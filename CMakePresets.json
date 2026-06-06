@@ -47,6 +47,21 @@
       }
     },
     {
+      "name": "windows-nmake-release-image",
+      "displayName": "Windows NMake Release with stb image metadata",
+      "description": "Configure the opt-in stb-backed PNG/JPEG image metadata helper through vcpkg planned-image.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-image",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "ON",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_ENABLE_STB": "ON",
+        "VCPKG_MANIFEST_FEATURES": "planned-image"
+      }
+    },
+    {
       "name": "windows-nmake-release-benchmark",
       "displayName": "Windows NMake Release Benchmark",
       "description": "Configure opt-in manual FastXLSX benchmarks without vcpkg.",
@@ -90,6 +105,10 @@
       "configurePreset": "windows-nmake-release-minizip"
     },
     {
+      "name": "windows-nmake-release-image",
+      "configurePreset": "windows-nmake-release-image"
+    },
+    {
       "name": "windows-nmake-release-benchmark",
       "configurePreset": "windows-nmake-release-benchmark"
     },
@@ -124,6 +143,17 @@
     {
       "name": "windows-nmake-release-minizip",
       "configurePreset": "windows-nmake-release-minizip",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "timeout": 60
+      }
+    },
+    {
+      "name": "windows-nmake-release-image",
+      "configurePreset": "windows-nmake-release-image",
       "output": {
         "outputOnFailure": true
       },

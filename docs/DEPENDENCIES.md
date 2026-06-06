@@ -139,6 +139,21 @@ XLSX 语义层：FastXLSX 自研
 - 如果只是嵌入已有 PNG/JPEG，优先保留原始图片字节并正确写 OpenXML package；
   不要无意义地解码再重编码。
 
+P17 图片任务的依赖接入应按阶段推进：
+
+1. 依赖发现阶段验证 `planned-image` / `stb` 的 vcpkg feature、include 路径、
+   license、CMake package/include 行为和 CI 安装成本。当前 P17a 已把
+   `FASTXLSX_ENABLE_STB=ON` 作为 opt-in CMake 接入口，用于 `read_image_info()`
+   PNG/JPEG 元数据 helper。
+2. API 设计阶段先写清 Streaming / Patch / In-memory 模式、原始图片字节和 decoded
+   pixel buffer 的内存边界、OpenXML package 副作用，以及为什么不会破坏 worksheet
+   streaming 热路径。
+3. New-workbook 插入阶段必须把 media part、drawing XML、drawing relationships、
+   worksheet relationships、worksheet `<drawing>` 引用和 content types 一起验证；
+   不能只凭 `stb` 解码可用就宣称图片 OpenXML 支持。
+4. Existing-workbook 图片读取、编辑或保真复制必须等 package reader/writer 和保真
+   fixtures 证明未修改 media/drawing/chart/VBA/unknown parts 能保留后再推进。
+
 ## 开发依赖
 
 ### 1. Catch2
@@ -306,8 +321,9 @@ Google Benchmark
 - `planned-runtime` 现在是 opt-in 运行依赖 feature：当前源码只使用其中的
   `minizip-ng[core,zlib]` 作为 package writer backend；`zlib-ng`、`expat`
   和 `pugixml` 仍是后续 ZIP/XML reader/editor 工作的计划依赖。
-- `planned-image` 记录计划中的图片解码依赖：`stb`。它只面向后续 Phase 5
-  图片读取/插入切片，不属于当前默认构建，也不代表图片功能已经实现。
+- `planned-image` 记录图片解码依赖：`stb`。当前只通过
+  `FASTXLSX_ENABLE_STB=ON` 接入 PNG/JPEG `read_image_info()` 元数据 helper；
+  它不属于默认构建，也不代表图片 OpenXML 插入已经实现。
 - `planned-dev` 记录计划中的开发依赖：`catch2`、`benchmark`。
 - 本机已用 `vcpkg search` 确认上述 port 名称存在。
 - 本机已用 `vcpkg install --dry-run --x-feature=planned-runtime`、

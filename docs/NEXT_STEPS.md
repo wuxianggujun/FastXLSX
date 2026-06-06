@@ -578,30 +578,75 @@ Do not claim:
 
 ### P17 - Images
 
-Start new-workbook-only insertion after P11. Existing-workbook image
-read/edit/preservation starts only after P13 proves preservation behavior.
+Start dependency and API design work after P11. Start new-workbook-only
+insertion only after the OpenXML part boundaries are designed. Existing-workbook
+image read/edit/preservation starts only after P13 proves preservation behavior.
+
+Stages:
+1. P17.0 - `stb` dependency discovery and image metadata helper. Status:
+   basic.
+   - Use `stb` for image decoding, dimensions, channels, and pixel access.
+   - Keep it opt-in through `FASTXLSX_ENABLE_STB=ON` and `planned-image`.
+   - Current code exposes PNG/JPEG `read_image_info()` for file and memory
+     input, backed by `stbi_info` when enabled and a clear FastXlsxError when
+     disabled.
+   - This stage still does not create media parts, drawing XML, relationships,
+     content types, anchors, or existing-workbook preservation.
+2. P17.1 - API shape and documentation.
+   - Document whether each image API is Streaming, Patch, or In-memory.
+   - Public comments must state memory behavior for original image bytes,
+     decoded pixels, anchor metadata, drawing/media part state, and package
+     finalization.
+   - Any convenience API must explain why it does not force large worksheets
+     into DOM, a full cell matrix, or the row/cell XML hot path.
+3. P17.2 - New-workbook-only insertion slice.
+   - Keep the first slice narrow: PNG/JPEG, one anchor strategy, generated
+     workbook only, generated media and drawing parts, and no existing drawing
+     mutation.
+   - Allocate media parts, drawing parts, drawing relationships, worksheet
+     relationships, content type entries, and worksheet `<drawing>` references.
+4. P17.3 - Compatibility and reference validation.
+   - Use structure tests for media, drawing XML, relationship parts, content
+     types, and worksheet drawing references.
+   - Use local Excel visual verification for generated `.xlsx` samples when
+     Excel is available, confirming no repair dialog and expected image
+     position/size.
+   - When XML structure or Excel repair behavior is unclear, generate an
+     equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
+     unzip both packages and compare OpenXML semantics.
+5. P17.4 - Existing-workbook image read/edit/preservation.
+   - Start only after P13 fixtures prove unmodified media/drawing/chart/VBA and
+     unknown parts remain present and relationships still resolve after
+     unrelated edits.
 
 Do:
-- Use `stb` as the image decoding and dimension-reading dependency. Keep it in
-  the planned image feature until CMake/include behavior is verified.
-- Allocate media parts.
-- Generate drawing parts, drawing relationships, worksheet relationships, and
-  content type entries.
-- Validate anchors without retaining a full worksheet DOM.
+- Use `stb` as the image decoding, dimension-reading, channel, and pixel-access
+  dependency for image reading tasks.
 - Keep decoding separate from OpenXML packaging: `stb` does not manage media
-  part names, relationship ids, content types, or drawing anchors.
-- Keep the first insertion slice narrow: PNG/JPEG, one anchor strategy, generated
-  workbook only, and no existing drawing mutation.
+  part names, relationship ids, content types, drawing XML, or anchors.
+- Allocate media parts only in an implementation slice that also writes the
+  required drawing and relationship parts.
+- Generate drawing parts, drawing relationships, worksheet relationships,
+  worksheet drawing references, and content type entries together.
+- Validate anchors without retaining a full worksheet DOM.
 
 Accept when:
-- vcpkg `stb` feature resolution, include path, license, and CI behavior are
-  verified before CMake integration.
+- vcpkg `stb` feature resolution, include path, license, and local CMake
+  behavior are verified for the opt-in image metadata helper. CI behavior for
+  `planned-image` remains a separate hardening task unless a workflow starts
+  running the image preset.
+- Public API docs for any image surface describe mode, ordering, memory cost,
+  decoded-pixel lifetime, package side effects, and unsupported operations.
 - Package structure tests cover media, drawing XML, rels, and content types.
-- Excel visual verification confirms images display.
+- Excel visual verification confirms images display without repair and with the
+  expected position and size.
+- Reference XML comparison is recorded when structure compatibility is
+  uncertain or Excel repairs the generated file.
 
 Do not claim:
 - Image editing or broad drawing support beyond the implemented slice.
 - Picture support from `stb` dependency availability alone.
+- OpenXML image support from decoding/dimension tests alone.
 - Existing workbook image passthrough or preservation before P13 fixtures prove
   unmodified media/drawing/chart/VBA parts survive edits.
 

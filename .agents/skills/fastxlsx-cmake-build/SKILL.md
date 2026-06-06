@@ -18,7 +18,9 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 `.github/workflows/ci.yml` 和 `examples/`，但这些只能写为基础：
 默认构建仍不接入第三方依赖；`FASTXLSX_ENABLE_MINIZIP_NG=ON` 才通过
 `planned-runtime` 接入 `find_package(minizip-ng CONFIG REQUIRED)` /
-`MINIZIP::minizip-ng`。CI 路径不能在本地文档里写成已验证完成。
+`MINIZIP::minizip-ng`；`FASTXLSX_ENABLE_STB=ON` 才通过 `planned-image`
+接入 `find_package(Stb REQUIRED)` / `${Stb_INCLUDE_DIR}`，用于 PNG/JPEG
+`read_image_info()` 元数据 helper。CI 路径不能在本地文档里写成已验证完成。
 
 ## 当前 CMake 事实
 
@@ -26,7 +28,7 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 - 项目是 `FastXLSX`，版本 `0.1.0`，语言是 `CXX`。
 - C++ 标准是 C++20，强制启用，并关闭编译器扩展。
 - `fastxlsx` 当前是 compiled library，源码列表在顶层 `CMakeLists.txt`；当前已接入
-  `src/opc.cpp`、`src/package_writer.cpp`、`src/streaming_writer.cpp`、
+  `src/image.cpp`、`src/opc.cpp`、`src/package_writer.cpp`、`src/streaming_writer.cpp`、
   `src/workbook.cpp`、`src/xml.cpp`、`src/zip_store_writer.cpp`。
 - 别名目标是 `FastXLSX::fastxlsx`。
 - 选项：
@@ -38,9 +40,11 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
   - `FASTXLSX_ENABLE_DOM_EDITING` 默认 `ON`。
   - `FASTXLSX_ENABLE_MINIZIP_NG` 默认 `OFF`，启用后链接 `MINIZIP::minizip-ng`
     并定义 `FASTXLSX_HAS_MINIZIP_NG`。
+  - `FASTXLSX_ENABLE_STB` 默认 `OFF`，启用后使用 `Stb_INCLUDE_DIR` 并定义
+    `FASTXLSX_HAS_STB`。
 - `tests/CMakeLists.txt` 注册 `fastxlsx_tests`、`fastxlsx_streaming_writer_tests`
-  和 `fastxlsx_opc_tests`，CTest 名称是 `fastxlsx.unit`、`fastxlsx.streaming`
-  和 `fastxlsx.opc`。
+  `fastxlsx_opc_tests` 和 `fastxlsx_image_tests`，CTest 名称是
+  `fastxlsx.unit`、`fastxlsx.streaming`、`fastxlsx.opc` 和 `fastxlsx.image`。
 - 当前测试不依赖 Catch2。
 
 ## 本地配置命令
@@ -71,6 +75,8 @@ cmake --help
 - `windows-nmake-release-vcpkg`：只启用 vcpkg toolchain。
 - `windows-nmake-release-minizip`：启用 `planned-runtime` 和
   `FASTXLSX_ENABLE_MINIZIP_NG=ON`，用于 opt-in minizip backend 验证。
+- `windows-nmake-release-image`：启用 `planned-image` 和
+  `FASTXLSX_ENABLE_STB=ON`，用于 opt-in stb 图片元数据 helper 验证。
 - `windows-nmake-release-benchmark`：启用 `FASTXLSX_BUILD_BENCHMARKS=ON`，
   不启用 vcpkg，不进入默认 CTest。
 - `windows-nmake-release-benchmark-minizip`：启用 benchmark 和 minizip backend，
@@ -92,7 +98,8 @@ cmake --help
 
 - 当前 `vcpkg.json` 是基础入口：默认依赖为空，planned features 包含
   `minizip-ng`、`zlib-ng`、`expat`、`pugixml`、`catch2` 和 `benchmark`。
-- 当前代码真正使用的第三方依赖只有 opt-in `minizip-ng[core,zlib]` backend。
+- 当前代码真正使用的第三方依赖只有 opt-in `minizip-ng[core,zlib]` backend
+  和 opt-in `stb` 图片元数据 helper。
 - 未使用的依赖不要提前加 `find_package` 或 link。
 - 接入前必须验证真实 port 名、feature、imported target、triplet 行为和许可证。
 - 依赖接入遵守 `fastxlsx-dependency-policy`。
@@ -125,6 +132,14 @@ cmake --build --preset windows-nmake-release-minizip
 ctest --preset windows-nmake-release-minizip
 ```
 
+验证 stb 图片元数据 helper：
+
+```powershell
+cmake --preset windows-nmake-release-image
+cmake --build --preset windows-nmake-release-image
+ctest --preset windows-nmake-release-image
+```
+
 构建手工 benchmark：
 
 ```powershell
@@ -137,6 +152,6 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_s
 不要把这个工具边界写成 FastXLSX public API 的 worksheet 数量承诺。
 
 如果 `ctest` 没有运行测试，先检查 `tests/CMakeLists.txt` 是否仍注册
-`fastxlsx.unit`、`fastxlsx.streaming` 和 `fastxlsx.opc`。
+`fastxlsx.unit`、`fastxlsx.streaming`、`fastxlsx.opc` 和 `fastxlsx.image`。
 后台运行普通测试时使用 60s 超时；preset 和 `tests/CMakeLists.txt` 已承载该
 边界。手写 `build-nmake` 排障目录时，显式加 `ctest --test-dir ... --timeout 60`。

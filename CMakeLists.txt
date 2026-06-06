@@ -15,8 +15,10 @@ option(FASTXLSX_BUILD_EXAMPLES "Build FastXLSX examples" OFF)
 option(FASTXLSX_BUILD_BENCHMARKS "Build FastXLSX manual benchmark tools" OFF)
 option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" ON)
 option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZIP writer backend" OFF)
+option(FASTXLSX_ENABLE_STB "Enable stb-backed PNG/JPEG image metadata helpers" OFF)
 
 add_library(fastxlsx
+    src/image.cpp
     src/opc.cpp
     src/package_writer.cpp
     src/streaming_writer.cpp
@@ -38,6 +40,12 @@ if(FASTXLSX_ENABLE_MINIZIP_NG)
     find_package(minizip-ng CONFIG REQUIRED)
     target_link_libraries(fastxlsx PRIVATE MINIZIP::minizip-ng)
     target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_MINIZIP_NG=1)
+endif()
+
+if(FASTXLSX_ENABLE_STB)
+    find_package(Stb REQUIRED)
+    target_include_directories(fastxlsx PRIVATE ${Stb_INCLUDE_DIR})
+    target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_STB=1)
 endif()
 
 if(FASTXLSX_BUILD_TESTS)

@@ -46,3 +46,19 @@ set_tests_properties(fastxlsx.opc PROPERTIES
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     TIMEOUT 60
 )
+
+add_executable(fastxlsx_image_tests
+    test_image.cpp
+)
+
+target_link_libraries(fastxlsx_image_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_image_tests PRIVATE cxx_std_20)
+if(FASTXLSX_ENABLE_STB)
+    target_compile_definitions(fastxlsx_image_tests PRIVATE FASTXLSX_TEST_HAS_STB=1)
+endif()
+
+add_test(NAME fastxlsx.image COMMAND fastxlsx_image_tests)
+set_tests_properties(fastxlsx.image PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)

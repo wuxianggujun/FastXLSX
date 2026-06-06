@@ -881,8 +881,9 @@ Required dependencies before broad implementation:
   styles, document properties, and relationship parts.
 - Streaming worksheet writer support for object anchors or references without
   holding full worksheet data.
-- `stb` image decode/dimension dependency verified through vcpkg `planned-image`
-  before any CMake integration.
+- `stb` image decode/dimension dependency is available through the opt-in
+  `FASTXLSX_ENABLE_STB=ON` / `planned-image` path for `read_image_info()`.
+  This is only a PNG/JPEG metadata helper, not image insertion.
 - Style and formula boundaries from Phase 3 where conditional formatting,
   tables, or validations depend on styles, ranges, formulas, or workbook
   metadata.
@@ -918,6 +919,24 @@ Allowed early slices:
 - Image work must use `stb` for image decoding, dimensions, and pixel access;
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.
+- P17 image work must stay split into explicit stages:
+  1. Dependency discovery and metadata helper: verify `planned-image` / `stb`
+     resolution, include behavior, license, local CMake behavior, and CI cost.
+     Current P17a exposes `ImageInfo`, `ImageFormat`, and `read_image_info()`
+     for PNG/JPEG metadata only.
+  2. API design and documentation for insertion/editing: define
+     Streaming/Patch/In-memory mode,
+     memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,
+     and why the API does not move worksheet data into DOM or a cell matrix.
+  3. New-workbook insertion slice: PNG/JPEG only, one anchor strategy, generated
+     media and drawing parts, worksheet `.rels`, drawing `.rels`, content type
+     entries, and worksheet `<drawing>` references.
+  4. Visual and reference validation: generated `.xlsx` samples need local Excel
+     visual verification when Excel is available; structure problems require an
+     Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
+  5. Existing-workbook image read/edit/preservation: start only after package
+     reader/writer and P13 preservation fixtures prove untouched media,
+     drawings, charts, VBA, and unknown parts survive unrelated edits.
 - Chart and VBA handling should start as passthrough preservation, not native
   generation or editing.
 

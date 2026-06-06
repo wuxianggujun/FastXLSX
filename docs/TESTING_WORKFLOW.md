@@ -52,8 +52,21 @@ docProps/core.xml
 docProps/app.xml
 ```
 
+如果功能涉及图片或 drawing，还要检查：
+
+```text
+xl/media/image*.png|jpg|jpeg
+xl/drawings/drawing*.xml
+xl/drawings/_rels/drawing*.xml.rels
+xl/worksheets/_rels/sheet*.xml.rels
+worksheet XML 中的 <drawing r:id="...">
+[Content_Types].xml 中的图片格式 default 或 override
+```
+
 结构测试应检查 relationships、content type override/default、sheet id、
 relationship target、worksheet `sheetData`、cell reference 和 value type。
+图片结构测试还应检查 media part target、drawing relationship target、worksheet-local
+`rId` 一致性，以及 anchor 的起始/结束单元格和 offset 语义。
 
 ### 3. 本机 Excel 可视化验证
 
@@ -65,6 +78,7 @@ relationship target、worksheet `sheetData`、cell reference 和 value type。
 - sheet 名、行列位置、单元格值与预期一致。
 - 数字、布尔、字符串、日期、公式写入可见结果符合预期。
 - 样式、列宽、行高、合并单元格、冻结窗格等高级功能在后续实现时可见。
+- 图片功能在后续实现时，必须确认图片显示、位置和尺寸符合预期。
 - 保存后再打开仍然正常。
 
 Excel 可视化验证是本地验收步骤，不应作为默认 CI 的强依赖。CI 可以做结构检查
@@ -179,11 +193,22 @@ xl/sharedStrings.xml
 xl/styles.xml
 ```
 
+如果涉及图片或 drawing，还要额外对比：
+
+```text
+xl/media/*
+xl/drawings/drawing*.xml
+xl/drawings/_rels/drawing*.xml.rels
+xl/worksheets/_rels/sheet*.xml.rels
+```
+
 对比时注意：
 
 - Excel、openpyxl、XlsxWriter 生成的 XML 不一定 byte-level 相同。
 - 重点比较 OpenXML 语义：part 是否存在、关系是否正确、content type 是否正确、
   sheet/cell/value/type 是否正确。
+- 图片对比应重点看 media part 是否存在、relationship target 是否有效、worksheet
+  `<drawing>` 引用是否匹配、anchor 语义是否等价，而不是要求 XML 字节完全一致。
 - namespace、属性顺序、默认值、压缩方式可能不同，不应直接当成错误。
 - 如果 Excel 打开后自动修复，应保存 Excel 修复后的文件，再拆包比较修复前后差异。
 

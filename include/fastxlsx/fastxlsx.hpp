@@ -12,6 +12,8 @@
 ///   FastXlsxError.
 /// - `fastxlsx/streaming_writer.hpp` for WorkbookWriter, WorksheetWriter,
 ///   CellView, and StringStrategy.
+/// - `fastxlsx/image.hpp` for opt-in stb-backed PNG/JPEG metadata probing.
 
+#include <fastxlsx/image.hpp>
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>

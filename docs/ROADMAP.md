@@ -102,7 +102,9 @@ existing-file editing、unknown part preservation 仍是计划。
 
 ## Phase 5：复杂对象
 
-当前状态提示：`stb` 仍只在 `planned-image` 依赖规划中，尚未接入 CMake。
+当前状态提示：`stb` 已通过 opt-in `FASTXLSX_ENABLE_STB=ON` /
+`planned-image` 接入 PNG/JPEG `read_image_info()` 元数据 helper；这只代表
+图片格式、尺寸和通道读取切片，不代表 media/drawing OpenXML 图片插入。
 图片、超链接、table、chart/VBA passthrough 不能仅凭本 roadmap 条目宣称支持；
 以 `TASK_PLAN.md`、`NEXT_STEPS.md`、`AGENTS.md` 的 current verified state 为准。
 

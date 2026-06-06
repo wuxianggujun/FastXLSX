@@ -24,7 +24,7 @@
       ]
     },
     "planned-image": {
-      "description": "Planned image decoding dependency for future XLSX media/image features. This port is not wired into CMake yet.",
+      "description": "Opt-in image decoding dependency for FASTXLSX_ENABLE_STB image metadata helpers and future XLSX media/image features.",
       "dependencies": [
         "stb"
       ]

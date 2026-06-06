@@ -25,7 +25,11 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 ## 当前事实
 
 - `WorkbookWriter` / `WorksheetWriter` 是当前 streaming 新建 workbook 路径。
-- worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格。
+- worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格和
+  streaming-only data validations。
+- `WorksheetWriter::add_data_validation()` 当前只支持新建 workbook 的 worksheet XML
+  metadata，写出 `<dataValidations>`，不新增 worksheet `.rels`、content types 或
+  package relationships。
 - 大型 worksheet 路径禁止 DOM，metadata 必须以小向量/轻量结构记录，再在
   worksheet XML 正确位置输出。
 - `RelationshipSet` 可表达 external target，但这不是 hyperlink feature。
@@ -39,7 +43,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 ## 推荐流程
 
 1. 先判定功能是否只需要 worksheet XML metadata。
-2. 若只改 worksheet XML，例如最小 data validations，可以先留在
+2. 若只改 worksheet XML，例如当前 data validations 基础切片，可以留在
    streaming new-workbook 路径，不引入 package relationship。
 3. 若功能需要 worksheet `.rels`、新 part、content type override 或跨 part id，
    先基于内部 relationship graph / part index 做窄范围 package wiring，不要直接
@@ -51,8 +55,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 ## 可切入切片
 
-- Data validations：优先做 streaming-only、新建 workbook、worksheet metadata 版本。
-  先覆盖简单 whole/decimal/list/date/textLength 结构，禁止已有文件编辑和 DOM。
+- Data validations：已有基础 streaming-only、新建 workbook、worksheet metadata 版本。
+  当前覆盖 whole/decimal/list/date/time/textLength/custom 公式文本结构；继续禁止已有
+  文件编辑、DOM、公式解析、单元格值校验和重叠检查。
 - Hyperlinks：保持计划，可基于内部 relationship graph 设计 worksheet `.rels`
   wiring，但必须同时写 worksheet XML 和 `.rels` 后才能宣称功能。
   可先做 metadata/API 设计，不要宣称功能已实现。
@@ -75,6 +80,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 - `ctest` 默认测试 60s 内完成。
 - worksheet XML 中 metadata 位置符合 OpenXML 结构要求。
+- data validations 结构测试应检查 `count`、`sqref`、`type`、`operator`、
+  `allowBlank`、`formula1`、`formula2`、XML escape、invalid ranges、
+  invalid rule shapes、关系缺失和 close 后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 本机有 Excel 时打开关键 `.xlsx`，确认无修复弹窗并检查可视化结果。
 - 结构失败时拆包对比 FastXLSX 输出、Excel 修复文件和参考文件的 XML 语义。

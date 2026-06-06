@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -44,6 +45,67 @@ enum class StringStrategy {
 struct WorkbookWriterOptions {
     /// Controls how string cells are represented in worksheet XML.
     StringStrategy string_strategy = StringStrategy::InlineString;
+};
+
+/// Worksheet data-validation value type.
+///
+/// API mode: Streaming worksheet metadata. Data validation rules are copied
+/// into WorksheetWriter state and serialized as worksheet-local
+/// `<dataValidation>` XML during WorkbookWriter::close(). This does not create
+/// relationships, content types, styles, formula parsing, or existing-workbook
+/// edits.
+enum class DataValidationType {
+    Whole,
+    Decimal,
+    List,
+    Date,
+    Time,
+    TextLength,
+    Custom,
+};
+
+/// Optional comparison operator for worksheet data validation.
+///
+/// API mode: Streaming worksheet metadata. Operators are serialized as OpenXML
+/// attributes only when supplied by DataValidationRule. List and custom rules do
+/// not accept operators in the current narrow API.
+enum class DataValidationOperator {
+    Between,
+    NotBetween,
+    Equal,
+    NotEqual,
+    GreaterThan,
+    LessThan,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+};
+
+/// A streaming-only worksheet data-validation rule.
+///
+/// FastXLSX copies formula text into writer-owned storage when the rule is
+/// added. Formula text is written as XML text but is not parsed, evaluated, or
+/// checked against cell contents. The writer stores one small rule object per
+/// call to WorksheetWriter::add_data_validation(); memory grows with rule count,
+/// not with worksheet row or cell count.
+struct DataValidationRule {
+    /// Validation kind written as the OpenXML `type` attribute.
+    DataValidationType type = DataValidationType::List;
+
+    /// Optional comparison operator written as the OpenXML `operator`
+    /// attribute. Required for between/notBetween formulas and rejected for
+    /// list/custom rules in the current implementation.
+    std::optional<DataValidationOperator> operator_type;
+
+    /// First formula or list source. Required by the current implementation and
+    /// copied into WorksheetWriter state.
+    std::string formula1;
+
+    /// Second formula for between/notBetween operators. Must be empty for
+    /// single-formula operators.
+    std::string formula2;
+
+    /// Writes `allowBlank="1"` when true. Omitted when false.
+    bool allow_blank = false;
 };
 
 /// A cell view consumed immediately by WorksheetWriter.
@@ -183,6 +245,19 @@ public:
     /// @throws FastXlsxError if the range is invalid, outside Excel worksheet
     /// limits, or contains only one cell.
     void merge_cells(CellRange range);
+
+    /// Records a worksheet-local data validation rule.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The rule is
+    /// emitted as `<dataValidations>` in the worksheet XML and does not add
+    /// package relationships or content types. FastXLSX copies formula strings
+    /// into writer state, performs range and narrow-rule-shape validation, and
+    /// does not parse formulas, validate existing cell values, check overlapping
+    /// validations, or promise Excel UI completeness.
+    ///
+    /// @throws FastXlsxError if the range is invalid, the workbook is closed, or
+    /// the rule shape is outside the current narrow data-validation surface.
+    void add_data_validation(CellRange range, DataValidationRule rule);
 
 private:
     friend class WorkbookWriter;

@@ -16,8 +16,10 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
 包括 `Workbook`、`Worksheet`、`Cell`、`WorkbookWriter`、`WorksheetWriter`、
-`CellView` 和 `FastXlsxError`。`WorkbookWriter` / `WorksheetWriter` / `CellView`
-是流式写入骨架，不等同完整 Phase 3。
+`CellView`、`DataValidationRule`、`DataValidationType`、`DataValidationOperator`
+和 `FastXlsxError`。`WorkbookWriter` / `WorksheetWriter` / `CellView`
+是流式写入骨架；data validation API 是 worksheet XML metadata 基础切片，
+不等同完整 Phase 3 或完整 Phase 5。
 
 ## 核心原则
 
@@ -30,8 +32,12 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 - 性能热路径不能因为高层包装落到通用 XML serializer。
 - 当前 `Worksheet::append_row()` 是 append-only、streaming-oriented public API，
   但 Phase 1 实现会临时 buffer rows；不要把这个 buffer 当成长期大文件架构。
-- 当前 `WorksheetWriter` 骨架覆盖公式、行高、列宽、冻结窗格、自动筛选和
-  合并单元格的写入 XML；这些不代表完整 Phase 3 功能集。
+- 当前 `WorksheetWriter` 骨架覆盖公式、行高、列宽、冻结窗格、自动筛选、
+  合并单元格和 data validations 的写入 XML；这些不代表完整 Phase 3 或
+  Phase 5 功能集。
+- `WorksheetWriter::add_data_validation()` 是 Streaming metadata API：规则和公式文本
+  被复制进 writer state，内存按规则数量和公式文本长度增长；它不解析公式、不校验
+  单元格值、不检查重叠、不新增 relationships/content types，也不支持 existing-file editing。
 - 当前 `Workbook::save()` 使用 internal package writer boundary；默认无依赖构建走
   stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
   backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
@@ -60,6 +66,10 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 - 样式、relationships 或 content types 副作用。
 - 错误处理方式。
 - 性能/内存注意事项。
+
+data validations 这类 worksheet metadata API 还要写清：Streaming-only、
+new-workbook-only、规则数量内存成本、公式文本拷贝、无公式求值、无单元格值校验、
+无重叠检查、无完整 Excel UI 保证，以及是否新增 relationships/content types。
 
 涉及热路径的 API，还要说明是否会触发 DOM、跨行缓存、shared strings 状态增长、
 压缩等级影响或输出文件大小变化。

@@ -305,29 +305,34 @@ Validation:
 
 ### M8 - Streaming-Only Data Validations
 
-Status: planned Phase 5 early slice.
+Status: 基础 for streaming-only new-workbook worksheet data validations.
 
-Do this after M4 and before hyperlink/table/image work if the goal is a visible
-worksheet feature that does not require relationships.
+The first slice is implemented on `WorksheetWriter` only. It writes
+worksheet-local `<dataValidations>` XML and does not require package
+relationships.
 
 Tasks:
-- Start with `WorksheetWriter` new-workbook output only.
-- Store validation rules as lightweight worksheet metadata.
-- Write `<dataValidations>` in `worksheet.xml`; do not introduce package
-  relationships for the first slice.
-- Support a narrow first scope such as list, whole, decimal, date/time,
-  textLength, and custom formula text.
-- Copy formula strings into writer state; do not use temporary `string_view`
-  data past the API call.
+- `WorksheetWriter::add_data_validation()` stores validation rules as
+  lightweight worksheet metadata.
+- `DataValidationRule` copies formula strings into writer state; it does not
+  keep temporary `string_view` data past the API call.
+- The current narrow scope covers whole, decimal, list, date, time, textLength,
+  and custom formula text.
+- The first slice writes only worksheet `<dataValidations>` and does not add
+  worksheet `.rels`, workbook relationships, or content type overrides.
 - Do not parse formulas, validate cell values, check overlap, or claim full
   Excel UI support.
 
 Validation:
-- Structure tests for `count`, `sqref`, `type`, `operator`, `allowBlank`,
-  `formula1`, and `formula2`.
-- XML escaping tests for formula text.
-- Invalid range tests and mutation-after-close tests.
-- Excel visual verification and reference XML comparison before expanding scope.
+- `fastxlsx.streaming` covers `count`, `sqref`, `type`, `operator`,
+  `allowBlank`, `formula1`, `formula2`, XML escaping, invalid ranges,
+  invalid rule shapes, package relationship absence, and mutation-after-close.
+- Local Excel visual verification passed for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`.
+  Excel COM normalizes list formulas by removing outer literal quotes and adds
+  `=` when returning function formulas.
+- Keep Excel / `openpyxl` / `XlsxWriter` reference XML comparison in the
+  expansion path before adding richer validation semantics.
 
 ### M9 - Hyperlinks
 
@@ -857,13 +862,13 @@ Required dependencies before broad implementation:
   comparison and local Excel visual verification.
 
 Allowed early slices:
-- Data validations may be planned as a streaming-only, new-workbook worksheet
-  metadata slice. The first implementation should only write `<dataValidations>`
-  in `worksheet.xml`, store rules as lightweight worksheet metadata, avoid DOM,
-  and avoid existing-file editing.
-- A public data-validation API, if added, must document Streaming mode, memory
-  cost as rule count plus formula text, no random access, no full worksheet cell
-  matrix, no formula evaluation, and no Excel UI completeness guarantee.
+- Data validations have a basic streaming-only, new-workbook worksheet metadata
+  slice through `WorksheetWriter::add_data_validation()`. It only writes
+  `<dataValidations>` in `worksheet.xml`, stores rules as lightweight worksheet
+  metadata, avoids DOM, and avoids existing-file editing.
+- The public data-validation API documents Streaming mode, memory cost as rule
+  count plus formula text, no random access, no full worksheet cell matrix, no
+  formula evaluation, and no Excel UI completeness guarantee.
 - Hyperlinks may be planned as worksheet metadata plus relationships, but only
   after internal part index / relationship graph support can keep worksheet XML
   and worksheet `.rels` ids consistent.

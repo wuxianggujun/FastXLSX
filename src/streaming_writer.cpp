@@ -32,6 +32,11 @@ struct ColumnWidth {
     double width = 0.0;
 };
 
+struct DataValidation {
+    CellRange range;
+    DataValidationRule rule;
+};
+
 std::string format_number(double value)
 {
     std::array<char, 64> buffer {};
@@ -90,6 +95,87 @@ void validate_sheet_name(std::string_view name)
     }
 }
 
+std::string_view data_validation_type_name(DataValidationType type)
+{
+    switch (type) {
+    case DataValidationType::Whole:
+        return "whole";
+    case DataValidationType::Decimal:
+        return "decimal";
+    case DataValidationType::List:
+        return "list";
+    case DataValidationType::Date:
+        return "date";
+    case DataValidationType::Time:
+        return "time";
+    case DataValidationType::TextLength:
+        return "textLength";
+    case DataValidationType::Custom:
+        return "custom";
+    }
+
+    throw FastXlsxError("unknown data validation type");
+}
+
+std::string_view data_validation_operator_name(DataValidationOperator operator_type)
+{
+    switch (operator_type) {
+    case DataValidationOperator::Between:
+        return "between";
+    case DataValidationOperator::NotBetween:
+        return "notBetween";
+    case DataValidationOperator::Equal:
+        return "equal";
+    case DataValidationOperator::NotEqual:
+        return "notEqual";
+    case DataValidationOperator::GreaterThan:
+        return "greaterThan";
+    case DataValidationOperator::LessThan:
+        return "lessThan";
+    case DataValidationOperator::GreaterThanOrEqual:
+        return "greaterThanOrEqual";
+    case DataValidationOperator::LessThanOrEqual:
+        return "lessThanOrEqual";
+    }
+
+    throw FastXlsxError("unknown data validation operator");
+}
+
+bool data_validation_operator_requires_formula2(DataValidationOperator operator_type) noexcept
+{
+    return operator_type == DataValidationOperator::Between
+        || operator_type == DataValidationOperator::NotBetween;
+}
+
+void validate_data_validation_rule(const DataValidationRule& rule)
+{
+    if (rule.formula1.empty()) {
+        throw FastXlsxError("data validation formula1 cannot be empty");
+    }
+
+    if (rule.type == DataValidationType::List || rule.type == DataValidationType::Custom) {
+        if (rule.operator_type.has_value()) {
+            throw FastXlsxError("list and custom data validations do not accept an operator");
+        }
+        if (!rule.formula2.empty()) {
+            throw FastXlsxError("list and custom data validations do not accept formula2");
+        }
+        return;
+    }
+
+    if (!rule.operator_type.has_value()) {
+        throw FastXlsxError("data validation operator is required for this type");
+    }
+
+    if (data_validation_operator_requires_formula2(*rule.operator_type)) {
+        if (rule.formula2.empty()) {
+            throw FastXlsxError("between data validations require formula2");
+        }
+    } else if (!rule.formula2.empty()) {
+        throw FastXlsxError("single-formula data validation operator cannot use formula2");
+    }
+}
+
 std::filesystem::path make_temp_path()
 {
     static std::atomic<std::uint64_t> counter {0};
@@ -145,6 +231,7 @@ struct WorksheetWriterState {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> frozen_panes;
     std::optional<CellRange> auto_filter;
     std::vector<CellRange> merged_ranges;
+    std::vector<DataValidation> data_validations;
     std::string row_buffer;
 };
 
@@ -366,6 +453,43 @@ std::string build_merge_cells(const detail::WorksheetWriterState& worksheet)
     return xml;
 }
 
+std::string build_data_validations(const detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.data_validations.empty()) {
+        return {};
+    }
+
+    std::string xml = "<dataValidations count=\"";
+    xml += std::to_string(worksheet.data_validations.size());
+    xml += "\">";
+    for (const DataValidation& validation : worksheet.data_validations) {
+        xml += "<dataValidation type=\"";
+        xml += data_validation_type_name(validation.rule.type);
+        xml += "\"";
+        if (validation.rule.allow_blank) {
+            xml += " allowBlank=\"1\"";
+        }
+        if (validation.rule.operator_type.has_value()) {
+            xml += " operator=\"";
+            xml += data_validation_operator_name(*validation.rule.operator_type);
+            xml += "\"";
+        }
+        xml += " sqref=\"";
+        xml += detail::range_reference(validation.range);
+        xml += "\"><formula1>";
+        xml += detail::escape_xml_text(validation.rule.formula1);
+        xml += "</formula1>";
+        if (!validation.rule.formula2.empty()) {
+            xml += "<formula2>";
+            xml += detail::escape_xml_text(validation.rule.formula2);
+            xml += "</formula2>";
+        }
+        xml += "</dataValidation>";
+    }
+    xml += "</dataValidations>";
+    return xml;
+}
+
 std::string build_worksheet_prefix(const detail::WorksheetWriterState& worksheet)
 {
     std::string xml;
@@ -390,6 +514,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
         xml += "\"/>";
     }
     xml += build_merge_cells(worksheet);
+    xml += build_data_validations(worksheet);
     xml += "</worksheet>";
     return xml;
 }
@@ -592,6 +717,14 @@ void WorksheetWriter::merge_cells(CellRange range)
         throw FastXlsxError("merged range must include more than one cell");
     }
     state_->merged_ranges.push_back(range);
+}
+
+void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule rule)
+{
+    ensure_mutable_worksheet(state_);
+    (void)detail::range_reference(range);
+    validate_data_validation_rule(rule);
+    state_->data_validations.push_back({range, std::move(rule)});
 }
 
 WorkbookWriter::WorkbookWriter() = default;

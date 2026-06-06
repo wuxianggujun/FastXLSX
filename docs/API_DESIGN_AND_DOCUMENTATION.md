@@ -27,6 +27,9 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
   buffer、字符串策略和 package / ZIP writer 状态相关。
 - 不持有完整 worksheet cell matrix；如果 finalization 避免完整 worksheet XML
   内存副本，也必须说明该保证只覆盖对应 worksheet entry，不覆盖所有 package parts。
+- worksheet metadata API，例如 `WorksheetWriter::add_data_validation()`，应只保存
+  轻量规则状态；内存成本按规则数量和公式文本长度增长，不能为了校验规则而读取或
+  持有完整 worksheet cell matrix。
 
 ### Patch API
 
@@ -73,6 +76,10 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 样式、关系或 content types 的副作用。
 - 错误处理方式。
 - 性能/内存注意事项。
+
+对 data validations 这类 worksheet metadata API，注释还要说明是否只写
+worksheet XML、是否新增 relationships/content types、是否复制公式文本、是否解析
+公式或校验单元格值，以及是否支持 existing-file editing。
 
 ## 性能注释要求
 

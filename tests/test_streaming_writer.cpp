@@ -231,6 +231,134 @@ void test_streaming_writer_file_backed_body_round_trip()
         worksheet_xml, "</sheetData></worksheet>", "file-backed worksheet footer was truncated");
 }
 
+void test_streaming_writer_data_validations()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-data-validations.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Validation");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Number"),
+        fastxlsx::CellView::text("Decimal"),
+        fastxlsx::CellView::text("Choice"),
+        fastxlsx::CellView::text("Date"),
+        fastxlsx::CellView::text("Time"),
+        fastxlsx::CellView::text("Length"),
+        fastxlsx::CellView::text("Custom"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::number(1.5),
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::number(45500.0),
+        fastxlsx::CellView::number(0.5),
+        fastxlsx::CellView::text("short"),
+        fastxlsx::CellView::text("abc"),
+    });
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+
+    fastxlsx::DataValidationRule decimal;
+    decimal.type = fastxlsx::DataValidationType::Decimal;
+    decimal.operator_type = fastxlsx::DataValidationOperator::GreaterThan;
+    decimal.formula1 = "0.5";
+    sheet.add_data_validation({2, 2, 10, 2}, decimal);
+
+    fastxlsx::DataValidationRule list;
+    list.type = fastxlsx::DataValidationType::List;
+    list.formula1 = "\"A,B,C\"";
+    list.allow_blank = true;
+    sheet.add_data_validation({2, 3, 10, 3}, list);
+
+    fastxlsx::DataValidationRule date;
+    date.type = fastxlsx::DataValidationType::Date;
+    date.operator_type = fastxlsx::DataValidationOperator::NotBetween;
+    date.formula1 = "DATE(2026,1,1)";
+    date.formula2 = "DATE(2026,12,31)";
+    sheet.add_data_validation({2, 4, 10, 4}, date);
+
+    fastxlsx::DataValidationRule time;
+    time.type = fastxlsx::DataValidationType::Time;
+    time.operator_type = fastxlsx::DataValidationOperator::LessThan;
+    time.formula1 = "TIME(18,0,0)";
+    sheet.add_data_validation({2, 5, 10, 5}, time);
+
+    fastxlsx::DataValidationRule text_length;
+    text_length.type = fastxlsx::DataValidationType::TextLength;
+    text_length.operator_type = fastxlsx::DataValidationOperator::LessThanOrEqual;
+    text_length.formula1 = "12";
+    sheet.add_data_validation({2, 6, 10, 6}, text_length);
+
+    fastxlsx::DataValidationRule custom;
+    custom.type = fastxlsx::DataValidationType::Custom;
+    custom.formula1 = "LEN(G2)&\"<tag>\"";
+    sheet.add_data_validation({2, 7, 10, 7}, custom);
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "data validation xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing data validation worksheet part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "data validation should not create a metadata package part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "data validation should not add content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "data validation should not add workbook relationships");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:G2\"/>",
+        "data validation worksheet dimension mismatch");
+    check_contains(worksheet_xml, "</sheetData><dataValidations count=\"7\">",
+        "dataValidations should follow sheetData when no other suffix metadata exists");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"whole\" allowBlank=\"1\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
+        "whole-number data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"decimal\" operator=\"greaterThan\" "
+        "sqref=\"B2:B10\"><formula1>0.5</formula1></dataValidation>",
+        "decimal data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"list\" allowBlank=\"1\" sqref=\"C2:C10\">"
+        "<formula1>\"A,B,C\"</formula1></dataValidation>",
+        "list data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"date\" operator=\"notBetween\" "
+        "sqref=\"D2:D10\"><formula1>DATE(2026,1,1)</formula1><formula2>DATE(2026,12,31)</formula2></dataValidation>",
+        "date data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"time\" operator=\"lessThan\" "
+        "sqref=\"E2:E10\"><formula1>TIME(18,0,0)</formula1></dataValidation>",
+        "time data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"textLength\" operator=\"lessThanOrEqual\" "
+        "sqref=\"F2:F10\"><formula1>12</formula1></dataValidation>",
+        "textLength data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"custom\" sqref=\"G2:G10\">"
+        "<formula1>LEN(G2)&amp;\"&lt;tag&gt;\"</formula1></dataValidation>",
+        "custom data validation XML escaping mismatch");
+    check_contains(
+        worksheet_xml, "</dataValidations></worksheet>", "dataValidations footer mismatch");
+    check(count_occurrences(worksheet_xml, "<dataValidation ") == 7,
+        "dataValidation item count mismatch");
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -459,6 +587,14 @@ void test_streaming_writer_rejects_mutation_after_close()
     check_fastxlsx_error(
         [&sheet] { sheet.merge_cells({1, 1, 1, 2}); },
         "merge_cells should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] {
+            fastxlsx::DataValidationRule rule;
+            rule.type = fastxlsx::DataValidationType::List;
+            rule.formula1 = "\"A,B\"";
+            sheet.add_data_validation({1, 1, 1, 1}, rule);
+        },
+        "add_data_validation should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -508,6 +644,83 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet] { sheet.merge_cells({1, 1, 1, 1}); },
         "mergeCells should reject a single-cell range");
+
+    fastxlsx::DataValidationRule list;
+    list.type = fastxlsx::DataValidationType::List;
+    list.formula1 = "\"A,B\"";
+    check_fastxlsx_error(
+        [&sheet, &list] { sheet.add_data_validation({0, 1, 1, 1}, list); },
+        "dataValidations should reject a zero row");
+    check_fastxlsx_error(
+        [&sheet, &list] { sheet.add_data_validation({1, 0, 1, 1}, list); },
+        "dataValidations should reject a zero column");
+    check_fastxlsx_error(
+        [&sheet, &list] { sheet.add_data_validation({2, 1, 1, 1}, list); },
+        "dataValidations should reject a reversed row range");
+    check_fastxlsx_error(
+        [&sheet, &list] { sheet.add_data_validation({1, 2, 1, 1}, list); },
+        "dataValidations should reject a reversed column range");
+    check_fastxlsx_error(
+        [&sheet, &list] { sheet.add_data_validation({1, 1, 1048577, 1}, list); },
+        "dataValidations should reject a row beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet, &list] { sheet.add_data_validation({1, 1, 1, 16385}, list); },
+        "dataValidations should reject a column beyond Excel's limit");
+}
+
+void test_streaming_writer_invalid_data_validation_rules()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-invalid-validations.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Validation");
+
+    fastxlsx::DataValidationRule missing_formula;
+    missing_formula.type = fastxlsx::DataValidationType::List;
+    check_fastxlsx_error(
+        [&sheet, &missing_formula] { sheet.add_data_validation({1, 1, 1, 1}, missing_formula); },
+        "dataValidations should reject empty formula1");
+
+    fastxlsx::DataValidationRule list_with_operator;
+    list_with_operator.type = fastxlsx::DataValidationType::List;
+    list_with_operator.operator_type = fastxlsx::DataValidationOperator::Equal;
+    list_with_operator.formula1 = "\"A,B\"";
+    check_fastxlsx_error(
+        [&sheet, &list_with_operator] { sheet.add_data_validation({1, 1, 1, 1}, list_with_operator); },
+        "list dataValidations should reject an operator");
+
+    fastxlsx::DataValidationRule custom_with_formula2;
+    custom_with_formula2.type = fastxlsx::DataValidationType::Custom;
+    custom_with_formula2.formula1 = "A1>0";
+    custom_with_formula2.formula2 = "B1";
+    check_fastxlsx_error(
+        [&sheet, &custom_with_formula2] { sheet.add_data_validation({1, 1, 1, 1}, custom_with_formula2); },
+        "custom dataValidations should reject formula2");
+
+    fastxlsx::DataValidationRule whole_without_operator;
+    whole_without_operator.type = fastxlsx::DataValidationType::Whole;
+    whole_without_operator.formula1 = "1";
+    check_fastxlsx_error(
+        [&sheet, &whole_without_operator] { sheet.add_data_validation({1, 1, 1, 1}, whole_without_operator); },
+        "whole dataValidations should require an operator");
+
+    fastxlsx::DataValidationRule between_without_formula2;
+    between_without_formula2.type = fastxlsx::DataValidationType::Decimal;
+    between_without_formula2.operator_type = fastxlsx::DataValidationOperator::Between;
+    between_without_formula2.formula1 = "1.5";
+    check_fastxlsx_error(
+        [&sheet, &between_without_formula2] { sheet.add_data_validation({1, 1, 1, 1}, between_without_formula2); },
+        "between dataValidations should require formula2");
+
+    fastxlsx::DataValidationRule equal_with_formula2;
+    equal_with_formula2.type = fastxlsx::DataValidationType::Decimal;
+    equal_with_formula2.operator_type = fastxlsx::DataValidationOperator::Equal;
+    equal_with_formula2.formula1 = "1.5";
+    equal_with_formula2.formula2 = "2.5";
+    check_fastxlsx_error(
+        [&sheet, &equal_with_formula2] { sheet.add_data_validation({1, 1, 1, 1}, equal_with_formula2); },
+        "single-formula dataValidations should reject formula2");
 }
 
 void test_streaming_writer_invalid_metadata_and_rows()
@@ -560,11 +773,13 @@ int main()
     try {
         test_streaming_writer_smoke_package();
         test_streaming_writer_file_backed_body_round_trip();
+        test_streaming_writer_data_validations();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();
         test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();
+        test_streaming_writer_invalid_data_validation_rules();
         test_streaming_writer_invalid_metadata_and_rows();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

@@ -27,6 +27,9 @@ that exist in code, CMake, tests, docs, or local verification.
   - `WorkbookWriter`
   - `WorksheetWriter`
   - `CellView`
+  - `DataValidationRule`
+  - `DataValidationType`
+  - `DataValidationOperator`
   - `FastXlsxError`
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
@@ -50,6 +53,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`
   Manual `build-nmake` output may exist locally, but treat it as potentially
   stale unless it was regenerated after the current source change.
 
@@ -154,11 +158,13 @@ and release packaging, or the decision to make minizip the default backend.
    - Prove unknown and unmodified parts are preserved.
    - Use template workbooks with images, charts, macros, or unknown parts.
 
-9. Streaming-only data validations.
-   - Start as new-workbook `WorksheetWriter` metadata.
-   - Write only worksheet `<dataValidations>` first.
-   - Add structure tests, invalid range tests, mutation-after-close tests, and
-     Excel/reference XML validation before expanding scope.
+9. Streaming-only data validations - 基础.
+   - `WorksheetWriter::add_data_validation()` now writes worksheet-local
+     `<dataValidations>` for new workbooks only.
+   - The first slice stores lightweight metadata, copies formula strings into
+     writer state, and does not add package relationships or content types.
+   - Keep richer validation semantics, overlap checks, formula parsing, and
+     existing-file editing out of scope until separately designed.
 
 10. Hyperlinks.
     - Start only after relationship graph support can keep worksheet XML and
@@ -483,25 +489,25 @@ Do not claim:
 
 ### P14 - Streaming-Only Data Validations
 
-Start after P7, and before broader Phase 5 object work if a visible worksheet
-feature is desired without relationship dependencies.
+Status: 基础. The first streaming-only new-workbook slice is implemented.
 
 Do:
-- Implement new-workbook `WorksheetWriter` metadata only.
-- Write worksheet `<dataValidations>` without package relationships.
-- Support a narrow first scope and copy formula strings into writer-owned
-  storage.
-- Add Doxygen comments stating Streaming mode, rule-count memory cost, no
-  formula evaluation, and no Excel UI completeness guarantee.
+- Keep new-workbook `WorksheetWriter` metadata as the only supported surface.
+- Keep worksheet `<dataValidations>` independent of package relationships and
+  content type overrides.
+- Extend the narrow rule surface only with structure tests, Doxygen comments,
+  and Excel/reference XML validation.
 
 Accept when:
-- Tests cover `count`, `sqref`, `type`, `operator`, `allowBlank`, `formula1`,
-  `formula2`, invalid ranges, escaping, and mutation-after-close behavior.
-- Excel visual verification and reference XML comparison are recorded.
+- Current tests cover `count`, `sqref`, `type`, `operator`, `allowBlank`,
+  `formula1`, `formula2`, invalid ranges, invalid rule shapes, XML escaping,
+  package relationship absence, and mutation-after-close behavior.
+- Local Excel visual verification is recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`.
 
 Do not claim:
-- Full data validation semantics, formula parsing, overlap checks, or existing
-  file editing.
+- Full data validation semantics, formula parsing, value validation, overlap
+  checks, complete Excel UI behavior, or existing-file editing.
 
 ### P15 - Hyperlinks
 

@@ -113,6 +113,8 @@ cmake --help
 - 构建通过。
 - `ctest` 能发现并运行新增测试；普通测试 60s 内完成。
 - ZIP entry 和 OpenXML 基本 part 存在。
+- `fastxlsx.unit` 结构测试覆盖基础 cell 编码、公式 XML escape、row height metadata、
+  空 worksheet / 单空行 dimension、`XFD1` 最大列和 16385 列拒绝路径。
 - minizip backend 变更时，测试必须读取解压后的 entries，不要假设 ZIP method 0。
 - 输出 `.xlsx` 能被 Excel / WPS / LibreOffice 打开；如果本机无这些工具，说明未验证。
 - 本机有 Excel 时，用 Excel 打开关键样例做可视化验证。

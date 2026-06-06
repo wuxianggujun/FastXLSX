@@ -70,6 +70,8 @@ obligations.
 - Numeric XML encoding boundaries in the current files: in-memory
   `Workbook::save()` rejects non-finite numeric cells and rejects row heights
   that are zero, negative, `NaN`, `+Inf`, or `-Inf` during serialization;
+  it also rejects in-memory rows beyond Excel's 16384-column limit while
+  serializing cell references;
   streaming `WorksheetWriter::append_row()` rejects non-finite numeric cells
   before mutating row state and rejects row heights that are zero, negative,
   `NaN`, `+Inf`, or `-Inf`; `WorksheetWriter::set_column_width()` rejects
@@ -794,9 +796,11 @@ Tasks:
 - Add fast numeric and date encoding tasks with tests for edge cases.
 - Track dimensions incrementally and test row/column Excel limits. Current
   empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
-  dimension XML without requiring DOM backtracking. Current `append_row()` row
-  limit coverage uses a test-only hook to avoid a million-row default CTest loop;
-  column-limit coverage still uses an oversized in-memory row vector.
+  streaming dimension XML without requiring DOM backtracking. Current in-memory
+  tests lock empty worksheet, single empty row, `XFD1` max-column dimension, and
+  16385-column rejection. Current `append_row()` row limit coverage uses a
+  test-only hook to avoid a million-row default CTest loop; column-limit coverage
+  uses oversized row vectors in focused tests, not a large-data benchmark.
 - Add an opt-in benchmark target or command; do not put large benchmarks in
   default CTest.
 - Current preset entry points are `windows-nmake-release-benchmark` and

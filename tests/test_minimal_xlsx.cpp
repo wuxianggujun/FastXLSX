@@ -318,6 +318,60 @@ void test_workbook_formula_and_row_height_metadata()
         "row height metadata should not create styles");
 }
 
+void test_workbook_dimension_and_column_boundaries()
+{
+    {
+        auto workbook = fastxlsx::Workbook::create();
+        workbook.add_worksheet("Empty");
+
+        const auto output_path =
+            std::filesystem::current_path() / "fastxlsx-empty-worksheet.xlsx";
+        workbook.save(output_path);
+
+        const auto entries = fastxlsx::test::read_zip_entries(output_path);
+        const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+        check(worksheet_xml.find("<dimension ref=\"A1\"/>") != std::string::npos,
+            "empty in-memory worksheet dimension mismatch");
+        check(worksheet_xml.find("<sheetData></sheetData>") != std::string::npos,
+            "empty in-memory worksheet sheetData mismatch");
+    }
+
+    {
+        auto workbook = fastxlsx::Workbook::create();
+        auto& sheet = workbook.add_worksheet("EmptyRow");
+        sheet.append_row({});
+
+        const auto output_path =
+            std::filesystem::current_path() / "fastxlsx-empty-row-worksheet.xlsx";
+        workbook.save(output_path);
+
+        const auto entries = fastxlsx::test::read_zip_entries(output_path);
+        const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+        check(worksheet_xml.find("<dimension ref=\"A1:A1\"/>") != std::string::npos,
+            "single empty in-memory row dimension mismatch");
+        check(worksheet_xml.find("<row r=\"1\"></row>") != std::string::npos,
+            "single empty in-memory row XML mismatch");
+    }
+
+    {
+        auto workbook = fastxlsx::Workbook::create();
+        auto& sheet = workbook.add_worksheet("MaxColumns");
+        const std::vector<fastxlsx::Cell> max_columns(16384, fastxlsx::Cell::number(1.0));
+        sheet.append_row(max_columns);
+
+        const auto output_path =
+            std::filesystem::current_path() / "fastxlsx-max-columns.xlsx";
+        workbook.save(output_path);
+
+        const auto entries = fastxlsx::test::read_zip_entries(output_path);
+        const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+        check(worksheet_xml.find("<dimension ref=\"A1:XFD1\"/>") != std::string::npos,
+            "max-column in-memory worksheet dimension mismatch");
+        check(worksheet_xml.find("<c r=\"XFD1\"><v>1</v></c>") != std::string::npos,
+            "max-column in-memory cell reference mismatch");
+    }
+}
+
 void test_validation_errors()
 {
     auto workbook = fastxlsx::Workbook::create();
@@ -360,6 +414,19 @@ void test_validation_errors()
     expect_invalid_in_memory_row_height(-std::numeric_limits<double>::infinity(),
         "InvalidNegativeInfHeight", "invalid-negative-infinity-height.xlsx",
         "workbook save should reject negative infinity row heights");
+
+    {
+        auto too_wide_workbook = fastxlsx::Workbook::create();
+        auto& sheet = too_wide_workbook.add_worksheet("TooWide");
+        const std::vector<fastxlsx::Cell> too_wide_row(16385, fastxlsx::Cell::number(1.0));
+        sheet.append_row(too_wide_row);
+        check_fastxlsx_error(
+            [&too_wide_workbook] {
+                too_wide_workbook.save(
+                    std::filesystem::current_path() / "invalid-too-wide-row.xlsx");
+            },
+            "workbook save should reject rows beyond Excel's column limit");
+    }
 }
 
 } // namespace
@@ -371,6 +438,7 @@ int main()
         test_minimal_xlsx_package();
         test_workbook_document_properties();
         test_workbook_formula_and_row_height_metadata();
+        test_workbook_dimension_and_column_boundaries();
         test_validation_errors();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

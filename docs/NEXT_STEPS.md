@@ -401,16 +401,18 @@ Do:
 - Add numeric/date encoding edge cases and Excel row/column limit tests.
   Current coverage rejects `NaN` / `+Inf` / `-Inf` for numeric cells, rejects
   in-memory and streaming row heights that are zero, negative, or non-finite,
-  and rejects streaming column widths that are non-positive or non-finite.
+  rejects in-memory rows beyond Excel's 16384-column limit during save(), and
+  rejects streaming column widths that are non-positive or non-finite.
   Current `append_row()` row limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to
   inject the internal row counter at `1048576` and verify one rejected append
   without a million-row default CTest loop; broader date and formatting edge
   cases remain follow-up work.
 - Track worksheet dimensions incrementally. Current empty-row coverage locks
-  `<dimension ref="A1"/>` for no-row and all-empty-row sheets, preserves empty
-  `<row r="N"></row>` elements, and keeps a trailing appended empty row in the
-  generated dimension; do not introduce a full cell matrix just to mimic Excel
-  `UsedRange`.
+  streaming `<dimension ref="A1"/>` for no-row and all-empty-row sheets,
+  preserves empty `<row r="N"></row>` elements, and keeps a trailing appended
+  empty row in the generated dimension. Current in-memory tests also lock empty
+  worksheet, single empty row, `XFD1` max-column dimension, and 16385-column
+  rejection. Do not introduce a full cell matrix just to mimic Excel `UsedRange`.
 - Add or update Doxygen comments for public APIs touched by the change.
 
 Accept when:

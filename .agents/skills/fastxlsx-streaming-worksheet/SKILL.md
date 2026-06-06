@@ -49,7 +49,13 @@ package writer 或生产级大文件性能完成。
 - `CellView`
 
 当前骨架已覆盖公式、行高、列宽、冻结窗格、自动筛选和合并单元格的 XML 输出；
-这些是写入骨架能力，不等同完整 Phase 3。
+`fastxlsx.streaming` 已有 focused Phase 3 metadata 结构测试，覆盖公式 XML escape、
+row height、多个 column width records、last-call-wins frozen panes、
+last-call-wins auto filters、多个 merged ranges、suffix ordering 和无额外
+relationship/content type side effects。本机 Excel COM 已验证
+`build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx` 可打开并显示
+公式、行高、列宽、自动筛选、合并区域和冻结窗格。这些仍是写入骨架能力，不等同
+公式计算、cached values、calcChain、styles 或完整 Phase 3。
 
 当前 sharedStrings 基础：
 
@@ -126,6 +132,9 @@ dimension 更新。
 ## 验证
 
 - 为 XML escape、cell reference、值编码、dimensions、字符串策略补单元测试。
+- 触及公式、行高、列宽、冻结窗格、自动筛选或合并单元格时，保持 Phase 3
+  metadata 结构测试和 Excel 可视化样例同步；不要把 write-only 公式扩展成
+  公式计算、cached values 或 calcChain 保证。
 - sharedStrings 进行中时，验证 `xl/sharedStrings.xml`、content type override、
   workbook relationship、worksheet shared-string index、`count` / `uniqueCount`、
   XML escape、`xml:space="preserve"`、exact occurrence counts、跨 worksheet 去重、

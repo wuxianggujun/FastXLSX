@@ -381,18 +381,26 @@ Do not claim:
 
 ### P8 - Phase 3 Metadata Tests
 
-Start after current formula, row height, column width, freeze pane, filter, and
-merge skeletons are stable enough to validate.
+Status: basic focused structure and local Excel validation exists for the
+current streaming metadata skeleton. Continue when this surface changes or when
+styles/formula calculation work begins.
 
 Do:
-- Add structure tests for existing metadata writer paths.
-- Add Excel visual samples for visible formula cells, row/column sizing,
-  frozen panes, auto filters, and merged cells.
+- Keep structure tests for existing metadata writer paths current. The current
+  `fastxlsx.streaming` slice checks formula XML escaping, row height, column
+  width records, last-call-wins frozen panes, last-call-wins auto filters,
+  merged ranges, suffix ordering, and absence of relationship/content-type side
+  effects.
+- Keep Excel visual samples current for visible formula cells, row/column
+  sizing, frozen panes, auto filters, and merged cells. Current local Excel COM
+  validation opened
+  `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`.
 - Document formula boundaries: write-only formula text unless cached values,
   calculation mode, and calc chain are implemented.
 
 Accept when:
-- XML structure tests and local Excel checks are recorded.
+- XML structure tests and local Excel checks are recorded for the touched
+  metadata surface.
 - Docs still mark full Phase 3 as planned.
 
 Do not claim:

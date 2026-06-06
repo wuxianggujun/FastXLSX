@@ -271,6 +271,12 @@ cmake --help
   Excel 打开验证 `Inventory`、`Totals` 和 `Plain` sheet 的 `ListObjects` 数量、
   表名、范围、header 文本和内建 table style flags；不要把这扩展成完整 table UI
   或已有文件编辑保证。
+- 当前 `fastxlsx.streaming` Phase 3 metadata 推荐 preset 输出样例为
+  `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`。本机已用
+  Excel COM 打开验证 `Metadata` sheet、`B2` / `C2` 公式、row 2 高度、A/C 列宽、
+  `B2:D4` auto filter、`A3:B3` / `C4:D4` merge areas，以及
+  `SplitRow=2` / `SplitColumn=3` frozen panes；不要把这扩展成公式计算、
+  cached values、calcChain、styles 或完整 Phase 3。
 - 当前 `fastxlsx.streaming` images 推荐 preset 输出样例为
   `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。本机已用
   Excel COM 打开验证 workbook 可读、`Images` 和 `SecondImage` sheet 各 1 个

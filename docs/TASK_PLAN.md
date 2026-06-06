@@ -241,13 +241,16 @@ Validation:
 
 ### M5 - Phase 3 Metadata and Styles
 
-Status: foundation exists for some worksheet metadata; full Phase 3 remains planned.
+Status: foundation exists for some worksheet metadata; focused structure and
+local Excel validation now cover the current write skeleton. Full Phase 3
+remains planned.
 
 Do this after the streaming writer boundaries are clear.
 
 Tasks:
-- Strengthen tests and Excel visual checks for formula text, row height,
-  column width, frozen panes, auto filters, and merged cells.
+- Keep strengthening tests and Excel visual checks for formula text, row height,
+  column width, frozen panes, auto filters, and merged cells as the metadata
+  surface expands.
 - Design a style registry before writing broad `xl/styles.xml` support.
 - Add number formats, fonts, fills, borders, and alignment through that registry.
 - Decide formula calculation boundaries: write-only formula text, cached values,
@@ -258,8 +261,12 @@ Tasks:
   behavior documented.
 
 Validation:
-- Structure tests for `xl/styles.xml`, style ids, workbook metadata, and
-  worksheet references.
+- Current focused structure tests cover formula XML escaping, row height,
+  multiple column width records, last-call-wins frozen panes, last-call-wins
+  auto filters, multiple merged ranges, worksheet suffix ordering, and absence
+  of relationship/content-type side effects for these metadata-only features.
+- Future structure tests still need `xl/styles.xml`, style ids, workbook
+  metadata, and worksheet references when those features are implemented.
 - Public APIs have Doxygen comments stating mode, memory behavior, ordering,
   side effects, and unsupported Excel semantics.
 - Excel visual verification for representative style and metadata samples.
@@ -775,15 +782,22 @@ Current facts:
 - `WorksheetWriter::merge_cells()` records merged-cell ranges.
 - These features are metadata-oriented and currently live on the streaming
   writer path.
+- `fastxlsx.streaming` includes a focused Phase 3 metadata structure test for
+  formula XML escaping, row height, column widths, last-call-wins frozen panes,
+  last-call-wins auto filters, merged ranges, suffix ordering, and absence of
+  relationship/content-type side effects.
+- Local Excel COM validation has opened
+  `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`
+  and confirmed `Metadata` sheet, `B2` / `C2` formulas, row 2 height, A/C
+  column widths, `B2:D4` auto filter, `A3:B3` / `C4:D4` merge areas, and
+  `SplitRow=2` / `SplitColumn=3` frozen panes.
 - Styles, configurable document properties, named ranges, style registries, and
   rich formatting are still planned work. Static basic `docProps/core.xml` and
   `docProps/app.xml` output already exists in the minimum package path.
 
 Tasks:
-- Add focused structure tests for formula XML, row height, column width,
-  frozen panes, auto filters, and merged cells.
-- Add Excel visual verification samples covering visible formula cells, row
-  height, column width, frozen panes, auto filters, and merged cells.
+- Extend focused structure tests and Excel visual samples when metadata behavior
+  changes or new options are exposed.
 - Define style registry and style XML tasks without putting style handling in
   the raw cell XML hot path.
 - Add document property and named range tasks as small-part metadata writers.

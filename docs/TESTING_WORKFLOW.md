@@ -65,6 +65,10 @@ worksheet XML 中的 <drawing r:id="...">
 
 结构测试应检查 relationships、content type override/default、sheet id、
 relationship target、worksheet `sheetData`、cell reference 和 value type。
+Phase 3 worksheet metadata 结构测试还应检查公式 XML escape、row height、
+column width records、last-call-wins frozen panes、last-call-wins auto filters、
+merged ranges、suffix ordering，以及不会为纯 worksheet metadata 误加
+relationships 或 content type entries。
 图片结构测试还应检查 media part target、drawing relationship target、worksheet-local
 `rId` 一致性，以及 anchor 的起始/结束单元格和 offset 语义。
 
@@ -116,6 +120,16 @@ Excel COM 验证应确认 workbook 可打开、`Images` 和 `SecondImage` sheet 
 shape、`Plain` sheet 没有 shape，并记录 Excel 报告的 `TopLeftCell` /
 `BottomRightCell`。当前本机验证结果为 `Images` 上 `C1:F5`，`SecondImage` 上
 `A1:B2`。
+
+当前 streaming Phase 3 metadata 样例由 `fastxlsx.streaming` 在默认 preset 下生成，
+推荐路径是
+`build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`。本机
+Excel COM 验证应确认 `Metadata` sheet 可打开，公式、row height、column width、
+auto filter、merge areas 和 frozen panes 可见。当前本机验证结果为 `B2` 公式
+`=A2*2`、`C2` 公式 `=IF(A2>0,"<yes>","&no")`、row 2 高度约 `19.3`、
+auto filter `B2:D4`、merge areas `A3:B3` / `C4:D4`、`SplitRow=2` 和
+`SplitColumn=3`。这不代表公式计算、cached values、calcChain、styles 或完整
+Phase 3 已完成。
 
 ## 结构异常时的参考对比流程
 

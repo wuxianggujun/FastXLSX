@@ -211,6 +211,107 @@ void test_streaming_writer_smoke_package()
         "mergeCells XML mismatch");
 }
 
+void test_streaming_writer_phase3_metadata_structure()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-phase3-metadata.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Metadata");
+
+    sheet.set_column_width(1, 1, 12.25);
+    sheet.set_column_width(3, 4, 8.75);
+    sheet.freeze_panes(1, 0);
+    sheet.freeze_panes(2, 3);
+    sheet.set_auto_filter({1, 1, 2, 2});
+    sheet.set_auto_filter({2, 2, 4, 4});
+    sheet.merge_cells({3, 1, 3, 2});
+    sheet.merge_cells({4, 3, 4, 4});
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Header A"),
+        fastxlsx::CellView::text("Header B"),
+        fastxlsx::CellView::text("Header C"),
+        fastxlsx::CellView::text("Header D"),
+    });
+    sheet.append_row(
+        {
+            fastxlsx::CellView::number(42.0),
+            fastxlsx::CellView::formula("A2*2"),
+            fastxlsx::CellView::formula("IF(A2>0,\"<yes>\",\"&no\")"),
+            fastxlsx::CellView::boolean(true),
+        },
+        fastxlsx::RowOptions {19.25});
+    sheet.append_row({
+        fastxlsx::CellView::text("Merged left"),
+        fastxlsx::CellView::text("Merged right"),
+        fastxlsx::CellView::text("plain"),
+        fastxlsx::CellView::text("plain"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("tail"),
+        fastxlsx::CellView::number(7.0),
+        fastxlsx::CellView::text("merged c"),
+        fastxlsx::CellView::text("merged d"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "phase3 metadata xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing phase3 metadata worksheet part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "phase3 metadata should not create worksheet relationships");
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "phase3 metadata inline string package should not include shared strings");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("drawing") == std::string::npos,
+        "phase3 metadata should not create drawing content types");
+    check(content_types.find("spreadsheetml.table+xml") == std::string::npos,
+        "phase3 metadata should not create table content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "phase3 metadata should not add workbook relationships");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "phase3 metadata worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:D4\"/>",
+        "phase3 metadata worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "<sheetViews><sheetView workbookViewId=\"0\"><pane xSplit=\"3\" ySplit=\"2\" "
+        "topLeftCell=\"D3\" activePane=\"bottomRight\" state=\"frozen\"/></sheetView></sheetViews>",
+        "last freeze pane XML mismatch");
+    check(worksheet_xml.find("topLeftCell=\"A2\"") == std::string::npos,
+        "obsolete freeze pane setting should not be serialized");
+    check(count_occurrences(worksheet_xml, "<col ") == 2,
+        "phase3 metadata column width count mismatch");
+    check_contains(worksheet_xml,
+        "<cols><col min=\"1\" max=\"1\" width=\"12.25\" customWidth=\"1\"/>"
+        "<col min=\"3\" max=\"4\" width=\"8.75\" customWidth=\"1\"/></cols>",
+        "phase3 metadata column width XML mismatch");
+    check_contains(worksheet_xml,
+        "<row r=\"2\" ht=\"19.25\" customHeight=\"1\">",
+        "phase3 metadata row height XML mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"B2\"><f>A2*2</f></c>", "plain formula XML mismatch");
+    check_contains(worksheet_xml,
+        "<c r=\"C2\"><f>IF(A2&gt;0,\"&lt;yes&gt;\",\"&amp;no\")</f></c>",
+        "escaped formula XML mismatch");
+    check_contains(worksheet_xml, "<autoFilter ref=\"B2:D4\"/>",
+        "last autoFilter range mismatch");
+    check(worksheet_xml.find("<autoFilter ref=\"A1:B2\"/>") == std::string::npos,
+        "obsolete autoFilter range should not be serialized");
+    check_contains(worksheet_xml,
+        "<mergeCells count=\"2\"><mergeCell ref=\"A3:B3\"/><mergeCell ref=\"C4:D4\"/></mergeCells>",
+        "phase3 metadata mergeCells XML mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><autoFilter ref=\"B2:D4\"/><mergeCells count=\"2\">",
+        "phase3 metadata suffix ordering mismatch");
+}
+
 void test_streaming_writer_file_backed_body_round_trip()
 {
     const auto output_path =
@@ -1291,6 +1392,7 @@ int main()
 {
     try {
         test_streaming_writer_smoke_package();
+        test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
         test_streaming_writer_external_hyperlinks();

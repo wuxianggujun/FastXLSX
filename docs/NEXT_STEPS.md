@@ -54,8 +54,8 @@ that exist in code, CMake, tests, docs, or local verification.
     serializers, including the docProps small XML builders.
   - Numeric XML output now has explicit boundaries: non-finite numeric cell
     values are rejected before serialization writes invalid worksheet XML;
-    in-memory row heights reject non-finite values at save; streaming row
-    heights and streaming column widths must be positive and finite.
+    in-memory and streaming row heights must be positive and finite; streaming
+    column widths must be positive and finite.
   - A 2026-06-07 local manual benchmark snapshot exists for sharedStrings:
     `strings`, `50000 x 10 x 1 = 500000` cells, repeated/unique string patterns,
     inline/shared string strategies, stored-bootstrap ZIP, plus separate local
@@ -400,12 +400,12 @@ Do:
 - Keep row-order writes and bounded memory.
 - Add numeric/date encoding edge cases and Excel row/column limit tests.
   Current coverage rejects `NaN` / `+Inf` / `-Inf` for numeric cells, rejects
-  streaming row heights that are zero, negative, or non-finite, and rejects
-  streaming column widths that are non-positive or non-finite. Current
-  `append_row()` row limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to inject
-  the internal row counter at `1048576` and verify one rejected append without a
-  million-row default CTest loop; broader date and formatting edge cases remain
-  follow-up work.
+  in-memory and streaming row heights that are zero, negative, or non-finite,
+  and rejects streaming column widths that are non-positive or non-finite.
+  Current `append_row()` row limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to
+  inject the internal row counter at `1048576` and verify one rejected append
+  without a million-row default CTest loop; broader date and formatting edge
+  cases remain follow-up work.
 - Track worksheet dimensions incrementally. Current empty-row coverage locks
   `<dimension ref="A1"/>` for no-row and all-empty-row sheets, preserves empty
   `<row r="N"></row>` elements, and keeps a trailing appended empty row in the

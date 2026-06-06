@@ -68,11 +68,12 @@ obligations.
   document metadata for new workbooks, not as `docProps/custom.xml`,
   existing-file editing, or a complete document-properties API.
 - Numeric XML encoding boundaries in the current files: in-memory
-  `Workbook::save()` rejects non-finite numeric cells and row heights during
-  serialization; streaming `WorksheetWriter::append_row()` rejects non-finite
-  numeric cells before mutating row state and rejects row heights that are
-  zero, negative, `NaN`, `+Inf`, or `-Inf`; `WorksheetWriter::set_column_width()`
-  rejects non-positive or non-finite widths.
+  `Workbook::save()` rejects non-finite numeric cells and rejects row heights
+  that are zero, negative, `NaN`, `+Inf`, or `-Inf` during serialization;
+  streaming `WorksheetWriter::append_row()` rejects non-finite numeric cells
+  before mutating row state and rejects row heights that are zero, negative,
+  `NaN`, `+Inf`, or `-Inf`; `WorksheetWriter::set_column_width()` rejects
+  non-positive or non-finite widths.
 - Phase 3 write skeletons exist for formula cells, row height, column width,
   frozen panes, auto filters, and merged cells. Basic configurable core/app
   document properties are 基础. Styles, named ranges, full formula calculation,

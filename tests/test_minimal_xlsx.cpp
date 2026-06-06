@@ -287,8 +287,34 @@ void test_validation_errors()
     }
 
     {
+        auto invalid_zero_height = fastxlsx::Workbook::create();
+        auto& sheet = invalid_zero_height.add_worksheet("InvalidZeroHeight");
+        const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
+        sheet.append_row(row, fastxlsx::RowOptions {0.0});
+        check_fastxlsx_error(
+            [&invalid_zero_height] {
+                invalid_zero_height.save(
+                    std::filesystem::current_path() / "invalid-zero-height.xlsx");
+            },
+            "workbook save should reject zero row heights");
+    }
+
+    {
+        auto invalid_negative_height = fastxlsx::Workbook::create();
+        auto& sheet = invalid_negative_height.add_worksheet("InvalidNegativeHeight");
+        const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
+        sheet.append_row(row, fastxlsx::RowOptions {-1.0});
+        check_fastxlsx_error(
+            [&invalid_negative_height] {
+                invalid_negative_height.save(
+                    std::filesystem::current_path() / "invalid-negative-height.xlsx");
+            },
+            "workbook save should reject negative row heights");
+    }
+
+    {
         auto invalid_height = fastxlsx::Workbook::create();
-        auto& sheet = invalid_height.add_worksheet("InvalidHeight");
+        auto& sheet = invalid_height.add_worksheet("InvalidNonFiniteHeight");
         const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
         sheet.append_row(row, fastxlsx::RowOptions {std::numeric_limits<double>::infinity()});
         check_fastxlsx_error(

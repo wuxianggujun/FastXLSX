@@ -133,6 +133,9 @@ std::string build_worksheet(const std::vector<detail::WorksheetRowData>& rows)
         xml += "<row r=\"";
         xml += std::to_string(row_number);
         if (row_data.options.height.has_value()) {
+            if (!std::isfinite(*row_data.options.height) || *row_data.options.height <= 0.0) {
+                throw FastXlsxError("row height must be positive and finite");
+            }
             xml += "\" ht=\"";
             xml += format_number(*row_data.options.height);
             xml += "\" customHeight=\"1";

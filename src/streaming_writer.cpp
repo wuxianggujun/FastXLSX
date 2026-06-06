@@ -37,6 +37,12 @@ struct DataValidation {
     DataValidationRule rule;
 };
 
+struct ExternalHyperlink {
+    std::uint32_t row = 1;
+    std::uint32_t column = 1;
+    std::string target_url;
+};
+
 std::string format_number(double value)
 {
     std::array<char, 64> buffer {};
@@ -141,6 +147,11 @@ std::string_view data_validation_operator_name(DataValidationOperator operator_t
     throw FastXlsxError("unknown data validation operator");
 }
 
+std::string hyperlink_relationship_id(std::size_t index)
+{
+    return "rId" + std::to_string(index + 1);
+}
+
 bool data_validation_operator_requires_formula2(DataValidationOperator operator_type) noexcept
 {
     return operator_type == DataValidationOperator::Between
@@ -232,6 +243,7 @@ struct WorksheetWriterState {
     std::optional<CellRange> auto_filter;
     std::vector<CellRange> merged_ranges;
     std::vector<DataValidation> data_validations;
+    std::vector<ExternalHyperlink> external_hyperlinks;
     std::string row_buffer;
 };
 
@@ -490,11 +502,34 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
     return xml;
 }
 
+std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.external_hyperlinks.empty()) {
+        return {};
+    }
+
+    std::string xml = "<hyperlinks>";
+    for (std::size_t index = 0; index < worksheet.external_hyperlinks.size(); ++index) {
+        const ExternalHyperlink& hyperlink = worksheet.external_hyperlinks[index];
+        xml += "<hyperlink ref=\"";
+        xml += detail::cell_reference(hyperlink.row, hyperlink.column);
+        xml += "\" r:id=\"";
+        xml += hyperlink_relationship_id(index);
+        xml += "\"/>";
+    }
+    xml += "</hyperlinks>";
+    return xml;
+}
+
 std::string build_worksheet_prefix(const detail::WorksheetWriterState& worksheet)
 {
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
-    xml += R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)";
+    xml += R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main")";
+    if (!worksheet.external_hyperlinks.empty()) {
+        xml += R"( xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships")";
+    }
+    xml += ">";
     xml += R"(<dimension ref=")";
     xml += worksheet_dimension(worksheet);
     xml += "\"/>";
@@ -515,6 +550,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
     }
     xml += build_merge_cells(worksheet);
     xml += build_data_validations(worksheet);
+    xml += build_hyperlinks(worksheet);
     xml += "</worksheet>";
     return xml;
 }
@@ -531,6 +567,28 @@ detail::PackageEntry build_worksheet_entry(std::string entry_name, detail::Works
     chunks.push_back(detail::PackageEntryChunk::file(worksheet.body_path));
     chunks.push_back(detail::PackageEntryChunk::memory(build_worksheet_suffix(worksheet)));
     return {std::move(entry_name), std::move(chunks)};
+}
+
+std::string build_worksheet_relationships(const detail::WorksheetWriterState& worksheet)
+{
+    detail::RelationshipSet relationships;
+    constexpr std::string_view hyperlink_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+
+    for (std::size_t index = 0; index < worksheet.external_hyperlinks.size(); ++index) {
+        relationships.add(hyperlink_relationship_id(index),
+            std::string(hyperlink_type),
+            worksheet.external_hyperlinks[index].target_url,
+            detail::Relationship::TargetMode::External);
+    }
+
+    return detail::serialize_relationships(relationships);
+}
+
+std::string worksheet_relationship_entry_name(std::size_t worksheet_index)
+{
+    const std::string sheet_name = "sheet" + std::to_string(worksheet_index + 1) + ".xml";
+    return "xl/worksheets/_rels/" + sheet_name + ".rels";
 }
 
 class TemporaryFile {
@@ -727,6 +785,17 @@ void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule ru
     state_->data_validations.push_back({range, std::move(rule)});
 }
 
+void WorksheetWriter::add_external_hyperlink(
+    std::uint32_t row, std::uint32_t column, std::string target_url)
+{
+    ensure_mutable_worksheet(state_);
+    (void)detail::cell_reference(row, column);
+    if (target_url.empty()) {
+        throw FastXlsxError("external hyperlink target URL cannot be empty");
+    }
+    state_->external_hyperlinks.push_back({row, column, std::move(target_url)});
+}
+
 WorkbookWriter::WorkbookWriter() = default;
 WorkbookWriter::~WorkbookWriter() = default;
 WorkbookWriter::WorkbookWriter(WorkbookWriter&&) noexcept = default;
@@ -790,7 +859,11 @@ void WorkbookWriter::close()
         throw FastXlsxError("workbook relationships missing from package manifest");
     }
 
-    entries.reserve(6 + state_->worksheets.size() + (write_shared_strings ? 1 : 0));
+    const auto worksheet_relationship_count =
+        std::count_if(state_->worksheets.begin(), state_->worksheets.end(),
+            [](const auto& worksheet) { return !worksheet->external_hyperlinks.empty(); });
+    entries.reserve(
+        6 + state_->worksheets.size() + worksheet_relationship_count + (write_shared_strings ? 1 : 0));
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
     entries.push_back({"docProps/core.xml", detail::build_core_properties()});
@@ -812,6 +885,10 @@ void WorkbookWriter::close()
         entries.push_back(build_worksheet_entry(
             "xl/worksheets/sheet" + std::to_string(index + 1) + ".xml",
             *state_->worksheets[index]));
+        if (!state_->worksheets[index]->external_hyperlinks.empty()) {
+            entries.emplace_back(worksheet_relationship_entry_name(index),
+                build_worksheet_relationships(*state_->worksheets[index]));
+        }
     }
 
     detail::write_package(state_->output_path, entries);

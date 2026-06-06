@@ -359,6 +359,104 @@ void test_streaming_writer_data_validations()
         "dataValidation item count mismatch");
 }
 
+void test_streaming_writer_external_hyperlinks()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-external-hyperlinks.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto links = workbook.add_worksheet("Links");
+    auto more_links = workbook.add_worksheet("MoreLinks");
+    auto plain = workbook.add_worksheet("Plain");
+
+    links.append_row({
+        fastxlsx::CellView::text("OpenAI"),
+        fastxlsx::CellView::text("No link"),
+    });
+    links.append_row({
+        fastxlsx::CellView::text("Row2"),
+        fastxlsx::CellView::text("Docs & <API>"),
+    });
+    links.add_external_hyperlink(1, 1, "https://openai.com/");
+    links.add_external_hyperlink(2, 2, "https://example.com/path?a=1&b=2");
+
+    more_links.append_row({
+        fastxlsx::CellView::text("Second sheet"),
+    });
+    more_links.add_external_hyperlink(1, 1, "mailto:test@example.com");
+
+    plain.append_row({
+        fastxlsx::CellView::text("No hyperlink sheet"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "external hyperlinks xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing first hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing second hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet3.xml"), "missing plain worksheet");
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "missing first worksheet hyperlink relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "missing second worksheet hyperlink relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "plain worksheet should not create relationships");
+    check(!entries.contains("xl/metadata.xml"), "external hyperlinks should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "external hyperlinks should not add content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 3,
+        "external hyperlinks should not add workbook relationships");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_sheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "hyperlink worksheet namespace mismatch");
+    check_contains(first_sheet_xml, "<dimension ref=\"A1:B2\"/>",
+        "hyperlink worksheet dimension mismatch");
+    check_contains(first_sheet_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>OpenAI</t></is></c>",
+        "hyperlink should not replace A1 cell text");
+    check_contains(first_sheet_xml,
+        "<c r=\"B2\" t=\"inlineStr\"><is><t>Docs &amp; &lt;API&gt;</t></is></c>",
+        "hyperlink should not replace B2 escaped cell text");
+    check_contains(first_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\"/>"
+        "<hyperlink ref=\"B2\" r:id=\"rId2\"/></hyperlinks></worksheet>",
+        "first worksheet hyperlink XML mismatch");
+    check(count_occurrences(first_sheet_xml, "<hyperlink ") == 2,
+        "first worksheet hyperlink count mismatch");
+
+    const auto& first_sheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(first_sheet_rels, "<Relationship ") == 2,
+        "first worksheet hyperlink relationship count mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://openai.com/" TargetMode="External"/>)",
+        "first hyperlink relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/path?a=1&amp;b=2" TargetMode="External"/>)",
+        "second hyperlink relationship mismatch or target escape failure");
+
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_sheet_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\"/></hyperlinks>",
+        "second worksheet hyperlink XML mismatch");
+    const auto& second_sheet_rels = entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:test@example.com" TargetMode="External"/>)",
+        "second worksheet owner-local hyperlink relationship mismatch");
+
+    const auto& third_sheet_xml = entries.at("xl/worksheets/sheet3.xml");
+    check(third_sheet_xml.find("<hyperlinks>") == std::string::npos,
+        "plain worksheet should not contain hyperlinks");
+    check(third_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not include relationship namespace");
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -595,6 +693,9 @@ void test_streaming_writer_rejects_mutation_after_close()
             sheet.add_data_validation({1, 1, 1, 1}, rule);
         },
         "add_data_validation should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_external_hyperlink(1, 1, "https://example.com/"); },
+        "add_external_hyperlink should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -666,6 +767,22 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet, &list] { sheet.add_data_validation({1, 1, 1, 16385}, list); },
         "dataValidations should reject a column beyond Excel's limit");
+
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_external_hyperlink(0, 1, "https://example.com/"); },
+        "external hyperlinks should reject a zero row");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_external_hyperlink(1, 0, "https://example.com/"); },
+        "external hyperlinks should reject a zero column");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_external_hyperlink(1048577, 1, "https://example.com/"); },
+        "external hyperlinks should reject a row beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_external_hyperlink(1, 16385, "https://example.com/"); },
+        "external hyperlinks should reject a column beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_external_hyperlink(1, 1, ""); },
+        "external hyperlinks should reject an empty target");
 }
 
 void test_streaming_writer_invalid_data_validation_rules()
@@ -774,6 +891,7 @@ int main()
         test_streaming_writer_smoke_package();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
+        test_streaming_writer_external_hyperlinks();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();

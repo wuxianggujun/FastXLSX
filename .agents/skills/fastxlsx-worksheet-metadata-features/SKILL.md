@@ -26,14 +26,18 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 - `WorkbookWriter` / `WorksheetWriter` 是当前 streaming 新建 workbook 路径。
 - worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格和
-  streaming-only data validations。
+  streaming-only data validations / external hyperlinks。
 - `WorksheetWriter::add_data_validation()` 当前只支持新建 workbook 的 worksheet XML
   metadata，写出 `<dataValidations>`，不新增 worksheet `.rels`、content types 或
   package relationships。
+- `WorksheetWriter::add_external_hyperlink()` 当前只支持新建 workbook 的 external URL
+  hyperlinks，写出 worksheet `<hyperlinks>` 和
+  `xl/worksheets/_rels/sheetN.xml.rels`，relationship 使用 `TargetMode="External"`，
+  `rId` 只在 worksheet owner 内分配。
 - 大型 worksheet 路径禁止 DOM，metadata 必须以小向量/轻量结构记录，再在
   worksheet XML 正确位置输出。
-- `RelationshipSet` 可表达 external target，但这不是 hyperlink feature。
-  真正 hyperlink 还需要 worksheet `<hyperlinks>`、worksheet `.rels` 和关系 id 一致性。
+- `RelationshipSet` 可表达 external target，但只有同时写 worksheet `<hyperlinks>`、
+  worksheet `.rels` 并保持 `r:id` 一致时，才是实际 hyperlink feature。
 - 图片不是 worksheet-only metadata。图片需要 media part、drawing part、drawing
   relationships、worksheet relationships、content types 和 anchors；`WorksheetWriter`
   最多保存轻量 anchor/reference metadata，package wiring 归 OPC graph/package work。
@@ -58,9 +62,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - Data validations：已有基础 streaming-only、新建 workbook、worksheet metadata 版本。
   当前覆盖 whole/decimal/list/date/time/textLength/custom 公式文本结构；继续禁止已有
   文件编辑、DOM、公式解析、单元格值校验和重叠检查。
-- Hyperlinks：保持计划，可基于内部 relationship graph 设计 worksheet `.rels`
-  wiring，但必须同时写 worksheet XML 和 `.rels` 后才能宣称功能。
-  可先做 metadata/API 设计，不要宣称功能已实现。
+- Hyperlinks：已有基础 streaming-only、新建 workbook、external-only 版本。
+  当前只写 cell ref + external target URL，不写单元格文本、不创建 hyperlink 样式、
+  不支持 internal links、tooltip/display 属性、已有文件编辑或完整 Excel UI 行为。
 - Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
   公式和 range 依赖不会进入大型 DOM。
 - Tables：保持计划；需要 table part、content type override、worksheet rels 和
@@ -71,7 +75,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 ## 禁止事项
 
 - 不要把 Phase 5 写成已实现。
-- 不要因为 `RelationshipSet` 能序列化 external target 就宣称 hyperlinks 已支持。
+- 不要因为 external-only hyperlink slice 已存在就宣称完整 hyperlinks 已支持。
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。
 - 不要在没有 PackageReader/PackageWriter 前宣称 existing XLSX editing 或 unknown part passthrough。
 - 不要把 Excel、`openpyxl` 或 `XlsxWriter` 加为运行时依赖；它们只能用于测试和排障参考。
@@ -83,6 +87,10 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - data validations 结构测试应检查 `count`、`sqref`、`type`、`operator`、
   `allowBlank`、`formula1`、`formula2`、XML escape、invalid ranges、
   invalid rule shapes、关系缺失和 close 后 mutation。
+- external hyperlinks 结构测试应检查 worksheet XML `r:id` 与 worksheet `.rels` 一致、
+  target XML escape、owner-local `rId`、plain sheet 不生成 `.rels`、不污染 workbook
+  relationships、不新增 content type override、invalid cell、empty target 和 close 后
+  mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 本机有 Excel 时打开关键 `.xlsx`，确认无修复弹窗并检查可视化结果。
 - 结构失败时拆包对比 FastXLSX 输出、Excel 修复文件和参考文件的 XML 语义。

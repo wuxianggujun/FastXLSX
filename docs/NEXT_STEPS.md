@@ -54,6 +54,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`
   Manual `build-nmake` output may exist locally, but treat it as potentially
   stale unless it was regenerated after the current source change.
 
@@ -166,10 +167,13 @@ and release packaging, or the decision to make minizip the default backend.
    - Keep richer validation semantics, overlap checks, formula parsing, and
      existing-file editing out of scope until separately designed.
 
-10. Hyperlinks.
-    - Start only after relationship graph support can keep worksheet XML and
-      worksheet `.rels` in sync.
-    - External URL hyperlinks should come before internal links.
+10. Streaming-only external hyperlinks - 基础.
+    - `WorksheetWriter::add_external_hyperlink()` now writes worksheet
+      `<hyperlinks>` plus `xl/worksheets/_rels/sheetN.xml.rels` for new
+      workbooks only.
+    - Keep internal links, hyperlink styles, tooltip/display attributes, full
+      Excel UI behavior, and existing-file editing out of scope until separately
+      designed.
 
 11. Tables, images, and passthrough objects.
     - Tables need table parts, content type overrides, worksheet rels, and table
@@ -511,21 +515,31 @@ Do not claim:
 
 ### P15 - Hyperlinks
 
-Start after P11, and after P12 if editing existing workbooks is in scope.
+Status: 基础 for streaming-only external URL hyperlinks in new workbooks.
 
 Do:
-- Add worksheet hyperlink metadata.
-- Allocate worksheet relationship ids.
-- Write worksheet `<hyperlinks>` and worksheet `.rels` together.
-- Start with external URL hyperlinks.
+- Keep `WorksheetWriter::add_external_hyperlink()` as a new-workbook Streaming
+  metadata API.
+- Store only lightweight cell-reference and target URL state; memory grows with
+  link count and URL text length.
+- Write worksheet `<hyperlinks>` and worksheet-owned `.rels` together.
+- Keep relationship ids owner-local to each worksheet.
+- Keep internal links, hyperlink styles, tooltip/display attributes, URL
+  reachability checks, and existing-file editing out of this first slice.
 
 Accept when:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
-- Package relationship parts and content types are correct.
-- Excel visual verification confirms clickable links without repair.
+- Package relationship parts and content types are correct, including no
+  workbook relationship pollution and no content type override for `.rels`.
+- Tests cover target XML escaping, plain sheets without `.rels`, invalid
+  row/column references, empty target URLs, and mutation-after-close.
+- Excel visual verification is recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`.
 
 Do not claim:
-- Hyperlink support from `RelationshipSet` serialization alone.
+- Full hyperlink support from this external-only slice.
+- Internal workbook links, hyperlink styles, tooltip/display attributes,
+  existing-file editing, unknown part preservation, or complete Excel UI parity.
 
 ### P16 - Tables
 
@@ -730,8 +744,9 @@ Safe order:
 2. Use the existing internal `PartIndex` / `RelationshipGraph` groundwork for
    features that need worksheet `.rels` or cross-part id consistency, and add
    per-feature tests before claiming support.
-3. Hyperlinks after worksheet XML and worksheet `.rels` can be kept in sync;
-   external URL hyperlinks should come before broader hyperlink support.
+3. External URL hyperlinks now have a streaming-only new-workbook slice after
+   worksheet XML and worksheet `.rels` were kept in sync. Broader hyperlink
+   support still needs separate design and tests.
 4. Tables after table part allocation, content type override, worksheet rels,
    and table XML are in place.
 5. Images after `stb` decode/dimension behavior, media part allocation,

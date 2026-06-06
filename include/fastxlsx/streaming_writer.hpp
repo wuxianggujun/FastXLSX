@@ -259,6 +259,21 @@ public:
     /// the rule shape is outside the current narrow data-validation surface.
     void add_data_validation(CellRange range, DataValidationRule rule);
 
+    /// Records an external hyperlink on one worksheet cell.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The hyperlink
+    /// is emitted as a worksheet `<hyperlink>` element plus a matching
+    /// `xl/worksheets/_rels/sheetN.xml.rels` relationship with
+    /// `TargetMode="External"`. This API copies the target URL into writer
+    /// state, does not write or style the cell value, does not check URL
+    /// reachability, and does not support internal workbook links or editing
+    /// existing XLSX files.
+    ///
+    /// @throws FastXlsxError if the cell reference is outside Excel worksheet
+    /// limits, the target URL is empty, or the workbook is closed.
+    void add_external_hyperlink(
+        std::uint32_t row, std::uint32_t column, std::string target_url);
+
 private:
     friend class WorkbookWriter;
     explicit WorksheetWriter(detail::WorksheetWriterState* state) noexcept;

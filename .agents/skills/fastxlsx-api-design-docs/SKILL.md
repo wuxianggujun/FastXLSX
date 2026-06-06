@@ -17,8 +17,9 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
 包括 `Workbook`、`Worksheet`、`Cell`、`WorkbookWriter`、`WorksheetWriter`、
 `CellView`、`DataValidationRule`、`DataValidationType`、`DataValidationOperator`
-和 `FastXlsxError`。`WorkbookWriter` / `WorksheetWriter` / `CellView`
-是流式写入骨架；data validation API 是 worksheet XML metadata 基础切片，
+和 `FastXlsxError`。`WorksheetWriter::add_external_hyperlink()` 是当前 external-only
+worksheet hyperlink API。`WorkbookWriter` / `WorksheetWriter` / `CellView`
+是流式写入骨架；data validation API 和 external hyperlink API 是 worksheet metadata 基础切片，
 不等同完整 Phase 3 或完整 Phase 5。
 
 ## 核心原则
@@ -38,6 +39,11 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 - `WorksheetWriter::add_data_validation()` 是 Streaming metadata API：规则和公式文本
   被复制进 writer state，内存按规则数量和公式文本长度增长；它不解析公式、不校验
   单元格值、不检查重叠、不新增 relationships/content types，也不支持 existing-file editing。
+- `WorksheetWriter::add_external_hyperlink()` 是 Streaming metadata API：cell ref 和
+  target URL 被复制进 writer state，内存按链接数量和 URL 文本长度增长；它会新增
+  worksheet `<hyperlinks>` 和 worksheet `.rels`，但不新增 workbook relationships 或
+  content type overrides，不写单元格文本、不创建 hyperlink 样式、不校验 URL 可达性，
+  也不支持 internal links 或 existing-file editing。
 - 当前 `Workbook::save()` 使用 internal package writer boundary；默认无依赖构建走
   stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
   backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
@@ -70,6 +76,10 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 data validations 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、规则数量内存成本、公式文本拷贝、无公式求值、无单元格值校验、
 无重叠检查、无完整 Excel UI 保证，以及是否新增 relationships/content types。
+external hyperlinks 这类 worksheet metadata API 还要写清：Streaming-only、
+new-workbook-only、URL 文本拷贝、worksheet `<hyperlinks>` 与 worksheet `.rels` 副作用、
+worksheet-owner-local `rId`、不写单元格文本、不创建 hyperlink 样式、无 URL 可达性校验、
+无 internal links、无 existing-file editing，以及不代表完整 hyperlink 支持。
 
 涉及热路径的 API，还要说明是否会触发 DOM、跨行缓存、shared strings 状态增长、
 压缩等级影响或输出文件大小变化。

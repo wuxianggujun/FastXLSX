@@ -336,21 +336,37 @@ Validation:
 
 ### M9 - Hyperlinks
 
-Status: planned; blocked by relationship graph work.
+Status: 基础 for streaming-only external URL hyperlinks in new workbooks.
 
-Do this after M6, and preferably after M7 if editing existing files is in scope.
+The first slice is implemented on `WorksheetWriter` only. It writes worksheet
+`<hyperlinks>` XML and worksheet-owned relationship parts together, but it does
+not provide complete Excel hyperlink support.
 
 Tasks:
-- Add worksheet hyperlink metadata.
-- Allocate worksheet relationship ids.
-- Write worksheet `<hyperlinks>` and worksheet `.rels` together.
-- Start with external URL hyperlinks; add internal links later.
-- Keep this separate from generic `RelationshipSet` serializer tests.
+- `WorksheetWriter::add_external_hyperlink()` stores a cell reference and target
+  URL as lightweight worksheet metadata.
+- Relationship ids are allocated per worksheet owner as `rId1`, `rId2`, and so
+  on.
+- The writer emits worksheet `<hyperlinks>` plus
+  `xl/worksheets/_rels/sheetN.xml.rels` for worksheets that contain external
+  links.
+- The relationship type is the OpenXML hyperlink relationship type and uses
+  `TargetMode="External"`.
+- The first slice does not write cell text, create hyperlink styles, validate
+  URL reachability, support internal workbook links, expose tooltip/display
+  attributes, edit existing XLSX files, or claim full Excel UI parity.
 
 Validation:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
-- Package contains the expected relationship part.
-- Excel visual verification confirms clickable links without repair.
+- Package contains the expected worksheet relationship parts and no workbook
+  relationship pollution, content type override, or metadata part.
+- `fastxlsx.streaming` covers target XML escaping, owner-local `rId` allocation,
+  sheets without hyperlinks, invalid row/column references, empty target URLs,
+  and mutation-after-close.
+- Local Excel visual verification passed for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`;
+  Excel COM confirmed worksheet `Hyperlinks` counts, Address values, and
+  TextToDisplay without replacing cell text.
 
 ### M10 - Tables, Images, Charts, and VBA
 
@@ -405,8 +421,11 @@ Use this map to decide when a task can start:
 - M4 should precede broad convenience APIs and any low-memory writer claims.
 - M4 can enable M8 data validations because the first validation slice is
   streaming-only worksheet metadata and does not need relationships.
-- M6 is required before M9 hyperlinks, tables, images, chart passthrough, VBA
-  passthrough, or any feature that needs cross-part relationship id consistency.
+- M6 was required before the M9 external hyperlink slice because worksheet XML
+  and worksheet `.rels` ids must stay consistent. M7 and preservation tests are
+  still required before existing-file hyperlink editing or broad object support.
+- M6 is still required before tables, images, chart passthrough, VBA passthrough,
+  or any feature that needs cross-part relationship id consistency.
 - M7 and preservation tests are required before claiming chart/VBA passthrough
   or safe editing of workbooks containing unknown parts.
 - Image work must use `stb` for decode/dimension tasks, but `stb` availability
@@ -869,9 +888,13 @@ Allowed early slices:
 - The public data-validation API documents Streaming mode, memory cost as rule
   count plus formula text, no random access, no full worksheet cell matrix, no
   formula evaluation, and no Excel UI completeness guarantee.
-- Hyperlinks may be planned as worksheet metadata plus relationships, but only
-  after internal part index / relationship graph support can keep worksheet XML
-  and worksheet `.rels` ids consistent.
+- External URL hyperlinks have a basic streaming-only, new-workbook worksheet
+  metadata slice through `WorksheetWriter::add_external_hyperlink()`. It writes
+  worksheet `<hyperlinks>` and worksheet `.rels` together, keeps relationship
+  ids worksheet-owner-local, avoids DOM, and avoids existing-file editing.
+- Complete hyperlink support remains planned: internal links, tooltip/display
+  attributes, hyperlink styles, existing-file editing, and full Excel UI
+  behavior are not implemented by the first slice.
 - Conditional formatting may be added as worksheet metadata only if it does not
   force a large worksheet DOM and does not put validation/formatting logic into
   the cell XML hot path.

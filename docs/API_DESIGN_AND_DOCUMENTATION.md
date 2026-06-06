@@ -81,6 +81,12 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 worksheet XML、是否新增 relationships/content types、是否复制公式文本、是否解析
 公式或校验单元格值，以及是否支持 existing-file editing。
 
+对 external hyperlinks 这类 worksheet metadata API，注释还要说明是否只支持
+Streaming / new-workbook 路径、是否复制 URL 文本、是否写 worksheet
+`<hyperlinks>` 和 worksheet `.rels`、relationship id 是否只在 worksheet owner 内
+有效、是否新增 workbook relationships 或 content type overrides、是否会写单元格文本
+或样式，以及是否支持 internal links、URL 可达性校验和 existing-file editing。
+
 ## 性能注释要求
 
 涉及热路径或大数据行为的 API，注释必须包含性能边界。

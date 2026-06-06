@@ -55,6 +55,10 @@ that exist in code, CMake, tests, docs, or local verification.
   - Numeric XML output now has a finite-only boundary: non-finite numeric cell
     values and row heights are rejected before serialization writes invalid
     worksheet XML, and streaming column widths must be positive and finite.
+  - A 2026-06-07 local manual benchmark snapshot exists for sharedStrings:
+    `strings`, `50000 x 10 x 1 = 500000` cells, repeated/unique string patterns,
+    inline/shared string strategies, stored-bootstrap ZIP, plus separate local
+    Excel COM read-only open checks for all four generated files.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -74,6 +78,9 @@ feature completion.
    - Current files show the API option, internal table, package wiring, and
      XML structure tests for `xl/sharedStrings.xml`.
    - Keep `inlineStr` as the low-memory default.
+   - The current small benchmark snapshot shows repeated/shared smaller and
+     faster than repeated/inline, and unique/shared higher-memory and larger
+     than unique/inline. Treat this as a local `500000`-cell trend only.
    - Before treating sharedStrings as a production feature, record the default
      CTest result, Excel visual open result, reference XML comparison against
      Excel / `openpyxl` / `XlsxWriter` where useful, and size/memory data.
@@ -334,6 +341,8 @@ Do:
 - Measure repeated-string and mostly-unique-string behavior with the opt-in
   benchmark `--string-pattern repeated|unique` inputs before widening support
   wording.
+- Current local small benchmark snapshot is recorded in `docs/PERFORMANCE_TARGETS.md`;
+  expand scale and backends before changing production wording.
 
 Accept when:
 - CTest passes.
@@ -341,6 +350,11 @@ Accept when:
 - Reference XML comparison is recorded when structure compatibility is in
   question.
 - Memory/size data is recorded before any production-ready wording.
+- Current `500000`-cell manual snapshot: repeated/inline `335 ms`, `4.97266 MB`,
+  `27931711 bytes`; repeated/shared `227 ms`, `5 MB`, `16932289 bytes`;
+  unique/inline `487 ms`, `4.97656 MB`, `30870651 bytes`; unique/shared
+  `702 ms`, `70.0586 MB`, `33260102 bytes`. The benchmark JSON still records
+  `temporary_worksheet_part_footprint="not_measured"`.
 
 Do not claim:
 - sharedStrings as the best default for large data.
@@ -369,6 +383,8 @@ Do not claim:
 - Benchmark coverage from normal unit tests.
 - Google Benchmark integration or 10,000,000-cell results from the manual
   benchmark entry alone.
+- Full low-memory behavior from results where temporary worksheet footprint is
+  still `not_measured`.
 
 ### P7 - Streaming Writer Hot Path
 

@@ -161,3 +161,31 @@ file-backed/chunked source；`temporary_worksheet_part_footprint="not_measured"`
 binary dir，例如 `build/windows-nmake-release-benchmark/benchmarks/`。手工工具会
 拒绝超过 1024 个 worksheet 的输入；这只是 benchmark 工具边界，不代表
 FastXLSX public API 的 worksheet 数量承诺。
+
+## 当前手工 Benchmark 记录
+
+2026-06-07 本机 VS2026 / NMake release benchmark preset 下，使用
+`fastxlsx_bench_streaming_writer` 对 `strings` 场景做了 4 组小规模对比。输入规模均为
+`rows=50000`、`cols=10`、`sheets=1`、`cells=500000`、`string_ratio=1`，
+ZIP backend 为 `stored-bootstrap` / `store`，package entry source mode 为
+`worksheet-file-backed-chunked`，临时 worksheet footprint 仍为 `not_measured` /
+`null`。
+
+| string_pattern | string_strategy | elapsed_ms | peak_memory_mb | output_bytes |
+| --- | --- | ---: | ---: | ---: |
+| repeated | inline | 335 | 4.97266 | 27931711 |
+| repeated | shared | 227 | 5 | 16932289 |
+| unique | inline | 487 | 4.97656 | 30870651 |
+| unique | shared | 702 | 70.0586 | 33260102 |
+
+本机 Excel COM 只读打开了上述 4 个输出文件，并验证 `Sheet1` 使用范围为
+`50000 x 10`。repeated 样例的 `A1` / `J50000` 均为 `repeat`；unique 样例的
+`A1` 为 `s1-r1-c1`，`J50000` 为 `s1-r50000-c10`。benchmark JSON 中的
+`office_open` 字段仍保持工具写出的 `not_run`；这次 Excel COM 结果是文档记录的
+独立本机检查，不是 benchmark 工具自动写回的字段。
+
+这组记录只能用于小规模 sharedStrings 趋势观察：高重复字符串下 sharedStrings 输出更小，
+高唯一字符串下 sharedStrings 的峰值内存和输出体积明显上升。不要据此宣称
+sharedStrings 生产就绪、sharedStrings 是默认最佳策略、完整低内存写出已验证、
+10,000,000-cell 级别性能已记录、Google Benchmark 已接入、Zip64 / true package
+streaming / existing-file editing 已验证，或办公套件兼容性已全面验证。

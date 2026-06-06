@@ -89,7 +89,14 @@ OpenXML worksheet XML 写出 `nan`、`inf` 或 `-inf` 数字文本。
 
 - sharedStrings：进行中。当前可见 API 选项、内部表、package wiring 和结构测试；
   仍需默认 CTest、Excel 可视化验证、Excel / `openpyxl` / `XlsxWriter`
-  参考文件拆包 XML 对比，以及大小/内存数据后，才能扩大支持表述。
+  参考文件拆包 XML 对比，以及更大规模大小/内存数据后，才能扩大支持表述。
+  当前已有 2026-06-07 本机小规模手工 benchmark 快照：`strings` 场景
+  `50000 x 10 x 1 = 500000` cells，repeated/inline 为 `335 ms`、`4.97266 MB`、
+  `27931711 bytes`，repeated/shared 为 `227 ms`、`5 MB`、`16932289 bytes`，
+  unique/inline 为 `487 ms`、`4.97656 MB`、`30870651 bytes`，
+  unique/shared 为 `702 ms`、`70.0586 MB`、`33260102 bytes`。四个输出已用本机
+  Excel COM 只读打开并核对 `Sheet1` 使用范围和首尾值；这只是 stored-bootstrap
+  ZIP 下的小规模趋势快照，不是 sharedStrings 生产就绪、默认最佳策略或大文件性能结论。
 - vcpkg / CMakePresets / CI：基础。默认 preset 仍是无 vcpkg 的 VS2026/NMake
   路径；`windows-nmake-release-minizip` 是 opt-in vcpkg 验证路径，会启用
   `FASTXLSX_ENABLE_MINIZIP_NG` 和 `planned-runtime`。
@@ -301,6 +308,12 @@ cmake --help
   Excel COM 打开验证 workbook 可读、`Images` 和 `SecondImage` sheet 各 1 个
   shape、`Plain` sheet 为 0 个 shape，Excel 报告首图锚点为 `C1:F5`、第二图为
   `A1:B2`；不要把这扩展成 existing-workbook 图片保真、完整 drawing 编辑或图片 UI 保证。
+- 当前 sharedStrings benchmark 小样例位于
+  `build/windows-nmake-release-benchmark/benchmarks/strings-*.xlsx`。本机已用 Excel COM
+  只读打开 `strings-repeated-inline.xlsx`、`strings-repeated-shared.xlsx`、
+  `strings-unique-inline.xlsx` 和 `strings-unique-shared.xlsx`，确认 `Sheet1`
+  使用范围为 `50000 x 10`，首尾值符合 repeated / unique 预期。benchmark JSON 的
+  `office_open` 字段仍是工具默认 `not_run`；Excel COM 检查是独立本机记录。
 - `.xlsx` 结构异常时，按 `docs/TESTING_WORKFLOW.md` 使用 Excel、`openpyxl`
   或 `XlsxWriter` 生成语义等价参考文件，拆包后对比 XML，重点检查
   content types、relationships、workbook、worksheet、shared strings 和 styles。
@@ -328,6 +341,8 @@ cmake --help
 - 修改 `tests/CMakeLists.txt` 后让 `ctest` 回到 0 测试，或让默认测试超过 60s。
 - 为了 API 易用性牺牲 streaming 性能主线。
 - 允许 `NaN`、`+Inf` 或 `-Inf` 写进 numeric cell、row height 或 column width XML。
+- 把 `500000` cells 的小规模手工 benchmark 快照写成 1,000 万 cells、大文件性能、
+  完整低内存、Google Benchmark 或 sharedStrings 生产就绪结论。
 - public API 没有文档注释，或注释不说明内存/性能限制。
 
 ## 项目 Skills

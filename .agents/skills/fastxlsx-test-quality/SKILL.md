@@ -215,6 +215,14 @@ Benchmark 应记录：
 `temporary_worksheet_part_footprint_bytes=null`。不要把 `not_measured` 写成临时文件
 footprint 已验证；只有后续工具真实记录字节数后才能据此做低内存结论。
 
+当前 `docs/PERFORMANCE_TARGETS.md` 记录了 2026-06-07 本机小规模 sharedStrings
+benchmark 快照：`strings` 场景、`50000 x 10 x 1 = 500000` cells、
+repeated/unique string pattern、inline/shared strategy、stored-bootstrap ZIP。
+四个输出已用本机 Excel COM 只读打开并核对 `Sheet1` 使用范围和首尾值。继续把它
+当作 opt-in 手工结果；不要把 `office_open=not_run` 的 JSON 字段写成工具自动完成
+Office 验证，也不要把 `temporary_worksheet_part_footprint=not_measured` 写成低内存
+证据。
+
 重点覆盖：
 
 - 百万行级导出。

@@ -175,9 +175,15 @@ and release packaging, or the decision to make minizip the default backend.
       Excel UI behavior, and existing-file editing out of scope until separately
       designed.
 
-11. Tables, images, and passthrough objects.
-    - Tables need table parts, content type overrides, worksheet rels, and table
-      references.
+11. Streaming-only tables - 基础.
+    - `WorksheetWriter::add_table()` and `TableOptions` now write
+      `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
+      table content type overrides for new workbooks only.
+    - Keep automatic header inference, totals rows, calculated columns,
+      sort/filter criteria, custom styles, `styles.xml`, table resize, full
+      Excel table UI behavior, and existing-file editing out of scope.
+
+12. Images and passthrough objects.
     - Images need `stb` for image decoding/dimensions, plus media parts,
       drawings, drawing rels, worksheet rels, anchors, and content types.
     - Chart and VBA work starts as preservation, not native generation.
@@ -543,21 +549,32 @@ Do not claim:
 
 ### P16 - Tables
 
-Start after P11 and after style/range behavior needed by the table slice is
-defined.
+Status: 基础 for streaming-only new-workbook tables.
 
 Do:
-- Allocate table parts.
-- Add content type overrides, worksheet relationships, and worksheet table
-  references.
-- Start with a narrow table output scope.
+- Keep `WorksheetWriter::add_table()` as a new-workbook Streaming metadata API.
+- Store only lightweight range, table name, column name, and style flag state;
+  do not read written row XML or infer headers.
+- Allocate table parts, content type overrides, worksheet relationships, and
+  worksheet `<tableParts>` references.
+- Keep worksheet relationship ids owner-local and compatible with hyperlinks.
+- Keep totals rows, calculated columns, sort/filter criteria, custom styles,
+  `styles.xml`, table resize, overlap checks, existing-file editing, and full
+  Excel table UI behavior out of this first slice.
 
 Accept when:
-- Structure tests compare table XML, relationships, and content types.
-- Excel opens table samples without repair.
+- Structure tests compare table XML, worksheet relationships, worksheet
+  `<tableParts>`, content types, XML escaping, owner-local `rId`, duplicate
+  names, invalid ranges/options, and mutation-after-close.
+- Excel visual verification is recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
+  confirmed `InventoryTable` and `TotalsTable` as `ListObjects` with expected
+  ranges and headers, and confirmed `Plain` has no table object.
 
 Do not claim:
-- Full table editing or Excel table feature parity.
+- Full table support, automatic header inference, custom style support,
+  existing-file table editing, unknown part preservation, or Excel table feature
+  parity.
 
 ### P17 - Images
 
@@ -747,8 +764,9 @@ Safe order:
 3. External URL hyperlinks now have a streaming-only new-workbook slice after
    worksheet XML and worksheet `.rels` were kept in sync. Broader hyperlink
    support still needs separate design and tests.
-4. Tables after table part allocation, content type override, worksheet rels,
-   and table XML are in place.
+4. Tables now have a streaming-only new-workbook slice after table part
+   allocation, content type override, worksheet rels, and table XML were kept
+   consistent. Broader table support still needs separate design and tests.
 5. Images after `stb` decode/dimension behavior, media part allocation,
    drawing part generation, drawing rels, worksheet rels, anchors, and content
    types are in place.

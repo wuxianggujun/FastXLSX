@@ -43,6 +43,11 @@ struct ExternalHyperlink {
     std::string target_url;
 };
 
+struct WorksheetTable {
+    CellRange range;
+    TableOptions options;
+};
+
 std::string format_number(double value)
 {
     std::array<char, 64> buffer {};
@@ -147,9 +152,114 @@ std::string_view data_validation_operator_name(DataValidationOperator operator_t
     throw FastXlsxError("unknown data validation operator");
 }
 
-std::string hyperlink_relationship_id(std::size_t index)
+std::string worksheet_relationship_id(std::size_t index)
 {
     return "rId" + std::to_string(index + 1);
+}
+
+bool is_ascii_letter(char ch) noexcept
+{
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+}
+
+bool is_ascii_digit(char ch) noexcept
+{
+    return ch >= '0' && ch <= '9';
+}
+
+char ascii_lower(char ch) noexcept
+{
+    if (ch >= 'A' && ch <= 'Z') {
+        return static_cast<char>(ch - 'A' + 'a');
+    }
+    return ch;
+}
+
+std::string ascii_lower_copy(std::string_view value)
+{
+    std::string lowered;
+    lowered.reserve(value.size());
+    for (const char ch : value) {
+        lowered.push_back(ascii_lower(ch));
+    }
+    return lowered;
+}
+
+bool looks_like_excel_cell_reference(std::string_view value)
+{
+    std::uint32_t column = 0;
+    std::size_t offset = 0;
+    while (offset < value.size() && is_ascii_letter(value[offset])) {
+        column = column * 26 + static_cast<std::uint32_t>(ascii_lower(value[offset]) - 'a' + 1);
+        if (column > max_excel_columns) {
+            return false;
+        }
+        ++offset;
+    }
+
+    if (offset == 0 || offset == value.size()) {
+        return false;
+    }
+
+    std::uint32_t row = 0;
+    for (; offset < value.size(); ++offset) {
+        if (!is_ascii_digit(value[offset])) {
+            return false;
+        }
+        row = row * 10 + static_cast<std::uint32_t>(value[offset] - '0');
+        if (row > max_excel_rows) {
+            return false;
+        }
+    }
+
+    return row > 0 && column > 0;
+}
+
+void validate_table_name(std::string_view name)
+{
+    if (name.empty()) {
+        throw FastXlsxError("table name cannot be empty");
+    }
+    if (!(is_ascii_letter(name.front()) || name.front() == '_')) {
+        throw FastXlsxError("table name must start with an ASCII letter or underscore");
+    }
+    for (const char ch : name) {
+        if (!(is_ascii_letter(ch) || is_ascii_digit(ch) || ch == '_')) {
+            throw FastXlsxError("table name must contain only ASCII letters, digits, and underscores");
+        }
+    }
+    if (looks_like_excel_cell_reference(name)) {
+        throw FastXlsxError("table name cannot look like an Excel cell reference");
+    }
+}
+
+std::uint32_t range_width(CellRange range)
+{
+    return range.last_column - range.first_column + 1;
+}
+
+void validate_table_options(CellRange range, const TableOptions& options)
+{
+    (void)detail::range_reference(range);
+    if (range.last_row == range.first_row) {
+        throw FastXlsxError("table range must include at least one data row after the header");
+    }
+    validate_table_name(options.name);
+
+    const std::uint32_t width = range_width(range);
+    if (options.column_names.size() != width) {
+        throw FastXlsxError("table column name count must match the table range width");
+    }
+
+    std::set<std::string> seen_column_names;
+    for (const std::string& column_name : options.column_names) {
+        if (column_name.empty()) {
+            throw FastXlsxError("table column names cannot be empty");
+        }
+        if (!seen_column_names.insert(ascii_lower_copy(column_name)).second) {
+            throw FastXlsxError("table column names must be unique within a table");
+        }
+    }
 }
 
 bool data_validation_operator_requires_formula2(DataValidationOperator operator_type) noexcept
@@ -244,6 +354,7 @@ struct WorksheetWriterState {
     std::vector<CellRange> merged_ranges;
     std::vector<DataValidation> data_validations;
     std::vector<ExternalHyperlink> external_hyperlinks;
+    std::vector<WorksheetTable> tables;
     std::string row_buffer;
 };
 
@@ -272,6 +383,25 @@ void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
     if (state->workbook != nullptr && state->workbook->closed) {
         throw FastXlsxError("cannot modify worksheet after workbook close");
     }
+}
+
+bool worksheet_has_relationships(const detail::WorksheetWriterState& worksheet) noexcept
+{
+    return !worksheet.external_hyperlinks.empty() || !worksheet.tables.empty();
+}
+
+bool workbook_has_table_name(
+    const detail::WorkbookWriterState& workbook, std::string_view table_name) noexcept
+{
+    const std::string candidate = ascii_lower_copy(table_name);
+    for (const auto& worksheet : workbook.worksheets) {
+        for (const WorksheetTable& table : worksheet->tables) {
+            if (ascii_lower_copy(table.options.name) == candidate) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 std::size_t shared_string_index(detail::WorkbookWriterState& workbook, std::string_view value)
@@ -514,10 +644,33 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
         xml += "<hyperlink ref=\"";
         xml += detail::cell_reference(hyperlink.row, hyperlink.column);
         xml += "\" r:id=\"";
-        xml += hyperlink_relationship_id(index);
+        xml += worksheet_relationship_id(index);
         xml += "\"/>";
     }
     xml += "</hyperlinks>";
+    return xml;
+}
+
+std::string table_relationship_id(const detail::WorksheetWriterState& worksheet, std::size_t table_index)
+{
+    return worksheet_relationship_id(worksheet.external_hyperlinks.size() + table_index);
+}
+
+std::string build_table_parts(const detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.tables.empty()) {
+        return {};
+    }
+
+    std::string xml = "<tableParts count=\"";
+    xml += std::to_string(worksheet.tables.size());
+    xml += "\">";
+    for (std::size_t index = 0; index < worksheet.tables.size(); ++index) {
+        xml += "<tablePart r:id=\"";
+        xml += table_relationship_id(worksheet, index);
+        xml += "\"/>";
+    }
+    xml += "</tableParts>";
     return xml;
 }
 
@@ -526,7 +679,7 @@ std::string build_worksheet_prefix(const detail::WorksheetWriterState& worksheet
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
     xml += R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main")";
-    if (!worksheet.external_hyperlinks.empty()) {
+    if (worksheet_has_relationships(worksheet)) {
         xml += R"( xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships")";
     }
     xml += ">";
@@ -551,6 +704,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
     xml += build_merge_cells(worksheet);
     xml += build_data_validations(worksheet);
     xml += build_hyperlinks(worksheet);
+    xml += build_table_parts(worksheet);
     xml += "</worksheet>";
     return xml;
 }
@@ -569,17 +723,31 @@ detail::PackageEntry build_worksheet_entry(std::string entry_name, detail::Works
     return {std::move(entry_name), std::move(chunks)};
 }
 
-std::string build_worksheet_relationships(const detail::WorksheetWriterState& worksheet)
+std::string table_entry_name(std::size_t table_index)
+{
+    return "xl/tables/table" + std::to_string(table_index + 1) + ".xml";
+}
+
+std::string build_worksheet_relationships(
+    const detail::WorksheetWriterState& worksheet, std::size_t first_table_index)
 {
     detail::RelationshipSet relationships;
     constexpr std::string_view hyperlink_type =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+    constexpr std::string_view table_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
 
     for (std::size_t index = 0; index < worksheet.external_hyperlinks.size(); ++index) {
-        relationships.add(hyperlink_relationship_id(index),
+        relationships.add(worksheet_relationship_id(index),
             std::string(hyperlink_type),
             worksheet.external_hyperlinks[index].target_url,
             detail::Relationship::TargetMode::External);
+    }
+
+    for (std::size_t index = 0; index < worksheet.tables.size(); ++index) {
+        relationships.add(table_relationship_id(worksheet, index),
+            std::string(table_type),
+            "../tables/table" + std::to_string(first_table_index + index + 1) + ".xml");
     }
 
     return detail::serialize_relationships(relationships);
@@ -589,6 +757,72 @@ std::string worksheet_relationship_entry_name(std::size_t worksheet_index)
 {
     const std::string sheet_name = "sheet" + std::to_string(worksheet_index + 1) + ".xml";
     return "xl/worksheets/_rels/" + sheet_name + ".rels";
+}
+
+std::string build_table_xml(const WorksheetTable& table, std::size_t table_index)
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id=")";
+    xml += std::to_string(table_index + 1);
+    xml += R"(" name=")";
+    xml += detail::escape_xml_attribute(table.options.name);
+    xml += R"(" displayName=")";
+    xml += detail::escape_xml_attribute(table.options.name);
+    xml += R"(" ref=")";
+    xml += detail::range_reference(table.range);
+    xml += R"(" totalsRowShown="0">)";
+    xml += R"(<autoFilter ref=")";
+    xml += detail::range_reference(table.range);
+    xml += R"("/>)";
+    xml += R"(<tableColumns count=")";
+    xml += std::to_string(table.options.column_names.size());
+    xml += R"(">)";
+    for (std::size_t index = 0; index < table.options.column_names.size(); ++index) {
+        xml += R"(<tableColumn id=")";
+        xml += std::to_string(index + 1);
+        xml += R"(" name=")";
+        xml += detail::escape_xml_attribute(table.options.column_names[index]);
+        xml += R"("/>)";
+    }
+    xml += "</tableColumns>";
+    if (!table.options.style_name.empty()) {
+        xml += R"(<tableStyleInfo name=")";
+        xml += detail::escape_xml_attribute(table.options.style_name);
+        xml += R"(" showFirstColumn=")";
+        xml += table.options.show_first_column ? "1" : "0";
+        xml += R"(" showLastColumn=")";
+        xml += table.options.show_last_column ? "1" : "0";
+        xml += R"(" showRowStripes=")";
+        xml += table.options.show_row_stripes ? "1" : "0";
+        xml += R"(" showColumnStripes=")";
+        xml += table.options.show_column_stripes ? "1" : "0";
+        xml += R"("/>)";
+    }
+    xml += "</table>";
+    return xml;
+}
+
+std::size_t count_tables(const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+{
+    std::size_t count = 0;
+    for (const auto& worksheet : worksheets) {
+        count += worksheet->tables.size();
+    }
+    return count;
+}
+
+std::vector<std::size_t> table_start_indexes(
+    const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+{
+    std::vector<std::size_t> starts;
+    starts.reserve(worksheets.size());
+    std::size_t next = 0;
+    for (const auto& worksheet : worksheets) {
+        starts.push_back(next);
+        next += worksheet->tables.size();
+    }
+    return starts;
 }
 
 class TemporaryFile {
@@ -796,6 +1030,16 @@ void WorksheetWriter::add_external_hyperlink(
     state_->external_hyperlinks.push_back({row, column, std::move(target_url)});
 }
 
+void WorksheetWriter::add_table(CellRange range, TableOptions options)
+{
+    ensure_mutable_worksheet(state_);
+    validate_table_options(range, options);
+    if (state_->workbook != nullptr && workbook_has_table_name(*state_->workbook, options.name)) {
+        throw FastXlsxError("table names must be unique within a workbook");
+    }
+    state_->tables.push_back({range, std::move(options)});
+}
+
 WorkbookWriter::WorkbookWriter() = default;
 WorkbookWriter::~WorkbookWriter() = default;
 WorkbookWriter::WorkbookWriter(WorkbookWriter&&) noexcept = default;
@@ -852,6 +1096,14 @@ void WorkbookWriter::close()
     const bool write_shared_strings = uses_shared_strings(*state_);
     detail::PackageManifest manifest =
         detail::make_minimal_workbook_manifest(state_->worksheets.size(), write_shared_strings);
+    const std::size_t table_count = count_tables(state_->worksheets);
+    constexpr std::string_view content_type_table =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
+    for (std::size_t index = 0; index < table_count; ++index) {
+        manifest.add_part(
+            detail::PartName("/" + table_entry_name(index)), std::string(content_type_table))
+            .set_write_mode(detail::PartWriteMode::GenerateSmallXml);
+    }
 
     const auto* workbook_relationships =
         manifest.relationships_for(detail::PartName("/xl/workbook.xml"));
@@ -861,9 +1113,9 @@ void WorkbookWriter::close()
 
     const auto worksheet_relationship_count =
         std::count_if(state_->worksheets.begin(), state_->worksheets.end(),
-            [](const auto& worksheet) { return !worksheet->external_hyperlinks.empty(); });
-    entries.reserve(
-        6 + state_->worksheets.size() + worksheet_relationship_count + (write_shared_strings ? 1 : 0));
+            [](const auto& worksheet) { return worksheet_has_relationships(*worksheet); });
+    entries.reserve(6 + state_->worksheets.size() + worksheet_relationship_count
+        + table_count + (write_shared_strings ? 1 : 0));
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
     entries.push_back({"docProps/core.xml", detail::build_core_properties()});
@@ -881,13 +1133,20 @@ void WorkbookWriter::close()
                 detail::PackageEntryChunk::file(shared_strings_file->path())});
     }
 
+    const std::vector<std::size_t> first_table_indexes = table_start_indexes(state_->worksheets);
     for (std::size_t index = 0; index < state_->worksheets.size(); ++index) {
         entries.push_back(build_worksheet_entry(
             "xl/worksheets/sheet" + std::to_string(index + 1) + ".xml",
             *state_->worksheets[index]));
-        if (!state_->worksheets[index]->external_hyperlinks.empty()) {
+        if (worksheet_has_relationships(*state_->worksheets[index])) {
             entries.emplace_back(worksheet_relationship_entry_name(index),
-                build_worksheet_relationships(*state_->worksheets[index]));
+                build_worksheet_relationships(*state_->worksheets[index], first_table_indexes[index]));
+        }
+        for (std::size_t table_index = 0; table_index < state_->worksheets[index]->tables.size();
+            ++table_index) {
+            const std::size_t package_table_index = first_table_indexes[index] + table_index;
+            entries.emplace_back(table_entry_name(package_table_index),
+                build_table_xml(state_->worksheets[index]->tables[table_index], package_table_index));
         }
     }
 

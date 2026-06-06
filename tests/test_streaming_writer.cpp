@@ -457,6 +457,136 @@ void test_streaming_writer_external_hyperlinks()
         "plain worksheet should not include relationship namespace");
 }
 
+void test_streaming_writer_tables()
+{
+    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-tables.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto inventory = workbook.add_worksheet("Inventory");
+    auto totals = workbook.add_worksheet("Totals");
+    auto plain = workbook.add_worksheet("Plain");
+
+    inventory.append_row({
+        fastxlsx::CellView::text("Name"),
+        fastxlsx::CellView::text("Qty"),
+        fastxlsx::CellView::text("Price & <Cost>"),
+    });
+    inventory.append_row({
+        fastxlsx::CellView::text("Widget"),
+        fastxlsx::CellView::number(7.0),
+        fastxlsx::CellView::number(12.5),
+    });
+    inventory.append_row({
+        fastxlsx::CellView::text("Gadget"),
+        fastxlsx::CellView::number(3.0),
+        fastxlsx::CellView::number(8.25),
+    });
+    inventory.add_external_hyperlink(2, 1, "https://example.com/items/widget");
+
+    fastxlsx::TableOptions inventory_table;
+    inventory_table.name = "InventoryTable";
+    inventory_table.column_names = {"Name", "Qty", "Price & <Cost>"};
+    inventory_table.style_name = "TableStyleMedium9";
+    inventory.add_table({1, 1, 3, 3}, inventory_table);
+
+    totals.append_row({
+        fastxlsx::CellView::text("Metric"),
+        fastxlsx::CellView::text("Value"),
+    });
+    totals.append_row({
+        fastxlsx::CellView::text("Rows"),
+        fastxlsx::CellView::number(2.0),
+    });
+    fastxlsx::TableOptions totals_table;
+    totals_table.name = "TotalsTable";
+    totals_table.column_names = {"Metric", "Value"};
+    totals_table.style_name.clear();
+    totals.add_table({1, 1, 2, 2}, totals_table);
+
+    plain.append_row({
+        fastxlsx::CellView::text("No table sheet"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "table xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/tables/table1.xml"), "missing first table part");
+    check(entries.contains("xl/tables/table2.xml"), "missing second table part");
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "missing first worksheet table relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "missing second worksheet table relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "plain worksheet should not create table relationships");
+    check(!entries.contains("xl/styles.xml"), "table slice should not create a styles part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>)",
+        "first table content type override missing");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/tables/table2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>)",
+        "second table content type override missing");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_sheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "table worksheet namespace mismatch");
+    check_contains(first_sheet_xml, "<dimension ref=\"A1:C3\"/>",
+        "table worksheet dimension mismatch");
+    check_contains(first_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId2\"/></tableParts></worksheet>",
+        "tableParts XML should follow hyperlinks and use the next worksheet rId");
+
+    const auto& first_sheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/items/widget" TargetMode="External"/>)",
+        "hyperlink relationship should keep the first worksheet rId");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table relationship should use the next worksheet rId");
+
+    const auto& first_table_xml = entries.at("xl/tables/table1.xml");
+    check_contains(first_table_xml,
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="InventoryTable" displayName="InventoryTable" ref="A1:C3" totalsRowShown="0">)",
+        "first table root XML mismatch");
+    check_contains(first_table_xml, R"(<autoFilter ref="A1:C3"/>)",
+        "first table autoFilter mismatch");
+    check_contains(first_table_xml, R"(<tableColumns count="3">)",
+        "first table column count mismatch");
+    check_contains(first_table_xml, R"(<tableColumn id="1" name="Name"/>)",
+        "first table first column mismatch");
+    check_contains(first_table_xml, R"(<tableColumn id="3" name="Price &amp; &lt;Cost&gt;"/>)",
+        "first table column XML escaping mismatch");
+    check_contains(first_table_xml,
+        R"(<tableStyleInfo name="TableStyleMedium9" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>)",
+        "first table style info mismatch");
+
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_sheet_xml,
+        "<tableParts count=\"1\"><tablePart r:id=\"rId1\"/></tableParts>",
+        "second sheet table relationship id should be owner-local");
+    const auto& second_sheet_rels = entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table2.xml"/>)",
+        "second table relationship target mismatch");
+
+    const auto& second_table_xml = entries.at("xl/tables/table2.xml");
+    check_contains(second_table_xml,
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="2" name="TotalsTable" displayName="TotalsTable" ref="A1:B2" totalsRowShown="0">)",
+        "second table root XML mismatch");
+    check(second_table_xml.find("<tableStyleInfo") == std::string::npos,
+        "empty table style name should omit style info");
+
+    const auto& third_sheet_xml = entries.at("xl/worksheets/sheet3.xml");
+    check(third_sheet_xml.find("<tableParts") == std::string::npos,
+        "plain worksheet should not contain tableParts");
+    check(third_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not include relationship namespace");
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -696,6 +826,12 @@ void test_streaming_writer_rejects_mutation_after_close()
     check_fastxlsx_error(
         [&sheet] { sheet.add_external_hyperlink(1, 1, "https://example.com/"); },
         "add_external_hyperlink should reject mutation after workbook close");
+    fastxlsx::TableOptions table;
+    table.name = "ClosedTable";
+    table.column_names = {"A", "B"};
+    check_fastxlsx_error(
+        [&sheet, &table] { sheet.add_table({1, 1, 2, 2}, table); },
+        "add_table should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -783,6 +919,83 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet] { sheet.add_external_hyperlink(1, 1, ""); },
         "external hyperlinks should reject an empty target");
+
+    fastxlsx::TableOptions table;
+    table.name = "InvalidRangeTable";
+    table.column_names = {"A"};
+    check_fastxlsx_error(
+        [&sheet, &table] { sheet.add_table({1, 1, 1, 1}, table); },
+        "tables should reject a header-only range");
+    table.column_names = {"A", "B"};
+    check_fastxlsx_error(
+        [&sheet, &table] { sheet.add_table({1, 1, 2, 16385}, table); },
+        "tables should reject a column beyond Excel's limit");
+}
+
+void test_streaming_writer_invalid_table_options()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-invalid-tables.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("InvalidTables");
+
+    fastxlsx::TableOptions valid;
+    valid.name = "ValidTable";
+    valid.column_names = {"First", "Second"};
+
+    fastxlsx::TableOptions empty_name = valid;
+    empty_name.name.clear();
+    check_fastxlsx_error(
+        [&sheet, &empty_name] { sheet.add_table({1, 1, 2, 2}, empty_name); },
+        "tables should reject an empty name");
+
+    fastxlsx::TableOptions numeric_name = valid;
+    numeric_name.name = "1Table";
+    check_fastxlsx_error(
+        [&sheet, &numeric_name] { sheet.add_table({1, 1, 2, 2}, numeric_name); },
+        "tables should reject a name starting with a digit");
+
+    fastxlsx::TableOptions spaced_name = valid;
+    spaced_name.name = "Bad Table";
+    check_fastxlsx_error(
+        [&sheet, &spaced_name] { sheet.add_table({1, 1, 2, 2}, spaced_name); },
+        "tables should reject names with spaces");
+
+    fastxlsx::TableOptions cell_reference_name = valid;
+    cell_reference_name.name = "A1";
+    check_fastxlsx_error(
+        [&sheet, &cell_reference_name] { sheet.add_table({1, 1, 2, 2}, cell_reference_name); },
+        "tables should reject names that look like cell references");
+
+    fastxlsx::TableOptions wrong_column_count = valid;
+    wrong_column_count.name = "WrongColumnCount";
+    wrong_column_count.column_names = {"OnlyOne"};
+    check_fastxlsx_error(
+        [&sheet, &wrong_column_count] { sheet.add_table({1, 1, 2, 2}, wrong_column_count); },
+        "tables should reject a column count mismatch");
+
+    fastxlsx::TableOptions empty_column_name = valid;
+    empty_column_name.name = "EmptyColumnName";
+    empty_column_name.column_names = {"First", ""};
+    check_fastxlsx_error(
+        [&sheet, &empty_column_name] { sheet.add_table({1, 1, 2, 2}, empty_column_name); },
+        "tables should reject empty column names");
+
+    fastxlsx::TableOptions duplicate_column_name = valid;
+    duplicate_column_name.name = "DuplicateColumnName";
+    duplicate_column_name.column_names = {"Name", "name"};
+    check_fastxlsx_error(
+        [&sheet, &duplicate_column_name] { sheet.add_table({1, 1, 2, 2}, duplicate_column_name); },
+        "tables should reject duplicate column names");
+
+    sheet.add_table({1, 1, 2, 2}, valid);
+
+    fastxlsx::TableOptions duplicate_table_name = valid;
+    duplicate_table_name.name = "validtable";
+    check_fastxlsx_error(
+        [&sheet, &duplicate_table_name] { sheet.add_table({3, 1, 4, 2}, duplicate_table_name); },
+        "tables should reject duplicate workbook table names case-insensitively");
 }
 
 void test_streaming_writer_invalid_data_validation_rules()
@@ -892,11 +1105,13 @@ int main()
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
         test_streaming_writer_external_hyperlinks();
+        test_streaming_writer_tables();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();
         test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();
+        test_streaming_writer_invalid_table_options();
         test_streaming_writer_invalid_data_validation_rules();
         test_streaming_writer_invalid_metadata_and_rows();
     } catch (const std::exception& error) {

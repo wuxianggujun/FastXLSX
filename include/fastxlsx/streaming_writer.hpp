@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fastxlsx {
 
@@ -106,6 +107,33 @@ struct DataValidationRule {
 
     /// Writes `allowBlank="1"` when true. Omitted when false.
     bool allow_blank = false;
+};
+
+/// A streaming-only worksheet table definition.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. FastXLSX stores
+/// one lightweight table object per call to WorksheetWriter::add_table() and
+/// emits a table part plus worksheet relationship during close(). Column names
+/// are copied into writer state; the writer does not inspect previously written
+/// header cells, infer column names, or keep a full worksheet cell matrix.
+struct TableOptions {
+    /// Workbook-wide table display name. The first slice accepts conservative
+    /// ASCII identifiers only: first character must be a letter or underscore,
+    /// followed by letters, digits, or underscores.
+    std::string name;
+
+    /// Header names written to `<tableColumns>`. The count must match the table
+    /// range width. Names are copied and must be non-empty and unique within
+    /// the table in the current implementation.
+    std::vector<std::string> column_names;
+
+    /// Built-in Excel table style name. Empty string omits `<tableStyleInfo>`.
+    std::string style_name = "TableStyleMedium2";
+
+    bool show_first_column = false;
+    bool show_last_column = false;
+    bool show_row_stripes = true;
+    bool show_column_stripes = false;
 };
 
 /// A cell view consumed immediately by WorksheetWriter.
@@ -273,6 +301,21 @@ public:
     /// limits, the target URL is empty, or the workbook is closed.
     void add_external_hyperlink(
         std::uint32_t row, std::uint32_t column, std::string target_url);
+
+    /// Records a worksheet table range for a new workbook.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The table is
+    /// emitted as an `xl/tables/tableN.xml` part, a worksheet `<tableParts>`
+    /// reference, a worksheet `.rels` relationship, and a table content type
+    /// override. This API copies table name, column names, and style name into
+    /// writer state. It does not inspect row data, infer headers, create
+    /// styles.xml, support totals rows, resize existing tables, edit existing
+    /// XLSX files, or promise full Excel table UI parity.
+    ///
+    /// @throws FastXlsxError if the range is invalid, contains only a header
+    /// row, column names do not match the range width, names are invalid or
+    /// duplicated, or the workbook is closed.
+    void add_table(CellRange range, TableOptions options);
 
 private:
     friend class WorkbookWriter;

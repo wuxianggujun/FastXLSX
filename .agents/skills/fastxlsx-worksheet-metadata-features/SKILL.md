@@ -25,8 +25,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 ## 当前事实
 
 - `WorkbookWriter` / `WorksheetWriter` 是当前 streaming 新建 workbook 路径。
-- worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格和
-  streaming-only data validations / external hyperlinks。
+- worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格、
+  streaming-only data validations、external hyperlinks 和 tables。
 - `WorksheetWriter::add_data_validation()` 当前只支持新建 workbook 的 worksheet XML
   metadata，写出 `<dataValidations>`，不新增 worksheet `.rels`、content types 或
   package relationships。
@@ -34,6 +34,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   hyperlinks，写出 worksheet `<hyperlinks>` 和
   `xl/worksheets/_rels/sheetN.xml.rels`，relationship 使用 `TargetMode="External"`，
   `rId` 只在 worksheet owner 内分配。
+- `WorksheetWriter::add_table()` 当前只支持新建 workbook 的 streaming-only tables，
+  写出 worksheet `<tableParts>`、worksheet `.rels`、`xl/tables/tableN.xml` 和 table
+  content type override；它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。
 - 大型 worksheet 路径禁止 DOM，metadata 必须以小向量/轻量结构记录，再在
   worksheet XML 正确位置输出。
 - `RelationshipSet` 可表达 external target，但只有同时写 worksheet `<hyperlinks>`、
@@ -67,8 +70,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   不支持 internal links、tooltip/display 属性、已有文件编辑或完整 Excel UI 行为。
 - Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
   公式和 range 依赖不会进入大型 DOM。
-- Tables：保持计划；需要 table part、content type override、worksheet rels 和
-  worksheet table reference 一起更新。
+- Tables：已有基础 streaming-only、新建 workbook 版本。当前只保存 range、table name、
+  column names 和 style flags；不支持 totals row、calculated columns、sort/filter
+  criteria、custom styles、table resize、已有文件编辑或完整 Excel table UI。
 - Images/Pictures：保持计划；不要把它当成 data validations 那样的纯 worksheet XML
   切片。需要 `fastxlsx-image-media-features` 和 OPC graph/package 边界。
 
@@ -76,6 +80,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 - 不要把 Phase 5 写成已实现。
 - 不要因为 external-only hyperlink slice 已存在就宣称完整 hyperlinks 已支持。
+- 不要因为 streaming-only table slice 已存在就宣称完整 tables 已支持。
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。
 - 不要在没有 PackageReader/PackageWriter 前宣称 existing XLSX editing 或 unknown part passthrough。
 - 不要把 Excel、`openpyxl` 或 `XlsxWriter` 加为运行时依赖；它们只能用于测试和排障参考。
@@ -90,6 +95,10 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - external hyperlinks 结构测试应检查 worksheet XML `r:id` 与 worksheet `.rels` 一致、
   target XML escape、owner-local `rId`、plain sheet 不生成 `.rels`、不污染 workbook
   relationships、不新增 content type override、invalid cell、empty target 和 close 后
+  mutation。
+- tables 结构测试应检查 `xl/tables/tableN.xml`、worksheet `<tableParts>`、
+  worksheet `.rels`、table content type override、owner-local `rId`、与 hyperlinks
+  共存时的关系 id、XML escape、invalid range/options、duplicate names 和 close 后
   mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 本机有 Excel 时打开关键 `.xlsx`，确认无修复弹窗并检查可视化结果。

@@ -27,6 +27,12 @@ Phase 5 仍是计划。
 保持一致。这只是 new-workbook feature wiring，不是 existing-file relationship
 editing，也不证明 package preservation。
 
+当前新建 workbook streaming 路径也已有 streaming-only table relationship 输出：
+`WorksheetWriter::add_table()` 会生成 `xl/tables/tableN.xml`、worksheet
+`<tableParts>`、worksheet `.rels` 和 table content type override。这同样只是
+new-workbook feature wiring，不是 existing-file table editing、table preservation
+或完整 object support。
+
 本轮 OPC edit plan 只能写为基础或计划：当前有 copy-original、
 generate-small-XML、stream-rewrite、local-DOM-rewrite 的 write-mode metadata，
 并且有新建 workbook 输出使用的内部 `src/package_writer.*` boundary；但没有

@@ -87,6 +87,14 @@ Streaming / new-workbook 路径、是否复制 URL 文本、是否写 worksheet
 有效、是否新增 workbook relationships 或 content type overrides、是否会写单元格文本
 或样式，以及是否支持 internal links、URL 可达性校验和 existing-file editing。
 
+对 tables 这类跨 part worksheet metadata API，注释还要说明是否只支持
+Streaming / new-workbook 路径、是否复制 table name / column names / style name、
+是否生成 `xl/tables/tableN.xml`、worksheet `<tableParts>`、worksheet `.rels` 和
+content type override、relationship id 是否只在 worksheet owner 内有效、是否读取
+已写 header 行或推断列名、是否生成 `styles.xml`，以及是否支持 totals row、
+calculated columns、table resize、overlap checks、existing-file editing 和完整 Excel
+table UI。
+
 ## 性能注释要求
 
 涉及热路径或大数据行为的 API，注释必须包含性能边界。

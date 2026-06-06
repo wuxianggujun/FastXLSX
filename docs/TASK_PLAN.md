@@ -370,12 +370,13 @@ Validation:
 
 ### M10 - Tables, Images, Charts, and VBA
 
-Status: planned. Split new-workbook image generation from existing-workbook
-preservation work.
+Status: 基础 for streaming-only new-workbook tables; planned for images,
+charts, VBA, existing-workbook object preservation, and complete table support.
 
 Order:
-1. Tables after table part allocation, content type overrides, worksheet rels,
-   and worksheet table references are consistent.
+1. Tables now have a narrow `WorksheetWriter::add_table()` slice that writes
+   `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
+   table content type overrides for new workbooks only.
 2. New-workbook-only image insertion may start after internal OPC graph
    groundwork if it is limited to PNG/JPEG, one anchor strategy, generated media
    and drawing parts, and no existing drawing mutation or passthrough claims.
@@ -386,9 +387,17 @@ Order:
    native generation or editing.
 
 Validation:
-- Reference workbooks from Excel or Python XLSX libraries.
-- Package relationship and content type checks.
-- Excel visual verification for every object type.
+- `fastxlsx.streaming` table tests compare table XML, worksheet relationships,
+  worksheet `<tableParts>`, content type overrides, owner-local `rId`, XML
+  escaping, invalid ranges/options, duplicate names, and mutation-after-close.
+- Local Excel visual verification passed for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
+  confirmed worksheet `ListObjects` counts, `InventoryTable` / `TotalsTable`
+  names, `A1:C3` / `A1:B2` ranges, header text, and basic built-in style flags.
+- Reference workbooks from Excel or Python XLSX libraries remain the fallback
+  when table XML structure or Excel repair behavior is unclear.
+- Package relationship and content type checks remain required for every object type.
+- Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.
 
 ### M11 - Release Packaging and Public Surface
@@ -895,11 +904,17 @@ Allowed early slices:
 - Complete hyperlink support remains planned: internal links, tooltip/display
   attributes, hyperlink styles, existing-file editing, and full Excel UI
   behavior are not implemented by the first slice.
+- Tables have a basic streaming-only, new-workbook slice through
+  `WorksheetWriter::add_table()` and `TableOptions`. It writes worksheet
+  `<tableParts>`, worksheet `.rels`, `xl/tables/tableN.xml`, and table content
+  type overrides while storing only lightweight table metadata.
+- Complete table support remains planned: automatic header inference, totals
+  rows, calculated columns, sort/filter criteria, custom styles, `styles.xml`,
+  table resize, existing-file editing, overlap checks, and full Excel table UI
+  behavior are not implemented by the first slice.
 - Conditional formatting may be added as worksheet metadata only if it does not
   force a large worksheet DOM and does not put validation/formatting logic into
   the cell XML hot path.
-- Tables may be added only with content types, relationships, table parts, and
-  worksheet table references kept consistent.
 - Image work must use `stb` for image decoding, dimensions, and pixel access;
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.

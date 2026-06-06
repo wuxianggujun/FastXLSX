@@ -37,6 +37,33 @@ void check_fastxlsx_error(Callable callable, const char* message)
     check(failed, message);
 }
 
+void expect_invalid_in_memory_number(double value, const char* sheet_name, const char* file_name,
+    const char* message)
+{
+    auto workbook = fastxlsx::Workbook::create();
+    auto& sheet = workbook.add_worksheet(sheet_name);
+    sheet.append_row({fastxlsx::Cell::number(value)});
+    check_fastxlsx_error(
+        [&workbook, file_name] {
+            workbook.save(std::filesystem::current_path() / file_name);
+        },
+        message);
+}
+
+void expect_invalid_in_memory_row_height(double height, const char* sheet_name,
+    const char* file_name, const char* message)
+{
+    auto workbook = fastxlsx::Workbook::create();
+    auto& sheet = workbook.add_worksheet(sheet_name);
+    const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
+    sheet.append_row(row, fastxlsx::RowOptions {height});
+    check_fastxlsx_error(
+        [&workbook, file_name] {
+            workbook.save(std::filesystem::current_path() / file_name);
+        },
+        message);
+}
+
 void test_xml_helpers()
 {
     check(fastxlsx::detail::escape_xml_text("a&b<c>d") == "a&amp;b&lt;c&gt;d",
@@ -255,6 +282,42 @@ void test_workbook_document_properties()
         "custom workbook app version mismatch");
 }
 
+void test_workbook_formula_and_row_height_metadata()
+{
+    auto workbook = fastxlsx::Workbook::create();
+    auto& sheet = workbook.add_worksheet("FormulaHeight");
+
+    sheet.append_row({
+        fastxlsx::Cell::number(1.0),
+        fastxlsx::Cell::number(2.0),
+        fastxlsx::Cell::formula("SUM(A1:B1)&\"<ok>\""),
+    });
+    const std::vector<fastxlsx::Cell> row {
+        fastxlsx::Cell::text("tall row"),
+    };
+    sheet.append_row(row, fastxlsx::RowOptions {18.5});
+
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-formula-row-height.xlsx";
+    workbook.save(output_path);
+    check(std::filesystem::exists(output_path), "formula and row height xlsx was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("<dimension ref=\"A1:C2\"/>") != std::string::npos,
+        "formula workbook dimension mismatch");
+    check(worksheet_xml.find("<c r=\"C1\"><f>SUM(A1:B1)&amp;\"&lt;ok&gt;\"</f></c>")
+            != std::string::npos,
+        "formula XML escaping mismatch");
+    check(worksheet_xml.find("<row r=\"2\" ht=\"18.5\" customHeight=\"1\">")
+            != std::string::npos,
+        "row height metadata XML mismatch");
+    check(!entries.contains("xl/calcChain.xml"),
+        "in-memory formula writer should not create calcChain");
+    check(!entries.contains("xl/styles.xml"),
+        "row height metadata should not create styles");
+}
+
 void test_validation_errors()
 {
     auto workbook = fastxlsx::Workbook::create();
@@ -274,56 +337,29 @@ void test_validation_errors()
     }
     check(empty_workbook_failed, "empty workbook save should fail");
 
-    {
-        auto invalid_numbers = fastxlsx::Workbook::create();
-        auto& sheet = invalid_numbers.add_worksheet("InvalidNumber");
-        sheet.append_row({fastxlsx::Cell::number(std::numeric_limits<double>::quiet_NaN())});
-        check_fastxlsx_error(
-            [&invalid_numbers] {
-                invalid_numbers.save(
-                    std::filesystem::current_path() / "invalid-non-finite-number.xlsx");
-            },
-            "workbook save should reject non-finite numeric cells");
-    }
+    expect_invalid_in_memory_number(std::numeric_limits<double>::quiet_NaN(),
+        "InvalidNumberNaN", "invalid-nan-number.xlsx",
+        "workbook save should reject NaN numeric cells");
+    expect_invalid_in_memory_number(std::numeric_limits<double>::infinity(),
+        "InvalidNumberPositiveInf", "invalid-positive-infinity-number.xlsx",
+        "workbook save should reject positive infinity numeric cells");
+    expect_invalid_in_memory_number(-std::numeric_limits<double>::infinity(),
+        "InvalidNumberNegativeInf", "invalid-negative-infinity-number.xlsx",
+        "workbook save should reject negative infinity numeric cells");
 
-    {
-        auto invalid_zero_height = fastxlsx::Workbook::create();
-        auto& sheet = invalid_zero_height.add_worksheet("InvalidZeroHeight");
-        const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
-        sheet.append_row(row, fastxlsx::RowOptions {0.0});
-        check_fastxlsx_error(
-            [&invalid_zero_height] {
-                invalid_zero_height.save(
-                    std::filesystem::current_path() / "invalid-zero-height.xlsx");
-            },
-            "workbook save should reject zero row heights");
-    }
-
-    {
-        auto invalid_negative_height = fastxlsx::Workbook::create();
-        auto& sheet = invalid_negative_height.add_worksheet("InvalidNegativeHeight");
-        const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
-        sheet.append_row(row, fastxlsx::RowOptions {-1.0});
-        check_fastxlsx_error(
-            [&invalid_negative_height] {
-                invalid_negative_height.save(
-                    std::filesystem::current_path() / "invalid-negative-height.xlsx");
-            },
-            "workbook save should reject negative row heights");
-    }
-
-    {
-        auto invalid_height = fastxlsx::Workbook::create();
-        auto& sheet = invalid_height.add_worksheet("InvalidNonFiniteHeight");
-        const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
-        sheet.append_row(row, fastxlsx::RowOptions {std::numeric_limits<double>::infinity()});
-        check_fastxlsx_error(
-            [&invalid_height] {
-                invalid_height.save(
-                    std::filesystem::current_path() / "invalid-non-finite-height.xlsx");
-            },
-            "workbook save should reject non-finite row heights");
-    }
+    expect_invalid_in_memory_row_height(0.0, "InvalidZeroHeight",
+        "invalid-zero-height.xlsx", "workbook save should reject zero row heights");
+    expect_invalid_in_memory_row_height(-1.0, "InvalidNegativeHeight",
+        "invalid-negative-height.xlsx", "workbook save should reject negative row heights");
+    expect_invalid_in_memory_row_height(std::numeric_limits<double>::quiet_NaN(),
+        "InvalidNaNHeight", "invalid-nan-height.xlsx",
+        "workbook save should reject NaN row heights");
+    expect_invalid_in_memory_row_height(std::numeric_limits<double>::infinity(),
+        "InvalidPositiveInfHeight", "invalid-positive-infinity-height.xlsx",
+        "workbook save should reject positive infinity row heights");
+    expect_invalid_in_memory_row_height(-std::numeric_limits<double>::infinity(),
+        "InvalidNegativeInfHeight", "invalid-negative-infinity-height.xlsx",
+        "workbook save should reject negative infinity row heights");
 }
 
 } // namespace
@@ -334,6 +370,7 @@ int main()
         test_xml_helpers();
         test_minimal_xlsx_package();
         test_workbook_document_properties();
+        test_workbook_formula_and_row_height_metadata();
         test_validation_errors();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

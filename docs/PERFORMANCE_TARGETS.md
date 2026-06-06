@@ -133,6 +133,22 @@ benchmark 结果还应记录 package-entry source mode（`in-memory` / `file-bac
 `chunked`）、ZIP backend、压缩等级、峰值内存和临时 worksheet part footprint。没有这些
 数据时，不要声称完整低内存写出。
 
+当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `1`，新增这些元数据：
+
+```json
+{
+  "benchmark_schema_version": "1",
+  "package_entry_source_mode": "worksheet-file-backed-chunked",
+  "temporary_worksheet_part_footprint": "not_measured",
+  "temporary_worksheet_part_footprint_bytes": null
+}
+```
+
+`package_entry_source_mode` 记录当前 worksheet entry finalization 经过
+file-backed/chunked source；`temporary_worksheet_part_footprint="not_measured"`
+表示当前工具尚未测量临时 worksheet body 文件或 chunk footprint。只有后续工具真实
+记录字节数后，才能把该字段用于低内存或大文件性能结论。
+
 如果不传 `--output` / `--result`，当前工具默认把结果写到 benchmark target 的
 binary dir，例如 `build/windows-nmake-release-benchmark/benchmarks/`。手工工具会
 拒绝超过 1024 个 worksheet 的输入；这只是 benchmark 工具边界，不代表

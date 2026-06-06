@@ -204,6 +204,11 @@ Benchmark 应记录：
 不进入默认 CI；`planned-dev` 中的 `benchmark` 仍不是当前 CMake 事实。
 不传 `--output` / `--result` 时，该工具默认写到 benchmark target 的 binary dir；
 `--sheets` 超过 1024 会被拒绝，这是 benchmark 工具护栏，不是 public API 限制。
+当前 benchmark JSON schema version 为 `1`，会写
+`package_entry_source_mode="worksheet-file-backed-chunked"`、
+`temporary_worksheet_part_footprint="not_measured"` 和
+`temporary_worksheet_part_footprint_bytes=null`。不要把 `not_measured` 写成临时文件
+footprint 已验证；只有后续工具真实记录字节数后才能据此做低内存结论。
 
 重点覆盖：
 

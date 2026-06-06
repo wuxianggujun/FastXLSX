@@ -28,6 +28,9 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint32_t kBenchmarkSheetLimit = 1024;
+constexpr std::string_view kBenchmarkSchemaVersion = "1";
+constexpr std::string_view kPackageEntrySourceMode = "worksheet-file-backed-chunked";
+constexpr std::string_view kTemporaryWorksheetPartFootprint = "not_measured";
 
 std::filesystem::path default_output_dir()
 {
@@ -265,6 +268,7 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
 
     const std::uint64_t cells = checked_cell_count(options);
     out << "{\n";
+    out << "  \"benchmark_schema_version\": \"" << kBenchmarkSchemaVersion << "\",\n";
     out << "  \"scenario\": \"" << json_escape(options.scenario) << "\",\n";
     out << "  \"rows\": " << options.rows << ",\n";
     out << "  \"cols\": " << options.cols << ",\n";
@@ -279,6 +283,9 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
     out << "  \"zip_backend\": \"stored-bootstrap\",\n";
     out << "  \"compression\": \"store\",\n";
 #endif
+    out << "  \"package_entry_source_mode\": \"" << kPackageEntrySourceMode << "\",\n";
+    out << "  \"temporary_worksheet_part_footprint\": \"" << kTemporaryWorksheetPartFootprint << "\",\n";
+    out << "  \"temporary_worksheet_part_footprint_bytes\": null,\n";
     out << "  \"elapsed_ms\": " << elapsed_ms << ",\n";
     out << "  \"peak_memory_mb\": " << (peak_bytes / (1024.0 * 1024.0)) << ",\n";
     out << "  \"output_bytes\": " << output_bytes << ",\n";

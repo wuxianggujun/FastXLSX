@@ -225,6 +225,11 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_s
 不要把 benchmark preset 当成默认质量门禁。
 不传 `--output` / `--result` 时，当前 benchmark 工具默认写到 benchmark target
 的 binary dir；手工工具限制 `--sheets <= 1024`，这只是 benchmark 输入护栏。
+当前 benchmark JSON schema version 为 `1`，会记录
+`package_entry_source_mode="worksheet-file-backed-chunked"`、
+`temporary_worksheet_part_footprint="not_measured"` 和
+`temporary_worksheet_part_footprint_bytes=null`。这只说明当前工具还没有测量临时
+worksheet part footprint，不能据此宣称完整低内存或大文件性能。
 
 如果其他机器上的 Visual Studio 2026 对应新的 CMake 生成器名称，用下面命令确认：
 

@@ -348,8 +348,11 @@ could affect the writer hot path.
 Do:
 - Use the opt-in manual benchmark target `fastxlsx_bench_streaming_writer`.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
-- Record data scale, string strategy, compression setting, time, peak memory,
+- Record data scale, string strategy, compression setting, package entry source
+  mode, temporary worksheet part footprint availability, time, peak memory,
   output size, and Excel/WPS/LibreOffice open result.
+- Keep `temporary_worksheet_part_footprint="not_measured"` explicit until the
+  tool measures a real temporary file/chunk byte count.
 - Keep the first slice independent of Google Benchmark; `planned-dev`
   dependencies remain planned until a separate task explicitly wires them.
 

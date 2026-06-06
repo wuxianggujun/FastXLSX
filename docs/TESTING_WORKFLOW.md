@@ -86,9 +86,12 @@ XML 对比结论：
 验证日期：
 ```
 
-当前 Phase 1 smoke 样例由 `fastxlsx.unit` 生成，默认位于测试工作目录，例如
-`build-nmake/tests/fastxlsx-phase1-minimal.xlsx`。本机验证可以用 Excel COM
-只读打开该文件并核对 `Sheet1`、`A1`、`B1`、`C1`、`A2`、`B2`。
+当前 Phase 1 smoke 样例由 `fastxlsx.unit` 生成，位于测试工作目录。推荐
+preset 路径通常是 `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`。
+如果使用手写 `-B build-nmake` 命令，也可能生成
+`build-nmake/tests/fastxlsx-phase1-minimal.xlsx`；人工检查前必须确认该目录是
+当前源码重新构建后的输出。本机验证可以用 Excel COM 只读打开该文件并核对
+`Sheet1`、`A1`、`B1`、`C1`、`A2`、`B2`。
 
 ## 结构异常时的参考对比流程
 
@@ -101,6 +104,9 @@ XML 对比结论：
 2. Python XLSX 库创建同等内容，例如 `openpyxl` 或 `XlsxWriter`。
 
 这些 Python 库只用于测试/排障参考，不是 FastXLSX 的运行时依赖。
+本机当前优先使用 Windows Python launcher `py` 运行参考脚本；其他机器可以根据
+实际环境使用 `python`、`python3` 或虚拟环境入口。不要把 Python XLSX 库写进
+FastXLSX 的运行时依赖。
 
 ### 用 Excel 创建参考文件
 

@@ -81,7 +81,9 @@ Phase 1 后续依赖工作：
 ## 常用命令
 
 ```powershell
-cmd /d /c "call ""D:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat"" -arch=x64 && cmake -S . -B build-nmake -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release -DFASTXLSX_BUILD_TESTS=ON -DFASTXLSX_BUILD_EXAMPLES=OFF && cmake --build build-nmake && ctest --test-dir build-nmake --output-on-failure --timeout 60"
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
 ```
 
 如果本机生成器名称不同，先用：
@@ -105,5 +107,7 @@ cmake --help
 - ZIP entry 和 OpenXML 基本 part 存在。
 - 输出 `.xlsx` 能被 Excel / WPS / LibreOffice 打开；如果本机无这些工具，说明未验证。
 - 本机有 Excel 时，用 Excel 打开关键样例做可视化验证。
-- 当前 smoke 样例通常是 `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`。
+- 当前推荐 preset smoke 样例通常是
+  `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`；旧
+  `build-nmake/tests/*.xlsx` 可能是过期 artifact，人工验证前必须确认重新生成。
 - 结构异常时，创建 Excel 或 Python XLSX 库参考文件，拆包对比 XML。

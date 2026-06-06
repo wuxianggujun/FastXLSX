@@ -59,13 +59,19 @@ FastXLSX 的当前定位是：
 
 ## 构建与测试
 
-项目主开发环境是 Visual Studio 2026 / MSVC 2026。当前本机已验证的命令：
+项目主开发环境是 Visual Studio 2026 / MSVC 2026。推荐从 VS2026 Developer
+Command Prompt 使用 preset：
 
 ```powershell
-cmd /d /c "call ""D:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat"" -arch=x64 && cmake -S . -B build-nmake -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release && cmake --build build-nmake && ctest --test-dir build-nmake --output-on-failure --timeout 60"
+cmake --list-presets
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
 ```
 
-默认单元测试必须保持 60s 内完成。大型 benchmark 后续应作为显式 opt-in 目标。
+`windows-nmake-release` preset 使用 `NMake Makefiles`，普通单元测试通过
+CTest preset 和测试属性保持 60s 边界。大型 benchmark 后续应作为显式 opt-in
+目标，不进入默认 CTest。
 
 生成的 `.xlsx` 若出现结构异常，按 [测试流程](docs/TESTING_WORKFLOW.md)：
 用 Excel、`openpyxl` 或 `XlsxWriter` 生成语义等价参考文件，拆包后对比

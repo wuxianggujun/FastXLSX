@@ -40,11 +40,14 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 
 ## 本地配置命令
 
-Windows/MSVC 优先使用 Visual Studio 2026 / MSVC 2026。当前本机已验证
-VS2026 Developer Command Prompt + NMake：
+Windows/MSVC 优先使用 Visual Studio 2026 / MSVC 2026。推荐在 VS2026
+Developer Command Prompt 中使用 preset：
 
 ```powershell
-cmd /d /c "call ""D:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat"" -arch=x64 && cmake -S . -B build-nmake -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release && cmake --build build-nmake && ctest --test-dir build-nmake --output-on-failure --timeout 60"
+cmake --list-presets
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
 ```
 
 如果其他机器上的 Visual Studio 2026 对应新的 CMake 生成器名称，先查：
@@ -87,15 +90,20 @@ cmake --help
 - vcpkg：基础。manifest 可见，但第三方依赖仍是 planned features，不代表生产 ZIP
   backend 已接入。
 - CMakePresets：基础。preset 可见，默认以 VS2026/MSVC 2026 + NMake 为主线。
-- CI：基础。workflow 可见，目标是结构测试和 `ctest --timeout 60`；Excel 可视化
-  验证仍是本地步骤，大型 benchmark 不进入默认 CI。
+- CI：基础。workflow 可见，目标是结构测试和 CTest 60s 门禁；当前 CI 通过
+  `ctest --preset windows-nmake-release` 运行，超时来自 CTest preset 和
+  `tests/CMakeLists.txt` 的测试属性。Excel 可视化验证仍是本地步骤，大型
+  benchmark 不进入默认 CI。
 
 ## 验证
 
 ```powershell
-cmd /d /c "call ""D:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat"" -arch=x64 && cmake -S . -B build-nmake -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release && cmake --build build-nmake && ctest --test-dir build-nmake --output-on-failure --timeout 60"
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
 ```
 
 如果 `ctest` 没有运行测试，先检查 `tests/CMakeLists.txt` 是否仍注册
 `fastxlsx.unit`、`fastxlsx.streaming` 和 `fastxlsx.opc`。
-后台运行普通测试时使用 60s 超时。
+后台运行普通测试时使用 60s 超时；preset 和 `tests/CMakeLists.txt` 已承载该
+边界。手写 `build-nmake` 排障目录时，显式加 `ctest --test-dir ... --timeout 60`。

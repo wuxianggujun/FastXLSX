@@ -113,11 +113,14 @@ benchmark 对象，不作为 FastXLSX 的运行时底座。
 
 ## 构建和测试命令
 
-本项目以 Visual Studio 2026 / MSVC 2026 为主开发环境。本机已验证的
-Windows/MSVC 配置方式：
+本项目以 Visual Studio 2026 / MSVC 2026 为主开发环境。推荐在 VS2026
+Developer Command Prompt 中使用 preset：
 
 ```powershell
-cmd /d /c "call ""D:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat"" -arch=x64 && cmake -S . -B build-nmake -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release && cmake --build build-nmake && ctest --test-dir build-nmake --output-on-failure --timeout 60"
+cmake --list-presets
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
 ```
 
 如果其他机器上的 Visual Studio 2026 对应新的 CMake 生成器名称，用下面命令确认：
@@ -130,8 +133,10 @@ cmake --help
 `NMake Makefiles`，而开发文档已说明：未显式指定生成器时可能误选 NMake，
 并在没有 `nmake` 的普通终端环境中失败。
 
-后台运行普通单元测试时，核心测试超时时间设为 60s。大型 benchmark 不要混入
-默认单元测试。
+后台运行普通单元测试时，核心测试超时时间设为 60s。当前 60s 边界来自
+`CMakePresets.json` 的 CTest preset 和 `tests/CMakeLists.txt` 的测试属性。
+如果手写 `-B build-nmake` 目录排障，必须显式给 `ctest --test-dir ...`
+加 `--timeout 60`。大型 benchmark 不要混入默认单元测试。
 
 ## 常见开发路径
 
@@ -150,8 +155,11 @@ cmake --help
 - Phase 1 输出不能只看编译通过；生成的 `.xlsx` 应校验 OpenXML 基本结构，
   并在可用时验证 Excel / WPS / LibreOffice 可打开。
 - 本机有 Excel 时，关键 `.xlsx` 样例必须用 Excel 打开做可视化验证。
-- 当前 `fastxlsx.unit` 会生成 `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`；
-  本机已用 Excel 可视化验证并核对 `Sheet1`、`A1`、`B1`、`C1`、`A2`、`B2`。
+- 当前 `fastxlsx.unit` 推荐 preset 输出样例为
+  `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`；本机已用
+  Excel 可视化验证并核对 `Sheet1`、`A1`、`B1`、`C1`、`A2`、`B2`。
+  本地旧 `build-nmake/tests/*.xlsx` 可能存在，但除非确认由当前源码重新生成，
+  否则应视为过期 artifact。
 - `.xlsx` 结构异常时，按 `docs/TESTING_WORKFLOW.md` 使用 Excel、`openpyxl`
   或 `XlsxWriter` 生成语义等价参考文件，拆包后对比 XML，重点检查
   content types、relationships、workbook、worksheet、shared strings 和 styles。

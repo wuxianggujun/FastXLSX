@@ -87,7 +87,8 @@ claiming completion.
      CMake target names before adding `find_package` or link changes.
    - Keep `CMakePresets.json` centered on the VS2026/MSVC 2026 NMake workflow;
      use the vcpkg preset only when toolchain behavior is being verified.
-   - Keep CI as a structural and unit-test gate with `ctest --timeout 60`;
+   - Keep CI as a structural and unit-test gate. The current workflow calls the
+     CTest preset, and the preset/test properties carry the 60s timeout.
      Excel visual verification remains local, and benchmark jobs stay opt-in.
 
 3. OPC edit plan - 基础.
@@ -96,6 +97,289 @@ claiming completion.
    - The next implementation plan should introduce package reader/writer,
      `PartIndex`, `RelationshipGraph`, copy-original preservation tests, and
      stream rewrite/local DOM rewrite boundaries before exposing edit APIs.
+
+## Milestone Roadmap
+
+Use this section as the high-level order for future commits. Do not skip a
+gate unless the task explicitly proves the skipped dependency is unnecessary.
+
+### M0 - Current Foundation
+
+Status: 基础.
+
+Already visible:
+- Compiled `fastxlsx` target and `FastXLSX::fastxlsx` alias.
+- Lightweight CTest suite with `fastxlsx.unit`, `fastxlsx.streaming`, and
+  `fastxlsx.opc`.
+- Minimal new-workbook package with workbook, worksheet, relationships,
+  content types, `docProps/core.xml`, and `docProps/app.xml`.
+- Streaming writer skeleton with row-order writes and worksheet metadata for
+  columns, panes, filters, and merged cells.
+- Internal OPC manifest, relationship, content type, and write-mode metadata.
+
+Next maintenance:
+- Keep docs, AGENTS, and skills synchronized with each implementation change.
+- Prefer the `windows-nmake-release` preset output path for fresh validation
+  artifacts. Treat old manual `build-nmake` artifacts as potentially stale.
+- Keep generated `.xlsx`, build directories, logs, and local secret files out
+  of commits.
+
+### M1 - Build, Test, and CI Hygiene
+
+Status: next small maintenance lane.
+
+Do this when build/test instructions, CI labels, or local validation paths drift.
+
+Tasks:
+- Keep `CMakePresets.json`, `.github/workflows/ci.yml`, `docs/DEVELOPMENT_ENVIRONMENT.md`,
+  `docs/TESTING_WORKFLOW.md`, and `.agents/skills/fastxlsx-cmake-build` aligned.
+- Recheck the GitHub Actions runner label after the 2026-06-08 image migration
+  window starts; keep `windows-2025-vs2026` only while it is the most reliable
+  VS2026 runner label.
+- Track the GitHub Actions Node.js runtime warning for `actions/checkout@v4`.
+  Upgrade the workflow action when a Node 24-compatible path is required.
+- Prefer preset commands in docs:
+  `cmake --preset windows-nmake-release`,
+  `cmake --build --preset windows-nmake-release`,
+  `ctest --preset windows-nmake-release`.
+
+Validation:
+- `git diff --check`.
+- Skill validation after skill edits.
+- VS2026/NMake preset build and CTest.
+- GitHub Actions CI passes.
+
+### M2 - Production ZIP Backend
+
+Status: planned infrastructure and the highest-value implementation dependency.
+
+Do this before claiming large-file write performance, real compression,
+Zip64, package streaming, or existing-file edit support.
+
+Tasks:
+- Verify vcpkg package names, features, CMake config package names, imported
+  targets, and license impact for `minizip-ng`, `zlib-ng`, and fallback `zlib`.
+- Introduce a package writer abstraction so `src/zip_store_writer.*` remains a
+  bootstrap implementation behind an internal boundary.
+- Add compression level configuration without changing worksheet XML generation
+  into a DOM or full-workbook path.
+- Add Zip64 and large-entry behavior requirements before large workbook tests.
+- Update tests so they validate OpenXML package semantics without assuming
+  stored/no-compression entries.
+
+Validation:
+- Existing structure tests continue to pass.
+- New tests work for both bootstrap and production ZIP paths where both exist.
+- Excel opens representative output without repair.
+- Benchmark tasks remain opt-in and are not part of default CTest.
+
+### M3 - Shared Strings Hardening
+
+Status: 进行中.
+
+Do this after M2 if the goal is size/performance tradeoff work, or before M2
+only for small structure-only fixes.
+
+Tasks:
+- Keep `inlineStr` as the default low-memory path.
+- Validate `StringStrategy::SharedString` count/uniqueCount, de-duplication,
+  `xml:space`, escaping, and worksheet `t="s"` references.
+- Measure memory growth for repeated strings and mostly-unique strings.
+- Compare file size and open behavior against `inlineStr`.
+- Document when shared strings are beneficial and when they are a memory risk.
+
+Validation:
+- Structure tests for `xl/sharedStrings.xml`.
+- Excel visual verification for shared string samples.
+- Reference XML comparison when compatibility problems appear.
+- Size and memory benchmark before calling it production-ready.
+
+### M4 - Streaming Writer Hot Path
+
+Status: planned performance lane.
+
+Do this before adding broad convenience APIs or large-data promises.
+
+Tasks:
+- Replace temporary worksheet body handling only if the replacement preserves
+  row-order streaming and bounded memory.
+- Add fast numeric/date encoding tasks and edge-case tests.
+- Track worksheet dimensions incrementally.
+- Add row and column limit tests for Excel bounds.
+- Add opt-in benchmark target or documented benchmark command.
+
+Validation:
+- Default CTest stays under 60s.
+- Benchmarks record scale, time, peak memory, output size, string strategy,
+  compression setting, and Excel/WPS/LibreOffice open result.
+
+### M5 - Phase 3 Metadata and Styles
+
+Status: foundation exists for some worksheet metadata; full Phase 3 remains planned.
+
+Do this after the streaming writer boundaries are clear.
+
+Tasks:
+- Strengthen tests and Excel visual checks for formula text, row height,
+  column width, frozen panes, auto filters, and merged cells.
+- Design a style registry before writing broad `xl/styles.xml` support.
+- Add number formats, fonts, fills, borders, and alignment through that registry.
+- Decide formula calculation boundaries: write-only formula text, cached values,
+  calc mode, and `calcChain`.
+- Add configurable document properties as a small-part metadata API only after
+  the static docProps baseline remains stable.
+- Add named ranges only with workbook XML, relationships, and formula/range
+  behavior documented.
+
+Validation:
+- Structure tests for `xl/styles.xml`, style ids, workbook metadata, and
+  worksheet references.
+- Public APIs have Doxygen comments stating mode, memory behavior, ordering,
+  side effects, and unsupported Excel semantics.
+- Excel visual verification for representative style and metadata samples.
+
+### M6 - OPC Edit Groundwork
+
+Status: internal manifest foundation exists; edit pipeline remains planned.
+
+Do this before hyperlinks, tables, images, chart/VBA passthrough, or existing
+file editing are called supported.
+
+Tasks:
+- Build internal `PartIndex` and `RelationshipGraph` on top of the current
+  `PackageManifest`.
+- Add relationship id allocation and conflict checks per relationship owner.
+- Add content type registry helpers for defaults and overrides.
+- Define write modes for each part: copy original, generate small XML,
+  stream rewrite, local DOM rewrite.
+- Keep this internal until package reader/writer and preservation tests exist.
+
+Validation:
+- Unit tests for part lookup, relationship ownership, id uniqueness, content
+  type lookup, write-mode transitions, and error paths.
+- Docs continue to say this is not complete existing-file editing.
+
+### M7 - Existing Package Reader/Writer and Preservation
+
+Status: planned.
+
+Do this after M2 and M6.
+
+Tasks:
+- Read `[Content_Types].xml`, package `.rels`, part `.rels`, and package entries.
+- Preserve unknown and unmodified parts byte-for-byte when possible.
+- Rewrite only targeted parts.
+- Add tests with workbooks containing images, charts, macros, and unknown parts.
+
+Validation:
+- Input/output package comparison proves unmodified parts remain present.
+- Relationships still resolve after edit.
+- Excel opens edited workbooks without repair.
+
+### M8 - Streaming-Only Data Validations
+
+Status: planned Phase 5 early slice.
+
+Do this after M4 and before hyperlink/table/image work if the goal is a visible
+worksheet feature that does not require relationships.
+
+Tasks:
+- Start with `WorksheetWriter` new-workbook output only.
+- Store validation rules as lightweight worksheet metadata.
+- Write `<dataValidations>` in `worksheet.xml`; do not introduce package
+  relationships for the first slice.
+- Support a narrow first scope such as list, whole, decimal, date/time,
+  textLength, and custom formula text.
+- Copy formula strings into writer state; do not use temporary `string_view`
+  data past the API call.
+- Do not parse formulas, validate cell values, check overlap, or claim full
+  Excel UI support.
+
+Validation:
+- Structure tests for `count`, `sqref`, `type`, `operator`, `allowBlank`,
+  `formula1`, and `formula2`.
+- XML escaping tests for formula text.
+- Invalid range tests and mutation-after-close tests.
+- Excel visual verification and reference XML comparison before expanding scope.
+
+### M9 - Hyperlinks
+
+Status: planned; blocked by relationship graph work.
+
+Do this after M6, and preferably after M7 if editing existing files is in scope.
+
+Tasks:
+- Add worksheet hyperlink metadata.
+- Allocate worksheet relationship ids.
+- Write worksheet `<hyperlinks>` and worksheet `.rels` together.
+- Start with external URL hyperlinks; add internal links later.
+- Keep this separate from generic `RelationshipSet` serializer tests.
+
+Validation:
+- Tests prove worksheet XML `r:id` values match worksheet `.rels`.
+- Package contains the expected relationship part.
+- Excel visual verification confirms clickable links without repair.
+
+### M10 - Tables, Images, Charts, and VBA
+
+Status: planned; do not start as native generation before preservation works.
+
+Order:
+1. Tables after table part allocation, content type overrides, worksheet rels,
+   and worksheet table references are consistent.
+2. Images after media part allocation, drawing part generation, drawing rels,
+   worksheet rels, and content types are consistent.
+3. Chart and VBA handling should begin as passthrough preservation tests, not
+   native generation or editing.
+
+Validation:
+- Reference workbooks from Excel or Python XLSX libraries.
+- Package relationship and content type checks.
+- Excel visual verification for every object type.
+- Preservation tests for chart/VBA passthrough before any edit claims.
+
+### M11 - Release Packaging and Public Surface
+
+Status: planned.
+
+Do this only after the targeted feature set has CI, local validation, and clear
+API docs.
+
+Tasks:
+- Decide package install/export rules.
+- Add versioning policy and changelog workflow.
+- Ensure README examples match compiled public API.
+- Keep license and third-party notices aligned with actual linked dependencies.
+
+Validation:
+- Fresh clone configure/build/test.
+- CI green.
+- Public headers documented.
+- No generated files or private local state in the release commit.
+
+## Dependency Map
+
+Use this map to decide when a task can start:
+
+- M1 should stay current before every implementation push.
+- M2 and M3 can receive small independent fixes, but production large-file
+  claims need both production ZIP work and sharedStrings measurements.
+- M2 plus M6 are prerequisites for M7 existing-package reader/writer work.
+- M4 should precede broad convenience APIs and any low-memory writer claims.
+- M4 can enable M8 data validations because the first validation slice is
+  streaming-only worksheet metadata and does not need relationships.
+- M6 is required before M9 hyperlinks, tables, images, chart passthrough, VBA
+  passthrough, or any feature that needs cross-part relationship id consistency.
+- M7 and preservation tests are required before claiming chart/VBA passthrough
+  or safe editing of workbooks containing unknown parts.
+- M11 waits until the selected public surface has code, tests, local validation,
+  API comments, and docs.
+
+Every API task must include documentation comments in the public header it
+touches. The comments must describe API mode, ordering requirements, memory
+cost, random-access limits, side effects on OpenXML parts, and performance
+tradeoffs. Do not add a convenience API unless the task explains why it does
+not move the streaming hot path into DOM, a full cell matrix, or a cell map.
 
 ## Implementation Rules
 
@@ -131,7 +415,8 @@ Tasks:
 Validation:
 - Configure with CMake.
 - Build the library and tests.
-- Run `ctest --output-on-failure --timeout 60`.
+- Run `ctest --preset windows-nmake-release`, or use an explicit 60s timeout
+  when running a hand-written build directory.
 
 ### Phase 1.2 - Minimal Public API
 
@@ -212,11 +497,12 @@ Tasks:
   be opened manually in Excel.
 
 Validation:
-- `ctest --test-dir build -C Release --output-on-failure --timeout 60`
-- If a single-config generator is used:
-  `ctest --test-dir build --output-on-failure --timeout 60`
-- Verified locally with VS2026 Developer Command Prompt + NMake:
+- Preferred preset path:
+  `ctest --preset windows-nmake-release`
+- If a hand-written build directory is used, run CTest with an explicit 60s
+  timeout, for example:
   `ctest --test-dir build-nmake --output-on-failure --timeout 60`
+- Current tests also carry `TIMEOUT 60` properties in `tests/CMakeLists.txt`.
 
 ### Phase 1.6 - Local Excel Visual Verification
 
@@ -236,7 +522,7 @@ When local Excel is available:
 - Save the file from Excel and reopen it once.
 
 Verified on this machine:
-- Sample file: `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`
+- Sample file: `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
 - Excel COM opened the workbook read-only within the 60s timeout.
 - Checked values:
   - `Sheet1`
@@ -246,6 +532,8 @@ Verified on this machine:
   - `A2 = " leading "`
   - `B2 = FALSE`
 - Save-and-reopen was not performed in this pass.
+- Older manual `build-nmake/tests/*.xlsx` artifacts may exist locally. Treat
+  them as stale unless they were regenerated from the current source.
 
 If structure fails:
 - Create a semantic reference workbook with Excel, `openpyxl`, or `XlsxWriter`.
@@ -300,11 +588,15 @@ Current facts:
   `xl/sharedStrings.xml`, worksheet shared-string cell references, and focused
   structure tests. Keep this in 进行中 status until validation and performance
   data are recorded.
-- Streaming smoke file `build-nmake/tests/fastxlsx-streaming-smoke.xlsx` was
+- Streaming smoke file `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx` was
   opened read-only with local Excel COM. Verified worksheet `Streaming` and
   values: `A1 = 123.5`, `B1 = " text & <tag>"`, `C1 = TRUE`,
   `D1 formula =SUM(A1,C1)`, `A2 = 10`, `B2 = plain`, `C2 = FALSE`,
   `D2 formula =A2*2`, and `A3 = Merged`.
+- Shared strings smoke file
+  `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`
+  was opened read-only with local Excel COM. Verified worksheet `Shared`,
+  used range `2x3`, and `A1 = repeat`.
 - No save was requested during that Excel COM check. `LastWriteTime` changed
   while the file size stayed unchanged; this check only records successful
   read-only open and value verification.
@@ -335,7 +627,8 @@ API documentation requirements:
   data into DOM, cell maps, or full worksheet storage.
 
 Validation:
-- Run default unit tests with `ctest --output-on-failure --timeout 60`.
+- Run default unit tests through `ctest --preset windows-nmake-release`, or use
+  an explicit 60s timeout when testing a hand-written build directory.
 - Structure-check generated `.xlsx` files for content types, relationships,
   workbook, worksheet, dimensions, cell references, value types, and string
   strategy.
@@ -544,7 +837,8 @@ Validation:
   and error behavior.
 - Performance-sensitive API design must preserve the streaming main path even
   when convenience APIs are added.
-- Default CTest coverage must stay lightweight and run with `--timeout 60`.
+- Default CTest coverage must stay lightweight and run with the preset/test
+  60s timeout, or an explicit `--timeout 60` for hand-written build dirs.
 - Benchmarks are opt-in and must record data scale, compression level, string
   strategy, total time, peak memory, output size, and office-suite open result.
 - Every new `.xlsx` feature needs structure tests for the affected OpenXML

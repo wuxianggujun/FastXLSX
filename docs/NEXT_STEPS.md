@@ -43,8 +43,11 @@ that exist in code, CMake, tests, docs, or local verification.
     minimal workbook manifest builder, and content types / relationships
     serializers, including the docProps small XML builders.
 - Local Excel visual verification has been performed for:
-  - `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`
-  - `build-nmake/tests/fastxlsx-streaming-smoke.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`
+  Manual `build-nmake` output may exist locally, but treat it as potentially
+  stale unless it was regenerated after the current source change.
 
 ## Current Round Focus
 
@@ -68,8 +71,9 @@ feature completion.
      clean dependency task.
    - The default preset and CI path intentionally avoid external vcpkg
      dependencies.
-   - CI should run structural tests and CTest with `--timeout 60`; Excel visual
-     verification remains a local validation step, not a CI hard dependency.
+   - CI should run structural tests through the CTest preset/test properties
+     that carry the 60s timeout; Excel visual verification remains a local
+     validation step, not a CI hard dependency.
 
 3. OPC edit plan - 基础.
    - Current internal OPC metadata has part names, relationships, content types,
@@ -84,6 +88,462 @@ feature completion.
 - Public GitHub repository created and pushed:
   `https://github.com/wuxianggujun/FastXLSX`
 - `origin/main` is configured as the upstream branch.
+
+## Recommended Push Order
+
+Use this order for the next implementation pushes. Each item should be a small
+commit or short series with its own tests and docs update.
+
+1. Build/test documentation hygiene.
+   - Align `TASK_PLAN.md`, `NEXT_STEPS.md`, `TESTING_WORKFLOW.md`,
+     `DEVELOPMENT_ENVIRONMENT.md`, and build-related skills.
+   - Prefer preset paths over stale manual build directories.
+   - Record whether CI uses preset/test timeout rather than a command-line
+     `--timeout` flag.
+   - Verify skills after edits.
+
+2. CI runner and workflow maintenance.
+   - Recheck `windows-2025-vs2026` after the 2026-06-08 GitHub image migration
+     window starts.
+   - Track the GitHub Actions Node.js runtime warning for `actions/checkout@v4`.
+   - Keep CI on the no-vcpkg NMake preset until dependency work starts.
+
+3. Production ZIP backend spike.
+   - Verify `minizip-ng`, `zlib-ng`, and fallback `zlib` package names,
+     features, CMake targets, and license obligations.
+   - Add an internal package writer boundary before replacing
+     `zip_store_writer`.
+   - Keep existing OpenXML structure tests independent of compression method.
+
+4. Shared strings hardening.
+   - Keep `inlineStr` as default.
+   - Add memory/size measurements for repeated and unique strings.
+   - Compare package XML and Excel open behavior against inline strings.
+
+5. Streaming writer hot-path and benchmark groundwork.
+   - Add opt-in benchmark command/target.
+   - Measure row-order write path before adding broad convenience APIs.
+   - Keep benchmark work out of default CTest.
+
+6. Phase 3 style and metadata design.
+   - Design style registry before broad `styles.xml` output.
+   - Decide formula cached-value and calc behavior boundaries.
+   - Plan configurable document properties separately from the current static
+     docProps baseline.
+
+7. Internal OPC graph groundwork.
+   - Add `PartIndex` / `RelationshipGraph` internally.
+   - Add relationship id allocation and content type registry helpers.
+   - Do not expose existing-file edit APIs yet.
+
+8. Existing package preservation.
+   - Add reader/writer after production ZIP and OPC graph foundations.
+   - Prove unknown and unmodified parts are preserved.
+   - Use template workbooks with images, charts, macros, or unknown parts.
+
+9. Streaming-only data validations.
+   - Start as new-workbook `WorksheetWriter` metadata.
+   - Write only worksheet `<dataValidations>` first.
+   - Add structure tests, invalid range tests, mutation-after-close tests, and
+     Excel/reference XML validation before expanding scope.
+
+10. Hyperlinks.
+    - Start only after relationship graph support can keep worksheet XML and
+      worksheet `.rels` in sync.
+    - External URL hyperlinks should come before internal links.
+
+11. Tables, images, and passthrough objects.
+    - Tables need table parts, content type overrides, worksheet rels, and table
+      references.
+    - Images need media parts, drawings, drawing rels, worksheet rels, and
+      content types.
+    - Chart and VBA work starts as preservation, not native generation.
+
+## Push-by-Push Execution Queue
+
+Use this queue when deciding what to implement next. Pick the first item whose
+start condition is true. Do not treat later items as supported until their
+acceptance checks have passed and the docs have been updated.
+
+### P0 - Task Docs and Agent Context
+
+Start when task order, validation commands, or implementation status becomes
+ambiguous.
+
+Do:
+- Keep `TASK_PLAN.md`, `NEXT_STEPS.md`, `AGENTS.md`, `README.md`, and project
+  skills aligned with current code.
+- Prefer `build/windows-nmake-release` preset artifacts for fresh validation.
+- Record stale manual build directories as local-only, not canonical outputs.
+
+Accept when:
+- `git diff --check` passes.
+- Edited skills pass `quick_validate.py`.
+- Referenced files, commands, and sample paths exist or are explicitly marked
+  as planned/local-only.
+
+Do not claim:
+- New runtime behavior, new API support, or production readiness from doc-only
+  edits.
+
+### P1 - CI and Local Build Hygiene
+
+Start after P0, or whenever CI runner labels, CMake presets, or timeout behavior
+drift.
+
+Do:
+- Recheck `windows-2025-vs2026` and the GitHub runner image status after the
+  2026-06-08 migration window starts.
+- Update `.github/workflows/ci.yml` only after verifying the replacement runner
+  or action version.
+- Keep default CI on the no-vcpkg `windows-nmake-release` preset.
+
+Accept when:
+- VS2026/NMake configure, build, and `ctest --preset windows-nmake-release`
+  pass locally.
+- GitHub Actions runs the same preset path and passes.
+- Ordinary tests remain protected by the 60s CTest preset/test properties.
+
+Do not claim:
+- vcpkg dependency readiness or Excel visual validation from CI alone.
+
+### P2 - Production ZIP Dependency Discovery
+
+Start after P1 is stable and before changing `zip_store_writer`.
+
+Do:
+- Verify vcpkg ports, feature names, config package names, imported CMake
+  targets, and license obligations for `minizip-ng`, `zlib-ng`, and fallback
+  `zlib`.
+- Record exact findings in dependency docs before adding `find_package`.
+- Keep dependency work separate from OpenXML feature changes.
+
+Accept when:
+- A clean configure proves the selected packages and CMake targets resolve.
+- Docs identify which dependencies are runtime, dev-only, or optional.
+
+Do not claim:
+- Compression, Zip64, or package streaming before code uses the verified
+  backend.
+
+### P3 - Package Writer Boundary
+
+Start after P2 proves dependency and target names, or as a no-dependency
+internal refactor if it does not change package semantics.
+
+Do:
+- Introduce an internal package writer interface around current ZIP output.
+- Keep `src/zip_store_writer.*` as the bootstrap implementation behind that
+  boundary.
+- Keep OpenXML structure tests independent of compression method.
+
+Accept when:
+- Existing `.xlsx` structure tests pass through the new boundary.
+- Excel can still open the representative generated samples.
+
+Do not claim:
+- Real compression or Zip64 if the bootstrap writer is still active.
+
+### P4 - Production ZIP Backend
+
+Start after P2 and P3.
+
+Do:
+- Wire the verified ZIP/DEFLATE backend through CMake.
+- Add compression-level configuration as an explicit performance choice.
+- Define Zip64 and large-entry behavior before large-file promises.
+
+Accept when:
+- Tests pass for package entries without assuming stored/no-compression ZIP.
+- Generated workbooks open in Excel without repair.
+- Docs and API comments describe compression and memory behavior.
+
+Do not claim:
+- Large-file performance until benchmarks record scale, time, memory, output
+  size, compression setting, and office-suite open result.
+
+### P5 - Shared Strings Hardening
+
+Start after current sharedStrings structure support exists; production tuning is
+best after P4, while small structure fixes can happen earlier.
+
+Do:
+- Keep `inlineStr` as the default low-memory path.
+- Add tests for `count`, `uniqueCount`, escaping, `xml:space`, duplicates, and
+  worksheet `t="s"` references.
+- Measure repeated-string and mostly-unique-string behavior.
+
+Accept when:
+- CTest passes.
+- Shared string samples open in Excel.
+- Reference XML comparison is recorded when structure compatibility is in
+  question.
+- Memory/size data is recorded before any production-ready wording.
+
+Do not claim:
+- sharedStrings as the best default for large data.
+
+### P6 - Benchmark Groundwork
+
+Start before making broad performance claims or adding convenience APIs that
+could affect the writer hot path.
+
+Do:
+- Add an opt-in benchmark command, target, or documented manual workflow.
+- Keep benchmark dependencies behind planned/dev or opt-in configuration.
+- Record data scale, string strategy, compression setting, time, peak memory,
+  output size, and Excel/WPS/LibreOffice open result.
+
+Accept when:
+- Default CTest remains lightweight and under the 60s boundary.
+- Benchmark results are reproducible enough to compare future regressions.
+
+Do not claim:
+- Benchmark coverage from normal unit tests.
+
+### P7 - Streaming Writer Hot Path
+
+Start after P3/P4 boundaries are clear enough that package output will not hide
+worksheet-writer memory problems.
+
+Do:
+- Keep row-order writes and bounded memory.
+- Add numeric/date encoding edge cases and Excel row/column limit tests.
+- Track worksheet dimensions incrementally.
+- Add or update Doxygen comments for public APIs touched by the change.
+
+Accept when:
+- Structure tests pass for dimensions, cell references, value types, and string
+  strategy.
+- API comments state Streaming mode, ordering, lifetime, memory behavior, and
+  unsupported random access.
+- Benchmarks or follow-up benchmark tasks exist for performance-sensitive paths.
+
+Do not claim:
+- Low memory if the implementation retains a full worksheet cell matrix.
+
+### P8 - Phase 3 Metadata Tests
+
+Start after current formula, row height, column width, freeze pane, filter, and
+merge skeletons are stable enough to validate.
+
+Do:
+- Add structure tests for existing metadata writer paths.
+- Add Excel visual samples for visible formula cells, row/column sizing,
+  frozen panes, auto filters, and merged cells.
+- Document formula boundaries: write-only formula text unless cached values,
+  calculation mode, and calc chain are implemented.
+
+Accept when:
+- XML structure tests and local Excel checks are recorded.
+- Docs still mark full Phase 3 as planned.
+
+Do not claim:
+- Formula calculation, cached formula correctness, or complete style support.
+
+### P9 - Style Registry Design and First Styles
+
+Start after P8 and after the streaming metadata order is clear.
+
+Do:
+- Design style ids and registry ownership before broad `styles.xml` output.
+- Implement a narrow first style slice only through that registry.
+- Document whether each style API is Streaming, Patch, or In-memory.
+
+Accept when:
+- Tests cover `xl/styles.xml`, style ids, and worksheet style references.
+- Excel visual verification covers representative style output.
+
+Do not claim:
+- Full Excel formatting parity from a narrow first slice.
+
+### P10 - Configurable Document Properties API
+
+Start after the static `docProps/core.xml` and `docProps/app.xml` baseline stays
+stable.
+
+Do:
+- Add a small-part metadata API for document properties.
+- Keep it separate from worksheet hot paths.
+- Add Doxygen comments describing side effects on `docProps` parts and package
+  content types/relationships.
+
+Accept when:
+- Structure tests check `docProps/core.xml`, `docProps/app.xml`, relationships,
+  and content types.
+- Excel opens samples and displays expected document metadata where applicable.
+
+Do not claim:
+- Full document-property coverage unless every exposed property is tested.
+
+### P11 - Internal OPC Graph
+
+Start after P3, and before hyperlinks, tables, images, or existing-file editing.
+
+Do:
+- Add internal `PartIndex` and `RelationshipGraph`.
+- Add relationship id allocation and conflict checks per owner part.
+- Add content type registry helpers.
+
+Accept when:
+- Unit tests cover part lookup, relationship ownership, id uniqueness, content
+  type lookup, write-mode transitions, and error paths.
+- No public existing-file edit API is exposed yet.
+
+Do not claim:
+- Package editing, hyperlink support, or object preservation from internal graph
+  helpers alone.
+
+### P12 - Existing Package Reader/Writer
+
+Start after P4 and P11.
+
+Do:
+- Read package entries, `[Content_Types].xml`, package relationships, and part
+  relationships.
+- Write packages by copying unmodified parts and regenerating only targeted
+  parts.
+- Keep large worksheets and large shared strings streaming-only.
+
+Accept when:
+- Tests prove unknown and unmodified parts remain present.
+- Relationships still resolve after a targeted rewrite.
+- Edited workbooks open in Excel without repair.
+
+Do not claim:
+- Complete editing until preservation and compatibility samples cover the
+  relevant feature class.
+
+### P13 - Preservation Fixture Set
+
+Start after P12 has a working reader/writer path.
+
+Do:
+- Add template workbooks containing images, charts, macros, and unknown parts.
+- Edit unrelated workbook or worksheet metadata.
+- Compare before/after packages.
+
+Accept when:
+- Untouched drawings, media, charts, macros, and unknown extensions remain in
+  the output package.
+- Excel opens edited workbooks without repair.
+
+Do not claim:
+- Native image, chart, or VBA generation.
+
+### P14 - Streaming-Only Data Validations
+
+Start after P7, and before broader Phase 5 object work if a visible worksheet
+feature is desired without relationship dependencies.
+
+Do:
+- Implement new-workbook `WorksheetWriter` metadata only.
+- Write worksheet `<dataValidations>` without package relationships.
+- Support a narrow first scope and copy formula strings into writer-owned
+  storage.
+- Add Doxygen comments stating Streaming mode, rule-count memory cost, no
+  formula evaluation, and no Excel UI completeness guarantee.
+
+Accept when:
+- Tests cover `count`, `sqref`, `type`, `operator`, `allowBlank`, `formula1`,
+  `formula2`, invalid ranges, escaping, and mutation-after-close behavior.
+- Excel visual verification and reference XML comparison are recorded.
+
+Do not claim:
+- Full data validation semantics, formula parsing, overlap checks, or existing
+  file editing.
+
+### P15 - Hyperlinks
+
+Start after P11, and after P12 if editing existing workbooks is in scope.
+
+Do:
+- Add worksheet hyperlink metadata.
+- Allocate worksheet relationship ids.
+- Write worksheet `<hyperlinks>` and worksheet `.rels` together.
+- Start with external URL hyperlinks.
+
+Accept when:
+- Tests prove worksheet XML `r:id` values match worksheet `.rels`.
+- Package relationship parts and content types are correct.
+- Excel visual verification confirms clickable links without repair.
+
+Do not claim:
+- Hyperlink support from `RelationshipSet` serialization alone.
+
+### P16 - Tables
+
+Start after P11 and after style/range behavior needed by the table slice is
+defined.
+
+Do:
+- Allocate table parts.
+- Add content type overrides, worksheet relationships, and worksheet table
+  references.
+- Start with a narrow table output scope.
+
+Accept when:
+- Structure tests compare table XML, relationships, and content types.
+- Excel opens table samples without repair.
+
+Do not claim:
+- Full table editing or Excel table feature parity.
+
+### P17 - Images
+
+Start after P11 and preferably after P13 proves preservation behavior.
+
+Do:
+- Allocate media parts.
+- Generate drawing parts, drawing relationships, worksheet relationships, and
+  content type entries.
+- Validate anchors without retaining a full worksheet DOM.
+
+Accept when:
+- Package structure tests cover media, drawing XML, rels, and content types.
+- Excel visual verification confirms images display.
+
+Do not claim:
+- Image editing or broad drawing support beyond the implemented slice.
+
+### P18 - Chart and VBA Passthrough
+
+Start only after P12/P13 preservation is proven.
+
+Do:
+- Preserve existing chart and VBA parts while editing unrelated parts.
+- Keep the scope as passthrough until native generation/editing is separately
+  designed.
+
+Accept when:
+- Before/after package comparison proves chart/VBA parts and relationships
+  remain intact.
+- Excel opens edited files without repair and expected chart/macro parts remain
+  available.
+
+Do not claim:
+- Native chart generation, chart editing, VBA generation, or VBA editing.
+
+### P19 - Release Packaging
+
+Start only after the targeted public surface has code, tests, local validation,
+and documentation.
+
+Do:
+- Add install/export packaging rules.
+- Decide versioning and changelog workflow.
+- Ensure public headers have Doxygen comments.
+- Keep `LICENSE` and third-party notices aligned with actually linked
+  dependencies.
+
+Accept when:
+- Fresh clone configure/build/test passes.
+- CI is green.
+- README examples compile against public headers.
+- No generated files, local build outputs, or private state are staged.
+
+Do not claim:
+- Stable API or release readiness if public comments or validation are missing.
 
 ## Immediate Repository Tasks
 
@@ -248,7 +708,8 @@ py C:\Users\wuxianggujun\.codex\skills\.system\skill-creator\scripts\quick_valid
 - `README.md`, `AGENTS.md`, `docs/TASK_PLAN.md`, and project skills reflect
   current implementation facts.
 - VS2026/NMake build passes.
-- `ctest --timeout 60` passes.
+- `ctest --preset windows-nmake-release` passes, with the preset/test
+  properties enforcing the 60s timeout.
 - GitHub Actions CI runner label and workflow behavior are verified or
   corrected, then CI passes.
 - Key generated `.xlsx` files open in Excel.

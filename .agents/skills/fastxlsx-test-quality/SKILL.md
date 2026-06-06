@@ -61,8 +61,9 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
 - 基础 `sheetData`。
 - 本机有 Excel 时，必须用 Excel 打开关键样例做可视化验证。
 - 在可用时验证 Excel / WPS / LibreOffice 能打开。
-- 当前 Phase 1 smoke 样例通常位于测试工作目录：
-  `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`。
+- 当前 Phase 1 smoke 样例通常位于测试工作目录；推荐 preset 路径是
+  `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`。旧
+  `build-nmake/tests/*.xlsx` 可能是过期 artifact，人工验证前必须确认重新生成。
 
 编辑已有文件时，还要验证未修改 part 被保留，尤其是图表、图片、宏和未知扩展。
 
@@ -120,10 +121,14 @@ Benchmark 应记录：
 按 `docs/DEVELOPMENT_ENVIRONMENT.md` 的生成器建议：
 
 ```powershell
-cmd /d /c "call ""D:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat"" -arch=x64 && cmake -S . -B build-nmake -G ""NMake Makefiles"" -DCMAKE_BUILD_TYPE=Release && cmake --build build-nmake && ctest --test-dir build-nmake --output-on-failure --timeout 60"
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
 ```
 
 当前本机可用路径是 VS2026 Developer Command Prompt + NMake；其他机器可用
 `cmake --help` 检查是否有更合适的 Visual Studio 2026 生成器。
 
-后台跑普通单元测试时使用 60s 超时。大型 benchmark 必须显式 opt-in。
+后台跑普通单元测试时使用 60s 超时；preset 和 `tests/CMakeLists.txt` 已承载该
+边界。手写 build dir 时显式加 `ctest --test-dir ... --timeout 60`。大型
+benchmark 必须显式 opt-in。

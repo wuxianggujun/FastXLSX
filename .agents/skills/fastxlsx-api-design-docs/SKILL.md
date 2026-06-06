@@ -108,6 +108,9 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 `WorksheetWriter::append_row()` 抛 `FastXlsxError`。小型 in-memory `Cell::number()`
 路径当前在 `Workbook::save()` 序列化 worksheet XML 时报错。in-memory 和 streaming
 `RowOptions::height`、以及 `WorksheetWriter::set_column_width()` 都要写清正数/有限值要求。
+当前 `Cell` / `CellView` 都没有专用 date cell 类型；日期/时间单元格只能由调用方按
+Excel serial number 写入 numeric cell，样式/number format 仍不是当前能力。
+不要把 `DataValidationType::Date` 误写成 date cell encoding 已实现。
 不要设计或描述把 `NaN/Inf` 转成字符串、空单元格或 OpenXML 数字文本的行为。
 
 data validations 这类 worksheet metadata API 还要写清：Streaming-only、

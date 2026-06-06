@@ -603,6 +603,45 @@ void test_minimal_workbook_manifest()
         "extended properties application mismatch");
     check(extended_properties_xml.find("<AppVersion>0.1</AppVersion>") != std::string::npos,
         "extended properties app version mismatch");
+
+    fastxlsx::DocumentProperties custom_properties;
+    custom_properties.creator = "Alice & Bob";
+    custom_properties.last_modified_by = "Reviewer <QA>";
+    custom_properties.title = "Doc <Title>";
+    custom_properties.subject = "Subject & Scope";
+    custom_properties.description = "Description with <xml> & text";
+    custom_properties.keywords = "fastxlsx; metadata";
+    custom_properties.category = "Planning";
+    custom_properties.application = "FastXLSX Test & Tools";
+    custom_properties.app_version = "2.5";
+
+    const std::string custom_core_xml = fastxlsx::detail::build_core_properties(custom_properties);
+    check(custom_core_xml.find("<dc:creator>Alice &amp; Bob</dc:creator>") != std::string::npos,
+        "custom core properties creator escaping mismatch");
+    check(custom_core_xml.find("<cp:lastModifiedBy>Reviewer &lt;QA&gt;</cp:lastModifiedBy>")
+            != std::string::npos,
+        "custom core properties lastModifiedBy escaping mismatch");
+    check(custom_core_xml.find("<dc:title>Doc &lt;Title&gt;</dc:title>") != std::string::npos,
+        "custom core properties title escaping mismatch");
+    check(custom_core_xml.find("<dc:subject>Subject &amp; Scope</dc:subject>")
+            != std::string::npos,
+        "custom core properties subject escaping mismatch");
+    check(custom_core_xml.find("<dc:description>Description with &lt;xml&gt; &amp; text</dc:description>")
+            != std::string::npos,
+        "custom core properties description escaping mismatch");
+    check(custom_core_xml.find("<cp:keywords>fastxlsx; metadata</cp:keywords>")
+            != std::string::npos,
+        "custom core properties keywords mismatch");
+    check(custom_core_xml.find("<cp:category>Planning</cp:category>") != std::string::npos,
+        "custom core properties category mismatch");
+
+    const std::string custom_extended_xml =
+        fastxlsx::detail::build_extended_properties(custom_properties);
+    check(custom_extended_xml.find("<Application>FastXLSX Test &amp; Tools</Application>")
+            != std::string::npos,
+        "custom extended properties application escaping mismatch");
+    check(custom_extended_xml.find("<AppVersion>2.5</AppVersion>") != std::string::npos,
+        "custom extended properties app version mismatch");
 }
 
 void test_minimal_workbook_manifest_with_shared_strings()

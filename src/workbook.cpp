@@ -279,6 +279,11 @@ Workbook Workbook::create()
     return Workbook {};
 }
 
+void Workbook::set_document_properties(DocumentProperties properties)
+{
+    document_properties_ = std::move(properties);
+}
+
 Worksheet& Workbook::add_worksheet(std::string name)
 {
     validate_sheet_name(name);
@@ -313,8 +318,8 @@ void Workbook::save(const std::filesystem::path& path) const
     entries.reserve(6 + worksheets_.size());
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
-    entries.push_back({"docProps/core.xml", detail::build_core_properties()});
-    entries.push_back({"docProps/app.xml", detail::build_extended_properties()});
+    entries.push_back({"docProps/core.xml", detail::build_core_properties(document_properties_)});
+    entries.push_back({"docProps/app.xml", detail::build_extended_properties(document_properties_)});
     entries.push_back({"xl/workbook.xml", build_workbook(worksheets_)});
     entries.push_back({"xl/_rels/workbook.xml.rels", detail::serialize_relationships(*workbook_relationships)});
 

@@ -1388,8 +1388,10 @@ void WorkbookWriter::close()
         + table_count + drawing_count * 2 + image_count + (write_shared_strings ? 1 : 0));
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
-    entries.push_back({"docProps/core.xml", detail::build_core_properties()});
-    entries.push_back({"docProps/app.xml", detail::build_extended_properties()});
+    entries.push_back(
+        {"docProps/core.xml", detail::build_core_properties(state_->options.document_properties)});
+    entries.push_back(
+        {"docProps/app.xml", detail::build_extended_properties(state_->options.document_properties)});
     entries.push_back({"xl/workbook.xml", build_workbook(state_->worksheets)});
     entries.push_back(
         {"xl/_rels/workbook.xml.rels", detail::serialize_relationships(*workbook_relationships)});

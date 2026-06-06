@@ -44,8 +44,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - 图片不是 worksheet-only metadata。图片需要 media part、drawing part、drawing
   relationships、worksheet relationships、content types 和 anchors；`WorksheetWriter`
   最多保存轻量 anchor/reference metadata，package wiring 归 OPC graph/package work。
-- `docProps/core.xml` 和 `docProps/app.xml` 是当前基础小型 XML part 输出，
-  不代表完整 document-properties API。
+- `docProps/core.xml` 和 `docProps/app.xml` 是当前基础可配置 workbook/package
+  小型 XML part 输出，不属于 worksheet metadata；它不生成 `docProps/custom.xml`，
+  也不代表完整 document-properties API 或已有文件编辑。
 
 ## 推荐流程
 

@@ -38,9 +38,12 @@ that exist in code, CMake, tests, docs, or local verification.
     `xl/sharedStrings.xml` package entry generation, and focused structure
     tests are visible in the current files. Treat this as sharedStrings
     进行中, not as a production-ready string strategy.
-  - Basic `docProps/core.xml` and `docProps/app.xml` package wiring and static
-    XML generation are visible in the current files. Treat this as minimal
-    metadata output, not as a complete document-properties API.
+  - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
+    is visible in the current files through `DocumentProperties`,
+    `Workbook::set_document_properties()`, and
+    `WorkbookWriterOptions::document_properties`. Treat this as core/app
+    metadata for new workbooks, not as `docProps/custom.xml`, existing-file
+    editing, or a complete document-properties API.
   - Internal `src/package_writer.*` boundary exists for new-workbook package
     output. Default builds delegate to the stored/no-compression
     `src/zip_store_writer.*` bootstrap backend; opt-in minizip builds use
@@ -140,8 +143,9 @@ commit or short series with its own tests and docs update.
 6. Phase 3 style and metadata design.
    - Design style registry before broad `styles.xml` output.
    - Decide formula cached-value and calc behavior boundaries.
-   - Plan configurable document properties separately from the current static
-     docProps baseline.
+   - Keep configurable document properties limited to the current core/app
+     docProps API until custom properties or existing-file editing are separate
+     tasks.
 
 After the P4 opt-in minizip baseline, the default implementation lane is P5
 sharedStrings hardening, then P6 benchmark groundwork, then P7 streaming writer
@@ -424,14 +428,23 @@ Do not claim:
 
 ### P10 - Configurable Document Properties API
 
+Status: 基础.
+
+Current foundation:
+- Public `DocumentProperties` exists for small new-workbook metadata.
+- `Workbook::set_document_properties()` and
+  `WorkbookWriterOptions::document_properties` feed `docProps/core.xml` and
+  `docProps/app.xml`.
+- The current scope does not generate `docProps/custom.xml` and does not edit
+  existing XLSX files.
+
 Start after the static `docProps/core.xml` and `docProps/app.xml` baseline stays
 stable.
 
 Do:
-- Add a small-part metadata API for document properties.
-- Keep it separate from worksheet hot paths.
-- Add Doxygen comments describing side effects on `docProps` parts and package
-  content types/relationships.
+- Keep the small-part metadata API separate from worksheet hot paths.
+- Maintain Doxygen comments describing side effects on `docProps` parts and
+  package content types/relationships.
 
 Accept when:
 - Structure tests check `docProps/core.xml`, `docProps/app.xml`, relationships,
@@ -439,7 +452,8 @@ Accept when:
 - Excel opens samples and displays expected document metadata where applicable.
 
 Do not claim:
-- Full document-property coverage unless every exposed property is tested.
+- `docProps/custom.xml`, existing-file editing, arbitrary timestamps, or full
+  document-property coverage unless every exposed property is tested.
 
 ### P11 - Internal OPC Graph
 

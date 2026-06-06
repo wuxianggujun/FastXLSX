@@ -52,6 +52,12 @@ docProps/core.xml
 docProps/app.xml
 ```
 
+如果功能使用了 configurable document properties，还要检查 `docProps/core.xml`
+中的 creator、lastModifiedBy、title、subject、description、keywords、category，
+以及 `docProps/app.xml` 中的 Application 和 AppVersion。结构测试必须覆盖 XML
+escape、package relationships、content type overrides，并确认不会意外生成
+`docProps/custom.xml`。
+
 如果功能涉及图片或 drawing，还要检查：
 
 ```text
@@ -130,6 +136,15 @@ auto filter、merge areas 和 frozen panes 可见。当前本机验证结果为 
 auto filter `B2:D4`、merge areas `A3:B3` / `C4:D4`、`SplitRow=2` 和
 `SplitColumn=3`。这不代表公式计算、cached values、calcChain、styles 或完整
 Phase 3 已完成。
+
+当前 document properties 样例由 `fastxlsx.unit` 和 `fastxlsx.streaming` 在默认
+preset 下生成，推荐路径分别是
+`build/windows-nmake-release/tests/fastxlsx-document-properties.xlsx` 和
+`build/windows-nmake-release/tests/fastxlsx-streaming-document-properties.xlsx`。
+本机 Excel COM 验证应优先确认 workbook 可打开、无修复弹窗，并在可访问时核对
+BuiltinDocumentProperties 中的 Title、Author、Subject、Keywords 和 Category。
+Excel COM 未暴露或规范化的字段以拆包后的 `docProps/core.xml` / `docProps/app.xml`
+结构测试为准。
 
 ## 结构异常时的参考对比流程
 
@@ -215,7 +230,13 @@ xl/_rels/workbook.xml.rels
 xl/worksheets/sheet1.xml
 xl/sharedStrings.xml
 xl/styles.xml
+docProps/core.xml
+docProps/app.xml
 ```
+
+如果涉及 configurable document properties，重点对比 core/app docProps 字段、
+XML escape、package relationships、content type overrides，并确认没有额外的
+`docProps/custom.xml`。
 
 如果涉及图片或 drawing，还要额外对比：
 

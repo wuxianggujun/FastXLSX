@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fastxlsx/document_properties.hpp>
+
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -229,8 +231,8 @@ private:
 [[nodiscard]] PackageManifest make_minimal_workbook_manifest(
     std::size_t worksheet_count, bool include_shared_strings = false,
     bool include_document_properties = true);
-[[nodiscard]] std::string build_core_properties();
-[[nodiscard]] std::string build_extended_properties();
+[[nodiscard]] std::string build_core_properties(const DocumentProperties& properties = {});
+[[nodiscard]] std::string build_extended_properties(const DocumentProperties& properties = {});
 [[nodiscard]] std::string serialize_content_types(const ContentTypesManifest& content_types);
 [[nodiscard]] std::string serialize_relationships(const RelationshipSet& relationships);
 

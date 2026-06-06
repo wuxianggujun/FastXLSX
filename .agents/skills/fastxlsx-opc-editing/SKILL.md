@@ -17,8 +17,9 @@ description: "处理或规划 FastXLSX 已有文件编辑、OPC package、relati
 `RelationshipSet`、`ContentTypesManifest`、`PackageManifest`、`PartWriteMode`、
 `ContentTypeRegistry`、`PartIndex`、`RelationshipGraph`、`PackagePart`
 edit-state metadata、最小 workbook manifest 构建和 content types /
-relationships XML serializer 基础。当前最小新建 workbook 默认包含基础
-`docProps/core.xml` 和 `docProps/app.xml` 小型 XML builder；已有文件编辑和
+relationships XML serializer 基础。当前最小新建 workbook 包含基础可配置
+`docProps/core.xml` 和 `docProps/app.xml` 小型 XML builder；`DocumentProperties`
+只覆盖 new-workbook core/app metadata，不代表 `docProps/custom.xml` 或已有文件编辑。
 Phase 5 仍是计划。
 
 当前新建 workbook streaming 路径已有 external-only hyperlink worksheet relationships
@@ -130,8 +131,8 @@ existing-file image passthrough、drawing 编辑或 package preservation。
 
 - OPC edit plan：基础。内部 manifest、PartIndex、RelationshipGraph、content type
   registry 和 write-mode metadata 可作为规划入口。
-- 基础 docProps 输出：基础。它只是新建 package 的静态小型 XML part，不是完整
-  document properties API，也不是已有文件编辑。
+- 基础 docProps 输出：基础。它只是新建 package 的 core/app 小型 XML part 配置，
+  不是 `docProps/custom.xml`、完整 document properties API，也不是已有文件编辑。
 - Package read/copy/write：计划。当前已有 opt-in minizip package output backend，
   但仍需要 `PackageReader`、existing-file writer 和 preservation 测试。
 - 保真验证：计划。需要输入/输出 package 对比，证明未知和未修改 part 被保留。

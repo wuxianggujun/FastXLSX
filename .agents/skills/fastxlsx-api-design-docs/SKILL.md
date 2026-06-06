@@ -15,9 +15,12 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 - `README.md`
 
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
-包括 `Workbook`、`Worksheet`、`Cell`、`WorkbookWriter`、`WorksheetWriter`、
-`CellView`、`DataValidationRule`、`DataValidationType`、`DataValidationOperator`
-和 `FastXlsxError`。`WorksheetWriter::add_external_hyperlink()` 是当前 external-only
+包括 `Workbook`、`Worksheet`、`Cell`、`DocumentProperties`、`WorkbookWriter`、
+`WorksheetWriter`、`CellView`、`DataValidationRule`、`DataValidationType`、
+`DataValidationOperator` 和 `FastXlsxError`。`Workbook::set_document_properties()`
+和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
+docProps metadata API；它们只写 `docProps/core.xml` 和 `docProps/app.xml`。
+`WorksheetWriter::add_external_hyperlink()` 是当前 external-only
 worksheet hyperlink API；`WorksheetWriter::add_table()` 和 `TableOptions` 是当前
 streaming-only table API。`WorkbookWriter` / `WorksheetWriter` / `CellView`
 是流式写入骨架；data validation、external hyperlink 和 table API 是 worksheet
@@ -54,6 +57,11 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   它会新增 `xl/tables/tableN.xml`、worksheet `<tableParts>`、worksheet `.rels` 和
   table content type override，但不读取已写 header 行、不推断列名、不生成
   `styles.xml`、不支持 totals row、table resize 或 existing-file editing。
+- `DocumentProperties` 是 new-workbook 小型 metadata API：字符串值被复制进
+  `Workbook` 或 `WorkbookWriter` state，并写入 `docProps/core.xml` /
+  `docProps/app.xml`。它不创建 `docProps/custom.xml`，不支持任意 timestamps、
+  custom document properties 或 existing-file editing，也不进入 worksheet row/cell
+  热路径。
 - `read_image_info()` 是图片元数据 helper：默认无 `FASTXLSX_ENABLE_STB` 时抛出
   `FastXlsxError`，opt-in `FASTXLSX_ENABLE_STB=ON` 时用 `stb_image` 的 header probing
   读取 PNG/JPEG 格式、尺寸和通道。它不创建 media part、drawing XML、relationships、
@@ -106,6 +114,11 @@ table name / column names / style name 拷贝、`xl/tables/tableN.xml`、workshe
 `<tableParts>`、worksheet `.rels`、content type override、worksheet-owner-local `rId`、
 不读取已写 header 行、不推断列名、不生成 `styles.xml`、无 totals row、无 table
 resize、无 existing-file editing，以及不代表完整 table 支持。
+document properties 这类 workbook metadata API 还要写清：new-workbook-only、
+字符串值拷贝、只写 `docProps/core.xml` 和 `docProps/app.xml`、package relationships
+与 content type side effects、不创建 `docProps/custom.xml`、无 arbitrary timestamp
+API、无 custom document properties、无 existing-file editing，以及不代表完整
+document properties 支持。
 images 相关 API 还要写清：是图片元数据读取、new-workbook 插入还是 existing-workbook
 patch；`stb` 是否只做 header probing、是否会解码完整像素、原始图片字节和 decoded
 pixel buffer 的生命周期与内存成本；是否写 `xl/media/*`、drawing XML、drawing `.rels`、
@@ -146,4 +159,6 @@ worksheet `.rels`、worksheet `<drawing>` 和 content types；以及是否不支
 - 大数据路径仍然 row/chunk 化。
 - 便利 API 不会隐式 DOM 化大型 worksheet。
 - 测试计划包含结构验证和必要的 Excel 可视化验证。
+- document properties 测试覆盖 core/app docProps 字段、XML escape、relationships、
+  content types，并确认不生成 `docProps/custom.xml`。
 - 性能敏感 API 有 benchmark 或明确后续 benchmark 任务。

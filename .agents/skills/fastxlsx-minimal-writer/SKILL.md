@@ -21,8 +21,10 @@ description: "实现或审查 FastXLSX Phase 1 最小可写 XLSX。用于 workbo
 `include/fastxlsx/workbook.hpp`、`src/workbook.cpp`、`src/xml.cpp`、
 `src/opc.cpp`、`src/package_writer.cpp`、`src/zip_store_writer.cpp` 和
 `tests/test_minimal_xlsx.cpp`。
-当前默认写出基础 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML part；
-这不是完整 document properties public API。
+当前写出基础可配置 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML part；
+`DocumentProperties`、`Workbook::set_document_properties()` 和
+`WorkbookWriterOptions::document_properties` 只覆盖 new-workbook core/app metadata，
+不是完整 document properties public API。
 
 ## Phase 1 边界
 
@@ -102,7 +104,8 @@ cmake --help
 - 不要为了最小可写而使用大型 worksheet DOM。
 - 不要直接依赖 `OpenXLSX`、`xlnt` 或 `libxlsxwriter` 生成文件。
 - 不要把性能目标写成已达成结论。
-- 不要把基础 docProps 输出写成完整文档属性 API；当前只是静态小型 XML part。
+- 不要把基础 docProps 输出写成完整文档属性 API；当前只覆盖 core/app 小型 XML
+  part，不生成 `docProps/custom.xml`，也不编辑已有文件。
 - 不要假设 Catch2 或 Google Benchmark 已经接入；当前测试是轻量 CTest 可执行文件。
 
 ## 验证

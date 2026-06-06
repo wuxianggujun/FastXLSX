@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
 
 #include <filesystem>
@@ -46,6 +47,13 @@ enum class StringStrategy {
 struct WorkbookWriterOptions {
     /// Controls how string cells are represented in worksheet XML.
     StringStrategy string_strategy = StringStrategy::InlineString;
+
+    /// Document metadata written to `docProps/core.xml` and `docProps/app.xml`.
+    ///
+    /// This is small workbook metadata copied into WorkbookWriter state during
+    /// create(). It does not create custom document properties, does not edit
+    /// existing XLSX files, and does not affect worksheet row/cell streaming.
+    DocumentProperties document_properties;
 };
 
 /// Worksheet data-validation value type.

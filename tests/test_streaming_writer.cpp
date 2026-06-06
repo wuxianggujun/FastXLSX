@@ -211,6 +211,83 @@ void test_streaming_writer_smoke_package()
         "mergeCells XML mismatch");
 }
 
+void test_streaming_writer_document_properties()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-document-properties.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.document_properties.creator = "Stream & Author";
+    options.document_properties.last_modified_by = "Stream <QA>";
+    options.document_properties.title = "Streaming <Props>";
+    options.document_properties.subject = "DocProps & Streaming";
+    options.document_properties.description = "Streaming docProps test";
+    options.document_properties.keywords = "streaming;docprops";
+    options.document_properties.category = "Validation";
+    options.document_properties.application = "FastXLSX Streaming & Tools";
+    options.document_properties.app_version = "3.1";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    auto sheet = workbook.add_worksheet("StreamProps");
+    sheet.append_row({fastxlsx::CellView::text("document properties")});
+    workbook.close();
+
+    check(std::filesystem::exists(output_path), "streaming document properties xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("docProps/core.xml"), "missing streaming custom core properties part");
+    check(entries.contains("docProps/app.xml"), "missing streaming custom extended properties part");
+    check(!entries.contains("docProps/custom.xml"),
+        "streaming document properties API should not create custom properties part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(
+        content_types, "/docProps/core.xml", "missing streaming core properties content type override");
+    check_contains(
+        content_types, "/docProps/app.xml", "missing streaming extended properties content type override");
+    check(content_types.find("/docProps/custom.xml") == std::string::npos,
+        "streaming document properties API should not add custom properties content type");
+
+    const auto& package_rels = entries.at("_rels/.rels");
+    check_contains(
+        package_rels, "Target=\"docProps/core.xml\"", "missing streaming core properties relationship");
+    check_contains(
+        package_rels, "Target=\"docProps/app.xml\"", "missing streaming extended properties relationship");
+    check(package_rels.find("docProps/custom.xml") == std::string::npos,
+        "streaming document properties API should not add custom properties relationship");
+
+    const auto& core_properties_xml = entries.at("docProps/core.xml");
+    check_contains(core_properties_xml,
+        "<dc:creator>Stream &amp; Author</dc:creator>",
+        "streaming document properties creator escaping mismatch");
+    check_contains(core_properties_xml,
+        "<cp:lastModifiedBy>Stream &lt;QA&gt;</cp:lastModifiedBy>",
+        "streaming document properties lastModifiedBy escaping mismatch");
+    check_contains(core_properties_xml,
+        "<dc:title>Streaming &lt;Props&gt;</dc:title>",
+        "streaming document properties title escaping mismatch");
+    check_contains(core_properties_xml,
+        "<dc:subject>DocProps &amp; Streaming</dc:subject>",
+        "streaming document properties subject escaping mismatch");
+    check_contains(core_properties_xml,
+        "<dc:description>Streaming docProps test</dc:description>",
+        "streaming document properties description mismatch");
+    check_contains(core_properties_xml,
+        "<cp:keywords>streaming;docprops</cp:keywords>",
+        "streaming document properties keywords mismatch");
+    check_contains(core_properties_xml,
+        "<cp:category>Validation</cp:category>",
+        "streaming document properties category mismatch");
+
+    const auto& extended_properties_xml = entries.at("docProps/app.xml");
+    check_contains(extended_properties_xml,
+        "<Application>FastXLSX Streaming &amp; Tools</Application>",
+        "streaming document properties application escaping mismatch");
+    check_contains(extended_properties_xml,
+        "<AppVersion>3.1</AppVersion>",
+        "streaming document properties app version mismatch");
+}
+
 void test_streaming_writer_phase3_metadata_structure()
 {
     const auto output_path =
@@ -1392,6 +1469,7 @@ int main()
 {
     try {
         test_streaming_writer_smoke_package();
+        test_streaming_writer_document_properties();
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();

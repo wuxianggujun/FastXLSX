@@ -44,13 +44,17 @@ obligations.
   in the current files. Treat this as sharedStrings 进行中 until CTest, Excel
   visual verification, reference XML comparison, and size/memory behavior are
   recorded for the intended scope.
-- Basic `docProps/core.xml` and `docProps/app.xml` package wiring and static
-  small XML generation are visible in the current files. Treat this only as
-  minimal document metadata output, not as a complete document-properties API.
+- Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
+  is visible in the current files through `DocumentProperties`,
+  `Workbook::set_document_properties()`, and
+  `WorkbookWriterOptions::document_properties`. Treat this only as core/app
+  document metadata for new workbooks, not as `docProps/custom.xml`,
+  existing-file editing, or a complete document-properties API.
 - Phase 3 write skeletons exist for formula cells, row height, column width,
-  frozen panes, auto filters, and merged cells. Styles, configurable document
-  properties, named ranges, full formula calculation, calcChain management, and
-  broad compatibility coverage remain 计划.
+  frozen panes, auto filters, and merged cells. Basic configurable core/app
+  document properties are 基础. Styles, named ranges, full formula calculation,
+  calcChain management, custom document properties, and broad compatibility
+  coverage remain 计划.
 - Phase 4 has an internal `PartName`, `RelationshipSet`, `ContentTypesManifest`,
   `ContentTypeRegistry`, `PackageManifest`, `PartIndex`, `RelationshipGraph`,
   `PartWriteMode`, `PackagePart` edit-state metadata, minimal workbook manifest
@@ -255,8 +259,9 @@ Tasks:
 - Add number formats, fonts, fills, borders, and alignment through that registry.
 - Decide formula calculation boundaries: write-only formula text, cached values,
   calc mode, and `calcChain`.
-- Add configurable document properties as a small-part metadata API only after
-  the static docProps baseline remains stable.
+- Keep configurable document properties as a small-part metadata API limited to
+  generated `docProps/core.xml` and `docProps/app.xml`; do not expand it to
+  custom document properties or existing-file editing without a separate task.
 - Add named ranges only with workbook XML, relationships, and formula/range
   behavior documented.
 
@@ -265,8 +270,9 @@ Validation:
   multiple column width records, last-call-wins frozen panes, last-call-wins
   auto filters, multiple merged ranges, worksheet suffix ordering, and absence
   of relationship/content-type side effects for these metadata-only features.
-- Future structure tests still need `xl/styles.xml`, style ids, workbook
-  metadata, and worksheet references when those features are implemented.
+- Future structure tests still need `xl/styles.xml`, style ids, custom document
+  properties, named ranges, and worksheet references when those features are
+  implemented.
 - Public APIs have Doxygen comments stating mode, memory behavior, ordering,
   side effects, and unsupported Excel semantics.
 - Excel visual verification for representative style and metadata samples.
@@ -542,8 +548,8 @@ Tasks:
   - `docProps/core.xml`
   - `docProps/app.xml`
 - Generate worksheet `sheetData` with number, inline string, and boolean cells.
-- Generate static basic document metadata parts only; configurable document
-  properties remain planned API work.
+- Generate basic configurable core/app document metadata parts only; custom
+  document properties remain planned API work.
 - Escape XML text and attributes correctly.
 - Generate cell references such as `A1`, `Z1`, `AA1`, and `XFD1048576`.
 - Track worksheet dimension for the written row range.
@@ -791,9 +797,10 @@ Current facts:
   and confirmed `Metadata` sheet, `B2` / `C2` formulas, row 2 height, A/C
   column widths, `B2:D4` auto filter, `A3:B3` / `C4:D4` merge areas, and
   `SplitRow=2` / `SplitColumn=3` frozen panes.
-- Styles, configurable document properties, named ranges, style registries, and
-  rich formatting are still planned work. Static basic `docProps/core.xml` and
-  `docProps/app.xml` output already exists in the minimum package path.
+- Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
+  present on the in-memory and streaming new-workbook paths. Styles, custom
+  document properties, named ranges, style registries, and rich formatting are
+  still planned work.
 
 Tasks:
 - Extend focused structure tests and Excel visual samples when metadata behavior
@@ -837,7 +844,8 @@ real OPC rewrite pipeline remain 计划.
 Current facts:
 - Current code emits `[Content_Types].xml`, `_rels/.rels`, `xl/workbook.xml`,
   `xl/_rels/workbook.xml.rels`, worksheet parts, `docProps/core.xml`, and
-  `docProps/app.xml` for new workbooks.
+  `docProps/app.xml` for new workbooks; core/app docProps can be configured
+  through the current new-workbook public API.
 - `src/opc.cpp` provides `PartName`, `RelationshipSet`, `ContentTypesManifest`,
   `ContentTypeRegistry`, `PackageManifest`, `PartIndex`, `RelationshipGraph`,
   `PartWriteMode` state transitions, `make_minimal_workbook_manifest()`,

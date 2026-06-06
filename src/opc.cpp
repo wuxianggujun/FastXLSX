@@ -12,6 +12,21 @@
 namespace fastxlsx::detail {
 namespace {
 
+void append_optional_text_element(std::string& xml, std::string_view element_name, std::string_view value)
+{
+    if (value.empty()) {
+        return;
+    }
+
+    xml += "<";
+    xml += element_name;
+    xml += ">";
+    xml += escape_xml_text(value);
+    xml += "</";
+    xml += element_name;
+    xml += ">";
+}
+
 char to_ascii_lower(char ch) noexcept
 {
     if (ch >= 'A' && ch <= 'Z') {
@@ -767,7 +782,7 @@ PackageManifest make_minimal_workbook_manifest(
     return manifest;
 }
 
-std::string build_core_properties()
+std::string build_core_properties(const DocumentProperties& properties)
 {
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
@@ -777,26 +792,31 @@ std::string build_core_properties()
     xml += R"(xmlns:dcterms="http://purl.org/dc/terms/" )";
     xml += R"(xmlns:dcmitype="http://purl.org/dc/dcmitype/" )";
     xml += R"(xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">)";
-    xml += "<dc:creator>FastXLSX</dc:creator>";
-    xml += "<cp:lastModifiedBy>FastXLSX</cp:lastModifiedBy>";
+    append_optional_text_element(xml, "dc:creator", properties.creator);
+    append_optional_text_element(xml, "cp:lastModifiedBy", properties.last_modified_by);
+    append_optional_text_element(xml, "dc:title", properties.title);
+    append_optional_text_element(xml, "dc:subject", properties.subject);
+    append_optional_text_element(xml, "dc:description", properties.description);
+    append_optional_text_element(xml, "cp:keywords", properties.keywords);
+    append_optional_text_element(xml, "cp:category", properties.category);
     xml += "</cp:coreProperties>";
     return xml;
 }
 
-std::string build_extended_properties()
+std::string build_extended_properties(const DocumentProperties& properties)
 {
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
     xml += R"(<Properties )";
     xml += R"(xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" )";
     xml += R"(xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">)";
-    xml += "<Application>FastXLSX</Application>";
+    append_optional_text_element(xml, "Application", properties.application);
     xml += "<DocSecurity>0</DocSecurity>";
     xml += "<ScaleCrop>false</ScaleCrop>";
     xml += "<LinksUpToDate>false</LinksUpToDate>";
     xml += "<SharedDoc>false</SharedDoc>";
     xml += "<HyperlinksChanged>false</HyperlinksChanged>";
-    xml += "<AppVersion>0.1</AppVersion>";
+    append_optional_text_element(xml, "AppVersion", properties.app_version);
     xml += "</Properties>";
     return xml;
 }

@@ -107,6 +107,38 @@ XLSX 语义层：FastXLSX 自研
 - 禁止在百万行导出路径间接触发 DOM。
 - 是否允许 DOM 应该由 part 大小、part 类型和调用路径共同决定。
 
+## Phase 5 图片依赖
+
+### stb
+
+用途：
+
+- 图片读取和解码。
+- 获取图片尺寸、通道数和像素数据。
+- 后续图片插入、图片读取或图片验证任务中的轻量解码层。
+
+选择原因：
+
+- `stb` 是 header-only 库，适合 FastXLSX 保持轻量依赖边界。
+- 本机 vcpkg metadata 已确认 port 名称为 `stb`，描述为 public domain
+  header-only libraries，license 为 `MIT OR CC-PDDC`。
+- 本机 vcpkg usage 显示 CMake 用法是 `find_package(Stb REQUIRED)` 和
+  `${Stb_INCLUDE_DIR}`，当前未见 imported target。
+- 图片功能需要解码层，但不需要引入 OpenCV、FreeImage、Qt 等重型图像框架。
+
+边界：
+
+- `stb` 只负责图片文件解码、尺寸和像素读取。
+- OpenXML media part、drawing XML、drawing relationships、worksheet
+  relationships、content types、anchor 计算和 package preservation 由
+  FastXLSX 自己实现。
+- 不要因为接入 `stb` 就宣称图片插入、图片编辑、drawing 编辑或已有文件图片保真
+  已完成。
+- 不要把图片解码放进 worksheet row/cell 热路径。
+- `STB_IMAGE_IMPLEMENTATION` 等 implementation macro 只能放在一个 `.cpp` 中。
+- 如果只是嵌入已有 PNG/JPEG，优先保留原始图片字节并正确写 OpenXML package；
+  不要无意义地解码再重编码。
+
 ## 开发依赖
 
 ### 1. Catch2
@@ -273,10 +305,13 @@ Google Benchmark
 - 默认 CMake 配置和 CI 不安装、不链接任何外部 vcpkg 包。
 - `planned-runtime` 记录计划中的运行依赖：
   `minizip-ng[zlib]`、`zlib-ng`、`expat`、`pugixml`。
+- `planned-image` 记录计划中的图片解码依赖：`stb`。它只面向后续 Phase 5
+  图片读取/插入切片，不属于当前默认构建，也不代表图片功能已经实现。
 - `planned-dev` 记录计划中的开发依赖：`catch2`、`benchmark`。
 - 本机已用 `vcpkg search` 确认上述 port 名称存在。
-- 本机已用 `vcpkg install --dry-run --x-feature=planned-runtime`
-  和 `--x-feature=planned-dev` 确认可选 feature 可解析到依赖图。
+- 本机已用 `vcpkg install --dry-run --x-feature=planned-runtime`、
+  `--x-feature=planned-image` 和 `--x-feature=planned-dev` 确认可选
+  feature 可解析到依赖图。
 - 尚未验证这些 port 对应的 CMake package 名称和 imported target 名称。
 - 因此当前不在 `CMakeLists.txt` 中添加 `find_package` 或链接关系。
 
@@ -286,6 +321,10 @@ Google Benchmark
 2. CMake config package 名称和 imported target 名称。
 3. MSVC 2026 / NMake preset 下的配置、构建和测试。
 4. CI 上的安装耗时、缓存策略和失败行为。
+
+对于 `stb`，已知 vcpkg CMake 用法目前是 `find_package(Stb REQUIRED)` 加
+`${Stb_INCLUDE_DIR}`，而不是 imported target。正式接入时要以本机和 CI 的实际
+toolchain 输出为准。
 
 暂不在叙述文档里硬编码具体版本号。
 版本应由 `vcpkg.json` baseline 和 CI 环境共同锁定。
@@ -324,6 +363,7 @@ FastXLSX 项目本身使用 MIT License，见根目录 `LICENSE`。
 - `zlib-ng` / `zlib`：zlib license。
 - `pugixml`：MIT License。
 - `Expat`：MIT License。
+- `stb`：MIT OR CC-PDDC。
 - `Catch2`：Boost Software License。
 - `Google Benchmark`：Apache License 2.0。
 - `fast_float`：Apache License 2.0 / MIT / Boost 三选一授权。

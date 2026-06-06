@@ -133,6 +133,8 @@ FastXLSX
 - 压缩：`zlib-ng` 优先，保留 `zlib` fallback。
 - 大型 XML 流式读取：`Expat`。
 - 小型 XML DOM 编辑：`pugixml`。
+- Phase 5 图片读取/插入解码：`stb`，当前只记录在 `planned-image`
+  feature，尚未接入 CMake。
 - 测试：`Catch2`。
 - 性能基准：`Google Benchmark`。
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX 图片媒体"
+  short_description: "规划图片读取/插入、stb 解码和 media/drawing parts"
+  default_prompt: "使用 $fastxlsx-image-media-features 处理 FastXLSX 图片读取、图片插入、stb 解码或 media/drawing part 设计。"

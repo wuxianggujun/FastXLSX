@@ -23,6 +23,12 @@
         "pugixml"
       ]
     },
+    "planned-image": {
+      "description": "Planned image decoding dependency for future XLSX media/image features. This port is not wired into CMake yet.",
+      "dependencies": [
+        "stb"
+      ]
+    },
     "planned-dev": {
       "description": "Planned development dependencies for future test and benchmark integration. These ports are not wired into CMake yet.",
       "dependencies": [

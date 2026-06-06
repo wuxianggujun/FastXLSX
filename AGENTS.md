@@ -96,6 +96,8 @@ document properties public API。`PackageReader`、`CellEncoder` 等名称仍主
 - `zlib-ng / zlib`：DEFLATE 压缩。
 - `Expat`：大型 XML event parser。
 - `pugixml`：小型 XML 局部 DOM 编辑。
+- `stb`：Phase 5 图片读取/插入中的图片解码、尺寸和像素读取；只属于
+  `planned-image`，尚未接入 CMake。
 - `Catch2`：单元测试。
 - `Google Benchmark`：性能基准。
 
@@ -149,6 +151,8 @@ cmake --help
 - 测试、benchmark、兼容性验证、质量排障：使用 `.agents/skills/fastxlsx-test-quality`。
 - data validations、hyperlinks 等 worksheet metadata / Phase 5 早期切片：
   使用 `.agents/skills/fastxlsx-worksheet-metadata-features`。
+- 图片读取/插入、media part、drawing rels 和 `stb` 解码边界：
+  使用 `.agents/skills/fastxlsx-image-media-features`。
 
 ## 质量和兼容性检查
 
@@ -176,6 +180,9 @@ cmake --help
 - 在代码未使用前，把所有规划依赖提前接入 CMake。
 - 把 `src/zip_store_writer.*` 当成长期 ZIP 后端。它只是 Phase 1 bootstrap：
   stored/no compression、无 Zip64、无 package streaming，不进入 public API。
+- 把 `stb` 当成图片 OpenXML 支持。`stb` 只负责图片解码/尺寸/像素读取，
+  media part、drawing XML、relationships、content types 和 anchors 仍要
+  由 FastXLSX 自己实现并测试。
 - 把第三方源码复制进 `src` 或 `include`。
 - 修改 `tests/CMakeLists.txt` 后让 `ctest` 回到 0 测试，或让默认测试超过 60s。
 - 为了 API 易用性牺牲 streaming 性能主线。
@@ -194,3 +201,4 @@ cmake --help
 - `fastxlsx-test-quality`：测试、benchmark、兼容性验证和质量排障。
 - `fastxlsx-api-design-docs`：API 设计、文档注释和性能边界。
 - `fastxlsx-worksheet-metadata-features`：worksheet metadata 和 Phase 5 早期切片。
+- `fastxlsx-image-media-features`：图片读取/插入、stb 解码、media/drawing part 和关系同步。

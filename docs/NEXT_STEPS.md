@@ -105,7 +105,8 @@ commit or short series with its own tests and docs update.
 2. CI runner and workflow maintenance.
    - Recheck `windows-2025-vs2026` after the 2026-06-08 GitHub image migration
      window starts.
-   - Track the GitHub Actions Node.js runtime warning for `actions/checkout@v4`.
+   - Keep `actions/checkout` on a Node.js 24-compatible major. Current workflow
+     uses `actions/checkout@v5`.
    - Keep CI on the no-vcpkg NMake preset until dependency work starts.
 
 3. Production ZIP backend spike.
@@ -155,8 +156,8 @@ commit or short series with its own tests and docs update.
 11. Tables, images, and passthrough objects.
     - Tables need table parts, content type overrides, worksheet rels, and table
       references.
-    - Images need media parts, drawings, drawing rels, worksheet rels, and
-      content types.
+    - Images need `stb` for image decoding/dimensions, plus media parts,
+      drawings, drawing rels, worksheet rels, anchors, and content types.
     - Chart and VBA work starts as preservation, not native generation.
 
 ## Push-by-Push Execution Queue
@@ -196,6 +197,8 @@ Do:
   2026-06-08 migration window starts.
 - Update `.github/workflows/ci.yml` only after verifying the replacement runner
   or action version.
+- Keep checkout on `actions/checkout@v5` unless GitHub Actions compatibility
+  evidence requires another version.
 - Keep default CI on the no-vcpkg `windows-nmake-release` preset.
 
 Accept when:
@@ -203,6 +206,7 @@ Accept when:
   pass locally.
 - GitHub Actions runs the same preset path and passes.
 - Ordinary tests remain protected by the 60s CTest preset/test properties.
+- No Node.js 20 deprecation annotation appears for checkout.
 
 Do not claim:
 - vcpkg dependency readiness or Excel visual validation from CI alone.
@@ -494,17 +498,24 @@ Do not claim:
 Start after P11 and preferably after P13 proves preservation behavior.
 
 Do:
+- Use `stb` as the image decoding and dimension-reading dependency. Keep it in
+  the planned image feature until CMake/include behavior is verified.
 - Allocate media parts.
 - Generate drawing parts, drawing relationships, worksheet relationships, and
   content type entries.
 - Validate anchors without retaining a full worksheet DOM.
+- Keep decoding separate from OpenXML packaging: `stb` does not manage media
+  part names, relationship ids, content types, or drawing anchors.
 
 Accept when:
+- vcpkg `stb` feature resolution, include path, license, and CI behavior are
+  verified before CMake integration.
 - Package structure tests cover media, drawing XML, rels, and content types.
 - Excel visual verification confirms images display.
 
 Do not claim:
 - Image editing or broad drawing support beyond the implemented slice.
+- Picture support from `stb` dependency availability alone.
 
 ### P18 - Chart and VBA Passthrough
 
@@ -664,8 +675,9 @@ Safe order:
    broader hyperlink support.
 4. Tables after table part allocation, content type override, worksheet rels,
    and table XML are in place.
-5. Images after media part allocation, drawing part generation, drawing rels,
-   worksheet rels, and content types are in place.
+5. Images after `stb` decode/dimension behavior, media part allocation,
+   drawing part generation, drawing rels, worksheet rels, anchors, and content
+   types are in place.
 6. Chart and VBA passthrough only after existing-package read/copy is proven.
 
 Validation:
@@ -673,6 +685,8 @@ Validation:
   `XlsxWriter` reference workbook by unpacking and comparing XML semantics.
 - Use Excel visual verification for representative outputs.
 - Do not add Excel, `openpyxl`, or `XlsxWriter` as runtime dependencies.
+- Use `stb` for image decode/dimension work only; do not use it as a substitute
+  for OpenXML drawing/media package logic.
 
 ## Commands
 

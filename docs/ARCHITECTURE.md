@@ -37,6 +37,7 @@ minizip-ng      ZIP package 读写
 zlib-ng / zlib  DEFLATE 压缩
 Expat           大型 XML event parser
 pugixml         小型 XML DOM
+stb             Phase 5 图片解码和尺寸读取
 ```
 
 XLSX 语义层必须由 FastXLSX 自己实现：
@@ -47,6 +48,7 @@ XLSX 语义层必须由 FastXLSX 自己实现：
 - sharedStrings / inlineStr 策略。
 - styles registry。
 - part-level rewrite。
+- 图片 media part、drawing XML、relationships、content types 和 anchor 语义。
 
 更详细的依赖选择见 [依赖策略](DEPENDENCIES.md)。
 

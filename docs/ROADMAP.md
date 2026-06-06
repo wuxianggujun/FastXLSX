@@ -99,7 +99,8 @@ Phase 1 后续依赖工作：
 
 功能：
 
-- 图片插入。
+- 图片读取和插入；图片解码/尺寸读取使用 `stb`，OpenXML media/drawing
+  package 逻辑由 FastXLSX 自己实现。
 - 超链接。
 - 数据验证。
 - 条件格式。

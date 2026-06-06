@@ -82,7 +82,7 @@ claiming completion.
 
 2. vcpkg / CMakePresets / CI - 基础.
    - Keep `vcpkg.json` conservative: no default third-party dependencies, with
-     `planned-runtime` and `planned-dev` features only.
+     `planned-runtime`, `planned-image`, and `planned-dev` features only.
    - Verify real package names, feature switches, license expectations, and
      CMake target names before adding `find_package` or link changes.
    - Keep `CMakePresets.json` centered on the VS2026/MSVC 2026 NMake workflow;
@@ -137,7 +137,8 @@ Tasks:
   window starts; keep `windows-2025-vs2026` only while it is the most reliable
   VS2026 runner label.
 - Track the GitHub Actions Node.js runtime warning for `actions/checkout@v4`.
-  Upgrade the workflow action when a Node 24-compatible path is required.
+  Current workflow should use `actions/checkout@v5`; upgrade again only when
+  GitHub Actions compatibility evidence requires it.
 - Prefer preset commands in docs:
   `cmake --preset windows-nmake-release`,
   `cmake --build --preset windows-nmake-release`,
@@ -148,6 +149,7 @@ Validation:
 - Skill validation after skill edits.
 - VS2026/NMake preset build and CTest.
 - GitHub Actions CI passes.
+- No Node.js 20 deprecation annotation appears for checkout.
 
 ### M2 - Production ZIP Backend
 
@@ -327,8 +329,9 @@ Status: planned; do not start as native generation before preservation works.
 Order:
 1. Tables after table part allocation, content type overrides, worksheet rels,
    and worksheet table references are consistent.
-2. Images after media part allocation, drawing part generation, drawing rels,
-   worksheet rels, and content types are consistent.
+2. Images after `stb` decode/dimension behavior, media part allocation,
+   drawing part generation, drawing rels, worksheet rels, anchors, and content
+   types are consistent.
 3. Chart and VBA handling should begin as passthrough preservation tests, not
    native generation or editing.
 
@@ -372,6 +375,9 @@ Use this map to decide when a task can start:
   passthrough, or any feature that needs cross-part relationship id consistency.
 - M7 and preservation tests are required before claiming chart/VBA passthrough
   or safe editing of workbooks containing unknown parts.
+- Image work must use `stb` for decode/dimension tasks, but `stb` availability
+  does not remove the need for OPC graph, media part allocation, drawing XML,
+  relationships, anchors, content types, and Excel validation.
 - M11 waits until the selected public surface has code, tests, local validation,
   API comments, and docs.
 
@@ -758,7 +764,7 @@ Validation:
 Status: 计划. Keep Phase 5 support in plan-only language.
 
 Phase 5 features listed by the roadmap:
-- Pictures.
+- Pictures and image reading/insertion.
 - Hyperlinks.
 - Data validation.
 - Conditional formatting.
@@ -774,6 +780,8 @@ Required dependencies before broad implementation:
   styles, document properties, and relationship parts.
 - Streaming worksheet writer support for object anchors or references without
   holding full worksheet data.
+- `stb` image decode/dimension dependency verified through vcpkg `planned-image`
+  before any CMake integration.
 - Style and formula boundaries from Phase 3 where conditional formatting,
   tables, or validations depend on styles, ranges, formulas, or workbook
   metadata.
@@ -796,6 +804,9 @@ Allowed early slices:
   the cell XML hot path.
 - Tables may be added only with content types, relationships, table parts, and
   worksheet table references kept consistent.
+- Image work must use `stb` for image decoding, dimensions, and pixel access;
+  FastXLSX still owns media part allocation, drawing XML, drawing relationships,
+  worksheet relationships, content types, anchors, and package preservation.
 - Chart and VBA handling should start as passthrough preservation, not native
   generation or editing.
 
@@ -808,6 +819,9 @@ Forbidden until separately designed and verified:
   objects.
 - Do not move drawing, table, validation, or conditional-formatting logic into
   the cell XML hot path.
+- Do not treat `stb` as OpenXML support. It does not write drawing XML, manage
+  relationship ids, allocate media part names, or validate Excel package
+  compatibility.
 - Do not add Excel, openpyxl, or XlsxWriter as runtime dependencies. They are
   reference and QA tools only.
 - Do not make an In-memory workbook model the default just to simplify complex

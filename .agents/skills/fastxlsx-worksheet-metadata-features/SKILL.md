@@ -29,6 +29,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   worksheet XML 正确位置输出。
 - `RelationshipSet` 可表达 external target，但这不是 hyperlink feature。
   真正 hyperlink 还需要 worksheet `<hyperlinks>`、worksheet `.rels` 和关系 id 一致性。
+- 图片不是 worksheet-only metadata。图片需要 media part、drawing part、drawing
+  relationships、worksheet relationships、content types 和 anchors；`WorksheetWriter`
+  最多保存轻量 anchor/reference metadata，package wiring 归 OPC graph/package work。
 - `docProps/core.xml` 和 `docProps/app.xml` 是当前基础小型 XML part 输出，
   不代表完整 document-properties API。
 
@@ -54,6 +57,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   公式和 range 依赖不会进入大型 DOM。
 - Tables：保持计划；需要 table part、content type override、worksheet rels 和
   worksheet table reference 一起更新。
+- Images/Pictures：保持计划；不要把它当成 data validations 那样的纯 worksheet XML
+  切片。需要 `fastxlsx-image-media-features` 和 OPC graph/package 边界。
 
 ## 禁止事项
 

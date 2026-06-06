@@ -153,13 +153,14 @@ FastXLSX 推荐使用 `vcpkg` manifest mode 管理第三方依赖。
 - `zlib-ng` / `zlib`
 - `Expat`
 - `pugixml`
+- `stb`
 - `Catch2`
 - `Google Benchmark`
 
 当前项目根目录已有保守的 `vcpkg.json`：
 
 - 默认 `dependencies` 为空，保证普通配置和 CI 不依赖外部包。
-- `planned-runtime` 和 `planned-dev` 仅记录已规划、待接入的 port。
+- `planned-runtime`、`planned-image` 和 `planned-dev` 仅记录已规划、待接入的 port。
 - 已本机确认 port 名称和可选 feature dry-run 依赖解析可用。
 - CMake package 名称和 imported target 名称尚未验证。
 - 在正式接入代码前，不在 CMake 中提前引入未使用的库。

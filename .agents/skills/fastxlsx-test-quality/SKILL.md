@@ -84,6 +84,23 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
 
 Python XLSX 库只作为测试/排障参考，不是 FastXLSX 运行时依赖。
 
+## 图片和复杂对象验收
+
+图片功能实现后，结构测试至少检查：
+
+- `xl/media/image*.png|jpg|jpeg` 存在。
+- `xl/drawings/drawing*.xml` 存在。
+- `xl/drawings/_rels/drawing*.xml.rels` 指向 media part。
+- `xl/worksheets/_rels/sheet*.xml.rels` 指向 drawing part。
+- worksheet XML 中 drawing `r:id` 与 worksheet rels 一致。
+- `[Content_Types].xml` 有图片格式 default 或 override。
+
+Anchor 测试要覆盖起始/结束单元格、offset、零尺寸、负尺寸和越界 anchor；不要为了
+anchor 计算引入完整 worksheet DOM。兼容性测试要用 Excel 打开确认无修复弹窗并检查
+图片显示位置/尺寸；结构异常时用 Excel、`openpyxl` 或 `XlsxWriter` 参考文件拆包
+对比 XML。已有文件编辑场景还要证明未修改 drawings、media、charts、macros 和
+unknown parts 没有丢失，relationships 仍指向有效 target。
+
 ## Benchmark 优先级
 
 Benchmark 应记录：

@@ -32,20 +32,22 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`
   - `build-nmake/tests/fastxlsx-streaming-smoke.xlsx`
 
+## Repository State
+
+- Local Git repository initialized on branch `main`.
+- Public GitHub repository created and pushed:
+  `https://github.com/wuxianggujun/FastXLSX`
+- `origin/main` is configured as the upstream branch.
+
 ## Immediate Repository Tasks
 
-1. Initialize or connect Git remote.
-   - The current directory was not a Git repository during this pass.
-   - A local commit can be created after `git init`.
-   - Remote push still needs a configured `origin` URL and authentication.
-
-2. Keep generated artifacts out of source control.
+1. Keep generated artifacts out of source control.
    - Ignored build directories include `build/`, `build-*`, `cmake-build-*`,
      `out/`, `dist/`, and `%OPC_BUILD%/`.
    - Local secret files such as `.env`, private keys, and local tool state are
      ignored.
 
-3. Before publishing, inspect staged files.
+2. Before future publishing, inspect staged files.
    - Confirm `.agents/skills/` is included.
    - Confirm generated build outputs, Excel output files, temporary logs, and
      local private state are not included.

@@ -145,10 +145,13 @@ FastXLSX
 - 流式 writer 写入骨架：`WorkbookWriter`、`WorksheetWriter`、`CellView`。
 - 最小 OpenXML package 输出：
   `[Content_Types].xml`、`_rels/.rels`、`xl/workbook.xml`、
-  `xl/_rels/workbook.xml.rels`、`xl/worksheets/sheet1.xml`。
+  `xl/_rels/workbook.xml.rels`、`xl/worksheets/sheet1.xml`、
+  `docProps/core.xml` 和 `docProps/app.xml`。
 - 数字、inline string、布尔和公式单元格写入。
 - `StringStrategy::SharedString` 最小写出路径、`xl/sharedStrings.xml` package wiring
   和结构测试；仍需 Excel 可视化、参考 XML 对比和内存/大小数据后再视为生产特性。
+- 默认写出基础 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML part；
+  这只是静态文档属性元数据，不代表完整 document properties public API。
 - 行高、列宽、冻结窗格、自动筛选和合并单元格的写入骨架。
 - 内部 OPC manifest / relationships 基础；Phase 5 已有文件编辑仍是规划。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和

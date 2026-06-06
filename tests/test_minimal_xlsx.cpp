@@ -174,6 +174,8 @@ void test_minimal_xlsx_package()
     const auto entries = read_stored_zip_entries(output_path);
     check(entries.contains("[Content_Types].xml"), "missing content types part");
     check(entries.contains("_rels/.rels"), "missing package relationships part");
+    check(entries.contains("docProps/core.xml"), "missing core properties part");
+    check(entries.contains("docProps/app.xml"), "missing extended properties part");
     check(entries.contains("xl/workbook.xml"), "missing workbook part");
     check(entries.contains("xl/_rels/workbook.xml.rels"), "missing workbook relationships part");
     check(entries.contains("xl/worksheets/sheet1.xml"), "missing worksheet part");
@@ -186,12 +188,47 @@ void test_minimal_xlsx_package()
         "missing workbook content type override");
     check(content_types.find("/xl/worksheets/sheet1.xml") != std::string::npos,
         "missing worksheet content type override");
+    check(content_types.find("/docProps/core.xml") != std::string::npos,
+        "missing core properties content type override");
+    check(content_types.find("application/vnd.openxmlformats-package.core-properties+xml")
+            != std::string::npos,
+        "missing core properties content type");
+    check(content_types.find("/docProps/app.xml") != std::string::npos,
+        "missing extended properties content type override");
+    check(content_types.find("application/vnd.openxmlformats-officedocument.extended-properties+xml")
+            != std::string::npos,
+        "missing extended properties content type");
 
     const auto& package_rels = entries.at("_rels/.rels");
     check(package_rels.find("officeDocument") != std::string::npos,
         "missing officeDocument relationship");
     check(package_rels.find("Target=\"xl/workbook.xml\"") != std::string::npos,
         "package relationship target mismatch");
+    check(package_rels.find("Target=\"docProps/core.xml\"") != std::string::npos,
+        "missing core properties package relationship");
+    check(package_rels.find("relationships/metadata/core-properties") != std::string::npos,
+        "missing core properties package relationship type");
+    check(package_rels.find("Target=\"docProps/app.xml\"") != std::string::npos,
+        "missing extended properties package relationship");
+    check(package_rels.find("relationships/extended-properties") != std::string::npos,
+        "missing extended properties package relationship type");
+
+    const auto& core_properties_xml = entries.at("docProps/core.xml");
+    check(core_properties_xml.find("<cp:coreProperties ") != std::string::npos,
+        "core properties root missing");
+    check(core_properties_xml.find("<dc:creator>FastXLSX</dc:creator>") != std::string::npos,
+        "core properties creator missing");
+    check(core_properties_xml.find("<cp:lastModifiedBy>FastXLSX</cp:lastModifiedBy>")
+            != std::string::npos,
+        "core properties lastModifiedBy missing");
+
+    const auto& extended_properties_xml = entries.at("docProps/app.xml");
+    check(extended_properties_xml.find("<Properties ") != std::string::npos,
+        "extended properties root missing");
+    check(extended_properties_xml.find("<Application>FastXLSX</Application>") != std::string::npos,
+        "extended properties application missing");
+    check(extended_properties_xml.find("<AppVersion>0.1</AppVersion>") != std::string::npos,
+        "extended properties app version missing");
 
     const auto& workbook_xml = entries.at("xl/workbook.xml");
     check(workbook_xml.find("name=\"Sheet1\"") != std::string::npos,

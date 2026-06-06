@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX Worksheet Metadata"
+  short_description: "Worksheet metadata feature guardrails"
+  default_prompt: "Use $fastxlsx-worksheet-metadata-features for FastXLSX worksheet metadata and Phase 5 slice work."

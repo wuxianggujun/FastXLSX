@@ -153,8 +153,16 @@ constexpr std::string_view content_type_worksheet =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
 constexpr std::string_view content_type_shared_strings =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
+constexpr std::string_view content_type_core_properties =
+    "application/vnd.openxmlformats-package.core-properties+xml";
+constexpr std::string_view content_type_extended_properties =
+    "application/vnd.openxmlformats-officedocument.extended-properties+xml";
 constexpr std::string_view relationship_type_office_document =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+constexpr std::string_view relationship_type_core_properties =
+    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
+constexpr std::string_view relationship_type_extended_properties =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties";
 constexpr std::string_view relationship_type_worksheet =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
 constexpr std::string_view relationship_type_shared_strings =
@@ -508,7 +516,7 @@ std::size_t PackageManifest::size() const noexcept
 }
 
 PackageManifest make_minimal_workbook_manifest(
-    std::size_t worksheet_count, bool include_shared_strings)
+    std::size_t worksheet_count, bool include_shared_strings, bool include_document_properties)
 {
     PackageManifest manifest;
     manifest.content_types().add_default("rels", std::string(content_type_relationships));
@@ -522,6 +530,23 @@ PackageManifest make_minimal_workbook_manifest(
         std::string(relationship_type_office_document),
         "xl/workbook.xml",
     });
+
+    if (include_document_properties) {
+        manifest.add_part(PartName("/docProps/core.xml"), std::string(content_type_core_properties))
+            .mark_generated();
+        manifest.add_part(PartName("/docProps/app.xml"), std::string(content_type_extended_properties))
+            .mark_generated();
+        manifest.add_package_relationship(Relationship {
+            "rId2",
+            std::string(relationship_type_core_properties),
+            "docProps/core.xml",
+        });
+        manifest.add_package_relationship(Relationship {
+            "rId3",
+            std::string(relationship_type_extended_properties),
+            "docProps/app.xml",
+        });
+    }
 
     for (std::size_t index = 1; index <= worksheet_count; ++index) {
         const std::string sheet_name = "sheet" + std::to_string(index) + ".xml";
@@ -547,6 +572,40 @@ PackageManifest make_minimal_workbook_manifest(
     }
 
     return manifest;
+}
+
+std::string build_core_properties()
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<cp:coreProperties )";
+    xml += R"(xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" )";
+    xml += R"(xmlns:dc="http://purl.org/dc/elements/1.1/" )";
+    xml += R"(xmlns:dcterms="http://purl.org/dc/terms/" )";
+    xml += R"(xmlns:dcmitype="http://purl.org/dc/dcmitype/" )";
+    xml += R"(xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">)";
+    xml += "<dc:creator>FastXLSX</dc:creator>";
+    xml += "<cp:lastModifiedBy>FastXLSX</cp:lastModifiedBy>";
+    xml += "</cp:coreProperties>";
+    return xml;
+}
+
+std::string build_extended_properties()
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<Properties )";
+    xml += R"(xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" )";
+    xml += R"(xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">)";
+    xml += "<Application>FastXLSX</Application>";
+    xml += "<DocSecurity>0</DocSecurity>";
+    xml += "<ScaleCrop>false</ScaleCrop>";
+    xml += "<LinksUpToDate>false</LinksUpToDate>";
+    xml += "<SharedDoc>false</SharedDoc>";
+    xml += "<HyperlinksChanged>false</HyperlinksChanged>";
+    xml += "<AppVersion>0.1</AppVersion>";
+    xml += "</Properties>";
+    return xml;
 }
 
 std::string serialize_content_types(const ContentTypesManifest& content_types)

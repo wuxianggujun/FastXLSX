@@ -19,7 +19,9 @@ description: "实现或审查 FastXLSX Phase 1 最小可写 XLSX。用于 workbo
 
 先确认当前源码状态。当前已有 Phase 1 最小写入实现：
 `include/fastxlsx/workbook.hpp`、`src/workbook.cpp`、`src/xml.cpp`、
-`src/zip_store_writer.cpp` 和 `tests/test_minimal_xlsx.cpp`。
+`src/opc.cpp`、`src/zip_store_writer.cpp` 和 `tests/test_minimal_xlsx.cpp`。
+当前默认写出基础 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML part；
+这不是完整 document properties public API。
 
 ## Phase 1 边界
 
@@ -57,6 +59,8 @@ Phase 1 后续依赖工作：
    - `xl/workbook.xml`
    - `xl/_rels/workbook.xml.rels`
    - `xl/worksheets/sheet1.xml`
+   - `docProps/core.xml`
+   - `docProps/app.xml`
 2. worksheet 写入走流式 XML，不引入 worksheet DOM。
 3. 数字、字符串、布尔值分别建立最小编码路径。
 4. 当前 ZIP backend 是内部 stored ZIP bootstrap；如果修改 ZIP 层，必须确认它仍
@@ -91,6 +95,7 @@ cmake --help
 - 不要为了最小可写而使用大型 worksheet DOM。
 - 不要直接依赖 `OpenXLSX`、`xlnt` 或 `libxlsxwriter` 生成文件。
 - 不要把性能目标写成已达成结论。
+- 不要把基础 docProps 输出写成完整文档属性 API；当前只是静态小型 XML part。
 - 不要假设 Catch2 或 Google Benchmark 已经接入；当前测试是轻量 CTest 可执行文件。
 
 ## 验证

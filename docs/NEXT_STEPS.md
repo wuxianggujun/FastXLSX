@@ -35,10 +35,13 @@ that exist in code, CMake, tests, docs, or local verification.
     `xl/sharedStrings.xml` package entry generation, and focused structure
     tests are visible in the current files. Treat this as sharedStrings
     进行中, not as a production-ready string strategy.
+  - Basic `docProps/core.xml` and `docProps/app.xml` package wiring and static
+    XML generation are visible in the current files. Treat this as minimal
+    metadata output, not as a complete document-properties API.
   - Internal OPC `PartName`, `RelationshipSet`, `ContentTypesManifest`,
     `PackageManifest`, `PartWriteMode`, package-part edit state metadata,
     minimal workbook manifest builder, and content types / relationships
-    serializers.
+    serializers, including the docProps small XML builders.
 - Local Excel visual verification has been performed for:
   - `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`
   - `build-nmake/tests/fastxlsx-streaming-smoke.xlsx`
@@ -192,13 +195,18 @@ Validation:
 Status: 计划. Keep full object support in plan-only language.
 
 Safe order:
-1. Hyperlinks and data validations that only need worksheet XML plus simple
-   relationship/content type updates.
-2. Tables after table part allocation, content type override, worksheet rels,
+1. Data validations as streaming-only worksheet metadata for new workbooks.
+   They should not force a worksheet DOM or existing-file editing.
+2. Internal PartIndex / RelationshipGraph groundwork before features that need
+   worksheet `.rels` or cross-part id consistency.
+3. Hyperlinks after relationship graph support can keep worksheet XML and
+   worksheet `.rels` in sync; external URL hyperlinks should come before
+   broader hyperlink support.
+4. Tables after table part allocation, content type override, worksheet rels,
    and table XML are in place.
-3. Images after media part allocation, drawing part generation, drawing rels,
+5. Images after media part allocation, drawing part generation, drawing rels,
    worksheet rels, and content types are in place.
-4. Chart and VBA passthrough only after existing-package read/copy is proven.
+6. Chart and VBA passthrough only after existing-package read/copy is proven.
 
 Validation:
 - For every new object type, compare against an Excel or `openpyxl` /

@@ -153,6 +153,8 @@ void test_streaming_writer_smoke_package()
     const auto entries = read_stored_zip_entries(output_path);
     check(entries.contains("[Content_Types].xml"), "missing content types part");
     check(entries.contains("_rels/.rels"), "missing package relationships part");
+    check(entries.contains("docProps/core.xml"), "missing streaming core properties part");
+    check(entries.contains("docProps/app.xml"), "missing streaming extended properties part");
     check(entries.contains("xl/workbook.xml"), "missing workbook part");
     check(entries.contains("xl/_rels/workbook.xml.rels"), "missing workbook relationships part");
     check(entries.contains("xl/worksheets/sheet1.xml"), "missing streaming worksheet part");
@@ -162,11 +164,28 @@ void test_streaming_writer_smoke_package()
     check_contains(content_types, "/xl/workbook.xml", "missing workbook content type override");
     check_contains(
         content_types, "/xl/worksheets/sheet1.xml", "missing worksheet content type override");
+    check_contains(
+        content_types, "/docProps/core.xml", "missing core properties content type override");
+    check_contains(
+        content_types, "/docProps/app.xml", "missing extended properties content type override");
 
     const auto& package_rels = entries.at("_rels/.rels");
     check_contains(package_rels, "officeDocument", "missing officeDocument relationship");
     check_contains(
         package_rels, "Target=\"xl/workbook.xml\"", "package relationship target mismatch");
+    check_contains(
+        package_rels, "Target=\"docProps/core.xml\"", "missing core properties package relationship");
+    check_contains(
+        package_rels, "Target=\"docProps/app.xml\"", "missing extended properties package relationship");
+
+    const auto& core_properties_xml = entries.at("docProps/core.xml");
+    check_contains(
+        core_properties_xml, "<dc:creator>FastXLSX</dc:creator>", "core properties creator missing");
+
+    const auto& extended_properties_xml = entries.at("docProps/app.xml");
+    check_contains(extended_properties_xml,
+        "<Application>FastXLSX</Application>",
+        "extended properties application missing");
 
     const auto& workbook_xml = entries.at("xl/workbook.xml");
     check_contains(workbook_xml, "name=\"Streaming\"", "workbook streaming sheet name missing");
@@ -245,6 +264,8 @@ void test_streaming_writer_shared_string_package()
 
     const auto entries = read_stored_zip_entries(output_path);
     check(entries.contains("[Content_Types].xml"), "missing shared string content types part");
+    check(entries.contains("docProps/core.xml"), "missing shared string core properties part");
+    check(entries.contains("docProps/app.xml"), "missing shared string extended properties part");
     check(entries.contains("xl/_rels/workbook.xml.rels"), "missing shared string workbook rels part");
     check(entries.contains("xl/worksheets/sheet1.xml"), "missing shared string worksheet part");
     check(entries.contains("xl/sharedStrings.xml"), "missing shared strings part");

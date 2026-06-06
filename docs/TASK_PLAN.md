@@ -40,10 +40,13 @@ obligations.
   in the current files. Treat this as sharedStrings 进行中 until CTest, Excel
   visual verification, reference XML comparison, and size/memory behavior are
   recorded for the intended scope.
+- Basic `docProps/core.xml` and `docProps/app.xml` package wiring and static
+  small XML generation are visible in the current files. Treat this only as
+  minimal document metadata output, not as a complete document-properties API.
 - Phase 3 write skeletons exist for formula cells, row height, column width,
-  frozen panes, auto filters, and merged cells. Styles, document properties,
-  named ranges, full formula calculation, calcChain management, and broad
-  compatibility coverage remain 计划.
+  frozen panes, auto filters, and merged cells. Styles, configurable document
+  properties, named ranges, full formula calculation, calcChain management, and
+  broad compatibility coverage remain 计划.
 - Phase 4 has an internal `PartName`, `RelationshipSet`, `ContentTypesManifest`,
   `PackageManifest`, `PartWriteMode`, `PackagePart` edit-state metadata,
   minimal workbook manifest builder, and content types / relationships XML
@@ -154,7 +157,7 @@ Validation:
 
 ### Phase 1.3 - OpenXML Package Generation
 
-Status: 基础 for the minimum five-entry workbook package.
+Status: 基础 for the minimum seven-entry workbook package.
 
 Tasks:
 - Generate these required ZIP entries:
@@ -163,7 +166,11 @@ Tasks:
   - `xl/workbook.xml`
   - `xl/_rels/workbook.xml.rels`
   - `xl/worksheets/sheet1.xml`
+  - `docProps/core.xml`
+  - `docProps/app.xml`
 - Generate worksheet `sheetData` with number, inline string, and boolean cells.
+- Generate static basic document metadata parts only; configurable document
+  properties remain planned API work.
 - Escape XML text and attributes correctly.
 - Generate cell references such as `A1`, `Z1`, `AA1`, and `XFD1048576`.
 - Track worksheet dimension for the written row range.
@@ -356,8 +363,9 @@ Current facts:
 - `WorksheetWriter::merge_cells()` records merged-cell ranges.
 - These features are metadata-oriented and currently live on the streaming
   writer path.
-- Styles, document properties, named ranges, style registries, and rich
-  formatting are still planned work.
+- Styles, configurable document properties, named ranges, style registries, and
+  rich formatting are still planned work. Static basic `docProps/core.xml` and
+  `docProps/app.xml` output already exists in the minimum package path.
 
 Tasks:
 - Add focused structure tests for formula XML, row height, column width,
@@ -401,10 +409,12 @@ unknown-part preservation through a real OPC rewrite pipeline remain 计划.
 
 Current facts:
 - Current code emits `[Content_Types].xml`, `_rels/.rels`, `xl/workbook.xml`,
-  `xl/_rels/workbook.xml.rels`, and worksheet parts for new workbooks.
+  `xl/_rels/workbook.xml.rels`, worksheet parts, `docProps/core.xml`, and
+  `docProps/app.xml` for new workbooks.
 - `src/opc.cpp` provides `PartName`, `RelationshipSet`, `ContentTypesManifest`,
   `PackageManifest`, `PartWriteMode` state transitions,
-  `make_minimal_workbook_manifest()`, `serialize_content_types()`, and
+  `make_minimal_workbook_manifest()`, `build_core_properties()`,
+  `build_extended_properties()`, `serialize_content_types()`, and
   `serialize_relationships()`.
 - `Workbook::save()` and `WorkbookWriter::close()` now use the internal minimal
   manifest and serializers for content types and relationships.
@@ -478,10 +488,19 @@ Required dependencies before broad implementation:
   comparison and local Excel visual verification.
 
 Allowed early slices:
+- Data validations may be planned as a streaming-only, new-workbook worksheet
+  metadata slice. The first implementation should only write `<dataValidations>`
+  in `worksheet.xml`, store rules as lightweight worksheet metadata, avoid DOM,
+  and avoid existing-file editing.
+- A public data-validation API, if added, must document Streaming mode, memory
+  cost as rule count plus formula text, no random access, no full worksheet cell
+  matrix, no formula evaluation, and no Excel UI completeness guarantee.
 - Hyperlinks may be planned as worksheet metadata plus relationships, but only
-  after the manifest and relationship graph can update the package correctly.
-- Data validation and conditional formatting may be added as worksheet metadata
-  only if they do not force a large worksheet DOM.
+  after internal part index / relationship graph support can keep worksheet XML
+  and worksheet `.rels` ids consistent.
+- Conditional formatting may be added as worksheet metadata only if it does not
+  force a large worksheet DOM and does not put validation/formatting logic into
+  the cell XML hot path.
 - Tables may be added only with content types, relationships, table parts, and
   worksheet table references kept consistent.
 - Chart and VBA handling should start as passthrough preservation, not native
@@ -500,6 +519,9 @@ Forbidden until separately designed and verified:
   reference and QA tools only.
 - Do not make an In-memory workbook model the default just to simplify complex
   object APIs.
+- Do not claim full Data Validation, Hyperlink, Table, Chart, VBA, or existing
+  XLSX editing support until code, structure tests, reference XML comparison,
+  and local Excel visual verification exist for that feature.
 
 Validation:
 - Start with preservation tests: open an input workbook containing charts,

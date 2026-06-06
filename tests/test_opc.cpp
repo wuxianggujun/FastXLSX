@@ -272,10 +272,10 @@ void test_minimal_workbook_manifest()
     using fastxlsx::detail::PartWriteMode;
 
     const auto manifest = fastxlsx::detail::make_minimal_workbook_manifest(2);
-    check(manifest.size() == 3, "minimal workbook manifest part count mismatch");
-    check(manifest.content_types().overrides().size() == 3,
+    check(manifest.size() == 5, "minimal workbook manifest part count mismatch");
+    check(manifest.content_types().overrides().size() == 5,
         "minimal workbook manifest override count mismatch");
-    check(manifest.package_relationships().size() == 1,
+    check(manifest.package_relationships().size() == 3,
         "minimal workbook manifest package relationship count mismatch");
 
     const auto* workbook_relationships =
@@ -289,11 +289,35 @@ void test_minimal_workbook_manifest()
         fastxlsx::detail::serialize_content_types(manifest.content_types());
     check(content_types_xml.find("/xl/worksheets/sheet2.xml") != std::string::npos,
         "minimal workbook content types should include sheet2");
+    check(content_types_xml.find("/docProps/core.xml") != std::string::npos,
+        "minimal workbook content types should include core properties");
+    check(content_types_xml.find(
+              "application/vnd.openxmlformats-package.core-properties+xml")
+            != std::string::npos,
+        "minimal workbook content types should include core properties type");
+    check(content_types_xml.find("/docProps/app.xml") != std::string::npos,
+        "minimal workbook content types should include extended properties");
+    check(content_types_xml.find(
+              "application/vnd.openxmlformats-officedocument.extended-properties+xml")
+            != std::string::npos,
+        "minimal workbook content types should include extended properties type");
 
     const std::string package_rels_xml =
         fastxlsx::detail::serialize_relationships(manifest.package_relationships());
     check(package_rels_xml.find("Target=\"xl/workbook.xml\"") != std::string::npos,
         "minimal workbook package relationship target mismatch");
+    check(package_rels_xml.find("Target=\"docProps/core.xml\"") != std::string::npos,
+        "minimal workbook package relationships should include core properties");
+    check(package_rels_xml.find(
+              "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties")
+            != std::string::npos,
+        "minimal workbook package relationships should include core properties type");
+    check(package_rels_xml.find("Target=\"docProps/app.xml\"") != std::string::npos,
+        "minimal workbook package relationships should include extended properties");
+    check(package_rels_xml.find(
+              "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties")
+            != std::string::npos,
+        "minimal workbook package relationships should include extended properties type");
 
     const auto* workbook_part =
         manifest.find_part(fastxlsx::detail::PartName("/xl/workbook.xml"));
@@ -312,6 +336,44 @@ void test_minimal_workbook_manifest()
     check(!worksheet_part->preserve_original, "minimal worksheet should not preserve original bytes");
     check(worksheet_part->dirty, "minimal worksheet part should be dirty");
     check(!worksheet_part->generated, "stream rewrite worksheet should not be marked generated");
+
+    const auto* core_properties_part =
+        manifest.find_part(fastxlsx::detail::PartName("/docProps/core.xml"));
+    check(core_properties_part != nullptr, "minimal core properties part should exist");
+    check(core_properties_part->write_mode == PartWriteMode::GenerateSmallXml,
+        "minimal core properties part should be generated small XML");
+    check(!core_properties_part->preserve_original,
+        "minimal core properties should not preserve original bytes");
+    check(core_properties_part->dirty, "minimal core properties part should be dirty");
+    check(core_properties_part->generated,
+        "minimal core properties part should be marked generated");
+
+    const auto* extended_properties_part =
+        manifest.find_part(fastxlsx::detail::PartName("/docProps/app.xml"));
+    check(extended_properties_part != nullptr, "minimal extended properties part should exist");
+    check(extended_properties_part->write_mode == PartWriteMode::GenerateSmallXml,
+        "minimal extended properties part should be generated small XML");
+    check(!extended_properties_part->preserve_original,
+        "minimal extended properties should not preserve original bytes");
+    check(extended_properties_part->dirty, "minimal extended properties part should be dirty");
+    check(extended_properties_part->generated,
+        "minimal extended properties part should be marked generated");
+
+    const std::string core_properties_xml = fastxlsx::detail::build_core_properties();
+    check(core_properties_xml.find("<cp:coreProperties ") != std::string::npos,
+        "core properties root mismatch");
+    check(core_properties_xml.find("<dc:creator>FastXLSX</dc:creator>") != std::string::npos,
+        "core properties creator mismatch");
+    check(core_properties_xml.find("<cp:lastModifiedBy>FastXLSX</cp:lastModifiedBy>")
+            != std::string::npos,
+        "core properties lastModifiedBy mismatch");
+
+    const std::string extended_properties_xml = fastxlsx::detail::build_extended_properties();
+    check(extended_properties_xml.find("<Application>FastXLSX</Application>")
+            != std::string::npos,
+        "extended properties application mismatch");
+    check(extended_properties_xml.find("<AppVersion>0.1</AppVersion>") != std::string::npos,
+        "extended properties app version mismatch");
 }
 
 void test_minimal_workbook_manifest_with_shared_strings()
@@ -319,7 +381,7 @@ void test_minimal_workbook_manifest_with_shared_strings()
     using fastxlsx::detail::PartWriteMode;
 
     const auto manifest = fastxlsx::detail::make_minimal_workbook_manifest(1, true);
-    check(manifest.size() == 3, "shared string manifest part count mismatch");
+    check(manifest.size() == 5, "shared string manifest part count mismatch");
 
     const auto* shared_string_type =
         manifest.content_types().content_type_for(
@@ -354,6 +416,35 @@ void test_minimal_workbook_manifest_with_shared_strings()
     check(shared_strings_part->generated, "shared strings part should be marked generated");
 }
 
+void test_minimal_workbook_manifest_without_document_properties()
+{
+    const auto manifest = fastxlsx::detail::make_minimal_workbook_manifest(1, false, false);
+    check(manifest.size() == 2, "manifest without document properties part count mismatch");
+    check(manifest.content_types().overrides().size() == 2,
+        "manifest without document properties override count mismatch");
+    check(manifest.package_relationships().size() == 1,
+        "manifest without document properties package relationship count mismatch");
+
+    check(manifest.find_part(fastxlsx::detail::PartName("/docProps/core.xml")) == nullptr,
+        "core properties part should be omitted when disabled");
+    check(manifest.find_part(fastxlsx::detail::PartName("/docProps/app.xml")) == nullptr,
+        "extended properties part should be omitted when disabled");
+
+    const std::string content_types_xml =
+        fastxlsx::detail::serialize_content_types(manifest.content_types());
+    check(content_types_xml.find("/docProps/core.xml") == std::string::npos,
+        "content types should omit disabled core properties");
+    check(content_types_xml.find("/docProps/app.xml") == std::string::npos,
+        "content types should omit disabled extended properties");
+
+    const std::string package_rels_xml =
+        fastxlsx::detail::serialize_relationships(manifest.package_relationships());
+    check(package_rels_xml.find("Target=\"xl/workbook.xml\"") != std::string::npos,
+        "office document relationship should remain when document properties are disabled");
+    check(package_rels_xml.find("docProps/") == std::string::npos,
+        "package relationships should omit disabled document properties");
+}
+
 } // namespace
 
 int main()
@@ -366,6 +457,7 @@ int main()
         test_package_part_edit_state();
         test_minimal_workbook_manifest();
         test_minimal_workbook_manifest_with_shared_strings();
+        test_minimal_workbook_manifest_without_document_properties();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';
         return 1;

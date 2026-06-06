@@ -155,6 +155,7 @@ struct WorksheetWriterState {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> frozen_panes;
     std::optional<CellRange> auto_filter;
     std::vector<CellRange> merged_ranges;
+    std::string row_buffer;
 };
 
 struct WorkbookWriterState {
@@ -458,7 +459,13 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     ++state_->row_count;
     state_->max_column = std::max(state_->max_column, static_cast<std::uint32_t>(cells.size()));
 
-    std::string row_xml;
+    std::string& row_xml = state_->row_buffer;
+    row_xml.clear();
+    const std::size_t expected_row_size = 32 + cells.size() * 48;
+    if (row_xml.capacity() < expected_row_size) {
+        row_xml.reserve(expected_row_size);
+    }
+
     row_xml += "<row r=\"";
     row_xml += std::to_string(state_->row_count);
     if (options.height.has_value()) {
@@ -472,7 +479,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     }
     row_xml += "</row>";
 
-    state_->body << row_xml;
+    state_->body.write(row_xml.data(), static_cast<std::streamsize>(row_xml.size()));
     if (!state_->body) {
         throw FastXlsxError("failed to write worksheet row XML");
     }

@@ -83,6 +83,8 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 是否可能触发 shared strings 去重状态增长。
 - 是否影响 ZIP 压缩等级或输出文件大小。
 - 是否会触发 DOM。
+- Finalization API 必须说明当前是否 assemble package entries、是否 true
+  package streaming、是否有 Zip64 或 existing-file preservation 保证。
 
 禁止写模糊承诺，例如“高性能”“低内存”，却不说明内存由哪些状态组成。
 

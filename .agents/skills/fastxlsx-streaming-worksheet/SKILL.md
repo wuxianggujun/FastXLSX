@@ -116,8 +116,10 @@ dimension 更新。
 - 为 XML escape、cell reference、值编码、dimensions、字符串策略补单元测试。
 - sharedStrings 进行中时，验证 `xl/sharedStrings.xml`、content type override、
   workbook relationship、worksheet shared-string index、`count` / `uniqueCount`、
-  XML escape 和 `xml:space="preserve"`。
-- 普通单元测试遵守 60s 核心测试边界。
+  XML escape、`xml:space="preserve"`、exact occurrence counts、跨 worksheet 去重、
+  newline / carriage-return preserve，以及 ZIP duplicate entry 检测。
+- Benchmark 必须显式 opt-in，不得注册进默认 CTest；普通单元测试继续遵守
+  60s 核心测试边界。
 - 性能/内存结论必须来自 benchmark。
 - 生成 `.xlsx` 后，在可用时验证 OpenXML 结构和办公软件打开兼容性；结构异常时
   用 Excel / `openpyxl` / `XlsxWriter` 生成参考文件并拆包对比 XML 语义。

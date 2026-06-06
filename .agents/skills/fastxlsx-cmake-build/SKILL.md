@@ -33,6 +33,8 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
   - `FASTXLSX_BUILD_TESTS` 默认 `ON`。
   - `FASTXLSX_BUILD_EXAMPLES` 默认 `OFF`，当前已有 `add_subdirectory(examples)`
     分支。
+  - `FASTXLSX_BUILD_BENCHMARKS` 默认 `OFF`，启用后添加 `benchmarks/` 下的
+    手工 benchmark target；这些 target 不注册 CTest。
   - `FASTXLSX_ENABLE_DOM_EDITING` 默认 `ON`。
   - `FASTXLSX_ENABLE_MINIZIP_NG` 默认 `OFF`，启用后链接 `MINIZIP::minizip-ng`
     并定义 `FASTXLSX_HAS_MINIZIP_NG`。
@@ -69,6 +71,10 @@ cmake --help
 - `windows-nmake-release-vcpkg`：只启用 vcpkg toolchain。
 - `windows-nmake-release-minizip`：启用 `planned-runtime` 和
   `FASTXLSX_ENABLE_MINIZIP_NG=ON`，用于 opt-in minizip backend 验证。
+- `windows-nmake-release-benchmark`：启用 `FASTXLSX_BUILD_BENCHMARKS=ON`，
+  不启用 vcpkg，不进入默认 CTest。
+- `windows-nmake-release-benchmark-minizip`：启用 benchmark 和 minizip backend，
+  用于手工对比 stored bootstrap 与 minizip/DEFLATE 输出。
 
 ## 推荐流程
 
@@ -77,7 +83,9 @@ cmake --help
 3. 如果添加测试，挂到 `FASTXLSX_BUILD_TESTS`，并注册 CTest。
 4. 如果添加示例，挂到 `FASTXLSX_BUILD_EXAMPLES`，并确认 `examples/`
    下的 target、输出文件和验证方式。
-5. 生成物不进源码。`.gitignore` 已忽略 `build/`、CMake 生成文件、
+5. 如果添加 benchmark，挂到 `FASTXLSX_BUILD_BENCHMARKS`，不要调用
+   `add_test()`，不要让它进入默认 CTest。
+6. 生成物不进源码。`.gitignore` 已忽略 `build/`、CMake 生成文件、
    IDE 状态、二进制、日志和临时文件。
 
 ## 依赖处理
@@ -116,6 +124,17 @@ cmake --preset windows-nmake-release-minizip
 cmake --build --preset windows-nmake-release-minizip
 ctest --preset windows-nmake-release-minizip
 ```
+
+构建手工 benchmark：
+
+```powershell
+cmake --preset windows-nmake-release-benchmark
+cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_streaming_writer
+```
+
+直接运行 `fastxlsx_bench_streaming_writer` 且不传 `--output` / `--result` 时，
+默认结果写到 benchmark target 的 binary dir。该手工工具限制 `--sheets <= 1024`；
+不要把这个工具边界写成 FastXLSX public API 的 worksheet 数量承诺。
 
 如果 `ctest` 没有运行测试，先检查 `tests/CMakeLists.txt` 是否仍注册
 `fastxlsx.unit`、`fastxlsx.streaming` 和 `fastxlsx.opc`。

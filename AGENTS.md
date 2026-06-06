@@ -153,6 +153,20 @@ cmake --build --preset windows-nmake-release-minizip
 ctest --preset windows-nmake-release-minizip
 ```
 
+手工 benchmark 必须显式 opt-in，不进入默认 CTest：
+
+```powershell
+cmake --preset windows-nmake-release-benchmark
+cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_streaming_writer
+```
+
+需要验证 minizip backend 的 benchmark 时，使用
+`windows-nmake-release-benchmark-minizip`。benchmark 结果必须记录数据规模、
+字符串策略、ZIP backend/压缩设置、总耗时、峰值内存、输出大小和办公软件打开结果；
+不要把 benchmark preset 当成默认质量门禁。
+不传 `--output` / `--result` 时，当前 benchmark 工具默认写到 benchmark target
+的 binary dir；手工工具限制 `--sheets <= 1024`，这只是 benchmark 输入护栏。
+
 如果其他机器上的 Visual Studio 2026 对应新的 CMake 生成器名称，用下面命令确认：
 
 ```powershell

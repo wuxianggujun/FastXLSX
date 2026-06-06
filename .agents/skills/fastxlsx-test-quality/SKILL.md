@@ -120,6 +120,10 @@ unknown parts 没有丢失，relationships 仍指向有效 target。
 
 Benchmark 应记录：
 
+- 构建类型。
+- 数据规模。
+- 压缩等级或 ZIP backend。
+- 字符串策略。
 - 总耗时。
 - 峰值内存。
 - 输出文件大小。
@@ -127,6 +131,12 @@ Benchmark 应记录：
 
 文档中的对比对象是 `OpenXLSX`、`xlnt` streaming writer 和旧 `FastExcel`。
 不要把这些 benchmark 对象变成 FastXLSX 运行时依赖。
+
+当前最小 P6 benchmark 入口是 `FASTXLSX_BUILD_BENCHMARKS=ON` 下的手工工具
+`fastxlsx_bench_streaming_writer`。它不使用 Google Benchmark，不注册 CTest，
+不进入默认 CI；`planned-dev` 中的 `benchmark` 仍不是当前 CMake 事实。
+不传 `--output` / `--result` 时，该工具默认写到 benchmark target 的 binary dir；
+`--sheets` 超过 1024 会被拒绝，这是 benchmark 工具护栏，不是 public API 限制。
 
 重点覆盖：
 

@@ -45,6 +45,35 @@
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
         "VCPKG_MANIFEST_FEATURES": "planned-runtime"
       }
+    },
+    {
+      "name": "windows-nmake-release-benchmark",
+      "displayName": "Windows NMake Release Benchmark",
+      "description": "Configure opt-in manual FastXLSX benchmarks without vcpkg.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-benchmark",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "OFF",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    {
+      "name": "windows-nmake-release-benchmark-minizip",
+      "displayName": "Windows NMake Release Benchmark with minizip-ng",
+      "description": "Configure opt-in manual FastXLSX benchmarks with the minizip-ng backend.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-benchmark-minizip",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "OFF",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_BUILD_BENCHMARKS": "ON",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "VCPKG_MANIFEST_FEATURES": "planned-runtime"
+      }
     }
   ],
   "buildPresets": [
@@ -59,6 +88,14 @@
     {
       "name": "windows-nmake-release-minizip",
       "configurePreset": "windows-nmake-release-minizip"
+    },
+    {
+      "name": "windows-nmake-release-benchmark",
+      "configurePreset": "windows-nmake-release-benchmark"
+    },
+    {
+      "name": "windows-nmake-release-benchmark-minizip",
+      "configurePreset": "windows-nmake-release-benchmark-minizip"
     }
   ],
   "testPresets": [

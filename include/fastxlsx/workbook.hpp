@@ -89,9 +89,16 @@ public:
     /// calcChain, or provide a cached value in the current implementation.
     static Cell formula(std::string value);
 
+    /// Returns the stored value kind for the Phase 1 in-memory cell.
     [[nodiscard]] Type type() const noexcept;
+
+    /// Returns the numeric payload when type() is Type::Number.
     [[nodiscard]] double number_value() const noexcept;
+
+    /// Returns the owned string or formula payload for string/formula cells.
     [[nodiscard]] const std::string& string_value() const noexcept;
+
+    /// Returns the boolean payload when type() is Type::Boolean.
     [[nodiscard]] bool boolean_value() const noexcept;
 
 private:
@@ -117,11 +124,12 @@ struct WorksheetRowData {
 
 /// A worksheet exposed through an append-only, streaming-oriented API.
 ///
-/// API mode: Streaming. Rows must be appended in order and previously appended
-/// rows cannot be randomly modified through this API. The Phase 1 implementation
-/// buffers rows in memory until save() so OpenXML structure and compatibility can
-/// be validated. Do not treat this temporary buffer as the long-term large-file
-/// architecture or as the streaming writer's memory model.
+/// API mode: small in-memory creation path with a streaming-oriented,
+/// append-only worksheet surface. Rows must be appended in order and previously
+/// appended rows cannot be randomly modified through this API. The Phase 1
+/// implementation buffers rows in memory until save() so OpenXML structure and
+/// compatibility can be validated. Use WorkbookWriter for large ordered exports
+/// that should not retain row data.
 class Worksheet {
 public:
     /// Appends one row to the worksheet.
@@ -146,7 +154,12 @@ public:
     /// metadata and serializes it during Workbook::save().
     void append_row(const std::vector<Cell>& cells, RowOptions options);
 
+    /// Returns the worksheet name stored in the in-memory workbook model.
     [[nodiscard]] const std::string& name() const noexcept;
+
+    /// Returns the number of rows currently held by the Phase 1 in-memory buffer.
+    ///
+    /// This is not a streaming cursor for large exports.
     [[nodiscard]] std::uint32_t row_count() const noexcept;
 
 private:
@@ -160,14 +173,15 @@ private:
 
 /// Minimal XLSX workbook writer.
 ///
-/// API mode: Streaming-oriented creation. The public API is intentionally
-/// append-only at the worksheet level so later large-data writers can replace
-/// the Phase 1 in-memory buffer without changing callers into DOM-style random
-/// access. Workbook::save() writes through the internal package writer boundary:
-/// dependency-free builds use the stored ZIP bootstrap, while builds configured
-/// with FASTXLSX_ENABLE_MINIZIP_NG use the minizip-ng DEFLATE backend. Both
-/// paths still assemble small package entries in memory; Zip64 and true package
-/// streaming are not public guarantees.
+/// API mode: small in-memory creation path with a streaming-oriented,
+/// append-only worksheet surface. The public API is intentionally append-only at
+/// the worksheet level so later large-data writers can avoid DOM-style random
+/// access. Phase 1 buffers rows until save(); use WorkbookWriter for large
+/// ordered exports that should not retain row data. Workbook::save() writes
+/// through the internal package writer boundary: dependency-free builds use the
+/// stored ZIP bootstrap, while builds configured with FASTXLSX_ENABLE_MINIZIP_NG
+/// use the minizip-ng DEFLATE backend. Both paths still assemble small package
+/// entries in memory; Zip64 and true package streaming are not public guarantees.
 class Workbook {
 public:
     /// Creates an empty workbook.
@@ -194,6 +208,10 @@ public:
     /// the underlying package writer. This method is the only finalization step
     /// for the in-memory path; it does not edit or preserve parts from an
     /// existing workbook.
+    ///
+    /// Current implementations assemble the supported package entries in memory
+    /// through the internal package writer; this is not true package streaming,
+    /// Zip64, or existing-file preservation.
     ///
     /// @throws FastXlsxError if the workbook has no worksheets, generated XML is
     /// invalid for the supported limits, or the package cannot be written.

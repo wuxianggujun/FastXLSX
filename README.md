@@ -70,8 +70,9 @@ ctest --preset windows-nmake-release
 ```
 
 `windows-nmake-release` preset 使用 `NMake Makefiles`，普通单元测试通过
-CTest preset 和测试属性保持 60s 边界。大型 benchmark 后续应作为显式 opt-in
-目标，不进入默认 CTest。
+CTest preset 和测试属性保持 60s 边界。当前手工 benchmark 通过
+`FASTXLSX_BUILD_BENCHMARKS=ON` 和 `fastxlsx_bench_streaming_writer` 显式 opt-in，
+不进入默认 CTest。
 
 生成的 `.xlsx` 若出现结构异常，按 [测试流程](docs/TESTING_WORKFLOW.md)：
 用 Excel、`openpyxl` 或 `XlsxWriter` 生成语义等价参考文件，拆包后对比
@@ -122,7 +123,8 @@ FastXLSX
 - XML 大文件读写：SAX / event streaming。
 - XML 小文件编辑：可选局部 DOM。
 - ZIP/OPC：part 级别索引、复制、替换。
-- 字符串：支持 inlineStr 与 sharedStrings 双策略。
+- 字符串：`inlineStr` 是默认低内存路径；`sharedStrings` 是显式体积/性能策略，
+  当前仍在 hardening。
 - 样式：独立 registry，统一去重。
 
 ## 规划依赖

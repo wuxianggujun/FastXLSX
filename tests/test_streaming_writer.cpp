@@ -7,6 +7,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -40,6 +41,17 @@ void check_fastxlsx_error(Func func, const char* message)
 void check_contains(const std::string& text, const char* fragment, const char* message)
 {
     check(text.find(fragment) != std::string::npos, message);
+}
+
+std::size_t count_occurrences(const std::string& text, std::string_view fragment)
+{
+    std::size_t count = 0;
+    std::size_t offset = 0;
+    while ((offset = text.find(fragment, offset)) != std::string::npos) {
+        ++count;
+        offset += fragment.size();
+    }
+    return count;
 }
 
 void test_streaming_writer_smoke_package()
@@ -185,6 +197,12 @@ void test_streaming_writer_shared_string_package()
         fastxlsx::CellView::text("repeat"),
         fastxlsx::CellView::text("space "),
     });
+    sheet.append_row({
+        fastxlsx::CellView::text(""),
+        fastxlsx::CellView::text(" leading"),
+        fastxlsx::CellView::text("\tindent"),
+        fastxlsx::CellView::text("repeat"),
+    });
 
     workbook.close();
     check(std::filesystem::exists(output_path), "shared string xlsx file was not generated");
@@ -210,6 +228,9 @@ void test_streaming_writer_shared_string_package()
         workbook_rels, "Target=\"sharedStrings.xml\"", "shared strings relationship target mismatch");
 
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:D3\"/>", "shared string dimension mismatch");
+    check(count_occurrences(worksheet_xml, " t=\"s\"") == 9, "shared string cell count mismatch");
+    check(count_occurrences(worksheet_xml, "inlineStr") == 0, "shared string worksheet used inlineStr");
     check_contains(
         worksheet_xml, "<c r=\"A1\" t=\"s\"><v>0</v></c>", "shared string A1 index mismatch");
     check_contains(
@@ -220,11 +241,29 @@ void test_streaming_writer_shared_string_package()
         worksheet_xml, "<c r=\"A2\" t=\"s\"><v>0</v></c>", "shared string duplicate A2 mismatch");
     check_contains(
         worksheet_xml, "<c r=\"B2\" t=\"s\"><v>1</v></c>", "shared string duplicate B2 mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"A3\" t=\"s\"><v>3</v></c>", "shared string empty A3 mismatch");
+    check_contains(worksheet_xml, "<c r=\"B3\" t=\"s\"><v>4</v></c>",
+        "shared string leading-space B3 mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"C3\" t=\"s\"><v>5</v></c>", "shared string tab C3 mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"D3\" t=\"s\"><v>0</v></c>", "shared string duplicate D3 mismatch");
+    check_contains(worksheet_xml,
+        "<row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c><c r=\"B1\" t=\"s\"><v>1</v></c><c r=\"C1\" t=\"s\"><v>2</v></c></row>",
+        "shared string row 1 mapping mismatch");
+    check_contains(worksheet_xml,
+        "<row r=\"2\"><c r=\"A2\" t=\"s\"><v>0</v></c><c r=\"B2\" t=\"s\"><v>1</v></c></row>",
+        "shared string duplicate row mapping mismatch");
+    check_contains(worksheet_xml,
+        "<row r=\"3\"><c r=\"A3\" t=\"s\"><v>3</v></c><c r=\"B3\" t=\"s\"><v>4</v></c><c r=\"C3\" t=\"s\"><v>5</v></c><c r=\"D3\" t=\"s\"><v>0</v></c></row>",
+        "shared string empty/space/tab row mapping mismatch");
 
     const auto& shared_strings_xml = entries.at("xl/sharedStrings.xml");
     check_contains(shared_strings_xml, "<sst ", "missing shared strings root");
-    check_contains(shared_strings_xml, "count=\"5\"", "shared strings count mismatch");
-    check_contains(shared_strings_xml, "uniqueCount=\"3\"", "shared strings uniqueCount mismatch");
+    check_contains(shared_strings_xml, "count=\"9\"", "shared strings count mismatch");
+    check_contains(shared_strings_xml, "uniqueCount=\"6\"", "shared strings uniqueCount mismatch");
+    check(count_occurrences(shared_strings_xml, "<si>") == 6, "shared string unique entry count mismatch");
     check_contains(shared_strings_xml, "<si><t>repeat</t></si>", "first shared string mismatch");
     check_contains(shared_strings_xml,
         "<si><t xml:space=\"preserve\">space </t></si>",
@@ -232,6 +271,67 @@ void test_streaming_writer_shared_string_package()
     check_contains(shared_strings_xml,
         "<si><t>escaped &amp; &lt;tag&gt;</t></si>",
         "escaped shared string mismatch");
+    check_contains(shared_strings_xml, "<si><t></t></si>", "empty shared string mismatch");
+    check_contains(shared_strings_xml,
+        "<si><t xml:space=\"preserve\"> leading</t></si>",
+        "leading-space shared string mismatch");
+    check_contains(shared_strings_xml,
+        "<si><t xml:space=\"preserve\">\tindent</t></si>",
+        "tab-preserved shared string mismatch");
+    check_contains(shared_strings_xml,
+        "<si><t>repeat</t></si><si><t xml:space=\"preserve\">space </t></si><si><t>escaped &amp; &lt;tag&gt;</t></si><si><t></t></si><si><t xml:space=\"preserve\"> leading</t></si><si><t xml:space=\"preserve\">\tindent</t></si>",
+        "shared strings order/index mapping mismatch");
+}
+
+void test_streaming_writer_shared_strings_workbook_scope_and_crlf()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-shared-strings-workbook-scope.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    auto first = workbook.add_worksheet("One");
+    auto second = workbook.add_worksheet("Two");
+
+    first.append_row({
+        fastxlsx::CellView::text("repeat"),
+        fastxlsx::CellView::text("line\n"),
+    });
+    second.append_row({
+        fastxlsx::CellView::text("repeat"),
+        fastxlsx::CellView::text("\rline"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "workbook-scope shared string xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing first shared string worksheet part");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing second shared string worksheet part");
+    check(entries.contains("xl/sharedStrings.xml"), "missing workbook-scope shared strings part");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(first_sheet_xml, "<c r=\"A1\" t=\"s\"><v>0</v></c>",
+        "first worksheet shared string repeat index mismatch");
+    check_contains(first_sheet_xml, "<c r=\"B1\" t=\"s\"><v>1</v></c>",
+        "first worksheet newline shared string index mismatch");
+    check_contains(second_sheet_xml, "<c r=\"A1\" t=\"s\"><v>0</v></c>",
+        "second worksheet shared string repeat index mismatch");
+    check_contains(second_sheet_xml, "<c r=\"B1\" t=\"s\"><v>2</v></c>",
+        "second worksheet carriage-return shared string index mismatch");
+
+    const auto& shared_strings_xml = entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_xml, "count=\"4\"", "workbook-scope shared strings count mismatch");
+    check_contains(
+        shared_strings_xml, "uniqueCount=\"3\"", "workbook-scope shared strings uniqueCount mismatch");
+    check(count_occurrences(shared_strings_xml, "<si>") == 3,
+        "workbook-scope shared string unique entry count mismatch");
+    check_contains(shared_strings_xml,
+        "<si><t>repeat</t></si><si><t xml:space=\"preserve\">line\n</t></si><si><t xml:space=\"preserve\">\rline</t></si>",
+        "workbook-scope shared strings order or preserve mapping mismatch");
 }
 
 void test_streaming_writer_rejects_mutation_after_close()
@@ -365,6 +465,7 @@ int main()
     try {
         test_streaming_writer_smoke_package();
         test_streaming_writer_shared_string_package();
+        test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();
         test_streaming_writer_invalid_metadata_and_rows();

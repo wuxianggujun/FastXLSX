@@ -76,6 +76,9 @@ Status words in this section are intentionally limited to 计划, 进行中, and
 基础. They describe the current planning lane and visible foundations without
 claiming completion.
 
+Mapping to `docs/NEXT_STEPS.md`: `P5` = `M3` sharedStrings hardening;
+`P6` / `P7` = `M4` benchmark groundwork and streaming writer hot path.
+
 1. sharedStrings - 进行中.
    - Keep `inlineStr` as the default low-memory path.
    - Continue validating the visible shared string API option, table, package
@@ -222,6 +225,8 @@ Tasks:
 - Track worksheet dimensions incrementally.
 - Add row and column limit tests for Excel bounds.
 - Add opt-in benchmark target or documented benchmark command.
+- Current opt-in manual benchmark target: `fastxlsx_bench_streaming_writer`,
+  enabled only with `FASTXLSX_BUILD_BENCHMARKS=ON`.
 
 Validation:
 - Default CTest stays under 60s.
@@ -625,12 +630,24 @@ Current facts:
   `D2 formula =A2*2`, and `A3 = Merged`.
 - Shared strings smoke file
   `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`
-  was opened read-only with local Excel COM. Verified worksheet `Shared`,
-  used range `2x3`, and `A1 = repeat`.
-- No save was requested during that Excel COM check. `LastWriteTime` changed
-  while the file size stayed unchanged; this check only records successful
-  read-only open and value verification.
+  was opened read-only with local Excel COM after the current P5 test expansion.
+  Verified worksheet `Shared`, used range `A1:D3`, and values:
+  `A1 = repeat`, `B1 = "space "`, `C1 = "escaped & <tag>"`,
+  `A2 = repeat`, `B2 = "space "`, `A3 = ""`, `B3 = " leading"`,
+  `C3 = "\tindent"`, and `D3 = repeat`.
+- No save was requested during that Excel COM check. The COM-created Excel
+  process was closed after verification; the pre-existing user Excel process was
+  left untouched.
+- The focused structure test covers sharedStrings `count=9`, `uniqueCount=6`,
+  ordered `<si>` entry order, worksheet `t="s"` index references, escaped text,
+  empty string, `xml:space="preserve"`, exact shared-string cell/entry
+  occurrence counts, workbook-level reuse across two worksheets, and newline /
+  carriage-return preservation. The ZIP test helper also rejects duplicate
+  entry names instead of silently overwriting them. Reference XML comparison
+  against an Excel / `openpyxl` / `XlsxWriter` file is still not recorded.
 - No 10,000,000-cell benchmark result is recorded in this plan.
+- Current benchmark entry is a manual opt-in tool, not a Google Benchmark
+  integration and not a CTest test.
 
 Tasks:
 - Keep the opt-in minizip backend covered by tests, and decide later whether it
@@ -648,6 +665,12 @@ Tasks:
 - Track dimensions incrementally and test row/column Excel limits.
 - Add an opt-in benchmark target or command; do not put large benchmarks in
   default CTest.
+- Current preset entry points are `windows-nmake-release-benchmark` and
+  `windows-nmake-release-benchmark-minizip`; both are manual build/run paths.
+- When no `--output` / `--result` is supplied, `fastxlsx_bench_streaming_writer`
+  writes under the benchmark target binary directory. The manual tool rejects
+  `--sheets` above 1024 and keeps `office_open` as `not_run` until a real office
+  application check is performed.
 
 API documentation requirements:
 - Public comments must state Streaming mode, ordered input, string-view
@@ -862,7 +885,7 @@ Validation:
 - Add feature-specific OpenXML structure tests before claiming each object type
   is supported.
 - Run default tests with a 60s timeout and keep complex compatibility samples
-  out of the default benchmark path.
+  out of the default CTest/unit-test path.
 - Use local Excel visual verification when available, especially for pictures,
   tables, validations, conditional formatting, chart passthrough, and VBA
   passthrough.

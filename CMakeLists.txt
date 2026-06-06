@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(FASTXLSX_BUILD_TESTS "Build FastXLSX tests" ON)
 option(FASTXLSX_BUILD_EXAMPLES "Build FastXLSX examples" OFF)
+option(FASTXLSX_BUILD_BENCHMARKS "Build FastXLSX manual benchmark tools" OFF)
 option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" ON)
 option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZIP writer backend" OFF)
 
@@ -46,4 +47,8 @@ endif()
 
 if(FASTXLSX_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(FASTXLSX_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()

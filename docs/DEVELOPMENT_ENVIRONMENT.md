@@ -102,6 +102,10 @@ preset 文件要求；项目 `CMakeLists.txt` 的最低版本仍是 3.20。
 - `windows-nmake-release-minizip`：显式使用 vcpkg toolchain，并启用
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 与 `VCPKG_MANIFEST_FEATURES=planned-runtime`，
   用于验证 opt-in minizip-ng package writer backend。
+- `windows-nmake-release-benchmark`：显式启用手工 benchmark target，不使用
+  vcpkg，不注册默认 CTest。
+- `windows-nmake-release-benchmark-minizip`：显式启用手工 benchmark target 和
+  opt-in minizip backend，用于本地性能对比。
 
 在 VS2026 Developer Command Prompt 中可以运行：
 
@@ -134,6 +138,17 @@ ctest --preset windows-nmake-release-minizip
 才会安装并链接 `minizip-ng[core,zlib]`。`windows-nmake-release-vcpkg` 仍只是
 toolchain 和 manifest 入口，不代表 XML parser、DOM editing 或测试框架已经接入。
 首次运行 vcpkg preset 时，vcpkg 仍可能初始化自己的工具缓存，例如下载解压工具。
+
+手工 benchmark 不进入默认 CTest：
+
+```powershell
+cmake --preset windows-nmake-release-benchmark
+cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_streaming_writer
+```
+
+直接运行 `fastxlsx_bench_streaming_writer` 且不传 `--output` / `--result` 时，
+默认结果写到 benchmark target 的 binary dir。手工工具限制 `--sheets <= 1024`，
+用于避免极端输入污染 benchmark 结果；这不是默认 CTest 或 CI 路径。
 
 ## GitHub Actions CI
 

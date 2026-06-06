@@ -19,6 +19,15 @@
 
 namespace fastxlsx::test {
 
+inline void insert_zip_entry(
+    std::map<std::string, std::string>& entries, std::string name, std::string body)
+{
+    auto [_, inserted] = entries.emplace(std::move(name), std::move(body));
+    if (!inserted) {
+        throw std::runtime_error("duplicate ZIP entry");
+    }
+}
+
 inline std::string read_file(const std::filesystem::path& path)
 {
     std::ifstream stream(path, std::ios::binary);
@@ -97,7 +106,7 @@ inline std::map<std::string, std::string> read_stored_zip_entries(
         const std::uint16_t local_name_length = read_u16(data, local_offset + 26);
         const std::uint16_t local_extra_length = read_u16(data, local_offset + 28);
         const std::size_t body_offset = local_offset + 30u + local_name_length + local_extra_length;
-        entries[name] = data.substr(body_offset, uncompressed_size);
+        insert_zip_entry(entries, name, data.substr(body_offset, uncompressed_size));
 
         offset += 46u + name_length + extra_length + comment_length;
     }
@@ -162,7 +171,7 @@ inline std::map<std::string, std::string> read_minizip_entries(
             throw std::runtime_error(minizip_error("failed to read ZIP entry data", result));
         }
 
-        entries[name] = std::move(data);
+        insert_zip_entry(entries, name, std::move(data));
         result = mz_zip_reader_goto_next_entry(reader.get());
     }
 

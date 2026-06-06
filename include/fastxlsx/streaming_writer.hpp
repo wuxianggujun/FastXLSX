@@ -81,9 +81,19 @@ public:
     /// maintain calculation-chain metadata in the current implementation.
     static CellView formula(std::string_view value) noexcept;
 
+    /// Returns the value kind consumed by WorksheetWriter::append_row().
     [[nodiscard]] Type type() const noexcept;
+
+    /// Returns the numeric payload when type() is Type::Number.
     [[nodiscard]] double number_value() const noexcept;
+
+    /// Returns the text or formula view consumed during append_row().
+    ///
+    /// This accessor does not extend the string_view lifetime and does not
+    /// allocate writer state.
     [[nodiscard]] std::string_view text_value() const noexcept;
+
+    /// Returns the boolean payload when type() is Type::Boolean.
     [[nodiscard]] bool boolean_value() const noexcept;
 
 private:
@@ -144,6 +154,8 @@ public:
     /// The last call wins because the current worksheet model stores a single
     /// frozen pane setting. Split counts are zero-based counts of frozen rows and
     /// columns; for example (1, 1) freezes the first row and first column.
+    /// This records worksheet metadata only and does not inspect or rewrite
+    /// previously written row XML.
     ///
     /// @throws FastXlsxError if either split exceeds Excel worksheet limits.
     void freeze_panes(std::uint32_t row_split, std::uint32_t column_split);
@@ -153,6 +165,8 @@ public:
     /// The last call wins because the current worksheet model stores a single
     /// auto-filter range. The range is validated as a 1-based inclusive Excel
     /// cell range.
+    /// This records worksheet metadata only and does not inspect or rewrite
+    /// previously written row XML.
     ///
     /// @throws FastXlsxError if the range is reversed or outside Excel worksheet
     /// limits.
@@ -162,7 +176,9 @@ public:
     ///
     /// Ranges are appended and emitted during close(); the current implementation
     /// does not check overlap against other merged ranges or existing cell
-    /// values.
+    /// values. The writer keeps the merge range list until close(), so memory
+    /// grows with the number of recorded merged ranges, not with worksheet cell
+    /// contents.
     ///
     /// @throws FastXlsxError if the range is invalid, outside Excel worksheet
     /// limits, or contains only one cell.

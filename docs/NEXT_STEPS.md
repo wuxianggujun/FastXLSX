@@ -128,7 +128,7 @@ commit or short series with its own tests and docs update.
    - Compare package XML and Excel open behavior against inline strings.
 
 5. Streaming writer hot-path and benchmark groundwork.
-   - Add opt-in benchmark command/target.
+   - Use the opt-in `fastxlsx_bench_streaming_writer` manual benchmark target.
    - Measure row-order write path before adding broad convenience APIs.
    - Keep benchmark work out of default CTest.
 
@@ -326,10 +326,12 @@ Start before making broad performance claims or adding convenience APIs that
 could affect the writer hot path.
 
 Do:
-- Add an opt-in benchmark command, target, or documented manual workflow.
+- Use the opt-in manual benchmark target `fastxlsx_bench_streaming_writer`.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
 - Record data scale, string strategy, compression setting, time, peak memory,
   output size, and Excel/WPS/LibreOffice open result.
+- Keep the first slice independent of Google Benchmark; `planned-dev`
+  dependencies remain planned until a separate task explicitly wires them.
 
 Accept when:
 - Default CTest remains lightweight and under the 60s boundary.
@@ -337,6 +339,8 @@ Accept when:
 
 Do not claim:
 - Benchmark coverage from normal unit tests.
+- Google Benchmark integration or 10,000,000-cell results from the manual
+  benchmark entry alone.
 
 ### P7 - Streaming Writer Hot Path
 

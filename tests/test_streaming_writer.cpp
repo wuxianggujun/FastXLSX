@@ -2,7 +2,10 @@
 
 #include "zip_test_utils.hpp"
 
+#include <array>
+#include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <span>
 #include <stdexcept>
@@ -52,6 +55,37 @@ std::size_t count_occurrences(const std::string& text, std::string_view fragment
         offset += fragment.size();
     }
     return count;
+}
+
+const std::array<unsigned char, 67>& tiny_rgba_png()
+{
+    static constexpr std::array<unsigned char, 67> bytes {
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+        0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    };
+    return bytes;
+}
+
+std::span<const std::byte> tiny_png_bytes()
+{
+    const auto& bytes = tiny_rgba_png();
+    return std::as_bytes(std::span<const unsigned char>(bytes.data(), bytes.size()));
+}
+
+void write_bytes(const std::filesystem::path& path, std::span<const std::byte> bytes)
+{
+    std::ofstream output(path, std::ios::binary);
+    if (!output) {
+        throw TestFailure("failed to create test file");
+    }
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!output) {
+        throw TestFailure("failed to write test file");
+    }
 }
 
 void test_streaming_writer_smoke_package()
@@ -587,6 +621,135 @@ void test_streaming_writer_tables()
         "plain worksheet should not include relationship namespace");
 }
 
+void test_streaming_writer_images()
+{
+    const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
+    write_bytes(image_path, tiny_png_bytes());
+
+#ifdef FASTXLSX_TEST_HAS_STB
+    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-images.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto images = workbook.add_worksheet("Images");
+    auto second = workbook.add_worksheet("SecondImage");
+    auto plain = workbook.add_worksheet("Plain");
+
+    images.append_row({
+        fastxlsx::CellView::text("Name"),
+        fastxlsx::CellView::text("Qty"),
+        fastxlsx::CellView::text("Image"),
+    });
+    images.append_row({
+        fastxlsx::CellView::text("Widget"),
+        fastxlsx::CellView::number(7.0),
+        fastxlsx::CellView::text("anchored"),
+    });
+    images.add_external_hyperlink(2, 1, "https://example.com/items/widget");
+    images.add_image(image_path, {1, 3, 4, 5});
+
+    fastxlsx::TableOptions table;
+    table.name = "ImageTable";
+    table.column_names = {"Name", "Qty"};
+    images.add_table({1, 1, 2, 2}, table);
+
+    second.add_image(image_path, {1, 1, 1, 1});
+    plain.append_row({fastxlsx::CellView::text("No image sheet")});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "image xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.png"), "missing first image media part");
+    check(entries.contains("xl/media/image2.png"), "missing second image media part");
+    check(entries.contains("xl/drawings/drawing1.xml"), "missing first drawing part");
+    check(entries.contains("xl/drawings/drawing2.xml"), "missing second drawing part");
+    check(entries.contains("xl/drawings/_rels/drawing1.xml.rels"),
+        "missing first drawing relationships");
+    check(entries.contains("xl/drawings/_rels/drawing2.xml.rels"),
+        "missing second drawing relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "missing first worksheet drawing relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "missing second worksheet drawing relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "plain worksheet should not create image relationships");
+    check(entries.at("xl/media/image1.png").size() == tiny_rgba_png().size(),
+        "first media part byte size mismatch");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(content_types,
+        R"(<Default Extension="png" ContentType="image/png"/>)",
+        "PNG content type default missing");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>)",
+        "first drawing content type override missing");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/drawings/drawing2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>)",
+        "second drawing content type override missing");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\"/></hyperlinks>"
+        "<drawing r:id=\"rId2\"/><tableParts count=\"1\"><tablePart r:id=\"rId3\"/></tableParts></worksheet>",
+        "worksheet drawing reference should follow hyperlinks and precede tableParts");
+
+    const auto& first_sheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/items/widget" TargetMode="External"/>)",
+        "image test hyperlink relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>)",
+        "worksheet drawing relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table relationship should follow drawing rId");
+
+    const auto& first_drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check_contains(first_drawing_xml,
+        R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "drawing root namespace mismatch");
+    check_contains(first_drawing_xml,
+        "<xdr:from><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>",
+        "drawing from marker mismatch");
+    check_contains(first_drawing_xml,
+        "<xdr:to><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>",
+        "drawing to marker mismatch");
+    check_contains(first_drawing_xml,
+        R"(<a:blip r:embed="rId1"/>)",
+        "drawing image relationship id mismatch");
+    check_contains(first_drawing_xml,
+        R"(<a:ext cx="9525" cy="9525"/>)",
+        "drawing intrinsic EMU size mismatch");
+    check(count_occurrences(first_drawing_xml, "<xdr:twoCellAnchor") == 1,
+        "first drawing anchor count mismatch");
+
+    const auto& first_drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check_contains(first_drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "first drawing image relationship mismatch");
+
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_sheet_xml,
+        "</sheetData><drawing r:id=\"rId1\"/></worksheet>",
+        "second worksheet drawing id should be owner-local");
+    const auto& second_sheet_rels = entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing2.xml"/>)",
+        "second worksheet drawing relationship mismatch");
+    const auto& second_drawing_rels = entries.at("xl/drawings/_rels/drawing2.xml.rels");
+    check_contains(second_drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/>)",
+        "second drawing image relationship mismatch");
+#else
+    auto workbook = fastxlsx::WorkbookWriter::create(
+        std::filesystem::current_path() / "fastxlsx-streaming-images-disabled.xlsx");
+    auto sheet = workbook.add_worksheet("Images");
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 1}); },
+        "streaming add_image should require opt-in stb support");
+#endif
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -832,6 +995,12 @@ void test_streaming_writer_rejects_mutation_after_close()
     check_fastxlsx_error(
         [&sheet, &table] { sheet.add_table({1, 1, 2, 2}, table); },
         "add_table should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.add_image(std::filesystem::current_path() / "fastxlsx-unused-image.png",
+                {1, 1, 1, 1});
+        },
+        "add_image should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -930,6 +1099,26 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet, &table] { sheet.add_table({1, 1, 2, 16385}, table); },
         "tables should reject a column beyond Excel's limit");
+
+    const auto image_path = std::filesystem::current_path() / "fastxlsx-unused-image.png";
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {0, 1, 1, 1}); },
+        "images should reject a zero anchor row");
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {1, 0, 1, 1}); },
+        "images should reject a zero anchor column");
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {2, 1, 1, 1}); },
+        "images should reject a reversed anchor row range");
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {1, 2, 1, 1}); },
+        "images should reject a reversed anchor column range");
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1048577, 1}); },
+        "images should reject an anchor row beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 16385}); },
+        "images should reject an anchor column beyond Excel's limit");
 }
 
 void test_streaming_writer_invalid_table_options()
@@ -1106,6 +1295,7 @@ int main()
         test_streaming_writer_data_validations();
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_tables();
+        test_streaming_writer_images();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();

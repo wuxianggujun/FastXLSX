@@ -317,6 +317,23 @@ public:
     /// duplicated, or the workbook is closed.
     void add_table(CellRange range, TableOptions options);
 
+    /// Records a PNG/JPEG image anchored to worksheet cells.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The image file
+    /// is validated through the opt-in stb-backed image metadata helper, then
+    /// copied to a temporary file-backed media entry so close() can package the
+    /// original bytes without retaining them in worksheet row state. The anchor
+    /// is written as a simple two-cell drawing anchor spanning the supplied
+    /// inclusive cell range. This creates `xl/media/*`, `xl/drawings/*`,
+    /// drawing `.rels`, worksheet `.rels`, a worksheet `<drawing>` reference,
+    /// and drawing/content type entries. It does not crop, rotate, recompress,
+    /// convert formats, mutate existing drawings, or edit existing XLSX files.
+    ///
+    /// @throws FastXlsxError if the anchor range is invalid, the workbook is
+    /// closed, stb support is disabled, the file cannot be read, or the image
+    /// format is outside the current PNG/JPEG slice.
+    void add_image(const std::filesystem::path& path, CellRange anchor);
+
 private:
     friend class WorkbookWriter;
     explicit WorksheetWriter(detail::WorksheetWriterState* state) noexcept;

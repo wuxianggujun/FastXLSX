@@ -99,6 +99,10 @@ table UI。
 new-workbook 路径，还是属于 Patch / existing-workbook 路径。图片读取应使用 `stb`
 获取尺寸、通道数和像素；但 `stb` 不负责 OpenXML media part、drawing XML、
 drawing relationships、worksheet relationships、content types 或 anchors。
+当前 `WorksheetWriter::add_image(path, anchor)` 是 Streaming / new-workbook
+PNG/JPEG 基础切片：它用 `read_image_info()` 验证元数据，把原始图片字节复制到临时
+file-backed media entry，并在 `close()` 时生成 media part、drawing XML、drawing
+`.rels`、worksheet `.rels`、worksheet `<drawing>` 和 content type entries。
 图片插入 API 还要说明是否复制原始图片字节、是否会解码像素、decoded pixel buffer
 生命周期、内存成本是否与图片字节数或 `width * height * channels` 相关、是否生成
 `xl/media/*`、`xl/drawings/drawing*.xml`、drawing `.rels`、worksheet `.rels`、

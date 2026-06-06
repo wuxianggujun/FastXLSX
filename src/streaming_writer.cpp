@@ -2,6 +2,7 @@
 
 #include <fastxlsx/detail/opc.hpp>
 #include <fastxlsx/detail/xml.hpp>
+#include <fastxlsx/image.hpp>
 
 #include "package_writer.hpp"
 
@@ -12,6 +13,7 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <locale>
 #include <optional>
 #include <set>
@@ -46,6 +48,12 @@ struct ExternalHyperlink {
 struct WorksheetTable {
     CellRange range;
     TableOptions options;
+};
+
+struct WorksheetImage {
+    CellRange anchor;
+    ImageInfo info;
+    std::filesystem::path media_path;
 };
 
 std::string format_number(double value)
@@ -155,6 +163,30 @@ std::string_view data_validation_operator_name(DataValidationOperator operator_t
 std::string worksheet_relationship_id(std::size_t index)
 {
     return "rId" + std::to_string(index + 1);
+}
+
+std::string_view image_extension(ImageFormat format)
+{
+    switch (format) {
+    case ImageFormat::Png:
+        return "png";
+    case ImageFormat::Jpeg:
+        return "jpg";
+    }
+
+    throw FastXlsxError("unknown image format");
+}
+
+std::string_view image_content_type(ImageFormat format)
+{
+    switch (format) {
+    case ImageFormat::Png:
+        return "image/png";
+    case ImageFormat::Jpeg:
+        return "image/jpeg";
+    }
+
+    throw FastXlsxError("unknown image format");
 }
 
 bool is_ascii_letter(char ch) noexcept
@@ -306,6 +338,30 @@ std::filesystem::path make_temp_path()
         / ("fastxlsx-stream-" + std::to_string(tick) + "-" + std::to_string(id) + ".xml");
 }
 
+std::filesystem::path copy_image_to_temp_file(const std::filesystem::path& source_path)
+{
+    std::ifstream input(source_path, std::ios::binary);
+    if (!input) {
+        throw FastXlsxError("failed to open image file for package media part");
+    }
+
+    const std::filesystem::path temp_path = make_temp_path();
+    std::ofstream output(temp_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create temporary image media file");
+    }
+
+    output << input.rdbuf();
+    if (input.bad()) {
+        throw FastXlsxError("failed to read image file for package media part");
+    }
+    if (!output) {
+        throw FastXlsxError("failed to write temporary image media file");
+    }
+
+    return temp_path;
+}
+
 } // namespace
 
 namespace detail {
@@ -337,6 +393,9 @@ struct WorksheetWriterState {
         }
         std::error_code ignored;
         std::filesystem::remove(body_path, ignored);
+        for (const WorksheetImage& image : images) {
+            std::filesystem::remove(image.media_path, ignored);
+        }
     }
 
     WorksheetWriterState(const WorksheetWriterState&) = delete;
@@ -355,6 +414,7 @@ struct WorksheetWriterState {
     std::vector<DataValidation> data_validations;
     std::vector<ExternalHyperlink> external_hyperlinks;
     std::vector<WorksheetTable> tables;
+    std::vector<WorksheetImage> images;
     std::string row_buffer;
 };
 
@@ -387,7 +447,8 @@ void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
 
 bool worksheet_has_relationships(const detail::WorksheetWriterState& worksheet) noexcept
 {
-    return !worksheet.external_hyperlinks.empty() || !worksheet.tables.empty();
+    return !worksheet.external_hyperlinks.empty() || !worksheet.tables.empty()
+        || !worksheet.images.empty();
 }
 
 bool workbook_has_table_name(
@@ -653,7 +714,14 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
 
 std::string table_relationship_id(const detail::WorksheetWriterState& worksheet, std::size_t table_index)
 {
-    return worksheet_relationship_id(worksheet.external_hyperlinks.size() + table_index);
+    const std::size_t drawing_relationship_count = worksheet.images.empty() ? 0 : 1;
+    return worksheet_relationship_id(
+        worksheet.external_hyperlinks.size() + drawing_relationship_count + table_index);
+}
+
+std::string drawing_relationship_id(const detail::WorksheetWriterState& worksheet)
+{
+    return worksheet_relationship_id(worksheet.external_hyperlinks.size());
 }
 
 std::string build_table_parts(const detail::WorksheetWriterState& worksheet)
@@ -671,6 +739,18 @@ std::string build_table_parts(const detail::WorksheetWriterState& worksheet)
         xml += "\"/>";
     }
     xml += "</tableParts>";
+    return xml;
+}
+
+std::string build_drawing_reference(const detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.images.empty()) {
+        return {};
+    }
+
+    std::string xml = "<drawing r:id=\"";
+    xml += drawing_relationship_id(worksheet);
+    xml += "\"/>";
     return xml;
 }
 
@@ -704,6 +784,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
     xml += build_merge_cells(worksheet);
     xml += build_data_validations(worksheet);
     xml += build_hyperlinks(worksheet);
+    xml += build_drawing_reference(worksheet);
     xml += build_table_parts(worksheet);
     xml += "</worksheet>";
     return xml;
@@ -728,12 +809,32 @@ std::string table_entry_name(std::size_t table_index)
     return "xl/tables/table" + std::to_string(table_index + 1) + ".xml";
 }
 
+std::string drawing_entry_name(std::size_t drawing_index)
+{
+    return "xl/drawings/drawing" + std::to_string(drawing_index + 1) + ".xml";
+}
+
+std::string drawing_relationship_entry_name(std::size_t drawing_index)
+{
+    return "xl/drawings/_rels/drawing" + std::to_string(drawing_index + 1) + ".xml.rels";
+}
+
+std::string media_entry_name(const WorksheetImage& image, std::size_t image_index)
+{
+    std::string name = "xl/media/image" + std::to_string(image_index + 1) + ".";
+    name += image_extension(image.info.format);
+    return name;
+}
+
 std::string build_worksheet_relationships(
-    const detail::WorksheetWriterState& worksheet, std::size_t first_table_index)
+    const detail::WorksheetWriterState& worksheet, std::size_t first_table_index,
+    std::size_t drawing_index)
 {
     detail::RelationshipSet relationships;
     constexpr std::string_view hyperlink_type =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+    constexpr std::string_view drawing_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing";
     constexpr std::string_view table_type =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table";
 
@@ -742,6 +843,12 @@ std::string build_worksheet_relationships(
             std::string(hyperlink_type),
             worksheet.external_hyperlinks[index].target_url,
             detail::Relationship::TargetMode::External);
+    }
+
+    if (!worksheet.images.empty()) {
+        relationships.add(drawing_relationship_id(worksheet),
+            std::string(drawing_type),
+            "../drawings/drawing" + std::to_string(drawing_index + 1) + ".xml");
     }
 
     for (std::size_t index = 0; index < worksheet.tables.size(); ++index) {
@@ -803,6 +910,83 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
     return xml;
 }
 
+std::string drawing_relationship_id(std::size_t image_index)
+{
+    return worksheet_relationship_id(image_index);
+}
+
+std::string build_drawing_marker_xml(
+    std::string_view element_name, std::uint32_t row, std::uint32_t column)
+{
+    std::string xml;
+    xml += "<xdr:";
+    xml += element_name;
+    xml += "><xdr:col>";
+    xml += std::to_string(column - 1);
+    xml += "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>";
+    xml += std::to_string(row - 1);
+    xml += "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:";
+    xml += element_name;
+    xml += ">";
+    return xml;
+}
+
+std::string build_drawing_xml(
+    const detail::WorksheetWriterState& worksheet, std::size_t first_image_index)
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" )";
+    xml += R"(xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" )";
+    xml += R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)";
+
+    for (std::size_t index = 0; index < worksheet.images.size(); ++index) {
+        const WorksheetImage& image = worksheet.images[index];
+        const std::size_t package_image_index = first_image_index + index;
+        const std::uint64_t width_emu = static_cast<std::uint64_t>(image.info.width) * 9525U;
+        const std::uint64_t height_emu = static_cast<std::uint64_t>(image.info.height) * 9525U;
+
+        xml += R"(<xdr:twoCellAnchor editAs="twoCell">)";
+        xml += build_drawing_marker_xml("from", image.anchor.first_row, image.anchor.first_column);
+        xml += build_drawing_marker_xml("to", image.anchor.last_row + 1, image.anchor.last_column + 1);
+        xml += "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"";
+        xml += std::to_string(package_image_index + 1);
+        xml += "\" name=\"Picture ";
+        xml += std::to_string(package_image_index + 1);
+        xml += R"("/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/>)";
+        xml += "</xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed=\"";
+        xml += drawing_relationship_id(index);
+        xml += R"("/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>)";
+        xml += R"(<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx=")";
+        xml += std::to_string(width_emu);
+        xml += R"(" cy=")";
+        xml += std::to_string(height_emu);
+        xml += R"("/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>)";
+        xml += "</xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>";
+    }
+
+    xml += "</xdr:wsDr>";
+    return xml;
+}
+
+std::string build_drawing_relationships(
+    const detail::WorksheetWriterState& worksheet, std::size_t first_image_index)
+{
+    detail::RelationshipSet relationships;
+    constexpr std::string_view image_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+
+    for (std::size_t index = 0; index < worksheet.images.size(); ++index) {
+        const std::size_t package_image_index = first_image_index + index;
+        relationships.add(drawing_relationship_id(index),
+            std::string(image_type),
+            "../media/image" + std::to_string(package_image_index + 1) + "."
+                + std::string(image_extension(worksheet.images[index].info.format)));
+    }
+
+    return detail::serialize_relationships(relationships);
+}
+
 std::size_t count_tables(const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
 {
     std::size_t count = 0;
@@ -810,6 +994,22 @@ std::size_t count_tables(const std::vector<std::unique_ptr<detail::WorksheetWrit
         count += worksheet->tables.size();
     }
     return count;
+}
+
+std::size_t count_images(const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+{
+    std::size_t count = 0;
+    for (const auto& worksheet : worksheets) {
+        count += worksheet->images.size();
+    }
+    return count;
+}
+
+std::size_t count_drawings(const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+{
+    return static_cast<std::size_t>(
+        std::count_if(worksheets.begin(), worksheets.end(),
+            [](const auto& worksheet) { return !worksheet->images.empty(); }));
 }
 
 std::vector<std::size_t> table_start_indexes(
@@ -823,6 +1023,52 @@ std::vector<std::size_t> table_start_indexes(
         next += worksheet->tables.size();
     }
     return starts;
+}
+
+std::vector<std::size_t> image_start_indexes(
+    const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+{
+    std::vector<std::size_t> starts;
+    starts.reserve(worksheets.size());
+    std::size_t next = 0;
+    for (const auto& worksheet : worksheets) {
+        starts.push_back(next);
+        next += worksheet->images.size();
+    }
+    return starts;
+}
+
+std::vector<std::size_t> worksheet_drawing_indexes(
+    const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+{
+    constexpr std::size_t no_drawing = std::numeric_limits<std::size_t>::max();
+
+    std::vector<std::size_t> drawing_indexes;
+    drawing_indexes.reserve(worksheets.size());
+    std::size_t next = 0;
+    for (const auto& worksheet : worksheets) {
+        if (worksheet->images.empty()) {
+            drawing_indexes.push_back(no_drawing);
+        } else {
+            drawing_indexes.push_back(next);
+            ++next;
+        }
+    }
+    return drawing_indexes;
+}
+
+bool workbook_has_image_format(
+    const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets,
+    ImageFormat format) noexcept
+{
+    for (const auto& worksheet : worksheets) {
+        for (const WorksheetImage& image : worksheet->images) {
+            if (image.info.format == format) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 class TemporaryFile {
@@ -1040,6 +1286,15 @@ void WorksheetWriter::add_table(CellRange range, TableOptions options)
     state_->tables.push_back({range, std::move(options)});
 }
 
+void WorksheetWriter::add_image(const std::filesystem::path& path, CellRange anchor)
+{
+    ensure_mutable_worksheet(state_);
+    (void)detail::range_reference(anchor);
+
+    const ImageInfo info = read_image_info(path);
+    state_->images.push_back({anchor, info, copy_image_to_temp_file(path)});
+}
+
 WorkbookWriter::WorkbookWriter() = default;
 WorkbookWriter::~WorkbookWriter() = default;
 WorkbookWriter::WorkbookWriter(WorkbookWriter&&) noexcept = default;
@@ -1097,11 +1352,26 @@ void WorkbookWriter::close()
     detail::PackageManifest manifest =
         detail::make_minimal_workbook_manifest(state_->worksheets.size(), write_shared_strings);
     const std::size_t table_count = count_tables(state_->worksheets);
+    const std::size_t image_count = count_images(state_->worksheets);
+    const std::size_t drawing_count = count_drawings(state_->worksheets);
     constexpr std::string_view content_type_table =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml";
+    constexpr std::string_view content_type_drawing =
+        "application/vnd.openxmlformats-officedocument.drawing+xml";
+    if (workbook_has_image_format(state_->worksheets, ImageFormat::Png)) {
+        manifest.content_types().add_default("png", std::string(image_content_type(ImageFormat::Png)));
+    }
+    if (workbook_has_image_format(state_->worksheets, ImageFormat::Jpeg)) {
+        manifest.content_types().add_default("jpg", std::string(image_content_type(ImageFormat::Jpeg)));
+    }
     for (std::size_t index = 0; index < table_count; ++index) {
         manifest.add_part(
             detail::PartName("/" + table_entry_name(index)), std::string(content_type_table))
+            .set_write_mode(detail::PartWriteMode::GenerateSmallXml);
+    }
+    for (std::size_t index = 0; index < drawing_count; ++index) {
+        manifest.add_part(
+            detail::PartName("/" + drawing_entry_name(index)), std::string(content_type_drawing))
             .set_write_mode(detail::PartWriteMode::GenerateSmallXml);
     }
 
@@ -1115,7 +1385,7 @@ void WorkbookWriter::close()
         std::count_if(state_->worksheets.begin(), state_->worksheets.end(),
             [](const auto& worksheet) { return worksheet_has_relationships(*worksheet); });
     entries.reserve(6 + state_->worksheets.size() + worksheet_relationship_count
-        + table_count + (write_shared_strings ? 1 : 0));
+        + table_count + drawing_count * 2 + image_count + (write_shared_strings ? 1 : 0));
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
     entries.push_back({"docProps/core.xml", detail::build_core_properties()});
@@ -1134,13 +1404,30 @@ void WorkbookWriter::close()
     }
 
     const std::vector<std::size_t> first_table_indexes = table_start_indexes(state_->worksheets);
+    const std::vector<std::size_t> first_image_indexes = image_start_indexes(state_->worksheets);
+    const std::vector<std::size_t> drawing_indexes = worksheet_drawing_indexes(state_->worksheets);
     for (std::size_t index = 0; index < state_->worksheets.size(); ++index) {
         entries.push_back(build_worksheet_entry(
             "xl/worksheets/sheet" + std::to_string(index + 1) + ".xml",
             *state_->worksheets[index]));
         if (worksheet_has_relationships(*state_->worksheets[index])) {
             entries.emplace_back(worksheet_relationship_entry_name(index),
-                build_worksheet_relationships(*state_->worksheets[index], first_table_indexes[index]));
+                build_worksheet_relationships(*state_->worksheets[index], first_table_indexes[index],
+                    drawing_indexes[index]));
+        }
+        if (!state_->worksheets[index]->images.empty()) {
+            const std::size_t drawing_index = drawing_indexes[index];
+            entries.emplace_back(drawing_entry_name(drawing_index),
+                build_drawing_xml(*state_->worksheets[index], first_image_indexes[index]));
+            entries.emplace_back(drawing_relationship_entry_name(drawing_index),
+                build_drawing_relationships(*state_->worksheets[index], first_image_indexes[index]));
+            for (std::size_t image_index = 0; image_index < state_->worksheets[index]->images.size();
+                ++image_index) {
+                const WorksheetImage& image = state_->worksheets[index]->images[image_index];
+                entries.emplace_back(media_entry_name(image, first_image_indexes[index] + image_index),
+                    std::vector<detail::PackageEntryChunk> {
+                        detail::PackageEntryChunk::file(image.media_path)});
+            }
         }
         for (std::size_t table_index = 0; table_index < state_->worksheets[index]->tables.size();
             ++table_index) {

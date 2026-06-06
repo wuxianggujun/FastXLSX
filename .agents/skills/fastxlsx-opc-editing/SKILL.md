@@ -66,7 +66,9 @@ worksheet.xml drawing reference
 -> [Content_Types].xml default/override
 ```
 
-`stb` 只能证明图片 bytes 可解码或可读取尺寸，不证明 drawing/package 支持。
+`stb` 只能证明图片 bytes 可解码或可读取尺寸；当前
+`WorksheetWriter::add_image()` 另有 new-workbook drawing/package 基础切片，但不证明
+existing-file image passthrough、drawing 编辑或 package preservation。
 修改 relationships 时必须同步 content types 和 target part。
 
 ## DOM 边界
@@ -135,7 +137,8 @@ worksheet.xml drawing reference
 - 保真验证：计划。需要输入/输出 package 对比，证明未知和未修改 part 被保留。
 - 不能因为有 write-mode metadata 就宣称已有 XLSX 编辑、图片、VBA、table 或 chart
   支持。
-- 不能因为 `stb` 可用就宣称已有 XLSX image passthrough、图片插入或 drawing 编辑。
+- 不能因为 `stb` 可用或 `WorksheetWriter::add_image()` 存在就宣称已有 XLSX image
+  passthrough、existing-file 图片插入或 drawing 编辑。
 
 ## 高风险区域
 

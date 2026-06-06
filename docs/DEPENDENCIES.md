@@ -132,8 +132,9 @@ XLSX 语义层：FastXLSX 自研
 - OpenXML media part、drawing XML、drawing relationships、worksheet
   relationships、content types、anchor 计算和 package preservation 由
   FastXLSX 自己实现。
-- 不要因为接入 `stb` 就宣称图片插入、图片编辑、drawing 编辑或已有文件图片保真
-  已完成。
+- 不要因为接入 `stb` 就宣称完整图片插入、图片编辑、drawing 编辑或已有文件图片保真
+  已完成；当前只可宣称 `WorksheetWriter::add_image()` 的 streaming-only
+  new-workbook PNG/JPEG 基础插入切片。
 - 不要把图片解码放进 worksheet row/cell 热路径。
 - `STB_IMAGE_IMPLEMENTATION` 等 implementation macro 只能放在一个 `.cpp` 中。
 - 如果只是嵌入已有 PNG/JPEG，优先保留原始图片字节并正确写 OpenXML package；
@@ -150,7 +151,9 @@ P17 图片任务的依赖接入应按阶段推进：
    streaming 热路径。
 3. New-workbook 插入阶段必须把 media part、drawing XML、drawing relationships、
    worksheet relationships、worksheet `<drawing>` 引用和 content types 一起验证；
-   不能只凭 `stb` 解码可用就宣称图片 OpenXML 支持。
+   当前 P17b 已有 `WorksheetWriter::add_image(path, anchor)` 基础切片，会保留原始
+   PNG/JPEG 字节为 file-backed media entry，并写出生成的 drawing/media package 结构。
+   不能只凭 `stb` 解码可用就宣称更广泛的图片 OpenXML 支持。
 4. Existing-workbook 图片读取、编辑或保真复制必须等 package reader/writer 和保真
    fixtures 证明未修改 media/drawing/chart/VBA/unknown parts 能保留后再推进。
 
@@ -321,9 +324,10 @@ Google Benchmark
 - `planned-runtime` 现在是 opt-in 运行依赖 feature：当前源码只使用其中的
   `minizip-ng[core,zlib]` 作为 package writer backend；`zlib-ng`、`expat`
   和 `pugixml` 仍是后续 ZIP/XML reader/editor 工作的计划依赖。
-- `planned-image` 记录图片解码依赖：`stb`。当前只通过
-  `FASTXLSX_ENABLE_STB=ON` 接入 PNG/JPEG `read_image_info()` 元数据 helper；
-  它不属于默认构建，也不代表图片 OpenXML 插入已经实现。
+- `planned-image` 记录图片解码依赖：`stb`。当前通过
+  `FASTXLSX_ENABLE_STB=ON` 接入 PNG/JPEG `read_image_info()` 元数据 helper，并支撑
+  `WorksheetWriter::add_image()` 的 streaming-only new-workbook PNG/JPEG 基础插入切片；
+  它不属于默认构建，也不代表 existing-workbook 图片保真或完整 drawing 编辑。
 - `planned-dev` 记录计划中的开发依赖：`catch2`、`benchmark`。
 - 本机已用 `vcpkg search` 确认上述 port 名称存在。
 - 本机已用 `vcpkg install --dry-run --x-feature=planned-runtime`、

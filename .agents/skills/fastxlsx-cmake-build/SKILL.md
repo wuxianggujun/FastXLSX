@@ -20,7 +20,8 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 `planned-runtime` 接入 `find_package(minizip-ng CONFIG REQUIRED)` /
 `MINIZIP::minizip-ng`；`FASTXLSX_ENABLE_STB=ON` 才通过 `planned-image`
 接入 `find_package(Stb REQUIRED)` / `${Stb_INCLUDE_DIR}`，用于 PNG/JPEG
-`read_image_info()` 元数据 helper。CI 路径不能在本地文档里写成已验证完成。
+`read_image_info()` 元数据 helper 和 `WorksheetWriter::add_image()` 的 streaming
+图片插入基础切片。CI 路径不能在本地文档里写成已验证完成。
 
 ## 当前 CMake 事实
 
@@ -76,7 +77,8 @@ cmake --help
 - `windows-nmake-release-minizip`：启用 `planned-runtime` 和
   `FASTXLSX_ENABLE_MINIZIP_NG=ON`，用于 opt-in minizip backend 验证。
 - `windows-nmake-release-image`：启用 `planned-image` 和
-  `FASTXLSX_ENABLE_STB=ON`，用于 opt-in stb 图片元数据 helper 验证。
+  `FASTXLSX_ENABLE_STB=ON`，用于 opt-in stb 图片元数据 helper 和 streaming
+  图片插入结构验证。
 - `windows-nmake-release-benchmark`：启用 `FASTXLSX_BUILD_BENCHMARKS=ON`，
   不启用 vcpkg，不进入默认 CTest。
 - `windows-nmake-release-benchmark-minizip`：启用 benchmark 和 minizip backend，
@@ -99,7 +101,7 @@ cmake --help
 - 当前 `vcpkg.json` 是基础入口：默认依赖为空，planned features 包含
   `minizip-ng`、`zlib-ng`、`expat`、`pugixml`、`catch2` 和 `benchmark`。
 - 当前代码真正使用的第三方依赖只有 opt-in `minizip-ng[core,zlib]` backend
-  和 opt-in `stb` 图片元数据 helper。
+  和 opt-in `stb` 图片元数据 helper / streaming 图片插入结构。
 - 未使用的依赖不要提前加 `find_package` 或 link。
 - 接入前必须验证真实 port 名、feature、imported target、triplet 行为和许可证。
 - 依赖接入遵守 `fastxlsx-dependency-policy`。
@@ -132,7 +134,7 @@ cmake --build --preset windows-nmake-release-minizip
 ctest --preset windows-nmake-release-minizip
 ```
 
-验证 stb 图片元数据 helper：
+验证 stb 图片元数据 helper 和 streaming 图片插入结构：
 
 ```powershell
 cmake --preset windows-nmake-release-image

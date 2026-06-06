@@ -23,7 +23,9 @@ streaming-only table API。`WorkbookWriter` / `WorksheetWriter` / `CellView`
 是流式写入骨架；data validation、external hyperlink 和 table API 是 worksheet
 metadata 基础切片，不等同完整 Phase 3 或完整 Phase 5。
 当前 `ImageFormat`、`ImageInfo` 和 `read_image_info()` 是 opt-in `stb` PNG/JPEG
-图片元数据 API，只读取格式、尺寸和通道，不写 OpenXML media/drawing parts。
+图片元数据 API，只读取格式、尺寸和通道。当前 `WorksheetWriter::add_image()`
+是 opt-in `stb` streaming-only new-workbook PNG/JPEG 图片插入基础 API，会写
+OpenXML media/drawing parts，但不代表 existing-workbook 图片保真或完整 drawing 编辑。
 
 ## 核心原则
 
@@ -56,6 +58,13 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   `FastXlsxError`，opt-in `FASTXLSX_ENABLE_STB=ON` 时用 `stb_image` 的 header probing
   读取 PNG/JPEG 格式、尺寸和通道。它不创建 media part、drawing XML、relationships、
   content types 或 anchors，也不代表图片插入或 existing-file 图片保真。
+- `WorksheetWriter::add_image()` 是 Streaming metadata/object API：默认无
+  `FASTXLSX_ENABLE_STB` 时通过 `read_image_info()` 抛出明确错误；opt-in 时验证
+  PNG/JPEG 元数据，复制原始图片字节到临时 file-backed media entry，并在 `close()`
+  写 `xl/media/*`、`xl/drawings/drawing*.xml`、drawing `.rels`、worksheet `.rels`、
+  worksheet `<drawing>` 和 content type entries。它不解码完整像素、不进入 row/cell
+  热路径、不持有完整 worksheet matrix，也不支持裁剪、旋转、压缩、格式转换、
+  existing drawing mutation 或 existing-file editing。
 - 当前 `Workbook::save()` 使用 internal package writer boundary；默认无依赖构建走
   stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
   backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
@@ -102,6 +111,9 @@ patch；`stb` 是否只做 header probing、是否会解码完整像素、原始
 pixel buffer 的生命周期与内存成本；是否写 `xl/media/*`、drawing XML、drawing `.rels`、
 worksheet `.rels`、worksheet `<drawing>` 和 content types；以及是否不支持裁剪、旋转、
 格式转换、existing drawing mutation 或 existing-file preservation。
+当前 `WorksheetWriter::add_image()` 注释应保持说明：Streaming / new-workbook-only、
+原始图片字节 file-backed、two-cell anchor、package side effects、无完整像素解码、
+无 existing-file editing、无 drawing mutation，且不牺牲 worksheet streaming 热路径。
 
 涉及热路径的 API，还要说明是否会触发 DOM、跨行缓存、shared strings 状态增长、
 压缩等级影响或输出文件大小变化。

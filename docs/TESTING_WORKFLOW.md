@@ -78,7 +78,9 @@ relationship target、worksheet `sheetData`、cell reference 和 value type。
 - sheet 名、行列位置、单元格值与预期一致。
 - 数字、布尔、字符串、日期、公式写入可见结果符合预期。
 - 样式、列宽、行高、合并单元格、冻结窗格等高级功能在后续实现时可见。
-- 图片功能在后续实现时，必须确认图片显示、位置和尺寸符合预期。
+- 图片功能必须确认图片显示、位置和尺寸符合预期；当前
+  `WorksheetWriter::add_image()` 基础切片的推荐样例是
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。
 - 保存后再打开仍然正常。
 
 Excel 可视化验证是本地验收步骤，不应作为默认 CI 的强依赖。CI 可以做结构检查
@@ -106,6 +108,14 @@ preset 路径通常是 `build/windows-nmake-release/tests/fastxlsx-phase1-minima
 `build-nmake/tests/fastxlsx-phase1-minimal.xlsx`；人工检查前必须确认该目录是
 当前源码重新构建后的输出。本机验证可以用 Excel COM 只读打开该文件并核对
 `Sheet1`、`A1`、`B1`、`C1`、`A2`、`B2`。
+
+当前 streaming 图片样例由 `fastxlsx.streaming` 在
+`windows-nmake-release-image` preset 下生成，推荐路径是
+`build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。本机
+Excel COM 验证应确认 workbook 可打开、`Images` 和 `SecondImage` sheet 各有一个
+shape、`Plain` sheet 没有 shape，并记录 Excel 报告的 `TopLeftCell` /
+`BottomRightCell`。当前本机验证结果为 `Images` 上 `C1:F5`，`SecondImage` 上
+`A1:B2`。
 
 ## 结构异常时的参考对比流程
 

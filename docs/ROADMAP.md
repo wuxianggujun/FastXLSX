@@ -103,8 +103,11 @@ existing-file editing、unknown part preservation 仍是计划。
 ## Phase 5：复杂对象
 
 当前状态提示：`stb` 已通过 opt-in `FASTXLSX_ENABLE_STB=ON` /
-`planned-image` 接入 PNG/JPEG `read_image_info()` 元数据 helper；这只代表
-图片格式、尺寸和通道读取切片，不代表 media/drawing OpenXML 图片插入。
+`planned-image` 接入 PNG/JPEG `read_image_info()` 元数据 helper。当前还存在
+`WorksheetWriter::add_image(path, anchor)` 的 streaming-only new-workbook
+PNG/JPEG 图片插入基础切片，会写 media/drawing parts、drawing rels、
+worksheet rels、worksheet `<drawing>` 和 content types。它不代表图片编辑、
+existing-workbook 图片保真、drawing mutation、裁剪、旋转、压缩或格式转换。
 图片、超链接、table、chart/VBA passthrough 不能仅凭本 roadmap 条目宣称支持；
 以 `TASK_PLAN.md`、`NEXT_STEPS.md`、`AGENTS.md` 的 current verified state 为准。
 

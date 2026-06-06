@@ -578,9 +578,9 @@ Do not claim:
 
 ### P17 - Images
 
-Start dependency and API design work after P11. Start new-workbook-only
-insertion only after the OpenXML part boundaries are designed. Existing-workbook
-image read/edit/preservation starts only after P13 proves preservation behavior.
+Dependency discovery, API design, and the first new-workbook-only insertion
+slice are now started. Existing-workbook image read/edit/preservation still
+starts only after P13 proves preservation behavior.
 
 Stages:
 1. P17.0 - `stb` dependency discovery and image metadata helper. Status:
@@ -590,9 +590,10 @@ Stages:
    - Current code exposes PNG/JPEG `read_image_info()` for file and memory
      input, backed by `stbi_info` when enabled and a clear FastXlsxError when
      disabled.
-   - This stage still does not create media parts, drawing XML, relationships,
-     content types, anchors, or existing-workbook preservation.
+   - This stage alone still does not create media parts, drawing XML,
+     relationships, content types, anchors, or existing-workbook preservation.
 2. P17.1 - API shape and documentation.
+   Status: basic for `WorksheetWriter::add_image()`.
    - Document whether each image API is Streaming, Patch, or In-memory.
    - Public comments must state memory behavior for original image bytes,
      decoded pixels, anchor metadata, drawing/media part state, and package
@@ -600,17 +601,33 @@ Stages:
    - Any convenience API must explain why it does not force large worksheets
      into DOM, a full cell matrix, or the row/cell XML hot path.
 3. P17.2 - New-workbook-only insertion slice.
-   - Keep the first slice narrow: PNG/JPEG, one anchor strategy, generated
-     workbook only, generated media and drawing parts, and no existing drawing
-     mutation.
-   - Allocate media parts, drawing parts, drawing relationships, worksheet
-     relationships, content type entries, and worksheet `<drawing>` references.
+   Status: basic for streaming new workbooks.
+   - `WorksheetWriter::add_image(path, anchor)` accepts PNG/JPEG files when
+     `FASTXLSX_ENABLE_STB=ON`, validates metadata with `read_image_info()`, and
+     copies original image bytes into temporary file-backed media entries.
+   - The first slice uses a simple two-cell anchor from a 1-based inclusive
+     `CellRange`; it writes generated media parts, one drawing part per
+     worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
+     `<drawing>` references, and drawing/content type entries.
+   - It does not crop, rotate, recompress, convert formats, mutate existing
+     drawings, edit existing XLSX files, or prove existing-workbook image
+     preservation.
 4. P17.3 - Compatibility and reference validation.
+   Status: basic local validation for the new-workbook-only insertion slice.
    - Use structure tests for media, drawing XML, relationship parts, content
      types, and worksheet drawing references.
+   - Current `fastxlsx.streaming` image tests verify `xl/media/image*.png`,
+     `xl/drawings/drawing*.xml`, drawing `.rels`, worksheet `.rels`, worksheet
+     `<drawing>`, owner-local relationship ids, PNG content type defaults, and
+     drawing content type overrides.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.
+   - Current local Excel COM verification opened
+     `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`
+     and confirmed 3 sheets, one shape on `Images`, one shape on `SecondImage`,
+     zero shapes on `Plain`, first image at `C1:F5`, and second image at
+     `A1:B2`.
    - When XML structure or Excel repair behavior is unclear, generate an
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.
@@ -628,13 +645,15 @@ Do:
   required drawing and relationship parts.
 - Generate drawing parts, drawing relationships, worksheet relationships,
   worksheet drawing references, and content type entries together.
+- Keep current image media bytes file-backed in package entries; do not move
+  image bytes or decoded pixels into the worksheet row/cell hot path.
 - Validate anchors without retaining a full worksheet DOM.
 
 Accept when:
 - vcpkg `stb` feature resolution, include path, license, and local CMake
-  behavior are verified for the opt-in image metadata helper. CI behavior for
-  `planned-image` remains a separate hardening task unless a workflow starts
-  running the image preset.
+  behavior are verified for the opt-in image metadata helper and image
+  insertion structure tests. CI behavior for `planned-image` remains a separate
+  hardening task unless a workflow starts running the image preset.
 - Public API docs for any image surface describe mode, ordering, memory cost,
   decoded-pixel lifetime, package side effects, and unsupported operations.
 - Package structure tests cover media, drawing XML, rels, and content types.
@@ -646,7 +665,8 @@ Accept when:
 Do not claim:
 - Image editing or broad drawing support beyond the implemented slice.
 - Picture support from `stb` dependency availability alone.
-- OpenXML image support from decoding/dimension tests alone.
+- OpenXML image support beyond the narrow `WorksheetWriter::add_image()`
+  streaming new-workbook PNG/JPEG slice.
 - Existing workbook image passthrough or preservation before P13 fixtures prove
   unmodified media/drawing/chart/VBA parts survive edits.
 

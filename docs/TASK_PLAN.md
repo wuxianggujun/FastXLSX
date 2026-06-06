@@ -370,16 +370,20 @@ Validation:
 
 ### M10 - Tables, Images, Charts, and VBA
 
-Status: 基础 for streaming-only new-workbook tables; planned for images,
-charts, VBA, existing-workbook object preservation, and complete table support.
+Status: 基础 for streaming-only new-workbook tables and the first
+streaming-only new-workbook PNG/JPEG image insertion slice; planned for charts,
+VBA, existing-workbook object preservation, and complete table/image support.
 
 Order:
 1. Tables now have a narrow `WorksheetWriter::add_table()` slice that writes
    `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
    table content type overrides for new workbooks only.
-2. New-workbook-only image insertion may start after internal OPC graph
-   groundwork if it is limited to PNG/JPEG, one anchor strategy, generated media
-   and drawing parts, and no existing drawing mutation or passthrough claims.
+2. New-workbook-only image insertion has a narrow
+   `WorksheetWriter::add_image(path, anchor)` slice for PNG/JPEG files behind
+   `FASTXLSX_ENABLE_STB=ON`. It validates metadata with `read_image_info()`,
+   stores original image bytes as file-backed media entries, writes one drawing
+   part per worksheet with images, and does not mutate existing drawings or make
+   passthrough claims.
 3. Existing-workbook image read/edit/preservation must wait until package
    reader/writer and preservation fixtures prove unknown and unmodified
    media/drawing/chart/VBA parts survive edits.
@@ -396,6 +400,15 @@ Validation:
   names, `A1:C3` / `A1:B2` ranges, header text, and basic built-in style flags.
 - Reference workbooks from Excel or Python XLSX libraries remain the fallback
   when table XML structure or Excel repair behavior is unclear.
+- `fastxlsx.streaming` image tests under `windows-nmake-release-image` compare
+  `xl/media/image*.png`, `xl/drawings/drawing*.xml`, drawing `.rels`,
+  worksheet `.rels`, worksheet `<drawing>`, owner-local `rId`, PNG content type
+  defaults, and drawing content type overrides.
+- Local Excel COM visual verification passed for
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`;
+  Excel opened the workbook, saw one shape on `Images`, one shape on
+  `SecondImage`, zero shapes on `Plain`, and reported anchors `C1:F5` and
+  `A1:B2`.
 - Package relationship and content type checks remain required for every object type.
 - Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.
@@ -882,8 +895,9 @@ Required dependencies before broad implementation:
 - Streaming worksheet writer support for object anchors or references without
   holding full worksheet data.
 - `stb` image decode/dimension dependency is available through the opt-in
-  `FASTXLSX_ENABLE_STB=ON` / `planned-image` path for `read_image_info()`.
-  This is only a PNG/JPEG metadata helper, not image insertion.
+  `FASTXLSX_ENABLE_STB=ON` / `planned-image` path for `read_image_info()` and
+  the current `WorksheetWriter::add_image()` PNG/JPEG insertion slice.
+  This is still opt-in and not default-build image support.
 - Style and formula boundaries from Phase 3 where conditional formatting,
   tables, or validations depend on styles, ranges, formulas, or workbook
   metadata.
@@ -928,10 +942,13 @@ Allowed early slices:
      Streaming/Patch/In-memory mode,
      memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,
      and why the API does not move worksheet data into DOM or a cell matrix.
-  3. New-workbook insertion slice: PNG/JPEG only, one anchor strategy, generated
-     media and drawing parts, worksheet `.rels`, drawing `.rels`, content type
-     entries, and worksheet `<drawing>` references.
-  4. Visual and reference validation: generated `.xlsx` samples need local Excel
+  3. New-workbook insertion slice: current basic slice is
+     `WorksheetWriter::add_image(path, anchor)` for PNG/JPEG only, one two-cell
+     anchor strategy, generated media and drawing parts, worksheet `.rels`,
+     drawing `.rels`, content type entries, and worksheet `<drawing>`
+     references.
+  4. Visual and reference validation: current basic slice has structure tests
+     and local Excel COM validation; future image variants still need local Excel
      visual verification when Excel is available; structure problems require an
      Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
   5. Existing-workbook image read/edit/preservation: start only after package
@@ -949,9 +966,10 @@ Forbidden until separately designed and verified:
   objects.
 - Do not move drawing, table, validation, or conditional-formatting logic into
   the cell XML hot path.
-- Do not treat `stb` as OpenXML support. It does not write drawing XML, manage
-  relationship ids, allocate media part names, or validate Excel package
-  compatibility.
+- Do not treat `stb` as complete OpenXML image support. It does not write
+  drawing XML, manage relationship ids, allocate media part names, or validate
+  Excel package compatibility; FastXLSX does those only in the current narrow
+  `WorksheetWriter::add_image()` new-workbook slice.
 - Do not add Excel, openpyxl, or XlsxWriter as runtime dependencies. They are
   reference and QA tools only.
 - Do not make an In-memory workbook model the default just to simplify complex

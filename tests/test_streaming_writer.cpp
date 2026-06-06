@@ -1515,6 +1515,9 @@ void test_streaming_writer_invalid_metadata_and_rows()
     check_fastxlsx_error(
         [&sheet] { sheet.set_column_width(1, 1, std::numeric_limits<double>::infinity()); },
         "set_column_width should reject an infinite width");
+    check_fastxlsx_error(
+        [&sheet] { sheet.set_column_width(1, 1, -std::numeric_limits<double>::infinity()); },
+        "set_column_width should reject a negative infinite width");
 
     check_fastxlsx_error(
         [&sheet] { sheet.freeze_panes(1048577, 0); },
@@ -1535,6 +1538,12 @@ void test_streaming_writer_invalid_metadata_and_rows()
                 {fastxlsx::CellView::number(std::numeric_limits<double>::infinity())});
         },
         "append_row should reject an infinite numeric cell");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::number(-std::numeric_limits<double>::infinity())});
+        },
+        "append_row should reject a negative infinite numeric cell");
     check_fastxlsx_error(
         [&sheet] {
             sheet.append_row(
@@ -1563,6 +1572,13 @@ void test_streaming_writer_invalid_metadata_and_rows()
                 fastxlsx::RowOptions {std::numeric_limits<double>::infinity()});
         },
         "append_row should reject an infinite row height");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::text("bad height")},
+                fastxlsx::RowOptions {-std::numeric_limits<double>::infinity()});
+        },
+        "append_row should reject a negative infinite row height");
 
     std::vector<fastxlsx::CellView> too_wide_row(16385, fastxlsx::CellView::number(1.0));
     check_fastxlsx_error(

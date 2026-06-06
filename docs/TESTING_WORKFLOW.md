@@ -24,7 +24,7 @@ benchmark 混进默认单元测试。
 
 - XML escape。
 - 单元格引用生成。
-- 数字、日期、布尔、字符串编码。
+- 数字、日期、布尔、字符串编码，以及 `NaN`、`+Inf`、`-Inf` 非有限数值拒绝。
 - `inlineStr` 和 `sharedStrings` 策略。
 - dimension tracking。
 - row buffer 复用。
@@ -77,6 +77,13 @@ merged ranges、suffix ordering，以及不会为纯 worksheet metadata 误加
 relationships 或 content type entries。
 图片结构测试还应检查 media part target、drawing relationship target、worksheet-local
 `rId` 一致性，以及 anchor 的起始/结束单元格和 offset 语义。
+
+数值编码负例不需要 Excel 可视化验证，因为期望结果是不生成有效 `.xlsx`。测试应覆盖
+`NaN`、`+Inf` 和 `-Inf`，并确认 in-memory 路径在 `Workbook::save()` 抛
+`FastXlsxError`，streaming 路径在 `WorksheetWriter::append_row()` 拒绝非有限
+number / row height，`WorksheetWriter::set_column_width()` 拒绝非有限 width。
+结构测试或排障时还要确认 worksheet XML 中没有写出 `nan`、`inf` 或 `-inf` 这类
+非法数字文本。
 
 ### 3. 本机 Excel 可视化验证
 

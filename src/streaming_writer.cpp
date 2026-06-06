@@ -11,6 +11,7 @@
 #include <atomic>
 #include <charconv>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -58,6 +59,10 @@ struct WorksheetImage {
 
 std::string format_number(double value)
 {
+    if (!std::isfinite(value)) {
+        throw FastXlsxError("numeric values must be finite");
+    }
+
     std::array<char, 64> buffer {};
     const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
     if (error == std::errc()) {
@@ -442,6 +447,15 @@ void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
     }
     if (state->workbook != nullptr && state->workbook->closed) {
         throw FastXlsxError("cannot modify worksheet after workbook close");
+    }
+}
+
+void validate_numeric_cells(std::span<const CellView> cells)
+{
+    for (const CellView& cell : cells) {
+        if (cell.type() == CellView::Type::Number && !std::isfinite(cell.number_value())) {
+            throw FastXlsxError("numeric values must be finite");
+        }
     }
 }
 
@@ -1183,9 +1197,11 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     if (state_->row_count >= max_excel_rows) {
         throw FastXlsxError("worksheet exceeds Excel's row limit");
     }
-    if (options.height.has_value() && *options.height <= 0.0) {
-        throw FastXlsxError("row height must be positive");
+    if (options.height.has_value()
+        && (!std::isfinite(*options.height) || *options.height <= 0.0)) {
+        throw FastXlsxError("row height must be positive and finite");
     }
+    validate_numeric_cells(cells);
 
     ++state_->row_count;
     state_->max_column = std::max(state_->max_column, static_cast<std::uint32_t>(cells.size()));
@@ -1225,7 +1241,7 @@ void WorksheetWriter::set_column_width(std::uint32_t first_column, std::uint32_t
 {
     ensure_mutable_worksheet(state_);
     if (first_column == 0 || last_column == 0 || first_column > last_column
-        || last_column > max_excel_columns || width <= 0.0) {
+        || last_column > max_excel_columns || !std::isfinite(width) || width <= 0.0) {
         throw FastXlsxError("invalid column width range");
     }
     state_->column_widths.push_back({first_column, last_column, width});

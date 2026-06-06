@@ -52,6 +52,9 @@ that exist in code, CMake, tests, docs, or local verification.
     `PackageManifest`, `PartWriteMode`, package-part edit state metadata,
     minimal workbook manifest builder, and content types / relationships
     serializers, including the docProps small XML builders.
+  - Numeric XML output now has a finite-only boundary: non-finite numeric cell
+    values and row heights are rejected before serialization writes invalid
+    worksheet XML, and streaming column widths must be positive and finite.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -375,6 +378,9 @@ worksheet-writer memory problems.
 Do:
 - Keep row-order writes and bounded memory.
 - Add numeric/date encoding edge cases and Excel row/column limit tests.
+  Current finite-only coverage rejects `NaN` / `+Inf` / `-Inf` for numeric
+  cells, row heights, and streaming column widths; broader date and formatting
+  edge cases remain follow-up work.
 - Track worksheet dimensions incrementally.
 - Add or update Doxygen comments for public APIs touched by the change.
 

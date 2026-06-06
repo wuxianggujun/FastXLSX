@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <iomanip>
 #include <locale>
 #include <set>
@@ -19,6 +20,10 @@ namespace {
 
 std::string format_number(double value)
 {
+    if (!std::isfinite(value)) {
+        throw FastXlsxError("numeric values must be finite");
+    }
+
     std::array<char, 64> buffer {};
     const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
     if (error == std::errc()) {

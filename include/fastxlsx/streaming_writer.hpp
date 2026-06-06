@@ -161,6 +161,10 @@ public:
     };
 
     /// Creates a numeric cell view.
+    ///
+    /// The payload must be finite. CellView construction is noexcept, so
+    /// WorksheetWriter::append_row() performs the validation before mutating
+    /// row state.
     static CellView number(double value) noexcept;
 
     /// Creates a string cell view.
@@ -226,8 +230,9 @@ public:
     /// rewrite prior rows. Text/formula string_view values only need to remain
     /// valid for this call.
     ///
-    /// @throws FastXlsxError when row/column limits are exceeded or the writer
-    /// cannot write worksheet XML.
+    /// @throws FastXlsxError when row/column limits are exceeded, a numeric
+    /// cell value is not finite, row height metadata is non-positive or
+    /// non-finite, or the writer cannot write worksheet XML.
     void append_row(std::span<const CellView> cells, RowOptions options = {});
 
     /// Appends a row from an initializer list.
@@ -244,7 +249,7 @@ public:
     /// overlapping column-width ranges.
     ///
     /// @throws FastXlsxError if the range is reversed, outside Excel's column
-    /// limit, or width is not positive.
+    /// limit, or width is not positive or not finite.
     void set_column_width(std::uint32_t first_column, std::uint32_t last_column, double width);
 
     /// Records a frozen pane split.

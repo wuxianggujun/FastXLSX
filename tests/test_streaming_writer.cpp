@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -1446,6 +1447,12 @@ void test_streaming_writer_invalid_metadata_and_rows()
     check_fastxlsx_error(
         [&sheet] { sheet.set_column_width(1, 1, -1.0); },
         "set_column_width should reject a negative width");
+    check_fastxlsx_error(
+        [&sheet] { sheet.set_column_width(1, 1, std::numeric_limits<double>::quiet_NaN()); },
+        "set_column_width should reject a NaN width");
+    check_fastxlsx_error(
+        [&sheet] { sheet.set_column_width(1, 1, std::numeric_limits<double>::infinity()); },
+        "set_column_width should reject an infinite width");
 
     check_fastxlsx_error(
         [&sheet] { sheet.freeze_panes(1048577, 0); },
@@ -1453,6 +1460,33 @@ void test_streaming_writer_invalid_metadata_and_rows()
     check_fastxlsx_error(
         [&sheet] { sheet.freeze_panes(0, 16385); },
         "freeze_panes should reject a column split beyond Excel's limit");
+
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::number(std::numeric_limits<double>::quiet_NaN())});
+        },
+        "append_row should reject a NaN numeric cell");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::number(std::numeric_limits<double>::infinity())});
+        },
+        "append_row should reject an infinite numeric cell");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::text("bad height")},
+                fastxlsx::RowOptions {std::numeric_limits<double>::quiet_NaN()});
+        },
+        "append_row should reject a NaN row height");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::text("bad height")},
+                fastxlsx::RowOptions {std::numeric_limits<double>::infinity()});
+        },
+        "append_row should reject an infinite row height");
 
     std::vector<fastxlsx::CellView> too_wide_row(16385, fastxlsx::CellView::number(1.0));
     check_fastxlsx_error(

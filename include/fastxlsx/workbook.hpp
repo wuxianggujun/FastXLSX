@@ -44,7 +44,8 @@ struct CellRange {
 /// API mode: Streaming. Row options travel with the row so writers do not need
 /// a random-access row map after prior rows have been emitted. A height value is
 /// serialized as row height metadata; WorksheetWriter rejects non-positive
-/// heights in append_row().
+/// or non-finite heights in append_row(). The small in-memory Workbook path
+/// rejects non-finite height metadata when save() serializes worksheet XML.
 struct RowOptions {
     std::optional<double> height;
 };
@@ -71,6 +72,10 @@ public:
     };
 
     /// Creates a numeric cell.
+    ///
+    /// Numeric payloads must be finite. The small in-memory Workbook path
+    /// reports non-finite numbers as FastXlsxError when save() serializes the
+    /// worksheet XML.
     static Cell number(double value);
 
     /// Creates an inline string cell.
@@ -153,7 +158,8 @@ public:
     /// API mode: Streaming-oriented. Row options are stored with the appended
     /// row in the Phase 1 buffer and are intended to map directly to row XML in
     /// the streaming writer. This in-memory path currently stores the supplied
-    /// metadata and serializes it during Workbook::save().
+    /// metadata and serializes it during Workbook::save(); non-finite row
+    /// heights are rejected during serialization.
     void append_row(const std::vector<Cell>& cells, RowOptions options);
 
     /// Returns the worksheet name stored in the in-memory workbook model.
@@ -225,7 +231,8 @@ public:
     /// Zip64, or existing-file preservation.
     ///
     /// @throws FastXlsxError if the workbook has no worksheets, generated XML is
-    /// invalid for the supported limits, or the package cannot be written.
+    /// invalid for the supported limits, a numeric value or row height is not
+    /// finite, or the package cannot be written.
     void save(const std::filesystem::path& path) const;
 
     /// Returns the workbook's current worksheet buffer.

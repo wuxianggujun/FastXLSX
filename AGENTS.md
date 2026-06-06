@@ -79,6 +79,12 @@ minizip-ng DEFLATE backend。它仍不是已有文件编辑用 public `PackageWr
 owner-aware relationship / content type groundwork；不要宣称 package editing、
 hyperlink、图片、VBA 或 table 支持。
 
+当前数值 XML 写入是 finite-only 边界：`Workbook::save()` 会在序列化时拒绝
+in-memory numeric cell 和 row height 中的 `NaN` / `+Inf` / `-Inf`；
+`WorksheetWriter::append_row()` 会在写入前拒绝 streaming numeric cell 和 row height
+中的非有限值；`WorksheetWriter::set_column_width()` 要求 width 为正且有限。不要让
+OpenXML worksheet XML 写出 `nan`、`inf` 或 `-inf` 数字文本。
+
 ## 本轮推进计划同步
 
 - sharedStrings：进行中。当前可见 API 选项、内部表、package wiring 和结构测试；
@@ -321,6 +327,7 @@ cmake --help
 - 把第三方源码复制进 `src` 或 `include`。
 - 修改 `tests/CMakeLists.txt` 后让 `ctest` 回到 0 测试，或让默认测试超过 60s。
 - 为了 API 易用性牺牲 streaming 性能主线。
+- 允许 `NaN`、`+Inf` 或 `-Inf` 写进 numeric cell、row height 或 column width XML。
 - public API 没有文档注释，或注释不说明内存/性能限制。
 
 ## 项目 Skills

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -272,6 +273,31 @@ void test_validation_errors()
         empty_workbook_failed = true;
     }
     check(empty_workbook_failed, "empty workbook save should fail");
+
+    {
+        auto invalid_numbers = fastxlsx::Workbook::create();
+        auto& sheet = invalid_numbers.add_worksheet("InvalidNumber");
+        sheet.append_row({fastxlsx::Cell::number(std::numeric_limits<double>::quiet_NaN())});
+        check_fastxlsx_error(
+            [&invalid_numbers] {
+                invalid_numbers.save(
+                    std::filesystem::current_path() / "invalid-non-finite-number.xlsx");
+            },
+            "workbook save should reject non-finite numeric cells");
+    }
+
+    {
+        auto invalid_height = fastxlsx::Workbook::create();
+        auto& sheet = invalid_height.add_worksheet("InvalidHeight");
+        const std::vector<fastxlsx::Cell> row {fastxlsx::Cell::text("bad height")};
+        sheet.append_row(row, fastxlsx::RowOptions {std::numeric_limits<double>::infinity()});
+        check_fastxlsx_error(
+            [&invalid_height] {
+                invalid_height.save(
+                    std::filesystem::current_path() / "invalid-non-finite-height.xlsx");
+            },
+            "workbook save should reject non-finite row heights");
+    }
 }
 
 } // namespace

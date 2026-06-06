@@ -77,6 +77,14 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 错误处理方式。
 - 性能/内存注意事项。
 
+写入 OpenXML 数值或数值型 worksheet metadata 的 `double` API 还要写清
+finite-only 边界。`Cell::number(double)`、`CellView::number(double)`、
+`RowOptions::height` 和 `WorksheetWriter::set_column_width()` 不接受 `NaN`、
+`+Inf` 或 `-Inf`。当前 streaming 路径由 `WorksheetWriter::append_row()` 拒绝
+非有限 number / row height，`WorksheetWriter::set_column_width()` 立即拒绝非有限
+width；小型 in-memory `Workbook` 路径在 `Workbook::save()` 序列化 worksheet XML
+时报 `FastXlsxError`。不要把 `NaN/Inf` 写成字符串、空单元格或 OpenXML 数字文本。
+
 对 data validations 这类 worksheet metadata API，注释还要说明是否只写
 worksheet XML、是否新增 relationships/content types、是否复制公式文本、是否解析
 公式或校验单元格值，以及是否支持 existing-file editing。

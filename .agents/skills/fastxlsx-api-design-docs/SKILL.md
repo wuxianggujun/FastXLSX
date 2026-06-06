@@ -102,6 +102,14 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 - 错误处理方式。
 - 性能/内存注意事项。
 
+审查 public `double` API 时，必须核对 finite-only 边界、拒绝时机和异常类型是否写清。
+`Cell::number(double)` 和 `CellView::number(double)` 的数值 payload 不接受
+`NaN`、`+Inf` 或 `-Inf`；`CellView::number()` 构造本身是 `noexcept`，当前由
+`WorksheetWriter::append_row()` 抛 `FastXlsxError`。小型 in-memory `Cell::number()`
+路径当前在 `Workbook::save()` 序列化 worksheet XML 时报错。`RowOptions::height`
+和 `WorksheetWriter::set_column_width()` 也要写清正数/有限值要求。不要设计或描述
+把 `NaN/Inf` 转成字符串、空单元格或 OpenXML 数字文本的行为。
+
 data validations 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、规则数量内存成本、公式文本拷贝、无公式求值、无单元格值校验、
 无重叠检查、无完整 Excel UI 保证，以及是否新增 relationships/content types。
@@ -161,4 +169,5 @@ worksheet `.rels`、worksheet `<drawing>` 和 content types；以及是否不支
 - 测试计划包含结构验证和必要的 Excel 可视化验证。
 - document properties 测试覆盖 core/app docProps 字段、XML escape、relationships、
   content types，并确认不生成 `docProps/custom.xml`。
+- 数值相关 API 注释写清 `NaN` / `+Inf` / `-Inf` 拒绝边界，且测试覆盖拒绝路径。
 - 性能敏感 API 有 benchmark 或明确后续 benchmark 任务。

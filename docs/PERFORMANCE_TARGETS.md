@@ -134,16 +134,16 @@ benchmark 结果还应记录 package-entry source mode（`in-memory` / `file-bac
 `chunked`）、ZIP backend、压缩等级、峰值内存和临时 worksheet part footprint。没有这些
 数据时，不要声称完整低内存写出。
 
-当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `2`，记录字符串分布和
+当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `3`，记录字符串分布和
 package 元数据：
 
 ```json
 {
-  "benchmark_schema_version": "2",
+  "benchmark_schema_version": "3",
   "string_pattern": "mixed",
   "package_entry_source_mode": "worksheet-file-backed-chunked",
-  "temporary_worksheet_part_footprint": "not_measured",
-  "temporary_worksheet_part_footprint_bytes": null
+  "temporary_worksheet_part_footprint": "worksheet-body-file-bytes",
+  "temporary_worksheet_part_footprint_bytes": 317823
 }
 ```
 
@@ -153,9 +153,11 @@ package 元数据：
 sharedStrings 已生产就绪。
 
 `package_entry_source_mode` 记录当前 worksheet entry finalization 经过
-file-backed/chunked source；`temporary_worksheet_part_footprint="not_measured"`
-表示当前工具尚未测量临时 worksheet body 文件或 chunk footprint。只有后续工具真实
-记录字节数后，才能把该字段用于低内存或大文件性能结论。
+file-backed/chunked source；`temporary_worksheet_part_footprint_bytes` 由
+benchmark-only instrumentation 累计 worksheet body row XML 写入字节数。该字段不包含
+worksheet header/footer、小型 XML parts、sharedStrings 临时文件、media 文件、ZIP/backend
+内部缓冲或 OS 文件系统开销；它只能作为临时 worksheet body footprint 指标，不能单独用于
+完整低内存或大文件性能结论。
 
 如果不传 `--output` / `--result`，当前工具默认把结果写到 benchmark target 的
 binary dir，例如 `build/windows-nmake-release-benchmark/benchmarks/`。手工工具会
@@ -168,15 +170,15 @@ FastXLSX public API 的 worksheet 数量承诺。
 `fastxlsx_bench_streaming_writer` 对 `strings` 场景做了 4 组小规模对比。输入规模均为
 `rows=50000`、`cols=10`、`sheets=1`、`cells=500000`、`string_ratio=1`，
 ZIP backend 为 `stored-bootstrap` / `store`，package entry source mode 为
-`worksheet-file-backed-chunked`，临时 worksheet footprint 仍为 `not_measured` /
-`null`。
+`worksheet-file-backed-chunked`，临时 worksheet footprint 指标为
+`worksheet-body-file-bytes`。
 
-| string_pattern | string_strategy | elapsed_ms | peak_memory_mb | output_bytes |
-| --- | --- | ---: | ---: | ---: |
-| repeated | inline | 335 | 4.97266 | 27931711 |
-| repeated | shared | 227 | 5 | 16932289 |
-| unique | inline | 487 | 4.97656 | 30870651 |
-| unique | shared | 702 | 70.0586 | 33260102 |
+| string_pattern | string_strategy | elapsed_ms | peak_memory_mb | worksheet_body_bytes | output_bytes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| repeated | inline | 493 | 4.97266 | 27927834 | 27931711 |
+| repeated | shared | 392 | 4.98828 | 16927834 | 16932289 |
+| unique | inline | 658 | 4.97266 | 30866774 | 30870651 |
+| unique | shared | 1045 | 70.1055 | 19316724 | 33260102 |
 
 本机 Excel COM 只读打开了上述 4 个输出文件，并验证 `Sheet1` 使用范围为
 `50000 x 10`。repeated 样例的 `A1` / `J50000` 均为 `repeat`；unique 样例的

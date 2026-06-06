@@ -47,9 +47,10 @@ obligations.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
   `strings` scenario, `50000 x 10 x 1 = 500000` cells, repeated/unique string
-  patterns, inline/shared strategies, stored bootstrap ZIP backend, and separate
-  local Excel COM read-only open checks. Treat it as a small trend snapshot, not
-  production readiness, large-file performance, or full low-memory proof.
+  patterns, inline/shared strategies, stored bootstrap ZIP backend,
+  benchmark schema v3 worksheet-body byte counts, and separate local Excel COM
+  read-only open checks. Treat it as a small trend snapshot, not production
+  readiness, large-file performance, or full low-memory proof.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -752,8 +753,12 @@ Current facts:
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.
 - The 2026-06-07 repeated/unique sharedStrings benchmark snapshot is only
-  `500000` cells with stored-bootstrap ZIP and `temporary_worksheet_part_footprint`
-  still `not_measured`; do not use it as a low-memory or large-file claim.
+  `500000` cells with stored-bootstrap ZIP and benchmark schema v3
+  `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`.
+  The byte count is only the temporary worksheet body row XML footprint and does
+  not include sharedStrings XML, package assembly buffers, ZIP/backend memory,
+  media files, small XML parts, or OS file-system overhead; do not use it as a
+  full low-memory or large-file claim.
 
 Tasks:
 - Keep the opt-in minizip backend covered by tests, and decide later whether it
@@ -777,11 +782,12 @@ Tasks:
   writes under the benchmark target binary directory. The manual tool rejects
   `--sheets` above 1024 and keeps `office_open` as `not_run` until a real office
   application check is performed.
-- Current benchmark JSON schema version is `2`. It records
-  `string_pattern`, `package_entry_source_mode="worksheet-file-backed-chunked"`,
-  `temporary_worksheet_part_footprint="not_measured"`, and
-  `temporary_worksheet_part_footprint_bytes=null`; the footprint fields are
-  placeholders for measurement availability, not low-memory evidence.
+- Current benchmark JSON schema version is `3`. It records `string_pattern`,
+  `package_entry_source_mode="worksheet-file-backed-chunked"`,
+  `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`, and a
+  numeric `temporary_worksheet_part_footprint_bytes` value. The footprint value
+  comes from benchmark-only instrumentation and only counts worksheet body row
+  XML bytes, not the whole package or process footprint.
 
 API documentation requirements:
 - Public comments must state Streaming mode, ordered input, string-view

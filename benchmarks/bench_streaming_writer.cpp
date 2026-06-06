@@ -28,9 +28,22 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint32_t kBenchmarkSheetLimit = 1024;
-constexpr std::string_view kBenchmarkSchemaVersion = "2";
+constexpr std::string_view kBenchmarkSchemaVersion = "3";
 constexpr std::string_view kPackageEntrySourceMode = "worksheet-file-backed-chunked";
-constexpr std::string_view kTemporaryWorksheetPartFootprint = "not_measured";
+constexpr std::string_view kTemporaryWorksheetPartFootprint = "worksheet-body-file-bytes";
+
+} // namespace
+
+namespace fastxlsx::detail {
+
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+void reset_benchmark_metrics() noexcept;
+std::uint64_t benchmark_temporary_worksheet_part_footprint_bytes() noexcept;
+#endif
+
+} // namespace fastxlsx::detail
+
+namespace {
 
 std::filesystem::path default_output_dir()
 {
@@ -274,7 +287,7 @@ void ensure_parent_directory(const std::filesystem::path& path)
 }
 
 void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::uint64_t peak_bytes,
-    std::uint64_t output_bytes)
+    std::uint64_t output_bytes, std::uint64_t temporary_worksheet_part_footprint_bytes)
 {
     ensure_parent_directory(options.result);
     std::ofstream out(options.result, std::ios::binary);
@@ -302,7 +315,8 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
 #endif
     out << "  \"package_entry_source_mode\": \"" << kPackageEntrySourceMode << "\",\n";
     out << "  \"temporary_worksheet_part_footprint\": \"" << kTemporaryWorksheetPartFootprint << "\",\n";
-    out << "  \"temporary_worksheet_part_footprint_bytes\": null,\n";
+    out << "  \"temporary_worksheet_part_footprint_bytes\": "
+        << temporary_worksheet_part_footprint_bytes << ",\n";
     out << "  \"elapsed_ms\": " << elapsed_ms << ",\n";
     out << "  \"peak_memory_mb\": " << (peak_bytes / (1024.0 * 1024.0)) << ",\n";
     out << "  \"output_bytes\": " << output_bytes << ",\n";
@@ -313,6 +327,9 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
 void run_benchmark(const Options& options)
 {
     ensure_parent_directory(options.output);
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+    fastxlsx::detail::reset_benchmark_metrics();
+#endif
 
     fastxlsx::WorkbookWriterOptions writer_options;
     writer_options.string_strategy = options.string_strategy == "shared"
@@ -352,7 +369,14 @@ void run_benchmark(const Options& options)
         std::chrono::duration_cast<std::chrono::milliseconds>(finished - started).count());
     const auto peak_bytes = peak_memory_bytes();
     const auto output_bytes = static_cast<std::uint64_t>(std::filesystem::file_size(options.output));
-    write_result_json(options, elapsed_ms, peak_bytes, output_bytes);
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+    const std::uint64_t temporary_worksheet_part_footprint_bytes =
+        fastxlsx::detail::benchmark_temporary_worksheet_part_footprint_bytes();
+#else
+    const std::uint64_t temporary_worksheet_part_footprint_bytes = 0;
+#endif
+    write_result_json(
+        options, elapsed_ms, peak_bytes, output_bytes, temporary_worksheet_part_footprint_bytes);
 }
 
 } // namespace

@@ -119,10 +119,12 @@ dimension 更新。
 
 文档目标包括 1,000 万 cells 内存 `< 256 MB`、5,000 万 cells 内存 `< 1 GB`。
 这些是目标，不是当前已验证事实。
-当前手工 benchmark JSON 会记录 `string_pattern` 和
-`package_entry_source_mode="worksheet-file-backed-chunked"`，并把
-`temporary_worksheet_part_footprint` 写成 `not_measured`。这说明当前工具还没有
-测量临时 worksheet body 文件或 chunk footprint，不能据此宣称完整低内存。
+当前手工 benchmark JSON schema v3 会记录 `string_pattern`、
+`package_entry_source_mode="worksheet-file-backed-chunked"`、
+`temporary_worksheet_part_footprint="worksheet-body-file-bytes"` 和数值型
+`temporary_worksheet_part_footprint_bytes`。该值只累计 worksheet body row XML 写入字节；
+不包含 worksheet header/footer、sharedStrings 临时文件、小型 XML parts、media 文件、
+ZIP/backend 缓冲、package assembly 峰值内存或 OS 文件系统开销，不能据此宣称完整低内存。
 
 ## 禁止事项
 

@@ -209,19 +209,21 @@ Benchmark 应记录：
 不进入默认 CI；`planned-dev` 中的 `benchmark` 仍不是当前 CMake 事实。
 不传 `--output` / `--result` 时，该工具默认写到 benchmark target 的 binary dir；
 `--sheets` 超过 1024 会被拒绝，这是 benchmark 工具护栏，不是 public API 限制。
-当前 benchmark JSON schema version 为 `2`，会写 `string_pattern`、
+当前 benchmark JSON schema version 为 `3`，会写 `string_pattern`、
 `package_entry_source_mode="worksheet-file-backed-chunked"`、
-`temporary_worksheet_part_footprint="not_measured"` 和
-`temporary_worksheet_part_footprint_bytes=null`。不要把 `not_measured` 写成临时文件
-footprint 已验证；只有后续工具真实记录字节数后才能据此做低内存结论。
+`temporary_worksheet_part_footprint="worksheet-body-file-bytes"` 和数值型
+`temporary_worksheet_part_footprint_bytes`。该字段来自 benchmark-only instrumentation，
+只累计 worksheet body row XML 写入字节数，不包含 worksheet header/footer、
+sharedStrings 临时文件、小型 XML parts、media 文件、ZIP/backend 缓冲、package
+assembly 峰值内存或 OS 文件系统开销；不要把它写成完整低内存证据。
 
 当前 `docs/PERFORMANCE_TARGETS.md` 记录了 2026-06-07 本机小规模 sharedStrings
 benchmark 快照：`strings` 场景、`50000 x 10 x 1 = 500000` cells、
 repeated/unique string pattern、inline/shared strategy、stored-bootstrap ZIP。
 四个输出已用本机 Excel COM 只读打开并核对 `Sheet1` 使用范围和首尾值。继续把它
 当作 opt-in 手工结果；不要把 `office_open=not_run` 的 JSON 字段写成工具自动完成
-Office 验证，也不要把 `temporary_worksheet_part_footprint=not_measured` 写成低内存
-证据。
+Office 验证，也不要把 worksheet-body-only footprint 写成完整 package、完整临时文件
+或进程峰值内存 footprint。
 
 重点覆盖：
 

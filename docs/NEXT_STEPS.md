@@ -350,11 +350,14 @@ Accept when:
 - Reference XML comparison is recorded when structure compatibility is in
   question.
 - Memory/size data is recorded before any production-ready wording.
-- Current `500000`-cell manual snapshot: repeated/inline `335 ms`, `4.97266 MB`,
-  `27931711 bytes`; repeated/shared `227 ms`, `5 MB`, `16932289 bytes`;
-  unique/inline `487 ms`, `4.97656 MB`, `30870651 bytes`; unique/shared
-  `702 ms`, `70.0586 MB`, `33260102 bytes`. The benchmark JSON still records
-  `temporary_worksheet_part_footprint="not_measured"`.
+- Current `500000`-cell manual snapshot uses benchmark schema v3 and
+  `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`:
+  repeated/inline `493 ms`, `4.97266 MB`, `27927834` worksheet body bytes,
+  `27931711` output bytes; repeated/shared `392 ms`, `4.98828 MB`,
+  `16927834` worksheet body bytes, `16932289` output bytes; unique/inline
+  `658 ms`, `4.97266 MB`, `30866774` worksheet body bytes, `30870651`
+  output bytes; unique/shared `1045 ms`, `70.1055 MB`, `19316724`
+  worksheet body bytes, `33260102` output bytes.
 
 Do not claim:
 - sharedStrings as the best default for large data.
@@ -370,8 +373,10 @@ Do:
 - Record data scale, string strategy, compression setting, package entry source
   mode, string pattern, temporary worksheet part footprint availability, time,
   peak memory, output size, and Excel/WPS/LibreOffice open result.
-- Keep `temporary_worksheet_part_footprint="not_measured"` explicit until the
-  tool measures a real temporary file/chunk byte count.
+- Treat `temporary_worksheet_part_footprint="worksheet-body-file-bytes"` as a
+  benchmark-only worksheet body row XML byte count. It does not include
+  sharedStrings XML, worksheet header/footer, package assembly buffers,
+  ZIP/backend memory, media files, small XML parts, or OS file-system overhead.
 - Keep the first slice independent of Google Benchmark; `planned-dev`
   dependencies remain planned until a separate task explicitly wires them.
 
@@ -383,8 +388,7 @@ Do not claim:
 - Benchmark coverage from normal unit tests.
 - Google Benchmark integration or 10,000,000-cell results from the manual
   benchmark entry alone.
-- Full low-memory behavior from results where temporary worksheet footprint is
-  still `not_measured`.
+- Full low-memory behavior from worksheet-body-only footprint results.
 
 ### P7 - Streaming Writer Hot Path
 

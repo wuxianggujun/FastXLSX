@@ -58,5 +58,6 @@ if(FASTXLSX_BUILD_EXAMPLES)
 endif()
 
 if(FASTXLSX_BUILD_BENCHMARKS)
+    target_compile_definitions(fastxlsx PRIVATE FASTXLSX_ENABLE_BENCHMARK_METRICS=1)
     add_subdirectory(benchmarks)
 endif()

@@ -373,6 +373,27 @@ namespace detail {
 
 struct WorkbookWriterState;
 
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+namespace {
+std::atomic<std::uint64_t> temporary_worksheet_part_footprint_bytes {0};
+}
+
+void reset_benchmark_metrics() noexcept
+{
+    temporary_worksheet_part_footprint_bytes.store(0, std::memory_order_relaxed);
+}
+
+std::uint64_t benchmark_temporary_worksheet_part_footprint_bytes() noexcept
+{
+    return temporary_worksheet_part_footprint_bytes.load(std::memory_order_relaxed);
+}
+
+void add_benchmark_temporary_worksheet_part_bytes(std::uint64_t bytes) noexcept
+{
+    temporary_worksheet_part_footprint_bytes.fetch_add(bytes, std::memory_order_relaxed);
+}
+#endif
+
 struct SharedStringTable {
     std::size_t count = 0;
     std::vector<std::string> values;
@@ -1230,6 +1251,10 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     if (!state_->body) {
         throw FastXlsxError("failed to write worksheet row XML");
     }
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+    detail::add_benchmark_temporary_worksheet_part_bytes(
+        static_cast<std::uint64_t>(row_xml.size()));
+#endif
 }
 
 void WorksheetWriter::append_row(std::initializer_list<CellView> cells, RowOptions options)

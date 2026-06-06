@@ -1539,6 +1539,20 @@ void test_streaming_writer_invalid_metadata_and_rows()
         [&sheet] {
             sheet.append_row(
                 {fastxlsx::CellView::text("bad height")},
+                fastxlsx::RowOptions {0.0});
+        },
+        "append_row should reject a zero row height");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::text("bad height")},
+                fastxlsx::RowOptions {-1.0});
+        },
+        "append_row should reject a negative row height");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::text("bad height")},
                 fastxlsx::RowOptions {std::numeric_limits<double>::quiet_NaN()});
         },
         "append_row should reject a NaN row height");

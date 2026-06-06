@@ -106,9 +106,10 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 `Cell::number(double)` 和 `CellView::number(double)` 的数值 payload 不接受
 `NaN`、`+Inf` 或 `-Inf`；`CellView::number()` 构造本身是 `noexcept`，当前由
 `WorksheetWriter::append_row()` 抛 `FastXlsxError`。小型 in-memory `Cell::number()`
-路径当前在 `Workbook::save()` 序列化 worksheet XML 时报错。`RowOptions::height`
-和 `WorksheetWriter::set_column_width()` 也要写清正数/有限值要求。不要设计或描述
-把 `NaN/Inf` 转成字符串、空单元格或 OpenXML 数字文本的行为。
+路径当前在 `Workbook::save()` 序列化 worksheet XML 时报错。Streaming
+`RowOptions::height` 和 `WorksheetWriter::set_column_width()` 也要写清正数/有限值要求；
+in-memory `RowOptions::height` 当前只记录 save-time non-finite 拒绝事实，不要额外宣称
+非正值已被拒绝。不要设计或描述把 `NaN/Inf` 转成字符串、空单元格或 OpenXML 数字文本的行为。
 
 data validations 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、规则数量内存成本、公式文本拷贝、无公式求值、无单元格值校验、

@@ -67,11 +67,12 @@ obligations.
   `WorkbookWriterOptions::document_properties`. Treat this only as core/app
   document metadata for new workbooks, not as `docProps/custom.xml`,
   existing-file editing, or a complete document-properties API.
-- Numeric XML encoding now has a finite-only boundary in the current files:
-  in-memory `Workbook::save()` rejects non-finite numeric cells and row heights
-  during serialization, while streaming `WorksheetWriter::append_row()` rejects
-  non-finite numeric cells and row heights before mutating row state, and
-  `WorksheetWriter::set_column_width()` rejects non-finite widths.
+- Numeric XML encoding boundaries in the current files: in-memory
+  `Workbook::save()` rejects non-finite numeric cells and row heights during
+  serialization; streaming `WorksheetWriter::append_row()` rejects non-finite
+  numeric cells before mutating row state and rejects row heights that are
+  zero, negative, `NaN`, `+Inf`, or `-Inf`; `WorksheetWriter::set_column_width()`
+  rejects non-positive or non-finite widths.
 - Phase 3 write skeletons exist for formula cells, row height, column width,
   frozen panes, auto filters, and merged cells. Basic configurable core/app
   document properties are 基础. Styles, named ranges, full formula calculation,
@@ -265,10 +266,11 @@ Do this before adding broad convenience APIs or large-data promises.
 Tasks:
 - Replace temporary worksheet body handling only if the replacement preserves
   row-order streaming and bounded memory.
-- Add fast numeric/date encoding tasks and edge-case tests. The current
-  finite-only numeric boundary covers `NaN` / `+Inf` / `-Inf` rejection for
-  numeric cells, row heights, and streaming column widths, but broader date and
-  formatting edge cases remain planned.
+- Add fast numeric/date encoding tasks and edge-case tests. Current coverage
+  rejects `NaN` / `+Inf` / `-Inf` for numeric cells, rejects streaming row
+  heights that are zero, negative, or non-finite, and rejects streaming column
+  widths that are non-positive or non-finite; broader date and formatting edge
+  cases remain planned.
 - Track worksheet dimensions incrementally.
 - Add row and column limit tests for Excel bounds.
 - Add opt-in benchmark target or documented benchmark command.

@@ -80,11 +80,12 @@ minizip-ng DEFLATE backend。它仍不是已有文件编辑用 public `PackageWr
 owner-aware relationship / content type groundwork；不要宣称 package editing、
 hyperlink、图片、VBA 或 table 支持。
 
-当前数值 XML 写入是 finite-only 边界：`Workbook::save()` 会在序列化时拒绝
-in-memory numeric cell 和 row height 中的 `NaN` / `+Inf` / `-Inf`；
-`WorksheetWriter::append_row()` 会在写入前拒绝 streaming numeric cell 和 row height
-中的非有限值；`WorksheetWriter::set_column_width()` 要求 width 为正且有限。不要让
-OpenXML worksheet XML 写出 `nan`、`inf` 或 `-inf` 数字文本。
+当前数值 XML 写入边界是：`Workbook::save()` 会在序列化时拒绝 in-memory
+numeric cell 和 row height 中的 `NaN` / `+Inf` / `-Inf`；
+`WorksheetWriter::append_row()` 会在写入前拒绝 streaming numeric cell 中的非有限值，
+并要求 streaming row height 为正且有限；`WorksheetWriter::set_column_width()`
+要求 width 为正且有限。不要让 OpenXML worksheet XML 写出 `nan`、`inf`、`-inf`
+或非正 row height / column width 数字文本。
 
 ## 本轮推进计划同步
 
@@ -364,7 +365,7 @@ cmake --help
   `fastxlsx::detail::testing_set_worksheet_row_count()` 当作用户可用 API；它只服务
   默认单元测试中的低成本边界注入。
 - 为了 API 易用性牺牲 streaming 性能主线。
-- 允许 `NaN`、`+Inf` 或 `-Inf` 写进 numeric cell、row height 或 column width XML。
+- 允许 `NaN`、`+Inf`、`-Inf`、streaming 非正 row height 或非正 column width 写进 XML。
 - 把 `500000` cells 的小规模手工 benchmark 快照写成 1,000 万 cells、大文件性能、
   完整低内存、Google Benchmark 或 sharedStrings 生产就绪结论；也不要把
   `worksheet-body-file-bytes` 写成完整 package、完整临时文件或进程峰值内存 footprint。

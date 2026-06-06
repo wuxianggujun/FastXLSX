@@ -16,8 +16,9 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 引用 `vcpkg.json`、`CMakePresets.json`、`examples/`、CI 文件或真实测试源码前，
 先确认它们是否存在。当前可见 `vcpkg.json`、`CMakePresets.json`、
 `.github/workflows/ci.yml` 和 `examples/`，但这些只能写为基础：
-`vcpkg.json` 仍把第三方依赖放在 planned features，CMake 尚未接入
-`find_package` / link，CI 路径也不能在本地文档里写成已验证完成。
+默认构建仍不接入第三方依赖；`FASTXLSX_ENABLE_MINIZIP_NG=ON` 才通过
+`planned-runtime` 接入 `find_package(minizip-ng CONFIG REQUIRED)` /
+`MINIZIP::minizip-ng`。CI 路径不能在本地文档里写成已验证完成。
 
 ## 当前 CMake 事实
 
@@ -33,6 +34,8 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
   - `FASTXLSX_BUILD_EXAMPLES` 默认 `OFF`，当前已有 `add_subdirectory(examples)`
     分支。
   - `FASTXLSX_ENABLE_DOM_EDITING` 默认 `ON`。
+  - `FASTXLSX_ENABLE_MINIZIP_NG` 默认 `OFF`，启用后链接 `MINIZIP::minizip-ng`
+    并定义 `FASTXLSX_HAS_MINIZIP_NG`。
 - `tests/CMakeLists.txt` 注册 `fastxlsx_tests`、`fastxlsx_streaming_writer_tests`
   和 `fastxlsx_opc_tests`，CTest 名称是 `fastxlsx.unit`、`fastxlsx.streaming`
   和 `fastxlsx.opc`。
@@ -60,10 +63,12 @@ cmake --help
 而开发文档说明：未显式指定 `-G` 时可能误选 NMake，并在没有 `nmake`
 的环境里失败。
 
-当前可见 `CMakePresets.json` 提供 `windows-nmake-release` 和
-`windows-nmake-release-vcpkg` 基础 preset。前者不使用 vcpkg；后者通过
-`VCPKG_ROOT` 指向 vcpkg toolchain，但 manifest 没有默认第三方依赖，主要用于
-后续验证 toolchain 和 package target。
+当前可见 `CMakePresets.json` 提供：
+
+- `windows-nmake-release`：默认无 vcpkg。
+- `windows-nmake-release-vcpkg`：只启用 vcpkg toolchain。
+- `windows-nmake-release-minizip`：启用 `planned-runtime` 和
+  `FASTXLSX_ENABLE_MINIZIP_NG=ON`，用于 opt-in minizip backend 验证。
 
 ## 推荐流程
 
@@ -79,7 +84,8 @@ cmake --help
 
 - 当前 `vcpkg.json` 是基础入口：默认依赖为空，planned features 包含
   `minizip-ng`、`zlib-ng`、`expat`、`pugixml`、`catch2` 和 `benchmark`。
-- 代码真正使用依赖前，不要提前加 `find_package` 或 link。
+- 当前代码真正使用的第三方依赖只有 opt-in `minizip-ng[core,zlib]` backend。
+- 未使用的依赖不要提前加 `find_package` 或 link。
 - 接入前必须验证真实 port 名、feature、imported target、triplet 行为和许可证。
 - 依赖接入遵守 `fastxlsx-dependency-policy`。
 - 默认不要用 `FetchContent` 拉核心依赖。
@@ -87,8 +93,8 @@ cmake --help
 
 ## 本轮计划边界
 
-- vcpkg：基础。manifest 可见，但第三方依赖仍是 planned features，不代表生产 ZIP
-  backend 已接入。
+- vcpkg：基础。manifest 默认无依赖；minizip backend 是 opt-in，不代表
+  `zlib-ng`、`expat`、`pugixml`、Catch2 或 Benchmark 已接入源码。
 - CMakePresets：基础。preset 可见，默认以 VS2026/MSVC 2026 + NMake 为主线。
 - CI：基础。workflow 可见，目标是结构测试和 CTest 60s 门禁；当前 CI 通过
   `ctest --preset windows-nmake-release` 运行，超时来自 CTest preset 和
@@ -101,6 +107,14 @@ cmake --help
 cmake --preset windows-nmake-release
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
+```
+
+验证 minizip backend：
+
+```powershell
+cmake --preset windows-nmake-release-minizip
+cmake --build --preset windows-nmake-release-minizip
+ctest --preset windows-nmake-release-minizip
 ```
 
 如果 `ctest` 没有运行测试，先检查 `tests/CMakeLists.txt` 是否仍注册

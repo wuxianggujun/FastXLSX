@@ -56,8 +56,10 @@ XLSX 语义层必须由 FastXLSX 自己实现：
 
 当前已实现的是 `Workbook` / `Worksheet` / `Cell`、`WorkbookWriter` /
 `WorksheetWriter` / `CellView`，以及内部 OPC manifest / relationships /
-`PartIndex` / `RelationshipGraph` / content type registry 基础。`PackageReader`、
-生产 `PackageWriter`、`WorksheetReader`、`TemplateEditor` 等仍是规划模块。
+`PartIndex` / `RelationshipGraph` / content type registry 基础。新建 workbook
+输出已有内部 package writer boundary，默认 stored bootstrap，opt-in minizip-ng
+DEFLATE backend。`PackageReader`、已有文件编辑用 public `PackageWriter`、
+`WorksheetReader`、`TemplateEditor` 等仍是规划模块。
 
 ```text
 FastXLSX

@@ -99,6 +99,9 @@ preset 文件要求；项目 `CMakeLists.txt` 的最低版本仍是 3.20。
 - `windows-nmake-release-vcpkg`：显式使用
   `$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake`，用于后续验证
   vcpkg manifest 和依赖接入。
+- `windows-nmake-release-minizip`：显式使用 vcpkg toolchain，并启用
+  `FASTXLSX_ENABLE_MINIZIP_NG=ON` 与 `VCPKG_MANIFEST_FEATURES=planned-runtime`，
+  用于验证 opt-in minizip-ng package writer backend。
 
 在 VS2026 Developer Command Prompt 中可以运行：
 
@@ -118,10 +121,19 @@ cmake --build --preset windows-nmake-release-vcpkg
 ctest --preset windows-nmake-release-vcpkg
 ```
 
-注意：当前 `vcpkg.json` 默认不拉取 FastXLSX 依赖，CMake 也没有
-`find_package` 生产依赖。vcpkg preset 只是 toolchain 和 manifest 入口，
-不代表生产 ZIP、XML parser 或测试框架已经接入。首次运行 vcpkg preset 时，
-vcpkg 仍可能初始化自己的工具缓存，例如下载解压工具；这不等同于接入项目依赖。
+验证 opt-in minizip-ng backend 时运行：
+
+```powershell
+cmake --preset windows-nmake-release-minizip
+cmake --build --preset windows-nmake-release-minizip
+ctest --preset windows-nmake-release-minizip
+```
+
+注意：当前 `vcpkg.json` 默认不拉取 FastXLSX 依赖。只有 minizip preset 或手写
+`FASTXLSX_ENABLE_MINIZIP_NG=ON` 加 `VCPKG_MANIFEST_FEATURES=planned-runtime`
+才会安装并链接 `minizip-ng[core,zlib]`。`windows-nmake-release-vcpkg` 仍只是
+toolchain 和 manifest 入口，不代表 XML parser、DOM editing 或测试框架已经接入。
+首次运行 vcpkg preset 时，vcpkg 仍可能初始化自己的工具缓存，例如下载解压工具。
 
 ## GitHub Actions CI
 
@@ -160,9 +172,10 @@ FastXLSX 推荐使用 `vcpkg` manifest mode 管理第三方依赖。
 当前项目根目录已有保守的 `vcpkg.json`：
 
 - 默认 `dependencies` 为空，保证普通配置和 CI 不依赖外部包。
-- `planned-runtime`、`planned-image` 和 `planned-dev` 仅记录已规划、待接入的 port。
-- 已本机确认 port 名称和可选 feature dry-run 依赖解析可用。
-- CMake package 名称和 imported target 名称尚未验证。
+- `planned-runtime` 是 opt-in feature。当前源码只使用其中的
+  `minizip-ng[core,zlib]`；`zlib-ng`、`expat` 和 `pugixml` 仍是后续计划依赖。
+- 已本机确认 `planned-runtime` clean install 可用，`minizip-ng` CMake 用法为
+  `find_package(minizip-ng CONFIG REQUIRED)` 和 `MINIZIP::minizip-ng`。
 - 在正式接入代码前，不在 CMake 中提前引入未使用的库。
 
 ## 兼容目标

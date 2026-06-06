@@ -120,8 +120,8 @@ struct WorksheetRowData {
 /// API mode: Streaming. Rows must be appended in order and previously appended
 /// rows cannot be randomly modified through this API. The Phase 1 implementation
 /// buffers rows in memory until save() so OpenXML structure and compatibility can
-/// be validated before the ZIP/minizip-ng layer is finalized. Do not treat this
-/// temporary buffer as the long-term large-file architecture.
+/// be validated. Do not treat this temporary buffer as the long-term large-file
+/// architecture or as the streaming writer's memory model.
 class Worksheet {
 public:
     /// Appends one row to the worksheet.
@@ -163,9 +163,11 @@ private:
 /// API mode: Streaming-oriented creation. The public API is intentionally
 /// append-only at the worksheet level so later large-data writers can replace
 /// the Phase 1 in-memory buffer without changing callers into DOM-style random
-/// access. Workbook::save() currently writes a stored ZIP package for bootstrap
-/// validation; production compression/minizip-ng integration is tracked as a
-/// follow-up task.
+/// access. Workbook::save() writes through the internal package writer boundary:
+/// dependency-free builds use the stored ZIP bootstrap, while builds configured
+/// with FASTXLSX_ENABLE_MINIZIP_NG use the minizip-ng DEFLATE backend. Both
+/// paths still assemble small package entries in memory; Zip64 and true package
+/// streaming are not public guarantees.
 class Workbook {
 public:
     /// Creates an empty workbook.
@@ -189,9 +191,9 @@ public:
     ///
     /// The file is an OpenXML package with workbook relationships, content
     /// types, and worksheet sheetData. Existing files at path are replaced by
-    /// the underlying file stream. The current bootstrap ZIP writer stores
-    /// entries without compression. This method is the only finalization step for
-    /// the in-memory path.
+    /// the underlying package writer. This method is the only finalization step
+    /// for the in-memory path; it does not edit or preserve parts from an
+    /// existing workbook.
     ///
     /// @throws FastXlsxError if the workbook has no worksheets, generated XML is
     /// invalid for the supported limits, or the package cannot be written.

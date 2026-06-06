@@ -165,7 +165,8 @@ FastXLSX
 - 内部 OPC manifest / relationships / `PartIndex` / `RelationshipGraph`
   基础；Phase 5 已有文件编辑仍是规划。
 - 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
-  进入当前 ZIP backend，backend 仍是 stored/no-compression bootstrap。
+  进入 ZIP backend。默认构建使用 stored/no-compression bootstrap；
+  `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
   基础单元格编码。
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。
@@ -175,17 +176,17 @@ FastXLSX
 
 当前仍未完成：
 
-- `minizip-ng` / `zlib-ng` / `zlib` 生产 ZIP 后端接入。
-- Zip64、压缩等级配置和真正 package streaming。
+- 将 minizip-ng backend 设为默认前的 CI/cache/release packaging 验证。
+- Zip64、公开压缩等级配置和真正 package streaming。
 - Catch2 和 Google Benchmark 接入。
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
 - 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
 
-`src/package_writer.*` 是当前内部 package writer 边界，但它仍调用
-`src/zip_store_writer.*` Phase 1 bootstrap。`src/zip_store_writer.*` 仅写
-stored/no-compression ZIP，用于打通 OpenXML、CTest 和 Excel 验证；不要把它
-当作长期 ZIP/压缩架构，也不要据此宣称 compression、Zip64 或 package streaming。
+`src/package_writer.*` 是当前内部 package writer 边界。默认无依赖构建仍调用
+`src/zip_store_writer.*` Phase 1 bootstrap；opt-in minizip 构建会写出
+DEFLATE-compressed ZIP entries。它仍不是 public package editing API，不要据此
+宣称 Zip64、真正 package streaming、已有文件编辑或大文件性能。
 
 ## 许可证
 

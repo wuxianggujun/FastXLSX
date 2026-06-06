@@ -13,6 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(FASTXLSX_BUILD_TESTS "Build FastXLSX tests" ON)
 option(FASTXLSX_BUILD_EXAMPLES "Build FastXLSX examples" OFF)
 option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" ON)
+option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZIP writer backend" OFF)
 
 add_library(fastxlsx
     src/opc.cpp
@@ -31,6 +32,12 @@ target_include_directories(fastxlsx PUBLIC
 target_compile_features(fastxlsx PUBLIC cxx_std_20)
 
 add_library(FastXLSX::fastxlsx ALIAS fastxlsx)
+
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    find_package(minizip-ng CONFIG REQUIRED)
+    target_link_libraries(fastxlsx PRIVATE MINIZIP::minizip-ng)
+    target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_MINIZIP_NG=1)
+endif()
 
 if(FASTXLSX_BUILD_TESTS)
     enable_testing()

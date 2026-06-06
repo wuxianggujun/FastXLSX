@@ -32,7 +32,9 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   但 Phase 1 实现会临时 buffer rows；不要把这个 buffer 当成长期大文件架构。
 - 当前 `WorksheetWriter` 骨架覆盖公式、行高、列宽、冻结窗格、自动筛选和
   合并单元格的写入 XML；这些不代表完整 Phase 3 功能集。
-- 当前 `Workbook::save()` 使用 internal stored ZIP bootstrap；生产压缩后端仍未接入。
+- 当前 `Workbook::save()` 使用 internal package writer boundary；默认无依赖构建走
+  stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
+  backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
 - OPC/Phase 5 仍是内部 manifest / relationships 基础和规划，不要把
   `PackageEditor`、图片、VBA 或 table 支持写成当前完整能力。
 

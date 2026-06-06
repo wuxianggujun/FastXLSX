@@ -1,11 +1,9 @@
 #include <fastxlsx/streaming_writer.hpp>
 
-#include <cstdint>
+#include "zip_test_utils.hpp"
+
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <iterator>
-#include <map>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -37,77 +35,6 @@ void check_fastxlsx_error(Func func, const char* message)
     }
 
     throw TestFailure(message);
-}
-
-std::string read_file(const std::filesystem::path& path)
-{
-    std::ifstream stream(path, std::ios::binary);
-    check(static_cast<bool>(stream), "failed to open generated xlsx");
-    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
-}
-
-std::uint16_t read_u16(const std::string& data, std::size_t offset)
-{
-    return static_cast<std::uint16_t>(
-        (static_cast<unsigned char>(data[offset + 1]) << 8u)
-        | static_cast<unsigned char>(data[offset]));
-}
-
-std::uint32_t read_u32(const std::string& data, std::size_t offset)
-{
-    return (static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset + 3])) << 24u)
-        | (static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset + 2])) << 16u)
-        | (static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset + 1])) << 8u)
-        | static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset]));
-}
-
-std::map<std::string, std::string> read_stored_zip_entries(const std::filesystem::path& path)
-{
-    const std::string data = read_file(path);
-    check(data.size() >= 22, "zip is too small");
-
-    std::size_t eocd_offset = std::string::npos;
-    for (std::size_t offset = data.size() - 22; offset != static_cast<std::size_t>(-1); --offset) {
-        if (read_u32(data, offset) == 0x06054b50u) {
-            eocd_offset = offset;
-            break;
-        }
-        if (offset == 0) {
-            break;
-        }
-    }
-    check(eocd_offset != std::string::npos, "zip end of central directory not found");
-
-    const std::uint16_t entry_count = read_u16(data, eocd_offset + 10);
-    const std::uint32_t central_offset = read_u32(data, eocd_offset + 16);
-    std::size_t offset = central_offset;
-
-    std::map<std::string, std::string> entries;
-    for (std::uint16_t index = 0; index < entry_count; ++index) {
-        check(read_u32(data, offset) == 0x02014b50u, "central directory signature mismatch");
-
-        const std::uint16_t method = read_u16(data, offset + 10);
-        const std::uint32_t compressed_size = read_u32(data, offset + 20);
-        const std::uint32_t uncompressed_size = read_u32(data, offset + 24);
-        const std::uint16_t name_length = read_u16(data, offset + 28);
-        const std::uint16_t extra_length = read_u16(data, offset + 30);
-        const std::uint16_t comment_length = read_u16(data, offset + 32);
-        const std::uint32_t local_offset = read_u32(data, offset + 42);
-        const std::string name = data.substr(offset + 46, name_length);
-
-        check(method == 0, "streaming bootstrap zip should use stored entries");
-        check(compressed_size == uncompressed_size, "stored entry sizes should match");
-        check(read_u32(data, local_offset) == 0x04034b50u, "local header signature mismatch");
-
-        const std::uint16_t local_name_length = read_u16(data, local_offset + 26);
-        const std::uint16_t local_extra_length = read_u16(data, local_offset + 28);
-        const std::size_t body_offset = local_offset + 30u + local_name_length + local_extra_length;
-        entries[name] = data.substr(body_offset, uncompressed_size);
-
-        offset += 46u + name_length + extra_length + comment_length;
-    }
-
-    return entries;
 }
 
 void check_contains(const std::string& text, const char* fragment, const char* message)
@@ -150,7 +77,7 @@ void test_streaming_writer_smoke_package()
     workbook.close();
     check(std::filesystem::exists(output_path), "streaming xlsx file was not generated");
 
-    const auto entries = read_stored_zip_entries(output_path);
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
     check(entries.contains("[Content_Types].xml"), "missing content types part");
     check(entries.contains("_rels/.rels"), "missing package relationships part");
     check(entries.contains("docProps/core.xml"), "missing streaming core properties part");
@@ -262,7 +189,7 @@ void test_streaming_writer_shared_string_package()
     workbook.close();
     check(std::filesystem::exists(output_path), "shared string xlsx file was not generated");
 
-    const auto entries = read_stored_zip_entries(output_path);
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
     check(entries.contains("[Content_Types].xml"), "missing shared string content types part");
     check(entries.contains("docProps/core.xml"), "missing shared string core properties part");
     check(entries.contains("docProps/app.xml"), "missing shared string extended properties part");

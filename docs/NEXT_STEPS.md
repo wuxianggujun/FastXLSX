@@ -39,8 +39,9 @@ that exist in code, CMake, tests, docs, or local verification.
     XML generation are visible in the current files. Treat this as minimal
     metadata output, not as a complete document-properties API.
   - Internal `src/package_writer.*` boundary exists for new-workbook package
-    output. It still delegates to the stored/no-compression
-    `src/zip_store_writer.*` bootstrap backend.
+    output. Default builds delegate to the stored/no-compression
+    `src/zip_store_writer.*` bootstrap backend; opt-in minizip builds use
+    `minizip-ng[core,zlib]` and DEFLATE.
   - Internal OPC `PartName`, `RelationshipSet`, `ContentTypesManifest`,
     `PackageManifest`, `PartWriteMode`, package-part edit state metadata,
     minimal workbook manifest builder, and content types / relationships
@@ -69,9 +70,10 @@ feature completion.
 2. vcpkg / CMakePresets / CI - 基础.
    - Current root files include a conservative `vcpkg.json`,
      `CMakePresets.json`, and Windows CI workflow.
-   - Local `vcpkg search` and feature dry-run verified planned port/feature
-     resolution, but exported CMake target names still need verification in a
-     clean dependency task.
+   - `minizip-ng` package discovery is no longer just exploratory:
+     `FASTXLSX_ENABLE_MINIZIP_NG=ON` uses
+     `find_package(minizip-ng CONFIG REQUIRED)` and `MINIZIP::minizip-ng`
+     through the `windows-nmake-release-minizip` preset.
    - The default preset and CI path intentionally avoid external vcpkg
      dependencies.
    - CI should run structural tests through the CTest preset/test properties
@@ -113,11 +115,11 @@ commit or short series with its own tests and docs update.
      uses `actions/checkout@v5`.
    - Keep CI on the no-vcpkg NMake preset until dependency work starts.
 
-3. Production ZIP backend spike.
-   - Verify `minizip-ng`, `zlib-ng`, and fallback `zlib` package names,
-     features, CMake targets, and license obligations.
-   - Use the current internal package writer boundary before replacing the
-     stored ZIP bootstrap backend.
+3. Production ZIP backend hardening.
+   - Keep the opt-in minizip backend tested while deciding whether it becomes
+     the default.
+   - Add compression-level configuration and Zip64 policy only with focused
+     tests.
    - Keep existing OpenXML structure tests independent of compression method.
 
 4. Shared strings hardening.
@@ -135,6 +137,12 @@ commit or short series with its own tests and docs update.
    - Decide formula cached-value and calc behavior boundaries.
    - Plan configurable document properties separately from the current static
      docProps baseline.
+
+After the P4 opt-in minizip baseline, the default implementation lane is P5
+sharedStrings hardening, then P6 benchmark groundwork, then P7 streaming writer
+hot-path work. Return to P4 only when the task explicitly chooses the ZIP/backend
+lane: compression-level configuration, Zip64/large-entry policy, minizip CI/cache
+and release packaging, or the decision to make minizip the default backend.
 
 7. Internal OPC graph groundwork.
    - Internal `PartIndex` / `RelationshipGraph` groundwork now exists.
@@ -217,18 +225,21 @@ Do not claim:
 
 ### P2 - Production ZIP Dependency Discovery
 
-Start after P1 is stable and before changing `zip_store_writer`.
+Status: baseline complete for the minizip backend. `minizip-ng[core,zlib]` now
+has a verified CMake package and imported target:
+`find_package(minizip-ng CONFIG REQUIRED)` / `MINIZIP::minizip-ng`.
 
 Do:
-- Verify vcpkg ports, feature names, config package names, imported CMake
-  targets, and license obligations for `minizip-ng`, `zlib-ng`, and fallback
-  `zlib`.
-- Record that current `minizip-ng[zlib]` metadata resolves through vcpkg
+- Keep the verified vcpkg ports, feature names, config package names, imported
+  CMake targets, and license obligations documented for `minizip-ng`, `zlib-ng`,
+  and fallback `zlib`.
+- Keep the record that current `minizip-ng[zlib]` metadata resolves through vcpkg
   `zlib`, not `zlib-ng`; decide whether `zlib-ng` remains a separate future
   compression option or whether the minizip route should use plain `zlib`.
 - Treat `expat` and `pugixml` as runtime dependency discovery siblings, not as
   proof that XML reader/DOM editing is implemented.
-- Record exact findings in dependency docs before adding `find_package`.
+- Keep exact findings in dependency docs when adding or changing
+  `find_package` calls.
 - Keep dependency work separate from OpenXML feature changes.
 
 Accept when:
@@ -241,13 +252,14 @@ Do not claim:
 
 ### P3 - Package Writer Boundary
 
-Start after P2 proves dependency and target names, or as a no-dependency
-internal refactor if it does not change package semantics.
+Status: baseline complete. New workbook output now goes through the internal
+`src/package_writer.*` boundary.
 
 Do:
-- Introduce an internal package writer interface around current ZIP output.
-- Keep `src/zip_store_writer.*` as the bootstrap implementation behind that
-  boundary.
+- Keep `src/zip_store_writer.*` as the dependency-free bootstrap implementation
+  behind that boundary.
+- Keep `PackageWriterBackend::Auto` selecting minizip when
+  `FASTXLSX_ENABLE_MINIZIP_NG` is enabled and stored bootstrap otherwise.
 - Keep OpenXML structure tests independent of compression method.
 
 Current foundation:
@@ -262,21 +274,26 @@ Accept when:
 - Excel can still open the representative generated samples.
 
 Do not claim:
-- Real compression or Zip64 if the bootstrap writer is still active.
+- Public package editing, true package streaming, or Zip64 from this internal
+  boundary alone.
 
 ### P4 - Production ZIP Backend
 
-Start after P2 and P3.
+Status: minimal opt-in backend landed. Continue with hardening before making it
+the default.
 
 Do:
-- Wire the verified ZIP/DEFLATE backend through CMake.
+- Keep the verified ZIP/DEFLATE backend wired through
+  `FASTXLSX_ENABLE_MINIZIP_NG=ON` and `MINIZIP::minizip-ng`.
 - Add compression-level configuration as an explicit performance choice.
 - Define Zip64 and large-entry behavior before large-file promises.
 
 Accept when:
 - Tests pass for package entries without assuming stored/no-compression ZIP.
 - Generated workbooks open in Excel without repair.
-- Docs and API comments describe compression and memory behavior.
+- Docs and API comments describe backend and memory behavior for touched public
+  API. Internal-only backend work must not expose public compression controls
+  just to satisfy this checklist.
 
 Do not claim:
 - Large-file performance until benchmarks record scale, time, memory, output
@@ -520,7 +537,8 @@ Do not claim:
 
 ### P17 - Images
 
-Start after P11 and preferably after P13 proves preservation behavior.
+Start new-workbook-only insertion after P11. Existing-workbook image
+read/edit/preservation starts only after P13 proves preservation behavior.
 
 Do:
 - Use `stb` as the image decoding and dimension-reading dependency. Keep it in
@@ -531,6 +549,8 @@ Do:
 - Validate anchors without retaining a full worksheet DOM.
 - Keep decoding separate from OpenXML packaging: `stb` does not manage media
   part names, relationship ids, content types, or drawing anchors.
+- Keep the first insertion slice narrow: PNG/JPEG, one anchor strategy, generated
+  workbook only, and no existing drawing mutation.
 
 Accept when:
 - vcpkg `stb` feature resolution, include path, license, and CI behavior are
@@ -541,6 +561,8 @@ Accept when:
 Do not claim:
 - Image editing or broad drawing support beyond the implemented slice.
 - Picture support from `stb` dependency availability alone.
+- Existing workbook image passthrough or preservation before P13 fixtures prove
+  unmodified media/drawing/chart/VBA parts survive edits.
 
 ### P18 - Chart and VBA Passthrough
 
@@ -591,8 +613,10 @@ Do not claim:
 
 2. Use the conservative engineering entry points.
    - Prefer `cmake --preset windows-nmake-release` for local smoke builds.
-   - Use `windows-nmake-release-vcpkg` only after `VCPKG_ROOT` is configured
-     and dependency/toolchain behavior is being verified.
+   - Use `windows-nmake-release-minizip` after `VCPKG_ROOT` is configured when
+     verifying the opt-in minizip backend.
+   - Use `windows-nmake-release-vcpkg` only for generic vcpkg toolchain smoke;
+     it is not the canonical P4/minizip backend validation path.
    - The current CI workflow runs the no-vcpkg NMake preset first.
 
 3. Before future publishing, inspect staged files.
@@ -607,13 +631,12 @@ Do not claim:
 Status: 基础.
 
 Next tasks:
-- Keep the existing `vcpkg.json` conservative until CMake target names are
-  verified.
-- Verify config package names, imported target names, features, and triplet
-  behavior for `minizip-ng`, `zlib-ng`, `expat`, and `pugixml`.
-- Add `find_package` and link dependencies only after package/target
-  verification is complete.
-- Replace the current stored ZIP bootstrap behind `src/package_writer.*`.
+- Keep verified config package names, imported target names, features, and
+  triplet behavior documented for `minizip-ng`, `zlib-ng`, `expat`, and
+  `pugixml`.
+- Keep `find_package(minizip-ng CONFIG REQUIRED)` behind
+  `FASTXLSX_ENABLE_MINIZIP_NG` until CI/cache/release packaging are verified.
+- Decide whether the minizip backend should become default after that evidence.
 - Add compression level configuration without changing the worksheet XML hot
   path into a DOM path.
 - Add Zip64 and entry streaming requirements before large-file benchmarks.
@@ -731,6 +754,14 @@ Optional vcpkg toolchain smoke command after setting `VCPKG_ROOT`:
 cmake --preset windows-nmake-release-vcpkg
 cmake --build --preset windows-nmake-release-vcpkg
 ctest --preset windows-nmake-release-vcpkg
+```
+
+Canonical opt-in minizip backend command after setting `VCPKG_ROOT`:
+
+```powershell
+cmake --preset windows-nmake-release-minizip
+cmake --build --preset windows-nmake-release-minizip
+ctest --preset windows-nmake-release-minizip
 ```
 
 Skill validation command pattern:

@@ -21,7 +21,7 @@
     {
       "name": "windows-nmake-release-vcpkg",
       "displayName": "Windows NMake Release with vcpkg Toolchain",
-      "description": "Configure with the vcpkg toolchain from VCPKG_ROOT. The manifest has no default dependencies until CMake integration is verified.",
+      "description": "Configure with the vcpkg toolchain from VCPKG_ROOT without enabling optional FastXLSX runtime features.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release-vcpkg",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -29,6 +29,21 @@
         "CMAKE_BUILD_TYPE": "Release",
         "FASTXLSX_BUILD_TESTS": "ON",
         "FASTXLSX_BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
+      "name": "windows-nmake-release-minizip",
+      "displayName": "Windows NMake Release with minizip-ng",
+      "description": "Configure the opt-in minizip-ng package writer backend through vcpkg planned-runtime.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-minizip",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "ON",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "VCPKG_MANIFEST_FEATURES": "planned-runtime"
       }
     }
   ],
@@ -40,6 +55,10 @@
     {
       "name": "windows-nmake-release-vcpkg",
       "configurePreset": "windows-nmake-release-vcpkg"
+    },
+    {
+      "name": "windows-nmake-release-minizip",
+      "configurePreset": "windows-nmake-release-minizip"
     }
   ],
   "testPresets": [
@@ -57,6 +76,17 @@
     {
       "name": "windows-nmake-release-vcpkg",
       "configurePreset": "windows-nmake-release-vcpkg",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "timeout": 60
+      }
+    },
+    {
+      "name": "windows-nmake-release-minizip",
+      "configurePreset": "windows-nmake-release-minizip",
       "output": {
         "outputOnFailure": true
       },

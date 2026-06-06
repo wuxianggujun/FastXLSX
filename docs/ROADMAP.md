@@ -22,17 +22,18 @@
 - 数字、字符串、布尔值。
 - ZIP package 输出。
 
-当前 bootstrap 边界：
+当前 package writer 边界：
 
-- 内部 stored ZIP writer。
-- 无压缩。
+- 默认无依赖构建使用内部 stored ZIP writer。
+- `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 `minizip-ng[core,zlib]` DEFLATE backend。
 - 无 Zip64。
 - 无真实 package streaming。
-- 尚未接入 `minizip-ng` / `zlib-ng` / `pugixml` CMake 依赖。
+- `zlib-ng` / `pugixml` 尚未被当前源码使用。
 
 Phase 1 后续依赖工作：
 
-- `minizip-ng` / `zlib-ng` 生产 ZIP 后端接入。
+- minizip-ng backend 默认化前的 CI/cache/release packaging 验证。
+- 压缩等级配置、Zip64 策略和真正 package streaming。
 - `pugixml` 用于小型 XML part 编辑能力。
 
 验收：
@@ -86,6 +87,10 @@ Phase 1 后续依赖工作：
 
 ## Phase 4：编辑已有 XLSX
 
+当前状态提示：本 roadmap 描述目标能力，不等同当前实现。截至当前任务计划，
+`PartIndex` / `RelationshipGraph` 属于 internal groundwork；`PackageReader`、
+existing-file editing、unknown part preservation 仍是计划。
+
 功能：
 
 - PackageReader。
@@ -96,6 +101,10 @@ Phase 1 后续依赖工作：
 - 模板填充。
 
 ## Phase 5：复杂对象
+
+当前状态提示：`stb` 仍只在 `planned-image` 依赖规划中，尚未接入 CMake。
+图片、超链接、table、chart/VBA passthrough 不能仅凭本 roadmap 条目宣称支持；
+以 `TASK_PLAN.md`、`NEXT_STEPS.md`、`AGENTS.md` 的 current verified state 为准。
 
 功能：
 

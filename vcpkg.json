@@ -9,7 +9,7 @@
   "dependencies": [],
   "features": {
     "planned-runtime": {
-      "description": "Planned runtime dependencies for the production ZIP/XML backend. These ports are not wired into CMake yet.",
+      "description": "Opt-in runtime dependencies for the minizip-ng package writer backend and planned ZIP/XML reader/editor work.",
       "dependencies": [
         {
           "name": "minizip-ng",

@@ -24,7 +24,8 @@ Phase 5 仍是计划。
 本轮 OPC edit plan 只能写为基础或计划：当前有 copy-original、
 generate-small-XML、stream-rewrite、local-DOM-rewrite 的 write-mode metadata，
 并且有新建 workbook 输出使用的内部 `src/package_writer.*` boundary；但没有
-end-to-end `PackageReader` / 生产 `PackageWriter` 编辑管线。
+end-to-end `PackageReader` / public `PackageWriter` 编辑管线。该 boundary 默认走
+stored bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 可走 minizip-ng/DEFLATE。
 
 ## 核心编辑模型
 
@@ -117,8 +118,8 @@ worksheet.xml drawing reference
   registry 和 write-mode metadata 可作为规划入口。
 - 基础 docProps 输出：基础。它只是新建 package 的静态小型 XML part，不是完整
   document properties API，也不是已有文件编辑。
-- Package read/copy/write：计划。需要生产 ZIP backend、`PackageReader`、
-  `PackageWriter` 和 preservation 测试。
+- Package read/copy/write：计划。当前已有 opt-in minizip package output backend，
+  但仍需要 `PackageReader`、existing-file writer 和 preservation 测试。
 - 保真验证：计划。需要输入/输出 package 对比，证明未知和未修改 part 被保留。
 - 不能因为有 write-mode metadata 就宣称已有 XLSX 编辑、图片、VBA、table 或 chart
   支持。

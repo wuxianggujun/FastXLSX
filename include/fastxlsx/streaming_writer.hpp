@@ -96,10 +96,10 @@ private:
 /// Append-only worksheet writer for large-data paths.
 ///
 /// API mode: Streaming. Rows are consumed in order and previously written rows
-/// cannot be modified through this handle. The current ZIP backend is still the
-/// Phase 1 stored ZIP bootstrap, so package compression and Zip64 are not
-/// production-ready yet, but worksheet rows are not retained as a full cell
-/// matrix by this API.
+/// cannot be modified through this handle. Worksheet rows are not retained as a
+/// full cell matrix by this API. Package finalization still assembles current
+/// parts at close(); dependency-free builds use the stored ZIP bootstrap, while
+/// FASTXLSX_ENABLE_MINIZIP_NG builds use the minizip-ng DEFLATE backend.
 ///
 /// A default-constructed WorksheetWriter is detached and will throw
 /// FastXlsxError from mutating operations. Valid handles are returned by
@@ -179,9 +179,10 @@ private:
 ///
 /// API mode: Streaming. Use this writer for ordered worksheet export. It keeps
 /// workbook metadata and small worksheet metadata in memory, but row data is
-/// consumed as it is appended. The current stored ZIP bootstrap still buffers
-/// final package entries during close(); minizip-ng/zlib-ng integration remains
-/// the production backend task.
+/// consumed as it is appended. Final package entries are currently assembled
+/// during close(); FASTXLSX_ENABLE_MINIZIP_NG switches that final ZIP write to
+/// minizip-ng/DEFLATE, but does not yet provide true package streaming or Zip64
+/// guarantees.
 class WorkbookWriter {
 public:
     /// Creates an empty, uninitialized writer.
@@ -205,8 +206,9 @@ public:
     /// Creates a streaming workbook writer for the target path.
     ///
     /// The output file is written when close() succeeds. Existing files at the
-    /// path are replaced by the current stored-ZIP backend. The writer is
-    /// move-only so ownership of temporary worksheet state is explicit.
+    /// path are replaced through the internal package writer backend. The
+    /// writer is move-only so ownership of temporary worksheet state is
+    /// explicit.
     static WorkbookWriter create(std::filesystem::path path, WorkbookWriterOptions options = {});
 
     /// Adds a worksheet and returns its streaming handle.
@@ -224,7 +226,7 @@ public:
     /// close() is idempotent after a successful close. Before closing, all rows
     /// have been written to temporary worksheet XML files; close() assembles
     /// content types, relationships, workbook XML, optional sharedStrings.xml,
-    /// and worksheet parts into the current stored-ZIP package.
+    /// and worksheet parts through the configured package writer backend.
     ///
     /// @throws FastXlsxError if the writer is uninitialized, contains no
     /// worksheets, cannot read temporary worksheet XML, or cannot write the

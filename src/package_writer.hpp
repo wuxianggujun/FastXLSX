@@ -12,17 +12,18 @@ struct PackageEntry {
 };
 
 enum class PackageWriterBackend {
+    Auto,
     StoredZipBootstrap,
+    MinizipNg,
 };
 
 struct PackageWriterOptions {
-    PackageWriterBackend backend = PackageWriterBackend::StoredZipBootstrap;
+    PackageWriterBackend backend = PackageWriterBackend::Auto;
 };
 
-// Internal package writer boundary. The current backend still writes the
-// Phase 1 stored/no-compression ZIP bootstrap; production ZIP support should
-// replace the backend behind this function instead of calling ZIP code from
-// workbook writers directly.
+// Internal package writer boundary. Auto selects the production minizip-ng
+// backend when the dependency is enabled; otherwise it keeps the Phase 1
+// stored/no-compression ZIP bootstrap for dependency-free builds.
 void write_package(const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
     PackageWriterOptions options = {});
 

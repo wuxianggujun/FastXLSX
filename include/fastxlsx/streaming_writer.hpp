@@ -14,9 +14,15 @@
 
 namespace fastxlsx {
 
+class WorksheetWriter;
+
 namespace detail {
 struct WorkbookWriterState;
 struct WorksheetWriterState;
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+void testing_set_worksheet_row_count(WorksheetWriter& worksheet, std::uint32_t row_count);
+#endif
 } // namespace detail
 
 /// String storage strategy for streaming worksheet writes.
@@ -349,6 +355,10 @@ public:
 
 private:
     friend class WorkbookWriter;
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    friend void detail::testing_set_worksheet_row_count(
+        WorksheetWriter& worksheet, std::uint32_t row_count);
+#endif
     explicit WorksheetWriter(detail::WorksheetWriterState* state) noexcept;
 
     detail::WorksheetWriterState* state_ = nullptr;

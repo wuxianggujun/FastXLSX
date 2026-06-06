@@ -399,8 +399,11 @@ Do:
 - Keep row-order writes and bounded memory.
 - Add numeric/date encoding edge cases and Excel row/column limit tests.
   Current finite-only coverage rejects `NaN` / `+Inf` / `-Inf` for numeric
-  cells, row heights, and streaming column widths; broader date and formatting
-  edge cases remain follow-up work.
+  cells, row heights, and streaming column widths. Current `append_row()` row
+  limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to inject the internal row
+  counter at `1048576` and verify one rejected append without a million-row
+  default CTest loop; broader date and formatting edge cases remain follow-up
+  work.
 - Track worksheet dimensions incrementally. Current empty-row coverage locks
   `<dimension ref="A1"/>` for no-row and all-empty-row sheets, preserves empty
   `<row r="N"></row>` elements, and keeps a trailing appended empty row in the
@@ -419,6 +422,8 @@ Accept when:
 
 Do not claim:
 - Low memory if the implementation retains a full worksheet cell matrix.
+- `FASTXLSX_ENABLE_TEST_HOOKS` or `testing_set_worksheet_row_count()` as public
+  API, benchmark coverage, or proof of million-row export performance.
 
 ### P8 - Phase 3 Metadata Tests
 

@@ -22,6 +22,7 @@ add_executable(fastxlsx_streaming_writer_tests
 
 target_link_libraries(fastxlsx_streaming_writer_tests PRIVATE FastXLSX::fastxlsx)
 target_compile_features(fastxlsx_streaming_writer_tests PRIVATE cxx_std_20)
+target_compile_definitions(fastxlsx_streaming_writer_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
 target_include_directories(fastxlsx_streaming_writer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(FASTXLSX_ENABLE_MINIZIP_NG)
     target_link_libraries(fastxlsx_streaming_writer_tests PRIVATE MINIZIP::minizip-ng)

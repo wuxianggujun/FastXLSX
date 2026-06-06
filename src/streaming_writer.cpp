@@ -452,6 +452,19 @@ struct WorkbookWriterState {
     bool closed = false;
 };
 
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+void testing_set_worksheet_row_count(WorksheetWriter& worksheet, std::uint32_t row_count)
+{
+    if (worksheet.state_ == nullptr) {
+        throw FastXlsxError("worksheet writer is not attached to a workbook");
+    }
+    if (worksheet.state_->workbook != nullptr && worksheet.state_->workbook->closed) {
+        throw FastXlsxError("cannot modify worksheet after workbook close");
+    }
+    worksheet.state_->row_count = row_count;
+}
+#endif
+
 } // namespace detail
 
 namespace {

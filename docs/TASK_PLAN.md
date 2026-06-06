@@ -43,6 +43,11 @@ obligations.
   still serialize `<row r="N"></row>`; sparse worksheets with a trailing empty
   appended row keep that final row in the dimension, for example `A1:C3`.
   This is a generated XML invariant, not an Excel `UsedRange` claim.
+- `append_row()` row-limit coverage now uses `FASTXLSX_ENABLE_TEST_HOOKS` and
+  `fastxlsx::detail::testing_set_worksheet_row_count()` in the streaming test
+  build to inject `row_count = 1048576`, then verifies the next append is
+  rejected. This avoids putting a million-row loop into default CTest and is
+  not a public API or performance benchmark.
 - `StringStrategy::InlineString` remains the low-memory default.
 - `StringStrategy::SharedString`, internal shared string table state,
   `xl/sharedStrings.xml` package wiring, and focused structure tests are visible
@@ -786,8 +791,9 @@ Tasks:
 - Add fast numeric and date encoding tasks with tests for edge cases.
 - Track dimensions incrementally and test row/column Excel limits. Current
   empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
-  dimension XML without requiring DOM backtracking; row-limit coverage remains
-  follow-up work.
+  dimension XML without requiring DOM backtracking. Current `append_row()` row
+  limit coverage uses a test-only hook to avoid a million-row default CTest loop;
+  column-limit coverage still uses an oversized in-memory row vector.
 - Add an opt-in benchmark target or command; do not put large benchmarks in
   default CTest.
 - Current preset entry points are `windows-nmake-release-benchmark` and

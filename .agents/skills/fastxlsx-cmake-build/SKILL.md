@@ -34,6 +34,9 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 - 别名目标是 `FastXLSX::fastxlsx`。
 - 选项：
   - `FASTXLSX_BUILD_TESTS` 默认 `ON`。
+    启用测试时，`fastxlsx` 和 `fastxlsx_streaming_writer_tests` 会以 `PRIVATE`
+    方式定义 `FASTXLSX_ENABLE_TEST_HOOKS=1`，只用于低成本触发内部边界测试。
+    不要把该宏传播为 `PUBLIC` / `INTERFACE`，也不要把测试 hook 当成用户 API。
   - `FASTXLSX_BUILD_EXAMPLES` 默认 `OFF`，当前已有 `add_subdirectory(examples)`
     分支。
   - `FASTXLSX_BUILD_BENCHMARKS` 默认 `OFF`，启用后添加 `benchmarks/` 下的

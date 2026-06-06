@@ -95,6 +95,11 @@ relationship/content type side effects。本机 Excel COM 已验证
 `UsedRange` 收缩到实际非空单元格；后续结构判断以拆包后的 worksheet XML 为准，不要为了
 匹配 `UsedRange` 引入完整 worksheet cell matrix 或回扫。
 
+当前行上限结构测试通过 `FASTXLSX_ENABLE_TEST_HOOKS` 和
+`fastxlsx::detail::testing_set_worksheet_row_count()` 注入内部 `row_count` 到 Excel
+最大行数，再验证下一次 `append_row()` 拒绝。这个 hook 只属于测试构建；不要把它用于
+功能代码、public API 设计或性能结论。
+
 ## 已有 XLSX 的 sheet 重写
 
 大型 sheet 修改使用文档中的流程：

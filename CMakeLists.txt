@@ -49,6 +49,7 @@ if(FASTXLSX_ENABLE_STB)
 endif()
 
 if(FASTXLSX_BUILD_TESTS)
+    target_compile_definitions(fastxlsx PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
     enable_testing()
     add_subdirectory(tests)
 endif()

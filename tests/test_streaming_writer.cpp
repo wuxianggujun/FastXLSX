@@ -1557,6 +1557,11 @@ void test_streaming_writer_invalid_metadata_and_rows()
                 too_wide_row.data(), too_wide_row.size()));
         },
         "append_row should reject rows beyond Excel's column limit");
+
+    fastxlsx::detail::testing_set_worksheet_row_count(sheet, 1048576);
+    check_fastxlsx_error(
+        [&sheet] { sheet.append_row({}); },
+        "append_row should reject rows beyond Excel's row limit");
 }
 
 } // namespace

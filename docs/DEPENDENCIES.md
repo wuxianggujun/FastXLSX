@@ -259,14 +259,36 @@ Google Benchmark
 
 原则：
 
-- 项目根目录用 `vcpkg.json` 固定直接依赖。
-- 用 baseline 锁定依赖版本。
+- 项目根目录用 `vcpkg.json` 作为依赖入口。
+- 正式接入的直接依赖应通过 baseline 锁定版本。
 - CMake 侧优先使用 `find_package`。
 - 默认不通过 `FetchContent` 在配置阶段自动拉取核心依赖。
 - 不把第三方源码直接复制进 `src` 或 `include`。
 
-暂不在文档里硬编码具体版本号。
-版本应由后续 `vcpkg.json` 和 CI 环境共同锁定。
+当前仓库已有保守 `vcpkg.json`。
+
+这个 manifest 的边界是：
+
+- 默认 `dependencies` 为空。
+- 默认 CMake 配置和 CI 不安装、不链接任何外部 vcpkg 包。
+- `planned-runtime` 记录计划中的运行依赖：
+  `minizip-ng[zlib]`、`zlib-ng`、`expat`、`pugixml`。
+- `planned-dev` 记录计划中的开发依赖：`catch2`、`benchmark`。
+- 本机已用 `vcpkg search` 确认上述 port 名称存在。
+- 本机已用 `vcpkg install --dry-run --x-feature=planned-runtime`
+  和 `--x-feature=planned-dev` 确认可选 feature 可解析到依赖图。
+- 尚未验证这些 port 对应的 CMake package 名称和 imported target 名称。
+- 因此当前不在 `CMakeLists.txt` 中添加 `find_package` 或链接关系。
+
+后续真正接入依赖时，必须先验证：
+
+1. vcpkg port 名称、features 和目标 triplet。
+2. CMake config package 名称和 imported target 名称。
+3. MSVC 2026 / NMake preset 下的配置、构建和测试。
+4. CI 上的安装耗时、缓存策略和失败行为。
+
+暂不在叙述文档里硬编码具体版本号。
+版本应由 `vcpkg.json` baseline 和 CI 环境共同锁定。
 
 ## 自研范围
 

@@ -21,8 +21,19 @@
 - 基础 sheetData。
 - 数字、字符串、布尔值。
 - ZIP package 输出。
-- `minizip-ng` / `zlib-ng` 接入。
-- `pugixml` 接入小型 XML part。
+
+当前 bootstrap 边界：
+
+- 内部 stored ZIP writer。
+- 无压缩。
+- 无 Zip64。
+- 无真实 package streaming。
+- 尚未接入 `minizip-ng` / `zlib-ng` / `pugixml` CMake 依赖。
+
+Phase 1 后续依赖工作：
+
+- `minizip-ng` / `zlib-ng` 生产 ZIP 后端接入。
+- `pugixml` 用于小型 XML part 编辑能力。
 
 验收：
 

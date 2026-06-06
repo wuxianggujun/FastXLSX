@@ -118,7 +118,10 @@ FastXLSX
 - 字符串：支持 inlineStr 与 sharedStrings 双策略。
 - 样式：独立 registry，统一去重。
 
-## 推荐依赖
+## 规划依赖
+
+这些依赖记录在 `vcpkg.json` 的 planned features 中，当前默认构建和 CI
+尚未接入或链接它们：
 
 - ZIP/OPC 底层：`minizip-ng`。
 - 压缩：`zlib-ng` 优先，保留 `zlib` fallback。
@@ -136,6 +139,7 @@ FastXLSX
 当前已具备：
 
 - compiled `fastxlsx` CMake target 和 `FastXLSX::fastxlsx` alias。
+- 保守 `vcpkg.json`、`CMakePresets.json` 和 Windows VS2026/NMake CI workflow 基础。
 - 最小 public API：`fastxlsx::Workbook`、`fastxlsx::Worksheet`、`fastxlsx::Cell`
   和 `fastxlsx::FastXlsxError`。
 - 流式 writer 写入骨架：`WorkbookWriter`、`WorksheetWriter`、`CellView`。
@@ -143,6 +147,8 @@ FastXLSX
   `[Content_Types].xml`、`_rels/.rels`、`xl/workbook.xml`、
   `xl/_rels/workbook.xml.rels`、`xl/worksheets/sheet1.xml`。
 - 数字、inline string、布尔和公式单元格写入。
+- `StringStrategy::SharedString` 最小写出路径、`xl/sharedStrings.xml` package wiring
+  和结构测试；仍需 Excel 可视化、参考 XML 对比和内存/大小数据后再视为生产特性。
 - 行高、列宽、冻结窗格、自动筛选和合并单元格的写入骨架。
 - 内部 OPC manifest / relationships 基础；Phase 5 已有文件编辑仍是规划。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
@@ -156,9 +162,9 @@ FastXLSX
 
 - `minizip-ng` / `zlib-ng` 生产 ZIP 后端接入。
 - Zip64、压缩等级配置和真正 package streaming。
-- Catch2、Google Benchmark、CI 和 example 目标。
-- shared strings 策略、完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和
-  性能 benchmark。
+- Catch2 和 Google Benchmark 接入。
+- CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
+- 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
 
 `src/zip_store_writer.*` 是 Phase 1 bootstrap 例外，仅写 stored/no-compression ZIP，

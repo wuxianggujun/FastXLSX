@@ -11,8 +11,13 @@
 
 namespace fastxlsx {
 
-/// Error raised when FastXLSX cannot build XML, validate workbook state, or
-/// write the XLSX package.
+/// Error raised for FastXLSX validation and package-writing failures.
+///
+/// FastXLSX currently exposes a single exception type for public API failures
+/// such as invalid worksheet names, invalid cell/range references, empty
+/// workbooks, XML generation errors, and ZIP/package write errors. The exception
+/// text is intended for diagnostics; no stable numeric error-code API exists in
+/// the current public surface.
 class FastXlsxError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -22,7 +27,9 @@ public:
 ///
 /// API mode: value type shared by Streaming and small in-memory helpers. The
 /// range does not imply random worksheet access; it is metadata for XML features
-/// such as auto filters and merged cells.
+/// such as auto filters and merged cells. APIs that serialize a range validate
+/// it against Excel worksheet limits when called or when the XML reference is
+/// generated.
 struct CellRange {
     std::uint32_t first_row = 1;
     std::uint32_t first_column = 1;
@@ -33,19 +40,27 @@ struct CellRange {
 /// Optional row metadata consumed when a row is appended.
 ///
 /// API mode: Streaming. Row options travel with the row so writers do not need
-/// a random-access row map after prior rows have been emitted.
+/// a random-access row map after prior rows have been emitted. A height value is
+/// serialized as row height metadata; WorksheetWriter rejects non-positive
+/// heights in append_row().
 struct RowOptions {
     std::optional<double> height;
 };
 
-/// A minimal worksheet cell value for the Phase 1 streaming-oriented write API.
+/// A minimal owning worksheet cell value for Workbook's Phase 1 write API.
 ///
 /// This type intentionally carries only number, inline string, boolean, and
 /// write-only formula values. Styles, shared strings, dates, and rich text are
 /// outside the current implementation and should be added without making large
 /// worksheet writes depend on a DOM or full random-access cell matrix.
+///
+/// API mode: small in-memory creation path. Cell owns string/formula text and is
+/// copied into Worksheet's row buffer when appended. For large ordered exports,
+/// prefer CellView with WorkbookWriter so row data can be consumed without
+/// retaining a full worksheet matrix.
 class Cell {
 public:
+    /// Stored value kind used during worksheet XML generation.
     enum class Type {
         Number,
         String,
@@ -58,9 +73,10 @@ public:
 
     /// Creates an inline string cell.
     ///
-    /// Phase 1 writes strings as inlineStr to avoid a shared string table. A
-    /// future shared-string strategy must be an explicit performance choice
-    /// because it grows state with the number of unique strings.
+    /// Workbook writes strings as inlineStr and does not create
+    /// xl/sharedStrings.xml. Shared-string output is currently an explicit
+    /// WorkbookWriter option because it grows workbook-level state with the
+    /// number of unique strings.
     static Cell text(std::string value);
 
     /// Creates a boolean cell.
@@ -113,6 +129,7 @@ public:
     /// The API does not expose random cell mutation and does not promise a full
     /// worksheet matrix for future large-file paths. For Phase 1, cells are kept
     /// in an internal row buffer and written as sheetData during Workbook::save().
+    /// Strings and formulas are copied before the call returns.
     void append_row(std::initializer_list<Cell> cells);
 
     /// Appends one row to the worksheet from a vector-like source.
@@ -125,7 +142,8 @@ public:
     ///
     /// API mode: Streaming-oriented. Row options are stored with the appended
     /// row in the Phase 1 buffer and are intended to map directly to row XML in
-    /// the future streaming writer.
+    /// the streaming writer. This in-memory path currently stores the supplied
+    /// metadata and serializes it during Workbook::save().
     void append_row(const std::vector<Cell>& cells, RowOptions options);
 
     [[nodiscard]] const std::string& name() const noexcept;
@@ -156,18 +174,34 @@ public:
     /// Adds a worksheet and returns it.
     ///
     /// Sheet names are validated against Excel's basic restrictions and must be
-    /// unique. Phase 1 supports writing workbook/worksheet package parts only;
-    /// styles, drawings, formulas, and document properties are not generated.
+    /// unique. Worksheets are stored in the workbook's internal vector, so a
+    /// reference returned from an earlier call can be invalidated by later
+    /// add_worksheet() calls that reallocate the vector. Phase 1 supports
+    /// writing workbook/worksheet package parts only; styles, drawings, document
+    /// properties, and calculation metadata are not generated.
+    ///
+    /// @throws FastXlsxError if the name is empty, exceeds Excel's 31-character
+    /// limit, contains a character rejected by Excel, or duplicates an existing
+    /// worksheet name.
     Worksheet& add_worksheet(std::string name = "Sheet1");
 
     /// Saves the workbook as an XLSX file.
     ///
     /// The file is an OpenXML package with workbook relationships, content
     /// types, and worksheet sheetData. Existing files at path are replaced by
-    /// the underlying file stream. Throws FastXlsxError when validation or
-    /// package writing fails.
+    /// the underlying file stream. The current bootstrap ZIP writer stores
+    /// entries without compression. This method is the only finalization step for
+    /// the in-memory path.
+    ///
+    /// @throws FastXlsxError if the workbook has no worksheets, generated XML is
+    /// invalid for the supported limits, or the package cannot be written.
     void save(const std::filesystem::path& path) const;
 
+    /// Returns the workbook's current worksheet buffer.
+    ///
+    /// This accessor exposes the in-memory path's current state for inspection.
+    /// It is not a streaming cursor and should not be used as a large-file data
+    /// model.
     [[nodiscard]] const std::vector<Worksheet>& worksheets() const noexcept;
 
 private:

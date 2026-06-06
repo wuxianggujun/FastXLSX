@@ -1,0 +1,69 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-nmake-release",
+      "displayName": "Windows NMake Release",
+      "description": "Configure FastXLSX with NMake from a Visual Studio Developer Command Prompt. This preset does not use vcpkg.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "ON",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF"
+      }
+    },
+    {
+      "name": "windows-nmake-release-vcpkg",
+      "displayName": "Windows NMake Release with vcpkg Toolchain",
+      "description": "Configure with the vcpkg toolchain from VCPKG_ROOT. The manifest has no default dependencies until CMake integration is verified.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-vcpkg",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "ON",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-nmake-release",
+      "configurePreset": "windows-nmake-release"
+    },
+    {
+      "name": "windows-nmake-release-vcpkg",
+      "configurePreset": "windows-nmake-release-vcpkg"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-nmake-release",
+      "configurePreset": "windows-nmake-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "timeout": 60
+      }
+    },
+    {
+      "name": "windows-nmake-release-vcpkg",
+      "configurePreset": "windows-nmake-release-vcpkg",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "timeout": 60
+      }
+    }
+  ]
+}

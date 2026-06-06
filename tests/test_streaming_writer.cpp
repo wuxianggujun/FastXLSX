@@ -156,6 +156,7 @@ void test_streaming_writer_smoke_package()
     check(entries.contains("xl/workbook.xml"), "missing workbook part");
     check(entries.contains("xl/_rels/workbook.xml.rels"), "missing workbook relationships part");
     check(entries.contains("xl/worksheets/sheet1.xml"), "missing streaming worksheet part");
+    check(!entries.contains("xl/sharedStrings.xml"), "inline string package should not include shared strings");
 
     const auto& content_types = entries.at("[Content_Types].xml");
     check_contains(content_types, "/xl/workbook.xml", "missing workbook content type override");
@@ -216,6 +217,105 @@ void test_streaming_writer_smoke_package()
         worksheet_xml,
         "<mergeCells count=\"1\"><mergeCell ref=\"A3:B3\"/></mergeCells>",
         "mergeCells XML mismatch");
+}
+
+void test_streaming_writer_shared_string_package()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-shared-strings.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    auto sheet = workbook.add_worksheet("Shared");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("repeat"),
+        fastxlsx::CellView::text("space "),
+        fastxlsx::CellView::text("escaped & <tag>"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("repeat"),
+        fastxlsx::CellView::text("space "),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "shared string xlsx file was not generated");
+
+    const auto entries = read_stored_zip_entries(output_path);
+    check(entries.contains("[Content_Types].xml"), "missing shared string content types part");
+    check(entries.contains("xl/_rels/workbook.xml.rels"), "missing shared string workbook rels part");
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing shared string worksheet part");
+    check(entries.contains("xl/sharedStrings.xml"), "missing shared strings part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(
+        content_types, "/xl/sharedStrings.xml", "missing shared strings content type override");
+    check_contains(content_types,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+        "shared strings content type mismatch");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check_contains(workbook_rels, "relationships/sharedStrings", "missing shared strings relationship");
+    check_contains(
+        workbook_rels, "Target=\"sharedStrings.xml\"", "shared strings relationship target mismatch");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(
+        worksheet_xml, "<c r=\"A1\" t=\"s\"><v>0</v></c>", "shared string A1 index mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"B1\" t=\"s\"><v>1</v></c>", "shared string B1 index mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"C1\" t=\"s\"><v>2</v></c>", "shared string C1 index mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"A2\" t=\"s\"><v>0</v></c>", "shared string duplicate A2 mismatch");
+    check_contains(
+        worksheet_xml, "<c r=\"B2\" t=\"s\"><v>1</v></c>", "shared string duplicate B2 mismatch");
+
+    const auto& shared_strings_xml = entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_xml, "<sst ", "missing shared strings root");
+    check_contains(shared_strings_xml, "count=\"5\"", "shared strings count mismatch");
+    check_contains(shared_strings_xml, "uniqueCount=\"3\"", "shared strings uniqueCount mismatch");
+    check_contains(shared_strings_xml, "<si><t>repeat</t></si>", "first shared string mismatch");
+    check_contains(shared_strings_xml,
+        "<si><t xml:space=\"preserve\">space </t></si>",
+        "space-preserved shared string mismatch");
+    check_contains(shared_strings_xml,
+        "<si><t>escaped &amp; &lt;tag&gt;</t></si>",
+        "escaped shared string mismatch");
+}
+
+void test_streaming_writer_rejects_mutation_after_close()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-after-close.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    auto sheet = workbook.add_worksheet("Closed");
+    sheet.append_row({fastxlsx::CellView::text("before close")});
+
+    workbook.close();
+    workbook.close();
+
+    check_fastxlsx_error(
+        [&sheet] { sheet.append_row({fastxlsx::CellView::text("after close")}); },
+        "append_row should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.set_column_width(1, 1, 12.0); },
+        "set_column_width should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.freeze_panes(1, 1); },
+        "freeze_panes should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.set_auto_filter({1, 1, 1, 1}); },
+        "set_auto_filter should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.merge_cells({1, 1, 1, 2}); },
+        "merge_cells should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -316,6 +416,8 @@ int main()
 {
     try {
         test_streaming_writer_smoke_package();
+        test_streaming_writer_shared_string_package();
+        test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();
         test_streaming_writer_invalid_metadata_and_rows();
     } catch (const std::exception& error) {

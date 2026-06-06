@@ -15,8 +15,10 @@ FastXLSX 的测试不能只证明代码能编译，也不能只证明 XML 字符
 
 ### 1. 单元测试
 
-普通单元测试使用 `Catch2`，并通过 `CTest` 注册。核心测试集必须能在 60s
-内完成，不能把大型 benchmark 混进默认单元测试。
+当前普通单元测试由轻量测试可执行文件通过 `CTest` 注册。`Catch2` 是
+`vcpkg.json` planned-dev 依赖，尚未接入 CMake；后续接入 Catch2 后，再将
+普通单元测试迁移到 Catch2。核心测试集必须能在 60s 内完成，不能把大型
+benchmark 混进默认单元测试。
 
 优先覆盖：
 
@@ -198,8 +200,8 @@ xl/styles.xml
 
 ## 排障优先级
 
-1. `ctest` 没有测试：先检查 `tests/CMakeLists.txt` 是否仍注册 `fastxlsx.unit`，
-   或是否被误改回空测试入口。
+1. `ctest` 没有测试：先检查 `tests/CMakeLists.txt` 是否仍注册
+   `fastxlsx.unit`、`fastxlsx.streaming` 和 `fastxlsx.opc`，或是否被误改回空测试入口。
 2. Excel 打不开：先拆包检查 content types、relationships、workbook、worksheet。
 3. Excel 提示修复：保存修复后的文件，与原文件和参考文件拆包对比 XML。
 4. 单元格显示不对：检查 cell reference、type、value、shared strings 和 styles。

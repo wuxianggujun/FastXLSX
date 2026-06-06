@@ -15,6 +15,10 @@ compile_commands.json
 CTestTestfile.cmake
 DartConfiguration.tcl
 Testing/
+vcpkg_installed/
+
+# CMake local user presets
+/CMakeUserPresets.json
 
 # IDE and editor files
 /.idea/
@@ -40,6 +44,10 @@ Testing/
 *.log
 *.tmp
 *.temp
+
+# Generated example workbooks
+/fastxlsx-minimal-example.xlsx
+/fastxlsx-streaming-example.xlsx
 
 # Environment and local secret files
 .env

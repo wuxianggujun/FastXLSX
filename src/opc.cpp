@@ -151,10 +151,14 @@ constexpr std::string_view content_type_workbook =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
 constexpr std::string_view content_type_worksheet =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
+constexpr std::string_view content_type_shared_strings =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 constexpr std::string_view relationship_type_office_document =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 constexpr std::string_view relationship_type_worksheet =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
+constexpr std::string_view relationship_type_shared_strings =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
 
 } // namespace
 
@@ -326,6 +330,43 @@ const std::vector<ContentTypeOverride>& ContentTypesManifest::overrides() const 
     return overrides_;
 }
 
+void PackagePart::set_write_mode(PartWriteMode mode) noexcept
+{
+    write_mode = mode;
+    switch (mode) {
+    case PartWriteMode::CopyOriginal:
+        preserve_original = true;
+        dirty = false;
+        generated = false;
+        break;
+    case PartWriteMode::GenerateSmallXml:
+        preserve_original = false;
+        dirty = true;
+        generated = true;
+        break;
+    case PartWriteMode::StreamRewrite:
+    case PartWriteMode::LocalDomRewrite:
+        preserve_original = false;
+        dirty = true;
+        generated = false;
+        break;
+    }
+}
+
+void PackagePart::mark_dirty() noexcept
+{
+    if (write_mode == PartWriteMode::CopyOriginal) {
+        write_mode = PartWriteMode::LocalDomRewrite;
+    }
+    preserve_original = false;
+    dirty = true;
+}
+
+void PackagePart::mark_generated() noexcept
+{
+    set_write_mode(PartWriteMode::GenerateSmallXml);
+}
+
 PackagePart& PackageManifest::add_part(PartName part_name, std::string content_type)
 {
     return ensure_part(std::move(part_name), std::move(content_type));
@@ -351,6 +392,39 @@ PackagePart& PackageManifest::ensure_part(PartName part_name, std::string conten
 
     parts_.push_back(std::move(part));
     return parts_.back();
+}
+
+PackagePart& PackageManifest::set_part_write_mode(const PartName& part_name, PartWriteMode mode)
+{
+    auto* part = find_part(part_name);
+    if (part == nullptr) {
+        throw FastXlsxError("package edit part is not registered in package manifest");
+    }
+
+    part->set_write_mode(mode);
+    return *part;
+}
+
+PackagePart& PackageManifest::mark_part_dirty(const PartName& part_name)
+{
+    auto* part = find_part(part_name);
+    if (part == nullptr) {
+        throw FastXlsxError("package edit part is not registered in package manifest");
+    }
+
+    part->mark_dirty();
+    return *part;
+}
+
+PackagePart& PackageManifest::mark_part_generated(const PartName& part_name)
+{
+    auto* part = find_part(part_name);
+    if (part == nullptr) {
+        throw FastXlsxError("package edit part is not registered in package manifest");
+    }
+
+    part->mark_generated();
+    return *part;
 }
 
 PackagePart* PackageManifest::find_part(const PartName& part_name) noexcept
@@ -433,14 +507,15 @@ std::size_t PackageManifest::size() const noexcept
     return parts_.size();
 }
 
-PackageManifest make_minimal_workbook_manifest(std::size_t worksheet_count)
+PackageManifest make_minimal_workbook_manifest(
+    std::size_t worksheet_count, bool include_shared_strings)
 {
     PackageManifest manifest;
     manifest.content_types().add_default("rels", std::string(content_type_relationships));
     manifest.content_types().add_default("xml", std::string(content_type_xml));
 
     const PartName workbook_part("/xl/workbook.xml");
-    manifest.add_part(workbook_part, std::string(content_type_workbook));
+    manifest.add_part(workbook_part, std::string(content_type_workbook)).mark_generated();
 
     manifest.add_package_relationship(Relationship {
         "rId1",
@@ -450,12 +525,24 @@ PackageManifest make_minimal_workbook_manifest(std::size_t worksheet_count)
 
     for (std::size_t index = 1; index <= worksheet_count; ++index) {
         const std::string sheet_name = "sheet" + std::to_string(index) + ".xml";
-        manifest.add_part(PartName("/xl/worksheets/" + sheet_name), std::string(content_type_worksheet));
+        manifest.add_part(PartName("/xl/worksheets/" + sheet_name), std::string(content_type_worksheet))
+            .set_write_mode(PartWriteMode::StreamRewrite);
         manifest.add_relationship(workbook_part,
             Relationship {
                 "rId" + std::to_string(index),
                 std::string(relationship_type_worksheet),
                 "worksheets/" + sheet_name,
+            });
+    }
+
+    if (include_shared_strings) {
+        manifest.add_part(PartName("/xl/sharedStrings.xml"), std::string(content_type_shared_strings))
+            .mark_generated();
+        manifest.add_relationship(workbook_part,
+            Relationship {
+                "rId" + std::to_string(worksheet_count + 1),
+                std::string(relationship_type_shared_strings),
+                "sharedStrings.xml",
             });
     }
 

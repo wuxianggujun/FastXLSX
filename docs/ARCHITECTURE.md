@@ -50,7 +50,12 @@ XLSX 语义层必须由 FastXLSX 自己实现：
 
 更详细的依赖选择见 [依赖策略](DEPENDENCIES.md)。
 
-## 总体分层
+## 目标总体分层（部分模块尚未实现）
+
+当前已实现的是 `Workbook` / `Worksheet` / `Cell`、`WorkbookWriter` /
+`WorksheetWriter` / `CellView`，以及内部 OPC manifest / relationships 基础。
+`PackageReader`、`PackageWriter`、`PartIndex`、`RelationshipGraph`、
+`WorksheetReader`、`TemplateEditor` 等仍是规划模块。
 
 ```text
 FastXLSX

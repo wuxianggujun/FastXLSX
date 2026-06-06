@@ -17,6 +17,9 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 然后检查 `include/`、`src/` 和测试，确认哪些已实现。当前已有
 `WorkbookWriter`、`WorksheetWriter`、`CellView` 流式写入骨架；文档中的其他
 模块名仍可能只是设计目标。
+当前可见 `StringStrategy::SharedString`、内部 `SharedStringTable`、
+`xl/sharedStrings.xml` 生成路径和 focused 结构测试。把这条线写为
+sharedStrings 进行中或基础，不要写成生产级字符串策略完成。
 
 ## 不可破坏的边界
 
@@ -39,6 +42,15 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 当前骨架已覆盖公式、行高、列宽、冻结窗格、自动筛选和合并单元格的 XML 输出；
 这些是写入骨架能力，不等同完整 Phase 3。
 
+当前 sharedStrings 基础：
+
+- `StringStrategy::InlineString` 仍是低内存默认路径。
+- `StringStrategy::SharedString` 是显式性能/体积策略入口。
+- 当前可见内部共享字符串表、`xl/sharedStrings.xml` part、content type、
+  workbook relationship、worksheet `t="s"` 引用和 XML escape 结构测试。
+- 继续写成 进行中，直到默认 CTest、Excel 可视化打开、参考文件拆包 XML 对比
+  和大小/内存数据补齐。
+
 这些仍主要是文档中的设计名，使用前先确认源码是否存在：
 
 - `RowStreamWriter`
@@ -48,7 +60,6 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 - `DimensionTracker`
 - `FastXmlWriter`
 - `InlineStringPolicy`
-- `SharedStringTable`
 - `StringEscaper`
 - `StyleRegistry`
 
@@ -103,7 +114,11 @@ dimension 更新。
 ## 验证
 
 - 为 XML escape、cell reference、值编码、dimensions、字符串策略补单元测试。
+- sharedStrings 进行中时，验证 `xl/sharedStrings.xml`、content type override、
+  workbook relationship、worksheet shared-string index、`count` / `uniqueCount`、
+  XML escape 和 `xml:space="preserve"`。
 - 普通单元测试遵守 60s 核心测试边界。
 - 性能/内存结论必须来自 benchmark。
-- 生成 `.xlsx` 后，在可用时验证 OpenXML 结构和办公软件打开兼容性。
+- 生成 `.xlsx` 后，在可用时验证 OpenXML 结构和办公软件打开兼容性；结构异常时
+  用 Excel / `openpyxl` / `XlsxWriter` 生成参考文件并拆包对比 XML 语义。
 - public API 需要文档注释，说明 streaming 模式、输入顺序、内存行为和限制。

@@ -67,6 +67,17 @@ struct ContentTypeOverride {
     std::string content_type;
 };
 
+/// Planned write strategy for a package part in a future edit pass.
+///
+/// This is edit-planning metadata only. It does not imply ZIP read/write support
+/// or existing-XLSX editing behavior.
+enum class PartWriteMode {
+    CopyOriginal,
+    GenerateSmallXml,
+    StreamRewrite,
+    LocalDomRewrite,
+};
+
 /// `[Content_Types].xml` defaults and overrides.
 ///
 /// Overrides win over extension defaults during lookup. Duplicate defaults or
@@ -92,6 +103,14 @@ struct PackagePart {
     PartName name;
     std::string content_type;
     RelationshipSet relationships;
+    PartWriteMode write_mode = PartWriteMode::CopyOriginal;
+    bool preserve_original = true;
+    bool dirty = false;
+    bool generated = false;
+
+    void set_write_mode(PartWriteMode mode) noexcept;
+    void mark_dirty() noexcept;
+    void mark_generated() noexcept;
 };
 
 /// Lightweight internal package manifest.
@@ -103,6 +122,9 @@ class PackageManifest {
 public:
     PackagePart& add_part(PartName part_name, std::string content_type);
     PackagePart& ensure_part(PartName part_name, std::string content_type = {});
+    PackagePart& set_part_write_mode(const PartName& part_name, PartWriteMode mode);
+    PackagePart& mark_part_dirty(const PartName& part_name);
+    PackagePart& mark_part_generated(const PartName& part_name);
 
     [[nodiscard]] PackagePart* find_part(const PartName& part_name) noexcept;
     [[nodiscard]] const PackagePart* find_part(const PartName& part_name) const noexcept;
@@ -126,7 +148,8 @@ private:
     RelationshipSet package_relationships_;
 };
 
-[[nodiscard]] PackageManifest make_minimal_workbook_manifest(std::size_t worksheet_count);
+[[nodiscard]] PackageManifest make_minimal_workbook_manifest(
+    std::size_t worksheet_count, bool include_shared_strings = false);
 [[nodiscard]] std::string serialize_content_types(const ContentTypesManifest& content_types);
 [[nodiscard]] std::string serialize_relationships(const RelationshipSet& relationships);
 

@@ -17,6 +17,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -112,9 +113,18 @@ std::string read_file(const std::filesystem::path& path)
 
 namespace detail {
 
+struct WorkbookWriterState;
+
+struct SharedStringTable {
+    std::size_t count = 0;
+    std::vector<std::string> values;
+    std::unordered_map<std::string, std::size_t> index_by_value;
+};
+
 struct WorksheetWriterState {
-    explicit WorksheetWriterState(std::string sheet_name)
-        : name(std::move(sheet_name))
+    WorksheetWriterState(std::string sheet_name, WorkbookWriterState* workbook_state)
+        : workbook(workbook_state)
+        , name(std::move(sheet_name))
         , body_path(make_temp_path())
         , body(body_path, std::ios::binary)
     {
@@ -135,6 +145,7 @@ struct WorksheetWriterState {
     WorksheetWriterState(const WorksheetWriterState&) = delete;
     WorksheetWriterState& operator=(const WorksheetWriterState&) = delete;
 
+    WorkbookWriterState* workbook = nullptr;
     std::string name;
     std::filesystem::path body_path;
     std::ofstream body;
@@ -150,6 +161,7 @@ struct WorkbookWriterState {
     std::filesystem::path output_path;
     WorkbookWriterOptions options;
     std::vector<std::unique_ptr<WorksheetWriterState>> worksheets;
+    SharedStringTable shared_strings;
     bool closed = false;
 };
 
@@ -157,7 +169,40 @@ struct WorkbookWriterState {
 
 namespace {
 
-void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const CellView& cell)
+bool uses_shared_strings(const detail::WorkbookWriterState& workbook) noexcept
+{
+    return workbook.options.string_strategy == StringStrategy::SharedString;
+}
+
+void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
+{
+    if (state == nullptr) {
+        throw FastXlsxError("worksheet writer is not attached to a workbook");
+    }
+    if (state->workbook != nullptr && state->workbook->closed) {
+        throw FastXlsxError("cannot modify worksheet after workbook close");
+    }
+}
+
+std::size_t shared_string_index(detail::WorkbookWriterState& workbook, std::string_view value)
+{
+    auto& table = workbook.shared_strings;
+    ++table.count;
+
+    std::string key(value);
+    if (const auto existing = table.index_by_value.find(key);
+        existing != table.index_by_value.end()) {
+        return existing->second;
+    }
+
+    const std::size_t index = table.values.size();
+    table.values.push_back(key);
+    table.index_by_value.emplace(std::move(key), index);
+    return index;
+}
+
+void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const CellView& cell,
+    detail::WorksheetWriterState& worksheet)
 {
     const std::string reference = detail::cell_reference(row, column);
     switch (cell.type()) {
@@ -171,9 +216,15 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
     case CellView::Type::String:
         xml += "<c r=\"";
         xml += reference;
-        xml += "\" t=\"inlineStr\"><is>";
-        append_text_element(xml, cell.text_value());
-        xml += "</is></c>";
+        if (worksheet.workbook != nullptr && uses_shared_strings(*worksheet.workbook)) {
+            xml += "\" t=\"s\"><v>";
+            xml += std::to_string(shared_string_index(*worksheet.workbook, cell.text_value()));
+            xml += "</v></c>";
+        } else {
+            xml += "\" t=\"inlineStr\"><is>";
+            append_text_element(xml, cell.text_value());
+            xml += "</is></c>";
+        }
         break;
     case CellView::Type::Boolean:
         xml += "<c r=\"";
@@ -217,6 +268,26 @@ std::string build_workbook(const std::vector<std::unique_ptr<detail::WorksheetWr
         xml += R"("/>)";
     }
     xml += "</sheets></workbook>";
+    return xml;
+}
+
+std::string build_shared_strings(const detail::SharedStringTable& shared_strings)
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count=")";
+    xml += std::to_string(shared_strings.count);
+    xml += R"(" uniqueCount=")";
+    xml += std::to_string(shared_strings.values.size());
+    xml += R"(">)";
+
+    for (const std::string& value : shared_strings.values) {
+        xml += "<si>";
+        append_text_element(xml, value);
+        xml += "</si>";
+    }
+
+    xml += "</sst>";
     return xml;
 }
 
@@ -373,9 +444,7 @@ WorksheetWriter::WorksheetWriter(detail::WorksheetWriterState* state) noexcept
 
 void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions options)
 {
-    if (state_ == nullptr) {
-        throw FastXlsxError("worksheet writer is not attached to a workbook");
-    }
+    ensure_mutable_worksheet(state_);
     if (cells.size() > max_excel_columns) {
         throw FastXlsxError("row exceeds Excel's column limit");
     }
@@ -399,7 +468,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     }
     row_xml += "\">";
     for (std::uint32_t column = 0; column < cells.size(); ++column) {
-        write_cell(row_xml, state_->row_count, column + 1, cells[column]);
+        write_cell(row_xml, state_->row_count, column + 1, cells[column], *state_);
     }
     row_xml += "</row>";
 
@@ -416,9 +485,7 @@ void WorksheetWriter::append_row(std::initializer_list<CellView> cells, RowOptio
 
 void WorksheetWriter::set_column_width(std::uint32_t first_column, std::uint32_t last_column, double width)
 {
-    if (state_ == nullptr) {
-        throw FastXlsxError("worksheet writer is not attached to a workbook");
-    }
+    ensure_mutable_worksheet(state_);
     if (first_column == 0 || last_column == 0 || first_column > last_column
         || last_column > max_excel_columns || width <= 0.0) {
         throw FastXlsxError("invalid column width range");
@@ -428,9 +495,7 @@ void WorksheetWriter::set_column_width(std::uint32_t first_column, std::uint32_t
 
 void WorksheetWriter::freeze_panes(std::uint32_t row_split, std::uint32_t column_split)
 {
-    if (state_ == nullptr) {
-        throw FastXlsxError("worksheet writer is not attached to a workbook");
-    }
+    ensure_mutable_worksheet(state_);
     if (row_split > max_excel_rows || column_split > max_excel_columns) {
         throw FastXlsxError("invalid freeze pane split");
     }
@@ -439,18 +504,14 @@ void WorksheetWriter::freeze_panes(std::uint32_t row_split, std::uint32_t column
 
 void WorksheetWriter::set_auto_filter(CellRange range)
 {
-    if (state_ == nullptr) {
-        throw FastXlsxError("worksheet writer is not attached to a workbook");
-    }
+    ensure_mutable_worksheet(state_);
     (void)detail::range_reference(range);
     state_->auto_filter = range;
 }
 
 void WorksheetWriter::merge_cells(CellRange range)
 {
-    if (state_ == nullptr) {
-        throw FastXlsxError("worksheet writer is not attached to a workbook");
-    }
+    ensure_mutable_worksheet(state_);
     (void)detail::range_reference(range);
     if (range.first_row == range.last_row && range.first_column == range.last_column) {
         throw FastXlsxError("merged range must include more than one cell");
@@ -494,7 +555,8 @@ WorksheetWriter WorkbookWriter::add_worksheet(std::string name)
         throw FastXlsxError("worksheet names must be unique");
     }
 
-    state_->worksheets.push_back(std::make_unique<detail::WorksheetWriterState>(std::move(name)));
+    state_->worksheets.push_back(
+        std::make_unique<detail::WorksheetWriterState>(std::move(name), state_.get()));
     return WorksheetWriter(state_->worksheets.back().get());
 }
 
@@ -509,25 +571,26 @@ void WorkbookWriter::close()
     if (state_->worksheets.empty()) {
         throw FastXlsxError("workbook must contain at least one worksheet");
     }
-    if (state_->options.string_strategy != StringStrategy::InlineString) {
-        throw FastXlsxError("only inline string strategy is implemented");
-    }
-
     std::vector<detail::ZipEntry> entries;
-    const detail::PackageManifest manifest =
-        detail::make_minimal_workbook_manifest(state_->worksheets.size());
+    const bool write_shared_strings = uses_shared_strings(*state_);
+    detail::PackageManifest manifest =
+        detail::make_minimal_workbook_manifest(state_->worksheets.size(), write_shared_strings);
+
     const auto* workbook_relationships =
         manifest.relationships_for(detail::PartName("/xl/workbook.xml"));
     if (workbook_relationships == nullptr) {
         throw FastXlsxError("workbook relationships missing from package manifest");
     }
 
-    entries.reserve(4 + state_->worksheets.size());
+    entries.reserve(4 + state_->worksheets.size() + (write_shared_strings ? 1 : 0));
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
     entries.push_back({"xl/workbook.xml", build_workbook(state_->worksheets)});
     entries.push_back(
         {"xl/_rels/workbook.xml.rels", detail::serialize_relationships(*workbook_relationships)});
+    if (write_shared_strings) {
+        entries.push_back({"xl/sharedStrings.xml", build_shared_strings(state_->shared_strings)});
+    }
 
     for (std::size_t index = 0; index < state_->worksheets.size(); ++index) {
         entries.push_back({"xl/worksheets/sheet" + std::to_string(index + 1) + ".xml",

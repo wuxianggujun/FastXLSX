@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msvc-nmake:
+    name: Windows VS2026 NMake
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Locate Visual Studio
+        shell: cmd
+        run: |
+          "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath > vs-path.txt
+          set /p VS_PATH=<vs-path.txt
+          if "%VS_PATH%"=="" (
+            echo Visual Studio with MSVC tools was not found.
+            exit /b 1
+          )
+          if not exist "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat" (
+            echo vcvars64.bat was not found under the Visual Studio install.
+            exit /b 1
+          )
+          echo VS_PATH=%VS_PATH%
+
+      - name: Configure build and test
+        shell: cmd
+        run: |
+          set /p VS_PATH=<vs-path.txt
+          call "%VS_PATH%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          where cl || exit /b 1
+          where nmake || exit /b 1
+          cmake --version || exit /b 1
+          cmake --preset windows-nmake-release || exit /b 1
+          cmake --build --preset windows-nmake-release || exit /b 1
+          ctest --preset windows-nmake-release || exit /b 1

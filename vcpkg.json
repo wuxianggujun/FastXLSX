@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "fastxlsx",
+  "version-string": "0.1.0",
+  "description": "A streaming-first C++ XLSX engine.",
+  "homepage": "https://github.com/wuxianggujun/FastXLSX",
+  "license": "MIT",
+  "builtin-baseline": "81de6771512413aaf89ea77add5ad1fda126b9d0",
+  "dependencies": [],
+  "features": {
+    "planned-runtime": {
+      "description": "Planned runtime dependencies for the production ZIP/XML backend. These ports are not wired into CMake yet.",
+      "dependencies": [
+        {
+          "name": "minizip-ng",
+          "default-features": false,
+          "features": [
+            "zlib"
+          ]
+        },
+        "zlib-ng",
+        "expat",
+        "pugixml"
+      ]
+    },
+    "planned-dev": {
+      "description": "Planned development dependencies for future test and benchmark integration. These ports are not wired into CMake yet.",
+      "dependencies": [
+        "catch2",
+        "benchmark"
+      ]
+    }
+  }
+}

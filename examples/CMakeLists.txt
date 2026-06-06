@@ -1,0 +1,13 @@
+add_executable(fastxlsx_minimal_writer_example
+    minimal_writer.cpp
+)
+
+target_link_libraries(fastxlsx_minimal_writer_example PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_minimal_writer_example PRIVATE cxx_std_20)
+
+add_executable(fastxlsx_streaming_writer_example
+    streaming_writer.cpp
+)
+
+target_link_libraries(fastxlsx_streaming_writer_example PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_streaming_writer_example PRIVATE cxx_std_20)

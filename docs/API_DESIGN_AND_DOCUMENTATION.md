@@ -1,0 +1,118 @@
+# API 设计与文档注释
+
+## 目标
+
+FastXLSX 的 API 可以追求易用，但不能为了易用性牺牲流式优先和性能主线。
+
+API 设计必须和项目性能目标对齐：
+
+- 大数据写入优先暴露 row iterator / chunk writer。
+- 大型 worksheet 不能被高层 API 迫使进入 DOM 或完整 cell matrix。
+- 便利 API 必须明确适用范围；如果只适合小文件或 in-memory 模式，要在文档注释里写明。
+- 性能热路径不能因为 API 包装而落到通用 XML serializer 或全量对象模型上。
+
+## API 分层原则
+
+FastXLSX 可以提供多层 API，但每层都要标明成本。
+
+### Streaming API
+
+用于新建 XLSX、大数据导出、多 sheet 批量写入。
+
+要求：
+
+- 接受 row iterator、range、callback 或 chunk writer。
+- 写入顺序应清晰，不承诺随机回写已输出历史行。
+- 内存占用与当前行 buffer、输出 buffer、字符串策略和 ZIP writer 状态相关。
+- 不持有完整 worksheet cell matrix。
+
+### Patch API
+
+用于编辑已有 XLSX。
+
+要求：
+
+- 以 part-level rewrite 为基本模型。
+- 未修改 part 原样复制。
+- 大型 worksheet 流式重写。
+- 小型 XML part 才允许局部 DOM。
+
+### In-memory API
+
+只用于小文件和复杂编辑。
+
+要求：
+
+- 必须显式标注不承诺大文件低内存。
+- 不得成为大数据写入的默认路径。
+- 不得让用户误以为随机访问 API 适合百万行级导出。
+
+## 文档注释要求
+
+公共头文件中的 public API 应编写文档注释。推荐使用 Doxygen 风格：
+
+```cpp
+/// Writes rows to the worksheet streaming path.
+///
+/// This API does not keep a full worksheet cell matrix in memory. Rows are
+/// consumed in order and previously written rows cannot be randomly modified.
+///
+/// @param rows Row range or iterator source.
+/// @throws FastXlsxError when XML encoding or package writing fails.
+```
+
+文档注释至少说明：
+
+- API 所属模式：Streaming、Patch 或 In-memory。
+- 是否保留完整 worksheet 状态。
+- 输入顺序要求。
+- 是否允许随机访问或回写历史行。
+- 字符串策略相关行为。
+- 样式、关系或 content types 的副作用。
+- 错误处理方式。
+- 性能/内存注意事项。
+
+## 性能注释要求
+
+涉及热路径或大数据行为的 API，注释必须包含性能边界。
+
+需要说明：
+
+- 是否 O(rows)、O(cells) 或与 unique strings 数量相关。
+- 是否分配跨行缓存。
+- 是否可能触发 shared strings 去重状态增长。
+- 是否影响 ZIP 压缩等级或输出文件大小。
+- 是否会触发 DOM。
+
+禁止写模糊承诺，例如“高性能”“低内存”，却不说明内存由哪些状态组成。
+
+## API 设计禁忌
+
+- 不要为了让 API 像普通 workbook 编辑器一样方便，而默认保存完整 worksheet。
+- 不要让 `Workbook` 级 API 隐式把大数据路径转成 in-memory 模式。
+- 不要把 streaming API 做成普通 DOM API 的附属补丁。
+- 不要隐藏压缩等级、字符串策略、DOM 模式等会影响性能的关键选择。
+- 不要让高级功能污染 cell XML 写入热路径。
+
+## 任务计划要求
+
+规划 API 或实现任务时，任务说明必须写清：
+
+- 属于哪个阶段：Phase 1、Phase 2、Phase 3、Phase 4 或 Phase 5。
+- 使用哪种 API 模式：Streaming、Patch 或 In-memory。
+- 是否触碰性能热路径。
+- 是否需要文档注释。
+- 需要哪些结构测试、Excel 可视化验证、拆包 XML 对比或 benchmark。
+- 是否会引入依赖或改变 CMake target。
+
+如果任务要求“API 更易用”，必须同时说明为什么不会破坏流式性能主线。
+
+## 验证清单
+
+- public API 有文档注释。
+- 文档注释写明模式、内存行为和限制。
+- 大数据路径仍能 row/chunk 化。
+- 便利 API 不会隐式 DOM 化大型 worksheet。
+- 测试覆盖 API 行为和 OpenXML 结构。
+- 需要时完成本机 Excel 可视化验证。
+- 性能敏感 API 有 benchmark 或明确的后续 benchmark 任务。

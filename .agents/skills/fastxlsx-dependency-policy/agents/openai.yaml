@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX 依赖策略"
+  short_description: "评估 FastXLSX 依赖、vcpkg、license 和第三方库边界"
+  default_prompt: "使用 $fastxlsx-dependency-policy 评估 FastXLSX 依赖、vcpkg、license 或第三方库接入。"

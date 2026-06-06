@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX OPC 编辑"
+  short_description: "处理 OPC part rewrite、模板编辑和未知 part 保留"
+  default_prompt: "使用 $fastxlsx-opc-editing 处理 FastXLSX 既有 XLSX 编辑、part rewrite 和未知 part 保留。"

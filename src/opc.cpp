@@ -1,0 +1,515 @@
+#include <fastxlsx/detail/opc.hpp>
+
+#include <fastxlsx/detail/xml.hpp>
+#include <fastxlsx/workbook.hpp>
+
+#include <algorithm>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+namespace fastxlsx::detail {
+namespace {
+
+char to_ascii_lower(char ch) noexcept
+{
+    if (ch >= 'A' && ch <= 'Z') {
+        return static_cast<char>(ch - 'A' + 'a');
+    }
+    return ch;
+}
+
+std::string normalize_extension(std::string_view extension)
+{
+    while (!extension.empty() && extension.front() == '.') {
+        extension.remove_prefix(1);
+    }
+
+    if (extension.empty()) {
+        throw FastXlsxError("content type default extension cannot be empty");
+    }
+
+    std::string normalized;
+    normalized.reserve(extension.size());
+    for (const char ch : extension) {
+        if (ch == '/' || ch == '\\') {
+            throw FastXlsxError("content type default extension cannot contain a path separator");
+        }
+        normalized.push_back(to_ascii_lower(ch));
+    }
+
+    return normalized;
+}
+
+void validate_content_type(std::string_view content_type)
+{
+    if (content_type.empty()) {
+        throw FastXlsxError("content type cannot be empty");
+    }
+}
+
+void validate_relationship(const Relationship& relationship)
+{
+    if (relationship.id.empty()) {
+        throw FastXlsxError("relationship id cannot be empty");
+    }
+    if (relationship.type.empty()) {
+        throw FastXlsxError("relationship type cannot be empty");
+    }
+    if (relationship.target.empty()) {
+        throw FastXlsxError("relationship target cannot be empty");
+    }
+}
+
+std::string normalize_part_name(std::string_view value)
+{
+    if (value.empty()) {
+        throw FastXlsxError("part name cannot be empty");
+    }
+
+    std::string path;
+    path.reserve(value.size() + 1);
+    for (const char ch : value) {
+        if (ch == '\0') {
+            throw FastXlsxError("part name cannot contain null bytes");
+        }
+        if (ch == '?' || ch == '#') {
+            throw FastXlsxError("part name cannot contain query or fragment components");
+        }
+        path.push_back(ch == '\\' ? '/' : ch);
+    }
+
+    if (!path.empty() && path.back() == '/') {
+        throw FastXlsxError("part name cannot end with a path separator");
+    }
+
+    if (path.front() != '/') {
+        path.insert(path.begin(), '/');
+    }
+
+    std::vector<std::string> segments;
+    std::size_t offset = 0;
+    while (offset < path.size()) {
+        while (offset < path.size() && path[offset] == '/') {
+            ++offset;
+        }
+
+        const std::size_t begin = offset;
+        while (offset < path.size() && path[offset] != '/') {
+            ++offset;
+        }
+
+        if (begin == offset) {
+            continue;
+        }
+
+        const std::string segment = path.substr(begin, offset - begin);
+        if (segment == ".") {
+            continue;
+        }
+        if (segment == "..") {
+            if (segments.empty()) {
+                throw FastXlsxError("part name cannot escape the package root");
+            }
+            segments.pop_back();
+            continue;
+        }
+
+        segments.push_back(segment);
+    }
+
+    if (segments.empty()) {
+        throw FastXlsxError("part name cannot be the package root");
+    }
+
+    std::string normalized;
+    for (const auto& segment : segments) {
+        normalized.push_back('/');
+        normalized += segment;
+    }
+    return normalized;
+}
+
+std::string part_extension(const std::string& part_name)
+{
+    const std::size_t slash = part_name.find_last_of('/');
+    const std::size_t dot = part_name.find_last_of('.');
+    if (dot == std::string::npos || dot <= slash + 1 || dot + 1 >= part_name.size()) {
+        return {};
+    }
+
+    std::string extension = part_name.substr(dot + 1);
+    std::transform(extension.begin(), extension.end(), extension.begin(), to_ascii_lower);
+    return extension;
+}
+
+constexpr std::string_view content_type_relationships =
+    "application/vnd.openxmlformats-package.relationships+xml";
+constexpr std::string_view content_type_xml = "application/xml";
+constexpr std::string_view content_type_workbook =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+constexpr std::string_view content_type_worksheet =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
+constexpr std::string_view relationship_type_office_document =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+constexpr std::string_view relationship_type_worksheet =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
+
+} // namespace
+
+PartName::PartName(std::string_view value)
+    : value_(normalize_part_name(value))
+{
+}
+
+const std::string& PartName::value() const noexcept
+{
+    return value_;
+}
+
+std::string PartName::zip_path() const
+{
+    return value_.substr(1);
+}
+
+std::string PartName::extension() const
+{
+    return part_extension(value_);
+}
+
+bool operator==(const PartName& left, const PartName& right) noexcept
+{
+    return left.value() == right.value();
+}
+
+bool operator<(const PartName& left, const PartName& right) noexcept
+{
+    return left.value() < right.value();
+}
+
+Relationship& RelationshipSet::add(Relationship relationship)
+{
+    validate_relationship(relationship);
+    if (find_by_id(relationship.id) != nullptr) {
+        throw FastXlsxError("relationship id must be unique within a relationship set");
+    }
+
+    relationships_.push_back(std::move(relationship));
+    return relationships_.back();
+}
+
+Relationship& RelationshipSet::add(std::string id, std::string type, std::string target,
+    Relationship::TargetMode target_mode)
+{
+    return add(Relationship {std::move(id), std::move(type), std::move(target), target_mode});
+}
+
+Relationship* RelationshipSet::find_by_id(std::string_view id) noexcept
+{
+    const auto item = std::find_if(relationships_.begin(), relationships_.end(),
+        [id](const Relationship& relationship) { return relationship.id == id; });
+    return item == relationships_.end() ? nullptr : &*item;
+}
+
+const Relationship* RelationshipSet::find_by_id(std::string_view id) const noexcept
+{
+    const auto item = std::find_if(relationships_.begin(), relationships_.end(),
+        [id](const Relationship& relationship) { return relationship.id == id; });
+    return item == relationships_.end() ? nullptr : &*item;
+}
+
+const std::vector<Relationship>& RelationshipSet::relationships() const noexcept
+{
+    return relationships_;
+}
+
+bool RelationshipSet::empty() const noexcept
+{
+    return relationships_.empty();
+}
+
+std::size_t RelationshipSet::size() const noexcept
+{
+    return relationships_.size();
+}
+
+const ContentTypeDefault& ContentTypesManifest::add_default(
+    std::string extension, std::string content_type)
+{
+    extension = normalize_extension(extension);
+    validate_content_type(content_type);
+
+    const auto existing = std::find_if(defaults_.begin(), defaults_.end(),
+        [&extension](const ContentTypeDefault& value) { return value.extension == extension; });
+    if (existing != defaults_.end()) {
+        if (existing->content_type != content_type) {
+            throw FastXlsxError("content type default conflicts with an existing extension");
+        }
+        return *existing;
+    }
+
+    defaults_.push_back({std::move(extension), std::move(content_type)});
+    return defaults_.back();
+}
+
+const ContentTypeOverride& ContentTypesManifest::add_override(
+    PartName part_name, std::string content_type)
+{
+    validate_content_type(content_type);
+
+    const auto existing = std::find_if(overrides_.begin(), overrides_.end(),
+        [&part_name](const ContentTypeOverride& value) { return value.part_name == part_name; });
+    if (existing != overrides_.end()) {
+        if (existing->content_type != content_type) {
+            throw FastXlsxError("content type override conflicts with an existing part");
+        }
+        return *existing;
+    }
+
+    overrides_.push_back({std::move(part_name), std::move(content_type)});
+    return overrides_.back();
+}
+
+const std::string* ContentTypesManifest::content_type_for(const PartName& part_name) const noexcept
+{
+    if (const auto* override = override_for(part_name)) {
+        return &override->content_type;
+    }
+
+    if (const auto extension = part_name.extension(); !extension.empty()) {
+        if (const auto* item = default_for(extension)) {
+            return &item->content_type;
+        }
+    }
+
+    return nullptr;
+}
+
+const ContentTypeDefault* ContentTypesManifest::default_for(std::string_view extension) const noexcept
+{
+    while (!extension.empty() && extension.front() == '.') {
+        extension.remove_prefix(1);
+    }
+
+    const auto item = std::find_if(defaults_.begin(), defaults_.end(),
+        [extension](const ContentTypeDefault& value) {
+            if (value.extension.size() != extension.size()) {
+                return false;
+            }
+
+            for (std::size_t index = 0; index < extension.size(); ++index) {
+                if (value.extension[index] != to_ascii_lower(extension[index])) {
+                    return false;
+                }
+            }
+            return true;
+        });
+    return item == defaults_.end() ? nullptr : &*item;
+}
+
+const ContentTypeOverride* ContentTypesManifest::override_for(
+    const PartName& part_name) const noexcept
+{
+    const auto item = std::find_if(overrides_.begin(), overrides_.end(),
+        [&part_name](const ContentTypeOverride& value) { return value.part_name == part_name; });
+    return item == overrides_.end() ? nullptr : &*item;
+}
+
+const std::vector<ContentTypeDefault>& ContentTypesManifest::defaults() const noexcept
+{
+    return defaults_;
+}
+
+const std::vector<ContentTypeOverride>& ContentTypesManifest::overrides() const noexcept
+{
+    return overrides_;
+}
+
+PackagePart& PackageManifest::add_part(PartName part_name, std::string content_type)
+{
+    return ensure_part(std::move(part_name), std::move(content_type));
+}
+
+PackagePart& PackageManifest::ensure_part(PartName part_name, std::string content_type)
+{
+    if (auto* existing = find_part(part_name)) {
+        if (!content_type.empty()) {
+            if (!existing->content_type.empty() && existing->content_type != content_type) {
+                throw FastXlsxError("package part content type conflicts with an existing part");
+            }
+            content_types_.add_override(existing->name, content_type);
+            existing->content_type = std::move(content_type);
+        }
+        return *existing;
+    }
+
+    PackagePart part {std::move(part_name), std::move(content_type), {}};
+    if (!part.content_type.empty()) {
+        content_types_.add_override(part.name, part.content_type);
+    }
+
+    parts_.push_back(std::move(part));
+    return parts_.back();
+}
+
+PackagePart* PackageManifest::find_part(const PartName& part_name) noexcept
+{
+    const auto item = std::find_if(parts_.begin(), parts_.end(),
+        [&part_name](const PackagePart& part) { return part.name == part_name; });
+    return item == parts_.end() ? nullptr : &*item;
+}
+
+const PackagePart* PackageManifest::find_part(const PartName& part_name) const noexcept
+{
+    const auto item = std::find_if(parts_.begin(), parts_.end(),
+        [&part_name](const PackagePart& part) { return part.name == part_name; });
+    return item == parts_.end() ? nullptr : &*item;
+}
+
+RelationshipSet* PackageManifest::relationships_for(const PartName& part_name) noexcept
+{
+    if (auto* part = find_part(part_name)) {
+        return &part->relationships;
+    }
+    return nullptr;
+}
+
+const RelationshipSet* PackageManifest::relationships_for(const PartName& part_name) const noexcept
+{
+    if (const auto* part = find_part(part_name)) {
+        return &part->relationships;
+    }
+    return nullptr;
+}
+
+Relationship& PackageManifest::add_relationship(
+    const PartName& source_part, Relationship relationship)
+{
+    auto* part = find_part(source_part);
+    if (part == nullptr) {
+        throw FastXlsxError("relationship source part is not registered in package manifest");
+    }
+    return part->relationships.add(std::move(relationship));
+}
+
+Relationship& PackageManifest::add_package_relationship(Relationship relationship)
+{
+    return package_relationships_.add(std::move(relationship));
+}
+
+RelationshipSet& PackageManifest::package_relationships() noexcept
+{
+    return package_relationships_;
+}
+
+const RelationshipSet& PackageManifest::package_relationships() const noexcept
+{
+    return package_relationships_;
+}
+
+ContentTypesManifest& PackageManifest::content_types() noexcept
+{
+    return content_types_;
+}
+
+const ContentTypesManifest& PackageManifest::content_types() const noexcept
+{
+    return content_types_;
+}
+
+const std::vector<PackagePart>& PackageManifest::parts() const noexcept
+{
+    return parts_;
+}
+
+bool PackageManifest::empty() const noexcept
+{
+    return parts_.empty();
+}
+
+std::size_t PackageManifest::size() const noexcept
+{
+    return parts_.size();
+}
+
+PackageManifest make_minimal_workbook_manifest(std::size_t worksheet_count)
+{
+    PackageManifest manifest;
+    manifest.content_types().add_default("rels", std::string(content_type_relationships));
+    manifest.content_types().add_default("xml", std::string(content_type_xml));
+
+    const PartName workbook_part("/xl/workbook.xml");
+    manifest.add_part(workbook_part, std::string(content_type_workbook));
+
+    manifest.add_package_relationship(Relationship {
+        "rId1",
+        std::string(relationship_type_office_document),
+        "xl/workbook.xml",
+    });
+
+    for (std::size_t index = 1; index <= worksheet_count; ++index) {
+        const std::string sheet_name = "sheet" + std::to_string(index) + ".xml";
+        manifest.add_part(PartName("/xl/worksheets/" + sheet_name), std::string(content_type_worksheet));
+        manifest.add_relationship(workbook_part,
+            Relationship {
+                "rId" + std::to_string(index),
+                std::string(relationship_type_worksheet),
+                "worksheets/" + sheet_name,
+            });
+    }
+
+    return manifest;
+}
+
+std::string serialize_content_types(const ContentTypesManifest& content_types)
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)";
+
+    for (const ContentTypeDefault& item : content_types.defaults()) {
+        xml += R"(<Default Extension=")";
+        xml += escape_xml_attribute(item.extension);
+        xml += R"(" ContentType=")";
+        xml += escape_xml_attribute(item.content_type);
+        xml += R"("/>)";
+    }
+
+    for (const ContentTypeOverride& item : content_types.overrides()) {
+        xml += R"(<Override PartName=")";
+        xml += escape_xml_attribute(item.part_name.value());
+        xml += R"(" ContentType=")";
+        xml += escape_xml_attribute(item.content_type);
+        xml += R"("/>)";
+    }
+
+    xml += "</Types>";
+    return xml;
+}
+
+std::string serialize_relationships(const RelationshipSet& relationships)
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)";
+
+    for (const Relationship& relationship : relationships.relationships()) {
+        xml += R"(<Relationship Id=")";
+        xml += escape_xml_attribute(relationship.id);
+        xml += R"(" Type=")";
+        xml += escape_xml_attribute(relationship.type);
+        xml += R"(" Target=")";
+        xml += escape_xml_attribute(relationship.target);
+        xml += R"(")";
+        if (relationship.target_mode == Relationship::TargetMode::External) {
+            xml += R"( TargetMode="External")";
+        }
+        xml += R"(/>)";
+    }
+
+    xml += "</Relationships>";
+    return xml;
+}
+
+} // namespace fastxlsx::detail

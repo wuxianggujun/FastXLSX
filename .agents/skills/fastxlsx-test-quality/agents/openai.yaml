@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX 测试质量"
+  short_description: "管理测试、Excel 可视化验证、XML 对比和基准"
+  default_prompt: "使用 $fastxlsx-test-quality 添加测试、做 Excel 可视化验证、拆包对比 XML 或设计 benchmark。"

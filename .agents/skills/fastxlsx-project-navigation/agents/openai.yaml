@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX 项目导航"
+  short_description: "理解 FastXLSX 架构、实现状态、入口和约束"
+  default_prompt: "使用 $fastxlsx-project-navigation 梳理 FastXLSX 架构、当前实现状态和修改入口。"

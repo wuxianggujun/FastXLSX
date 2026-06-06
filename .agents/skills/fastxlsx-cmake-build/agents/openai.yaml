@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX CMake 构建"
+  short_description: "配置、构建、测试和排查 FastXLSX CMake 工程"
+  default_prompt: "使用 $fastxlsx-cmake-build 配置、构建或排查 FastXLSX CMake 问题。"

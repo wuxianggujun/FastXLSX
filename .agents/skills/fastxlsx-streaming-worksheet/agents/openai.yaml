@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX 流式 Worksheet"
+  short_description: "开发大型 worksheet 流式读写和性能热路径"
+  default_prompt: "使用 $fastxlsx-streaming-worksheet 实现或审查 FastXLSX worksheet 流式读写路径。"

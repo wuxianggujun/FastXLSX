@@ -195,10 +195,12 @@ private:
 ///
 /// API mode: Streaming. Use this writer for ordered worksheet export. It keeps
 /// workbook metadata and small worksheet metadata in memory, but row data is
-/// consumed as it is appended. Final package entries are currently assembled
-/// during close(); FASTXLSX_ENABLE_MINIZIP_NG switches that final ZIP write to
-/// minizip-ng/DEFLATE, but does not yet provide true package streaming or Zip64
-/// guarantees.
+/// consumed as it is appended. During close(), worksheet row bodies are passed
+/// to the internal package writer as file-backed entry chunks so the writer
+/// does not rebuild a full worksheet XML string. Small workbook/package XML
+/// parts are still assembled in memory. FASTXLSX_ENABLE_MINIZIP_NG switches the
+/// final ZIP write to minizip-ng/DEFLATE, but this does not provide true package
+/// streaming or Zip64 guarantees.
 class WorkbookWriter {
 public:
     /// Creates an empty, uninitialized writer.
@@ -241,8 +243,11 @@ public:
     ///
     /// close() is idempotent after a successful close. Before closing, all rows
     /// have been written to temporary worksheet XML files; close() assembles
-    /// content types, relationships, workbook XML, optional sharedStrings.xml,
-    /// and worksheet parts through the configured package writer backend.
+    /// content types, relationships, and workbook XML, then writes worksheet
+    /// parts as prefix/body-file/suffix package entry chunks. When SharedString
+    /// is enabled, sharedStrings.xml is written through a temporary file-backed
+    /// package entry, while the unique shared-string table remains workbook
+    /// state until close().
     ///
     /// @throws FastXlsxError if the writer is uninitialized, contains no
     /// worksheets, cannot read temporary worksheet XML, or cannot write the

@@ -20,6 +20,12 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 当前可见 `StringStrategy::SharedString`、内部 `SharedStringTable`、
 `xl/sharedStrings.xml` 生成路径和 focused 结构测试。把这条线写为
 sharedStrings 进行中或基础，不要写成生产级字符串策略完成。
+当前可见 file-backed/chunked worksheet package entry 基础：worksheet part
+finalization 以 header + temporary body file + footer 写入内部 package writer，
+避免 close 阶段重新物化完整 worksheet XML。sharedStrings XML 也可通过临时
+file-backed entry 写入，但 shared string table 仍保留唯一字符串状态。只能写成
+worksheet/package-entry 缓冲优化，不要写成 true package streaming、Zip64、完整低内存
+package writer 或生产级大文件性能完成。
 
 ## 不可破坏的边界
 
@@ -30,6 +36,9 @@ sharedStrings 进行中或基础，不要写成生产级字符串策略完成。
 - 大数据 API 必须接受 row iterator 或 chunk writer。
 - 单元格 XML 热路径应直接写字节流，而不是通用 XML serializer。
 - API 易用性不能迫使 large worksheet 进入 DOM、完整 cell matrix 或 cell map。
+- 大型 worksheet package entry finalization 禁止重新物化完整 worksheet XML。
+- file-backed/chunked entry 只覆盖 package entry source，不改变 row-order
+  streaming、字符串策略状态或 ZIP backend 限制。
 
 ## 设计锚点
 
@@ -98,6 +107,9 @@ dimension 更新。
 - ZIP 压缩等级。
 - `sharedStrings` 去重。
 - 行级 buffer 复用。
+- worksheet package entry source：in-memory、file-backed 或 chunked。
+- close-time package assembly 的峰值内存。
+- 临时 worksheet part 文件大小、生命周期和清理行为。
 
 文档目标包括 1,000 万 cells 内存 `< 256 MB`、5,000 万 cells 内存 `< 1 GB`。
 这些是目标，不是当前已验证事实。
@@ -121,6 +133,10 @@ dimension 更新。
 - Benchmark 必须显式 opt-in，不得注册进默认 CTest；普通单元测试继续遵守
   60s 核心测试边界。
 - 性能/内存结论必须来自 benchmark。
+- file-backed/chunked worksheet entry 实现后，测试应验证解压后的
+  `xl/worksheets/sheet*.xml` 语义、duplicate entry 检测、两种 ZIP backend
+  可用时的输出一致性，并避免依赖 ZIP method、entry order、compressed size、
+  archive size 或 chunk 边界。
 - 生成 `.xlsx` 后，在可用时验证 OpenXML 结构和办公软件打开兼容性；结构异常时
   用 Excel / `openpyxl` / `XlsxWriter` 生成参考文件并拆包对比 XML 语义。
 - public API 需要文档注释，说明 streaming 模式、输入顺序、内存行为和限制。

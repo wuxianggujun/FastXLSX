@@ -23,8 +23,10 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 
 - 接受 row iterator、range、callback 或 chunk writer。
 - 写入顺序应清晰，不承诺随机回写已输出历史行。
-- 内存占用与当前行 buffer、输出 buffer、字符串策略和 ZIP writer 状态相关。
-- 不持有完整 worksheet cell matrix。
+- 内存占用与当前行 buffer、XML output buffer、file-backed/chunked worksheet entry
+  buffer、字符串策略和 package / ZIP writer 状态相关。
+- 不持有完整 worksheet cell matrix；如果 finalization 避免完整 worksheet XML
+  内存副本，也必须说明该保证只覆盖对应 worksheet entry，不覆盖所有 package parts。
 
 ### Patch API
 
@@ -83,8 +85,9 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 是否可能触发 shared strings 去重状态增长。
 - 是否影响 ZIP 压缩等级或输出文件大小。
 - 是否会触发 DOM。
-- Finalization API 必须说明当前是否 assemble package entries、是否 true
-  package streaming、是否有 Zip64 或 existing-file preservation 保证。
+- Finalization API 必须说明当前是否 assemble package entries、哪些 entries 可
+  file-backed/chunked、哪些 parts 仍可能 in-memory、是否 true package streaming、
+  是否有 Zip64 或 existing-file preservation 保证。
 
 禁止写模糊承诺，例如“高性能”“低内存”，却不说明内存由哪些状态组成。
 
@@ -114,6 +117,8 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - public API 有文档注释。
 - 文档注释写明模式、内存行为和限制。
 - 大数据路径仍能 row/chunk 化。
+- 大型 worksheet finalization 不会重新物化完整 worksheet XML；如果仍会发生，
+  必须在 API 注释中明确限制。
 - 便利 API 不会隐式 DOM 化大型 worksheet。
 - 测试覆盖 API 行为和 OpenXML 结构。
 - 需要时完成本机 Excel 可视化验证。

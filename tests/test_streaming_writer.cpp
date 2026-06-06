@@ -177,6 +177,60 @@ void test_streaming_writer_smoke_package()
         "mergeCells XML mismatch");
 }
 
+void test_streaming_writer_file_backed_body_round_trip()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-file-backed-body.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("FileBody");
+
+    constexpr std::uint32_t row_count = 160;
+    constexpr std::uint32_t column_count = 8;
+    for (std::uint32_t row = 1; row <= row_count; ++row) {
+        std::vector<std::string> values;
+        values.reserve(column_count);
+        for (std::uint32_t column = 1; column <= column_count; ++column) {
+            if (row == 1 && column == 1) {
+                values.emplace_back("FIRST_BODY_SENTINEL");
+            } else if (row == 80 && column == 4) {
+                values.emplace_back("MIDDLE_BODY_SENTINEL");
+            } else if (row == row_count && column == column_count) {
+                values.emplace_back("LAST_BODY_SENTINEL");
+            } else {
+                values.emplace_back("body-row-" + std::to_string(row) + "-col-"
+                    + std::to_string(column) + "-payload-abcdefghijklmnopqrstuvwxyz");
+            }
+        }
+
+        std::vector<fastxlsx::CellView> cells;
+        cells.reserve(values.size());
+        for (const std::string& value : values) {
+            cells.push_back(fastxlsx::CellView::text(value));
+        }
+        sheet.append_row(std::span<const fastxlsx::CellView>(cells.data(), cells.size()));
+    }
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "file-backed body xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing file-backed worksheet part");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:H160\"/>",
+        "file-backed worksheet dimension mismatch");
+    check_contains(worksheet_xml, "<sheetData>", "file-backed worksheet sheetData missing");
+    check_contains(worksheet_xml, "FIRST_BODY_SENTINEL",
+        "file-backed worksheet first sentinel missing");
+    check_contains(worksheet_xml, "MIDDLE_BODY_SENTINEL",
+        "file-backed worksheet middle sentinel missing");
+    check_contains(worksheet_xml, "LAST_BODY_SENTINEL",
+        "file-backed worksheet last sentinel missing");
+    check_contains(
+        worksheet_xml, "</sheetData></worksheet>", "file-backed worksheet footer was truncated");
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -334,6 +388,47 @@ void test_streaming_writer_shared_strings_workbook_scope_and_crlf()
         "workbook-scope shared strings order or preserve mapping mismatch");
 }
 
+void test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-file-backed-multi-sheet.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto first = workbook.add_worksheet("One");
+    auto second = workbook.add_worksheet("Two");
+
+    first.append_row({
+        fastxlsx::CellView::text("SHEET_ONE_ONLY"),
+        fastxlsx::CellView::text("one payload"),
+    });
+    second.append_row({
+        fastxlsx::CellView::text("SHEET_TWO_ONLY"),
+        fastxlsx::CellView::text("two payload"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "multi-sheet file-backed xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing first file-backed sheet");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing second file-backed sheet");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(first_sheet_xml, "SHEET_ONE_ONLY", "first sheet sentinel missing");
+    check(first_sheet_xml.find("SHEET_TWO_ONLY") == std::string::npos,
+        "first sheet contains second sheet body");
+    check_contains(second_sheet_xml, "SHEET_TWO_ONLY", "second sheet sentinel missing");
+    check(second_sheet_xml.find("SHEET_ONE_ONLY") == std::string::npos,
+        "second sheet contains first sheet body");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check_contains(
+        workbook_rels, "Target=\"worksheets/sheet1.xml\"", "first worksheet relationship missing");
+    check_contains(
+        workbook_rels, "Target=\"worksheets/sheet2.xml\"", "second worksheet relationship missing");
+}
+
 void test_streaming_writer_rejects_mutation_after_close()
 {
     const auto output_path =
@@ -464,8 +559,10 @@ int main()
 {
     try {
         test_streaming_writer_smoke_package();
+        test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
+        test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();
         test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();
         test_streaming_writer_invalid_metadata_and_rows();

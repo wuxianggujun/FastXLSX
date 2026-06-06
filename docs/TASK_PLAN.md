@@ -31,10 +31,13 @@ obligations.
   `WorkbookWriter`, `WorksheetWriter`, and `CellView`.
 - The streaming writer consumes rows in order and writes worksheet row XML to a
   temporary body file, so it does not retain already-written rows as a full
-  worksheet cell matrix. It now closes through an internal package writer
-  boundary. Default builds use the Phase 1 stored ZIP bootstrap; opt-in minizip
-  builds use DEFLATE compression. Package streaming, Zip64, and large-file
-  package performance remain 计划.
+  worksheet cell matrix. During close-time package assembly, worksheet parts are
+  passed to the internal package writer as file-backed/chunked entries
+  (`header + body file + footer`) instead of re-materializing the full worksheet
+  XML string in memory. Default builds use the Phase 1 stored ZIP bootstrap;
+  opt-in minizip builds use DEFLATE compression. True package streaming, Zip64,
+  existing-file editing, complete low-memory behavior, and large-file package
+  performance remain 计划 or benchmark-gated.
 - `StringStrategy::InlineString` remains the low-memory default.
 - `StringStrategy::SharedString`, internal shared string table state,
   `xl/sharedStrings.xml` package wiring, and focused structure tests are visible
@@ -178,10 +181,13 @@ Tasks:
   targets, and license impact recorded for `minizip-ng`, `zlib-ng`, and fallback
   `zlib`.
 - Keep `src/package_writer.*` as the internal package writer boundary. Default
-  builds still use `src/zip_store_writer.*`; opt-in builds use minizip-ng.
+  builds still use `src/zip_store_writer.*`; opt-in builds use minizip-ng. The
+  boundary accepts in-memory and file-backed/chunked entries for new-workbook
+  output, but this is not the planned public `PackageWriter`.
 - Add compression level configuration without changing worksheet XML generation
   into a DOM or full-workbook path.
-- Add Zip64 and large-entry behavior requirements before large workbook tests.
+- Add Zip64 and large-entry behavior requirements before large workbook tests;
+  file-backed/chunked entries alone do not prove large-entry support.
 - Update tests so they validate OpenXML package semantics without assuming
   stored/no-compression entries.
 
@@ -612,11 +618,14 @@ Current facts:
   initializer list in row order.
 - Worksheet row XML is written to a temporary body file instead of keeping a
   full cell matrix in memory.
-- `WorkbookWriter::close()` builds final package entries through the internal
-  package writer boundary. Default builds use the stored ZIP bootstrap; opt-in
-  `FASTXLSX_ENABLE_MINIZIP_NG` builds use minizip-ng/DEFLATE.
-- Compression level public configuration, Zip64, and real package streaming are
-  not integrated.
+- `WorkbookWriter::close()` writes worksheet parts as file-backed/chunked
+  package entries, avoiding a full worksheet XML string copy during close-time
+  finalization. This covers worksheet entry source buffering only.
+- `WorkbookWriter::close()` still performs close-time package assembly through
+  the internal package writer boundary. Default builds use the stored ZIP
+  bootstrap; opt-in `FASTXLSX_ENABLE_MINIZIP_NG` builds use minizip-ng/DEFLATE.
+- Compression level public configuration, Zip64, existing-file editing, and
+  real package streaming are not integrated.
 - `inlineStr` is the default low-memory path.
 - The current files show a sharedStrings foundation: `StringStrategy::SharedString`,
   internal shared string table state, package manifest wiring for
@@ -635,6 +644,15 @@ Current facts:
   `A1 = repeat`, `B1 = "space "`, `C1 = "escaped & <tag>"`,
   `A2 = repeat`, `B2 = "space "`, `A3 = ""`, `B3 = " leading"`,
   `C3 = "\tindent"`, and `D3 = repeat`.
+- File-backed worksheet body smoke files were opened read-only with local Excel
+  COM after the file-backed/chunked package entry update. Verified default
+  stored output
+  `build/windows-nmake-release/tests/fastxlsx-streaming-file-backed-body.xlsx`
+  and opt-in minizip output
+  `build/windows-nmake-release-minizip/tests/fastxlsx-streaming-file-backed-body.xlsx`.
+  Both opened worksheet `FileBody` with used range `A1:H160`, and checked
+  `A1 = FIRST_BODY_SENTINEL`, `D80 = MIDDLE_BODY_SENTINEL`, and
+  `H160 = LAST_BODY_SENTINEL`.
 - No save was requested during that Excel COM check. The COM-created Excel
   process was closed after verification; the pre-existing user Excel process was
   left untouched.
@@ -675,7 +693,8 @@ Tasks:
 API documentation requirements:
 - Public comments must state Streaming mode, ordered input, string-view
   lifetime, no random access to previous rows, and memory owned by the current
-  row buffer, output buffer, string strategy, and package writer.
+  row buffer, XML output buffer, file-backed worksheet entry/chunk buffer,
+  string strategy, and package writer.
 - Any convenience overload must explain why it does not force large worksheet
   data into DOM, cell maps, or full worksheet storage.
 
@@ -691,7 +710,8 @@ Validation:
   reference with Excel, `openpyxl`, or `XlsxWriter`, unzip both `.xlsx` files,
   and compare the relevant XML parts.
 - Benchmark reports must record data scale, compression level, string strategy,
-  total time, peak memory, output file size, and Excel/WPS/LibreOffice open
+  package-entry source mode, total time, peak memory, temporary worksheet part
+  footprint when available, output file size, and Excel/WPS/LibreOffice open
   result.
 
 ## Phase 3 Work Items - High-Frequency XLSX Features

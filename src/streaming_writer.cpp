@@ -12,7 +12,6 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
-#include <iterator>
 #include <locale>
 #include <optional>
 #include <set>
@@ -98,15 +97,6 @@ std::filesystem::path make_temp_path()
     const auto id = counter.fetch_add(1, std::memory_order_relaxed);
     return std::filesystem::temp_directory_path()
         / ("fastxlsx-stream-" + std::to_string(tick) + "-" + std::to_string(id) + ".xml");
-}
-
-std::string read_file(const std::filesystem::path& path)
-{
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream) {
-        throw FastXlsxError("failed to open temporary worksheet XML");
-    }
-    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
 } // namespace
@@ -272,24 +262,45 @@ std::string build_workbook(const std::vector<std::unique_ptr<detail::WorksheetWr
     return xml;
 }
 
-std::string build_shared_strings(const detail::SharedStringTable& shared_strings)
+void write_stream(std::ofstream& stream, std::string_view xml, const char* error_message)
 {
-    std::string xml;
-    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
-    xml += R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count=")";
-    xml += std::to_string(shared_strings.count);
-    xml += R"(" uniqueCount=")";
-    xml += std::to_string(shared_strings.values.size());
-    xml += R"(">)";
+    stream.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+    if (!stream) {
+        throw FastXlsxError(error_message);
+    }
+}
 
-    for (const std::string& value : shared_strings.values) {
-        xml += "<si>";
-        append_text_element(xml, value);
-        xml += "</si>";
+void write_shared_strings_file(
+    const std::filesystem::path& path, const detail::SharedStringTable& shared_strings)
+{
+    std::ofstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw FastXlsxError("failed to create temporary sharedStrings XML");
     }
 
-    xml += "</sst>";
-    return xml;
+    write_stream(stream,
+        R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)",
+        "failed to write temporary sharedStrings XML");
+    write_stream(stream,
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count=")",
+        "failed to write temporary sharedStrings XML");
+    write_stream(stream, std::to_string(shared_strings.count),
+        "failed to write temporary sharedStrings XML");
+    write_stream(stream, R"(" uniqueCount=")", "failed to write temporary sharedStrings XML");
+    write_stream(stream, std::to_string(shared_strings.values.size()),
+        "failed to write temporary sharedStrings XML");
+    write_stream(stream, R"(">)", "failed to write temporary sharedStrings XML");
+
+    for (const std::string& value : shared_strings.values) {
+        std::string item_xml;
+        item_xml.reserve(value.size() + 32);
+        item_xml += "<si>";
+        append_text_element(item_xml, value);
+        item_xml += "</si>";
+        write_stream(stream, item_xml, "failed to write temporary sharedStrings XML");
+    }
+
+    write_stream(stream, "</sst>", "failed to write temporary sharedStrings XML");
 }
 
 std::string build_sheet_views(const detail::WorksheetWriterState& worksheet)
@@ -355,12 +366,8 @@ std::string build_merge_cells(const detail::WorksheetWriterState& worksheet)
     return xml;
 }
 
-std::string build_worksheet(detail::WorksheetWriterState& worksheet)
+std::string build_worksheet_prefix(const detail::WorksheetWriterState& worksheet)
 {
-    if (worksheet.body.is_open()) {
-        worksheet.body.close();
-    }
-
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
     xml += R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)";
@@ -370,7 +377,12 @@ std::string build_worksheet(detail::WorksheetWriterState& worksheet)
     xml += build_sheet_views(worksheet);
     xml += build_columns(worksheet);
     xml += "<sheetData>";
-    xml += read_file(worksheet.body_path);
+    return xml;
+}
+
+std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet)
+{
+    std::string xml;
     xml += "</sheetData>";
     if (worksheet.auto_filter.has_value()) {
         xml += "<autoFilter ref=\"";
@@ -381,6 +393,62 @@ std::string build_worksheet(detail::WorksheetWriterState& worksheet)
     xml += "</worksheet>";
     return xml;
 }
+
+detail::PackageEntry build_worksheet_entry(std::string entry_name, detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.body.is_open()) {
+        worksheet.body.close();
+    }
+
+    std::vector<detail::PackageEntryChunk> chunks;
+    chunks.reserve(3);
+    chunks.push_back(detail::PackageEntryChunk::memory(build_worksheet_prefix(worksheet)));
+    chunks.push_back(detail::PackageEntryChunk::file(worksheet.body_path));
+    chunks.push_back(detail::PackageEntryChunk::memory(build_worksheet_suffix(worksheet)));
+    return {std::move(entry_name), std::move(chunks)};
+}
+
+class TemporaryFile {
+public:
+    TemporaryFile()
+        : path_(make_temp_path())
+    {
+    }
+
+    ~TemporaryFile()
+    {
+        std::error_code ignored;
+        std::filesystem::remove(path_, ignored);
+    }
+
+    TemporaryFile(const TemporaryFile&) = delete;
+    TemporaryFile& operator=(const TemporaryFile&) = delete;
+
+    TemporaryFile(TemporaryFile&& other) noexcept
+        : path_(std::move(other.path_))
+    {
+        other.path_.clear();
+    }
+
+    TemporaryFile& operator=(TemporaryFile&& other) noexcept
+    {
+        if (this != &other) {
+            std::error_code ignored;
+            std::filesystem::remove(path_, ignored);
+            path_ = std::move(other.path_);
+            other.path_.clear();
+        }
+        return *this;
+    }
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept
+    {
+        return path_;
+    }
+
+private:
+    std::filesystem::path path_;
+};
 
 } // namespace
 
@@ -597,13 +665,20 @@ void WorkbookWriter::close()
     entries.push_back({"xl/workbook.xml", build_workbook(state_->worksheets)});
     entries.push_back(
         {"xl/_rels/workbook.xml.rels", detail::serialize_relationships(*workbook_relationships)});
+
+    std::optional<TemporaryFile> shared_strings_file;
     if (write_shared_strings) {
-        entries.push_back({"xl/sharedStrings.xml", build_shared_strings(state_->shared_strings)});
+        shared_strings_file.emplace();
+        write_shared_strings_file(shared_strings_file->path(), state_->shared_strings);
+        entries.emplace_back("xl/sharedStrings.xml",
+            std::vector<detail::PackageEntryChunk> {
+                detail::PackageEntryChunk::file(shared_strings_file->path())});
     }
 
     for (std::size_t index = 0; index < state_->worksheets.size(); ++index) {
-        entries.push_back({"xl/worksheets/sheet" + std::to_string(index + 1) + ".xml",
-            build_worksheet(*state_->worksheets[index])});
+        entries.push_back(build_worksheet_entry(
+            "xl/worksheets/sheet" + std::to_string(index + 1) + ".xml",
+            *state_->worksheets[index]));
     }
 
     detail::write_package(state_->output_path, entries);

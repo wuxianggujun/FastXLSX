@@ -169,6 +169,10 @@ void test_minimal_xlsx_package()
         "worksheet relationship target mismatch");
 
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("<sheetData>") != std::string::npos,
+        "worksheet sheetData missing");
+    check(worksheet_xml.find("</worksheet>") != std::string::npos,
+        "worksheet XML closing tag missing");
     check(worksheet_xml.find("<dimension ref=\"A1:C2\"/>") != std::string::npos,
         "worksheet dimension mismatch");
     check(worksheet_xml.find("<c r=\"A1\"><v>123.5</v></c>") != std::string::npos,

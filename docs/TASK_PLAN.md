@@ -38,6 +38,11 @@ obligations.
   opt-in minizip builds use DEFLATE compression. True package streaming, Zip64,
   existing-file editing, complete low-memory behavior, and large-file package
   performance remain 计划 or benchmark-gated.
+- Current streaming dimension behavior is append-order based: no-row worksheets
+  and all-empty-row worksheets serialize `<dimension ref="A1"/>`; empty rows
+  still serialize `<row r="N"></row>`; sparse worksheets with a trailing empty
+  appended row keep that final row in the dimension, for example `A1:C3`.
+  This is a generated XML invariant, not an Excel `UsedRange` claim.
 - `StringStrategy::InlineString` remains the low-memory default.
 - `StringStrategy::SharedString`, internal shared string table state,
   `xl/sharedStrings.xml` package wiring, and focused structure tests are visible
@@ -739,6 +744,12 @@ Current facts:
   Both opened worksheet `FileBody` with used range `A1:H160`, and checked
   `A1 = FIRST_BODY_SENTINEL`, `D80 = MIDDLE_BODY_SENTINEL`, and
   `H160 = LAST_BODY_SENTINEL`.
+- Empty-row dimension smoke file
+  `build/windows-nmake-release/tests/fastxlsx-streaming-empty-row-dimensions.xlsx`
+  was opened read-only with local Excel COM. Verified sheets `NoRows`,
+  `OnlyEmpty`, and `Sparse`; Excel showed `Sparse` with `B2 = 7` and
+  `C2 = TRUE`. XML structure tests, not Excel `UsedRange`, define the generated
+  dimension semantics for empty and trailing-empty rows.
 - No save was requested during that Excel COM check. The COM-created Excel
   process was closed after verification; the pre-existing user Excel process was
   left untouched.
@@ -773,7 +784,10 @@ Tasks:
 - Continue the `sharedStrings` strategy as an explicit performance/size choice,
   while keeping `inlineStr` as the low-memory path.
 - Add fast numeric and date encoding tasks with tests for edge cases.
-- Track dimensions incrementally and test row/column Excel limits.
+- Track dimensions incrementally and test row/column Excel limits. Current
+  empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
+  dimension XML without requiring DOM backtracking; row-limit coverage remains
+  follow-up work.
 - Add an opt-in benchmark target or command; do not put large benchmarks in
   default CTest.
 - Current preset entry points are `windows-nmake-release-benchmark` and

@@ -289,6 +289,68 @@ void test_streaming_writer_document_properties()
         "streaming document properties app version mismatch");
 }
 
+void test_streaming_writer_empty_rows_dimension()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-empty-row-dimensions.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto no_rows = workbook.add_worksheet("NoRows");
+    auto only_empty = workbook.add_worksheet("OnlyEmpty");
+    auto sparse = workbook.add_worksheet("Sparse");
+
+    std::span<const fastxlsx::CellView> empty_cells;
+    only_empty.append_row(empty_cells);
+    only_empty.append_row(empty_cells);
+
+    sparse.append_row(empty_cells);
+    sparse.append_row({
+        fastxlsx::CellView::text("after empty row"),
+        fastxlsx::CellView::number(7.0),
+        fastxlsx::CellView::boolean(true),
+    });
+    sparse.append_row(empty_cells);
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "empty-row dimension xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing no-rows worksheet part");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing only-empty worksheet part");
+    check(entries.contains("xl/worksheets/sheet3.xml"), "missing sparse worksheet part");
+
+    const auto& no_rows_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(no_rows_xml, "<dimension ref=\"A1\"/>",
+        "no-row worksheet dimension should stay at A1");
+    check_contains(no_rows_xml, "<sheetData></sheetData>",
+        "no-row worksheet should serialize empty sheetData");
+    check(no_rows_xml.find("<row ") == std::string::npos,
+        "no-row worksheet should not serialize row elements");
+
+    const auto& only_empty_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(only_empty_xml, "<dimension ref=\"A1\"/>",
+        "all-empty-row worksheet dimension should stay at A1");
+    check(count_occurrences(only_empty_xml, "<row ") == 2,
+        "all-empty-row worksheet should serialize both appended rows");
+    check_contains(only_empty_xml, "<row r=\"1\"></row><row r=\"2\"></row>",
+        "all-empty-row worksheet row XML mismatch");
+    check(only_empty_xml.find("<c r=") == std::string::npos,
+        "all-empty-row worksheet should not serialize cells");
+
+    const auto& sparse_xml = entries.at("xl/worksheets/sheet3.xml");
+    check_contains(sparse_xml, "<dimension ref=\"A1:C3\"/>",
+        "sparse worksheet dimension should include trailing appended empty row");
+    check(sparse_xml.find("<dimension ref=\"A1:C2\"/>") == std::string::npos,
+        "sparse worksheet dimension should not drop the trailing empty row");
+    check(count_occurrences(sparse_xml, "<row ") == 3,
+        "sparse worksheet should serialize leading, data, and trailing rows");
+    check_contains(sparse_xml,
+        "<row r=\"1\"></row><row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is>"
+        "<t>after empty row</t></is></c><c r=\"B2\"><v>7</v></c>"
+        "<c r=\"C2\" t=\"b\"><v>1</v></c></row><row r=\"3\"></row>",
+        "sparse empty-row worksheet XML mismatch");
+}
+
 void test_streaming_writer_phase3_metadata_structure()
 {
     const auto output_path =
@@ -1504,6 +1566,7 @@ int main()
     try {
         test_streaming_writer_smoke_package();
         test_streaming_writer_document_properties();
+        test_streaming_writer_empty_rows_dimension();
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();

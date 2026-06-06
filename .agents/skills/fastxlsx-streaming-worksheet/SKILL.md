@@ -89,6 +89,12 @@ relationship/content type side effects。本机 Excel COM 已验证
 5. 增量维护 dimensions，不要回头扫描全部 cells。
 6. 样式 ID 和 registry 与原始 row/cell streaming 分离。
 
+当前 dimension 行为是 append-order based：未 append 行或只 append 空行时
+`worksheet_dimension()` 写 `A1`；空行仍写 `<row r="N"></row>`；存在前导空行、数据行和
+尾部空行时，dimension 使用最后 append 行号和最大列号，例如 `A1:C3`。本机 Excel 可能把
+`UsedRange` 收缩到实际非空单元格；后续结构判断以拆包后的 worksheet XML 为准，不要为了
+匹配 `UsedRange` 引入完整 worksheet cell matrix 或回扫。
+
 ## 已有 XLSX 的 sheet 重写
 
 大型 sheet 修改使用文档中的流程：

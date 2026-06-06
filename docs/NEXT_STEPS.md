@@ -401,12 +401,18 @@ Do:
   Current finite-only coverage rejects `NaN` / `+Inf` / `-Inf` for numeric
   cells, row heights, and streaming column widths; broader date and formatting
   edge cases remain follow-up work.
-- Track worksheet dimensions incrementally.
+- Track worksheet dimensions incrementally. Current empty-row coverage locks
+  `<dimension ref="A1"/>` for no-row and all-empty-row sheets, preserves empty
+  `<row r="N"></row>` elements, and keeps a trailing appended empty row in the
+  generated dimension; do not introduce a full cell matrix just to mimic Excel
+  `UsedRange`.
 - Add or update Doxygen comments for public APIs touched by the change.
 
 Accept when:
 - Structure tests pass for dimensions, cell references, value types, and string
   strategy.
+- Excel visual checks are recorded where useful, but XML structure remains the
+  authority for dimension semantics when Excel `UsedRange` is narrower.
 - API comments state Streaming mode, ordering, lifetime, memory behavior, and
   unsupported random access.
 - Benchmarks or follow-up benchmark tasks exist for performance-sensitive paths.

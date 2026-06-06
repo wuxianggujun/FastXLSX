@@ -307,11 +307,14 @@ void run_benchmark(const Options& options)
 
     for (std::uint32_t sheet_index = 1; sheet_index <= options.sheets; ++sheet_index) {
         auto sheet = workbook.add_worksheet("Sheet" + std::to_string(sheet_index));
+        std::vector<std::string> string_values;
+        std::vector<fastxlsx::CellView> cells;
+        string_values.reserve(options.cols);
+        cells.reserve(options.cols);
+
         for (std::uint32_t row = 1; row <= options.rows; ++row) {
-            std::vector<std::string> string_values;
-            std::vector<fastxlsx::CellView> cells;
-            string_values.reserve(options.cols);
-            cells.reserve(options.cols);
+            string_values.clear();
+            cells.clear();
 
             for (std::uint32_t col = 1; col <= options.cols; ++col) {
                 if (should_write_string(options, row, col)) {

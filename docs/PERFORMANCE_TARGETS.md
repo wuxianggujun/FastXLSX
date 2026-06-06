@@ -120,6 +120,7 @@ cmake --preset windows-nmake-release-benchmark
 cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_streaming_writer
 .\build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_streaming_writer.exe `
   --scenario numeric --rows 100000 --cols 10 --sheets 1 `
+  --string-pattern mixed `
   --string-strategy inline `
   --output .\build\windows-nmake-release-benchmark\benchmarks\fastxlsx-bench-numeric.xlsx `
   --result .\build\windows-nmake-release-benchmark\benchmarks\fastxlsx-bench-numeric.json
@@ -133,16 +134,23 @@ benchmark 结果还应记录 package-entry source mode（`in-memory` / `file-bac
 `chunked`）、ZIP backend、压缩等级、峰值内存和临时 worksheet part footprint。没有这些
 数据时，不要声称完整低内存写出。
 
-当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `1`，新增这些元数据：
+当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `2`，记录字符串分布和
+package 元数据：
 
 ```json
 {
-  "benchmark_schema_version": "1",
+  "benchmark_schema_version": "2",
+  "string_pattern": "mixed",
   "package_entry_source_mode": "worksheet-file-backed-chunked",
   "temporary_worksheet_part_footprint": "not_measured",
   "temporary_worksheet_part_footprint_bytes": null
 }
 ```
+
+`string_pattern` 支持 `mixed`、`repeated` 和 `unique`。`mixed` 保持旧的部分重复
+字符串生成方式；`repeated` / `unique` 用于对比 sharedStrings 在高重复和高唯一
+字符串场景下的文件体积、耗时和峰值内存。该字段只是 benchmark 输入描述，不代表
+sharedStrings 已生产就绪。
 
 `package_entry_source_mode` 记录当前 worksheet entry finalization 经过
 file-backed/chunked source；`temporary_worksheet_part_footprint="not_measured"`

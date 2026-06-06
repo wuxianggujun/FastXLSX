@@ -748,8 +748,8 @@ Tasks:
   writes under the benchmark target binary directory. The manual tool rejects
   `--sheets` above 1024 and keeps `office_open` as `not_run` until a real office
   application check is performed.
-- Current benchmark JSON schema version is `1`. It records
-  `package_entry_source_mode="worksheet-file-backed-chunked"`,
+- Current benchmark JSON schema version is `2`. It records
+  `string_pattern`, `package_entry_source_mode="worksheet-file-backed-chunked"`,
   `temporary_worksheet_part_footprint="not_measured"`, and
   `temporary_worksheet_part_footprint_bytes=null`; the footprint fields are
   placeholders for measurement availability, not low-memory evidence.

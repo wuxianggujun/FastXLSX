@@ -152,8 +152,8 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_s
 直接运行 `fastxlsx_bench_streaming_writer` 且不传 `--output` / `--result` 时，
 默认结果写到 benchmark target 的 binary dir。该手工工具限制 `--sheets <= 1024`；
 不要把这个工具边界写成 FastXLSX public API 的 worksheet 数量承诺。
-当前 benchmark JSON schema version 为 `1`，会记录 package entry source mode；
-临时 worksheet footprint 仍写为 `not_measured` / `null`，不是实测低内存数据。
+当前 benchmark JSON schema version 为 `2`，会记录 string pattern 和 package entry
+source mode；临时 worksheet footprint 仍写为 `not_measured` / `null`，不是实测低内存数据。
 
 如果 `ctest` 没有运行测试，先检查 `tests/CMakeLists.txt` 是否仍注册
 `fastxlsx.unit`、`fastxlsx.streaming`、`fastxlsx.opc` 和 `fastxlsx.image`。

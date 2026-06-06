@@ -28,7 +28,7 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint32_t kBenchmarkSheetLimit = 1024;
-constexpr std::string_view kBenchmarkSchemaVersion = "1";
+constexpr std::string_view kBenchmarkSchemaVersion = "2";
 constexpr std::string_view kPackageEntrySourceMode = "worksheet-file-backed-chunked";
 constexpr std::string_view kTemporaryWorksheetPartFootprint = "not_measured";
 
@@ -47,6 +47,7 @@ struct Options {
     std::uint32_t sheets = 1;
     double string_ratio = 0.0;
     std::string scenario = "numeric";
+    std::string string_pattern = "mixed";
     std::string string_strategy = "inline";
     std::filesystem::path output = default_output_dir() / "fastxlsx-bench-streaming.xlsx";
     std::filesystem::path result = default_output_dir() / "fastxlsx-bench-streaming.json";
@@ -129,6 +130,8 @@ Options parse_args(int argc, char** argv)
             options.string_ratio = parse_ratio(next_value());
         } else if (arg == "--scenario") {
             options.scenario = std::string(next_value());
+        } else if (arg == "--string-pattern") {
+            options.string_pattern = std::string(next_value());
         } else if (arg == "--string-strategy") {
             options.string_strategy = std::string(next_value());
         } else if (arg == "--output") {
@@ -139,6 +142,7 @@ Options parse_args(int argc, char** argv)
             std::cout
                 << "Usage: fastxlsx_bench_streaming_writer "
                 << "--scenario numeric|mixed|strings --rows N --cols N --sheets N "
+                << "--string-pattern mixed|repeated|unique "
                 << "--string-strategy inline|shared --string-ratio 0..1 "
                 << "--output file.xlsx --result result.json\n"
                 << "Default output files are written under the benchmark build directory.\n";
@@ -154,6 +158,10 @@ Options parse_args(int argc, char** argv)
     }
     if (options.string_strategy != "inline" && options.string_strategy != "shared") {
         fail("--string-strategy must be inline or shared");
+    }
+    if (options.string_pattern != "mixed" && options.string_pattern != "repeated"
+        && options.string_pattern != "unique") {
+        fail("--string-pattern must be mixed, repeated, or unique");
     }
     if (options.scenario == "numeric") {
         options.string_ratio = 0.0;
@@ -196,8 +204,16 @@ bool should_write_string(const Options& options, std::uint32_t row, std::uint32_
     return ((row + col) % bucket) == 0;
 }
 
-std::string make_string_value(std::uint32_t sheet, std::uint32_t row, std::uint32_t col)
+std::string make_string_value(
+    std::string_view pattern, std::uint32_t sheet, std::uint32_t row, std::uint32_t col)
 {
+    if (pattern == "repeated") {
+        return "repeat";
+    }
+    if (pattern == "unique") {
+        return "s" + std::to_string(sheet) + "-r" + std::to_string(row) + "-c"
+            + std::to_string(col);
+    }
     if ((row + col) % 5 == 0) {
         return "repeat";
     }
@@ -275,6 +291,7 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
     out << "  \"sheets\": " << options.sheets << ",\n";
     out << "  \"cells\": " << cells << ",\n";
     out << "  \"string_ratio\": " << options.string_ratio << ",\n";
+    out << "  \"string_pattern\": \"" << json_escape(options.string_pattern) << "\",\n";
     out << "  \"string_strategy\": \"" << json_escape(options.string_strategy) << "\",\n";
 #ifdef FASTXLSX_BENCH_HAS_MINIZIP_NG
     out << "  \"zip_backend\": \"minizip-ng\",\n";
@@ -318,7 +335,8 @@ void run_benchmark(const Options& options)
 
             for (std::uint32_t col = 1; col <= options.cols; ++col) {
                 if (should_write_string(options, row, col)) {
-                    string_values.push_back(make_string_value(sheet_index, row, col));
+                    string_values.push_back(
+                        make_string_value(options.string_pattern, sheet_index, row, col));
                     cells.push_back(fastxlsx::CellView::text(string_values.back()));
                 } else {
                     cells.push_back(fastxlsx::CellView::number(make_number_value(sheet_index, row, col)));

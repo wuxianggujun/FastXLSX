@@ -31,9 +31,10 @@ obligations.
   `WorkbookWriter`, `WorksheetWriter`, and `CellView`.
 - The streaming writer consumes rows in order and writes worksheet row XML to a
   temporary body file, so it does not retain already-written rows as a full
-  worksheet cell matrix. It still closes through the Phase 1 stored ZIP
-  bootstrap, so package streaming, compression, Zip64, and minizip-ng/zlib-ng
-  integration remain 计划.
+  worksheet cell matrix. It now closes through an internal package writer
+  boundary, whose current backend is still the Phase 1 stored ZIP bootstrap, so
+  package streaming, compression, Zip64, and minizip-ng/zlib-ng integration
+  remain 计划.
 - `StringStrategy::InlineString` remains the low-memory default.
 - `StringStrategy::SharedString`, internal shared string table state,
   `xl/sharedStrings.xml` package wiring, and focused structure tests are visible
@@ -48,10 +49,13 @@ obligations.
   properties, named ranges, full formula calculation, calcChain management, and
   broad compatibility coverage remain 计划.
 - Phase 4 has an internal `PartName`, `RelationshipSet`, `ContentTypesManifest`,
-  `PackageManifest`, `PartWriteMode`, `PackagePart` edit-state metadata,
-  minimal workbook manifest builder, and content types / relationships XML
-  serializers. `PackageReader`, `PackageWriter`, `PartIndex`,
-  `RelationshipGraph`, and existing-file editing are still 计划.
+  `ContentTypeRegistry`, `PackageManifest`, `PartIndex`, `RelationshipGraph`,
+  `PartWriteMode`, `PackagePart` edit-state metadata, minimal workbook manifest
+  builder, and content types / relationships XML serializers.
+  `src/package_writer.*` is an internal new-workbook output boundary backed by
+  the stored ZIP bootstrap; it is not the planned production `PackageWriter`
+  for existing-file editing. `PackageReader`, production `PackageWriter`, and
+  existing-file editing are still 计划.
 - A local Git repository is visible on branch `main`, with `origin` configured
   to `https://github.com/wuxianggujun/FastXLSX.git`.
 - Current visible root files include `vcpkg.json`, `CMakePresets.json`, and
@@ -85,6 +89,9 @@ claiming completion.
      `planned-runtime`, `planned-image`, and `planned-dev` features only.
    - Verify real package names, feature switches, license expectations, and
      CMake target names before adding `find_package` or link changes.
+   - Current P2 discovery has only candidate target evidence. Record that
+     `minizip-ng[zlib]` resolves through vcpkg `zlib`, not `zlib-ng`, and that
+     `zlib-ng`, `expat`, and `pugixml` still need clean configure verification.
    - Keep `CMakePresets.json` centered on the VS2026/MSVC 2026 NMake workflow;
      use the vcpkg preset only when toolchain behavior is being verified.
    - Keep CI as a structural and unit-test gate. The current workflow calls the
@@ -92,11 +99,12 @@ claiming completion.
      Excel visual verification remains local, and benchmark jobs stay opt-in.
 
 3. OPC edit plan - 基础.
-   - Continue from the internal manifest, relationship/content-type models, and
+   - Continue from the internal manifest, relationship/content-type models,
+     `PartIndex`, `RelationshipGraph`, content type registry helper, and
      package-part write modes.
    - The next implementation plan should introduce package reader/writer,
-     `PartIndex`, `RelationshipGraph`, copy-original preservation tests, and
-     stream rewrite/local DOM rewrite boundaries before exposing edit APIs.
+     copy-original preservation tests, and stream rewrite/local DOM rewrite
+     boundaries before exposing edit APIs.
 
 ## Milestone Roadmap
 
@@ -153,7 +161,7 @@ Validation:
 
 ### M2 - Production ZIP Backend
 
-Status: planned infrastructure and the highest-value implementation dependency.
+Status: 基础 for the internal package writer boundary; production ZIP remains planned.
 
 Do this before claiming large-file write performance, real compression,
 Zip64, package streaming, or existing-file edit support.
@@ -161,8 +169,8 @@ Zip64, package streaming, or existing-file edit support.
 Tasks:
 - Verify vcpkg package names, features, CMake config package names, imported
   targets, and license impact for `minizip-ng`, `zlib-ng`, and fallback `zlib`.
-- Introduce a package writer abstraction so `src/zip_store_writer.*` remains a
-  bootstrap implementation behind an internal boundary.
+- Keep `src/package_writer.*` as the internal package writer boundary so
+  `src/zip_store_writer.*` remains a bootstrap implementation behind it.
 - Add compression level configuration without changing worksheet XML generation
   into a DOM or full-workbook path.
 - Add Zip64 and large-entry behavior requirements before large workbook tests.
@@ -242,16 +250,17 @@ Validation:
 
 ### M6 - OPC Edit Groundwork
 
-Status: internal manifest foundation exists; edit pipeline remains planned.
+Status: internal graph foundation exists; edit pipeline remains planned.
 
 Do this before hyperlinks, tables, images, chart/VBA passthrough, or existing
 file editing are called supported.
 
-Tasks:
-- Build internal `PartIndex` and `RelationshipGraph` on top of the current
-  `PackageManifest`.
-- Add relationship id allocation and conflict checks per relationship owner.
-- Add content type registry helpers for defaults and overrides.
+Current foundation:
+- Internal `PartIndex` and `RelationshipGraph` exist in `fastxlsx::detail`.
+- Relationship ids are allocated per relationship owner.
+- Content type registry helpers wrap defaults and overrides.
+
+Remaining tasks:
 - Define write modes for each part: copy original, generate small XML,
   stream rewrite, local DOM rewrite.
 - Keep this internal until package reader/writer and preservation tests exist.
@@ -481,9 +490,11 @@ Current decision:
 - This is not the long-term ZIP/compression strategy.
 
 Required follow-up:
-- Add `vcpkg.json` and CMake dependency integration for `minizip-ng`/`zlib-ng`
-  when dependency installation is part of the task.
-- Replace or wrap the bootstrap writer behind a real package writer.
+- Extend the existing `vcpkg.json` / enable `planned-runtime` only when
+  dependency installation is part of the task, then add CMake dependency
+  integration after package target verification.
+- Replace the bootstrap writer backend behind the current internal package
+  writer boundary.
 - Preserve tests that inspect OpenXML structure independent of compression.
 
 Risk controls:
@@ -584,8 +595,9 @@ Current facts:
   initializer list in row order.
 - Worksheet row XML is written to a temporary body file instead of keeping a
   full cell matrix in memory.
-- `WorkbookWriter::close()` still builds final ZIP entries through the internal
-  stored ZIP bootstrap.
+- `WorkbookWriter::close()` builds final package entries through the internal
+  package writer boundary. The current boundary backend still uses the stored
+  ZIP bootstrap.
 - Compression levels, Zip64, real package streaming, and minizip-ng/zlib-ng are
   not integrated.
 - `inlineStr` is the default low-memory path.
@@ -609,8 +621,9 @@ Current facts:
 - No 10,000,000-cell benchmark result is recorded in this plan.
 
 Tasks:
-- Replace or wrap `zip_store_writer` with a real package writer based on
-  `minizip-ng` and `zlib-ng` through vcpkg manifest mode.
+- Replace the stored ZIP bootstrap behind `src/package_writer.*` with a real
+  backend based on verified `minizip-ng` / `zlib` or `zlib-ng` decisions through
+  vcpkg manifest mode.
 - Add explicit compression level configuration without making the hot path
   depend on a DOM or a full workbook object model.
 - Keep the large-data writer row-oriented: row iterator, range, callback, or
@@ -702,23 +715,25 @@ Validation:
 ## Phase 4 Work Items - OPC Package Editing and Part Manifest
 
 Status: 基础. FastXLSX now has a lightweight internal OPC manifest, content
-types model, relationships model, package-part write-mode metadata, and XML
-serializers for the new-workbook metadata path. Existing package editing and
-unknown-part preservation through a real OPC rewrite pipeline remain 计划.
+types model, relationships model, `PartIndex`, `RelationshipGraph`,
+package-part write-mode metadata, and XML serializers for the new-workbook
+metadata path. Existing package editing and unknown-part preservation through a
+real OPC rewrite pipeline remain 计划.
 
 Current facts:
 - Current code emits `[Content_Types].xml`, `_rels/.rels`, `xl/workbook.xml`,
   `xl/_rels/workbook.xml.rels`, worksheet parts, `docProps/core.xml`, and
   `docProps/app.xml` for new workbooks.
 - `src/opc.cpp` provides `PartName`, `RelationshipSet`, `ContentTypesManifest`,
-  `PackageManifest`, `PartWriteMode` state transitions,
-  `make_minimal_workbook_manifest()`, `build_core_properties()`,
-  `build_extended_properties()`, `serialize_content_types()`, and
-  `serialize_relationships()`.
+  `ContentTypeRegistry`, `PackageManifest`, `PartIndex`, `RelationshipGraph`,
+  `PartWriteMode` state transitions, `make_minimal_workbook_manifest()`,
+  `build_core_properties()`, `build_extended_properties()`,
+  `serialize_content_types()`, and `serialize_relationships()`.
 - `Workbook::save()` and `WorkbookWriter::close()` now use the internal minimal
   manifest and serializers for content types and relationships.
-- There is no implemented `PackageReader`, `PackageWriter`, `PartIndex`,
-  `RelationshipGraph`, or `PackageEditor`.
+- `src/package_writer.*` provides an internal new-workbook package output
+  boundary, but there is no implemented `PackageReader`, production
+  `PackageWriter`, or `PackageEditor`.
 - Existing XLSX editing, part-level rewrite, unknown part passthrough, chart
   passthrough, image passthrough, and VBA passthrough remain 计划.
 
@@ -729,9 +744,8 @@ Tasks:
   local DOM rewrite.
 - Build `PackageReader` and `PackageWriter` on the real ZIP backend instead of
   the Phase 1 stored ZIP bootstrap.
-- Build `PartIndex` and `RelationshipGraph` so relationships and content types
-  are updated together.
-- Add a content type registry for defaults and overrides.
+- Use the internal `PartIndex`, `RelationshipGraph`, and content type registry
+  groundwork when adding reader/writer and object features.
 - Implement part-level rewrite: unchanged parts are copied byte-for-byte when
   possible; changed parts are regenerated or stream-rewritten.
 - Allow local DOM only for small XML parts such as workbook metadata,

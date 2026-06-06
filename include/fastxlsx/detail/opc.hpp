@@ -98,6 +98,25 @@ private:
     std::vector<ContentTypeOverride> overrides_;
 };
 
+/// Internal helper for registering and resolving OPC content types.
+///
+/// This is a small convenience wrapper over `ContentTypesManifest`; it does not
+/// imply package read/write support.
+class ContentTypeRegistry {
+public:
+    const ContentTypeDefault& add_default(std::string extension, std::string content_type);
+    const ContentTypeOverride& add_override(PartName part_name, std::string content_type);
+
+    [[nodiscard]] const std::string* content_type_for(const PartName& part_name) const noexcept;
+    [[nodiscard]] const ContentTypeDefault* default_for(std::string_view extension) const noexcept;
+    [[nodiscard]] const ContentTypeOverride* override_for(const PartName& part_name) const noexcept;
+    [[nodiscard]] ContentTypesManifest& manifest() noexcept;
+    [[nodiscard]] const ContentTypesManifest& manifest() const noexcept;
+
+private:
+    ContentTypesManifest manifest_;
+};
+
 /// One known package part and relationships sourced from that part.
 struct PackagePart {
     PartName name;
@@ -111,6 +130,65 @@ struct PackagePart {
     void set_write_mode(PartWriteMode mode) noexcept;
     void mark_dirty() noexcept;
     void mark_generated() noexcept;
+};
+
+/// Internal index of known package parts.
+///
+/// This only tracks part metadata and content types. It has no ZIP reader,
+/// writer, or existing-package editing behavior.
+class PartIndex {
+public:
+    PackagePart& add_part(PartName part_name, std::string content_type = {});
+    PackagePart& ensure_part(PartName part_name, std::string content_type = {});
+
+    [[nodiscard]] PackagePart* find_part(const PartName& part_name) noexcept;
+    [[nodiscard]] const PackagePart* find_part(const PartName& part_name) const noexcept;
+    [[nodiscard]] ContentTypeRegistry& content_types() noexcept;
+    [[nodiscard]] const ContentTypeRegistry& content_types() const noexcept;
+    [[nodiscard]] const std::vector<PackagePart>& parts() const noexcept;
+    [[nodiscard]] bool empty() const noexcept;
+    [[nodiscard]] std::size_t size() const noexcept;
+
+private:
+    std::vector<PackagePart> parts_;
+    ContentTypeRegistry content_types_;
+};
+
+/// Internal relationship graph keyed by package owner or source part.
+///
+/// Relationship ids are unique within each owner only, matching OPC `.rels`
+/// files. Source-part relationships require the source part to exist in the
+/// supplied `PartIndex`.
+class RelationshipGraph {
+public:
+    explicit RelationshipGraph(const PartIndex& part_index);
+
+    Relationship& add_package_relationship(Relationship relationship);
+    Relationship& add_package_relationship(std::string type, std::string target,
+        Relationship::TargetMode target_mode = Relationship::TargetMode::Internal);
+
+    Relationship& add_relationship(const PartName& source_part, Relationship relationship);
+    Relationship& add_relationship(const PartName& source_part, std::string type,
+        std::string target,
+        Relationship::TargetMode target_mode = Relationship::TargetMode::Internal);
+
+    [[nodiscard]] RelationshipSet& package_relationships() noexcept;
+    [[nodiscard]] const RelationshipSet& package_relationships() const noexcept;
+    [[nodiscard]] RelationshipSet* relationships_for(const PartName& source_part) noexcept;
+    [[nodiscard]] const RelationshipSet* relationships_for(
+        const PartName& source_part) const noexcept;
+
+private:
+    struct PartRelationshipSet {
+        PartName owner;
+        RelationshipSet relationships;
+    };
+
+    [[nodiscard]] RelationshipSet& ensure_relationships_for(const PartName& source_part);
+
+    const PartIndex* part_index_;
+    RelationshipSet package_relationships_;
+    std::vector<PartRelationshipSet> part_relationships_;
 };
 
 /// Lightweight internal package manifest.

@@ -55,9 +55,9 @@ XLSX 语义层必须由 FastXLSX 自己实现：
 ## 目标总体分层（部分模块尚未实现）
 
 当前已实现的是 `Workbook` / `Worksheet` / `Cell`、`WorkbookWriter` /
-`WorksheetWriter` / `CellView`，以及内部 OPC manifest / relationships 基础。
-`PackageReader`、`PackageWriter`、`PartIndex`、`RelationshipGraph`、
-`WorksheetReader`、`TemplateEditor` 等仍是规划模块。
+`WorksheetWriter` / `CellView`，以及内部 OPC manifest / relationships /
+`PartIndex` / `RelationshipGraph` / content type registry 基础。`PackageReader`、
+生产 `PackageWriter`、`WorksheetReader`、`TemplateEditor` 等仍是规划模块。
 
 ```text
 FastXLSX
@@ -111,7 +111,7 @@ WorkbookBuilder
 
 这条路径禁止 DOM。
 
-### 2. 编辑已有 XLSX
+### 2. 编辑已有 XLSX（规划路径）
 
 ```text
 PackageReader

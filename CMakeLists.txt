@@ -16,6 +16,7 @@ option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" O
 
 add_library(fastxlsx
     src/opc.cpp
+    src/package_writer.cpp
     src/streaming_writer.cpp
     src/workbook.cpp
     src/xml.cpp

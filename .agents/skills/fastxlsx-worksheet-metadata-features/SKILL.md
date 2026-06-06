@@ -19,7 +19,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - `docs/API_DESIGN_AND_DOCUMENTATION.md`
 
 先用 `rg` 确认符号是否真实存在。当前没有完整 Phase 5，也没有
-`PackageReader`、`PackageWriter`、`PartIndex`、`RelationshipGraph` 或已有文件编辑管线。
+`PackageReader`、生产 `PackageWriter` 或已有文件编辑管线。内部
+`PartIndex` / `RelationshipGraph` 已存在，但它们只是 detail groundwork。
 
 ## 当前事实
 
@@ -41,7 +42,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 2. 若只改 worksheet XML，例如最小 data validations，可以先留在
    streaming new-workbook 路径，不引入 package relationship。
 3. 若功能需要 worksheet `.rels`、新 part、content type override 或跨 part id，
-   先补内部 relationship graph / part index 基础，不要直接上 public API。
+   先基于内部 relationship graph / part index 做窄范围 package wiring，不要直接
+   宣称完整 public feature。
 4. 在 public header 增加 API 时，同步 Doxygen 注释，写清 Streaming 模式、
    顺序写入限制、内存行为、是否新增 relationships/content types。
 5. 测试先覆盖 XML 结构，再做本机 Excel 可视化验证；结构异常时创建 Excel、
@@ -51,7 +53,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 - Data validations：优先做 streaming-only、新建 workbook、worksheet metadata 版本。
   先覆盖简单 whole/decimal/list/date/textLength 结构，禁止已有文件编辑和 DOM。
-- Hyperlinks：保持计划，等 relationship graph 能更新 worksheet `.rels` 后再做。
+- Hyperlinks：保持计划，可基于内部 relationship graph 设计 worksheet `.rels`
+  wiring，但必须同时写 worksheet XML 和 `.rels` 后才能宣称功能。
   可先做 metadata/API 设计，不要宣称功能已实现。
 - Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
   公式和 range 依赖不会进入大型 DOM。

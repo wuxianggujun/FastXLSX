@@ -3,7 +3,7 @@
 #include <fastxlsx/detail/opc.hpp>
 #include <fastxlsx/detail/xml.hpp>
 
-#include "zip_store_writer.hpp"
+#include "package_writer.hpp"
 
 #include <algorithm>
 #include <array>
@@ -301,7 +301,7 @@ void Workbook::save(const std::filesystem::path& path) const
         throw FastXlsxError("workbook must contain at least one worksheet");
     }
 
-    std::vector<detail::ZipEntry> entries;
+    std::vector<detail::PackageEntry> entries;
     const detail::PackageManifest manifest =
         detail::make_minimal_workbook_manifest(worksheets_.size());
     const auto* workbook_relationships =
@@ -323,7 +323,7 @@ void Workbook::save(const std::filesystem::path& path) const
             build_worksheet(worksheets_[index].rows_)});
     }
 
-    detail::write_stored_zip(path, entries);
+    detail::write_package(path, entries);
 }
 
 const std::vector<Worksheet>& Workbook::worksheets() const noexcept

@@ -315,6 +315,31 @@ Google Benchmark
 - 尚未验证这些 port 对应的 CMake package 名称和 imported target 名称。
 - 因此当前不在 `CMakeLists.txt` 中添加 `find_package` 或链接关系。
 
+### 当前 P2 dependency discovery 记录
+
+本机只读核对已确认以下事实，仍不能视为 CMake 接入闭环：
+
+- `minizip-ng` 当前 vcpkg ports tree 中可见版本为 `4.1.0`，license 为
+  `Zlib`。其 `zlib` feature 依赖 vcpkg `zlib` port；当前 portfile 还显式禁用
+  `ZLIBNG` 查找。这意味着 `minizip-ng[zlib]` 并不等同于“minizip-ng 已使用
+  zlib-ng”。
+- `zlib-ng` 当前可见版本为 `2.3.3`，license 为 `Zlib`。默认形态不是
+  `ZLIB::ZLIB`；本机旧 installed config 显示候选 target 为 `zlib-ng::zlib`，
+  但必须通过 clean configure 再确认。
+- `zlib` 当前可见版本为 `1.3.2#1`，license 为 `Zlib`。vcpkg usage 明确给出
+  `find_package(ZLIB REQUIRED)` 和 `ZLIB::ZLIB`。
+- `expat` 当前可见版本为 `2.8.1`，license 为 `MIT`。候选接入方式有
+  config-mode `expat::expat` 和 CMake find-module `EXPAT::EXPAT`，正式接入前
+  必须统一选择并验证。
+- `pugixml` 当前可见版本为 `1.15#1`，license 为 `MIT`。候选 target 是
+  `pugixml::pugixml`，仍需 clean configure 证明。
+- Windows 下 `minizip-ng` portfile 有 static-only 约束；正式接入时需要确认
+  triplet、链接形态、CI 安装耗时和发布 license notice。
+
+当前 `windows-nmake-release-vcpkg` preset 只配置 vcpkg toolchain，不启用
+`planned-runtime` feature。仅让该 preset configure 成功，不等同于上述运行依赖
+已经解析或已链接。
+
 后续真正接入依赖时，必须先验证：
 
 1. vcpkg port 名称、features 和目标 triplet。
@@ -347,6 +372,10 @@ toolchain 输出为准。
 - `StyleRegistry`
 - `SharedStringTable`
 - `InlineStringPolicy`
+
+当前状态不同步等同：`PartIndex` / `RelationshipGraph` 已有内部基础；
+`PackageReader` / 生产 `PackageWriter` 仍是计划，不能从自研范围列表推导为
+已有文件编辑已实现。
 
 其中 `FastXmlWriter`、`CellEncoder`、`RowStreamWriter` 是最重要的性能热路径。
 这些模块不应该交给通用 XML serializer。

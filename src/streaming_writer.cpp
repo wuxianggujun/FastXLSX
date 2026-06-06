@@ -3,7 +3,7 @@
 #include <fastxlsx/detail/opc.hpp>
 #include <fastxlsx/detail/xml.hpp>
 
-#include "zip_store_writer.hpp"
+#include "package_writer.hpp"
 
 #include <algorithm>
 #include <array>
@@ -571,7 +571,7 @@ void WorkbookWriter::close()
     if (state_->worksheets.empty()) {
         throw FastXlsxError("workbook must contain at least one worksheet");
     }
-    std::vector<detail::ZipEntry> entries;
+    std::vector<detail::PackageEntry> entries;
     const bool write_shared_strings = uses_shared_strings(*state_);
     detail::PackageManifest manifest =
         detail::make_minimal_workbook_manifest(state_->worksheets.size(), write_shared_strings);
@@ -599,7 +599,7 @@ void WorkbookWriter::close()
             build_worksheet(*state_->worksheets[index])});
     }
 
-    detail::write_stored_zip(state_->output_path, entries);
+    detail::write_package(state_->output_path, entries);
     state_->closed = true;
 }
 

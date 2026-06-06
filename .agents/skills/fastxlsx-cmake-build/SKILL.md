@@ -25,8 +25,8 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 - 项目是 `FastXLSX`，版本 `0.1.0`，语言是 `CXX`。
 - C++ 标准是 C++20，强制启用，并关闭编译器扩展。
 - `fastxlsx` 当前是 compiled library，源码列表在顶层 `CMakeLists.txt`；当前已接入
-  `src/opc.cpp`、`src/streaming_writer.cpp`、`src/workbook.cpp`、`src/xml.cpp`、
-  `src/zip_store_writer.cpp`。
+  `src/opc.cpp`、`src/package_writer.cpp`、`src/streaming_writer.cpp`、
+  `src/workbook.cpp`、`src/xml.cpp`、`src/zip_store_writer.cpp`。
 - 别名目标是 `FastXLSX::fastxlsx`。
 - 选项：
   - `FASTXLSX_BUILD_TESTS` 默认 `ON`。

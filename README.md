@@ -104,6 +104,7 @@ FastXLSX
 │       └── workbook.hpp
 ├── src
 │   ├── opc.cpp
+│   ├── package_writer.cpp
 │   ├── streaming_writer.cpp
 │   ├── workbook.cpp
 │   ├── xml.cpp
@@ -161,7 +162,10 @@ FastXLSX
 - 默认写出基础 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML part；
   这只是静态文档属性元数据，不代表完整 document properties public API。
 - 行高、列宽、冻结窗格、自动筛选和合并单元格的写入骨架。
-- 内部 OPC manifest / relationships 基础；Phase 5 已有文件编辑仍是规划。
+- 内部 OPC manifest / relationships / `PartIndex` / `RelationshipGraph`
+  基础；Phase 5 已有文件编辑仍是规划。
+- 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
+  进入当前 ZIP backend，backend 仍是 stored/no-compression bootstrap。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
   基础单元格编码。
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。
@@ -171,15 +175,17 @@ FastXLSX
 
 当前仍未完成：
 
-- `minizip-ng` / `zlib-ng` 生产 ZIP 后端接入。
+- `minizip-ng` / `zlib-ng` / `zlib` 生产 ZIP 后端接入。
 - Zip64、压缩等级配置和真正 package streaming。
 - Catch2 和 Google Benchmark 接入。
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
 - 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
 
-`src/zip_store_writer.*` 是 Phase 1 bootstrap 例外，仅写 stored/no-compression ZIP，
-用于打通 OpenXML、CTest 和 Excel 验证；不要把它当作长期 ZIP/压缩架构。
+`src/package_writer.*` 是当前内部 package writer 边界，但它仍调用
+`src/zip_store_writer.*` Phase 1 bootstrap。`src/zip_store_writer.*` 仅写
+stored/no-compression ZIP，用于打通 OpenXML、CTest 和 Excel 验证；不要把它
+当作长期 ZIP/压缩架构，也不要据此宣称 compression、Zip64 或 package streaming。
 
 ## 许可证
 

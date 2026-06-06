@@ -38,6 +38,9 @@ that exist in code, CMake, tests, docs, or local verification.
   - Basic `docProps/core.xml` and `docProps/app.xml` package wiring and static
     XML generation are visible in the current files. Treat this as minimal
     metadata output, not as a complete document-properties API.
+  - Internal `src/package_writer.*` boundary exists for new-workbook package
+    output. It still delegates to the stored/no-compression
+    `src/zip_store_writer.*` bootstrap backend.
   - Internal OPC `PartName`, `RelationshipSet`, `ContentTypesManifest`,
     `PackageManifest`, `PartWriteMode`, package-part edit state metadata,
     minimal workbook manifest builder, and content types / relationships
@@ -77,10 +80,11 @@ feature completion.
 
 3. OPC edit plan - 基础.
    - Current internal OPC metadata has part names, relationships, content types,
-     package parts, and write-mode planning states.
-   - Existing-file editing still needs package reader/writer, part index,
-     relationship graph, production ZIP backend, and preservation tests before
-     any complete edit support is claimed.
+     package parts, write-mode planning states, internal `PartIndex`,
+     internal `RelationshipGraph`, and a content type registry helper.
+   - Existing-file editing still needs package reader/writer, production ZIP
+     backend, and preservation tests before any complete edit support is
+     claimed.
 
 ## Repository State
 
@@ -112,8 +116,8 @@ commit or short series with its own tests and docs update.
 3. Production ZIP backend spike.
    - Verify `minizip-ng`, `zlib-ng`, and fallback `zlib` package names,
      features, CMake targets, and license obligations.
-   - Add an internal package writer boundary before replacing
-     `zip_store_writer`.
+   - Use the current internal package writer boundary before replacing the
+     stored ZIP bootstrap backend.
    - Keep existing OpenXML structure tests independent of compression method.
 
 4. Shared strings hardening.
@@ -133,8 +137,8 @@ commit or short series with its own tests and docs update.
      docProps baseline.
 
 7. Internal OPC graph groundwork.
-   - Add `PartIndex` / `RelationshipGraph` internally.
-   - Add relationship id allocation and content type registry helpers.
+   - Internal `PartIndex` / `RelationshipGraph` groundwork now exists.
+   - Relationship id allocation and content type registry helpers now exist.
    - Do not expose existing-file edit APIs yet.
 
 8. Existing package preservation.
@@ -219,6 +223,11 @@ Do:
 - Verify vcpkg ports, feature names, config package names, imported CMake
   targets, and license obligations for `minizip-ng`, `zlib-ng`, and fallback
   `zlib`.
+- Record that current `minizip-ng[zlib]` metadata resolves through vcpkg
+  `zlib`, not `zlib-ng`; decide whether `zlib-ng` remains a separate future
+  compression option or whether the minizip route should use plain `zlib`.
+- Treat `expat` and `pugixml` as runtime dependency discovery siblings, not as
+  proof that XML reader/DOM editing is implemented.
 - Record exact findings in dependency docs before adding `find_package`.
 - Keep dependency work separate from OpenXML feature changes.
 
@@ -240,6 +249,13 @@ Do:
 - Keep `src/zip_store_writer.*` as the bootstrap implementation behind that
   boundary.
 - Keep OpenXML structure tests independent of compression method.
+
+Current foundation:
+- `src/package_writer.hpp` / `src/package_writer.cpp` define internal
+  `PackageEntry`, `PackageWriterOptions`, `PackageWriterBackend`, and
+  `write_package()`.
+- `Workbook::save()` and `WorkbookWriter::close()` now call `write_package()`
+  instead of calling the ZIP bootstrap directly.
 
 Accept when:
 - Existing `.xlsx` structure tests pass through the new boundary.
@@ -382,16 +398,25 @@ Do not claim:
 
 ### P11 - Internal OPC Graph
 
-Start after P3, and before hyperlinks, tables, images, or existing-file editing.
+Status: 基础.
+
+Current foundation:
+- `include/fastxlsx/detail/opc.hpp` exposes internal `ContentTypeRegistry`,
+  `PartIndex`, and `RelationshipGraph` in `fastxlsx::detail`.
+- `src/opc.cpp` implements owner-scoped relationship sets, automatic `rIdN`
+  allocation per owner, source-part registration checks, and content type
+  default/override helpers.
+- `tests/test_opc.cpp` covers part lookup, duplicate/conflict handling,
+  relationship ownership, id uniqueness, external relationships, registry
+  lookup, write-mode defaults, and error paths.
 
 Do:
-- Add internal `PartIndex` and `RelationshipGraph`.
-- Add relationship id allocation and conflict checks per owner part.
-- Add content type registry helpers.
+- Keep this internal until package reader/writer and preservation tests exist.
+- Use it as groundwork before hyperlinks, tables, images, or existing-file
+  editing.
 
 Accept when:
-- Unit tests cover part lookup, relationship ownership, id uniqueness, content
-  type lookup, write-mode transitions, and error paths.
+- `ctest --preset windows-nmake-release` passes.
 - No public existing-file edit API is exposed yet.
 
 Do not claim:
@@ -579,7 +604,7 @@ Do not claim:
 
 ### 1. Production ZIP Backend
 
-Status: 计划.
+Status: 基础.
 
 Next tasks:
 - Keep the existing `vcpkg.json` conservative until CMake target names are
@@ -588,8 +613,7 @@ Next tasks:
   behavior for `minizip-ng`, `zlib-ng`, `expat`, and `pugixml`.
 - Add `find_package` and link dependencies only after package/target
   verification is complete.
-- Introduce a package writer abstraction that can replace the current internal
-  stored ZIP bootstrap.
+- Replace the current stored ZIP bootstrap behind `src/package_writer.*`.
 - Add compression level configuration without changing the worksheet XML hot
   path into a DOM path.
 - Add Zip64 and entry streaming requirements before large-file benchmarks.
@@ -648,7 +672,9 @@ Current foundation:
 
 Next tasks:
 - Add package reader and package writer on the production ZIP backend.
-- Build `PartIndex` and `RelationshipGraph`.
+- Use and harden the existing internal `PartIndex` / `RelationshipGraph`
+  groundwork when adding reader/writer, preservation tests, and object
+  features.
 - Add edit manifest write modes:
   - copy original
   - generate small XML
@@ -668,11 +694,11 @@ Status: 计划. Keep full object support in plan-only language.
 Safe order:
 1. Data validations as streaming-only worksheet metadata for new workbooks.
    They should not force a worksheet DOM or existing-file editing.
-2. Internal PartIndex / RelationshipGraph groundwork before features that need
-   worksheet `.rels` or cross-part id consistency.
-3. Hyperlinks after relationship graph support can keep worksheet XML and
-   worksheet `.rels` in sync; external URL hyperlinks should come before
-   broader hyperlink support.
+2. Use the existing internal `PartIndex` / `RelationshipGraph` groundwork for
+   features that need worksheet `.rels` or cross-part id consistency, and add
+   per-feature tests before claiming support.
+3. Hyperlinks after worksheet XML and worksheet `.rels` can be kept in sync;
+   external URL hyperlinks should come before broader hyperlink support.
 4. Tables after table part allocation, content type override, worksheet rels,
    and table XML are in place.
 5. Images after `stb` decode/dimension behavior, media part allocation,

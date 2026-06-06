@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-opc-editing
-description: "处理或规划 FastXLSX 已有文件编辑、OPC package、relationships、part index、part-level rewrite、小型 XML part 局部 DOM、模板填充和未知 part 保留边界。用于审查当前内部 OPC manifest/relationships 基础，以及 PackageReader、PackageWriter、PartIndex、RelationshipGraph、TemplateEditor 等规划类行为；不要据此宣称完整图片/VBA/table 支持。"
+description: "处理或规划 FastXLSX 已有文件编辑、OPC package、relationships、part index、part-level rewrite、小型 XML part 局部 DOM、模板填充和未知 part 保留边界。用于审查当前内部 OPC manifest/relationships、PartIndex、RelationshipGraph 基础，以及 PackageReader、生产 PackageWriter、TemplateEditor 等计划行为；不要据此宣称完整图片/VBA/table 支持。"
 ---
 
 # FastXLSX OPC Editing
@@ -15,15 +15,16 @@ description: "处理或规划 FastXLSX 已有文件编辑、OPC package、relati
 
 引用实现类前，先检查 `include/` 和 `src/`。当前已有内部 `PartName`、
 `RelationshipSet`、`ContentTypesManifest`、`PackageManifest`、`PartWriteMode`、
-`PackagePart` edit-state metadata、最小 workbook manifest 构建和 content types /
+`ContentTypeRegistry`、`PartIndex`、`RelationshipGraph`、`PackagePart`
+edit-state metadata、最小 workbook manifest 构建和 content types /
 relationships XML serializer 基础。当前最小新建 workbook 默认包含基础
 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML builder；已有文件编辑和
 Phase 5 仍是计划。
 
 本轮 OPC edit plan 只能写为基础或计划：当前有 copy-original、
 generate-small-XML、stream-rewrite、local-DOM-rewrite 的 write-mode metadata，
-但没有 end-to-end `PackageReader` / `PackageWriter` / `PartIndex` /
-`RelationshipGraph` 编辑管线。
+并且有新建 workbook 输出使用的内部 `src/package_writer.*` boundary；但没有
+end-to-end `PackageReader` / 生产 `PackageWriter` 编辑管线。
 
 ## 核心编辑模型
 
@@ -83,6 +84,9 @@ worksheet.xml drawing reference
 - `PackageManifest`
 - `PartWriteMode`
 - `PackagePart`
+- `ContentTypeRegistry`
+- `PartIndex`
+- `RelationshipGraph`
 - `PackageManifest::set_part_write_mode`
 - `PackageManifest::mark_part_dirty`
 - `PackageManifest::mark_part_generated`
@@ -94,8 +98,6 @@ worksheet.xml drawing reference
 
 - `PackageReader`
 - `PackageWriter`
-- `PartIndex`
-- `RelationshipGraph`
 - `WorksheetRewriter`
 - `OptionalDomDocument`
 - `TemplateEditor`
@@ -111,11 +113,12 @@ worksheet.xml drawing reference
 
 ## 本轮计划边界
 
-- OPC edit plan：基础。内部 manifest 和 write-mode metadata 可作为规划入口。
+- OPC edit plan：基础。内部 manifest、PartIndex、RelationshipGraph、content type
+  registry 和 write-mode metadata 可作为规划入口。
 - 基础 docProps 输出：基础。它只是新建 package 的静态小型 XML part，不是完整
   document properties API，也不是已有文件编辑。
 - Package read/copy/write：计划。需要生产 ZIP backend、`PackageReader`、
-  `PackageWriter`、`PartIndex` 和 `RelationshipGraph`。
+  `PackageWriter` 和 preservation 测试。
 - 保真验证：计划。需要输入/输出 package 对比，证明未知和未修改 part 被保留。
 - 不能因为有 write-mode metadata 就宣称已有 XLSX 编辑、图片、VBA、table 或 chart
   支持。
@@ -137,4 +140,5 @@ worksheet.xml drawing reference
 - 结构异常时，用 Excel / `openpyxl` / `XlsxWriter` 生成语义参考文件，拆包后比较
   content types、relationships、workbook、worksheet、shared strings、styles
   和相关 object part 的 XML 语义。
-- 实现存在后，为 part index 和 relationship graph 更新补回归测试。
+- part index 和 relationship graph 已有 `fastxlsx.opc` 回归测试；新增 reader/writer
+  或对象功能时继续扩展这些测试。

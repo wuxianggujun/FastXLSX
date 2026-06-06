@@ -62,6 +62,16 @@ void validate_relationship(const Relationship& relationship)
     }
 }
 
+std::string next_relationship_id(const RelationshipSet& relationships)
+{
+    for (std::size_t index = 1;; ++index) {
+        std::string id = "rId" + std::to_string(index);
+        if (relationships.find_by_id(id) == nullptr) {
+            return id;
+        }
+    }
+}
+
 std::string normalize_part_name(std::string_view value)
 {
     if (value.empty()) {
@@ -338,6 +348,46 @@ const std::vector<ContentTypeOverride>& ContentTypesManifest::overrides() const 
     return overrides_;
 }
 
+const ContentTypeDefault& ContentTypeRegistry::add_default(
+    std::string extension, std::string content_type)
+{
+    return manifest_.add_default(std::move(extension), std::move(content_type));
+}
+
+const ContentTypeOverride& ContentTypeRegistry::add_override(
+    PartName part_name, std::string content_type)
+{
+    return manifest_.add_override(std::move(part_name), std::move(content_type));
+}
+
+const std::string* ContentTypeRegistry::content_type_for(
+    const PartName& part_name) const noexcept
+{
+    return manifest_.content_type_for(part_name);
+}
+
+const ContentTypeDefault* ContentTypeRegistry::default_for(
+    std::string_view extension) const noexcept
+{
+    return manifest_.default_for(extension);
+}
+
+const ContentTypeOverride* ContentTypeRegistry::override_for(
+    const PartName& part_name) const noexcept
+{
+    return manifest_.override_for(part_name);
+}
+
+ContentTypesManifest& ContentTypeRegistry::manifest() noexcept
+{
+    return manifest_;
+}
+
+const ContentTypesManifest& ContentTypeRegistry::manifest() const noexcept
+{
+    return manifest_;
+}
+
 void PackagePart::set_write_mode(PartWriteMode mode) noexcept
 {
     write_mode = mode;
@@ -373,6 +423,149 @@ void PackagePart::mark_dirty() noexcept
 void PackagePart::mark_generated() noexcept
 {
     set_write_mode(PartWriteMode::GenerateSmallXml);
+}
+
+PackagePart& PartIndex::add_part(PartName part_name, std::string content_type)
+{
+    return ensure_part(std::move(part_name), std::move(content_type));
+}
+
+PackagePart& PartIndex::ensure_part(PartName part_name, std::string content_type)
+{
+    if (auto* existing = find_part(part_name)) {
+        if (!content_type.empty()) {
+            if (!existing->content_type.empty() && existing->content_type != content_type) {
+                throw FastXlsxError("part index content type conflicts with an existing part");
+            }
+            content_types_.add_override(existing->name, content_type);
+            existing->content_type = std::move(content_type);
+        }
+        return *existing;
+    }
+
+    PackagePart part {std::move(part_name), std::move(content_type), {}};
+    if (!part.content_type.empty()) {
+        content_types_.add_override(part.name, part.content_type);
+    }
+
+    parts_.push_back(std::move(part));
+    return parts_.back();
+}
+
+PackagePart* PartIndex::find_part(const PartName& part_name) noexcept
+{
+    const auto item = std::find_if(parts_.begin(), parts_.end(),
+        [&part_name](const PackagePart& part) { return part.name == part_name; });
+    return item == parts_.end() ? nullptr : &*item;
+}
+
+const PackagePart* PartIndex::find_part(const PartName& part_name) const noexcept
+{
+    const auto item = std::find_if(parts_.begin(), parts_.end(),
+        [&part_name](const PackagePart& part) { return part.name == part_name; });
+    return item == parts_.end() ? nullptr : &*item;
+}
+
+ContentTypeRegistry& PartIndex::content_types() noexcept
+{
+    return content_types_;
+}
+
+const ContentTypeRegistry& PartIndex::content_types() const noexcept
+{
+    return content_types_;
+}
+
+const std::vector<PackagePart>& PartIndex::parts() const noexcept
+{
+    return parts_;
+}
+
+bool PartIndex::empty() const noexcept
+{
+    return parts_.empty();
+}
+
+std::size_t PartIndex::size() const noexcept
+{
+    return parts_.size();
+}
+
+RelationshipGraph::RelationshipGraph(const PartIndex& part_index)
+    : part_index_(&part_index)
+{
+}
+
+Relationship& RelationshipGraph::add_package_relationship(Relationship relationship)
+{
+    return package_relationships_.add(std::move(relationship));
+}
+
+Relationship& RelationshipGraph::add_package_relationship(std::string type, std::string target,
+    Relationship::TargetMode target_mode)
+{
+    return add_package_relationship(Relationship {
+        next_relationship_id(package_relationships_),
+        std::move(type),
+        std::move(target),
+        target_mode,
+    });
+}
+
+Relationship& RelationshipGraph::add_relationship(
+    const PartName& source_part, Relationship relationship)
+{
+    return ensure_relationships_for(source_part).add(std::move(relationship));
+}
+
+Relationship& RelationshipGraph::add_relationship(const PartName& source_part, std::string type,
+    std::string target, Relationship::TargetMode target_mode)
+{
+    RelationshipSet& relationships = ensure_relationships_for(source_part);
+    return relationships.add(Relationship {
+        next_relationship_id(relationships),
+        std::move(type),
+        std::move(target),
+        target_mode,
+    });
+}
+
+RelationshipSet& RelationshipGraph::package_relationships() noexcept
+{
+    return package_relationships_;
+}
+
+const RelationshipSet& RelationshipGraph::package_relationships() const noexcept
+{
+    return package_relationships_;
+}
+
+RelationshipSet* RelationshipGraph::relationships_for(const PartName& source_part) noexcept
+{
+    const auto item = std::find_if(part_relationships_.begin(), part_relationships_.end(),
+        [&source_part](const PartRelationshipSet& value) { return value.owner == source_part; });
+    return item == part_relationships_.end() ? nullptr : &item->relationships;
+}
+
+const RelationshipSet* RelationshipGraph::relationships_for(const PartName& source_part) const noexcept
+{
+    const auto item = std::find_if(part_relationships_.begin(), part_relationships_.end(),
+        [&source_part](const PartRelationshipSet& value) { return value.owner == source_part; });
+    return item == part_relationships_.end() ? nullptr : &item->relationships;
+}
+
+RelationshipSet& RelationshipGraph::ensure_relationships_for(const PartName& source_part)
+{
+    if (part_index_->find_part(source_part) == nullptr) {
+        throw FastXlsxError("relationship source part is not registered in part index");
+    }
+
+    if (auto* relationships = relationships_for(source_part)) {
+        return *relationships;
+    }
+
+    part_relationships_.push_back(PartRelationshipSet {source_part, {}});
+    return part_relationships_.back().relationships;
 }
 
 PackagePart& PackageManifest::add_part(PartName part_name, std::string content_type)

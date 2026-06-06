@@ -105,6 +105,63 @@ void test_content_types_manifest()
         "content types serializer should include overrides");
 }
 
+void test_content_type_registry_helper()
+{
+    fastxlsx::detail::ContentTypeRegistry registry;
+    registry.add_default(".PNG", "image/png");
+    registry.add_default("xml", "application/xml");
+    registry.add_override(fastxlsx::detail::PartName("/xl/workbook.xml"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml");
+
+    const auto* png_default = registry.default_for("png");
+    check(png_default != nullptr, "content type registry default lookup failed");
+    check(png_default->content_type == "image/png",
+        "content type registry default value mismatch");
+
+    const auto* workbook_override =
+        registry.override_for(fastxlsx::detail::PartName("xl//workbook.xml"));
+    check(workbook_override != nullptr, "content type registry override lookup failed");
+    check(workbook_override->content_type
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "content type registry override value mismatch");
+
+    const auto* workbook_type =
+        registry.content_type_for(fastxlsx::detail::PartName("/xl/workbook.xml"));
+    check(workbook_type != nullptr, "content type registry override resolution failed");
+    check(*workbook_type
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "content type registry override should win");
+
+    const auto* image_type =
+        registry.content_type_for(fastxlsx::detail::PartName("/xl/media/image1.PNG"));
+    check(image_type != nullptr, "content type registry default resolution failed");
+    check(*image_type == "image/png", "content type registry default mismatch");
+
+    check(registry.manifest().defaults().size() == 2,
+        "content type registry should expose defaults");
+    check(registry.manifest().overrides().size() == 1,
+        "content type registry should expose overrides");
+
+    bool default_conflict_failed = false;
+    try {
+        registry.add_default("png", "image/jpeg");
+    } catch (const std::exception&) {
+        default_conflict_failed = true;
+    }
+    check(default_conflict_failed,
+        "content type registry should reject conflicting defaults");
+
+    bool override_conflict_failed = false;
+    try {
+        registry.add_override(
+            fastxlsx::detail::PartName("/xl/workbook.xml"), "application/xml");
+    } catch (const std::exception&) {
+        override_conflict_failed = true;
+    }
+    check(override_conflict_failed,
+        "content type registry should reject conflicting overrides");
+}
+
 void test_relationship_set()
 {
     fastxlsx::detail::RelationshipSet relationships;
@@ -150,6 +207,178 @@ void test_relationship_set()
         duplicate_id_failed = true;
     }
     check(duplicate_id_failed, "duplicate relationship ids should be rejected");
+}
+
+void test_part_index()
+{
+    fastxlsx::detail::PartIndex index;
+    check(index.empty(), "new part index should be empty");
+
+    auto& workbook = index.add_part(fastxlsx::detail::PartName("xl//workbook.xml"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml");
+    auto& duplicate = index.add_part(fastxlsx::detail::PartName("/xl/./workbook.xml"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml");
+
+    check(&workbook == &duplicate, "part index duplicate should return existing part");
+    check(index.size() == 1, "part index duplicate should not be inserted");
+
+    const auto* lookup = index.find_part(fastxlsx::detail::PartName("/xl/workbook.xml"));
+    check(lookup != nullptr, "part index lookup failed");
+    check(lookup->content_type
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "part index content type mismatch");
+    check(lookup->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "part index should keep default write mode for new parts");
+
+    const auto* workbook_type =
+        index.content_types().content_type_for(fastxlsx::detail::PartName("/xl/workbook.xml"));
+    check(workbook_type != nullptr, "part index should register content type override");
+    check(*workbook_type
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+        "part index registered content type mismatch");
+
+    bool duplicate_conflict_failed = false;
+    try {
+        index.add_part(fastxlsx::detail::PartName("/xl/workbook.xml"), "application/xml");
+    } catch (const std::exception&) {
+        duplicate_conflict_failed = true;
+    }
+    check(duplicate_conflict_failed, "part index should reject duplicate content type conflict");
+
+    index.add_part(fastxlsx::detail::PartName("/xl/worksheets/sheet1.xml"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
+    check(index.size() == 2, "part index should insert distinct parts");
+
+    index.content_types().add_override(
+        fastxlsx::detail::PartName("/xl/styles.xml"), "application/xml");
+
+    bool registry_conflict_failed = false;
+    try {
+        index.add_part(fastxlsx::detail::PartName("/xl/styles.xml"),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml");
+    } catch (const std::exception&) {
+        registry_conflict_failed = true;
+    }
+    check(registry_conflict_failed, "part index should surface content type registry conflict");
+    check(index.find_part(fastxlsx::detail::PartName("/xl/styles.xml")) == nullptr,
+        "failed part insert should not leave an indexed part");
+}
+
+void test_relationship_graph()
+{
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    fastxlsx::detail::PartIndex index;
+    index.add_part(workbook_part,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml");
+    index.add_part(worksheet_part,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
+
+    fastxlsx::detail::RelationshipGraph graph(index);
+
+    auto& package_relationship = graph.add_package_relationship(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+        "xl/workbook.xml");
+    check(package_relationship.id == "rId1",
+        "package owner should auto-allocate first relationship id");
+
+    auto& workbook_relationship = graph.add_relationship(workbook_part,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet",
+        "worksheets/sheet1.xml");
+    check(workbook_relationship.id == "rId1",
+        "part owner should have an independent relationship id space");
+
+    graph.add_package_relationship(fastxlsx::detail::Relationship {
+        "rId2",
+        "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties",
+        "docProps/core.xml",
+    });
+    graph.add_package_relationship(fastxlsx::detail::Relationship {
+        "customId",
+        "http://schemas.openxmlformats.org/package/2006/relationships/metadata/custom",
+        "docProps/custom.xml",
+    });
+    auto& next_package_relationship = graph.add_package_relationship(
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties",
+        "docProps/app.xml");
+    check(next_package_relationship.id == "rId3",
+        "package owner auto relationship id should skip existing ids");
+
+    auto& external_relationship = graph.add_relationship(workbook_part,
+        fastxlsx::detail::Relationship {
+            "rId2",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+            "https://example.test/path?a=1&b=2",
+            fastxlsx::detail::Relationship::TargetMode::External,
+        });
+    check(external_relationship.target == "https://example.test/path?a=1&b=2",
+        "relationship graph should preserve external target text");
+    check(external_relationship.target_mode
+            == fastxlsx::detail::Relationship::TargetMode::External,
+        "relationship graph should preserve external target mode");
+
+    auto& next_workbook_relationship = graph.add_relationship(workbook_part,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles",
+        "styles.xml");
+    check(next_workbook_relationship.id == "rId3",
+        "part owner auto relationship id should skip existing ids");
+
+    auto& worksheet_relationship = graph.add_relationship(worksheet_part,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+        "https://worksheet.example/",
+        fastxlsx::detail::Relationship::TargetMode::External);
+    check(worksheet_relationship.id == "rId1",
+        "worksheet owner should have an independent relationship id space");
+
+    const auto* workbook_relationships =
+        graph.relationships_for(fastxlsx::detail::PartName("xl//workbook.xml"));
+    check(workbook_relationships != nullptr,
+        "relationship graph should find relationships by normalized source part");
+    check(workbook_relationships->size() == 3,
+        "relationship graph part relationship count mismatch");
+    check(workbook_relationships->find_by_id("rId2")->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::External,
+        "relationship graph external lookup mismatch");
+
+    const std::string workbook_rels_xml =
+        fastxlsx::detail::serialize_relationships(*workbook_relationships);
+    check(workbook_rels_xml.find("TargetMode=\"External\"") != std::string::npos,
+        "relationship serializer should preserve external target mode from graph");
+
+    bool same_owner_conflict_failed = false;
+    try {
+        graph.add_relationship(workbook_part,
+            fastxlsx::detail::Relationship {
+                "rId1",
+                "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
+                "theme/theme1.xml",
+            });
+    } catch (const std::exception&) {
+        same_owner_conflict_failed = true;
+    }
+    check(same_owner_conflict_failed,
+        "relationship graph should reject duplicate ids within the same owner");
+
+    bool missing_source_failed = false;
+    try {
+        graph.add_relationship(fastxlsx::detail::PartName("/xl/styles.xml"),
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme",
+            "theme/theme1.xml");
+    } catch (const std::exception&) {
+        missing_source_failed = true;
+    }
+    check(missing_source_failed,
+        "relationship graph should reject unregistered source parts");
+
+    const auto* worksheet_relationships = graph.relationships_for(worksheet_part);
+    check(worksheet_relationships != nullptr,
+        "relationship graph should find worksheet owner relationships");
+    check(worksheet_relationships->size() == 1,
+        "relationship graph worksheet owner relationship count mismatch");
+    check(worksheet_relationships->find_by_id("rId1")->target
+            == "https://worksheet.example/",
+        "relationship graph worksheet relationship target mismatch");
 }
 
 void test_package_manifest()
@@ -452,7 +681,10 @@ int main()
     try {
         test_part_name_normalization();
         test_content_types_manifest();
+        test_content_type_registry_helper();
         test_relationship_set();
+        test_part_index();
+        test_relationship_graph();
         test_package_manifest();
         test_package_part_edit_state();
         test_minimal_workbook_manifest();

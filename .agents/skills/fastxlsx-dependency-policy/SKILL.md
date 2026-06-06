@@ -74,8 +74,24 @@ OpenXML、CTest 和本机 Excel 验证。
 - 不进入 public API。
 - 不作为性能、压缩率或长期 ZIP 后端的依据。
 
-生产路线仍是 `vcpkg` manifest mode + `minizip-ng` / `zlib-ng`，后续接入时应
-保留现有 OpenXML 结构测试，并把压缩后端测试从 OpenXML 语义测试中拆开。
+生产路线仍是 `vcpkg` manifest mode + verified `minizip-ng` backend，并在
+`zlib` 或单独验证后的 `zlib-ng` 决策之间明确选择。后续接入时应保留现有
+OpenXML 结构测试，并把压缩后端测试从 OpenXML 语义测试中拆开。
+
+当前 `src/package_writer.*` 已作为内部 package writer boundary 存在，但 backend
+仍然调用上述 stored ZIP bootstrap。生产 ZIP 接入应替换该 boundary 后面的 backend，
+不要让 workbook writer 代码重新直接依赖 ZIP 细节。
+
+## 当前 P2 依赖发现事实
+
+- `minizip-ng[zlib]` 在当前 vcpkg metadata 中依赖 `zlib` port，不是 `zlib-ng`。
+- `minizip-ng` 默认 features 包含 BZIP2/LZMA/ZSTD/加密等非必要能力；项目 manifest
+  必须保留 `default-features: false` 和只启用 `zlib` 的约束，除非任务明确改策略。
+- `zlib` 用法已知为 `find_package(ZLIB REQUIRED)` / `ZLIB::ZLIB`。
+- `zlib-ng`、`minizip-ng`、`expat`、`pugixml` 的 imported target 只能写成候选，
+  正式接入前必须用 clean configure 验证。
+- `windows-nmake-release-vcpkg` preset 只启用 toolchain；默认不会安装
+  `planned-runtime` feature。
 
 ## 明确不作为底座的库
 

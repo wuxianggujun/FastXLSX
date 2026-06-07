@@ -3,6 +3,7 @@
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <initializer_list>
@@ -189,6 +190,26 @@ enum class DataBarValueType {
     Percentile,
 };
 
+/// Icon set style for the current narrow conditional-formatting icon-set slice.
+///
+/// API mode: Streaming worksheet metadata. This enum currently exposes only the
+/// stable built-in `3Arrows` OpenXML token. It does not represent custom icons,
+/// icon-set extensions, dxf-backed formatting, or complete Excel UI parity.
+enum class IconSetStyle {
+    ThreeArrows,
+};
+
+/// Value kind for conditional-formatting icon-set thresholds.
+///
+/// API mode: Streaming worksheet metadata. Icon-set thresholds are serialized as
+/// finite numeric `<cfvo>` values. This first slice intentionally excludes
+/// formula thresholds, minimum/maximum endpoints, custom icons, and extLst data.
+enum class IconSetValueType {
+    Number,
+    Percent,
+    Percentile,
+};
+
 /// One point of a conditional-formatting color scale.
 ///
 /// API mode: Streaming worksheet metadata. The point is copied into worksheet
@@ -278,6 +299,35 @@ struct DataBarRule {
 
     /// Inline ARGB bar color.
     ArgbColor color {0xFF, 0x63, 0x8E, 0xC6};
+};
+
+/// A narrow built-in conditional-formatting icon set.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
+/// into WorksheetWriter state and serialized as worksheet-local
+/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
+/// call order per worksheet, shared with color-scale and data-bar rules. This
+/// first slice writes only built-in 3-arrow icon sets with three finite numeric
+/// thresholds; it does not evaluate cell values, create styles.xml/dxfs, use
+/// custom icons, write extLst, edit existing XLSX files, or promise full Excel
+/// conditional-formatting UI parity.
+struct IconSetRule {
+    /// Built-in icon set style. The current slice supports only `3Arrows`.
+    IconSetStyle style = IconSetStyle::ThreeArrows;
+
+    /// OpenXML `cfvo` type shared by all thresholds.
+    IconSetValueType value_type = IconSetValueType::Percent;
+
+    /// Three finite, strictly ascending thresholds, defaulting to the common 0/33/67 percent split.
+    std::array<double, 3> thresholds {0.0, 33.0, 67.0};
+
+    /// Whether Excel should display the cell value next to the icon.
+    /// The default is omitted from XML; `false` writes `showValue="0"`.
+    bool show_value = true;
+
+    /// Whether Excel should reverse icon order.
+    /// The default is omitted from XML; `true` writes `reverse="1"`.
+    bool reverse = false;
 };
 
 /// A streaming-only worksheet data-validation rule.
@@ -753,6 +803,38 @@ public:
     ///
     /// The initializer-list ranges are copied during this call.
     void add_conditional_data_bar(std::initializer_list<CellRange> ranges, DataBarRule rule);
+
+    /// Records one worksheet-local built-in 3-arrow conditional-formatting icon set.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The rule is
+    /// emitted as worksheet-local `<conditionalFormatting>` XML and does not add
+    /// package relationships, content types, styles.xml, dxfs, metadata parts,
+    /// or cell text. FastXLSX copies the three thresholds into writer state,
+    /// validates the range and finite ascending values, and assigns priority by
+    /// call order shared with color-scale and data-bar rules.
+    ///
+    /// @throws FastXlsxError if the range is invalid, the workbook is closed, or
+    /// the rule shape is outside the current basic icon-set surface.
+    void add_conditional_icon_set(CellRange range, IconSetRule rule);
+
+    /// Records one built-in 3-arrow conditional-formatting icon set for multiple ranges.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. Ranges are
+    /// copied into writer state and serialized as one space-separated `sqref`
+    /// attribute on a single `<conditionalFormatting>` element. This does not
+    /// sort, merge, deduplicate, or overlap-check ranges; memory grows with the
+    /// copied range count and number of rules, not with worksheet row or cell
+    /// count.
+    ///
+    /// @throws FastXlsxError if the range list is empty, any range is invalid,
+    /// the workbook is closed, or threshold values are outside the current
+    /// finite ascending icon-set surface.
+    void add_conditional_icon_set(std::span<const CellRange> ranges, IconSetRule rule);
+
+    /// Convenience overload for multiple basic icon-set ranges.
+    ///
+    /// The initializer-list ranges are copied during this call.
+    void add_conditional_icon_set(std::initializer_list<CellRange> ranges, IconSetRule rule);
 
     /// Records a worksheet-local data validation rule for one range.
     ///

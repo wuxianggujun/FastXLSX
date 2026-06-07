@@ -39,7 +39,8 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellStyle、W
 - worksheet cell 使用非默认 style 时写 `s="N"`；默认 style 不写 `s="0"`。
 - sharedStrings + styles 可以共存：styled shared string cell 同时写 `s="N"` 和 `t="s"`；
   workbook relationship 顺序保持 sheets、sharedStrings、styles。
-- 当前 two-/three-color conditional color scale 和 basic data bar 不是 style registry 功能：它们写 worksheet-local
+- 当前 two-/three-color conditional color scale、basic data bar 和 basic 3Arrows icon set
+  不是 style registry 功能：它们写 worksheet-local
   `<conditionalFormatting>`，不生成 `styles.xml` 或 `dxfs`。不要把它当成 P9a styles
   完整 conditional formatting 支持。
 

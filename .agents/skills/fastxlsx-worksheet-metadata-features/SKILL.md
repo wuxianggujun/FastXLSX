@@ -27,7 +27,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - `WorkbookWriter` / `WorksheetWriter` 是当前 streaming 新建 workbook 路径。
 - worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格、
   streaming-only data validations、external/internal hyperlinks、two-/three-color conditional
-  color scales、basic data bars 和 tables。
+  color scales、basic data bars、basic 3Arrows icon sets 和 tables。
 - `WorksheetWriter::add_data_validation()` 当前只支持新建 workbook 的 worksheet XML
   metadata，写出 `<dataValidations>`，不新增 worksheet `.rels`、content types 或
   package relationships。当前 `DataValidationRule` 还支持 prompt/error metadata：
@@ -107,12 +107,13 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   `HyperlinkOptions` 当前只支持基础 `display` / `tooltip` worksheet attributes；非空
   字符串会复制进 writer state，空字符串省略，不改变 `.rels` / content types / styles。
 - Conditional formatting：已有基础 streaming-only、新建 workbook two-/three-color color scale
-  和 basic data bar 切片。当前只保存 range 列表、color-scale points 或 data-bar endpoints、
-  inline ARGB color 和 worksheet-local priority；写出 worksheet-local
+  和 basic data bar / basic 3Arrows icon set 切片。当前只保存 range 列表、color-scale
+  points、data-bar endpoints、icon-set thresholds、inline ARGB color 和 worksheet-local priority；写出 worksheet-local
   `<conditionalFormatting>`，不生成 styles/dxfs/rels/content type/calcPr 副作用。
   Color scale 写 `<cfRule type="colorScale">`，data bar 写 `<cfRule type="dataBar">`、
-  两个 `<cfvo>` 和一个 `<color rgb="AARRGGBB">`。继续禁止 formula/cellIs、
-  advanced data bars、icon sets、dxf-backed styles、existing-file editing、range
+  两个 `<cfvo>` 和一个 `<color rgb="AARRGGBB">`，icon set 写 built-in `3Arrows`
+  和三枚 finite 严格递增 `<cfvo>`。继续禁止 formula/cellIs、
+  advanced data bars、advanced/custom icon sets、dxf-backed styles、existing-file editing、range
   排序/合并/去重、重叠检测和完整 Excel UI。
 - Tables：已有基础 streaming-only、新建 workbook 版本。当前只保存 range、table name、
   column names、style flags、`show_totals_row`、`column_totals_functions` 和
@@ -131,7 +132,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - 不要因为基础 hyperlink slices（external URL + internal location）已存在就宣称完整 hyperlinks 已支持。
 - 不要因为 streaming-only table slice 已存在就宣称完整 tables 已支持。
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。
-- 不要把 two-/three-color color scale 或 basic data bar 写成完整 conditional formatting、styles registry 或
+- 不要把 two-/three-color color scale、basic data bar 或 basic 3Arrows icon set 写成完整 conditional formatting、styles registry 或
   `dxfs` 支持。
 - 不要在没有 PackageReader/PackageWriter 前宣称 existing XLSX editing 或 unknown part passthrough。
 - 不要把 Excel、`openpyxl` 或 `XlsxWriter` 加为运行时依赖；它们只能用于测试和排障参考。
@@ -173,6 +174,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   `<cfRule type="colorScale" priority>`、two-color 的两个 `<cfvo>` / 两个 `<color>`、
   three-color 的三个 `<cfvo>` / 三个 `<color rgb="AARRGGBB">`、
   basic data bar 的 `<cfRule type="dataBar">`、两个 `<cfvo>` / 一个 `<color rgb>`、
+  basic icon set 的 `<cfRule type="iconSet">`、`3Arrows` / 三个 `<cfvo>`、
   multi-range `sqref`、priority 顺序、suffix 顺序、无 `styles.xml` / `dxfs` /
   worksheet `.rels` / content type / workbook relationship / `<calcPr>` 副作用、
   invalid ranges、empty range list、非有限 endpoint、lower `Maximum`、upper `Minimum`

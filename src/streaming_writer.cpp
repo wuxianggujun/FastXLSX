@@ -55,6 +55,12 @@ struct ConditionalDataBar {
     std::uint32_t priority = 1;
 };
 
+struct ConditionalIconSet {
+    std::vector<CellRange> ranges;
+    IconSetRule rule;
+    std::uint32_t priority = 1;
+};
+
 struct ExternalHyperlink {
     std::uint32_t row = 1;
     std::uint32_t column = 1;
@@ -242,6 +248,30 @@ std::string_view data_bar_value_type_name(DataBarValueType type)
     }
 
     throw FastXlsxError("unknown data bar value type");
+}
+
+std::string_view icon_set_style_name(IconSetStyle style)
+{
+    switch (style) {
+    case IconSetStyle::ThreeArrows:
+        return "3Arrows";
+    }
+
+    throw FastXlsxError("unknown icon set style");
+}
+
+std::string_view icon_set_value_type_name(IconSetValueType type)
+{
+    switch (type) {
+    case IconSetValueType::Number:
+        return "num";
+    case IconSetValueType::Percent:
+        return "percent";
+    case IconSetValueType::Percentile:
+        return "percentile";
+    }
+
+    throw FastXlsxError("unknown icon set value type");
 }
 
 bool color_scale_value_type_requires_value(ColorScaleValueType type)
@@ -559,6 +589,21 @@ void validate_data_bar_rule(const DataBarRule& rule)
     validate_data_bar_endpoint(rule.upper);
 }
 
+void validate_icon_set_rule(const IconSetRule& rule)
+{
+    (void)icon_set_style_name(rule.style);
+    (void)icon_set_value_type_name(rule.value_type);
+    for (double threshold : rule.thresholds) {
+        if (!std::isfinite(threshold)) {
+            throw FastXlsxError("icon set threshold values must be finite");
+        }
+    }
+    if (!(rule.thresholds[0] < rule.thresholds[1]
+            && rule.thresholds[1] < rule.thresholds[2])) {
+        throw FastXlsxError("icon set threshold values must be strictly ascending");
+    }
+}
+
 void validate_three_color_scale_rule(const ThreeColorScaleRule& rule)
 {
     if (rule.lower.type == ColorScaleValueType::Maximum) {
@@ -682,6 +727,7 @@ struct WorksheetWriterState {
     std::uint32_t next_conditional_format_priority = 1;
     std::vector<ConditionalColorScale> conditional_color_scales;
     std::vector<ConditionalDataBar> conditional_data_bars;
+    std::vector<ConditionalIconSet> conditional_icon_sets;
     std::vector<DataValidation> data_validations;
     std::vector<ExternalHyperlink> external_hyperlinks;
     std::vector<InternalHyperlink> internal_hyperlinks;
@@ -1090,25 +1136,85 @@ void append_conditional_data_bar_xml(std::string& xml, const ConditionalDataBar&
     xml += "\"/></dataBar></cfRule></conditionalFormatting>";
 }
 
+void append_icon_set_threshold_xml(
+    std::string& xml, IconSetValueType value_type, double threshold)
+{
+    xml += "<cfvo type=\"";
+    xml += icon_set_value_type_name(value_type);
+    xml += "\" val=\"";
+    xml += format_number(threshold);
+    xml += "\"/>";
+}
+
+void append_conditional_icon_set_xml(std::string& xml, const ConditionalIconSet& icon_set)
+{
+    xml += "<conditionalFormatting sqref=\"";
+    xml += detail::sqref(icon_set.ranges);
+    xml += "\"><cfRule type=\"iconSet\" priority=\"";
+    xml += std::to_string(icon_set.priority);
+    xml += "\"><iconSet iconSet=\"";
+    xml += icon_set_style_name(icon_set.rule.style);
+    if (!icon_set.rule.show_value) {
+        xml += "\" showValue=\"0";
+    }
+    if (icon_set.rule.reverse) {
+        xml += "\" reverse=\"1";
+    }
+    xml += "\">";
+    for (double threshold : icon_set.rule.thresholds) {
+        append_icon_set_threshold_xml(xml, icon_set.rule.value_type, threshold);
+    }
+    xml += "</iconSet></cfRule></conditionalFormatting>";
+}
+
 std::string build_conditional_formattings(const detail::WorksheetWriterState& worksheet)
 {
-    if (worksheet.conditional_color_scales.empty() && worksheet.conditional_data_bars.empty()) {
+    if (worksheet.conditional_color_scales.empty() && worksheet.conditional_data_bars.empty()
+        && worksheet.conditional_icon_sets.empty()) {
         return {};
     }
 
     std::string xml;
     auto color_scale_it = worksheet.conditional_color_scales.begin();
     auto data_bar_it = worksheet.conditional_data_bars.begin();
+    auto icon_set_it = worksheet.conditional_icon_sets.begin();
     while (color_scale_it != worksheet.conditional_color_scales.end()
-        || data_bar_it != worksheet.conditional_data_bars.end()) {
-        if (data_bar_it == worksheet.conditional_data_bars.end()
-            || (color_scale_it != worksheet.conditional_color_scales.end()
-                && color_scale_it->priority < data_bar_it->priority)) {
+        || data_bar_it != worksheet.conditional_data_bars.end()
+        || icon_set_it != worksheet.conditional_icon_sets.end()) {
+        std::uint32_t next_priority = std::numeric_limits<std::uint32_t>::max();
+        enum class NextRule {
+            ColorScale,
+            DataBar,
+            IconSet,
+        } next_rule = NextRule::ColorScale;
+        if (color_scale_it != worksheet.conditional_color_scales.end()
+            && color_scale_it->priority < next_priority) {
+            next_priority = color_scale_it->priority;
+            next_rule = NextRule::ColorScale;
+        }
+        if (data_bar_it != worksheet.conditional_data_bars.end()
+            && data_bar_it->priority < next_priority) {
+            next_priority = data_bar_it->priority;
+            next_rule = NextRule::DataBar;
+        }
+        if (icon_set_it != worksheet.conditional_icon_sets.end()
+            && icon_set_it->priority < next_priority) {
+            next_rule = NextRule::IconSet;
+        }
+
+        switch (next_rule) {
+        case NextRule::ColorScale:
             append_conditional_color_scale_xml(xml, *color_scale_it);
             ++color_scale_it;
-        } else {
+            break;
+        case NextRule::DataBar:
             append_conditional_data_bar_xml(xml, *data_bar_it);
             ++data_bar_it;
+            break;
+        case NextRule::IconSet:
+            append_conditional_icon_set_xml(xml, *icon_set_it);
+            ++icon_set_it;
+            break;
         }
     }
     return xml;
@@ -1978,6 +2084,32 @@ void WorksheetWriter::add_conditional_data_bar(
     std::initializer_list<CellRange> ranges, DataBarRule rule)
 {
     add_conditional_data_bar(std::span<const CellRange>(ranges.begin(), ranges.size()), rule);
+}
+
+void WorksheetWriter::add_conditional_icon_set(CellRange range, IconSetRule rule)
+{
+    add_conditional_icon_set(std::span<const CellRange>(&range, 1), rule);
+}
+
+void WorksheetWriter::add_conditional_icon_set(std::span<const CellRange> ranges, IconSetRule rule)
+{
+    ensure_mutable_worksheet(state_);
+    if (ranges.empty()) {
+        throw FastXlsxError("conditional icon set range list cannot be empty");
+    }
+    for (const CellRange& range : ranges) {
+        (void)detail::range_reference(range);
+    }
+    validate_icon_set_rule(rule);
+    const auto priority = state_->next_conditional_format_priority++;
+    state_->conditional_icon_sets.push_back(
+        {std::vector<CellRange>(ranges.begin(), ranges.end()), rule, priority});
+}
+
+void WorksheetWriter::add_conditional_icon_set(
+    std::initializer_list<CellRange> ranges, IconSetRule rule)
+{
+    add_conditional_icon_set(std::span<const CellRange>(ranges.begin(), ranges.size()), rule);
 }
 
 void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule rule)

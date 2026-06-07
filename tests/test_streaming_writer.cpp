@@ -98,6 +98,15 @@ fastxlsx::DataBarRule make_data_bar(fastxlsx::ArgbColor color)
     return rule;
 }
 
+fastxlsx::IconSetRule make_icon_set()
+{
+    fastxlsx::IconSetRule rule;
+    rule.style = fastxlsx::IconSetStyle::ThreeArrows;
+    rule.value_type = fastxlsx::IconSetValueType::Percent;
+    rule.thresholds = {0.0, 33.0, 67.0};
+    return rule;
+}
+
 void test_streaming_writer_smoke_package()
 {
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-smoke.xlsx";
@@ -1250,6 +1259,14 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
         },
         "failed data bar conditional formatting call should not mutate priority state");
 
+    fastxlsx::IconSetRule invalid_icon_set = make_icon_set();
+    invalid_icon_set.thresholds = {0.0, 67.0, 33.0};
+    check_fastxlsx_error(
+        [&sheet, &invalid_icon_set] {
+            sheet.add_conditional_icon_set({2, 1, 2, 1}, invalid_icon_set);
+        },
+        "failed icon set conditional formatting call should not mutate priority state");
+
     fastxlsx::TwoColorScaleRule percent_rule;
     percent_rule.lower = {
         fastxlsx::ColorScaleValueType::Percent,
@@ -1264,6 +1281,7 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
     sheet.add_conditional_color_scale({2, 1, 2, 1}, percent_rule);
     sheet.add_conditional_data_bar(
         {2, 1, 2, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+    sheet.add_conditional_icon_set({2, 1, 2, 1}, make_icon_set());
 
     workbook.close();
 
@@ -1274,7 +1292,7 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "<dimension ref=\"A1:A2\"/>",
         "conditional formatting ranges should not expand worksheet dimension");
-    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 3,
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 4,
         "failed conditional formatting call should not add a rule");
     check_contains(worksheet_xml, "<cfRule type=\"colorScale\" priority=\"1\">",
         "first successful conditional formatting priority mismatch");
@@ -1282,7 +1300,9 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
         "second successful conditional formatting priority mismatch");
     check_contains(worksheet_xml, "<cfRule type=\"dataBar\" priority=\"3\">",
         "third successful data bar conditional formatting priority mismatch");
-    check(worksheet_xml.find("priority=\"4\"") == std::string::npos,
+    check_contains(worksheet_xml, "<cfRule type=\"iconSet\" priority=\"4\">",
+        "fourth successful icon set conditional formatting priority mismatch");
+    check(worksheet_xml.find("priority=\"5\"") == std::string::npos,
         "failed conditional formatting call should not consume a priority");
     check_contains(worksheet_xml,
         "<cfvo type=\"percent\" val=\"10\"/><cfvo type=\"percent\" val=\"90\"/>"
@@ -1293,6 +1313,11 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
         "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
         "<color rgb=\"FF638EC6\"/></dataBar></cfRule>",
         "valid data bar after failed calls XML mismatch");
+    check_contains(worksheet_xml,
+        "<cfRule type=\"iconSet\" priority=\"4\"><iconSet iconSet=\"3Arrows\">"
+        "<cfvo type=\"percent\" val=\"0\"/><cfvo type=\"percent\" val=\"33\"/>"
+        "<cfvo type=\"percent\" val=\"67\"/></iconSet></cfRule>",
+        "valid icon set after failed calls XML mismatch");
 }
 
 void test_streaming_writer_conditional_formatting_data_bar()
@@ -1521,6 +1546,240 @@ void test_streaming_writer_conditional_formatting_data_bar_priorities()
         "data bar priorities second sheet should not create relationships");
 }
 
+void test_streaming_writer_conditional_formatting_icon_set()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-icon-set.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("IconSet");
+
+    sheet.append_row({fastxlsx::CellView::text("Score")});
+    for (int value = 1; value <= 9; ++value) {
+        sheet.append_row({fastxlsx::CellView::number(static_cast<double>(value))});
+    }
+
+    sheet.add_conditional_icon_set({2, 1, 10, 1}, make_icon_set());
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "conditional formatting icon set xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"),
+        "missing conditional formatting icon set worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "icon set should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"), "icon set should not create styles");
+    check(!entries.contains("xl/metadata.xml"), "icon set should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("styles") == std::string::npos,
+        "icon set should not add style content types");
+    check(content_types.find("conditionalFormatting") == std::string::npos,
+        "icon set should not add conditional formatting content types");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "icon set should not request recalculation");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("styles") == std::string::npos,
+        "icon set should not add styles workbook relationship");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "icon set worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A10\"/>",
+        "icon set worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"iconSet\" priority=\"1\"><iconSet iconSet=\"3Arrows\">"
+        "<cfvo type=\"percent\" val=\"0\"/><cfvo type=\"percent\" val=\"33\"/>"
+        "<cfvo type=\"percent\" val=\"67\"/></iconSet></cfRule></conditionalFormatting></worksheet>",
+        "icon set XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "icon set conditional formatting element count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfRule ") == 1,
+        "icon set conditional formatting rule count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfvo ") == 3, "icon set cfvo count mismatch");
+    check(count_occurrences(worksheet_xml, "<iconSet ") == 1, "icon set element count mismatch");
+}
+
+void test_streaming_writer_conditional_formatting_icon_set_metadata_order()
+{
+    const auto output_path = std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("IconSetObjects");
+
+    sheet.append_row({fastxlsx::CellView::text("Value"), fastxlsx::CellView::text("Link")});
+    sheet.append_row({fastxlsx::CellView::number(5.0), fastxlsx::CellView::text("Docs")});
+    sheet.append_row({fastxlsx::CellView::number(7.0), fastxlsx::CellView::text("More")});
+
+    fastxlsx::IconSetRule rule = make_icon_set();
+    rule.show_value = false;
+    rule.reverse = true;
+
+    sheet.merge_cells({4, 1, 4, 2});
+    sheet.add_conditional_icon_set({2, 1, 10, 1}, rule);
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+    sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
+
+    fastxlsx::TableOptions table;
+    table.name = "IconSetTable";
+    table.column_names = {"Value", "Link"};
+    sheet.add_table({1, 1, 3, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "icon set relationship-backed metadata should still create worksheet relationships");
+    check(entries.contains("xl/tables/table1.xml"), "icon set metadata order test should create table part");
+    check(!entries.contains("xl/styles.xml"),
+        "icon set with other metadata should not create styles");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:B3\"/>",
+        "icon set metadata should not expand worksheet dimension");
+    check_contains(worksheet_xml,
+        "</sheetData><mergeCells count=\"1\"><mergeCell ref=\"A4:B4\"/></mergeCells>"
+        "<conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"iconSet\" priority=\"1\"><iconSet iconSet=\"3Arrows\" showValue=\"0\" reverse=\"1\">"
+        "<cfvo type=\"percent\" val=\"0\"/><cfvo type=\"percent\" val=\"33\"/>"
+        "<cfvo type=\"percent\" val=\"67\"/></iconSet></cfRule></conditionalFormatting>"
+        "<dataValidations count=\"1\"><dataValidation type=\"whole\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>"
+        "</dataValidations><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId2\"/></tableParts></worksheet>",
+        "icon set suffix ordering or relationship ids mismatch");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 2,
+        "icon set should not add worksheet relationship entries");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs" TargetMode="External"/>)",
+        "icon set hyperlink relationship id should remain rId1");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "icon set table relationship id should remain rId2");
+}
+
+void test_streaming_writer_conditional_formatting_icon_set_multi_range_sqref()
+{
+    const auto output_path = std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("IconSetRanges");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::text("B"),
+        fastxlsx::CellView::text("C"),
+        fastxlsx::CellView::text("D"),
+        fastxlsx::CellView::text("E"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(1.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(2.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(3.0),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(4.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(6.0),
+    });
+
+    sheet.add_conditional_icon_set(
+        {{2, 1, 3, 1}, {2, 3, 3, 3}, {2, 5, 3, 5}},
+        make_icon_set());
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "multi-range icon set should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"), "multi-range icon set should not create styles");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:E3\"/>",
+        "multi-range icon set dimension mismatch");
+    check_contains(worksheet_xml,
+        "<conditionalFormatting sqref=\"A2:A3 C2:C3 E2:E3\">"
+        "<cfRule type=\"iconSet\" priority=\"1\"><iconSet iconSet=\"3Arrows\">"
+        "<cfvo type=\"percent\" val=\"0\"/><cfvo type=\"percent\" val=\"33\"/>"
+        "<cfvo type=\"percent\" val=\"67\"/></iconSet></cfRule></conditionalFormatting>",
+        "multi-range icon set sqref XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "multi-range icon set should be one conditionalFormatting element");
+}
+
+void test_streaming_writer_conditional_formatting_icon_set_priorities()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto first = workbook.add_worksheet("First");
+    auto second = workbook.add_worksheet("Second");
+
+    first.append_row({fastxlsx::CellView::text("Value")});
+    first.append_row({fastxlsx::CellView::number(1.0)});
+    first.append_row({fastxlsx::CellView::number(2.0)});
+    first.add_conditional_color_scale(
+        {2, 1, 3, 1},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+            fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B}));
+    first.add_conditional_data_bar(
+        {2, 1, 3, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+    fastxlsx::IconSetRule numeric_rule = make_icon_set();
+    numeric_rule.value_type = fastxlsx::IconSetValueType::Number;
+    numeric_rule.thresholds = {0.0, 5.0, 10.0};
+    first.add_conditional_icon_set({2, 1, 3, 1}, numeric_rule);
+
+    second.append_row({fastxlsx::CellView::text("Value")});
+    second.append_row({fastxlsx::CellView::number(3.0)});
+    second.add_conditional_icon_set({2, 1, 2, 1}, make_icon_set());
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& first_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, R"(<cfRule type="colorScale" priority="1">)",
+        "color scale priority should remain first");
+    check_contains(first_xml, R"(<cfRule type="dataBar" priority="2">)",
+        "data bar priority should remain second");
+    check_contains(first_xml, R"(<cfRule type="iconSet" priority="3">)",
+        "icon set should share conditional formatting priority sequence");
+    check_contains(first_xml,
+        "<cfvo type=\"num\" val=\"0\"/><cfvo type=\"num\" val=\"5\"/><cfvo type=\"num\" val=\"10\"/>",
+        "numeric icon set threshold XML mismatch");
+
+    const auto& second_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_xml, R"(<cfRule type="iconSet" priority="1">)",
+        "icon set priority should reset per worksheet");
+    check(second_xml.find("priority=\"2\"") == std::string::npos,
+        "second worksheet icon set should not inherit first worksheet priority");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "icon set priorities first sheet should not create relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "icon set priorities second sheet should not create relationships");
+}
+
 void test_streaming_writer_invalid_conditional_formatting()
 {
     const auto output_path =
@@ -1538,6 +1797,7 @@ void test_streaming_writer_invalid_conditional_formatting()
         fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
         fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B});
     const auto valid_data_bar = make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6});
+    const auto valid_icon_set = make_icon_set();
     check_fastxlsx_error(
         [&sheet, &valid_rule] { sheet.add_conditional_color_scale({0, 1, 1, 1}, valid_rule); },
         "conditional formatting should reject a zero row");
@@ -1585,6 +1845,20 @@ void test_streaming_writer_invalid_conditional_formatting()
             sheet.add_conditional_data_bar({{1, 1, 1, 1}, {1, 0, 1, 1}}, valid_data_bar);
         },
         "data bar conditional formatting should reject an invalid range inside a multi-range list");
+    check_fastxlsx_error(
+        [&sheet, &valid_icon_set] { sheet.add_conditional_icon_set({0, 1, 1, 1}, valid_icon_set); },
+        "icon set conditional formatting should reject a zero row");
+    check_fastxlsx_error(
+        [&sheet, &valid_icon_set] {
+            const std::span<const fastxlsx::CellRange> no_ranges;
+            sheet.add_conditional_icon_set(no_ranges, valid_icon_set);
+        },
+        "icon set conditional formatting should reject an empty multi-range list");
+    check_fastxlsx_error(
+        [&sheet, &valid_icon_set] {
+            sheet.add_conditional_icon_set({{1, 1, 1, 1}, {1, 0, 1, 1}}, valid_icon_set);
+        },
+        "icon set conditional formatting should reject an invalid range inside a multi-range list");
 
     fastxlsx::TwoColorScaleRule nan_rule = valid_rule;
     nan_rule.lower.type = fastxlsx::ColorScaleValueType::Number;
@@ -1667,6 +1941,54 @@ void test_streaming_writer_invalid_conditional_formatting()
             sheet.add_conditional_data_bar({1, 1, 1, 1}, data_bar_infinity_rule);
         },
         "data bar conditional formatting should reject non-finite upper numeric endpoints");
+
+    fastxlsx::IconSetRule icon_set_nan_rule = valid_icon_set;
+    icon_set_nan_rule.thresholds[1] = std::numeric_limits<double>::quiet_NaN();
+    check_fastxlsx_error(
+        [&sheet, &icon_set_nan_rule] {
+            sheet.add_conditional_icon_set({1, 1, 1, 1}, icon_set_nan_rule);
+        },
+        "icon set conditional formatting should reject non-finite thresholds");
+
+    fastxlsx::IconSetRule icon_set_infinity_rule = valid_icon_set;
+    icon_set_infinity_rule.thresholds[2] = std::numeric_limits<double>::infinity();
+    check_fastxlsx_error(
+        [&sheet, &icon_set_infinity_rule] {
+            sheet.add_conditional_icon_set({1, 1, 1, 1}, icon_set_infinity_rule);
+        },
+        "icon set conditional formatting should reject infinite thresholds");
+
+    fastxlsx::IconSetRule icon_set_descending_rule = valid_icon_set;
+    icon_set_descending_rule.thresholds = {0.0, 67.0, 33.0};
+    check_fastxlsx_error(
+        [&sheet, &icon_set_descending_rule] {
+            sheet.add_conditional_icon_set({1, 1, 1, 1}, icon_set_descending_rule);
+        },
+        "icon set conditional formatting should reject descending thresholds");
+
+    fastxlsx::IconSetRule icon_set_duplicate_rule = valid_icon_set;
+    icon_set_duplicate_rule.thresholds = {0.0, 33.0, 33.0};
+    check_fastxlsx_error(
+        [&sheet, &icon_set_duplicate_rule] {
+            sheet.add_conditional_icon_set({1, 1, 1, 1}, icon_set_duplicate_rule);
+        },
+        "icon set conditional formatting should reject duplicate thresholds");
+
+    fastxlsx::IconSetRule icon_set_invalid_style_rule = valid_icon_set;
+    icon_set_invalid_style_rule.style = static_cast<fastxlsx::IconSetStyle>(255);
+    check_fastxlsx_error(
+        [&sheet, &icon_set_invalid_style_rule] {
+            sheet.add_conditional_icon_set({1, 1, 1, 1}, icon_set_invalid_style_rule);
+        },
+        "icon set conditional formatting should reject unknown icon set styles");
+
+    fastxlsx::IconSetRule icon_set_invalid_type_rule = valid_icon_set;
+    icon_set_invalid_type_rule.value_type = static_cast<fastxlsx::IconSetValueType>(255);
+    check_fastxlsx_error(
+        [&sheet, &icon_set_invalid_type_rule] {
+            sheet.add_conditional_icon_set({1, 1, 1, 1}, icon_set_invalid_type_rule);
+        },
+        "icon set conditional formatting should reject unknown icon set value types");
 
     sheet.append_row({fastxlsx::CellView::number(1.0)});
     workbook.close();
@@ -3609,6 +3931,9 @@ void test_streaming_writer_rejects_mutation_after_close()
         },
         "add_conditional_data_bar should reject mutation after workbook close");
     check_fastxlsx_error(
+        [&sheet] { sheet.add_conditional_icon_set({1, 1, 1, 1}, make_icon_set()); },
+        "add_conditional_icon_set should reject mutation after workbook close");
+    check_fastxlsx_error(
         [&sheet] {
             fastxlsx::DataValidationRule rule;
             rule.type = fastxlsx::DataValidationType::List;
@@ -4130,6 +4455,10 @@ int main()
         test_streaming_writer_conditional_formatting_data_bar_metadata_order();
         test_streaming_writer_conditional_formatting_data_bar_multi_range_sqref();
         test_streaming_writer_conditional_formatting_data_bar_priorities();
+        test_streaming_writer_conditional_formatting_icon_set();
+        test_streaming_writer_conditional_formatting_icon_set_metadata_order();
+        test_streaming_writer_conditional_formatting_icon_set_multi_range_sqref();
+        test_streaming_writer_conditional_formatting_icon_set_priorities();
         test_streaming_writer_invalid_conditional_formatting();
         test_streaming_writer_data_validations();
         test_streaming_writer_data_validation_multi_range_sqref();

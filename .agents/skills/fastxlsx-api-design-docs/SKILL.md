@@ -19,9 +19,11 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 `WorksheetWriter`、`CellView`、`StyleId`、`CellStyle`、`DataValidationRule`、`DataValidationType`、
 `DataValidationOperator`、`DataValidationErrorStyle`、`ArgbColor`、`ColorScaleValueType`、
 `ColorScalePoint`、`TwoColorScaleRule`、`ThreeColorScaleRule`、`DataBarValueType`、
-`DataBarEndpoint`、`DataBarRule`、`ImageEditAs`、`ImageAnchorOffset`、
+`DataBarEndpoint`、`DataBarRule`、`IconSetStyle`、`IconSetValueType`、`IconSetRule`、
+`ImageEditAs`、`ImageAnchorOffset`、
 `ImageOptions`、`WorkbookWriter::add_style()`、`CellView::with_style()`、
-`WorksheetWriter::add_conditional_color_scale()`、`WorksheetWriter::add_conditional_data_bar()` 和
+`WorksheetWriter::add_conditional_color_scale()`、`WorksheetWriter::add_conditional_data_bar()`、
+`WorksheetWriter::add_conditional_icon_set()` 和
 `FastXlsxError`。
 `Workbook::set_document_properties()`
 和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
@@ -32,7 +34,7 @@ worksheet hyperlink API；`WorksheetWriter::add_internal_hyperlink()` 是当前 
 workbook location worksheet hyperlink API；`WorksheetWriter::add_table()` 和 `TableOptions` 是当前
 streaming-only table API。`WorkbookWriter` / `WorksheetWriter` / `CellView`
 是流式写入骨架；data validation、external/internal hyperlink、two-/three-color conditional
-color scale、basic data bar 和 table API 是 worksheet metadata 基础切片，不等同完整 Phase 3 或完整
+color scale、basic data bar、basic 3Arrows icon set 和 table API 是 worksheet metadata 基础切片，不等同完整 Phase 3 或完整
 Phase 5。
 当前 `ImageFormat`、`ImageInfo` 和 `read_image_info()` 是默认 `stb` PNG/JPEG
 图片元数据 API，只读取格式、尺寸和通道。当前 `WorksheetWriter::add_image()`
@@ -55,7 +57,8 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 - 当前 `Worksheet::append_row()` 是 append-only、streaming-oriented public API，
   但 Phase 1 实现会临时 buffer rows；不要把这个 buffer 当成长期大文件架构。
 - 当前 `WorksheetWriter` 骨架覆盖公式、行高、列宽、冻结窗格、自动筛选、
-  合并单元格、data validations、two-/three-color conditional color scales 和 basic data bars 的写入 XML；
+  合并单元格、data validations、two-/three-color conditional color scales、basic data bars
+  和 basic 3Arrows icon sets 的写入 XML；
   这些不代表完整 Phase 3 或
   Phase 5 功能集。
 - `WorksheetWriter::add_conditional_color_scale()` 是 Streaming metadata API：range 列表
@@ -150,9 +153,11 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   space-separated `sqref` for multi-range calls.
 - The API does not create `styles.xml`, `dxfs`, worksheet `.rels`, content type
   entries, workbook relationships, cell text, or `<calcPr>`.
-- Do not document it as formula/cellIs, icon sets, advanced data bars
+- Do not document it as formula/cellIs, advanced/custom icon sets, advanced data bars
   (negative colors, axis, border, gradient, `extLst`), dxf-backed styles,
   existing-file editing, or full conditional formatting.
+- Basic 3Arrows icon sets are a separate current `WorksheetWriter::add_conditional_icon_set()`
+  API surface, not part of the data bar API.
 
 ## API 模式
 
@@ -196,17 +201,21 @@ handle、默认 id `0` 表示 default style、非默认 id 必须来自同一个
 `xl/styles.xml` / workbook relationship / content type override、cell 写 `s="N"`、
 默认 `s="0"` 省略、不创建 worksheet `.rels`，以及当前不支持 font/fill/border/alignment、
 rich text、dxf-backed conditional formatting、existing-file style preservation 或完整
-Excel formatting parity。当前 two-/three-color color scale 和 basic data bar 是 worksheet
+Excel formatting parity。当前 two-/three-color color scale、basic data bar 和 basic
+3Arrows icon set 是 worksheet
 metadata，不代表 styles registry 或 `dxfs` 已支持。
 
 conditional formatting 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、规则/range 拷贝成本、`ArgbColor` 8 位大写 ARGB 序列化、
-`ColorScaleValueType` / `DataBarValueType` token、finite endpoint 边界、priority 规则、multi-range `sqref`
+`ColorScaleValueType` / `DataBarValueType` / `IconSetValueType` token、finite endpoint/threshold
+边界、priority 规则、multi-range `sqref`
 行为、是否新增 relationships/content types/styles/calc metadata、无公式求值、无冲突
 检测、无 existing-file editing 和无完整 Excel UI。当前
 `WorksheetWriter::add_conditional_color_scale()` 只覆盖 two-/three-color color scale；
-`WorksheetWriter::add_conditional_data_bar()` 只覆盖 basic data bar；不要写成
-formula/cellIs、advanced data bars、icon sets、dxf-backed styles 或完整 conditional formatting。
+`WorksheetWriter::add_conditional_data_bar()` 只覆盖 basic data bar；
+`WorksheetWriter::add_conditional_icon_set()` 只覆盖 basic built-in `3Arrows` icon set；
+不要写成 formula/cellIs、advanced data bars、advanced/custom icon sets、dxf-backed styles
+或完整 conditional formatting。
 
 data validations 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、规则数量/multi-area `sqref` 区域数量/公式文本/prompt-error 文本

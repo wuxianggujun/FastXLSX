@@ -30,9 +30,11 @@ obligations.
 - Current public worksheet metadata API also includes `ArgbColor`,
   `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
   `ThreeColorScaleRule`, `DataBarValueType`, `DataBarEndpoint`, `DataBarRule`,
+  `IconSetStyle`, `IconSetValueType`, `IconSetRule`,
   `WorksheetWriter::add_conditional_color_scale()`, and
-  `WorksheetWriter::add_conditional_data_bar()` for narrow two-/three-color
-  conditional color scale and basic data bar slices.
+  `WorksheetWriter::add_conditional_data_bar()`, and
+  `WorksheetWriter::add_conditional_icon_set()` for narrow two-/three-color
+  conditional color scale, basic data bar, and basic 3Arrows icon set slices.
 - A Phase 2 streaming writer skeleton exists in
   `include/fastxlsx/streaming_writer.hpp` and `src/streaming_writer.cpp`:
   `WorkbookWriter`, `WorksheetWriter`, and `CellView`.
@@ -79,7 +81,7 @@ obligations.
   override, and a workbook styles relationship when styles are registered. This
   is not font/fill/border/alignment support, rich text, dxf-backed conditional
   formatting, date cell type, or existing-file style preservation. The current
-  two-/three-color color scale and basic data bar slices are worksheet metadata,
+  two-/three-color color scale, basic data bar, and basic 3Arrows icon set slices are worksheet metadata,
   not styles registry or `dxfs` support.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
@@ -1310,18 +1312,23 @@ Allowed early slices:
   are not implemented by the first slice.
 - Conditional formatting has basic streaming-only, new-workbook two-/three-color
   color scale and data bar slices through `WorksheetWriter::add_conditional_color_scale()`
-  and `WorksheetWriter::add_conditional_data_bar()`. They write worksheet-local
-  `<conditionalFormatting>` with `<cfRule type="colorScale">` or
-  `<cfRule type="dataBar">`. Color scales write two or three `<cfvo>` endpoints
-  and matching inline ARGB colors; data bars write two `<cfvo>` endpoints and one
-  inline ARGB bar color. `ColorScaleValueType` and `DataBarValueType` `Minimum` /
+  `WorksheetWriter::add_conditional_data_bar()`, and
+  `WorksheetWriter::add_conditional_icon_set()`. They write worksheet-local
+  `<conditionalFormatting>` with `<cfRule type="colorScale">`,
+  `<cfRule type="dataBar">`, or `<cfRule type="iconSet">`. Color scales write
+  two or three `<cfvo>` endpoints and matching inline ARGB colors; data bars
+  write two `<cfvo>` endpoints and one inline ARGB bar color; icon sets currently
+  write built-in `3Arrows` with three finite strictly ascending `Number` /
+  `Percent` / `Percentile` thresholds plus optional `showValue` / `reverse`
+  attributes. `ColorScaleValueType` and `DataBarValueType` `Minimum` /
   `Maximum` endpoints write no `val`; `Number` / `Percent` / `Percentile` require
   finite numeric values. Priorities are shared by call order per worksheet, and
   multi-range input is serialized as one space-separated `sqref`.
 - Complete conditional formatting remains planned: formula rules, cellIs,
-  icon sets, top/bottom, duplicate/unique, advanced data bar negative color/axis/
-  border/gradient/`extLst`, dxf-backed styles, conflict handling, existing-file
-  editing, and full Excel UI behavior are not implemented by these slices.
+  advanced/custom icon sets, top/bottom, duplicate/unique, advanced data bar
+  negative color/axis/border/gradient/`extLst`, dxf-backed styles, conflict
+  handling, existing-file editing, and full Excel UI behavior are not implemented
+  by these slices.
 - Image work must use `stb` for image decoding, dimensions, and pixel access;
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.
@@ -1411,6 +1418,11 @@ Validation:
   `openpyxl`, and optional `XlsxWriter` reference checks, and
   `tools/verify_conditional_formatting_data_bars_excel.ps1` for Excel COM
   read-only visual checks of the basic and multi-range data bar workbooks.
+- Current conditional icon set local QA uses
+  `tools/verify_conditional_formatting_icon_sets.py` for package XML,
+  `openpyxl`, and optional `XlsxWriter` reference checks, and
+  `tools/verify_conditional_formatting_icon_sets_excel.ps1` for Excel COM
+  read-only visual checks of the basic 3Arrows and multi-range icon set workbooks.
 - On any structural mismatch, compare against Excel/openpyxl/XlsxWriter
   reference workbooks by unzipping packages and inspecting XML semantics.
 

@@ -63,6 +63,7 @@ struct WorksheetImage {
     CellRange anchor;
     ImageInfo info;
     std::filesystem::path media_path;
+    ImageOptions options;
 };
 
 std::string format_number(double value)
@@ -1099,9 +1100,20 @@ std::string build_drawing_xml(
         xml += build_drawing_marker_xml("to", image.anchor.last_row + 1, image.anchor.last_column + 1);
         xml += "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"";
         xml += std::to_string(package_image_index + 1);
-        xml += "\" name=\"Picture ";
-        xml += std::to_string(package_image_index + 1);
-        xml += R"("/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/>)";
+        xml += "\" name=\"";
+        if (image.options.name.empty()) {
+            xml += "Picture ";
+            xml += std::to_string(package_image_index + 1);
+        } else {
+            xml += detail::escape_xml_attribute(image.options.name);
+        }
+        xml += "\"";
+        if (!image.options.description.empty()) {
+            xml += " descr=\"";
+            xml += detail::escape_xml_attribute(image.options.description);
+            xml += "\"";
+        }
+        xml += R"(/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/>)";
         xml += "</xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed=\"";
         xml += drawing_relationship_id(index);
         xml += R"("/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>)";
@@ -1458,11 +1470,17 @@ void WorksheetWriter::add_table(CellRange range, TableOptions options)
 
 void WorksheetWriter::add_image(const std::filesystem::path& path, CellRange anchor)
 {
+    add_image(path, anchor, {});
+}
+
+void WorksheetWriter::add_image(
+    const std::filesystem::path& path, CellRange anchor, ImageOptions options)
+{
     ensure_mutable_worksheet(state_);
     (void)detail::range_reference(anchor);
 
     const ImageInfo info = read_image_info(path);
-    state_->images.push_back({anchor, info, copy_image_to_temp_file(path)});
+    state_->images.push_back({anchor, info, copy_image_to_temp_file(path), std::move(options)});
 }
 
 WorkbookWriter::WorkbookWriter() = default;

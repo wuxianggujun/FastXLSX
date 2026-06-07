@@ -44,6 +44,8 @@ PNG/JPEG `read_image_info()` 元数据 API；P17b 已有
 `WorksheetWriter::add_image()` 的 streaming-only new-workbook PNG/JPEG 基础插入切片。
 这只能说明当前窄范围 OpenXML media/drawing packaging 已通过结构测试和本机 Excel
 验证，不能代表 existing-workbook 图片保真、drawing 编辑、裁剪、旋转、压缩或格式转换。
+当前 `ImageOptions` name/description 只是 drawing XML `xdr:cNvPr` metadata，不新增
+依赖，也不改变 `stb` 只负责图片解码/尺寸/像素读取的边界。
 
 开发依赖：
 

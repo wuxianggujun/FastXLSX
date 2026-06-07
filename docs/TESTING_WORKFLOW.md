@@ -105,6 +105,9 @@ number / row height，`WorksheetWriter::set_column_width()` 拒绝非有限 widt
 - 图片功能必须确认图片显示、位置和尺寸符合预期；当前
   `WorksheetWriter::add_image()` 基础切片的推荐样例是
   `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。
+- 图片 metadata 功能还必须确认 drawing XML 的 `xdr:cNvPr name` / `descr` 与
+  Excel 可见 shape metadata 对应；当前推荐样例是
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`。
 - 保存后再打开仍然正常。
 
 Excel 可视化验证是本地验收步骤，不应作为默认 CI 的强依赖。CI 可以做结构检查
@@ -140,6 +143,21 @@ Excel COM 验证应确认 workbook 可打开、`Images` 和 `SecondImage` sheet 
 shape、`Plain` sheet 没有 shape，并记录 Excel 报告的 `TopLeftCell` /
 `BottomRightCell`。当前本机验证结果为 `Images` 上 `C1:F5`，`SecondImage` 上
 `A1:B2`。
+
+当前 streaming image metadata 样例由 `fastxlsx.streaming` 在
+`windows-nmake-release-image` preset 下生成，推荐路径是
+`build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`。本机
+Excel COM 验证可以运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
+  -Path build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx
+```
+
+该脚本只读打开 workbook，核对 `ImageMetadata` sheet 的 3 个 shapes、自定义
+`NamedOnly` 名称、默认 `Picture 3` 名称，以及首图 `AlternativeText`。Excel COM
+当前会把 drawing XML 的 `descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
+`xl/drawings/drawing*.xml` 为准。
 
 当前 streaming Phase 3 metadata 样例由 `fastxlsx.streaming` 在默认 preset 下生成，
 推荐路径是
@@ -265,6 +283,21 @@ Python helper 检查 FastXLSX package XML、prompt/error attributes、无 `.rels
 `ValidationPrompt!A2:D2` 的 `Validation` 属性；Excel COM 会把 custom validation
 公式 `LEN(D2)>0` 返回为 `=LEN(D2)>0`，所以结构语义仍以拆包后的 worksheet XML 为准。
 
+当前 image metadata smoke 样例也有固定本地 QA 脚本：
+
+```powershell
+py tools\verify_image_metadata.py `
+  --input build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
+  -Path build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx
+```
+
+Python helper 检查 FastXLSX package XML、drawing `xdr:cNvPr name` / `descr`、XML
+attribute escape、relationships、content types 和 media entries，使用 `openpyxl`
+打开确认 3 张图片，并用 `XlsxWriter` 创建参考 workbook。Excel helper 只读打开 workbook
+并核对 shape 数量、custom/default shape name 和 `AlternativeText`。这些仍是本地
+QA artifact，不要提交，也不是默认 CTest 或运行时依赖。
+
 ## 拆包和 XML 对比
 
 XLSX 本质是 ZIP package。对比时先复制为 `.zip` 再解压：
@@ -309,7 +342,9 @@ xl/worksheets/_rels/sheet*.xml.rels
 - 重点比较 OpenXML 语义：part 是否存在、关系是否正确、content type 是否正确、
   sheet/cell/value/type 是否正确。
 - 图片对比应重点看 media part 是否存在、relationship target 是否有效、worksheet
-  `<drawing>` 引用是否匹配、anchor 语义是否等价，而不是要求 XML 字节完全一致。
+  `<drawing>` 引用是否匹配、anchor 语义是否等价；如果涉及图片 name/description，
+  还要核对 `xdr:cNvPr` 的 `name` / `descr` attributes、XML attribute escape、
+  空 description 省略和默认 `Picture N` 名称，而不是要求 XML 字节完全一致。
 - namespace、属性顺序、默认值、压缩方式可能不同，不应直接当成错误。
 - 如果 Excel 打开后自动修复，应保存 Excel 修复后的文件，再拆包比较修复前后差异。
 

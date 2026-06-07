@@ -1542,6 +1542,9 @@ void test_streaming_writer_images()
         R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
         "drawing root namespace mismatch");
     check_contains(first_drawing_xml,
+        R"(<xdr:cNvPr id="1" name="Picture 1"/>)",
+        "default drawing picture name mismatch");
+    check_contains(first_drawing_xml,
         "<xdr:from><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>",
         "drawing from marker mismatch");
     check_contains(first_drawing_xml,
@@ -1573,6 +1576,10 @@ void test_streaming_writer_images()
     check_contains(second_drawing_rels,
         R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/>)",
         "second drawing image relationship mismatch");
+    const auto& second_drawing_xml = entries.at("xl/drawings/drawing2.xml");
+    check_contains(second_drawing_xml,
+        R"(<xdr:cNvPr id="2" name="Picture 2"/>)",
+        "default drawing picture name should follow workbook image index");
 #else
     auto workbook = fastxlsx::WorkbookWriter::create(
         std::filesystem::current_path() / "fastxlsx-streaming-images-disabled.xlsx");
@@ -1580,6 +1587,93 @@ void test_streaming_writer_images()
     check_fastxlsx_error(
         [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 1}); },
         "streaming add_image should require opt-in stb support");
+#endif
+}
+
+void test_streaming_writer_image_metadata()
+{
+    const auto image_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-image-metadata-source.png";
+    write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
+
+#ifdef FASTXLSX_TEST_HAS_STB
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-image-metadata.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ImageMetadata");
+
+    fastxlsx::ImageOptions escaped_options;
+    escaped_options.name = R"(Logo "A&B<1>')";
+    escaped_options.description = R"(Alt "quoted" & <tag> 'owner')";
+    sheet.add_image(image_path, {1, 1, 2, 2}, escaped_options);
+
+    fastxlsx::ImageOptions named_only;
+    named_only.name = "NamedOnly";
+    sheet.add_image(image_path, {3, 1, 4, 2}, named_only);
+
+    sheet.add_image(image_path, {5, 1, 6, 2});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.png"), "missing first image metadata media part");
+    check(entries.contains("xl/media/image2.png"), "missing second image metadata media part");
+    check(entries.contains("xl/media/image3.png"), "missing third image metadata media part");
+    check(entries.contains("xl/drawings/drawing1.xml"), "missing image metadata drawing part");
+    check(!entries.contains("xl/drawings/drawing2.xml"),
+        "image metadata images on one sheet should share one drawing part");
+
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check(count_occurrences(drawing_xml, "<xdr:twoCellAnchor") == 3,
+        "image metadata drawing anchor count mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="1" name="Logo &quot;A&amp;B&lt;1&gt;&apos;" descr="Alt &quot;quoted&quot; &amp; &lt;tag&gt; &apos;owner&apos;"/>)",
+        "image metadata name/description attribute escape mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="2" name="NamedOnly"/>)",
+        "image metadata named-only picture mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="3" name="Picture 3"/>)",
+        "image metadata default picture name mismatch");
+    check(drawing_xml.find(R"(name="NamedOnly" descr=)") == std::string::npos,
+        "empty image metadata description should be omitted");
+    check(drawing_xml.find(R"(name="Picture 3" descr=)") == std::string::npos,
+        "default image metadata description should be omitted");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "</sheetData><drawing r:id=\"rId1\"/></worksheet>",
+        "image metadata worksheet drawing relationship mismatch");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 1,
+        "image metadata should only create one worksheet drawing relationship");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>)",
+        "image metadata worksheet relationship target mismatch");
+
+    const auto& drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check(count_occurrences(drawing_rels, "<Relationship ") == 3,
+        "image metadata drawing relationship count mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "image metadata first drawing relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.png"/>)",
+        "image metadata second drawing relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image3.png"/>)",
+        "image metadata third drawing relationship mismatch");
+#else
+    auto workbook = fastxlsx::WorkbookWriter::create(
+        std::filesystem::current_path() / "fastxlsx-streaming-image-metadata-disabled.xlsx");
+    auto sheet = workbook.add_worksheet("ImageMetadata");
+    fastxlsx::ImageOptions options;
+    options.name = "NoStb";
+    options.description = "Still metadata only";
+    check_fastxlsx_error(
+        [&sheet, &image_path, &options] { sheet.add_image(image_path, {1, 1, 1, 1}, options); },
+        "streaming add_image metadata should require opt-in stb support");
 #endif
 }
 
@@ -2492,6 +2586,7 @@ int main()
         test_streaming_writer_table_style_flags();
         test_streaming_writer_table_column_attribute_escaping();
         test_streaming_writer_images();
+        test_streaming_writer_image_metadata();
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();
         test_streaming_writer_image_anchor_markers();

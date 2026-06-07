@@ -129,6 +129,11 @@ drawing relationships、worksheet relationships、content types 或 anchors。
 PNG/JPEG 基础切片：它用 `read_image_info()` 验证元数据，把原始图片字节复制到临时
 file-backed media entry，并在 `close()` 时生成 media part、drawing XML、drawing
 `.rels`、worksheet `.rels`、worksheet `<drawing>` 和 content type entries。
+当前 `ImageOptions` 是同一 streaming image API 的窄 metadata options：非空
+`name` / `description` 字符串会复制进 writer state，并分别写到 drawing XML
+`xdr:cNvPr` 的 `name` / `descr` attributes；空 `name` 保留生成的 `Picture N`，
+空 `description` 省略。它只改变 drawing non-visual picture properties，不修改
+图片二进制、EXIF、media filename、anchor、relationships、content types 或 cell text。
 `read_image_info()` 注释应限制为 PNG/JPEG metadata helper：读取格式、尺寸和
 通道数；不要暗示它会生成 media part、drawing XML、relationships、content types、
 anchors，或验证 Excel package 兼容性。

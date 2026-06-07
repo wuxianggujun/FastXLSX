@@ -189,6 +189,26 @@ struct TableOptions {
     bool show_column_stripes = false;
 };
 
+/// Optional metadata for an inserted worksheet image.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. Non-empty strings
+/// are copied into WorksheetWriter state and serialized only as drawing
+/// non-visual picture properties. They do not change image bytes, anchor
+/// geometry, relationships, content types, or worksheet row/cell streaming.
+struct ImageOptions {
+    /// Optional drawing object name written as `xdr:cNvPr name`.
+    ///
+    /// Empty keeps the generated `Picture N` name. The caller is responsible
+    /// for choosing names that are meaningful and unique enough for consumers.
+    std::string name;
+
+    /// Optional drawing object description written as `xdr:cNvPr descr`.
+    ///
+    /// Empty omits the attribute. This is metadata only and does not create
+    /// alt-text UI guarantees across spreadsheet applications.
+    std::string description;
+};
+
 /// Optional hyperlink display metadata.
 ///
 /// API mode: Streaming worksheet metadata for new workbooks. Empty strings are
@@ -426,11 +446,20 @@ public:
     /// drawing `.rels`, worksheet `.rels`, a worksheet `<drawing>` reference,
     /// and drawing/content type entries. It does not crop, rotate, recompress,
     /// convert formats, mutate existing drawings, or edit existing XLSX files.
+    /// Optional ImageOptions strings are copied into writer state and written
+    /// only as drawing non-visual metadata; empty values preserve the generated
+    /// `Picture N` name and omit the description.
     ///
     /// @throws FastXlsxError if the anchor range is invalid, the workbook is
     /// closed, stb support is disabled, the file cannot be read, or the image
     /// format is outside the current PNG/JPEG slice.
     void add_image(const std::filesystem::path& path, CellRange anchor);
+
+    /// Records a PNG/JPEG image with optional drawing non-visual metadata.
+    ///
+    /// Same behavior as add_image(path, anchor), plus ImageOptions serialization
+    /// to drawing `xdr:cNvPr` attributes.
+    void add_image(const std::filesystem::path& path, CellRange anchor, ImageOptions options);
 
 private:
     friend class WorkbookWriter;

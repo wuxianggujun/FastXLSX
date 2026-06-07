@@ -507,6 +507,9 @@ Order:
    stores original image bytes as file-backed media entries, writes one drawing
    part per worksheet with images, and does not mutate existing drawings or make
    passthrough claims.
+   `ImageOptions` adds only drawing non-visual metadata: non-empty `name` and
+   `description` write `xdr:cNvPr name` / `descr`, empty `name` keeps generated
+   `Picture N`, and empty `description` is omitted.
 3. Existing-workbook image read/edit/preservation must wait until package
    reader/writer and preservation fixtures prove unknown and unmodified
    media/drawing/chart/VBA parts survive edits.
@@ -547,6 +550,13 @@ Validation:
   slice also covers maximum legal anchor marker serialization: Excel-boundary
   `CellRange` coordinates are written as 0-based drawing marker values such as
   `<xdr:col>16383</xdr:col>` and `<xdr:row>1048575</xdr:row>`.
+- Image metadata structure coverage checks drawing `xdr:cNvPr name` / `descr`,
+  XML attribute escape, empty description omission, default `Picture N` names,
+  and no extra drawing part / worksheet relationship / content type / media
+  side effects. Local Python QA for
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`
+  uses `tools/verify_image_metadata.py` to parse package XML, open with
+  `openpyxl`, and create a `XlsxWriter` reference workbook.
 - The current mixed-object relationship regression covers multiple external
   hyperlinks, one drawing, and multiple tables under the same worksheet
   relationship owner; it verifies worksheet-local `rId` ordering, owner reset
@@ -561,6 +571,11 @@ Validation:
   Excel opened the workbook, saw one shape on `Images`, one shape on
   `SecondImage`, zero shapes on `Plain`, and reported anchors `C1:F5` and
   `A1:B2`.
+- Local Excel COM image metadata verification passed for
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`;
+  Excel opened the workbook, saw 3 shapes on `ImageMetadata`, exposed custom
+  `NamedOnly`, default `Picture 3`, and mapped the first drawing `descr` to
+  `Shape.AlternativeText`.
 - Package relationship and content type checks remain required for every object type.
 - Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.
@@ -1159,15 +1174,22 @@ Allowed early slices:
      Streaming/Patch/In-memory mode,
      memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,
      and why the API does not move worksheet data into DOM or a cell matrix.
+     Current `ImageOptions` metadata belongs here as a narrow drawing XML
+     option surface: it copies name/description strings and writes only
+     `xdr:cNvPr name` / `descr`, not EXIF/PNG/JPEG metadata, media filenames,
+     cell text, or existing drawing state.
   3. New-workbook insertion slice: current basic slice is
      `WorksheetWriter::add_image(path, anchor)` for PNG/JPEG only, one two-cell
      anchor strategy, generated media and drawing parts, worksheet `.rels`,
      drawing `.rels`, content type entries, and worksheet `<drawing>`
      references.
   4. Visual and reference validation: current basic slice has structure tests
-     and local Excel COM validation; future image variants still need local Excel
-     visual verification when Excel is available; structure problems require an
-     Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
+     and local Excel COM validation. Current image metadata validation also has
+     `tools/verify_image_metadata.py` for drawing XML / openpyxl / XlsxWriter
+     checks and `tools/verify_image_metadata_excel.ps1` for Excel COM shape
+     metadata checks; future image variants still need local Excel visual
+     verification when Excel is available. Structure problems require an Excel /
+     `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
   5. Existing-workbook image read/edit/preservation: start only after package
      reader/writer and P13 preservation fixtures prove untouched media,
      drawings, charts, VBA, and unknown parts survive unrelated edits.
@@ -1187,6 +1209,9 @@ Forbidden until separately designed and verified:
   drawing XML, manage relationship ids, allocate media part names, or validate
   Excel package compatibility; FastXLSX does those only in the current narrow
   `WorksheetWriter::add_image()` new-workbook slice.
+- Do not treat `ImageOptions::name` / `description` as complete image metadata,
+  full alt text/accessibility UI, EXIF/PNG/JPEG metadata, media filename
+  semantics, drawing mutation, or existing-workbook image editing.
 - Do not add Excel, openpyxl, or XlsxWriter as runtime dependencies. They are
   reference and QA tools only.
 - Do not make an In-memory workbook model the default just to simplify complex

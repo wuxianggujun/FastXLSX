@@ -17,7 +17,7 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
 包括 `Workbook`、`Worksheet`、`Cell`、`DocumentProperties`、`WorkbookWriter`、
 `WorksheetWriter`、`CellView`、`DataValidationRule`、`DataValidationType`、
-`DataValidationOperator`、`DataValidationErrorStyle` 和 `FastXlsxError`。
+`DataValidationOperator`、`DataValidationErrorStyle`、`ImageOptions` 和 `FastXlsxError`。
 `Workbook::set_document_properties()`
 和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
 docProps metadata API；它们只写 `docProps/core.xml` 和 `docProps/app.xml`。
@@ -32,6 +32,8 @@ metadata 基础切片，不等同完整 Phase 3 或完整 Phase 5。
 图片元数据 API，只读取格式、尺寸和通道。当前 `WorksheetWriter::add_image()`
 是 opt-in `stb` streaming-only new-workbook PNG/JPEG 图片插入基础 API，会写
 OpenXML media/drawing parts，但不代表 existing-workbook 图片保真或完整 drawing 编辑。
+当前 `ImageOptions` 只给该插入 API 增加 drawing XML non-visual metadata：非空
+`name` / `description` 写 `xdr:cNvPr name` / `descr`，空值走默认名或省略。
 
 ## 核心原则
 
@@ -94,6 +96,11 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   worksheet `<drawing>` 和 content type entries。它不解码完整像素、不进入 row/cell
   热路径、不持有完整 worksheet matrix，也不支持裁剪、旋转、压缩、格式转换、
   existing drawing mutation 或 existing-file editing。
+- `ImageOptions` 是 Streaming image metadata options：非空 `name` / `description`
+  被复制进 writer state，并作为 drawing XML `xdr:cNvPr` 的 `name` / `descr`
+  attributes 输出；空 `name` 使用生成的 `Picture N`，空 `description` 省略。它不新增
+  media parts、relationships、content types、styles 或 cell text，不写 EXIF/PNG/JPEG
+  metadata，也不代表完整 alt text/accessibility UI。
 - 当前 `Workbook::save()` 使用 internal package writer boundary；默认无依赖构建走
   stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
   backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
@@ -163,6 +170,9 @@ worksheet `.rels`、worksheet `<drawing>` 和 content types；以及是否不支
 当前 `WorksheetWriter::add_image()` 注释应保持说明：Streaming / new-workbook-only、
 原始图片字节 file-backed、two-cell anchor、package side effects、无完整像素解码、
 无 existing-file editing、无 drawing mutation，且不牺牲 worksheet streaming 热路径。
+涉及 `ImageOptions` 时还要写清：name/description 字符串复制成本、XML attribute escape、
+空值行为、只写 `xdr:cNvPr name` / `descr`、不修改图片二进制/EXIF/media filename/cell
+text，以及不承诺完整 Excel UI 或跨办公软件 accessibility 行为。
 
 涉及热路径的 API，还要说明是否会触发 DOM、跨行缓存、shared strings 状态增长、
 压缩等级影响或输出文件大小变化。

@@ -743,6 +743,10 @@ Stages:
    - Public comments must state memory behavior for original image bytes,
      decoded pixels, anchor metadata, drawing/media part state, and package
      finalization.
+   - Current `ImageOptions` metadata is limited to drawing XML non-visual
+     picture properties: non-empty `name` writes `xdr:cNvPr name`, non-empty
+     `description` writes `descr`, empty `name` keeps generated `Picture N`,
+     and empty `description` is omitted.
    - Any convenience API must explain why it does not force large worksheets
      into DOM, a full cell matrix, or the row/cell XML hot path.
 3. P17.2 - New-workbook-only insertion slice.
@@ -754,6 +758,10 @@ Stages:
      `CellRange`; it writes generated media parts, one drawing part per
      worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
      `<drawing>` references, and drawing/content type entries.
+   - The current metadata increment copies image `name` / `description` strings
+     into writer state and writes them only to drawing `xdr:cNvPr` attributes;
+     it does not modify image bytes, media filenames, anchors, relationships,
+     content types, or worksheet cell text.
    - It does not crop, rotate, recompress, convert formats, mutate existing
      drawings, edit existing XLSX files, or prove existing-workbook image
      preservation.
@@ -775,6 +783,9 @@ Stages:
    - Current anchor boundary coverage checks maximum legal Excel row/column
      marker serialization, including 0-based drawing marker values such as
      `<xdr:col>16383</xdr:col>` and `<xdr:row>1048575</xdr:row>`.
+   - Current image metadata coverage checks `xdr:cNvPr name` / `descr`, XML
+     attribute escaping, empty description omission, default `Picture N` names,
+     and no extra relationship/content type/media side effects.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.
@@ -783,6 +794,11 @@ Stages:
      and confirmed 3 sheets, one shape on `Images`, one shape on `SecondImage`,
      zero shapes on `Plain`, first image at `C1:F5`, and second image at
      `A1:B2`.
+   - Current local QA for
+     `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`
+     uses `tools/verify_image_metadata.py` for XML/openpyxl/XlsxWriter checks
+     and `tools/verify_image_metadata_excel.ps1` for Excel COM shape name and
+     `AlternativeText` checks.
    - When XML structure or Excel repair behavior is unclear, generate an
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.
@@ -812,6 +828,8 @@ Accept when:
 - Public API docs for any image surface describe mode, ordering, memory cost,
   decoded-pixel lifetime, package side effects, and unsupported operations.
 - Package structure tests cover media, drawing XML, rels, and content types.
+- Image metadata tests cover `xdr:cNvPr name` / `descr` semantics without
+  changing media bytes, relationships, anchors, or content types.
 - Excel visual verification confirms images display without repair and with the
   expected position and size.
 - Reference XML comparison is recorded when structure compatibility is
@@ -822,6 +840,8 @@ Do not claim:
 - Picture support from `stb` dependency availability alone.
 - OpenXML image support beyond the narrow `WorksheetWriter::add_image()`
   streaming new-workbook PNG/JPEG slice.
+- Complete image metadata, EXIF/PNG/JPEG metadata, accessibility UI parity, or
+  existing drawing mutation from `ImageOptions` name/description alone.
 - Existing workbook image passthrough or preservation before P13 fixtures prove
   unmodified media/drawing/chart/VBA parts survive edits.
 

@@ -32,12 +32,13 @@ struct ImageInfo {
 
 /// Reads PNG/JPEG image dimensions and channel count from a file.
 ///
-/// API mode: small media metadata helper for future image insertion. When
-/// FastXLSX is built with `FASTXLSX_ENABLE_STB=ON`, this uses `stb_image`
-/// header probing through file callbacks and does not decode a full pixel
-/// buffer. It has no OpenXML side effects, does not allocate media parts, does
-/// not write drawing XML, and does not touch worksheet streaming rows. Without
-/// the opt-in stb dependency, the function is still declared but throws
+/// API mode: small media metadata helper used by the current streaming image
+/// insertion slice for validation. When FastXLSX is built with
+/// `FASTXLSX_ENABLE_STB=ON`, this uses `stb_image` header probing through file
+/// callbacks and does not decode a full pixel buffer or retain image bytes. It
+/// has no OpenXML side effects, does not allocate media parts, does not write
+/// drawing XML or relationships, and does not touch worksheet streaming rows.
+/// Without the opt-in stb dependency, the function is still declared but throws
 /// FastXlsxError.
 ///
 /// @throws FastXlsxError if stb support is disabled, the file cannot be opened,

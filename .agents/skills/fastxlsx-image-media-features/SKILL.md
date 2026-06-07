@@ -24,6 +24,8 @@ description: "规划或实现 FastXLSX 图片读取/插入、stb 图片解码、
 图片插入基础切片，会写 media part、drawing XML、drawing `.rels`、worksheet
 `.rels`、worksheet `<drawing>` 和 content type entries。仍没有已有 XLSX 图片编辑、
 已有 drawing mutation 或保真复制闭环。
+`read_image_info()` 的 public 注释只能声明 PNG/JPEG 格式、尺寸和通道读取；不要写成
+OpenXML image package、anchor、relationships、content types 或 Excel 兼容性验证能力。
 
 ## 当前事实
 
@@ -116,6 +118,9 @@ description: "规划或实现 FastXLSX 图片读取/插入、stb 图片解码、
   `image/jpeg` default、drawing EMU 尺寸和 drawing `.rels` target；混合 PNG/JPEG
   覆盖同一 worksheet 共享 drawing part、多 anchor、全局 media 编号和 owner-local
   drawing relationship id。
+  最大合法 anchor marker 结构测试还应覆盖 Excel 边界单元格到 drawing marker 的
+  0-based 序列化，例如 `<xdr:col>16383</xdr:col>` 和
+  `<xdr:row>1048575</xdr:row>`；这只是结构边界测试，不是大文件性能证明。
 - CMake 接入阶段：VS2026/NMake configure/build/test 通过；CI 行为需要在 workflow
   真正运行 image preset 后再记录。
 - 结构测试：检查 `xl/media/*`、`xl/drawings/drawing*.xml`、

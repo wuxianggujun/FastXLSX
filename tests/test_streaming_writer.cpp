@@ -1081,6 +1081,39 @@ void test_streaming_writer_mixed_image_formats()
 #endif
 }
 
+void test_streaming_writer_image_anchor_markers()
+{
+#ifdef FASTXLSX_TEST_HAS_STB
+    const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-anchor-image-source.png";
+    write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
+
+    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-image-anchors.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Anchors");
+    sheet.add_image(image_path, {1, 1, 1, 1});
+    sheet.add_image(image_path, {1048576, 16384, 1048576, 16384});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check(count_occurrences(drawing_xml, "<xdr:twoCellAnchor") == 2,
+        "image anchor marker test should write two anchors");
+    check_contains(drawing_xml,
+        "<xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>",
+        "single-cell image from marker mismatch");
+    check_contains(drawing_xml,
+        "<xdr:to><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>",
+        "single-cell image to marker mismatch");
+    check_contains(drawing_xml,
+        "<xdr:from><xdr:col>16383</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1048575</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>",
+        "max-cell image from marker mismatch");
+    check_contains(drawing_xml,
+        "<xdr:to><xdr:col>16384</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1048576</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>",
+        "max-cell image to marker mismatch");
+#endif
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -1700,6 +1733,7 @@ int main()
         test_streaming_writer_images();
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();
+        test_streaming_writer_image_anchor_markers();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();

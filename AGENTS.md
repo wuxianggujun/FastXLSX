@@ -340,6 +340,10 @@ cmake --help
 - 当前混合 PNG/JPEG 结构测试还覆盖同一个 worksheet 中两张不同格式图片共享一个
   drawing part、两个 `<xdr:twoCellAnchor>`、`image1.png` / `image2.jpg` 全局 media
   编号，以及 drawing `.rels` 中 owner-local `rId1` / `rId2` target。
+- 当前 opt-in image preset 还覆盖最大合法 anchor marker 结构测试，确认
+  `CellRange` 最大合法行列会序列化为 drawing XML 的 0-based marker，例如
+  `<xdr:col>16383</xdr:col>` 和 `<xdr:row>1048575</xdr:row>`；这只是结构边界测试，
+  不是百万行/最大列大文件性能证明。
 - 当前 sharedStrings benchmark 小样例位于
   `build/windows-nmake-release-benchmark/benchmarks/sharedstrings-v3-*.xlsx`。本机已用
   Excel COM 只读打开 `sharedstrings-v3-repeated-inline.xlsx`、

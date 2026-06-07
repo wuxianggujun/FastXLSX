@@ -120,6 +120,9 @@ drawing relationships、worksheet relationships、content types 或 anchors。
 PNG/JPEG 基础切片：它用 `read_image_info()` 验证元数据，把原始图片字节复制到临时
 file-backed media entry，并在 `close()` 时生成 media part、drawing XML、drawing
 `.rels`、worksheet `.rels`、worksheet `<drawing>` 和 content type entries。
+`read_image_info()` 注释应限制为 PNG/JPEG metadata helper：读取格式、尺寸和
+通道数；不要暗示它会生成 media part、drawing XML、relationships、content types、
+anchors，或验证 Excel package 兼容性。
 图片插入 API 还要说明是否复制原始图片字节、是否会解码像素、decoded pixel buffer
 生命周期、内存成本是否与图片字节数或 `width * height * channels` 相关、是否生成
 `xl/media/*`、`xl/drawings/drawing*.xml`、drawing `.rels`、worksheet `.rels`、

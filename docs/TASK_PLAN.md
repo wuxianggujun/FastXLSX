@@ -461,7 +461,10 @@ Validation:
   type defaults, JPEG drawing EMU sizing, JPEG media relationship targets, and
   drawing content type overrides. Mixed PNG/JPEG coverage checks one worksheet
   sharing a single drawing part with multiple anchors, global media numbering,
-  and drawing-owner-local image relationship ids.
+  and drawing-owner-local image relationship ids. The current image structure
+  slice also covers maximum legal anchor marker serialization: Excel-boundary
+  `CellRange` coordinates are written as 0-based drawing marker values such as
+  `<xdr:col>16383</xdr:col>` and `<xdr:row>1048575</xdr:row>`.
 - Local Excel COM visual verification passed for
   `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`;
   Excel opened the workbook, saw one shape on `Images`, one shape on
@@ -1043,7 +1046,10 @@ Allowed early slices:
   1. Dependency discovery and metadata helper: verify `planned-image` / `stb`
      resolution, include behavior, license, local CMake behavior, and CI cost.
      Current P17a exposes `ImageInfo`, `ImageFormat`, and `read_image_info()`
-     for PNG/JPEG metadata only.
+     for PNG/JPEG metadata only; its public comment must stay clear that the
+     helper reports dimensions, format, and channels only, and does not create
+     OpenXML image package parts, relationships, anchors, or compatibility
+     guarantees.
   2. API design and documentation for insertion/editing: define
      Streaming/Patch/In-memory mode,
      memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,

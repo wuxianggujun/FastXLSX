@@ -662,6 +662,9 @@ Stages:
    - Current code exposes PNG/JPEG `read_image_info()` for file and memory
      input, backed by `stbi_info` when enabled and a clear FastXlsxError when
      disabled.
+   - The `read_image_info()` documentation must describe metadata reading only;
+     it must not imply media part creation, drawing XML, relationships, content
+     types, anchors, or existing-workbook preservation.
    - This stage alone still does not create media parts, drawing XML,
      relationships, content types, anchors, or existing-workbook preservation.
 2. P17.1 - API shape and documentation.
@@ -695,6 +698,9 @@ Stages:
      content type overrides. Mixed PNG/JPEG coverage also checks one worksheet
      sharing a single drawing part with multiple anchors, global media numbering,
      and drawing-owner-local image relationship ids.
+   - Current anchor boundary coverage checks maximum legal Excel row/column
+     marker serialization, including 0-based drawing marker values such as
+     `<xdr:col>16383</xdr:col>` and `<xdr:row>1048575</xdr:row>`.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.

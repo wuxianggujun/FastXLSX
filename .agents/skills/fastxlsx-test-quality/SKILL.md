@@ -204,12 +204,17 @@ duplicate entry 被拒绝，以及 worksheet XML 内容没有因 chunk 边界被
 drawing intrinsic EMU 尺寸和 drawing `.rels` target。
 混合 PNG/JPEG 测试还应覆盖同一个 worksheet 内多图片共享一个 drawing part、
 多个 `<xdr:twoCellAnchor>`、全局 media 编号和 drawing-owner-local relationship id。
+最大合法 anchor marker 测试应验证 Excel 最大合法行列边界序列化为 drawing XML 的
+0-based marker，例如 `<xdr:col>16383</xdr:col>` 和
+`<xdr:row>1048575</xdr:row>`。
 当前推荐样例是
 `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。
 
 Anchor 测试要覆盖起始/结束单元格、offset、零尺寸、负尺寸和越界 anchor；不要为了
 anchor 计算引入完整 worksheet DOM。图片读取应使用 `stb` 处理解码、尺寸、通道和像素，
 但结构测试必须验证 FastXLSX 自己生成的 OpenXML media/drawing package 语义。
+这些 anchor 边界测试是结构测试，不是大 sheet 导出性能证明，也不要求真实写满
+worksheet 数据。
 兼容性测试要用本机 Excel 打开 `.xlsx` 样例，确认无修复弹窗并检查图片显示位置/尺寸；
 当前本机 Excel COM 验证结果应记录为 `Images` / `SecondImage` 各 1 个 shape、
 `Plain` 为 0 个 shape，锚点 `C1:F5` 和 `A1:B2`。

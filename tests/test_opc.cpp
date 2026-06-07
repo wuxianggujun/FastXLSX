@@ -684,6 +684,48 @@ void test_minimal_workbook_manifest_with_shared_strings()
     check(shared_strings_part->generated, "shared strings part should be marked generated");
 }
 
+void test_minimal_workbook_manifest_with_styles()
+{
+    using fastxlsx::detail::PartWriteMode;
+
+    const auto manifest = fastxlsx::detail::make_minimal_workbook_manifest(1, true, true, true);
+    check(manifest.size() == 6, "styles manifest part count mismatch");
+
+    const auto* styles_type = manifest.content_types().content_type_for(
+        fastxlsx::detail::PartName("/xl/styles.xml"));
+    check(styles_type != nullptr, "styles content type should be registered");
+    check(*styles_type
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
+        "styles content type mismatch");
+
+    const auto* workbook_relationships =
+        manifest.relationships_for(fastxlsx::detail::PartName("/xl/workbook.xml"));
+    check(workbook_relationships != nullptr, "styles workbook relationships should exist");
+    check(workbook_relationships->size() == 3,
+        "styles and shared strings relationship count mismatch");
+
+    const auto* shared_strings = workbook_relationships->find_by_id("rId2");
+    check(shared_strings != nullptr, "shared strings relationship id should remain before styles");
+    check(shared_strings->type
+            == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings",
+        "shared strings relationship type should remain stable");
+
+    const auto* styles = workbook_relationships->find_by_id("rId3");
+    check(styles != nullptr, "styles relationship id mismatch");
+    check(styles->type
+            == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles",
+        "styles relationship type mismatch");
+    check(styles->target == "styles.xml", "styles relationship target mismatch");
+
+    const auto* styles_part = manifest.find_part(fastxlsx::detail::PartName("/xl/styles.xml"));
+    check(styles_part != nullptr, "styles part should exist");
+    check(styles_part->write_mode == PartWriteMode::GenerateSmallXml,
+        "styles part should be generated small XML");
+    check(!styles_part->preserve_original, "styles part should not preserve original bytes");
+    check(styles_part->dirty, "styles part should be dirty");
+    check(styles_part->generated, "styles part should be marked generated");
+}
+
 void test_minimal_workbook_manifest_without_document_properties()
 {
     const auto manifest = fastxlsx::detail::make_minimal_workbook_manifest(1, false, false);
@@ -728,6 +770,7 @@ int main()
         test_package_part_edit_state();
         test_minimal_workbook_manifest();
         test_minimal_workbook_manifest_with_shared_strings();
+        test_minimal_workbook_manifest_with_styles();
         test_minimal_workbook_manifest_without_document_properties();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

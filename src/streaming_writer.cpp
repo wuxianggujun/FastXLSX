@@ -67,6 +67,11 @@ struct WorksheetImage {
     ImageOptions options;
 };
 
+struct RegisteredStyle {
+    CellStyle style;
+    std::uint32_t number_format_id = 0;
+};
+
 std::string format_number(double value)
 {
     if (!std::isfinite(value)) {
@@ -535,6 +540,7 @@ struct WorkbookWriterState {
     WorkbookWriterOptions options;
     std::vector<std::unique_ptr<WorksheetWriterState>> worksheets;
     SharedStringTable shared_strings;
+    std::vector<RegisteredStyle> styles;
     bool closed = false;
 };
 
@@ -558,6 +564,11 @@ namespace {
 bool uses_shared_strings(const detail::WorkbookWriterState& workbook) noexcept
 {
     return workbook.options.string_strategy == StringStrategy::SharedString;
+}
+
+bool writes_styles(const detail::WorkbookWriterState& workbook) noexcept
+{
+    return !workbook.styles.empty();
 }
 
 bool row_has_formula(std::span<const CellView> cells) noexcept
@@ -622,6 +633,17 @@ std::size_t shared_string_index(detail::WorkbookWriterState& workbook, std::stri
     return index;
 }
 
+void append_style_attribute(std::string& xml, StyleId style_id)
+{
+    if (style_id.value() == 0) {
+        return;
+    }
+
+    xml += " s=\"";
+    xml += std::to_string(style_id.value());
+    xml += "\"";
+}
+
 void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const CellView& cell,
     detail::WorksheetWriterState& worksheet)
 {
@@ -630,19 +652,23 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
     case CellView::Type::Number:
         xml += "<c r=\"";
         xml += reference;
-        xml += "\"><v>";
+        xml += "\"";
+        append_style_attribute(xml, cell.style_id());
+        xml += "><v>";
         xml += format_number(cell.number_value());
         xml += "</v></c>";
         break;
     case CellView::Type::String:
         xml += "<c r=\"";
         xml += reference;
+        xml += "\"";
+        append_style_attribute(xml, cell.style_id());
         if (worksheet.workbook != nullptr && uses_shared_strings(*worksheet.workbook)) {
-            xml += "\" t=\"s\"><v>";
+            xml += " t=\"s\"><v>";
             xml += std::to_string(shared_string_index(*worksheet.workbook, cell.text_value()));
             xml += "</v></c>";
         } else {
-            xml += "\" t=\"inlineStr\"><is>";
+            xml += " t=\"inlineStr\"><is>";
             append_text_element(xml, cell.text_value());
             xml += "</is></c>";
         }
@@ -650,14 +676,18 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
     case CellView::Type::Boolean:
         xml += "<c r=\"";
         xml += reference;
-        xml += "\" t=\"b\"><v>";
+        xml += "\"";
+        append_style_attribute(xml, cell.style_id());
+        xml += " t=\"b\"><v>";
         xml += cell.boolean_value() ? "1" : "0";
         xml += "</v></c>";
         break;
     case CellView::Type::Formula:
         xml += "<c r=\"";
         xml += reference;
-        xml += "\"><f>";
+        xml += "\"";
+        append_style_attribute(xml, cell.style_id());
+        xml += "><f>";
         xml += detail::escape_xml_text(cell.text_value());
         xml += "</f></c>";
         break;
@@ -741,6 +771,41 @@ void write_shared_strings_file(
     }
 
     write_stream(stream, "</sst>", "failed to write temporary sharedStrings XML");
+}
+
+std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
+{
+    std::string xml;
+    xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
+    xml += R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)";
+    xml += R"(<numFmts count=")";
+    xml += std::to_string(styles.size());
+    xml += R"(">)";
+    for (const RegisteredStyle& style : styles) {
+        xml += R"(<numFmt numFmtId=")";
+        xml += std::to_string(style.number_format_id);
+        xml += R"(" formatCode=")";
+        xml += detail::escape_xml_attribute(style.style.number_format);
+        xml += R"("/>)";
+    }
+    xml += "</numFmts>";
+    xml += R"(<fonts count="1"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>)";
+    xml += R"(<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>)";
+    xml += R"(<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>)";
+    xml += R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)";
+    xml += R"(<cellXfs count=")";
+    xml += std::to_string(styles.size() + 1);
+    xml += R"("><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)";
+    for (const RegisteredStyle& style : styles) {
+        xml += R"(<xf numFmtId=")";
+        xml += std::to_string(style.number_format_id);
+        xml += R"(" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)";
+    }
+    xml += "</cellXfs>";
+    xml += R"(<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>)";
+    xml += R"(<dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/>)";
+    xml += "</styleSheet>";
+    return xml;
 }
 
 std::string build_sheet_views(const detail::WorksheetWriterState& worksheet)
@@ -1176,6 +1241,13 @@ void validate_image_options(const ImageOptions& options)
     validate_image_offset(options.to_offset);
 }
 
+void validate_cell_style(const CellStyle& style)
+{
+    if (style.number_format.empty()) {
+        throw FastXlsxError("cell style must set a custom number format");
+    }
+}
+
 std::string build_drawing_marker_xml(
     std::string_view element_name, std::uint32_t row, std::uint32_t column,
     ImageAnchorOffset offset)
@@ -1396,6 +1468,17 @@ private:
 
 } // namespace
 
+StyleId::StyleId(std::uint32_t value, std::uintptr_t owner_token) noexcept
+    : value_(value)
+    , owner_token_(owner_token)
+{
+}
+
+std::uint32_t StyleId::value() const noexcept
+{
+    return value_;
+}
+
 CellView CellView::number(double value) noexcept
 {
     CellView cell;
@@ -1448,6 +1531,18 @@ bool CellView::boolean_value() const noexcept
     return boolean_value_;
 }
 
+CellView CellView::with_style(StyleId style_id) const noexcept
+{
+    CellView cell = *this;
+    cell.style_id_ = style_id;
+    return cell;
+}
+
+StyleId CellView::style_id() const noexcept
+{
+    return style_id_;
+}
+
 WorksheetWriter::WorksheetWriter() noexcept = default;
 
 WorksheetWriter::WorksheetWriter(detail::WorksheetWriterState* state) noexcept
@@ -1469,6 +1564,20 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
         throw FastXlsxError("row height must be positive and finite");
     }
     validate_numeric_cells(cells);
+    if (state_->workbook != nullptr) {
+        const std::uintptr_t owner_token =
+            reinterpret_cast<std::uintptr_t>(state_->workbook);
+        for (const CellView& cell : cells) {
+            const StyleId style_id = cell.style_id();
+            if (style_id.value_ == 0) {
+                continue;
+            }
+            if (style_id.owner_token_ != owner_token
+                || style_id.value_ > state_->workbook->styles.size()) {
+                throw FastXlsxError("cell style id is not registered in this workbook");
+            }
+        }
+    }
 
     ++state_->row_count;
     state_->max_column = std::max(state_->max_column, static_cast<std::uint32_t>(cells.size()));
@@ -1646,6 +1755,44 @@ WorkbookWriter WorkbookWriter::create(std::filesystem::path path, WorkbookWriter
     return WorkbookWriter(std::move(state));
 }
 
+StyleId WorkbookWriter::add_style(CellStyle style)
+{
+    if (!state_) {
+        throw FastXlsxError("workbook writer is not initialized");
+    }
+    if (state_->closed) {
+        throw FastXlsxError("cannot add styles after close");
+    }
+    validate_cell_style(style);
+
+    constexpr std::uint32_t first_custom_number_format_id = 164;
+    const auto existing = std::find_if(state_->styles.begin(), state_->styles.end(),
+        [&style](const RegisteredStyle& registered_style) {
+            return registered_style.style.number_format == style.number_format;
+        });
+    if (existing != state_->styles.end()) {
+        return StyleId(
+            static_cast<std::uint32_t>(std::distance(state_->styles.begin(), existing) + 1),
+            reinterpret_cast<std::uintptr_t>(state_.get()));
+    }
+
+    if (state_->styles.size()
+        >= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+        throw FastXlsxError("too many cell styles");
+    }
+    if (state_->styles.size()
+        > static_cast<std::size_t>(
+            std::numeric_limits<std::uint32_t>::max() - first_custom_number_format_id)) {
+        throw FastXlsxError("too many custom number formats");
+    }
+
+    const std::uint32_t number_format_id =
+        first_custom_number_format_id + static_cast<std::uint32_t>(state_->styles.size());
+    state_->styles.push_back({std::move(style), number_format_id});
+    return StyleId(static_cast<std::uint32_t>(state_->styles.size()),
+        reinterpret_cast<std::uintptr_t>(state_.get()));
+}
+
 WorksheetWriter WorkbookWriter::add_worksheet(std::string name)
 {
     if (!state_) {
@@ -1683,8 +1830,10 @@ void WorkbookWriter::close()
     std::vector<detail::PackageEntry> entries;
     const bool write_shared_strings =
         uses_shared_strings(*state_) && state_->shared_strings.count > 0;
+    const bool write_styles = writes_styles(*state_);
     detail::PackageManifest manifest =
-        detail::make_minimal_workbook_manifest(state_->worksheets.size(), write_shared_strings);
+        detail::make_minimal_workbook_manifest(
+            state_->worksheets.size(), write_shared_strings, true, write_styles);
     const std::size_t table_count = count_tables(state_->worksheets);
     const std::size_t image_count = count_images(state_->worksheets);
     const std::size_t drawing_count = count_drawings(state_->worksheets);
@@ -1719,7 +1868,8 @@ void WorkbookWriter::close()
         std::count_if(state_->worksheets.begin(), state_->worksheets.end(),
             [](const auto& worksheet) { return worksheet_has_relationships(*worksheet); });
     entries.reserve(6 + state_->worksheets.size() + worksheet_relationship_count
-        + table_count + drawing_count * 2 + image_count + (write_shared_strings ? 1 : 0));
+        + table_count + drawing_count * 2 + image_count + (write_shared_strings ? 1 : 0)
+        + (write_styles ? 1 : 0));
     entries.push_back({"[Content_Types].xml", detail::serialize_content_types(manifest.content_types())});
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
     entries.push_back(
@@ -1739,6 +1889,9 @@ void WorkbookWriter::close()
         entries.emplace_back("xl/sharedStrings.xml",
             std::vector<detail::PackageEntryChunk> {
                 detail::PackageEntryChunk::file(shared_strings_file->path())});
+    }
+    if (write_styles) {
+        entries.emplace_back("xl/styles.xml", build_styles_xml(state_->styles));
     }
 
     const std::vector<std::size_t> first_table_indexes = table_start_indexes(state_->worksheets);

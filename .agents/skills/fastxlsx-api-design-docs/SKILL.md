@@ -16,9 +16,9 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
 包括 `Workbook`、`Worksheet`、`Cell`、`DocumentProperties`、`WorkbookWriter`、
-`WorksheetWriter`、`CellView`、`DataValidationRule`、`DataValidationType`、
+`WorksheetWriter`、`CellView`、`StyleId`、`CellStyle`、`DataValidationRule`、`DataValidationType`、
 `DataValidationOperator`、`DataValidationErrorStyle`、`ImageEditAs`、`ImageAnchorOffset`、
-`ImageOptions` 和 `FastXlsxError`。
+`ImageOptions`、`WorkbookWriter::add_style()`、`CellView::with_style()` 和 `FastXlsxError`。
 `Workbook::set_document_properties()`
 和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
 docProps metadata API；它们只写 `docProps/core.xml` 和 `docProps/app.xml`。
@@ -153,9 +153,19 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 路径当前在 `Workbook::save()` 序列化 worksheet XML 时报错。in-memory 和 streaming
 `RowOptions::height`、以及 `WorksheetWriter::set_column_width()` 都要写清正数/有限值要求。
 当前 `Cell` / `CellView` 都没有专用 date cell 类型；日期/时间单元格只能由调用方按
-Excel serial number 写入 numeric cell，样式/number format 仍不是当前能力。
+Excel serial number 写入 numeric cell。P9a 已有 streaming-only 自定义 number format
+styles，但 number format 只负责显示格式，不编码 date cell type、不计算日期序列值。
 不要把 `DataValidationType::Date` 误写成 date cell encoding 已实现。
 不要设计或描述把 `NaN/Inf` 转成字符串、空单元格或 OpenXML 数字文本的行为。
+
+styles API 还要写清：Streaming / new-workbook-only、`StyleId` 是 workbook-local
+handle、默认 id `0` 表示 default style、非默认 id 必须来自同一个
+`WorkbookWriter::add_style()`、foreign id 应在 `append_row()` 推进 row state 前拒绝、
+`CellStyle::number_format` 当前不能为空、重复 format 只按字符串精确匹配去重、生成
+`xl/styles.xml` / workbook relationship / content type override、cell 写 `s="N"`、
+默认 `s="0"` 省略、不创建 worksheet `.rels`，以及当前不支持 font/fill/border/alignment、
+rich text、conditional formatting、existing-file style preservation 或完整 Excel
+formatting parity。
 
 data validations 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、规则数量/multi-area `sqref` 区域数量/公式文本/prompt-error 文本

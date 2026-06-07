@@ -1,0 +1,4 @@
+interface:
+  display_name: "FastXLSX 样式注册表"
+  short_description: "处理 number format styles、StyleId 和 xl/styles.xml"
+  default_prompt: "使用 $fastxlsx-style-registry 处理 FastXLSX number format styles、StyleId、CellStyle、xl/styles.xml 或样式验证。"

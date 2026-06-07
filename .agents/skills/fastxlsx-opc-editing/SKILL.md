@@ -34,6 +34,14 @@ editing，也不证明 package preservation。
 new-workbook feature wiring，不是 existing-file table editing、table preservation
 或完整 object support。
 
+当前新建 workbook streaming 路径已有 P9a number-format styles 输出：
+`WorkbookWriter::add_style()` 注册非默认 style 后，minimal workbook manifest 会包含
+generated small XML part `/xl/styles.xml`、styles content type override，以及从
+`/xl/workbook.xml` 指向 `styles.xml` 的 workbook relationship。styles relationship
+不属于 worksheet owner，不创建 worksheet `.rels`。这只是 new-workbook number-format
+style wiring，不是 existing-file style reading、style id migration、unknown style
+extension preservation 或完整 formatting support。
+
 本轮 OPC edit plan 只能写为基础或计划：当前有 copy-original、
 generate-small-XML、stream-rewrite、local-DOM-rewrite 的 write-mode metadata，
 并且有新建 workbook 输出使用的内部 `src/package_writer.*` boundary；但没有

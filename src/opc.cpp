@@ -178,6 +178,8 @@ constexpr std::string_view content_type_worksheet =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
 constexpr std::string_view content_type_shared_strings =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
+constexpr std::string_view content_type_styles =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml";
 constexpr std::string_view content_type_core_properties =
     "application/vnd.openxmlformats-package.core-properties+xml";
 constexpr std::string_view content_type_extended_properties =
@@ -192,6 +194,8 @@ constexpr std::string_view relationship_type_worksheet =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
 constexpr std::string_view relationship_type_shared_strings =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
+constexpr std::string_view relationship_type_styles =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
 } // namespace
 
@@ -724,7 +728,8 @@ std::size_t PackageManifest::size() const noexcept
 }
 
 PackageManifest make_minimal_workbook_manifest(
-    std::size_t worksheet_count, bool include_shared_strings, bool include_document_properties)
+    std::size_t worksheet_count, bool include_shared_strings, bool include_document_properties,
+    bool include_styles)
 {
     PackageManifest manifest;
     manifest.content_types().add_default("rels", std::string(content_type_relationships));
@@ -776,6 +781,17 @@ PackageManifest make_minimal_workbook_manifest(
                 "rId" + std::to_string(worksheet_count + 1),
                 std::string(relationship_type_shared_strings),
                 "sharedStrings.xml",
+            });
+    }
+
+    if (include_styles) {
+        manifest.add_part(PartName("/xl/styles.xml"), std::string(content_type_styles))
+            .mark_generated();
+        manifest.add_relationship(workbook_part,
+            Relationship {
+                "rId" + std::to_string(worksheet_count + 1 + (include_shared_strings ? 1 : 0)),
+                std::string(relationship_type_styles),
+                "styles.xml",
             });
     }
 

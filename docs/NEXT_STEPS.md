@@ -27,9 +27,13 @@ that exist in code, CMake, tests, docs, or local verification.
   - `WorkbookWriter`
   - `WorksheetWriter`
   - `CellView`
+  - `StyleId`
+  - `CellStyle`
   - `DataValidationRule`
   - `DataValidationType`
   - `DataValidationOperator`
+  - `WorkbookWriter::add_style()`
+  - `CellView::with_style()`
   - `FastXlsxError`
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
@@ -48,6 +52,12 @@ that exist in code, CMake, tests, docs, or local verification.
     `WorkbookWriterOptions::document_properties`. Treat this as core/app
     metadata for new workbooks, not as `docProps/custom.xml`, existing-file
     editing, or a complete document-properties API.
+  - Streaming-only number-format styles are visible through `StyleId`,
+    `CellStyle`, `WorkbookWriter::add_style()`, `CellView::with_style()`,
+    generated `xl/styles.xml`, workbook styles relationship, and focused
+    structure tests. Treat this as the P9a custom number format foundation, not
+    as font/fill/border/alignment, date cell type, conditional formatting,
+    rich text, or existing-file style preservation.
   - Internal `src/package_writer.*` boundary exists for new-workbook package
     output. Default builds delegate to the stored/no-compression
     `src/zip_store_writer.*` bootstrap backend; opt-in minizip builds use
@@ -72,6 +82,8 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-internal-hyperlinks.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-styles-number-formats.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-styles-shared-strings.xlsx`
   Manual `build-nmake` output may exist locally, but treat it as potentially
   stale unless it was regenerated after the current source change.
 
@@ -120,6 +132,19 @@ feature completion.
      backend, and preservation tests before any complete edit support is
      claimed.
 
+4. P9 styles number formats - 基础.
+   - Current files show workbook-local `StyleId`, `CellStyle`,
+     `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
+     `xl/styles.xml`, workbook styles relationship, and focused CTest coverage.
+   - The first slice supports custom number formats only. Duplicate format
+     strings reuse the same style id; default cells omit `s="0"`.
+   - Current local QA uses `tools/verify_styles_number_formats.py` for
+     package XML / `openpyxl` / optional `XlsxWriter` checks and
+     `tools/verify_styles_excel.ps1` for Excel COM read-only visible checks.
+   - Before expanding support wording, add separate tasks and tests for
+     fonts/fills/borders/alignment, date serial helper policy, conditional
+     formatting, rich text, and existing-file style preservation.
+
 ## Repository State
 
 - Local Git repository initialized on branch `main`.
@@ -165,9 +190,14 @@ commit or short series with its own tests and docs update.
    - Measure row-order write path before adding broad convenience APIs.
    - Keep benchmark work out of default CTest.
 
-6. Phase 3 style and metadata design.
-   - Design style registry before broad `styles.xml` output.
-   - Decide formula cached-value and calc behavior boundaries.
+6. Phase 3 styles and metadata hardening.
+   - Current P9a number-format styles are 基础 for streaming new workbooks:
+     workbook-local style ids, generated `xl/styles.xml`, workbook relationship,
+     and cell `s="N"` references.
+   - Continue with fonts/fills/borders/alignment only as separate registry
+     slices with structure tests and Excel visual verification.
+   - Decide formula cached-value and calc behavior boundaries separately from
+     styles.
    - Keep configurable document properties limited to the current core/app
      docProps API until custom properties or existing-file editing are separate
      tasks.
@@ -512,19 +542,46 @@ Do not claim:
 
 ### P9 - Style Registry Design and First Styles
 
-Start after P8 and after the streaming metadata order is clear.
+Status: 基础 for streaming-only custom number format styles.
+
+Current foundation:
+- `StyleId` is a workbook-local handle; default `StyleId{}` is style `0`.
+- `CellStyle` currently stores only `number_format`.
+- `WorkbookWriter::add_style(CellStyle)` copies style metadata into workbook
+  state, rejects empty styles, and de-duplicates repeated number format strings.
+- `CellView::with_style(StyleId)` carries the style id into append-row cell XML.
+- `WorksheetWriter::append_row()` validates non-default style ids before
+  advancing row count, dimensions, sharedStrings state, or formula recalculation
+  metadata.
+- `WorkbookWriter::close()` writes `xl/styles.xml`, a styles content type
+  override, and a workbook relationship only when non-default styles are
+  registered.
 
 Do:
-- Design style ids and registry ownership before broad `styles.xml` output.
-- Implement a narrow first style slice only through that registry.
-- Document whether each style API is Streaming, Patch, or In-memory.
+- Keep style ids workbook-local and opaque. Expose `StyleId::value()` only for
+  diagnostics and structure tests.
+- Keep `xl/styles.xml` as a small workbook-level part. Do not create worksheet
+  `.rels` for styles.
+- Keep style validation before row-state mutation.
+- Add future font/fill/border/alignment slices through the same registry, not
+  through ad hoc cell XML fragments.
+- Document every style API as Streaming / new-workbook-only until existing-file
+  style preservation exists.
 
 Accept when:
-- Tests cover `xl/styles.xml`, style ids, and worksheet style references.
-- Excel visual verification covers representative style output.
+- CTest covers `xl/styles.xml`, style ids, worksheet `s="N"` references,
+  custom `numFmtId`, XML attribute escape, sharedStrings + styles relationship
+  ordering, default `s="0"` omission, and invalid foreign `StyleId` state
+  hygiene.
+- Local QA runs:
+  `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
+  optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM
+  read-only NumberFormat checks.
 
 Do not claim:
-- Full Excel formatting parity from a narrow first slice.
+- Font, fill, border, alignment, rich text, conditional formatting, date cell
+  type, existing-file style preservation, or full Excel formatting parity from
+  the number-format slice.
 
 ### P10 - Configurable Document Properties API
 
@@ -1030,17 +1087,22 @@ Status: 基础.
 Current foundation:
 - Write skeletons exist for formula cells, row height, column width, frozen
   panes, auto filters, and merged cells.
+- P9a number-format style registry exists for streaming new workbooks:
+  workbook-local `StyleId`, `CellStyle::number_format`,
+  `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
+  `xl/styles.xml`, and workbook styles relationship.
 - Full Phase 3 remains 计划.
 
 Next tasks:
-- Add a style registry rather than ad hoc style XML fragments.
-- Add number formats and basic font/fill/border/alignment support only after
-  the registry shape is clear.
+- Harden number-format style docs and reference QA when the sample shape changes.
+- Add fonts/fills/borders/alignment only as separate registry-backed slices.
 - Add calc mode and cached formula behavior decisions before claiming formula
   compatibility beyond write-only formulas.
 
 Validation:
-- Test `xl/styles.xml`, style IDs, and worksheet style references.
+- Current style validation includes `xl/styles.xml`, style IDs, worksheet style
+  references, custom number format escaping, sharedStrings coexistence, and
+  Excel COM / `openpyxl` checks through the fixed local helpers.
 - Use Excel visual verification for style samples.
 - Use reference `.xlsx` files and XML comparison when Excel repairs output.
 

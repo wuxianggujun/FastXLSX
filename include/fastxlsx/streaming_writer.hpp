@@ -47,6 +47,48 @@ enum class StringStrategy {
     SharedString,
 };
 
+/// Workbook-owned cell style identifier.
+///
+/// API mode: Streaming. The default-constructed id is the workbook default
+/// style. Non-default ids are returned by WorkbookWriter::add_style() and are
+/// valid only for the owning WorkbookWriter. A CellView stores only this small
+/// handle; append_row() validates that non-default ids exist before mutating
+/// worksheet row state.
+class StyleId {
+public:
+    /// Returns the default workbook style id.
+    StyleId() noexcept = default;
+
+    /// Returns the numeric OpenXML cellXfs index used in generated worksheets.
+    ///
+    /// The value is exposed for diagnostics and structure tests. Non-zero
+    /// values should still be treated as workbook-local handles, not stable
+    /// ids that can be copied across workbooks.
+    [[nodiscard]] std::uint32_t value() const noexcept;
+
+private:
+    friend class WorkbookWriter;
+    friend class WorksheetWriter;
+
+    explicit StyleId(std::uint32_t value, std::uintptr_t owner_token) noexcept;
+
+    std::uint32_t value_ = 0;
+    std::uintptr_t owner_token_ = 0;
+};
+
+/// Narrow streaming cell style registered at workbook scope.
+///
+/// API mode: Streaming style metadata for new workbooks. The first style slice
+/// supports custom number formats only. Styles are copied into workbook state,
+/// serialized to `xl/styles.xml` during WorkbookWriter::close(), and referenced
+/// by per-cell `s` attributes. This does not create worksheet relationships, a
+/// worksheet DOM, a full cell matrix, or existing-file edits.
+struct CellStyle {
+    /// Custom Excel number format code. Empty strings are rejected by the
+    /// current first slice because no other style properties are supported yet.
+    std::string number_format;
+};
+
 /// Options for WorkbookWriter.
 ///
 /// API mode: Streaming. Options are captured by WorkbookWriter::create() and are
@@ -364,6 +406,13 @@ public:
     /// calculation-chain metadata in the current implementation.
     static CellView formula(std::string_view value) noexcept;
 
+    /// Returns a copy of this view with a workbook-owned style id.
+    ///
+    /// Style id `0` clears the style back to the workbook default. Non-zero ids
+    /// must come from WorkbookWriter::add_style() on the same workbook; the
+    /// writer validates this during append_row() before row state is advanced.
+    [[nodiscard]] CellView with_style(StyleId style_id) const noexcept;
+
     /// Returns the value kind consumed by WorksheetWriter::append_row().
     [[nodiscard]] Type type() const noexcept;
 
@@ -379,11 +428,15 @@ public:
     /// Returns the boolean payload when type() is Type::Boolean.
     [[nodiscard]] bool boolean_value() const noexcept;
 
+    /// Returns the workbook-owned style id carried by this cell view.
+    [[nodiscard]] StyleId style_id() const noexcept;
+
 private:
     Type type_;
     double number_value_ = 0.0;
     std::string_view text_value_;
     bool boolean_value_ = false;
+    StyleId style_id_;
 };
 
 /// Append-only worksheet writer for large-data paths.
@@ -632,6 +685,20 @@ public:
     /// writer is move-only so ownership of temporary worksheet state is
     /// explicit.
     static WorkbookWriter create(std::filesystem::path path, WorkbookWriterOptions options = {});
+
+    /// Registers a workbook-owned cell style and returns its style id.
+    ///
+    /// API mode: Streaming style metadata for new workbooks. The style is
+    /// copied into workbook state and written to `xl/styles.xml` only when the
+    /// workbook is closed. The first slice supports custom number formats; font,
+    /// fill, border, alignment, rich text, conditional formatting, and
+    /// existing-file style preservation remain outside this API. Registering a
+    /// style does not touch worksheet row XML until a CellView carries the
+    /// returned id through with_style().
+    ///
+    /// @throws FastXlsxError if the writer is uninitialized or closed, or the
+    /// style contains no property supported by the current narrow slice.
+    StyleId add_style(CellStyle style);
 
     /// Adds a worksheet and returns its streaming handle.
     ///

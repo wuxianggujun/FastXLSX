@@ -25,7 +25,8 @@ obligations.
 - `docs/API_DESIGN_AND_DOCUMENTATION.md` requires public API documentation and
   forbids API convenience from sacrificing the streaming/performance path.
 - Current public API includes `Workbook`, `Worksheet`, `Cell`, `WorkbookWriter`,
-  `WorksheetWriter`, `CellView`, and `FastXlsxError`.
+  `WorksheetWriter`, `CellView`, `StyleId`, `CellStyle`,
+  `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
 - A Phase 2 streaming writer skeleton exists in
   `include/fastxlsx/streaming_writer.hpp` and `src/streaming_writer.cpp`:
   `WorkbookWriter`, `WorksheetWriter`, and `CellView`.
@@ -65,6 +66,13 @@ obligations.
   `xl/sharedStrings.xml`, sharedStrings content type, or workbook relationship;
   the worksheet does not write `t="s"` or `inlineStr`, and formulas still request
   workbook recalculation.
+- Streaming-only number-format styles now have a P9a foundation:
+  `WorkbookWriter::add_style(CellStyle)` registers workbook-local custom number
+  formats, `CellView::with_style(StyleId)` writes cell `s="N"` references, and
+  `WorkbookWriter::close()` emits `xl/styles.xml`, a styles content type
+  override, and a workbook styles relationship when styles are registered. This
+  is not font/fill/border/alignment support, rich text, conditional formatting,
+  date cell type, or existing-file style preservation.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
   `strings` scenario, `50000 x 10 x 1 = 500000` cells, repeated/unique string
@@ -322,8 +330,12 @@ Tasks:
 - Keep strengthening tests and Excel visual checks for formula text, row height,
   column width, frozen panes, auto filters, and merged cells as the metadata
   surface expands.
-- Design a style registry before writing broad `xl/styles.xml` support.
-- Add number formats, fonts, fills, borders, and alignment through that registry.
+- Keep the current P9a style registry as the entry point for styles:
+  workbook-local `StyleId`, `CellStyle::number_format`, generated
+  `xl/styles.xml`, and cell `s="N"` references.
+- Add fonts, fills, borders, alignment, rich text, and conditional formatting
+  only as separate registry-backed slices with their own structure and Excel
+  validation.
 - Decide formula calculation boundaries: write-only formula text, cached values,
   calc mode, and `calcChain`.
 - Keep configurable document properties as a small-part metadata API limited to
@@ -337,9 +349,12 @@ Validation:
   multiple column width records, last-call-wins frozen panes, last-call-wins
   auto filters, multiple merged ranges, worksheet suffix ordering, and absence
   of relationship/content-type side effects for these metadata-only features.
-- Future structure tests still need `xl/styles.xml`, style ids, custom document
-  properties, named ranges, and worksheet references when those features are
-  implemented.
+- Current style structure tests cover `xl/styles.xml`, style ids, custom
+  `numFmtId`, worksheet style references, default `s="0"` omission,
+  sharedStrings + styles coexistence, and invalid foreign style id state
+  hygiene. Future structure tests still need fonts/fills/borders/alignment,
+  custom document properties, named ranges, and worksheet references when those
+  features are implemented.
 - Public APIs have Doxygen comments stating mode, memory behavior, ordering,
   side effects, and unsupported Excel semantics.
 - Excel visual verification for representative style and metadata samples.
@@ -1103,9 +1118,12 @@ Current facts:
   auto filter, merge areas and frozen panes. They are local QA tools, not
   runtime dependencies or default CI requirements.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
-  present on the in-memory and streaming new-workbook paths. Styles, custom
-  document properties, named ranges, style registries, and rich formatting are
-  still planned work.
+  present on the in-memory and streaming new-workbook paths. P9a streaming
+  number-format styles are now 基础 through workbook-local style ids,
+  `CellStyle::number_format`, generated `xl/styles.xml`, and cell `s="N"`
+  references. Custom document properties, named ranges, fonts/fills/borders/
+  alignment, rich formatting, conditional formatting, date cell type, and
+  existing-file style preservation are still planned work.
 - Local QA helpers now exist for document properties:
   `tools/verify_document_properties.py` checks the in-memory and streaming
   sample packages, core/app XML, content types, relationships, XML escaping,
@@ -1113,6 +1131,13 @@ Current facts:
   `tools/verify_document_properties_excel.ps1` opens both workbooks read-only
   through Excel COM and verifies the smoke sheets, while treating XML/openpyxl
   as authoritative when Excel COM does not expose built-in properties.
+- Local QA helpers now exist for number-format styles:
+  `tools/verify_styles_number_formats.py` checks FastXLSX package XML,
+  `xl/styles.xml`, workbook relationships, worksheet `s="N"` references,
+  `openpyxl` number format semantics, and optional `XlsxWriter` reference
+  creation; `tools/verify_styles_excel.ps1` opens the styles and
+  sharedStrings+styles samples read-only through Excel COM and checks visible
+  NumberFormat, values, and formulas.
 
 Tasks:
 - Extend focused structure tests and Excel visual samples when metadata behavior

@@ -160,6 +160,17 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
   固定本地 QA 入口是 `tools/verify_phase3_metadata.py` 和
   `tools/verify_phase3_metadata_excel.ps1`；它们分别做拆包 XML / `openpyxl`
   检查和 Excel COM 只读可视化检查，不接入默认 CTest/CI。
+- 当前 P9 number-format styles 推荐 preset 样例为
+  `build/windows-nmake-release/tests/fastxlsx-streaming-styles-number-formats.xlsx`，
+  sharedStrings + styles 样例为
+  `build/windows-nmake-release/tests/fastxlsx-streaming-styles-shared-strings.xlsx`。
+  结构测试必须覆盖 `xl/styles.xml`、styles content type override、workbook styles
+  relationship、custom `numFmts` / `cellXfs`、worksheet `s="N"`、默认 `s="0"` 省略、
+  sharedStrings + styles 共存，以及 foreign `StyleId` 数值碰撞也在 row state 变更前
+  被拒绝。固定本地 QA 入口是 `tools/verify_styles_number_formats.py` 和
+  `tools/verify_styles_excel.ps1`；它们分别做拆包 XML / `openpyxl` / 可选
+  `XlsxWriter` 检查和 Excel COM 只读 NumberFormat 检查，不接入默认 CTest/CI，也不是
+  运行时依赖。
 - 在可用时验证 Excel / WPS / LibreOffice 能打开。
 - 当前 Phase 1 smoke 样例通常位于测试工作目录；推荐 preset 路径是
   `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`。旧

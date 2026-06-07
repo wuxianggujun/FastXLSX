@@ -563,6 +563,230 @@ void test_streaming_writer_phase3_metadata_structure()
         "phase3 metadata suffix ordering mismatch");
 }
 
+void test_streaming_writer_number_format_styles()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-styles-number-formats.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const auto currency_style = workbook.add_style(fastxlsx::CellStyle {"$#,##0.00"});
+    const auto duplicate_currency_style =
+        workbook.add_style(fastxlsx::CellStyle {"$#,##0.00"});
+    const auto escaped_style =
+        workbook.add_style(fastxlsx::CellStyle {R"(0.00 "kg & <unit>")"});
+
+    check(currency_style.value() == 1, "first custom style id should be 1");
+    check(duplicate_currency_style.value() == 1, "duplicate style should reuse style id");
+    check(escaped_style.value() == 2, "second custom style id should be 2");
+
+    auto sheet = workbook.add_worksheet("Styles");
+    sheet.append_row({
+        fastxlsx::CellView::text("Currency"),
+        fastxlsx::CellView::text("Escaped"),
+        fastxlsx::CellView::text("Default"),
+        fastxlsx::CellView::text("Text"),
+        fastxlsx::CellView::text("Bool"),
+        fastxlsx::CellView::text("Formula"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(1234.5).with_style(currency_style),
+        fastxlsx::CellView::number(7.25).with_style(escaped_style),
+        fastxlsx::CellView::number(9.0),
+        fastxlsx::CellView::text("styled text").with_style(escaped_style),
+        fastxlsx::CellView::boolean(true).with_style(currency_style),
+        fastxlsx::CellView::formula("A2*2").with_style(currency_style),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "styles xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "missing styles part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "styles should not create worksheet relationships");
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "styles-only inline package should not include shared strings");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>)",
+        "missing styles content type override");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 2,
+        "styles workbook relationship count mismatch");
+    check_contains(workbook_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>)",
+        "styles workbook relationship mismatch");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="2">)",
+        "custom number format count mismatch");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="$#,##0.00"/>)",
+        "first custom number format mismatch");
+    check_contains(styles_xml,
+        R"(<numFmt numFmtId="165" formatCode="0.00 &quot;kg &amp; &lt;unit&gt;&quot;"/>)",
+        "escaped custom number format mismatch");
+    check_contains(styles_xml, R"(<fonts count="1">)", "default font collection missing");
+    check_contains(styles_xml, R"(<fills count="2">)", "default fill collection missing");
+    check_contains(styles_xml, R"(<borders count="1">)", "default border collection missing");
+    check_contains(styles_xml,
+        R"(<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "cellXfs default style mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "first style xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "second style xf mismatch");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:F2"/>)",
+        "styles worksheet dimension mismatch");
+    check_contains(worksheet_xml, R"(<c r="A2" s="1"><v>1234.5</v></c>)",
+        "styled number cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="B2" s="2"><v>7.25</v></c>)",
+        "second styled number cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="C2"><v>9</v></c>)",
+        "default number cell should omit style attribute");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" s="2" t="inlineStr"><is><t>styled text</t></is></c>)",
+        "styled inline string cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="E2" s="1" t="b"><v>1</v></c>)",
+        "styled boolean cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="F2" s="1"><f>A2*2</f></c>)",
+        "styled formula cell mismatch");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "default style should not be serialized as s=\"0\"");
+}
+
+void test_streaming_writer_styles_with_shared_strings()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-styles-shared-strings.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    const auto text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+    auto sheet = workbook.add_worksheet("StyledShared");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("styled shared").with_style(text_style),
+        fastxlsx::CellView::text("plain shared"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "styled shared string xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/sharedStrings.xml"), "missing shared strings part");
+    check(entries.contains("xl/styles.xml"), "missing styles part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "shared strings plus styles should not create worksheet relationships");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check_contains(workbook_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)",
+        "shared strings relationship should remain before styles");
+    check_contains(workbook_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>)",
+        "styles relationship id should follow shared strings");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A1" s="1" t="s"><v>0</v></c>)",
+        "styled shared string cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="B1" t="s"><v>1</v></c>)",
+        "plain shared string cell mismatch");
+}
+
+void test_streaming_writer_invalid_style_preserves_state()
+{
+    const auto source_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-source-unused.xlsx";
+    auto source_workbook = fastxlsx::WorkbookWriter::create(source_path);
+    const auto foreign_style = source_workbook.add_style(fastxlsx::CellStyle {"0.0000"});
+
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-invalid-state.xlsx";
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("StyleState");
+
+    check_fastxlsx_error(
+        [&sheet, foreign_style] {
+            sheet.append_row({fastxlsx::CellView::text("bad style").with_style(foreign_style)});
+        },
+        "append_row should reject a style id not registered in this workbook");
+
+    sheet.append_row({fastxlsx::CellView::text("good")});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/styles.xml"),
+        "failed foreign style append should not create styles.xml");
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:A1"/>)",
+        "failed style append should not advance worksheet dimension");
+    check(worksheet_xml.find("bad style") == std::string::npos,
+        "failed style append should not serialize rejected cell text");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>good</t></is></c>)",
+        "valid row after failed style append mismatch");
+}
+
+void test_streaming_writer_foreign_style_collision_is_rejected()
+{
+    const auto source_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-collision-source.xlsx";
+    auto source_workbook = fastxlsx::WorkbookWriter::create(source_path);
+    const auto foreign_style = source_workbook.add_style(fastxlsx::CellStyle {"0.0000"});
+    check(foreign_style.value() == 1, "foreign style id setup mismatch");
+
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-collision-target.xlsx";
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const auto own_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
+    check(own_style.value() == 1, "target style id setup mismatch");
+    auto sheet = workbook.add_worksheet("Collision");
+
+    check_fastxlsx_error(
+        [&sheet, foreign_style] {
+            sheet.append_row({fastxlsx::CellView::text("bad collision").with_style(foreign_style)});
+        },
+        "append_row should reject a foreign style id even when the numeric value collides");
+
+    sheet.append_row({fastxlsx::CellView::text("good").with_style(own_style)});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:A1"/>)",
+        "foreign style collision failure should not advance dimension");
+    check(worksheet_xml.find("bad collision") == std::string::npos,
+        "foreign style collision failure should not serialize rejected text");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" s="1" t="inlineStr"><is><t>good</t></is></c>)",
+        "valid row after foreign style collision mismatch");
+}
+
+void test_streaming_writer_invalid_style_registration()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-registration-errors.xlsx";
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+
+    check_fastxlsx_error(
+        [&workbook] { static_cast<void>(workbook.add_style(fastxlsx::CellStyle {""})); },
+        "add_style should reject an empty style in the current number-format-only slice");
+
+    workbook.add_worksheet("Registration").append_row({fastxlsx::CellView::text("done")});
+    workbook.close();
+
+    check_fastxlsx_error(
+        [&workbook] { static_cast<void>(workbook.add_style(fastxlsx::CellStyle {"0.0"})); },
+        "add_style should reject mutation after close");
+}
+
 void test_streaming_writer_file_backed_body_round_trip()
 {
     const auto output_path =
@@ -3019,6 +3243,11 @@ int main()
         test_streaming_writer_max_row_boundary_with_test_hook();
         test_streaming_writer_failed_append_preserves_state();
         test_streaming_writer_phase3_metadata_structure();
+        test_streaming_writer_number_format_styles();
+        test_streaming_writer_styles_with_shared_strings();
+        test_streaming_writer_invalid_style_preserves_state();
+        test_streaming_writer_foreign_style_collision_is_rejected();
+        test_streaming_writer_invalid_style_registration();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
         test_streaming_writer_data_validation_multi_range_sqref();

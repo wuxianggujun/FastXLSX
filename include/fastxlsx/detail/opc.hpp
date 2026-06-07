@@ -230,7 +230,7 @@ private:
 
 [[nodiscard]] PackageManifest make_minimal_workbook_manifest(
     std::size_t worksheet_count, bool include_shared_strings = false,
-    bool include_document_properties = true);
+    bool include_document_properties = true, bool include_styles = false);
 [[nodiscard]] std::string build_core_properties(const DocumentProperties& properties = {});
 [[nodiscard]] std::string build_extended_properties(const DocumentProperties& properties = {});
 [[nodiscard]] std::string serialize_content_types(const ContentTypesManifest& content_types);

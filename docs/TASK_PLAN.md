@@ -323,8 +323,8 @@ Validation:
 
 Status: internal graph foundation exists; edit pipeline remains planned.
 
-Do this before hyperlinks, tables, images, chart/VBA passthrough, or existing
-file editing are called supported.
+Use this as groundwork before broader hyperlink/table/image support,
+chart/VBA passthrough, or existing-file editing are called supported.
 
 Current foundation:
 - Internal `PartIndex` and `RelationshipGraph` exist in `fastxlsx::detail`.
@@ -407,38 +407,56 @@ Validation:
 
 ### M9 - Hyperlinks
 
-Status: 基础 for streaming-only external URL hyperlinks in new workbooks.
+Status: 基础 for streaming-only external URL and internal workbook-location
+hyperlinks in new workbooks.
 
 The first slice is implemented on `WorksheetWriter` only. It writes worksheet
-`<hyperlinks>` XML and worksheet-owned relationship parts together, but it does
-not provide complete Excel hyperlink support.
+`<hyperlinks>` XML. External links also write worksheet-owned relationship
+parts; internal workbook links are location-only and do not create
+relationships. This does not provide complete Excel hyperlink support.
 
 Tasks:
 - `WorksheetWriter::add_external_hyperlink()` stores a cell reference and target
   URL as lightweight worksheet metadata.
+- `WorksheetWriter::add_internal_hyperlink()` stores a cell reference and
+  workbook location text as lightweight worksheet metadata.
 - Relationship ids are allocated per worksheet owner as `rId1`, `rId2`, and so
-  on.
+  on, and internal hyperlinks do not consume relationship ids.
 - The writer emits worksheet `<hyperlinks>` plus
   `xl/worksheets/_rels/sheetN.xml.rels` for worksheets that contain external
   links.
+- The writer emits internal hyperlinks as `<hyperlink location="...">` in
+  worksheet XML, without worksheet `.rels`, workbook relationships, or content
+  type overrides.
 - The relationship type is the OpenXML hyperlink relationship type and uses
   `TargetMode="External"`.
 - The first slice does not write cell text, create hyperlink styles, validate
-  URL reachability, support internal workbook links, expose tooltip/display
+  URL reachability or internal target existence, expose tooltip/display
   attributes, edit existing XLSX files, or claim full Excel UI parity.
 
 Validation:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
+- Tests prove internal-only worksheets write `location` without `r:id`, do not
+  declare `xmlns:r`, and do not create worksheet `.rels`.
+- Tests prove mixed external/internal hyperlinks keep external relationship ids
+  stable and do not write internal locations to worksheet `.rels`.
 - Package contains the expected worksheet relationship parts and no workbook
   relationship pollution, content type override, or metadata part.
 - `fastxlsx.streaming` covers target XML escaping, multiple hyperlinks in one
   worksheet, worksheet-owner-local `rId` allocation across worksheets, sheets
-  without hyperlinks, invalid row/column references, empty target URLs, and
-  mutation-after-close.
+  without hyperlinks, invalid row/column references, empty target URLs,
+  empty internal locations, and mutation-after-close.
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`;
   Excel COM confirmed worksheet `Hyperlinks` counts, Address values, and
   TextToDisplay without replacing cell text.
+- Local Excel visual verification passed for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-internal-hyperlinks.xlsx`;
+  Excel COM confirmed internal hyperlink `SubAddress` values, null internal
+  `Address` values, external URL `Address` values in the mixed sheet, hyperlink
+  counts, and unchanged cell text. Local `openpyxl` 3.1.2 also confirmed
+  `cell.hyperlink.location` / `target` semantics and a reference internal-link
+  workbook with no worksheet `.rels`.
 
 ### M10 - Tables, Images, Charts, and VBA
 
@@ -1068,13 +1086,16 @@ Allowed early slices:
 - The public data-validation API documents Streaming mode, memory cost as rule
   count plus formula text, no random access, no full worksheet cell matrix, no
   formula evaluation, and no Excel UI completeness guarantee.
-- External URL hyperlinks have a basic streaming-only, new-workbook worksheet
-  metadata slice through `WorksheetWriter::add_external_hyperlink()`. It writes
-  worksheet `<hyperlinks>` and worksheet `.rels` together, keeps relationship
-  ids worksheet-owner-local, avoids DOM, and avoids existing-file editing.
-- Complete hyperlink support remains planned: internal links, tooltip/display
-  attributes, hyperlink styles, existing-file editing, and full Excel UI
-  behavior are not implemented by the first slice.
+- External URL hyperlinks and internal workbook-location hyperlinks have basic
+  streaming-only, new-workbook worksheet metadata slices through
+  `WorksheetWriter::add_external_hyperlink()` and
+  `WorksheetWriter::add_internal_hyperlink()`. External links write worksheet
+  `.rels`; internal links write `location` only and do not consume worksheet
+  `rId` values. Both avoid DOM and existing-file editing.
+- Complete hyperlink support remains planned: tooltip/display attributes,
+  hyperlink styles, target existence validation, named range semantics,
+  existing-file editing, and full Excel UI behavior are not implemented by the
+  first slices.
 - Tables have a basic streaming-only, new-workbook slice through
   `WorksheetWriter::add_table()` and `TableOptions`. It writes worksheet
   `<tableParts>`, worksheet `.rels`, `xl/tables/tableN.xml`, and table content

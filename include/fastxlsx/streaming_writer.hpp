@@ -327,6 +327,21 @@ public:
     void add_external_hyperlink(
         std::uint32_t row, std::uint32_t column, std::string target_url);
 
+    /// Records an internal workbook hyperlink on one worksheet cell.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The hyperlink
+    /// is emitted as a worksheet `<hyperlink>` element with a `location`
+    /// attribute and does not create worksheet relationships, workbook
+    /// relationships, or content type overrides. This API copies the location
+    /// text into writer state, does not write or style the cell value, does not
+    /// validate that the target sheet or cell exists, and does not edit
+    /// existing XLSX files.
+    ///
+    /// @throws FastXlsxError if the cell reference is outside Excel worksheet
+    /// limits, the location is empty, or the workbook is closed.
+    void add_internal_hyperlink(
+        std::uint32_t row, std::uint32_t column, std::string location);
+
     /// Records a worksheet table range for a new workbook.
     ///
     /// API mode: Streaming worksheet metadata for new workbooks. The table is

@@ -839,6 +839,162 @@ void test_streaming_writer_external_hyperlinks()
         "plain worksheet should not include relationship namespace");
 }
 
+void test_streaming_writer_internal_hyperlinks()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-internal-hyperlinks.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto internal_only = workbook.add_worksheet("Internal");
+    auto target = workbook.add_worksheet("Target & <Sheet>");
+    auto mixed = workbook.add_worksheet("Mixed");
+    auto plain = workbook.add_worksheet("Plain");
+
+    internal_only.append_row({fastxlsx::CellView::text("Jump to target")});
+    internal_only.append_row({fastxlsx::CellView::text("Second jump")});
+    internal_only.add_internal_hyperlink(1, 1, "'Target & <Sheet>'!A1");
+    internal_only.add_internal_hyperlink(2, 1, "'Target & <Sheet>'!B2:\"quoted\"");
+
+    target.append_row({fastxlsx::CellView::text("Target cell")});
+    target.append_row({fastxlsx::CellView::text("Second target")});
+
+    mixed.append_row({
+        fastxlsx::CellView::text("External"),
+        fastxlsx::CellView::text("Internal"),
+    });
+    mixed.append_row({fastxlsx::CellView::text("External 2")});
+    mixed.add_external_hyperlink(1, 1, "https://example.com/");
+    mixed.add_internal_hyperlink(1, 2, "'Target & <Sheet>'!A1");
+    mixed.add_external_hyperlink(2, 1, "https://example.com/more");
+
+    plain.append_row({fastxlsx::CellView::text("No hyperlink sheet")});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "internal hyperlinks xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing internal hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing internal hyperlink target worksheet");
+    check(entries.contains("xl/worksheets/sheet3.xml"), "missing mixed hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet4.xml"), "missing plain hyperlink worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "internal-only hyperlinks should not create worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "target sheet without relationships should not create worksheet relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "mixed sheet should keep external hyperlink relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet4.xml.rels"),
+        "plain sheet should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"), "internal hyperlinks should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "internal hyperlinks should not add content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 4,
+        "internal hyperlinks should not add workbook relationships");
+
+    const auto& internal_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(internal_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "internal-only worksheet should not declare relationship namespace");
+    check_contains(internal_sheet_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>Jump to target</t></is></c>",
+        "internal hyperlink should not replace A1 cell text");
+    check_contains(internal_sheet_xml,
+        "</sheetData><hyperlinks>"
+        "<hyperlink ref=\"A1\" location=\"&apos;Target &amp; &lt;Sheet&gt;&apos;!A1\"/>"
+        "<hyperlink ref=\"A2\" location=\"&apos;Target &amp; &lt;Sheet&gt;&apos;!B2:&quot;quoted&quot;\"/>"
+        "</hyperlinks></worksheet>",
+        "internal-only hyperlink XML mismatch or location escaping failure");
+    check(count_occurrences(internal_sheet_xml, "<hyperlink ") == 2,
+        "internal-only worksheet hyperlink count mismatch");
+    check(internal_sheet_xml.find("r:id=") == std::string::npos,
+        "internal-only hyperlinks should not use relationship ids");
+
+    const auto& mixed_sheet_xml = entries.at("xl/worksheets/sheet3.xml");
+    check_contains(mixed_sheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "mixed hyperlink worksheet namespace mismatch");
+    check_contains(mixed_sheet_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\"/>"
+        "<hyperlink ref=\"A2\" r:id=\"rId2\"/>"
+        "<hyperlink ref=\"B1\" location=\"&apos;Target &amp; &lt;Sheet&gt;&apos;!A1\"/></hyperlinks>",
+        "mixed external/internal hyperlink XML mismatch");
+    check(count_occurrences(mixed_sheet_xml, "<hyperlink ") == 3,
+        "mixed worksheet hyperlink count mismatch");
+
+    const auto& mixed_sheet_rels = entries.at("xl/worksheets/_rels/sheet3.xml.rels");
+    check(count_occurrences(mixed_sheet_rels, "<Relationship ") == 2,
+        "internal hyperlinks should not create relationship entries");
+    check_contains(mixed_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>)",
+        "first mixed external hyperlink relationship mismatch");
+    check_contains(mixed_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/more" TargetMode="External"/>)",
+        "second mixed external hyperlink relationship mismatch");
+    check(mixed_sheet_rels.find("Target &amp; &lt;Sheet&gt;") == std::string::npos,
+        "internal hyperlink location should not be written to worksheet relationships");
+
+    const auto& plain_sheet_xml = entries.at("xl/worksheets/sheet4.xml");
+    check(plain_sheet_xml.find("<hyperlinks>") == std::string::npos,
+        "plain worksheet should not contain hyperlinks");
+    check(plain_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not include relationship namespace");
+}
+
+void test_streaming_writer_internal_hyperlink_with_table_relationship_id()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-internal-hyperlink-table-rels.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Objects");
+    auto target = workbook.add_worksheet("Target");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Name"),
+        fastxlsx::CellView::text("Qty"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("Widget"),
+        fastxlsx::CellView::number(7.0),
+    });
+    sheet.add_internal_hyperlink(2, 1, "Target!A1");
+
+    fastxlsx::TableOptions table;
+    table.name = "InternalLinkTable";
+    table.column_names = {"Name", "Qty"};
+    sheet.add_table({1, 1, 2, 2}, table);
+
+    target.append_row({fastxlsx::CellView::text("Destination")});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "internal hyperlink + table xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "table should still create worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "target sheet should not create worksheet relationships");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "<hyperlinks><hyperlink ref=\"A2\" location=\"Target!A1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId1\"/></tableParts>",
+        "internal hyperlink should not shift table relationship id");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 1,
+        "internal hyperlink should not create a relationship next to table");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table relationship should remain rId1 when only internal hyperlinks precede it");
+    check(worksheet_rels.find("hyperlink") == std::string::npos,
+        "internal hyperlink should not create hyperlink relationship entries");
+}
+
 void test_streaming_writer_tables()
 {
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-tables.xlsx";
@@ -1683,6 +1839,9 @@ void test_streaming_writer_rejects_mutation_after_close()
     check_fastxlsx_error(
         [&sheet] { sheet.add_external_hyperlink(1, 1, "https://example.com/"); },
         "add_external_hyperlink should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_internal_hyperlink(1, 1, "Sheet1!A1"); },
+        "add_internal_hyperlink should reject mutation after workbook close");
     fastxlsx::TableOptions table;
     table.name = "ClosedTable";
     table.column_names = {"A", "B"};
@@ -1782,6 +1941,21 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet] { sheet.add_external_hyperlink(1, 1, ""); },
         "external hyperlinks should reject an empty target");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_internal_hyperlink(0, 1, "Sheet1!A1"); },
+        "internal hyperlinks should reject a zero row");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_internal_hyperlink(1, 0, "Sheet1!A1"); },
+        "internal hyperlinks should reject a zero column");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_internal_hyperlink(1048577, 1, "Sheet1!A1"); },
+        "internal hyperlinks should reject a row beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_internal_hyperlink(1, 16385, "Sheet1!A1"); },
+        "internal hyperlinks should reject a column beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_internal_hyperlink(1, 1, ""); },
+        "internal hyperlinks should reject an empty location");
 
     fastxlsx::TableOptions table;
     table.name = "InvalidRangeTable";
@@ -2061,6 +2235,8 @@ int main()
         test_streaming_writer_data_validations_with_relationship_metadata();
         test_streaming_writer_data_validation_formula2_escape_and_namespace();
         test_streaming_writer_external_hyperlinks();
+        test_streaming_writer_internal_hyperlinks();
+        test_streaming_writer_internal_hyperlink_with_table_relationship_id();
         test_streaming_writer_tables();
         test_streaming_writer_table_style_flags();
         test_streaming_writer_table_column_attribute_escaping();

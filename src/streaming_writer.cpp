@@ -46,6 +46,12 @@ struct ExternalHyperlink {
     std::string target_url;
 };
 
+struct InternalHyperlink {
+    std::uint32_t row = 1;
+    std::uint32_t column = 1;
+    std::string location;
+};
+
 struct WorksheetTable {
     CellRange range;
     TableOptions options;
@@ -439,6 +445,7 @@ struct WorksheetWriterState {
     std::vector<CellRange> merged_ranges;
     std::vector<DataValidation> data_validations;
     std::vector<ExternalHyperlink> external_hyperlinks;
+    std::vector<InternalHyperlink> internal_hyperlinks;
     std::vector<WorksheetTable> tables;
     std::vector<WorksheetImage> images;
     bool has_formula = false;
@@ -760,7 +767,7 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
 
 std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
 {
-    if (worksheet.external_hyperlinks.empty()) {
+    if (worksheet.external_hyperlinks.empty() && worksheet.internal_hyperlinks.empty()) {
         return {};
     }
 
@@ -771,6 +778,13 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
         xml += detail::cell_reference(hyperlink.row, hyperlink.column);
         xml += "\" r:id=\"";
         xml += worksheet_relationship_id(index);
+        xml += "\"/>";
+    }
+    for (const InternalHyperlink& hyperlink : worksheet.internal_hyperlinks) {
+        xml += "<hyperlink ref=\"";
+        xml += detail::cell_reference(hyperlink.row, hyperlink.column);
+        xml += "\" location=\"";
+        xml += detail::escape_xml_attribute(hyperlink.location);
         xml += "\"/>";
     }
     xml += "</hyperlinks>";
@@ -1346,6 +1360,17 @@ void WorksheetWriter::add_external_hyperlink(
         throw FastXlsxError("external hyperlink target URL cannot be empty");
     }
     state_->external_hyperlinks.push_back({row, column, std::move(target_url)});
+}
+
+void WorksheetWriter::add_internal_hyperlink(
+    std::uint32_t row, std::uint32_t column, std::string location)
+{
+    ensure_mutable_worksheet(state_);
+    (void)detail::cell_reference(row, column);
+    if (location.empty()) {
+        throw FastXlsxError("internal hyperlink location cannot be empty");
+    }
+    state_->internal_hyperlinks.push_back({row, column, std::move(location)});
 }
 
 void WorksheetWriter::add_table(CellRange range, TableOptions options)

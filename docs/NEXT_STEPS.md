@@ -66,6 +66,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-internal-hyperlinks.xlsx`
   Manual `build-nmake` output may exist locally, but treat it as potentially
   stale unless it was regenerated after the current source change.
 
@@ -186,13 +187,17 @@ and release packaging, or the decision to make minizip the default backend.
    - Keep richer validation semantics, overlap checks, formula parsing, and
      existing-file editing out of scope until separately designed.
 
-10. Streaming-only external hyperlinks - 基础.
+10. Streaming-only external and internal hyperlinks - 基础.
     - `WorksheetWriter::add_external_hyperlink()` now writes worksheet
       `<hyperlinks>` plus `xl/worksheets/_rels/sheetN.xml.rels` for new
       workbooks only.
-    - Keep internal links, hyperlink styles, tooltip/display attributes, full
-      Excel UI behavior, and existing-file editing out of scope until separately
-      designed.
+    - `WorksheetWriter::add_internal_hyperlink()` now writes worksheet
+      `<hyperlink location="...">` for new workbooks only, without worksheet
+      `.rels`, workbook relationships, content type overrides, or `rId`
+      consumption.
+    - Keep hyperlink styles, tooltip/display attributes, target existence
+      validation, full Excel UI behavior, and existing-file editing out of
+      scope until separately designed.
 
 11. Streaming-only tables - 基础.
     - `WorksheetWriter::add_table()` and `TableOptions` now write
@@ -525,16 +530,16 @@ Current foundation:
 
 Do:
 - Keep this internal until package reader/writer and preservation tests exist.
-- Use it as groundwork before hyperlinks, tables, images, or existing-file
-  editing.
+- Use it as groundwork before broader hyperlink/table/image support, chart/VBA
+  passthrough, or existing-file editing.
 
 Accept when:
 - `ctest --preset windows-nmake-release` passes.
 - No public existing-file edit API is exposed yet.
 
 Do not claim:
-- Package editing, hyperlink support, or object preservation from internal graph
-  helpers alone.
+- Package editing, broader hyperlink support, or object preservation from
+  internal graph helpers alone.
 
 ### P12 - Existing Package Reader/Writer
 
@@ -604,33 +609,49 @@ Do not claim:
 
 ### P15 - Hyperlinks
 
-Status: 基础 for streaming-only external URL hyperlinks in new workbooks.
+Status: 基础 for streaming-only external URL and internal workbook-location
+hyperlinks in new workbooks.
 
 Do:
 - Keep `WorksheetWriter::add_external_hyperlink()` as a new-workbook Streaming
   metadata API.
+- Keep `WorksheetWriter::add_internal_hyperlink()` as a new-workbook Streaming
+  metadata API.
 - Store only lightweight cell-reference and target URL state; memory grows with
-  link count and URL text length.
-- Write worksheet `<hyperlinks>` and worksheet-owned `.rels` together.
-- Keep relationship ids owner-local to each worksheet.
-- Keep internal links, hyperlink styles, tooltip/display attributes, URL
-  reachability checks, and existing-file editing out of this first slice.
+  link count plus URL/location text length.
+- Write external hyperlinks as worksheet `<hyperlinks>` and worksheet-owned
+  `.rels` together.
+- Write internal hyperlinks as worksheet `location` attributes only; do not
+  create worksheet `.rels`, workbook relationships, content type overrides, or
+  consume worksheet-local `rId` values.
+- Keep hyperlink styles, tooltip/display attributes, URL reachability checks,
+  internal target existence checks, named range semantics, and existing-file
+  editing out of these first slices.
 
 Accept when:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
+- Tests prove internal-only worksheets write `location` without `r:id`, do not
+  declare `xmlns:r`, and do not create worksheet `.rels`.
+- Tests prove mixed external/internal hyperlinks keep external `rId` values
+  stable and do not leak internal locations into worksheet `.rels`.
 - Package relationship parts and content types are correct, including no
   workbook relationship pollution and no content type override for `.rels`.
 - Tests cover target XML escaping, multiple hyperlinks in one worksheet,
   worksheet-owner-local `rId` allocation across worksheets, plain sheets without
-  `.rels`, invalid row/column references, empty target URLs, and
-  mutation-after-close.
+  `.rels`, invalid row/column references, empty target URLs, empty internal
+  locations, and mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`.
+- Excel visual verification is recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-internal-hyperlinks.xlsx`;
+  local `openpyxl` 3.1.2 also confirmed internal `location` semantics and a
+  reference workbook with no worksheet `.rels`.
 
 Do not claim:
-- Full hyperlink support from this external-only slice.
-- Internal workbook links, hyperlink styles, tooltip/display attributes,
-  existing-file editing, unknown part preservation, or complete Excel UI parity.
+- Full hyperlink support from these basic slices.
+- Hyperlink styles, tooltip/display attributes, target existence validation,
+  named range semantics, existing-file editing, unknown part preservation, or
+  complete Excel UI parity.
 
 ### P16 - Tables
 
@@ -932,9 +953,11 @@ Safe order:
 2. Use the existing internal `PartIndex` / `RelationshipGraph` groundwork for
    features that need worksheet `.rels` or cross-part id consistency, and add
    per-feature tests before claiming support.
-3. External URL hyperlinks now have a streaming-only new-workbook slice after
-   worksheet XML and worksheet `.rels` were kept in sync. Broader hyperlink
-   support still needs separate design and tests.
+3. External URL and internal workbook-location hyperlinks now have
+   streaming-only new-workbook slices. External links keep worksheet XML and
+   worksheet `.rels` in sync; internal links are location-only and do not
+   consume `rId` values. Broader hyperlink support still needs separate design
+   and tests.
 4. Tables now have a streaming-only new-workbook slice after table part
    allocation, content type override, worksheet rels, and table XML were kept
    consistent. Broader table support still needs separate design and tests.

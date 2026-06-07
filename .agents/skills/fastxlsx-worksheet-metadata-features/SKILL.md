@@ -26,7 +26,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 - `WorkbookWriter` / `WorksheetWriter` 是当前 streaming 新建 workbook 路径。
 - worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格、
-  streaming-only data validations、external hyperlinks 和 tables。
+  streaming-only data validations、external/internal hyperlinks 和 tables。
 - `WorksheetWriter::add_data_validation()` 当前只支持新建 workbook 的 worksheet XML
   metadata，写出 `<dataValidations>`，不新增 worksheet `.rels`、content types 或
   package relationships。
@@ -34,6 +34,10 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   hyperlinks，写出 worksheet `<hyperlinks>` 和
   `xl/worksheets/_rels/sheetN.xml.rels`，relationship 使用 `TargetMode="External"`，
   `rId` 只在 worksheet owner 内分配。
+- `WorksheetWriter::add_internal_hyperlink()` 当前只支持新建 workbook 的 internal
+  workbook location hyperlinks，只在 worksheet `<hyperlinks>` 写 `location`，不创建
+  worksheet `.rels`、workbook relationships、content type overrides，也不消耗
+  worksheet-local `rId`。
 - `WorksheetWriter::add_table()` 当前只支持新建 workbook 的 streaming-only tables，
   写出 worksheet `<tableParts>`、worksheet `.rels`、`xl/tables/tableN.xml` 和 table
   content type override；它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。
@@ -66,9 +70,11 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - Data validations：已有基础 streaming-only、新建 workbook、worksheet metadata 版本。
   当前覆盖 whole/decimal/list/date/time/textLength/custom 公式文本结构；继续禁止已有
   文件编辑、DOM、公式解析、单元格值校验和重叠检查。
-- Hyperlinks：已有基础 streaming-only、新建 workbook、external-only 版本。
-  当前只写 cell ref + external target URL，不写单元格文本、不创建 hyperlink 样式、
-  不支持 internal links、tooltip/display 属性、已有文件编辑或完整 Excel UI 行为。
+- Hyperlinks：已有基础 streaming-only、新建 workbook 版本，覆盖 external URL links
+  和 internal workbook location links。External 写 cell ref + target URL + worksheet
+  `.rels`；internal 写 cell ref + `location` 且不写 `.rels`。当前不写单元格文本、
+  不创建 hyperlink 样式、不支持 tooltip/display 属性、target 存在性校验、已有文件编辑
+  或完整 Excel UI 行为。
 - Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
   公式和 range 依赖不会进入大型 DOM。
 - Tables：已有基础 streaming-only、新建 workbook 版本。当前只保存 range、table name、
@@ -80,7 +86,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 ## 禁止事项
 
 - 不要把 Phase 5 写成已实现。
-- 不要因为 external-only hyperlink slice 已存在就宣称完整 hyperlinks 已支持。
+- 不要因为基础 hyperlink slices（external URL + internal location）已存在就宣称完整 hyperlinks 已支持。
 - 不要因为 streaming-only table slice 已存在就宣称完整 tables 已支持。
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。
 - 不要在没有 PackageReader/PackageWriter 前宣称 existing XLSX editing 或 unknown part passthrough。
@@ -99,6 +105,10 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   target XML escape、同一 worksheet 多个 hyperlink、跨 worksheet owner-local `rId`、
   plain sheet 不生成 `.rels`、不污染 workbook relationships、不新增 content type
   override、invalid cell、empty target 和 close 后 mutation。
+- internal hyperlinks 结构测试应检查 worksheet XML `location` attribute escape、
+  internal-only worksheet 不生成 `.rels`、不声明 `xmlns:r`、不写 `r:id`、不污染 workbook
+  relationships 或 content types，mixed external/internal 场景下 external `rId` 不被
+  internal hyperlink 消耗，以及 invalid cell、empty location 和 close 后 mutation。
 - tables 结构测试应检查 `xl/tables/tableN.xml`、worksheet `<tableParts>`、
   worksheet `.rels`、table content type override、owner-local `rId`、与 hyperlinks
   共存时的关系 id、多对象关系 id 回归、XML escape、table column attribute

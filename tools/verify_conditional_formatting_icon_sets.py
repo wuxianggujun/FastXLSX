@@ -21,6 +21,7 @@ EXPECTED_BASIC_SQREF = "A2:A10"
 EXPECTED_MULTI_RANGE_SQREF = "A2:A3 C2:C3 E2:E3"
 EXPECTED_ICON_SET = "3Arrows"
 EXPECTED_CFVO = [("percent", 0.0), ("percent", 33.0), ("percent", 67.0)]
+EXPECTED_PERCENTILE_CFVO = [("percentile", 10.0), ("percentile", 50.0), ("percentile", 90.0)]
 
 
 def require(condition: bool, message: str) -> None:
@@ -86,13 +87,26 @@ def verify_no_package_side_effects(path: Path, worksheet_rels_allowed: bool = Fa
     }
 
 
-def expected_icon_set_fragment(sqref: str, priority: int = 1, attributes: str = "") -> str:
+def expected_cfvo_fragment(expected_cfvo: list[tuple[str, float]]) -> str:
+    return "".join(
+        f'<cfvo type="{value_type}" val="{value:g}"/>'
+        for value_type, value in expected_cfvo
+    )
+
+
+def expected_icon_set_fragment(
+    sqref: str,
+    priority: int = 1,
+    attributes: str = "",
+    expected_cfvo: list[tuple[str, float]] | None = None,
+) -> str:
+    if expected_cfvo is None:
+        expected_cfvo = EXPECTED_CFVO
     return (
         f'<conditionalFormatting sqref="{sqref}">'
         f'<cfRule type="iconSet" priority="{priority}">'
         f'<iconSet iconSet="{EXPECTED_ICON_SET}"{attributes}>'
-        '<cfvo type="percent" val="0"/><cfvo type="percent" val="33"/>'
-        '<cfvo type="percent" val="67"/></iconSet></cfRule></conditionalFormatting>'
+        f'{expected_cfvo_fragment(expected_cfvo)}</iconSet></cfRule></conditionalFormatting>'
     )
 
 
@@ -157,6 +171,35 @@ def verify_metadata_order_package(path: Path) -> dict[str, Any]:
     return {"suffix_order": "mergeCells -> conditionalFormatting -> dataValidations"}
 
 
+def verify_percentile_package(path: Path) -> dict[str, Any]:
+    side_effects = verify_no_package_side_effects(path)
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require("xmlns:r=" not in worksheet_xml,
+            "percentile icon set should not declare relationship namespace")
+    require('<dimension ref="A1:A10"/>' in worksheet_xml,
+            "percentile icon set worksheet dimension mismatch")
+    require(
+        expected_icon_set_fragment(
+            EXPECTED_BASIC_SQREF,
+            attributes=' showValue="0" reverse="1"',
+            expected_cfvo=EXPECTED_PERCENTILE_CFVO,
+        ) in worksheet_xml,
+        "percentile icon set XML fragment mismatch",
+    )
+    require(worksheet_xml.count("<conditionalFormatting ") == 1,
+            "percentile conditionalFormatting count mismatch")
+    require(worksheet_xml.count("<cfRule ") == 1, "percentile cfRule count mismatch")
+    require(worksheet_xml.count("<iconSet ") == 1, "percentile iconSet count mismatch")
+    require(worksheet_xml.count("<cfvo ") == 3, "percentile cfvo count mismatch")
+    return {
+        "side_effects": side_effects,
+        "sqref": EXPECTED_BASIC_SQREF,
+        "cfvo": EXPECTED_PERCENTILE_CFVO,
+        "show_value": False,
+        "reverse": True,
+    }
+
+
 def verify_multi_range_package(path: Path) -> dict[str, Any]:
     side_effects = verify_no_package_side_effects(path)
     worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
@@ -198,8 +241,17 @@ def verify_priorities_package(path: Path) -> dict[str, Any]:
     return {"first_sheet_priorities": [1, 2, 3], "second_sheet_priorities": [1]}
 
 
-def extract_openpyxl_rule(path: Path, sheet_name: str, expected_sqref: str) -> dict[str, Any]:
+def extract_openpyxl_rule(
+    path: Path,
+    sheet_name: str,
+    expected_sqref: str,
+    expected_cfvo: list[tuple[str, float]] | None = None,
+    expected_show_value: bool | None = None,
+    expected_reverse: bool | None = None,
+) -> dict[str, Any]:
     import openpyxl  # type: ignore
+    if expected_cfvo is None:
+        expected_cfvo = EXPECTED_CFVO
 
     workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
     try:
@@ -217,13 +269,21 @@ def extract_openpyxl_rule(path: Path, sheet_name: str, expected_sqref: str) -> d
         require(icon_set.iconSet == EXPECTED_ICON_SET,
                 f"openpyxl icon set mismatch: {icon_set.iconSet!r}")
         cfvo = [(point.type, float(point.val)) for point in icon_set.cfvo]
-        require(cfvo == EXPECTED_CFVO, f"openpyxl cfvo mismatch: {cfvo!r}")
+        require(cfvo == expected_cfvo, f"openpyxl cfvo mismatch: {cfvo!r}")
+        if expected_show_value is not None:
+            require(icon_set.showValue == expected_show_value,
+                    f"openpyxl showValue mismatch: {icon_set.showValue!r}")
+        if expected_reverse is not None:
+            require(icon_set.reverse == expected_reverse,
+                    f"openpyxl reverse mismatch: {icon_set.reverse!r}")
         return {
             "status": "opened",
             "sqref": sqref,
             "priority": rule.priority,
             "icon_set": icon_set.iconSet,
             "cfvo": cfvo,
+            "show_value": icon_set.showValue,
+            "reverse": icon_set.reverse,
         }
     finally:
         workbook.close()
@@ -239,6 +299,20 @@ def verify_openpyxl_basic(path: Path) -> dict[str, Any]:
 def verify_openpyxl_multi_range(path: Path) -> dict[str, Any]:
     try:
         return extract_openpyxl_rule(path, "IconSetRanges", EXPECTED_MULTI_RANGE_SQREF)
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+
+def verify_openpyxl_percentile(path: Path) -> dict[str, Any]:
+    try:
+        return extract_openpyxl_rule(
+            path,
+            "IconSetPercentile",
+            EXPECTED_BASIC_SQREF,
+            EXPECTED_PERCENTILE_CFVO,
+            expected_show_value=False,
+            expected_reverse=True,
+        )
     except ModuleNotFoundError:
         return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
 
@@ -294,6 +368,15 @@ def main() -> int:
         help="FastXLSX icon set + relationship-backed metadata workbook.",
     )
     parser.add_argument(
+        "--percentile-input",
+        type=Path,
+        default=Path(
+            "build/windows-nmake-release/tests/"
+            "fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx"
+        ),
+        help="FastXLSX percentile-threshold conditional-formatting icon set workbook.",
+    )
+    parser.add_argument(
         "--multi-range-input",
         type=Path,
         default=Path(
@@ -321,10 +404,11 @@ def main() -> int:
 
     input_path = args.input.resolve()
     metadata_order_path = args.metadata_order_input.resolve()
+    percentile_path = args.percentile_input.resolve()
     multi_range_path = args.multi_range_input.resolve()
     priorities_path = args.priorities_input.resolve()
     work_dir = args.work_dir.resolve()
-    for path in [input_path, metadata_order_path, multi_range_path, priorities_path]:
+    for path in [input_path, metadata_order_path, percentile_path, multi_range_path, priorities_path]:
         require(path.exists(), f"input workbook does not exist: {path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -333,12 +417,15 @@ def main() -> int:
         "fastxlsx_package": verify_basic_package(input_path),
         "metadata_order_input": str(metadata_order_path),
         "metadata_order": verify_metadata_order_package(metadata_order_path),
+        "percentile_input": str(percentile_path),
+        "percentile": verify_percentile_package(percentile_path),
         "multi_range_input": str(multi_range_path),
         "multi_range": verify_multi_range_package(multi_range_path),
         "priorities_input": str(priorities_path),
         "priorities": verify_priorities_package(priorities_path),
         "xlsx_libraries": {
             "openpyxl": verify_openpyxl_basic(input_path),
+            "openpyxl_percentile": verify_openpyxl_percentile(percentile_path),
             "openpyxl_multi_range": verify_openpyxl_multi_range(multi_range_path),
             "xlsxwriter": create_xlsxwriter_reference(
                 work_dir / "reference-xlsxwriter-conditional-formatting-icon-set.xlsx"

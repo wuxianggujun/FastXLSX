@@ -1,6 +1,7 @@
 param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set.xlsx",
     [string]$MetadataOrderPath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx",
+    [string]$PercentilePath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx",
     [string]$MultiRangePath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx"
 )
 
@@ -47,7 +48,9 @@ function Assert-IconSet {
         [object]$FormatCondition,
         [bool]$ShowIconOnly,
         [bool]$ReverseOrder,
-        [string]$MessagePrefix
+        [string]$MessagePrefix,
+        [int[]]$ExpectedCriterionTypes = @(3, 3, 3),
+        [double[]]$ExpectedCriterionValues = @(0, 33, 67)
     )
 
     Assert-Equal $FormatCondition.Type 6 "$MessagePrefix FormatCondition type"
@@ -55,6 +58,8 @@ function Assert-IconSet {
     Assert-Bool $FormatCondition.ShowIconOnly $ShowIconOnly "$MessagePrefix ShowIconOnly"
     Assert-Bool $FormatCondition.ReverseOrder $ReverseOrder "$MessagePrefix ReverseOrder"
     Assert-Equal $FormatCondition.IconCriteria.Count 3 "$MessagePrefix icon criteria count"
+    Assert-Equal $ExpectedCriterionTypes.Count 3 "$MessagePrefix expected criterion type count"
+    Assert-Equal $ExpectedCriterionValues.Count 3 "$MessagePrefix expected criterion value count"
 
     $criteria = @()
     try {
@@ -62,12 +67,11 @@ function Assert-IconSet {
             $criteria += $FormatCondition.IconCriteria.Item($i)
         }
 
-        Assert-Equal $criteria[0].Type 3 "$MessagePrefix criterion 1 type"
-        Assert-Equal $criteria[0].Value 0 "$MessagePrefix criterion 1 value"
-        Assert-Equal $criteria[1].Type 3 "$MessagePrefix criterion 2 type"
-        Assert-Equal $criteria[1].Value 33 "$MessagePrefix criterion 2 value"
-        Assert-Equal $criteria[2].Type 3 "$MessagePrefix criterion 3 type"
-        Assert-Equal $criteria[2].Value 67 "$MessagePrefix criterion 3 value"
+        for ($i = 0; $i -lt 3; $i++) {
+            $displayIndex = $i + 1
+            Assert-Equal $criteria[$i].Type $ExpectedCriterionTypes[$i] "$MessagePrefix criterion $displayIndex type"
+            Assert-Equal $criteria[$i].Value $ExpectedCriterionValues[$i] "$MessagePrefix criterion $displayIndex value"
+        }
     }
     finally {
         Release-ComObjects -Objects $criteria
@@ -138,6 +142,40 @@ function Verify-MetadataOrderWorkbook {
     }
 }
 
+function Verify-PercentileWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+    $formatCondition = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("IconSetPercentile")
+
+        Assert-Equal $sheet.Range("A1").Value2 "Score" "IconSetPercentile A1 value"
+        Assert-Equal $sheet.Range("A2").Value2 1 "IconSetPercentile A2 value"
+        Assert-Equal $sheet.Range("A10").Value2 9 "IconSetPercentile A10 value"
+        Assert-Equal $sheet.Range("A2:A10").FormatConditions.Count 1 "IconSetPercentile FormatConditions count"
+
+        $formatCondition = $sheet.Range("A2:A10").FormatConditions.Item(1)
+        Assert-IconSet $formatCondition $true $true "IconSetPercentile A2:A10" @(5, 5, 5) @(10, 50, 90)
+
+        Write-Host "OK: Excel opened conditional formatting percentile icon-set workbook read-only: $resolved"
+        Write-Host "OK: IconSetPercentile!A2:A10 preserves percentile thresholds and icon-only/reverse metadata"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        Release-ComObjects -Objects @($formatCondition, $sheet, $workbook)
+    }
+}
+
 function Verify-MultiRangeWorkbook {
     param(
         [object]$Excel,
@@ -188,6 +226,7 @@ try {
 
     Verify-BasicWorkbook -Excel $excel -Path $Path
     Verify-MetadataOrderWorkbook -Excel $excel -Path $MetadataOrderPath
+    Verify-PercentileWorkbook -Excel $excel -Path $PercentilePath
     Verify-MultiRangeWorkbook -Excel $excel -Path $MultiRangePath
 }
 finally {

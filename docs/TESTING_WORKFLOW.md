@@ -614,13 +614,21 @@ QA/排障参考，不接入默认 CTest/CI，也不是运行时依赖。
 py tools\verify_conditional_formatting_icon_sets.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set.xlsx `
   --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx `
+  --percentile-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx `
   --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx `
   --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx `
   --work-dir build\qa\conditional-formatting-icon-sets
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_formatting_icon_sets_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set.xlsx `
+  -MetadataOrderPath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx `
+  -PercentilePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx `
   -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx
 ```
+
+QA note: this icon-set helper now covers the existing `IconSetValueType::Percentile`
+path with `percentile` thresholds `10/50/90`, plus `showValue="0"` and
+`reverse="1"`. This is QA hardening for the current basic built-in `3Arrows`
+slice, not support for advanced/custom icon sets.
 
 Python helper 检查 package XML、`<cfRule type="iconSet">`、内建 `3Arrows`、
 三枚 `<cfvo>`、`showValue` / `reverse` metadata、multi-range `sqref`、与 color

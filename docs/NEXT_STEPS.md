@@ -290,7 +290,8 @@ and release packaging, or the decision to make minizip the default backend.
       worksheet-local basic `<cfRule type="dataBar">` XML, including optional
       `showValue="0"` when `DataBarRule::show_value=false`.
       `WorksheetWriter::add_conditional_icon_set()` now writes worksheet-local
-      basic built-in `3Arrows` `<cfRule type="iconSet">` XML.
+      basic built-in `3Arrows` `<cfRule type="iconSet">` XML; current QA covers
+      percent, numeric, and percentile threshold serialization.
     - `ArgbColor` values serialize as uppercase eight-digit ARGB; `priority`
       is assigned by call order per worksheet; multi-range input writes one
       space-separated `sqref`.
@@ -1201,8 +1202,10 @@ Safe order:
    consistent. Broader table support still needs separate design and tests.
 5. Two-/three-color conditional color scales, basic data bars, and basic
    3Arrows icon sets now have streaming-only new-workbook worksheet metadata
-   slices. Broader conditional formatting still needs separate design and tests
-   for formula/cellIs rules, advanced/custom icon sets, advanced data bars,
+   slices. Icon set QA now includes a percentile-threshold sample in addition
+   to the default percent, numeric-priority, and multi-range samples. Broader
+   conditional formatting still needs separate design and tests for
+   formula/cellIs rules, advanced/custom icon sets, advanced data bars,
    dxf-backed styles, conflict handling, and existing-file editing.
 6. Images after `stb` decode/dimension behavior, media part allocation,
    drawing part generation, drawing rels, worksheet rels, anchors, and content

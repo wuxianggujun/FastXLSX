@@ -1674,6 +1674,71 @@ void test_streaming_writer_conditional_formatting_icon_set_metadata_order()
         "icon set table relationship id should remain rId2");
 }
 
+void test_streaming_writer_conditional_formatting_icon_set_percentile_thresholds()
+{
+    const auto output_path = std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("IconSetPercentile");
+
+    sheet.append_row({fastxlsx::CellView::text("Score")});
+    for (int value = 1; value <= 9; ++value) {
+        sheet.append_row({fastxlsx::CellView::number(static_cast<double>(value))});
+    }
+
+    fastxlsx::IconSetRule rule = make_icon_set();
+    rule.value_type = fastxlsx::IconSetValueType::Percentile;
+    rule.thresholds = {10.0, 50.0, 90.0};
+    rule.show_value = false;
+    rule.reverse = true;
+    sheet.add_conditional_icon_set({2, 1, 10, 1}, rule);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"),
+        "missing percentile icon set worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "percentile icon set should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"), "percentile icon set should not create styles");
+    check(!entries.contains("xl/metadata.xml"), "percentile icon set should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("styles") == std::string::npos,
+        "percentile icon set should not add style content types");
+    check(content_types.find("conditionalFormatting") == std::string::npos,
+        "percentile icon set should not add conditional formatting content types");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "percentile icon set should not request recalculation");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("styles") == std::string::npos,
+        "percentile icon set should not add styles workbook relationship");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "percentile icon set worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A10\"/>",
+        "percentile icon set worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"iconSet\" priority=\"1\"><iconSet iconSet=\"3Arrows\" showValue=\"0\" reverse=\"1\">"
+        "<cfvo type=\"percentile\" val=\"10\"/><cfvo type=\"percentile\" val=\"50\"/>"
+        "<cfvo type=\"percentile\" val=\"90\"/></iconSet></cfRule></conditionalFormatting></worksheet>",
+        "percentile icon set XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "percentile icon set conditional formatting element count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfRule ") == 1,
+        "percentile icon set conditional formatting rule count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfvo ") == 3,
+        "percentile icon set cfvo count mismatch");
+    check(count_occurrences(worksheet_xml, "<iconSet ") == 1,
+        "percentile icon set element count mismatch");
+}
+
 void test_streaming_writer_conditional_formatting_icon_set_multi_range_sqref()
 {
     const auto output_path = std::filesystem::current_path()
@@ -4458,6 +4523,7 @@ int main()
         test_streaming_writer_conditional_formatting_data_bar_priorities();
         test_streaming_writer_conditional_formatting_icon_set();
         test_streaming_writer_conditional_formatting_icon_set_metadata_order();
+        test_streaming_writer_conditional_formatting_icon_set_percentile_thresholds();
         test_streaming_writer_conditional_formatting_icon_set_multi_range_sqref();
         test_streaming_writer_conditional_formatting_icon_set_priorities();
         test_streaming_writer_invalid_conditional_formatting();

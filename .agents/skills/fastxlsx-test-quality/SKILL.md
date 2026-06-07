@@ -352,17 +352,21 @@ ShowValue 和多区域 AppliesTo；metadata-order workbook 应核对 `ShowValue=
 py tools\verify_conditional_formatting_icon_sets.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set.xlsx `
   --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx `
+  --percentile-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx `
   --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx `
   --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx `
   --work-dir build\qa\conditional-formatting-icon-sets
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_formatting_icon_sets_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set.xlsx `
+  -MetadataOrderPath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx `
+  -PercentilePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx `
   -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx
 ```
 Python helper 检查 package XML、`openpyxl` 读取和可选 `XlsxWriter` reference；
-Excel helper 只读打开 basic 和 multi-range workbook，核对 icon set、IconSet ID、
-ShowIconOnly、ReverseOrder 和多区域 AppliesTo。它们是本地 QA/排障工具，不接入默认
-CTest/CI，也不是运行时依赖。
+Excel helper 只读打开 basic、metadata-order、percentile 和 multi-range workbook，
+核对 icon set、IconSet ID、Percent / Percentile criteria、ShowIconOnly、
+ReverseOrder 和多区域 AppliesTo。它们是本地 QA/排障工具，不接入默认 CTest/CI，
+也不是运行时依赖。
 
 ## ZIP backend 验证
 

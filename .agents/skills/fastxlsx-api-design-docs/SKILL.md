@@ -161,6 +161,8 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   existing-file editing, or full conditional formatting.
 - Basic 3Arrows icon sets are a separate current `WorksheetWriter::add_conditional_icon_set()`
   API surface, not part of the data bar API.
+- Current icon-set QA covers the existing Percent, Number, and Percentile
+  threshold serialization paths; this does not imply advanced/custom icon sets.
 
 ## API 模式
 

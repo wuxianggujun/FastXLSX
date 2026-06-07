@@ -1423,7 +1423,8 @@ Validation:
   `tools/verify_conditional_formatting_icon_sets.py` for package XML,
   `openpyxl`, and optional `XlsxWriter` reference checks, and
   `tools/verify_conditional_formatting_icon_sets_excel.ps1` for Excel COM
-  read-only visual checks of the basic 3Arrows and multi-range icon set workbooks.
+  read-only visual checks of the basic 3Arrows, percentile-threshold, and
+  multi-range icon set workbooks.
 - On any structural mismatch, compare against Excel/openpyxl/XlsxWriter
   reference workbooks by unzipping packages and inspecting XML semantics.
 

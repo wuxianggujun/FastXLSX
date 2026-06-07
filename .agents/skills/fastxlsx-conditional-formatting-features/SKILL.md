@@ -79,6 +79,13 @@ py tools\verify_conditional_formatting_icon_sets.py
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_formatting_icon_sets_excel.ps1
 ```
 
+Icon set QA note: `tools/verify_conditional_formatting_icon_sets.py` and
+`tools/verify_conditional_formatting_icon_sets_excel.ps1` now include the
+existing `IconSetValueType::Percentile` path through
+`fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx`.
+This is QA hardening for the basic built-in `3Arrows` slice, not
+advanced/custom icon set support.
+
 ## 禁止事项
 
 - 不要把 color scale、basic data bar 或 basic 3Arrows icon set 写成完整 conditional formatting。

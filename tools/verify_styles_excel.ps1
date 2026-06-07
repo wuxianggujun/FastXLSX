@@ -1,6 +1,7 @@
 param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx",
-    [string]$SharedPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx"
+    [string]$SharedPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx",
+    [string]$AlignmentPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -90,6 +91,45 @@ function Verify-SharedStylesWorkbook {
     }
 }
 
+function Verify-AlignmentStylesWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("Alignment")
+
+        Assert-Equal $sheet.Range("A2").Value2 "line 1`nline 2" "Alignment A2 value"
+        Assert-Equal $sheet.Range("B2").Value2 12.5 "Alignment B2 value"
+        Assert-Equal $sheet.Range("C2").Value2 42.5 "Alignment C2 value"
+        Assert-Equal $sheet.Range("D2").Value2 "plain" "Alignment D2 value"
+
+        Assert-Equal $sheet.Range("A2").WrapText $true "Alignment A2 wrap text"
+        Assert-Equal $sheet.Range("B2").NumberFormat '0.0' "Alignment B2 number format"
+        Assert-Equal $sheet.Range("C2").NumberFormat '0.0' "Alignment C2 number format"
+        Assert-Equal $sheet.Range("C2").WrapText $true "Alignment C2 wrap text"
+
+        Write-Host "OK: Excel opened wrap-text alignment styles workbook read-only: $resolved"
+        Write-Host "OK: WrapText and NumberFormat metadata verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($sheet, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 $excel = $null
 
 try {
@@ -99,6 +139,7 @@ try {
 
     Verify-StylesWorkbook -Excel $excel -Path $Path
     Verify-SharedStylesWorkbook -Excel $excel -Path $SharedPath
+    Verify-AlignmentStylesWorkbook -Excel $excel -Path $AlignmentPath
 }
 finally {
     if ($null -ne $excel) {

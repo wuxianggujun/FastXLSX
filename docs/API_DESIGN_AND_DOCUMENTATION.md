@@ -105,21 +105,26 @@ width；小型 in-memory `Workbook` 路径在 `Workbook::save()` 序列化 works
 时报 `FastXlsxError`。不要把 `NaN/Inf` 写成字符串、空单元格或 OpenXML 数字文本。
 
 当前 `Cell` / `CellView` 都没有专用 date cell 类型；日期/时间单元格只能由调用方按
-Excel serial number 写入 numeric cell。P9a 已有 streaming-only 自定义 number format
-styles，但它只控制显示格式，不编码 date cell type、不计算日期序列值，也不验证
+Excel serial number 写入 numeric cell。P9 已有 streaming-only 自定义 number format
+styles，但 number format 只控制显示格式，不编码 date cell type、不计算日期序列值，也不验证
 日期语义。不要把 `DataValidationType::Date` 误写成 date cell encoding 已实现。
 
 对 styles 相关 public API，注释还要写清当前只支持 Streaming / new-workbook-only 的
-custom number format first slice。`StyleId` 是 workbook-local handle，默认 id `0`
+custom number format 和窄 wrap-text alignment slices。`StyleId` 是 workbook-local handle，默认 id `0`
 表示 workbook default style；非默认 id 必须来自同一个 `WorkbookWriter::add_style()`
-返回值，不能跨 workbook 复用。`CellStyle::number_format` 当前不能为空，重复字符串按
-精确文本匹配去重，不做语义规范化。`CellView::with_style()` 只在 cell view 中携带
+返回值，不能跨 workbook 复用。`CellStyle::number_format` 可为空，表示不改变 number
+format；`CellAlignment::wrap_text=true` 是当前唯一 alignment 子能力，false 或空 optional
+不贡献 style 属性。`WorkbookWriter::add_style()` 应拒绝完全空的 style；重复完整 style
+复用同一个 `StyleId`，相同 number format 在不同 style 组合中复用同一个 custom
+`numFmtId`，不做 Excel 语义规范化。`CellView::with_style()` 只在 cell view 中携带
 小句柄；`WorksheetWriter::append_row()` 必须在推进 row count、dimension、
 sharedStrings 或 formula recalculation metadata 前拒绝无效或 foreign style id。
 启用非默认样式会在 `close()` 时生成 `xl/styles.xml`、styles content type override 和
 workbook styles relationship，并在 worksheet cell 上写 `s="N"`；默认 style 不写
-`s="0"`，也不新增 worksheet `.rels`。当前不支持 font/fill/border/alignment、
-rich text、dxf-backed conditional formatting、existing-file style preservation 或完整
+`s="0"`，也不新增 worksheet `.rels`。wrap-text alignment 只写 `cellXfs` 中的
+`applyAlignment="1"` / `<alignment wrapText="1"/>`，不计算 row height，也不代表完整
+alignment。当前不支持 font/fill/border/full alignment、rich text、dxf-backed
+conditional formatting、existing-file style preservation 或完整
 Excel formatting parity。当前 two-/three-color color scale、basic data bar 和 basic
 3Arrows icon set API 是 worksheet metadata，不代表 styles registry 或 `dxfs` 已支持。
 
@@ -278,7 +283,8 @@ unsupported header 的错误边界，以及它不是任意 stream/URL/base64 图
 - 需要时完成本机 Excel 可视化验证。
 - styles API 还需验证文档注释写清 workbook-local `StyleId`、foreign id 拒绝、
   `xl/styles.xml` / workbook relationship / content type side effects、默认 `s="0"`
-  省略、number format 不是 date cell type，以及当前不支持完整 formatting。
+  省略、number format 不是 date cell type、wrap-text alignment 不是完整 alignment，
+  以及当前不支持完整 formatting。
 - 图片 API 还需验证文档注释没有把 `stb` 解码能力写成 OpenXML 图片支持，也没有省略
   decoded pixel buffer、caller-owned memory span、copy-to-temp-file-backed media entry
   或 media/drawing part state 的内存边界。

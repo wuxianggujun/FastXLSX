@@ -219,18 +219,23 @@ public header 中的 API 应有 Doxygen 风格注释，至少说明：
 路径当前在 `Workbook::save()` 序列化 worksheet XML 时报错。in-memory 和 streaming
 `RowOptions::height`、以及 `WorksheetWriter::set_column_width()` 都要写清正数/有限值要求。
 当前 `Cell` / `CellView` 都没有专用 date cell 类型；日期/时间单元格只能由调用方按
-Excel serial number 写入 numeric cell。P9a 已有 streaming-only 自定义 number format
+Excel serial number 写入 numeric cell。P9 已有 streaming-only 自定义 number format
 styles，但 number format 只负责显示格式，不编码 date cell type、不计算日期序列值。
 不要把 `DataValidationType::Date` 误写成 date cell encoding 已实现。
 不要设计或描述把 `NaN/Inf` 转成字符串、空单元格或 OpenXML 数字文本的行为。
 
 styles API 还要写清：Streaming / new-workbook-only、`StyleId` 是 workbook-local
 handle、默认 id `0` 表示 default style、非默认 id 必须来自同一个
-`WorkbookWriter::add_style()`、foreign id 应在 `append_row()` 推进 row state 前拒绝、
-`CellStyle::number_format` 当前不能为空、重复 format 只按字符串精确匹配去重、生成
+`WorkbookWriter::add_style()`、foreign id 应在 `append_row()` 推进 row state 前拒绝。
+`CellStyle::number_format` 可为空，表示不改变 number format；`CellAlignment::wrap_text`
+是当前唯一 alignment 子能力，false 或空 optional 不贡献 style 属性。完全空 style 会被拒绝。
+重复完整 style 复用同一个 `StyleId`，相同 number format 在不同 style 组合中复用同一个
+custom `numFmtId`，format 只按字符串精确匹配去重。样式会生成
 `xl/styles.xml` / workbook relationship / content type override、cell 写 `s="N"`、
-默认 `s="0"` 省略、不创建 worksheet `.rels`，以及当前不支持 font/fill/border/alignment、
-rich text、dxf-backed conditional formatting、existing-file style preservation 或完整
+默认 `s="0"` 省略、不创建 worksheet `.rels`。wrap-text alignment 只写
+`applyAlignment="1"` / `<alignment wrapText="1"/>`，不计算行高，不代表完整 alignment；
+当前不支持 font/fill/border/full alignment、rich text、dxf-backed conditional formatting、
+existing-file style preservation 或完整
 Excel formatting parity。当前 two-/three-color color scale、basic data bar 和 basic
 3Arrows icon set 是 worksheet
 metadata，不代表 styles registry 或 `dxfs` 已支持。

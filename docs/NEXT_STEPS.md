@@ -66,11 +66,12 @@ that exist in code, CMake, tests, docs, or local verification.
     `WorkbookWriterOptions::document_properties`. Treat this as core/app
     metadata for new workbooks, not as `docProps/custom.xml`, existing-file
     editing, or a complete document-properties API.
-  - Streaming-only number-format styles are visible through `StyleId`,
-    `CellStyle`, `WorkbookWriter::add_style()`, `CellView::with_style()`,
-    generated `xl/styles.xml`, workbook styles relationship, and focused
-    structure tests. Treat this as the P9a custom number format foundation, not
-    as font/fill/border/alignment, date cell type, dxf-backed conditional
+  - Streaming-only number-format and wrap-text alignment styles are visible
+    through `StyleId`, `CellAlignment`, `CellStyle`,
+    `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
+    `xl/styles.xml`, workbook styles relationship, and focused structure tests.
+    Treat this as the P9 foundation for custom number formats and narrow
+    `wrapText` alignment, not as font/fill/border/full alignment, date cell type, dxf-backed conditional
     formatting, rich text, or existing-file style preservation. The current
     two-/three-color color scale, basic data bar, and basic 3Arrows icon set slices are worksheet metadata,
     not styles/dxfs support.
@@ -159,17 +160,19 @@ feature completion.
      backend, and preservation tests before any complete edit support is
      claimed.
 
-4. P9 styles number formats - 基础.
+4. P9 styles number formats + wrap-text alignment - 基础.
    - Current files show workbook-local `StyleId`, `CellStyle`,
      `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
      `xl/styles.xml`, workbook styles relationship, and focused CTest coverage.
-   - The first slice supports custom number formats only. Duplicate format
-     strings reuse the same style id; default cells omit `s="0"`.
+   - The current slices support custom number formats and narrow
+     `CellAlignment::wrap_text`. Duplicate complete styles reuse the same style
+     id; equal number-format strings reuse the same custom `numFmtId` across
+     different style combinations; default cells omit `s="0"`.
    - Current local QA uses `tools/verify_styles_number_formats.py` for
      package XML / `openpyxl` / optional `XlsxWriter` checks and
      `tools/verify_styles_excel.ps1` for Excel COM read-only visible checks.
    - Before expanding support wording, add separate tasks and tests for
-     fonts/fills/borders/alignment, date serial helper policy, conditional
+     fonts/fills/borders/full alignment, date serial helper policy, conditional
      formatting, rich text, and existing-file style preservation.
 
 ## Repository State
@@ -218,10 +221,10 @@ commit or short series with its own tests and docs update.
    - Keep benchmark work out of default CTest.
 
 6. Phase 3 styles and metadata hardening.
-   - Current P9a number-format styles are 基础 for streaming new workbooks:
-     workbook-local style ids, generated `xl/styles.xml`, workbook relationship,
-     and cell `s="N"` references.
-   - Continue with fonts/fills/borders/alignment only as separate registry
+   - Current P9 number-format and wrap-text alignment styles are 基础 for
+     streaming new workbooks: workbook-local style ids, generated
+     `xl/styles.xml`, workbook relationship, and cell `s="N"` references.
+   - Continue with fonts/fills/borders/full alignment only as separate registry
      slices with structure tests and Excel visual verification.
    - Decide formula cached-value and calc behavior boundaries separately from
      styles.
@@ -588,13 +591,16 @@ Do not claim:
 
 ### P9 - Style Registry Design and First Styles
 
-Status: 基础 for streaming-only custom number format styles.
+Status: 基础 for streaming-only custom number format and wrap-text alignment styles.
 
 Current foundation:
 - `StyleId` is a workbook-local handle; default `StyleId{}` is style `0`.
-- `CellStyle` currently stores only `number_format`.
+- `CellAlignment` currently exposes only `wrap_text`; `CellStyle` stores
+  `number_format` plus optional narrow alignment metadata.
 - `WorkbookWriter::add_style(CellStyle)` copies style metadata into workbook
-  state, rejects empty styles, and de-duplicates repeated number format strings.
+  state, rejects empty styles, de-duplicates repeated complete styles, and
+  reuses the same custom `numFmtId` for equal number-format strings across
+  different style combinations.
 - `CellView::with_style(StyleId)` carries the style id into append-row cell XML.
 - `WorksheetWriter::append_row()` validates non-default style ids before
   advancing row count, dimensions, sharedStrings state, or formula recalculation
@@ -609,25 +615,25 @@ Do:
 - Keep `xl/styles.xml` as a small workbook-level part. Do not create worksheet
   `.rels` for styles.
 - Keep style validation before row-state mutation.
-- Add future font/fill/border/alignment slices through the same registry, not
+- Add future font/fill/border/full-alignment slices through the same registry, not
   through ad hoc cell XML fragments.
 - Document every style API as Streaming / new-workbook-only until existing-file
   style preservation exists.
 
 Accept when:
 - CTest covers `xl/styles.xml`, style ids, worksheet `s="N"` references,
-  custom `numFmtId`, XML attribute escape, sharedStrings + styles relationship
-  ordering, default `s="0"` omission, and invalid foreign `StyleId` state
-  hygiene.
+  custom `numFmtId`, XML attribute escape, wrap-text `applyAlignment` /
+  `<alignment wrapText="1"/>`, sharedStrings + styles relationship ordering,
+  default `s="0"` omission, and invalid foreign `StyleId` state hygiene.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM
-  read-only NumberFormat checks.
+  read-only NumberFormat and WrapText checks.
 
 Do not claim:
-- Font, fill, border, alignment, rich text, dxf-backed conditional formatting,
+- Font, fill, border, full alignment, rich text, dxf-backed conditional formatting,
   date cell type, existing-file style preservation, or full Excel formatting
-  parity from the number-format slice.
+  parity from the number-format and wrap-text alignment slices.
 
 ### P10 - Configurable Document Properties API
 
@@ -1180,22 +1186,23 @@ Status: 基础.
 Current foundation:
 - Write skeletons exist for formula cells, row height, column width, frozen
   panes, auto filters, and merged cells.
-- P9a number-format style registry exists for streaming new workbooks:
+- P9 style registry exists for streaming new workbooks:
   workbook-local `StyleId`, `CellStyle::number_format`,
+  `CellStyle::alignment.wrap_text`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
   `xl/styles.xml`, and workbook styles relationship.
 - Full Phase 3 remains 计划.
 
 Next tasks:
-- Harden number-format style docs and reference QA when the sample shape changes.
-- Add fonts/fills/borders/alignment only as separate registry-backed slices.
+- Harden style docs and reference QA when the sample shape changes.
+- Add fonts/fills/borders/full alignment only as separate registry-backed slices.
 - Add calc mode and cached formula behavior decisions before claiming formula
   compatibility beyond write-only formulas.
 
 Validation:
 - Current style validation includes `xl/styles.xml`, style IDs, worksheet style
-  references, custom number format escaping, sharedStrings coexistence, and
-  Excel COM / `openpyxl` checks through the fixed local helpers.
+  references, custom number format escaping, wrap-text alignment metadata,
+  sharedStrings coexistence, and Excel COM / `openpyxl` checks through the fixed local helpers.
 - Use Excel visual verification for style samples.
 - Use reference `.xlsx` files and XML comparison when Excel repairs output.
 

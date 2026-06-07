@@ -798,6 +798,59 @@ bool writes_styles(const detail::WorkbookWriterState& workbook) noexcept
     return !workbook.styles.empty();
 }
 
+bool has_number_format(const CellStyle& style) noexcept
+{
+    return !style.number_format.empty();
+}
+
+bool has_wrap_text_alignment(const CellStyle& style) noexcept
+{
+    return style.alignment.has_value() && style.alignment->wrap_text;
+}
+
+bool has_supported_style_property(const CellStyle& style) noexcept
+{
+    return has_number_format(style) || has_wrap_text_alignment(style);
+}
+
+bool equivalent_style(const CellStyle& lhs, const CellStyle& rhs) noexcept
+{
+    return lhs.number_format == rhs.number_format
+        && has_wrap_text_alignment(lhs) == has_wrap_text_alignment(rhs);
+}
+
+std::size_t custom_number_format_count(const std::vector<RegisteredStyle>& styles) noexcept
+{
+    std::size_t count = 0;
+    for (auto style = styles.begin(); style != styles.end(); ++style) {
+        if (style->number_format_id == 0) {
+            continue;
+        }
+        const bool already_seen = std::any_of(styles.begin(), style,
+            [id = style->number_format_id](const RegisteredStyle& previous) {
+                return previous.number_format_id == id;
+            });
+        if (!already_seen) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::optional<std::uint32_t> find_number_format_id(
+    const std::vector<RegisteredStyle>& styles, std::string_view number_format)
+{
+    const auto existing = std::find_if(styles.begin(), styles.end(),
+        [number_format](const RegisteredStyle& registered_style) {
+            return registered_style.number_format_id != 0
+                && registered_style.style.number_format == number_format;
+        });
+    if (existing == styles.end()) {
+        return std::nullopt;
+    }
+    return existing->number_format_id;
+}
+
 bool row_has_formula(std::span<const CellView> cells) noexcept
 {
     return std::any_of(cells.begin(), cells.end(),
@@ -1005,17 +1058,30 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
     xml += R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)";
-    xml += R"(<numFmts count=")";
-    xml += std::to_string(styles.size());
-    xml += R"(">)";
-    for (const RegisteredStyle& style : styles) {
-        xml += R"(<numFmt numFmtId=")";
-        xml += std::to_string(style.number_format_id);
-        xml += R"(" formatCode=")";
-        xml += detail::escape_xml_attribute(style.style.number_format);
-        xml += R"("/>)";
+    const std::size_t number_format_count = custom_number_format_count(styles);
+    if (number_format_count > 0) {
+        xml += R"(<numFmts count=")";
+        xml += std::to_string(number_format_count);
+        xml += R"(">)";
+        for (auto style = styles.begin(); style != styles.end(); ++style) {
+            if (style->number_format_id == 0) {
+                continue;
+            }
+            const bool already_emitted = std::any_of(styles.begin(), style,
+                [id = style->number_format_id](const RegisteredStyle& previous) {
+                    return previous.number_format_id == id;
+                });
+            if (already_emitted) {
+                continue;
+            }
+            xml += R"(<numFmt numFmtId=")";
+            xml += std::to_string(style->number_format_id);
+            xml += R"(" formatCode=")";
+            xml += detail::escape_xml_attribute(style->style.number_format);
+            xml += R"("/>)";
+        }
+        xml += "</numFmts>";
     }
-    xml += "</numFmts>";
     xml += R"(<fonts count="1"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>)";
     xml += R"(<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>)";
     xml += R"(<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>)";
@@ -1026,7 +1092,18 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
     for (const RegisteredStyle& style : styles) {
         xml += R"(<xf numFmtId=")";
         xml += std::to_string(style.number_format_id);
-        xml += R"(" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)";
+        xml += R"(" fontId="0" fillId="0" borderId="0" xfId="0")";
+        if (style.number_format_id != 0) {
+            xml += R"( applyNumberFormat="1")";
+        }
+        if (has_wrap_text_alignment(style.style)) {
+            xml += R"( applyAlignment="1")";
+        }
+        if (has_wrap_text_alignment(style.style)) {
+            xml += R"(><alignment wrapText="1"/></xf>)";
+        } else {
+            xml += "/>";
+        }
     }
     xml += "</cellXfs>";
     xml += R"(<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>)";
@@ -1649,8 +1726,8 @@ void validate_image_options(const ImageOptions& options)
 
 void validate_cell_style(const CellStyle& style)
 {
-    if (style.number_format.empty()) {
-        throw FastXlsxError("cell style must set a custom number format");
+    if (!has_supported_style_property(style)) {
+        throw FastXlsxError("cell style must set at least one supported property");
     }
 }
 
@@ -2323,7 +2400,7 @@ StyleId WorkbookWriter::add_style(CellStyle style)
     constexpr std::uint32_t first_custom_number_format_id = 164;
     const auto existing = std::find_if(state_->styles.begin(), state_->styles.end(),
         [&style](const RegisteredStyle& registered_style) {
-            return registered_style.style.number_format == style.number_format;
+            return equivalent_style(registered_style.style, style);
         });
     if (existing != state_->styles.end()) {
         return StyleId(
@@ -2335,14 +2412,24 @@ StyleId WorkbookWriter::add_style(CellStyle style)
         >= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
         throw FastXlsxError("too many cell styles");
     }
-    if (state_->styles.size()
-        > static_cast<std::size_t>(
-            std::numeric_limits<std::uint32_t>::max() - first_custom_number_format_id)) {
-        throw FastXlsxError("too many custom number formats");
+
+    std::uint32_t number_format_id = 0;
+    if (has_number_format(style)) {
+        if (const auto existing_number_format_id =
+                find_number_format_id(state_->styles, style.number_format)) {
+            number_format_id = *existing_number_format_id;
+        } else {
+            const std::size_t number_format_count = custom_number_format_count(state_->styles);
+            if (number_format_count
+                > static_cast<std::size_t>(
+                    std::numeric_limits<std::uint32_t>::max() - first_custom_number_format_id)) {
+                throw FastXlsxError("too many custom number formats");
+            }
+            number_format_id =
+                first_custom_number_format_id + static_cast<std::uint32_t>(number_format_count);
+        }
     }
 
-    const std::uint32_t number_format_id =
-        first_custom_number_format_id + static_cast<std::uint32_t>(state_->styles.size());
     state_->styles.push_back({std::move(style), number_format_id});
     return StyleId(static_cast<std::uint32_t>(state_->styles.size()),
         reinterpret_cast<std::uintptr_t>(state_.get()));

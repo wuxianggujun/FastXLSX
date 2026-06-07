@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local QA for FastXLSX streaming number-format styles.
+"""Local QA for FastXLSX streaming styles.
 
 This helper is intentionally local QA, not a runtime dependency and not a
 default CI gate. It checks the generated OpenXML package, then uses openpyxl as
@@ -142,7 +142,80 @@ def verify_shared_styles_package(path: Path) -> dict[str, Any]:
     }
 
 
-def verify_with_openpyxl(path: Path, shared_path: Path) -> dict[str, Any]:
+def verify_alignment_styles_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "[Content_Types].xml",
+        "xl/workbook.xml",
+        "xl/_rels/workbook.xml.rels",
+        "xl/worksheets/sheet1.xml",
+        "xl/styles.xml",
+    ]
+    for name in required:
+        require(name in names, f"alignment styles sample missing package entry: {name}")
+
+    require("xl/worksheets/_rels/sheet1.xml.rels" not in names,
+            "alignment styles sample should not create worksheet relationships")
+    require("xl/sharedStrings.xml" not in names,
+            "alignment styles sample should not create sharedStrings.xml")
+
+    workbook_rels = read_zip_text(path, "xl/_rels/workbook.xml.rels")
+    require(count(workbook_rels, "<Relationship ") == 2,
+            "alignment styles workbook relationship count mismatch")
+    require('Target="styles.xml"' in workbook_rels,
+            "alignment styles workbook relationship missing")
+
+    styles_xml = read_zip_text(path, "xl/styles.xml")
+    require('<numFmts count="1">' in styles_xml,
+            "alignment-only style should not create a custom numFmt entry")
+    require('<numFmt numFmtId="164" formatCode="0.0"/>' in styles_xml,
+            "alignment combined style should reuse number format id")
+    require('<fonts count="1">' in styles_xml, "alignment slice should keep default fonts")
+    require('<fills count="2">' in styles_xml, "alignment slice should keep default fills")
+    require('<borders count="1">' in styles_xml, "alignment slice should keep default borders")
+    require('<cellXfs count="4">' in styles_xml, "alignment cellXfs count mismatch")
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment wrapText="1"/></xf>' in styles_xml,
+        "alignment-only xf mismatch",
+    )
+    require(
+        '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyNumberFormat="1"/>' in styles_xml,
+        "number-only xf mismatch",
+    )
+    require(
+        '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyNumberFormat="1" applyAlignment="1"><alignment wrapText="1"/></xf>'
+        in styles_xml,
+        "number plus alignment xf mismatch",
+    )
+    require(count(styles_xml, '<alignment wrapText="1"/>') == 2,
+            "alignment sample should write exactly two wrapText records")
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('<dimension ref="A1:D2"/>' in worksheet_xml,
+            "alignment worksheet dimension mismatch")
+    require('<c r="A2" s="1" t="inlineStr"><is><t>line 1\nline 2</t></is></c>'
+            in worksheet_xml,
+            "wrapped string cell mismatch")
+    require('<c r="B2" s="2"><v>12.5</v></c>' in worksheet_xml,
+            "number-only styled cell mismatch")
+    require('<c r="C2" s="3"><v>42.5</v></c>' in worksheet_xml,
+            "number plus alignment styled cell mismatch")
+    require('<c r="D2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
+            "default inline string cell mismatch")
+    require('s="0"' not in worksheet_xml,
+            "default style should not be serialized as s=\"0\"")
+
+    return {
+        "style_ids": {"wrap_text": 1, "number_format": 2, "number_format_wrap_text": 3},
+        "custom_number_format_ids": [164],
+        "alignment_records": 2,
+    }
+
+
+def verify_with_openpyxl(path: Path, shared_path: Path, alignment_path: Path) -> dict[str, Any]:
     try:
         import openpyxl  # type: ignore
     except ModuleNotFoundError:
@@ -176,6 +249,26 @@ def verify_with_openpyxl(path: Path, shared_path: Path) -> dict[str, Any]:
     finally:
         shared_workbook.close()
 
+    alignment_workbook = openpyxl.load_workbook(alignment_path, read_only=False, data_only=False)
+    try:
+        alignment = alignment_workbook["Alignment"]
+        require(alignment["A2"].value == "line 1\nline 2",
+                "wrapped string value mismatch")
+        require(alignment["A2"].alignment.wrap_text is True,
+                f"A2 wrap_text mismatch: {alignment['A2'].alignment.wrap_text!r}")
+        require(alignment["B2"].number_format == "0.0",
+                f"B2 number format mismatch: {alignment['B2'].number_format!r}")
+        require(alignment["B2"].alignment.wrap_text is not True,
+                f"B2 should not wrap text: {alignment['B2'].alignment.wrap_text!r}")
+        require(alignment["C2"].number_format == "0.0",
+                f"C2 number format mismatch: {alignment['C2'].number_format!r}")
+        require(alignment["C2"].alignment.wrap_text is True,
+                f"C2 wrap_text mismatch: {alignment['C2'].alignment.wrap_text!r}")
+        require(alignment["D2"].alignment.wrap_text is not True,
+                f"D2 should keep default wrap_text: {alignment['D2'].alignment.wrap_text!r}")
+    finally:
+        alignment_workbook.close()
+
     return {
         "status": "opened",
         "styles": {
@@ -185,6 +278,12 @@ def verify_with_openpyxl(path: Path, shared_path: Path) -> dict[str, Any]:
             "F2": "$#,##0.00",
         },
         "shared_styles": {"A1": "@", "B1": "General"},
+        "alignment_styles": {
+            "A2_wrap_text": True,
+            "B2_number_format": "0.0",
+            "C2_number_format": "0.0",
+            "C2_wrap_text": True,
+        },
     }
 
 
@@ -212,6 +311,29 @@ def create_xlsxwriter_reference(path: Path) -> dict[str, Any]:
     return {"status": "created", "path": str(path)}
 
 
+def create_xlsxwriter_alignment_reference(path: Path) -> dict[str, Any]:
+    try:
+        import xlsxwriter  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module xlsxwriter is not installed"}
+
+    workbook = xlsxwriter.Workbook(path)
+    try:
+        sheet = workbook.add_worksheet("Alignment")
+        wrap_text = workbook.add_format({"text_wrap": True})
+        number = workbook.add_format({"num_format": "0.0"})
+        number_wrap = workbook.add_format({"num_format": "0.0", "text_wrap": True})
+        sheet.write_row(0, 0, ["Wrapped", "Number", "Both", "Default"])
+        sheet.write_string(1, 0, "line 1\nline 2", wrap_text)
+        sheet.write_number(1, 1, 12.5, number)
+        sheet.write_number(1, 2, 42.5, number_wrap)
+        sheet.write_string(1, 3, "plain")
+    finally:
+        workbook.close()
+
+    return {"status": "created", "path": str(path)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -227,6 +349,12 @@ def main() -> int:
         help="FastXLSX sharedStrings + styles workbook to verify.",
     )
     parser.add_argument(
+        "--alignment-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-styles-alignment.xlsx"),
+        help="FastXLSX wrap-text alignment styles workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/styles-number-formats"),
@@ -236,20 +364,27 @@ def main() -> int:
 
     input_path = args.input.resolve()
     shared_input_path = args.shared_input.resolve()
+    alignment_input_path = args.alignment_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
     require(shared_input_path.exists(), f"shared input workbook does not exist: {shared_input_path}")
+    require(alignment_input_path.exists(),
+            f"alignment input workbook does not exist: {alignment_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     report = {
         "fastxlsx_input": str(input_path),
         "fastxlsx_shared_input": str(shared_input_path),
+        "fastxlsx_alignment_input": str(alignment_input_path),
         "fastxlsx_package": verify_styles_package(input_path),
         "fastxlsx_shared_package": verify_shared_styles_package(shared_input_path),
+        "fastxlsx_alignment_package": verify_alignment_styles_package(alignment_input_path),
         "xlsx_libraries": {
-            "openpyxl": verify_with_openpyxl(input_path, shared_input_path),
+            "openpyxl": verify_with_openpyxl(input_path, shared_input_path, alignment_input_path),
             "xlsxwriter": create_xlsxwriter_reference(
                 work_dir / "reference-xlsxwriter-styles-number-formats.xlsx"),
+            "xlsxwriter_alignment": create_xlsxwriter_alignment_reference(
+                work_dir / "reference-xlsxwriter-styles-alignment.xlsx"),
         },
     }
 

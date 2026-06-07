@@ -711,6 +711,95 @@ void test_streaming_writer_number_format_styles()
         "default style should not be serialized as s=\"0\"");
 }
 
+void test_streaming_writer_alignment_styles()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-styles-alignment.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+
+    fastxlsx::CellStyle wrap_text_style_definition;
+    wrap_text_style_definition.alignment = fastxlsx::CellAlignment {true};
+    const auto wrap_text_style = workbook.add_style(wrap_text_style_definition);
+    const auto duplicate_wrap_text_style = workbook.add_style(wrap_text_style_definition);
+
+    fastxlsx::CellStyle number_style_definition {"0.0"};
+    const auto number_style = workbook.add_style(number_style_definition);
+
+    fastxlsx::CellStyle number_wrap_style_definition {"0.0"};
+    number_wrap_style_definition.alignment = fastxlsx::CellAlignment {true};
+    const auto number_wrap_style = workbook.add_style(number_wrap_style_definition);
+
+    check(wrap_text_style.value() == 1, "first alignment style id should be 1");
+    check(duplicate_wrap_text_style.value() == 1, "duplicate alignment style should reuse id");
+    check(number_style.value() == 2, "number format style should be second style id");
+    check(number_wrap_style.value() == 3, "combined number/alignment style should be third style id");
+
+    auto sheet = workbook.add_worksheet("Alignment");
+    sheet.append_row({
+        fastxlsx::CellView::text("Wrapped"),
+        fastxlsx::CellView::text("Number"),
+        fastxlsx::CellView::text("Both"),
+        fastxlsx::CellView::text("Default"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("line 1\nline 2").with_style(wrap_text_style),
+        fastxlsx::CellView::number(12.5).with_style(number_style),
+        fastxlsx::CellView::number(42.5).with_style(number_wrap_style),
+        fastxlsx::CellView::text("plain"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "alignment styles xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "missing alignment styles part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "alignment styles should not create worksheet relationships");
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "alignment styles inline sample should not create shared strings");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="1">)",
+        "alignment-only style should not create a custom number format");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="0.0"/>)",
+        "combined style should reuse the custom number format id");
+    check_contains(styles_xml, R"(<fonts count="1">)",
+        "alignment slice should keep default fonts only");
+    check_contains(styles_xml, R"(<fills count="2">)",
+        "alignment slice should keep default fills only");
+    check_contains(styles_xml, R"(<borders count="1">)",
+        "alignment slice should keep default borders only");
+    check_contains(styles_xml,
+        R"(<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "alignment cellXfs default style mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1"/></xf>)",
+        "alignment-only xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "number-only xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment wrapText="1"/></xf>)",
+        "number plus alignment xf mismatch");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "alignment worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "<c r=\"A2\" s=\"1\" t=\"inlineStr\"><is><t>line 1\nline 2</t></is></c>",
+        "wrapped inline string cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="B2" s="2"><v>12.5</v></c>)",
+        "number-only styled cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="C2" s="3"><v>42.5</v></c>)",
+        "number plus alignment styled cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>plain</t></is></c>)",
+        "default inline string cell mismatch");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "default style should not be serialized as s=\"0\" in alignment sample");
+}
+
 void test_streaming_writer_styles_with_shared_strings()
 {
     const auto output_path =
@@ -828,7 +917,15 @@ void test_streaming_writer_invalid_style_registration()
 
     check_fastxlsx_error(
         [&workbook] { static_cast<void>(workbook.add_style(fastxlsx::CellStyle {""})); },
-        "add_style should reject an empty style in the current number-format-only slice");
+        "add_style should reject an empty style");
+
+    fastxlsx::CellStyle false_alignment_style;
+    false_alignment_style.alignment = fastxlsx::CellAlignment {};
+    check_fastxlsx_error(
+        [&workbook, false_alignment_style] {
+            static_cast<void>(workbook.add_style(false_alignment_style));
+        },
+        "add_style should reject alignment metadata without a supported property");
 
     workbook.add_worksheet("Registration").append_row({fastxlsx::CellView::text("done")});
     workbook.close();
@@ -4818,6 +4915,7 @@ int main()
         test_streaming_writer_failed_append_preserves_state();
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_number_format_styles();
+        test_streaming_writer_alignment_styles();
         test_streaming_writer_styles_with_shared_strings();
         test_streaming_writer_invalid_style_preserves_state();
         test_streaming_writer_foreign_style_collision_is_rejected();

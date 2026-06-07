@@ -180,11 +180,13 @@ and release packaging, or the decision to make minizip the default backend.
    - Prove unknown and unmodified parts are preserved.
    - Use template workbooks with images, charts, macros, or unknown parts.
 
-9. Streaming-only data validations - 基础.
+9. Streaming-only data validations - 基础 + prompt/error metadata.
    - `WorksheetWriter::add_data_validation()` now writes worksheet-local
      `<dataValidations>` for new workbooks only.
-   - The first slice stores lightweight metadata, copies formula strings into
-     writer state, and does not add package relationships or content types.
+   - The current slice stores lightweight metadata, copies formula and
+     prompt/error strings into writer state, writes prompt/error fields as
+     worksheet `<dataValidation>` attributes, and does not add package
+     relationships, content types, or styles.
    - Keep richer validation semantics, overlap checks, formula parsing, and
      existing-file editing out of scope until separately designed.
 
@@ -583,12 +585,16 @@ Do not claim:
 
 ### P14 - Streaming-Only Data Validations
 
-Status: 基础. The first streaming-only new-workbook slice is implemented.
+Status: 基础 + prompt/error metadata. The streaming-only new-workbook worksheet
+slice is implemented.
 
 Do:
 - Keep new-workbook `WorksheetWriter` metadata as the only supported surface.
 - Keep worksheet `<dataValidations>` independent of package relationships and
   content type overrides.
+- Keep prompt/error metadata worksheet-local: `showInputMessage`,
+  `showErrorMessage`, `errorStyle`, `promptTitle`, `prompt`, `errorTitle`, and
+  `error` are attributes on `<dataValidation>`.
 - Extend the narrow rule surface only with structure tests, Doxygen comments,
   and Excel/reference XML validation.
 
@@ -599,12 +605,20 @@ Accept when:
 - Tests also cover validation-only namespace behavior and `formula2` XML text
   escaping: validation-only worksheets do not declare `xmlns:r`, and `formula2`
   escapes `&`, `<`, and `>`.
+- Tests also cover prompt/error attributes, XML attribute escaping, prompt-only
+  and error-only rules, `stop` / `warning` / `information` error styles, empty
+  string omission, false flag omission, and no `.rels` / `styles.xml` /
+  content type side effects.
 - Coexistence tests cover suffix ordering with relationship-backed metadata:
   `<dataValidations>` stays before `<hyperlinks>` and `<tableParts>`, and data
   validations do not consume worksheet-local `rId` values before hyperlinks and
   tables.
 - Local Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`.
+- Local Excel COM and Python QA are recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-prompts.xlsx`
+  through `tools/verify_data_validation_prompts_excel.ps1` and
+  `tools/verify_data_validation_prompts.py`.
 
 Do not claim:
 - Full data validation semantics, formula parsing, value validation, overlap

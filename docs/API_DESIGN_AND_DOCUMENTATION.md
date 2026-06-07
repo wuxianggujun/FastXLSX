@@ -28,8 +28,8 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 不持有完整 worksheet cell matrix；如果 finalization 避免完整 worksheet XML
   内存副本，也必须说明该保证只覆盖对应 worksheet entry，不覆盖所有 package parts。
 - worksheet metadata API，例如 `WorksheetWriter::add_data_validation()`，应只保存
-  轻量规则状态；内存成本按规则数量和公式文本长度增长，不能为了校验规则而读取或
-  持有完整 worksheet cell matrix。
+  轻量规则状态；内存成本按规则数量、公式文本长度和 prompt/error 文本长度增长，
+  不能为了校验规则而读取或持有完整 worksheet cell matrix。
 
 ### Patch API
 
@@ -86,8 +86,11 @@ width；小型 in-memory `Workbook` 路径在 `Workbook::save()` 序列化 works
 时报 `FastXlsxError`。不要把 `NaN/Inf` 写成字符串、空单元格或 OpenXML 数字文本。
 
 对 data validations 这类 worksheet metadata API，注释还要说明是否只写
-worksheet XML、是否新增 relationships/content types、是否复制公式文本、是否解析
-公式或校验单元格值，以及是否支持 existing-file editing。
+worksheet XML、是否新增 relationships/content types/styles、是否复制公式文本和
+prompt/error 文本、是否按属性写出 `showInputMessage`、`showErrorMessage`、
+`errorStyle`、`promptTitle`、`prompt`、`errorTitle`、`error`，是否省略空字符串和
+false flag，是否解析公式或校验单元格值，以及是否支持 existing-file editing 或完整
+Excel UI。
 
 对 hyperlinks 这类 worksheet metadata API，注释还要区分 external relationship-backed
 链接和 internal location-only 链接。external API 要说明是否只支持 Streaming /

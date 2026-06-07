@@ -641,6 +641,13 @@ void test_streaming_writer_data_validations_with_relationship_metadata()
     whole.formula1 = "1";
     whole.formula2 = "10";
     whole.allow_blank = true;
+    whole.show_input_message = true;
+    whole.prompt_title = "Input";
+    whole.prompt = "Use 1 to 10";
+    whole.show_error_message = true;
+    whole.error_style = fastxlsx::DataValidationErrorStyle::Stop;
+    whole.error_title = "Range";
+    whole.error = "Out of range";
     sheet.add_data_validation({2, 1, 10, 1}, whole);
 
     sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
@@ -679,7 +686,9 @@ void test_streaming_writer_data_validations_with_relationship_metadata()
     check_contains(worksheet_xml, "<dimension ref=\"A1:B3\"/>",
         "validation relationship metadata dimension mismatch");
     check_contains(worksheet_xml,
-        "</sheetData><dataValidations count=\"1\"><dataValidation type=\"whole\" allowBlank=\"1\" operator=\"between\" "
+        "</sheetData><dataValidations count=\"1\"><dataValidation type=\"whole\" allowBlank=\"1\" "
+        "showInputMessage=\"1\" showErrorMessage=\"1\" errorStyle=\"stop\" errorTitle=\"Range\" "
+        "error=\"Out of range\" promptTitle=\"Input\" prompt=\"Use 1 to 10\" operator=\"between\" "
         "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation></dataValidations>"
         "<hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/><hyperlink ref=\"B3\" r:id=\"rId2\"/></hyperlinks>"
         "<tableParts count=\"1\"><tablePart r:id=\"rId3\"/></tableParts></worksheet>",
@@ -739,6 +748,136 @@ void test_streaming_writer_data_validation_formula2_escape_and_namespace()
         "<dataValidation type=\"textLength\" operator=\"between\" sqref=\"A2:A10\">"
         "<formula1>1</formula1><formula2>LEN(A2&amp;\"&lt;max&gt;\")</formula2></dataValidation>",
         "formula2 XML escaping mismatch");
+}
+
+void test_streaming_writer_data_validation_prompt_error_metadata()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-data-validation-prompts.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ValidationPrompt");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Whole"),
+        fastxlsx::CellView::text("List"),
+        fastxlsx::CellView::text("Decimal"),
+        fastxlsx::CellView::text("Custom"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::number(1.5),
+        fastxlsx::CellView::text("abc"),
+    });
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    whole.show_input_message = true;
+    whole.show_error_message = true;
+    whole.error_style = fastxlsx::DataValidationErrorStyle::Warning;
+    whole.error_title = "Error \"Title\" & <bad>";
+    whole.error = "Bad 'value' & <cell>";
+    whole.prompt_title = "Input <Title> & \"Quote\"";
+    whole.prompt = "Enter 'whole' & <value>";
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+
+    fastxlsx::DataValidationRule list;
+    list.type = fastxlsx::DataValidationType::List;
+    list.formula1 = "\"A,B,C\"";
+    list.show_input_message = true;
+    list.prompt_title = "Choice";
+    list.prompt = "Pick A, B, or C";
+    sheet.add_data_validation({2, 2, 10, 2}, list);
+
+    fastxlsx::DataValidationRule decimal;
+    decimal.type = fastxlsx::DataValidationType::Decimal;
+    decimal.operator_type = fastxlsx::DataValidationOperator::GreaterThan;
+    decimal.formula1 = "0";
+    decimal.show_error_message = true;
+    decimal.error_style = fastxlsx::DataValidationErrorStyle::Information;
+    decimal.error_title = "Decimal";
+    decimal.error = "Use a positive decimal";
+    sheet.add_data_validation({2, 3, 10, 3}, decimal);
+
+    fastxlsx::DataValidationRule custom;
+    custom.type = fastxlsx::DataValidationType::Custom;
+    custom.formula1 = "LEN(D2)>0";
+    custom.error_style = fastxlsx::DataValidationErrorStyle::Stop;
+    sheet.add_data_validation({2, 4, 10, 4}, custom);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing prompt/error validation worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "prompt/error data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "prompt/error data validation should not create metadata part");
+    check(!entries.contains("xl/styles.xml"),
+        "prompt/error data validation should not create styles");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "prompt/error data validation should not add data validation content types");
+    check(content_types.find("styles") == std::string::npos,
+        "prompt/error data validation should not add style content types");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "prompt/error data validation should not add workbook relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "prompt/error data validation should not request workbook recalculation metadata");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "prompt/error validation-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:D2\"/>",
+        "prompt/error data validation dimension mismatch");
+    check_contains(worksheet_xml, "</sheetData><dataValidations count=\"4\">",
+        "prompt/error dataValidations should follow sheetData");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"whole\" allowBlank=\"1\" showInputMessage=\"1\" "
+        "showErrorMessage=\"1\" errorStyle=\"warning\" "
+        "errorTitle=\"Error &quot;Title&quot; &amp; &lt;bad&gt;\" "
+        "error=\"Bad &apos;value&apos; &amp; &lt;cell&gt;\" "
+        "promptTitle=\"Input &lt;Title&gt; &amp; &quot;Quote&quot;\" "
+        "prompt=\"Enter &apos;whole&apos; &amp; &lt;value&gt;\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
+        "whole prompt/error validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"list\" showInputMessage=\"1\" promptTitle=\"Choice\" "
+        "prompt=\"Pick A, B, or C\" sqref=\"B2:B10\"><formula1>\"A,B,C\"</formula1></dataValidation>",
+        "prompt-only list validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"decimal\" showErrorMessage=\"1\" errorStyle=\"information\" "
+        "errorTitle=\"Decimal\" error=\"Use a positive decimal\" operator=\"greaterThan\" "
+        "sqref=\"C2:C10\"><formula1>0</formula1></dataValidation>",
+        "error-only decimal validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"custom\" errorStyle=\"stop\" sqref=\"D2:D10\">"
+        "<formula1>LEN(D2)&gt;0</formula1></dataValidation>",
+        "stop-style custom validation XML mismatch");
+    check(worksheet_xml.find("showInputMessage=\"0\"") == std::string::npos,
+        "false showInputMessage should be omitted");
+    check(worksheet_xml.find("showErrorMessage=\"0\"") == std::string::npos,
+        "false showErrorMessage should be omitted");
+    check(worksheet_xml.find("promptTitle=\"\"") == std::string::npos,
+        "empty promptTitle should be omitted");
+    check(worksheet_xml.find("prompt=\"\"") == std::string::npos,
+        "empty prompt should be omitted");
+    check(worksheet_xml.find("errorTitle=\"\"") == std::string::npos,
+        "empty errorTitle should be omitted");
+    check(worksheet_xml.find("error=\"\"") == std::string::npos,
+        "empty error should be omitted");
+    check(count_occurrences(worksheet_xml, "<dataValidation ") == 4,
+        "prompt/error dataValidation item count mismatch");
 }
 
 void test_streaming_writer_external_hyperlinks()
@@ -2344,6 +2483,7 @@ int main()
         test_streaming_writer_data_validations();
         test_streaming_writer_data_validations_with_relationship_metadata();
         test_streaming_writer_data_validation_formula2_escape_and_namespace();
+        test_streaming_writer_data_validation_prompt_error_metadata();
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_internal_hyperlinks();
         test_streaming_writer_internal_hyperlink_with_table_relationship_id();

@@ -360,7 +360,7 @@ Validation:
 
 ### M8 - Streaming-Only Data Validations
 
-Status: 基础 for streaming-only new-workbook worksheet data validations.
+Status: 基础 + prompt/error metadata for streaming-only new-workbook worksheet data validations.
 
 The first slice is implemented on `WorksheetWriter` only. It writes
 worksheet-local `<dataValidations>` XML and does not require package
@@ -375,6 +375,10 @@ Tasks:
   and custom formula text.
 - The first slice writes only worksheet `<dataValidations>` and does not add
   worksheet `.rels`, workbook relationships, or content type overrides.
+- `DataValidationRule` now stores optional prompt/error metadata and writes
+  `showInputMessage`, `showErrorMessage`, `errorStyle`, `promptTitle`,
+  `prompt`, `errorTitle`, and `error` as worksheet `<dataValidation>`
+  attributes. Empty strings and false flags are omitted.
 - Do not parse formulas, validate cell values, check overlap, or claim full
   Excel UI support.
 
@@ -385,10 +389,24 @@ Validation:
 - `fastxlsx.streaming` covers validation-only worksheet namespace behavior and
   `formula2` XML text escaping; validation-only worksheets do not declare
   `xmlns:r`, and `formula2` escapes `&`, `<`, and `>`.
+- `fastxlsx.streaming` covers prompt/error metadata attributes, XML attribute
+  escaping, prompt-only/error-only rules, all three current `errorStyle`
+  values, empty string omission, false flag omission, and absence of worksheet
+  `.rels`, `xl/metadata.xml`, `xl/styles.xml`, workbook relationships, content
+  type side effects, and `<calcPr>`.
 - Local Excel COM read-only validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-formula2-escape.xlsx`
   and read `A2` validation formula2 as `=LEN(A2&"<max>")`; local `openpyxl`
   3.1.2 loaded one data validation with formula2 `LEN(A2&"<max>")`.
+- Local Excel COM read-only validation opened
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-prompts.xlsx`
+  and verified `ValidationPrompt!A2:D2` prompt/error properties. Excel COM
+  returns the custom formula as `=LEN(D2)>0`; XML structure remains the source
+  of truth for emitted formula text.
+- `tools/verify_data_validation_prompts.py` checks the FastXLSX package XML,
+  loads prompt/error metadata with `openpyxl 3.1.2`, and creates `openpyxl` /
+  `XlsxWriter 3.2.0` reference workbooks for local QA. It is not a runtime
+  dependency and is not part of default CTest.
 - `fastxlsx.streaming` also covers coexistence with relationship-backed
   worksheet metadata: `<dataValidations>` remains before `<hyperlinks>` and
   `<tableParts>`, and data validations do not consume worksheet-local `rId`

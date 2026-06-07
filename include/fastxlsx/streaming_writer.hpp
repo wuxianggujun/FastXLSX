@@ -95,13 +95,26 @@ enum class DataValidationOperator {
     LessThanOrEqual,
 };
 
+/// Optional Excel error-alert style for worksheet data validation.
+///
+/// API mode: Streaming worksheet metadata. The style is serialized only when
+/// DataValidationRule::error_style is set. It does not create styles.xml and
+/// does not validate cell values.
+enum class DataValidationErrorStyle {
+    Stop,
+    Warning,
+    Information,
+};
+
 /// A streaming-only worksheet data-validation rule.
 ///
 /// FastXLSX copies formula text into writer-owned storage when the rule is
 /// added. Formula text is written as XML text but is not parsed, evaluated, or
-/// checked against cell contents. The writer stores one small rule object per
-/// call to WorksheetWriter::add_data_validation(); memory grows with rule count,
-/// not with worksheet row or cell count.
+/// checked against cell contents. Optional prompt/error strings are serialized
+/// as `<dataValidation>` attributes and are not interpreted as Excel UI state.
+/// The writer stores one small rule object per call to
+/// WorksheetWriter::add_data_validation(); memory grows with rule count and
+/// metadata string length, not with worksheet row or cell count.
 struct DataValidationRule {
     /// Validation kind written as the OpenXML `type` attribute.
     DataValidationType type = DataValidationType::List;
@@ -121,6 +134,32 @@ struct DataValidationRule {
 
     /// Writes `allowBlank="1"` when true. Omitted when false.
     bool allow_blank = false;
+
+    /// Writes `showInputMessage="1"` when true. Omitted when false. Prompt
+    /// text can still be stored when this flag is false.
+    bool show_input_message = false;
+
+    /// Writes `showErrorMessage="1"` when true. Omitted when false. Error text
+    /// can still be stored when this flag is false.
+    bool show_error_message = false;
+
+    /// Optional error-alert style written as `errorStyle`. Omitted when empty.
+    std::optional<DataValidationErrorStyle> error_style;
+
+    /// Optional input prompt title written as `promptTitle`. Empty strings are
+    /// omitted.
+    std::string prompt_title;
+
+    /// Optional input prompt text written as `prompt`. Empty strings are
+    /// omitted.
+    std::string prompt;
+
+    /// Optional error alert title written as `errorTitle`. Empty strings are
+    /// omitted.
+    std::string error_title;
+
+    /// Optional error alert text written as `error`. Empty strings are omitted.
+    std::string error;
 };
 
 /// A streaming-only worksheet table definition.

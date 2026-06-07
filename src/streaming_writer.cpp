@@ -173,6 +173,20 @@ std::string_view data_validation_operator_name(DataValidationOperator operator_t
     throw FastXlsxError("unknown data validation operator");
 }
 
+std::string_view data_validation_error_style_name(DataValidationErrorStyle error_style)
+{
+    switch (error_style) {
+    case DataValidationErrorStyle::Stop:
+        return "stop";
+    case DataValidationErrorStyle::Warning:
+        return "warning";
+    case DataValidationErrorStyle::Information:
+        return "information";
+    }
+
+    throw FastXlsxError("unknown data validation error style");
+}
+
 std::string worksheet_relationship_id(std::size_t index)
 {
     return "rId" + std::to_string(index + 1);
@@ -745,6 +759,37 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
         xml += "\"";
         if (validation.rule.allow_blank) {
             xml += " allowBlank=\"1\"";
+        }
+        if (validation.rule.show_input_message) {
+            xml += " showInputMessage=\"1\"";
+        }
+        if (validation.rule.show_error_message) {
+            xml += " showErrorMessage=\"1\"";
+        }
+        if (validation.rule.error_style.has_value()) {
+            xml += " errorStyle=\"";
+            xml += data_validation_error_style_name(*validation.rule.error_style);
+            xml += "\"";
+        }
+        if (!validation.rule.error_title.empty()) {
+            xml += " errorTitle=\"";
+            xml += detail::escape_xml_attribute(validation.rule.error_title);
+            xml += "\"";
+        }
+        if (!validation.rule.error.empty()) {
+            xml += " error=\"";
+            xml += detail::escape_xml_attribute(validation.rule.error);
+            xml += "\"";
+        }
+        if (!validation.rule.prompt_title.empty()) {
+            xml += " promptTitle=\"";
+            xml += detail::escape_xml_attribute(validation.rule.prompt_title);
+            xml += "\"";
+        }
+        if (!validation.rule.prompt.empty()) {
+            xml += " prompt=\"";
+            xml += detail::escape_xml_attribute(validation.rule.prompt);
+            xml += "\"";
         }
         if (validation.rule.operator_type.has_value()) {
             xml += " operator=\"";

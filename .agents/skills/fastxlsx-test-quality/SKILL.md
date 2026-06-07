@@ -151,6 +151,21 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
    cell reference、cell type 和 value。
 
 Python XLSX 库只作为测试/排障参考，不是 FastXLSX 运行时依赖。
+当前已有本地 sharedStrings QA helper：
+
+```powershell
+py tools\verify_shared_strings_reference.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_shared_strings_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings.xlsx
+```
+
+第一个脚本检查 FastXLSX sharedStrings package 关键 entry、content type、relationship、
+worksheet `t="s"` index、`xl/sharedStrings.xml` count/uniqueCount 和当前 smoke 值，
+并创建 `openpyxl` 参考 workbook；本机 `py` 当前还能创建 `XlsxWriter` 参考 workbook，
+但 bundled Python 缺少 `xlsxwriter` 时会明确跳过该分支。第二个脚本用本机 Excel COM
+只读打开样例并核对 `Shared!A1:D3` 可见值。它们是本地 QA/排障工具，不接入默认 CTest，
+也不是运行时依赖。
 
 ## ZIP backend 验证
 

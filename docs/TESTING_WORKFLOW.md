@@ -153,6 +153,18 @@ BuiltinDocumentProperties 中的 Title、Author、Subject、Keywords 和 Categor
 Excel COM 未暴露或规范化的字段以拆包后的 `docProps/core.xml` / `docProps/app.xml`
 结构测试为准。
 
+当前 sharedStrings 样例由 `fastxlsx.streaming` 在默认 preset 下生成，推荐路径是
+`build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`。本机
+Excel COM 验证可以运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_shared_strings_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings.xlsx
+```
+
+该脚本只读打开 workbook，核对 `Shared` sheet、`A1:D3` used range 和当前 smoke
+样例中的字符串值；它不保存 workbook，也不进入默认 CI。
+
 ## 结构异常时的参考对比流程
 
 当生成的 `.xlsx` 打不开、Excel 提示修复、或结构测试失败时，不要只猜测 XML。
@@ -215,6 +227,21 @@ worksheet.write_string(0, 1, "text")
 worksheet.write_boolean(0, 2, True)
 workbook.close()
 ```
+
+当前 sharedStrings smoke 样例有固定参考检查脚本：
+
+```powershell
+py tools\verify_shared_strings_reference.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings.xlsx
+```
+
+在 Codex 桌面环境中，如果系统 `py` 没有 `openpyxl`，先用
+`load_workspace_dependencies` 解析 bundled Python，再用该 Python 运行同一脚本。
+当前本机系统 `py` 已验证 `openpyxl 3.1.2` 和 `xlsxwriter 3.2.0` 可用；Codex bundled
+Python 已验证有 `openpyxl 3.1.5`，但没有 `xlsxwriter`。因此该脚本会尽量创建
+并验证 `openpyxl` 和 `XlsxWriter` 参考 workbook；`XlsxWriter` 模块不存在时明确跳过。
+脚本输出目录默认是 `build/qa/shared-strings-reference/`，其中的 report 和参考 `.xlsx`
+都是本地 QA artifact，不要提交，也不要作为 FastXLSX 运行时依赖。
 
 ## 拆包和 XML 对比
 

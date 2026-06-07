@@ -734,8 +734,8 @@ Current facts:
 - The current files show a sharedStrings foundation: `StringStrategy::SharedString`,
   internal shared string table state, package manifest wiring for
   `xl/sharedStrings.xml`, worksheet shared-string cell references, and focused
-  structure tests. Keep this in 进行中 status until validation and performance
-  data are recorded.
+  structure tests. Keep this in 进行中 status; the current validation is a smoke
+  and local QA loop, not production-scale sharedStrings evidence.
 - Streaming smoke file `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx` was
   opened read-only with local Excel COM. Verified worksheet `Streaming` and
   values: `A1 = 123.5`, `B1 = " text & <tag>"`, `C1 = TRUE`,
@@ -748,6 +748,18 @@ Current facts:
   `A1 = repeat`, `B1 = "space "`, `C1 = "escaped & <tag>"`,
   `A2 = repeat`, `B2 = "space "`, `A3 = ""`, `B3 = " leading"`,
   `C3 = "\tindent"`, and `D3 = repeat`.
+- The current sharedStrings QA helper
+  `tools/verify_shared_strings_reference.py` verifies the same generated sample's
+  key OpenXML entries, sharedStrings content type / workbook relationship,
+  worksheet `t="s"` indexes, `count=9`, `uniqueCount=6`, `xml:space="preserve"`,
+  and smoke values. It also creates and verifies an `openpyxl` reference workbook
+  in `build/qa/shared-strings-reference/`. Current system `py` has
+  `openpyxl 3.1.2` and `xlsxwriter 3.2.0`, so the XlsxWriter reference branch
+  is also verified there. Current bundled Python has `openpyxl 3.1.5` but no
+  `xlsxwriter`, so that fallback environment records XlsxWriter as skipped.
+- The current sharedStrings Excel helper
+  `tools/verify_shared_strings_excel.ps1` opens the generated smoke workbook
+  read-only through local Excel COM and checks `Shared!A1:D3`.
 - File-backed worksheet body smoke files were opened read-only with local Excel
   COM after the file-backed/chunked package entry update. Verified default
   stored output
@@ -771,8 +783,10 @@ Current facts:
   empty string, `xml:space="preserve"`, exact shared-string cell/entry
   occurrence counts, workbook-level reuse across two worksheets, and newline /
   carriage-return preservation. The ZIP test helper also rejects duplicate
-  entry names instead of silently overwriting them. Reference XML comparison
-  against an Excel / `openpyxl` / `XlsxWriter` file is still not recorded.
+  entry names instead of silently overwriting them. `openpyxl` reference
+  comparison is now recorded through the local QA helper; Excel COM read-only
+  validation is also recorded. XlsxWriter comparison is recorded through system
+  `py`; Python environments without `xlsxwriter` should record that branch as skipped.
 - No 10,000,000-cell benchmark result is recorded in this plan.
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.

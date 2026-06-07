@@ -82,9 +82,13 @@ feature completion.
    - The current small benchmark snapshot shows repeated/shared smaller and
      faster than repeated/inline, and unique/shared higher-memory and larger
      than unique/inline. Treat this as a local `500000`-cell trend only.
-   - Before treating sharedStrings as a production feature, record the default
-     CTest result, Excel visual open result, reference XML comparison against
-     Excel / `openpyxl` / `XlsxWriter` where useful, and size/memory data.
+   - Current local QA also has `tools/verify_shared_strings_excel.ps1` for
+     Excel COM read-only validation and `tools/verify_shared_strings_reference.py`
+     for `openpyxl` reference semantics. System `py` currently also verifies an
+     XlsxWriter reference; Python environments without the module should record
+     that branch as skipped.
+   - Before treating sharedStrings as a production feature, expand scale,
+     backend coverage, reference compatibility, and size/memory data.
 
 2. vcpkg / CMakePresets / CI - 基础.
    - Current root files include a conservative `vcpkg.json`,

@@ -1768,6 +1768,8 @@ void test_streaming_writer_image_metadata()
 
     fastxlsx::ImageOptions escaped_options;
     escaped_options.edit_as = fastxlsx::ImageEditAs::OneCell;
+    escaped_options.from_offset = {111, 222};
+    escaped_options.to_offset = {333, 444};
     escaped_options.name = R"(Logo "A&B<1>')";
     escaped_options.description = R"(Alt "quoted" & <tag> 'owner')";
     sheet.add_image(image_path, {1, 1, 2, 2}, escaped_options);
@@ -1798,8 +1800,11 @@ void test_streaming_writer_image_metadata()
     check(count_occurrences(drawing_xml, R"(editAs="twoCell")") == 1,
         "image metadata default twoCell editAs count mismatch");
     check_contains(drawing_xml,
-        R"(<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>0</xdr:col>)",
-        "image metadata oneCell anchor mismatch");
+        R"(<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>111</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>222</xdr:rowOff></xdr:from>)",
+        "image metadata oneCell from marker offset mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:to><xdr:col>2</xdr:col><xdr:colOff>333</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>444</xdr:rowOff></xdr:to>)",
+        "image metadata oneCell to marker offset mismatch");
     check_contains(drawing_xml,
         R"(<xdr:twoCellAnchor editAs="absolute"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row>)",
         "image metadata absolute anchor mismatch");
@@ -2510,6 +2515,24 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 16385}); },
         "images should reject an anchor column beyond Excel's limit");
+
+    const auto valid_image_path =
+        std::filesystem::current_path() / "fastxlsx-invalid-offset-image-source.png";
+    write_bytes(valid_image_path, fastxlsx::test::tiny_png_bytes());
+    fastxlsx::ImageOptions negative_offset;
+    negative_offset.from_offset = {-1, 0};
+    check_fastxlsx_error(
+        [&sheet, &valid_image_path, &negative_offset] {
+            sheet.add_image(valid_image_path, {1, 1, 1, 1}, negative_offset);
+        },
+        "images should reject negative anchor offsets");
+    fastxlsx::ImageOptions too_large_offset;
+    too_large_offset.to_offset = {27273042316901LL, 0};
+    check_fastxlsx_error(
+        [&sheet, &valid_image_path, &too_large_offset] {
+            sheet.add_image(valid_image_path, {1, 1, 1, 1}, too_large_offset);
+        },
+        "images should reject anchor offsets beyond OpenXML coordinate bounds");
 }
 
 void test_streaming_writer_invalid_table_options()

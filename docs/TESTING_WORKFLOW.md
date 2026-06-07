@@ -87,7 +87,8 @@ column width records、last-call-wins frozen panes、last-call-wins auto filters
 merged ranges、suffix ordering，以及不会为纯 worksheet metadata 误加
 relationships 或 content type entries。
 图片结构测试还应检查 media part target、drawing relationship target、worksheet-local
-`rId` 一致性，以及 anchor 的起始/结束单元格和 offset 语义。
+`rId` 一致性，以及 anchor 的起始/结束单元格和 two-cell marker EMU offset
+(`xdr:colOff` / `xdr:rowOff`) 语义。
 table 结构测试还应检查 `xl/tables/table*.xml`、worksheet `<tableParts>`、
 worksheet `.rels`、content type override、owner-local `rId`、`tableColumns`、
 `tableStyleInfo` 和 totals-row visibility metadata。当前
@@ -410,10 +411,11 @@ xl/worksheets/_rels/sheet*.xml.rels
   sheet/cell/value/type 是否正确。
 - 图片对比应重点看 media part 是否存在、relationship target 是否有效、worksheet
   `<drawing>` 引用是否匹配、anchor 语义是否等价；如果涉及图片 `ImageOptions`，
-  还要核对 `xdr:twoCellAnchor editAs`、`xdr:cNvPr` 的 `name` / `descr` attributes、
-  XML attribute escape、空 description 省略和默认 `Picture N` 名称，而不是要求 XML
-  字节完全一致。不要把 `editAs` 检查写成 `oneCellAnchor` / `absoluteAnchor` 元素支持
-  或 row/column resize 几何计算保证。
+  还要核对 two-cell marker `xdr:colOff` / `xdr:rowOff` EMU offsets、
+  `xdr:twoCellAnchor editAs`、`xdr:cNvPr` 的 `name` / `descr` attributes、XML
+  attribute escape、空 description 省略和默认 `Picture N` 名称，而不是要求 XML
+  字节完全一致。不要把 `editAs` 或 marker offset 检查写成 `oneCellAnchor` /
+  `absoluteAnchor` 元素支持或 row/column resize 几何计算保证。
 - namespace、属性顺序、默认值、压缩方式可能不同，不应直接当成错误。
 - 如果 Excel 打开后自动修复，应保存 Excel 修复后的文件，再拆包比较修复前后差异。
 

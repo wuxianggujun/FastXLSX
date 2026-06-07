@@ -3,6 +3,7 @@
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/workbook.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <initializer_list>
 #include <memory>
@@ -243,8 +244,8 @@ struct TableOptions {
 ///
 /// API mode: Streaming worksheet drawing metadata for new workbooks. This only
 /// selects the OpenXML `xdr:twoCellAnchor editAs` attribute. It does not change
-/// anchor coordinates, image bytes, relationships, content types, or worksheet
-/// row/cell streaming.
+/// the anchor cell range, marker offsets, image bytes, relationships, content
+/// types, or worksheet row/cell streaming.
 enum class ImageEditAs {
     /// Move and size with cells. Serialized as `editAs="twoCell"`.
     TwoCell,
@@ -257,15 +258,39 @@ enum class ImageEditAs {
     Absolute,
 };
 
+/// Marker offset for a two-cell image anchor, in EMUs.
+///
+/// API mode: Streaming worksheet drawing metadata for new workbooks. Offsets
+/// are copied into WorksheetWriter state and serialized as `xdr:colOff` /
+/// `xdr:rowOff` on the existing two-cell anchor markers. They do not create
+/// new anchor element types, inspect row/column sizes, or change image bytes.
+struct ImageAnchorOffset {
+    /// Horizontal marker offset in EMUs. Must be non-negative and within the
+    /// OpenXML coordinate range.
+    std::int64_t column_emu = 0;
+
+    /// Vertical marker offset in EMUs. Must be non-negative and within the
+    /// OpenXML coordinate range.
+    std::int64_t row_emu = 0;
+};
+
 /// Optional metadata for an inserted worksheet image.
 ///
 /// API mode: Streaming worksheet metadata for new workbooks. Non-empty strings
 /// are copied into WorksheetWriter state and serialized only as drawing
-/// non-visual picture properties. They do not change image bytes, anchor
-/// geometry, relationships, content types, or worksheet row/cell streaming.
+/// non-visual picture properties. Marker offsets are copied as lightweight EMU
+/// metadata and serialized on the existing two-cell anchor. These options do
+/// not change image bytes, relationships, content types, worksheet row/cell
+/// streaming, row/column size geometry, or the anchor cell range.
 struct ImageOptions {
     /// OpenXML two-cell anchor placement behavior.
     ImageEditAs edit_as = ImageEditAs::TwoCell;
+
+    /// Offset applied to the starting two-cell anchor marker.
+    ImageAnchorOffset from_offset;
+
+    /// Offset applied to the ending two-cell anchor marker.
+    ImageAnchorOffset to_offset;
 
     /// Optional drawing object name written as `xdr:cNvPr name`.
     ///
@@ -540,21 +565,23 @@ public:
     /// inclusive cell range. This creates `xl/media/*`, `xl/drawings/*`,
     /// drawing `.rels`, worksheet `.rels`, a worksheet `<drawing>` reference,
     /// and drawing/content type entries. It does not crop, rotate, recompress,
-    /// convert formats, mutate existing drawings, or edit existing XLSX files.
+    /// convert formats, calculate row/column geometry, mutate existing drawings,
+    /// or edit existing XLSX files.
     /// Optional ImageOptions values are copied into writer state and written
-    /// only as drawing metadata: `editAs` on the anchor and non-visual
-    /// `xdr:cNvPr` name/description attributes. Empty strings preserve the
-    /// generated `Picture N` name and omit the description.
+    /// only as drawing metadata: EMU offsets on the existing two-cell markers,
+    /// `editAs` on the anchor, and non-visual `xdr:cNvPr` name/description
+    /// attributes. Empty strings preserve the generated `Picture N` name and
+    /// omit the description.
     ///
-    /// @throws FastXlsxError if the anchor range is invalid, the workbook is
-    /// closed, the file cannot be read, or the image format is outside the
-    /// current PNG/JPEG slice.
+    /// @throws FastXlsxError if the anchor range or ImageOptions offsets are
+    /// invalid, the workbook is closed, the file cannot be read, or the image
+    /// format is outside the current PNG/JPEG slice.
     void add_image(const std::filesystem::path& path, CellRange anchor);
 
     /// Records a PNG/JPEG image with optional drawing non-visual metadata.
     ///
     /// Same behavior as add_image(path, anchor), plus ImageOptions serialization
-    /// to drawing anchor / `xdr:cNvPr` attributes.
+    /// to drawing anchor marker offsets / `xdr:cNvPr` attributes.
     void add_image(const std::filesystem::path& path, CellRange anchor, ImageOptions options);
 
 private:

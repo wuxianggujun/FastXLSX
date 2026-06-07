@@ -24,18 +24,24 @@ EXPECTED_PICTURES: list[dict[str, str | None]] = [
         "name": 'Logo "A&B<1>\'',
         "description": 'Alt "quoted" & <tag> \'owner\'',
         "edit_as": "oneCell",
+        "from": "0,0,111,222",
+        "to": "2,2,333,444",
     },
     {
         "id": "2",
         "name": "NamedOnly",
         "description": None,
         "edit_as": "absolute",
+        "from": "0,2,0,0",
+        "to": "2,4,0,0",
     },
     {
         "id": "3",
         "name": "Picture 3",
         "description": None,
         "edit_as": "twoCell",
+        "from": "0,4,0,0",
+        "to": "2,6,0,0",
     },
 ]
 
@@ -70,6 +76,18 @@ def zip_names(path: Path) -> set[str]:
 def relationship_count(xml: str) -> int:
     root = ElementTree.fromstring(xml)
     return len(root.findall("rel:Relationship", NAMESPACES))
+
+
+def marker_signature(anchor: ElementTree.Element, marker_name: str) -> str:
+    marker = anchor.find(f"xdr:{marker_name}", NAMESPACES)
+    require(marker is not None, f"missing xdr:{marker_name}")
+    parts = []
+    for child_name in ["col", "row", "colOff", "rowOff"]:
+        child = marker.find(f"xdr:{child_name}", NAMESPACES)
+        require(child is not None and child.text is not None,
+                f"missing xdr:{marker_name}/xdr:{child_name}")
+        parts.append(child.text)
+    return ",".join(parts)
 
 
 def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
@@ -166,6 +184,8 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
                 "name": properties.attrib.get("name"),
                 "description": properties.attrib.get("descr"),
                 "edit_as": anchor.attrib.get("editAs"),
+                "from": marker_signature(anchor, "from"),
+                "to": marker_signature(anchor, "to"),
             }
         )
     require(parsed == EXPECTED_PICTURES, f"parsed image metadata mismatch: {parsed!r}")

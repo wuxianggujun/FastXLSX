@@ -550,10 +550,11 @@ Order:
    stores original image bytes as file-backed media entries, writes one drawing
    part per worksheet with images, and does not mutate existing drawings or make
    passthrough claims.
-   `ImageOptions` adds only drawing anchor / non-visual metadata: `edit_as`
-   writes `xdr:twoCellAnchor editAs`, non-empty `name` and `description` write
-   `xdr:cNvPr name` / `descr`, empty `name` keeps generated `Picture N`, and
-   empty `description` is omitted.
+   `ImageOptions` adds only drawing marker / non-visual metadata: `from_offset`
+   / `to_offset` write EMU values to two-cell marker `xdr:colOff` /
+   `xdr:rowOff`, `edit_as` writes `xdr:twoCellAnchor editAs`, non-empty `name`
+   and `description` write `xdr:cNvPr name` / `descr`, empty `name` keeps
+   generated `Picture N`, and empty `description` is omitted.
 3. Existing-workbook image read/edit/preservation must wait until package
    reader/writer and preservation fixtures prove unknown and unmodified
    media/drawing/chart/VBA parts survive edits.
@@ -1232,10 +1233,11 @@ Allowed early slices:
      memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,
      and why the API does not move worksheet data into DOM or a cell matrix.
      Current `ImageOptions` metadata belongs here as a narrow drawing XML
-     option surface: it copies `edit_as` and name/description strings and writes
-     only `xdr:twoCellAnchor editAs` plus `xdr:cNvPr name` / `descr`, not
-     EXIF/PNG/JPEG metadata, media filenames, anchor coordinate changes, cell
-     text, or existing drawing state.
+     option surface: it copies from/to marker EMU offsets, `edit_as`, and
+     name/description strings and writes only two-cell marker `xdr:colOff` /
+     `xdr:rowOff`, `xdr:twoCellAnchor editAs`, and `xdr:cNvPr name` / `descr`,
+     not EXIF/PNG/JPEG metadata, media filenames, anchor cell range changes,
+     cell text, or existing drawing state.
   3. New-workbook insertion slice: current basic slice is
      `WorksheetWriter::add_image(path, anchor)` for PNG/JPEG only, one two-cell
      anchor strategy, generated media and drawing parts, worksheet `.rels`,
@@ -1268,8 +1270,9 @@ Forbidden until separately designed and verified:
   Excel package compatibility; FastXLSX does those only in the current narrow
   `WorksheetWriter::add_image()` new-workbook slice.
 - Do not treat `ImageOptions::edit_as` as `oneCellAnchor` / `absoluteAnchor`
-  element support, row/column resize geometry calculation, cross-application UI
-  guarantees, drawing mutation, or existing-workbook image editing. Do not treat
+  element support, or treat `ImageOptions::from_offset` / `to_offset` as
+  row/column resize geometry calculation, cross-application UI guarantees,
+  drawing mutation, or existing-workbook image editing. Do not treat
   `ImageOptions::name` / `description` as complete image metadata, full alt
   text/accessibility UI, EXIF/PNG/JPEG metadata, or media filename semantics.
 - Do not add Excel, openpyxl, or XlsxWriter as runtime dependencies. They are

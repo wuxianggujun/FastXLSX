@@ -28,6 +28,7 @@ namespace {
 
 constexpr std::uint32_t max_excel_rows = 1048576;
 constexpr std::uint32_t max_excel_columns = 16384;
+constexpr std::int64_t max_openxml_coordinate = 27273042316900LL;
 
 struct ColumnWidth {
     std::uint32_t first_column = 1;
@@ -1159,17 +1160,38 @@ std::string_view image_edit_as_name(ImageEditAs edit_as)
     throw FastXlsxError("unknown image editAs mode");
 }
 
+void validate_image_offset(ImageAnchorOffset offset)
+{
+    if (offset.column_emu < 0 || offset.row_emu < 0) {
+        throw FastXlsxError("image anchor offsets must be non-negative EMU values");
+    }
+    if (offset.column_emu > max_openxml_coordinate || offset.row_emu > max_openxml_coordinate) {
+        throw FastXlsxError("image anchor offsets exceed OpenXML coordinate bounds");
+    }
+}
+
+void validate_image_options(const ImageOptions& options)
+{
+    validate_image_offset(options.from_offset);
+    validate_image_offset(options.to_offset);
+}
+
 std::string build_drawing_marker_xml(
-    std::string_view element_name, std::uint32_t row, std::uint32_t column)
+    std::string_view element_name, std::uint32_t row, std::uint32_t column,
+    ImageAnchorOffset offset)
 {
     std::string xml;
     xml += "<xdr:";
     xml += element_name;
     xml += "><xdr:col>";
     xml += std::to_string(column - 1);
-    xml += "</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>";
+    xml += "</xdr:col><xdr:colOff>";
+    xml += std::to_string(offset.column_emu);
+    xml += "</xdr:colOff><xdr:row>";
     xml += std::to_string(row - 1);
-    xml += "</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:";
+    xml += "</xdr:row><xdr:rowOff>";
+    xml += std::to_string(offset.row_emu);
+    xml += "</xdr:rowOff></xdr:";
     xml += element_name;
     xml += ">";
     return xml;
@@ -1193,8 +1215,10 @@ std::string build_drawing_xml(
         xml += R"(<xdr:twoCellAnchor editAs=")";
         xml += image_edit_as_name(image.options.edit_as);
         xml += R"(">)";
-        xml += build_drawing_marker_xml("from", image.anchor.first_row, image.anchor.first_column);
-        xml += build_drawing_marker_xml("to", image.anchor.last_row + 1, image.anchor.last_column + 1);
+        xml += build_drawing_marker_xml(
+            "from", image.anchor.first_row, image.anchor.first_column, image.options.from_offset);
+        xml += build_drawing_marker_xml(
+            "to", image.anchor.last_row + 1, image.anchor.last_column + 1, image.options.to_offset);
         xml += "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"";
         xml += std::to_string(package_image_index + 1);
         xml += "\" name=\"";
@@ -1598,6 +1622,7 @@ void WorksheetWriter::add_image(
 {
     ensure_mutable_worksheet(state_);
     (void)detail::range_reference(anchor);
+    validate_image_options(options);
 
     const ImageInfo info = read_image_info(path);
     state_->images.push_back({anchor, info, copy_image_to_temp_file(path), std::move(options)});

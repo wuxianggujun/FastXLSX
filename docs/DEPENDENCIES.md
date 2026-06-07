@@ -140,9 +140,9 @@ XLSX 语义层：FastXLSX 自研
 - 不要因为接入 `stb` 就宣称完整图片插入、图片编辑、drawing 编辑或已有文件图片保真
   已完成；当前只可宣称 `WorksheetWriter::add_image()` 的 streaming-only
   new-workbook PNG/JPEG 基础插入切片。
-- 当前 `ImageOptions` edit_as/name/description 只是 drawing XML
-  `xdr:twoCellAnchor editAs` 和 `xdr:cNvPr` metadata，不新增依赖，也不改变 `stb`
-  只负责图片解码、尺寸和像素读取的边界。
+- 当前 `ImageOptions` from/to marker offsets、edit_as/name/description 只是 drawing XML
+  two-cell marker `xdr:colOff` / `xdr:rowOff`、`xdr:twoCellAnchor editAs` 和
+  `xdr:cNvPr` metadata，不新增依赖，也不改变 `stb` 只负责图片解码、尺寸和像素读取的边界。
 - 不要把图片解码放进 worksheet row/cell 热路径。
 - `STB_IMAGE_IMPLEMENTATION` 等 implementation macro 只能放在一个 `.cpp` 中。
 - 如果只是嵌入已有 PNG/JPEG，优先保留原始图片字节并正确写 OpenXML package；
@@ -160,9 +160,10 @@ P17 图片任务的依赖接入应按阶段推进：
    worksheet relationships、worksheet `<drawing>` 引用和 content types 一起验证；
    当前 P17b 已有 `WorksheetWriter::add_image(path, anchor)` 基础切片，会保留原始
    PNG/JPEG 字节为 file-backed media entry，并写出生成的 drawing/media package 结构。
-   当前 `ImageOptions` 只在 drawing XML 写 `xdr:twoCellAnchor editAs` 和
-   `xdr:cNvPr` name/description metadata；它不修改图片文件 metadata、media filename、
-   anchor 坐标、relationships、content types 或 cell text。
+   当前 `ImageOptions` 只在 drawing XML 写 two-cell marker `xdr:colOff` /
+   `xdr:rowOff`、`xdr:twoCellAnchor editAs` 和 `xdr:cNvPr` name/description
+   metadata；它不修改图片文件 metadata、media filename、anchor cell range、
+   relationships、content types 或 cell text。
    不能只凭 `stb` 解码可用就宣称更广泛的图片 OpenXML 支持。
 4. Existing-workbook 图片读取、编辑或保真复制必须等 package reader/writer 和保真
    fixtures 证明未修改 media/drawing/chart/VBA/unknown parts 能保留后再推进。

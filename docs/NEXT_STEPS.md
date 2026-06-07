@@ -781,11 +781,12 @@ Stages:
    - Public comments must state memory behavior for original image bytes,
      decoded pixels, anchor metadata, drawing/media part state, and package
      finalization.
-   - Current `ImageOptions` metadata is limited to drawing XML anchor /
-     non-visual picture properties: `edit_as` writes `xdr:twoCellAnchor editAs`,
-     non-empty `name` writes `xdr:cNvPr name`, non-empty `description` writes
-     `descr`, empty `name` keeps generated `Picture N`, and empty
-     `description` is omitted.
+   - Current `ImageOptions` metadata is limited to drawing XML two-cell marker /
+     non-visual picture properties: `from_offset` / `to_offset` write EMU values
+     to marker `xdr:colOff` / `xdr:rowOff`, `edit_as` writes
+     `xdr:twoCellAnchor editAs`, non-empty `name` writes `xdr:cNvPr name`,
+     non-empty `description` writes `descr`, empty `name` keeps generated
+     `Picture N`, and empty `description` is omitted.
    - Any convenience API must explain why it does not force large worksheets
      into DOM, a full cell matrix, or the row/cell XML hot path.
 3. P17.2 - New-workbook-only insertion slice.
@@ -797,10 +798,11 @@ Stages:
      `CellRange`; it writes generated media parts, one drawing part per
      worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
      `<drawing>` references, and drawing/content type entries.
-   - The current metadata increment copies image `edit_as` and
-     `name` / `description` into writer state and writes them only to drawing
-     `xdr:twoCellAnchor editAs` and `xdr:cNvPr` attributes; it does not modify
-     image bytes, media filenames, anchor coordinates, relationships, content
+   - The current metadata increment copies image from/to marker EMU offsets,
+     `edit_as`, and `name` / `description` into writer state and writes them only
+     to drawing two-cell marker `xdr:colOff` / `xdr:rowOff`,
+     `xdr:twoCellAnchor editAs`, and `xdr:cNvPr` attributes; it does not modify
+     image bytes, media filenames, anchor cell ranges, relationships, content
      types, or worksheet cell text.
    - It does not crop, rotate, recompress, convert formats, mutate existing
      drawings, edit existing XLSX files, or prove existing-workbook image
@@ -883,8 +885,9 @@ Do not claim:
 - OpenXML image support beyond the narrow `WorksheetWriter::add_image()`
   streaming new-workbook PNG/JPEG slice.
 - `oneCellAnchor` / `absoluteAnchor` element support, row/column resize geometry
-  calculation, complete image metadata, EXIF/PNG/JPEG metadata, accessibility UI
-  parity, or existing drawing mutation from `ImageOptions` alone.
+  calculation from `ImageOptions::from_offset` / `to_offset`, complete image
+  metadata, EXIF/PNG/JPEG metadata, accessibility UI parity, or existing drawing
+  mutation from `ImageOptions` alone.
 - Existing workbook image passthrough or preservation before P13 fixtures prove
   unmodified media/drawing/chart/VBA parts survive edits.
 

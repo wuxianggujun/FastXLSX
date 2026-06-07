@@ -136,13 +136,15 @@ drawing relationships、worksheet relationships、content types 或 anchors。
 PNG/JPEG 基础切片：它用 `read_image_info()` 验证元数据，把原始图片字节复制到临时
 file-backed media entry，并在 `close()` 时生成 media part、drawing XML、drawing
 `.rels`、worksheet `.rels`、worksheet `<drawing>` 和 content type entries。
-当前 `ImageOptions` 是同一 streaming image API 的窄 metadata options：`edit_as`
-枚举和非空 `name` / `description` 字符串会复制进 writer state，并分别写到
-drawing XML `xdr:twoCellAnchor editAs` 和 `xdr:cNvPr` 的 `name` / `descr`
-attributes；空 `name` 保留生成的 `Picture N`，空 `description` 省略。它只改变
-drawing anchor metadata 和 non-visual picture properties，不修改图片二进制、EXIF、
-media filename、anchor 坐标、relationships、content types 或 cell text，也不支持
-`oneCellAnchor` / `absoluteAnchor` 元素或 row/column resize 几何计算。
+当前 `ImageOptions` 是同一 streaming image API 的窄 metadata options：
+`from_offset` / `to_offset` EMU 值、`edit_as` 枚举和非空 `name` / `description`
+字符串会复制进 writer state，并分别写到 drawing XML two-cell marker 的
+`xdr:colOff` / `xdr:rowOff`、`xdr:twoCellAnchor editAs` 和 `xdr:cNvPr` 的
+`name` / `descr` attributes；空 `name` 保留生成的 `Picture N`，空 `description`
+省略。它只改变 drawing marker metadata 和 non-visual picture properties，不修改
+图片二进制、EXIF、media filename、anchor cell range、relationships、content types
+或 cell text，也不支持 `oneCellAnchor` / `absoluteAnchor` 元素或 row/column resize
+几何计算。
 `read_image_info()` 注释应限制为 PNG/JPEG metadata helper：读取格式、尺寸和
 通道数；不要暗示它会生成 media part、drawing XML、relationships、content types、
 anchors，或验证 Excel package 兼容性。

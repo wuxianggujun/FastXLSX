@@ -584,6 +584,9 @@ Accept when:
 - Current tests cover `count`, `sqref`, `type`, `operator`, `allowBlank`,
   `formula1`, `formula2`, invalid ranges, invalid rule shapes, XML escaping,
   package relationship absence, and mutation-after-close behavior.
+- Tests also cover validation-only namespace behavior and `formula2` XML text
+  escaping: validation-only worksheets do not declare `xmlns:r`, and `formula2`
+  escapes `&`, `<`, and `>`.
 - Coexistence tests cover suffix ordering with relationship-backed metadata:
   `<dataValidations>` stays before `<hyperlinks>` and `<tableParts>`, and data
   validations do not consume worksheet-local `rId` values before hyperlinks and

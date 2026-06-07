@@ -93,7 +93,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - data validations 结构测试应检查 `count`、`sqref`、`type`、`operator`、
   `allowBlank`、`formula1`、`formula2`、XML escape、invalid ranges、
   invalid rule shapes、关系缺失、与 relationship-backed metadata 共存时不消耗
-  worksheet-local `rId`，以及 close 后 mutation。
+  worksheet-local `rId`、validation-only worksheet 不声明 `xmlns:r`、`formula2`
+  XML text escape，以及 close 后 mutation。
 - external hyperlinks 结构测试应检查 worksheet XML `r:id` 与 worksheet `.rels` 一致、
   target XML escape、同一 worksheet 多个 hyperlink、跨 worksheet owner-local `rId`、
   plain sheet 不生成 `.rels`、不污染 workbook relationships、不新增 content type

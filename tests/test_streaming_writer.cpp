@@ -691,6 +691,45 @@ void test_streaming_writer_data_validations_with_relationship_metadata()
         "validation relationship metadata table relationship mismatch");
 }
 
+void test_streaming_writer_data_validation_formula2_escape_and_namespace()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-data-validation-formula2-escape.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Formula2Escape");
+
+    sheet.append_row({fastxlsx::CellView::text("Text")});
+    sheet.append_row({fastxlsx::CellView::text("abc")});
+
+    fastxlsx::DataValidationRule rule;
+    rule.type = fastxlsx::DataValidationType::TextLength;
+    rule.operator_type = fastxlsx::DataValidationOperator::Between;
+    rule.formula1 = "1";
+    rule.formula2 = "LEN(A2&\"<max>\")";
+    sheet.add_data_validation({2, 1, 10, 1}, rule);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "formula2 escape data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "formula2 escape data validation should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "formula2 escape data validation should not add content types");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "validation-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"textLength\" operator=\"between\" sqref=\"A2:A10\">"
+        "<formula1>1</formula1><formula2>LEN(A2&amp;\"&lt;max&gt;\")</formula2></dataValidation>",
+        "formula2 XML escaping mismatch");
+}
+
 void test_streaming_writer_external_hyperlinks()
 {
     const auto output_path =
@@ -1929,6 +1968,7 @@ int main()
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
         test_streaming_writer_data_validations_with_relationship_metadata();
+        test_streaming_writer_data_validation_formula2_escape_and_namespace();
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_tables();
         test_streaming_writer_images();

@@ -304,6 +304,11 @@ cmake --help
   结构测试还覆盖 data validations 与 external hyperlinks / tables 共存时的
   worksheet suffix 顺序，确认 `<dataValidations>` 写在 `<hyperlinks>` 和
   `<tableParts>` 之前，且 data validation 不消耗 worksheet-local relationship id。
+  结构测试还覆盖 validation-only worksheet 不声明 `xmlns:r`，以及 `formula2` 中
+  `&`、`<`、`>` 的 XML text 转义。
+  本机 Excel COM 已只读打开
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-formula2-escape.xlsx`，
+  确认 `A2` validation 的 formula2 返回为 `=LEN(A2&"<max>")`。
   本机 Excel COM 已只读打开
   `build/windows-nmake-release/tests/fastxlsx-streaming-validation-relationship-metadata.xlsx`，
   确认 2 个 hyperlink、1 个 table，且 `A2` 有 validation。

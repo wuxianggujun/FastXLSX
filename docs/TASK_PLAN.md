@@ -382,6 +382,13 @@ Validation:
 - `fastxlsx.streaming` covers `count`, `sqref`, `type`, `operator`,
   `allowBlank`, `formula1`, `formula2`, XML escaping, invalid ranges,
   invalid rule shapes, package relationship absence, and mutation-after-close.
+- `fastxlsx.streaming` covers validation-only worksheet namespace behavior and
+  `formula2` XML text escaping; validation-only worksheets do not declare
+  `xmlns:r`, and `formula2` escapes `&`, `<`, and `>`.
+- Local Excel COM read-only validation opened
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-formula2-escape.xlsx`
+  and read `A2` validation formula2 as `=LEN(A2&"<max>")`; local `openpyxl`
+  3.1.2 loaded one data validation with formula2 `LEN(A2&"<max>")`.
 - `fastxlsx.streaming` also covers coexistence with relationship-backed
   worksheet metadata: `<dataValidations>` remains before `<hyperlinks>` and
   `<tableParts>`, and data validations do not consume worksheet-local `rId`

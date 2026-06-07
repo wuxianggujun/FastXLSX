@@ -459,7 +459,9 @@ Validation:
   `xl/media/image*.png|jpg`, `xl/drawings/drawing*.xml`, drawing `.rels`,
   worksheet `.rels`, worksheet `<drawing>`, owner-local `rId`, PNG/JPEG content
   type defaults, JPEG drawing EMU sizing, JPEG media relationship targets, and
-  drawing content type overrides.
+  drawing content type overrides. Mixed PNG/JPEG coverage checks one worksheet
+  sharing a single drawing part with multiple anchors, global media numbering,
+  and drawing-owner-local image relationship ids.
 - Local Excel COM visual verification passed for
   `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`;
   Excel opened the workbook, saw one shape on `Images`, one shape on

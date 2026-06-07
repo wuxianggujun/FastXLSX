@@ -187,6 +187,8 @@ duplicate entry 被拒绝，以及 worksheet XML 内容没有因 chunk 边界被
 - `[Content_Types].xml` 有图片格式 default 或 override。
 当前 JPEG 结构测试还应覆盖 `.jpg` media entry、`image/jpeg` content type default、
 drawing intrinsic EMU 尺寸和 drawing `.rels` target。
+混合 PNG/JPEG 测试还应覆盖同一个 worksheet 内多图片共享一个 drawing part、
+多个 `<xdr:twoCellAnchor>`、全局 media 编号和 drawing-owner-local relationship id。
 当前推荐样例是
 `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。
 

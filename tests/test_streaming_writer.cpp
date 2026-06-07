@@ -1012,6 +1012,75 @@ void test_streaming_writer_jpeg_images()
 #endif
 }
 
+void test_streaming_writer_mixed_image_formats()
+{
+#ifdef FASTXLSX_TEST_HAS_STB
+    const auto png_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-image-source.png";
+    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-image-source.jpg";
+    write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
+    write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
+
+    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-images.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("MixedImages");
+    sheet.append_row({fastxlsx::CellView::text("mixed")});
+    sheet.add_image(png_path, {1, 1, 1, 1});
+    sheet.add_image(jpeg_path, {2, 2, 3, 3});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.png"), "missing mixed PNG media part");
+    check(entries.contains("xl/media/image2.jpg"), "missing mixed JPEG media part");
+    check(!entries.contains("xl/drawings/drawing2.xml"), "mixed image formats should share worksheet drawing");
+    check(entries.at("xl/media/image1.png").size() == fastxlsx::test::tiny_rgba_png().size(),
+        "mixed PNG media part byte size mismatch");
+    check(entries.at("xl/media/image2.jpg").size() == fastxlsx::test::tiny_rgb_jpeg_header().size(),
+        "mixed JPEG media part byte size mismatch");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(count_occurrences(content_types,
+              R"(<Default Extension="png" ContentType="image/png"/>)")
+            == 1,
+        "mixed image workbook should write one PNG content type default");
+    check(count_occurrences(content_types,
+              R"(<Default Extension="jpg" ContentType="image/jpeg"/>)")
+            == 1,
+        "mixed image workbook should write one JPEG content type default");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "</sheetData><drawing r:id=\"rId1\"/></worksheet>",
+        "mixed image worksheet drawing relationship id mismatch");
+
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check(count_occurrences(drawing_xml, "<xdr:twoCellAnchor") == 2,
+        "mixed image drawing anchor count mismatch");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId1"/>)",
+        "mixed PNG drawing relationship id mismatch");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId2"/>)",
+        "mixed JPEG drawing relationship id mismatch");
+    check_contains(drawing_xml,
+        R"(<a:ext cx="9525" cy="9525"/>)",
+        "mixed PNG intrinsic EMU size mismatch");
+    check_contains(drawing_xml,
+        R"(<a:ext cx="19050" cy="9525"/>)",
+        "mixed JPEG intrinsic EMU size mismatch");
+
+    const auto& drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check(count_occurrences(drawing_rels, "<Relationship ") == 2,
+        "mixed image drawing relationship count mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "mixed PNG drawing image relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/>)",
+        "mixed JPEG drawing image relationship mismatch");
+#endif
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -1630,6 +1699,7 @@ int main()
         test_streaming_writer_tables();
         test_streaming_writer_images();
         test_streaming_writer_jpeg_images();
+        test_streaming_writer_mixed_image_formats();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();

@@ -113,7 +113,9 @@ description: "规划或实现 FastXLSX 图片读取/插入、stb 图片解码、
 - P17b 图片插入阶段：默认无 `stb` 时 `fastxlsx.streaming` 验证 `add_image()` 明确失败；
   opt-in `FASTXLSX_ENABLE_STB=ON` 构建下验证 PNG/JPEG media、drawing、rels、
   content types 和 worksheet `<drawing>` 结构；JPEG 覆盖 `.jpg` media entry、
-  `image/jpeg` default、drawing EMU 尺寸和 drawing `.rels` target。
+  `image/jpeg` default、drawing EMU 尺寸和 drawing `.rels` target；混合 PNG/JPEG
+  覆盖同一 worksheet 共享 drawing part、多 anchor、全局 media 编号和 owner-local
+  drawing relationship id。
 - CMake 接入阶段：VS2026/NMake configure/build/test 通过；CI 行为需要在 workflow
   真正运行 image preset 后再记录。
 - 结构测试：检查 `xl/media/*`、`xl/drawings/drawing*.xml`、

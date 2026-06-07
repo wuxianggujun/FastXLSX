@@ -688,7 +688,9 @@ Stages:
      `xl/drawings/drawing*.xml`, drawing `.rels`, worksheet `.rels`, worksheet
      `<drawing>`, owner-local relationship ids, PNG/JPEG content type defaults,
      JPEG drawing EMU sizing, JPEG media relationship targets, and drawing
-     content type overrides.
+     content type overrides. Mixed PNG/JPEG coverage also checks one worksheet
+     sharing a single drawing part with multiple anchors, global media numbering,
+     and drawing-owner-local image relationship ids.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.

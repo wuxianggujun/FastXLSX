@@ -335,6 +335,9 @@ cmake --help
 - 当前 `fastxlsx.streaming` 还在 opt-in image preset 下覆盖 JPEG 结构输出：
   `xl/media/image1.jpg`、`image/jpeg` content type default、worksheet drawing
   relationship、drawing EMU 尺寸和 drawing `.rels` 到 `../media/image1.jpg` 的关系。
+- 当前混合 PNG/JPEG 结构测试还覆盖同一个 worksheet 中两张不同格式图片共享一个
+  drawing part、两个 `<xdr:twoCellAnchor>`、`image1.png` / `image2.jpg` 全局 media
+  编号，以及 drawing `.rels` 中 owner-local `rId1` / `rId2` target。
 - 当前 sharedStrings benchmark 小样例位于
   `build/windows-nmake-release-benchmark/benchmarks/sharedstrings-v3-*.xlsx`。本机已用
   Excel COM 只读打开 `sharedstrings-v3-repeated-inline.xlsx`、

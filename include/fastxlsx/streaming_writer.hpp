@@ -167,6 +167,23 @@ struct DataValidationRule {
     std::string error;
 };
 
+/// Built-in Excel totals-row aggregate metadata for a table column.
+///
+/// API mode: Streaming worksheet table metadata. This writes only the
+/// OpenXML `totalsRowFunction` attribute. FastXLSX does not calculate totals,
+/// generate formula text, or rewrite totals row cells.
+enum class TableTotalsFunction {
+    Sum,
+    Count,
+    Average,
+    Maximum,
+    Minimum,
+    Product,
+    CountNumbers,
+    StandardDeviation,
+    Variance,
+};
+
 /// A streaming-only worksheet table definition.
 ///
 /// API mode: Streaming worksheet metadata for new workbooks. FastXLSX stores
@@ -184,6 +201,24 @@ struct TableOptions {
     /// range width. Names are copied and must be non-empty and unique within
     /// the table in the current implementation.
     std::vector<std::string> column_names;
+
+    /// Shows the final row in the supplied range as a one-row Excel totals row.
+    ///
+    /// This writes table metadata only. The caller must append the totals row
+    /// cells and include that row in the table range before calling
+    /// WorksheetWriter::add_table(). FastXLSX does not generate totals formulas,
+    /// labels, styles.xml, or calculated columns.
+    bool show_totals_row = false;
+
+    /// Optional per-column totals-row function metadata.
+    ///
+    /// Empty means no column totals functions. When supplied, the vector size
+    /// must match column_names; empty optionals leave the corresponding column
+    /// without a function. Visible totals rows require at least one function
+    /// metadata entry for Excel compatibility. FastXLSX only writes the
+    /// OpenXML attribute; it does not calculate, validate, or rewrite totals
+    /// row cell values.
+    std::vector<std::optional<TableTotalsFunction>> column_totals_functions;
 
     /// Built-in Excel table style name. Empty string omits `<tableStyleInfo>`.
     std::string style_name = "TableStyleMedium2";
@@ -471,14 +506,17 @@ public:
     /// API mode: Streaming worksheet metadata for new workbooks. The table is
     /// emitted as an `xl/tables/tableN.xml` part, a worksheet `<tableParts>`
     /// reference, a worksheet `.rels` relationship, and a table content type
-    /// override. This API copies table name, column names, and style name into
-    /// writer state. It does not inspect row data, infer headers, create
-    /// styles.xml, support totals rows, resize existing tables, edit existing
-    /// XLSX files, or promise full Excel table UI parity.
+    /// override. This API copies table name, column names, style name, optional
+    /// totals-row visibility, and optional per-column totals function metadata
+    /// into writer state. It does not inspect row data, infer headers,
+    /// calculate totals, generate formula text or labels, create styles.xml,
+    /// resize existing tables, edit existing XLSX files, or promise full Excel
+    /// table UI parity.
     ///
     /// @throws FastXlsxError if the range is invalid, contains only a header
-    /// row, column names do not match the range width, names are invalid or
-    /// duplicated, or the workbook is closed.
+    /// row, enables totals-row metadata without room for a data row, column
+    /// names do not match the range width, names are invalid or duplicated, or
+    /// the workbook is closed.
     void add_table(CellRange range, TableOptions options);
 
     /// Records a PNG/JPEG image anchored to worksheet cells.

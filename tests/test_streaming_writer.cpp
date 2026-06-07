@@ -1360,11 +1360,18 @@ void test_streaming_writer_tables()
         fastxlsx::CellView::text("Rows"),
         fastxlsx::CellView::number(2.0),
     });
+    totals.append_row({
+        fastxlsx::CellView::text("Total"),
+        fastxlsx::CellView::number(2.0),
+    });
     fastxlsx::TableOptions totals_table;
     totals_table.name = "TotalsTable";
     totals_table.column_names = {"Metric", "Value"};
+    totals_table.show_totals_row = true;
+    totals_table.column_totals_functions.resize(2);
+    totals_table.column_totals_functions[1] = fastxlsx::TableTotalsFunction::Sum;
     totals_table.style_name.clear();
-    totals.add_table({1, 1, 2, 2}, totals_table);
+    totals.add_table({1, 1, 3, 2}, totals_table);
 
     plain.append_row({
         fastxlsx::CellView::text("No table sheet"),
@@ -1438,8 +1445,22 @@ void test_streaming_writer_tables()
 
     const auto& second_table_xml = entries.at("xl/tables/table2.xml");
     check_contains(second_table_xml,
-        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="2" name="TotalsTable" displayName="TotalsTable" ref="A1:B2" totalsRowShown="0">)",
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="2" name="TotalsTable" displayName="TotalsTable" ref="A1:B3" totalsRowCount="1">)",
         "second table root XML mismatch");
+    check_contains(second_table_xml, R"(<autoFilter ref="A1:B2"/>)",
+        "second table autoFilter should exclude the totals row");
+    check(second_table_xml.find("totalsRowShown=\"0\"") == std::string::npos,
+        "visible totals row table should not also write hidden totals metadata");
+    check_contains(second_table_xml, R"(<tableColumn id="1" name="Metric"/>)",
+        "totals row table should leave columns without totals functions unchanged");
+    check_contains(second_table_xml, R"(<tableColumn id="2" name="Value" totalsRowFunction="sum"/>)",
+        "totals row function metadata mismatch");
+    check(second_table_xml.find("totalsRowLabel") == std::string::npos,
+        "totals row metadata should not generate column totals labels");
+    check(second_table_xml.find("totalsRowFormula") == std::string::npos,
+        "totals row metadata should not generate formula text");
+    check(second_table_xml.find("calculatedColumnFormula") == std::string::npos,
+        "totals row metadata should not generate calculated column formulas");
     check(second_table_xml.find("<tableStyleInfo") == std::string::npos,
         "empty table style name should omit style info");
 
@@ -2381,6 +2402,14 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet, &table] { sheet.add_table({1, 1, 1, 1}, table); },
         "tables should reject a header-only range");
+    table.show_totals_row = true;
+    check_fastxlsx_error(
+        [&sheet, &table] { sheet.add_table({1, 1, 2, 1}, table); },
+        "tables should reject totals row metadata without a data row");
+    check_fastxlsx_error(
+        [&sheet, &table] { sheet.add_table({1, 1, 3, 1}, table); },
+        "tables should reject visible totals rows without a totals function");
+    table.show_totals_row = false;
     table.column_names = {"A", "B"};
     check_fastxlsx_error(
         [&sheet, &table] { sheet.add_table({1, 1, 2, 16385}, table); },
@@ -2449,6 +2478,29 @@ void test_streaming_writer_invalid_table_options()
     check_fastxlsx_error(
         [&sheet, &wrong_column_count] { sheet.add_table({1, 1, 2, 2}, wrong_column_count); },
         "tables should reject a column count mismatch");
+
+    fastxlsx::TableOptions totals_function_without_totals_row = valid;
+    totals_function_without_totals_row.name = "TotalsFunctionWithoutTotalsRow";
+    totals_function_without_totals_row.column_totals_functions.resize(2);
+    totals_function_without_totals_row.column_totals_functions[1] =
+        fastxlsx::TableTotalsFunction::Sum;
+    check_fastxlsx_error(
+        [&sheet, &totals_function_without_totals_row] {
+            sheet.add_table({1, 1, 2, 2}, totals_function_without_totals_row);
+        },
+        "tables should reject totals functions without visible totals row metadata");
+
+    fastxlsx::TableOptions wrong_totals_function_count = valid;
+    wrong_totals_function_count.name = "WrongTotalsFunctionCount";
+    wrong_totals_function_count.show_totals_row = true;
+    wrong_totals_function_count.column_totals_functions.resize(1);
+    wrong_totals_function_count.column_totals_functions[0] =
+        fastxlsx::TableTotalsFunction::Sum;
+    check_fastxlsx_error(
+        [&sheet, &wrong_totals_function_count] {
+            sheet.add_table({1, 1, 3, 2}, wrong_totals_function_count);
+        },
+        "tables should reject a totals function count mismatch");
 
     fastxlsx::TableOptions empty_column_name = valid;
     empty_column_name.name = "EmptyColumnName";

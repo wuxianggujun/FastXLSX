@@ -48,7 +48,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   worksheet-local `rId`。
 - `WorksheetWriter::add_table()` 当前只支持新建 workbook 的 streaming-only tables，
   写出 worksheet `<tableParts>`、worksheet `.rels`、`xl/tables/tableN.xml` 和 table
-  content type override；它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。
+  content type override；`TableOptions::show_totals_row` 只写 totals-row visibility
+  metadata，`column_totals_functions` 只写 caller-supplied `totalsRowFunction`
+  attributes。它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。
 - 大型 worksheet 路径禁止 DOM，metadata 必须以小向量/轻量结构记录，再在
   worksheet XML 正确位置输出。
 - `RelationshipSet` 可表达 external target，但只有同时写 worksheet `<hyperlinks>`、
@@ -92,8 +94,12 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
   公式和 range 依赖不会进入大型 DOM。
 - Tables：已有基础 streaming-only、新建 workbook 版本。当前只保存 range、table name、
-  column names 和 style flags；不支持 totals row、calculated columns、sort/filter
-  criteria、custom styles、table resize、已有文件编辑或完整 Excel table UI。
+  column names、style flags、`show_totals_row` 和 `column_totals_functions`；
+  `show_totals_row` 只表示 table totals row 可见性，`column_totals_functions` 只写
+  caller-supplied `totalsRowFunction` attributes，不计算 totals、不生成公式文本、
+  `totalsRowLabel` 或样式。
+  不支持 calculated columns、sort/filter criteria、custom styles、table resize、
+  已有文件编辑或完整 Excel table UI。
 - Images/Pictures：保持计划；不要把它当成 data validations 那样的纯 worksheet XML
   切片。需要 `fastxlsx-image-media-features` 和 OPC graph/package 边界。
 
@@ -135,7 +141,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   worksheet `.rels`、table content type override、owner-local `rId`、与 hyperlinks
   共存时的关系 id、多对象关系 id 回归、XML escape、table column attribute
   escape、invalid range/options、table style flags 且不生成 `xl/styles.xml`、
-  duplicate names 和 close 后 mutation。
+  `show_totals_row` true/false/default metadata、caller-supplied
+  `totalsRowFunction`、无公式文本 / `totalsRowLabel` 生成、duplicate names 和 close
+  后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 如果 data validations 与 hyperlinks / tables 共存，检查 `<dataValidations>` 仍在
   `<hyperlinks>` 和 `<tableParts>` 之前，且 hyperlinks/table 的 `rId` 不被 data

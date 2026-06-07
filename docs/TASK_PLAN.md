@@ -536,6 +536,12 @@ Order:
 1. Tables now have a narrow `WorksheetWriter::add_table()` slice that writes
    `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
    table content type overrides for new workbooks only.
+   `TableOptions::show_totals_row` adds only caller-supplied totals-row
+   visibility metadata: true writes a one-row totals marker in table XML and
+   keeps autoFilter on the header/data rows; false/default keeps explicit
+   hidden totals metadata. `column_totals_functions` writes only caller-supplied
+   `totalsRowFunction` attributes for Excel compatibility; it does not compute
+   totals or generate formula text.
 2. New-workbook-only image insertion has a narrow
    `WorksheetWriter::add_image(path, anchor)` slice for PNG/JPEG files with the
    default manifest dependency `stb`. It validates metadata with `read_image_info()`,
@@ -557,7 +563,9 @@ Validation:
   worksheet `<tableParts>`, content type overrides, owner-local `rId`,
   coexistence with external hyperlinks in the same worksheet relationship owner,
   XML escaping, table column attribute escaping, table style flags without
-  generating `xl/styles.xml`, invalid ranges/options, duplicate names, and
+  generating `xl/styles.xml`, `show_totals_row` true/false/default metadata,
+  caller-supplied `totalsRowFunction`, absence of generated formulas /
+  `totalsRowLabel`, invalid ranges/options, duplicate names, and
   mutation-after-close.
 - Local Excel COM read-only validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-table-style-flags.xlsx`
@@ -573,7 +581,8 @@ Validation:
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed worksheet `ListObjects` counts, `InventoryTable` / `TotalsTable`
-  names, `A1:C3` / `A1:B2` ranges, header text, and basic built-in style flags.
+  names, `A1:C3` / `A1:B3` ranges, header text, `TotalsTable.ShowTotals=True`,
+  `TotalsTable` totals row range `A3:B3`, and basic built-in style flags.
 - Reference workbooks from Excel or Python XLSX libraries remain the fallback
   when table XML structure or Excel repair behavior is unclear.
 - `fastxlsx.streaming` image tests under `windows-nmake-release` compare
@@ -1188,8 +1197,13 @@ Allowed early slices:
   `WorksheetWriter::add_table()` and `TableOptions`. It writes worksheet
   `<tableParts>`, worksheet `.rels`, `xl/tables/tableN.xml`, and table content
   type overrides while storing only lightweight table metadata.
-- Complete table support remains planned: automatic header inference, totals
-  rows, calculated columns, sort/filter criteria, custom styles, `styles.xml`,
+  `TableOptions::show_totals_row` only controls totals-row visibility metadata;
+  callers still write the totals row cells and include that row in the range.
+  `column_totals_functions` only writes caller-supplied `totalsRowFunction`
+  attributes and exists to keep visible totals rows compatible with Excel.
+- Complete table support remains planned: automatic header inference,
+  totalsRowLabel, generated totals formulas, calculated
+  columns, sort/filter criteria, custom styles, `styles.xml`,
   table resize, existing-file editing, overlap checks, and full Excel table UI
   behavior are not implemented by the first slice.
 - Conditional formatting may be added as worksheet metadata only if it does not

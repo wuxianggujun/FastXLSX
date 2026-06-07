@@ -88,6 +88,14 @@ merged ranges、suffix ordering，以及不会为纯 worksheet metadata 误加
 relationships 或 content type entries。
 图片结构测试还应检查 media part target、drawing relationship target、worksheet-local
 `rId` 一致性，以及 anchor 的起始/结束单元格和 offset 语义。
+table 结构测试还应检查 `xl/tables/table*.xml`、worksheet `<tableParts>`、
+worksheet `.rels`、content type override、owner-local `rId`、`tableColumns`、
+`tableStyleInfo` 和 totals-row visibility metadata。当前
+`TableOptions::show_totals_row=false` / 默认路径显式写 `totalsRowShown="0"`；
+true 路径写 `totalsRowCount="1"`，且 `<autoFilter>` 范围只覆盖 header/data rows。
+如果使用 `column_totals_functions`，测试必须确认只写调用方声明的
+`totalsRowFunction` attribute，不计算 totals、不生成公式文本、`totalsRowLabel` 或
+`xl/styles.xml`。
 
 数值编码负例不需要 Excel 可视化验证，因为期望结果是不生成有效 `.xlsx`。测试应覆盖
 `NaN`、`+Inf` 和 `-Inf`，并确认 in-memory 路径在 `Workbook::save()` 抛
@@ -112,6 +120,11 @@ number / row height，`WorksheetWriter::set_column_width()` 拒绝非有限 widt
 - 图片 metadata 功能还必须确认 drawing XML 的 `xdr:cNvPr name` / `descr` 与
   Excel 可见 shape metadata 对应；当前推荐样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。
+- table totals-row visibility metadata 必须用本机 Excel COM 或人工打开确认
+  `ListObject.ShowTotals` 和 totals row 范围。当前推荐样例是
+  `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`，其中
+  `InventoryTable` 应保持隐藏 totals row，`TotalsTable` 应显示 totals row 且范围为
+  `A1:B3` / totals row `A3:B3`。
 - 保存后再打开仍然正常。
 
 Excel 可视化验证是本地验收步骤，不应作为默认 CI 的强依赖。CI 可以做结构检查
@@ -313,6 +326,23 @@ attribute escape、relationships、content types 和 media entries，使用 `ope
 并核对 shape 数量、custom/default shape name 和 `AlternativeText`。这些仍是本地
 QA artifact，不要提交，也不是默认 CTest 或运行时依赖。
 
+当前 table totals-row visibility metadata 样例也有固定本地 QA 脚本：
+
+```powershell
+py tools\verify_table_totals_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-tables.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_table_totals_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-tables.xlsx
+```
+
+Python helper 检查 FastXLSX package XML、`totalsRowShown` / `totalsRowCount`、
+`totalsRowFunction`、`autoFilter`、relationship ids、content types、无 `xl/styles.xml`，
+并用 `openpyxl` 读取 table metadata、用 `XlsxWriter` 生成语义参考 workbook。Excel
+helper 只读打开 workbook 并核对 `InventoryTable.ShowTotals=False`、
+`TotalsTable.ShowTotals=True`、`TotalsTable` 范围、totals row 范围和 Value 列 totals
+calculation。结构异常时仍以拆包后的 table XML 语义为准。脚本应从项目根目录运行；
+`build/qa/table-totals/` 下的 report 和参考 workbook 只是本地 QA artifact，不提交。
+
 ## 拆包和 XML 对比
 
 XLSX 本质是 ZIP package。对比时先复制为 `.zip` 再解压：
@@ -332,6 +362,8 @@ _rels/.rels
 xl/workbook.xml
 xl/_rels/workbook.xml.rels
 xl/worksheets/sheet1.xml
+xl/worksheets/_rels/sheet*.xml.rels
+xl/tables/table*.xml
 xl/sharedStrings.xml
 xl/styles.xml
 docProps/core.xml

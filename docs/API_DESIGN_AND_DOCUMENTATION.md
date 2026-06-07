@@ -108,12 +108,14 @@ attributes，空字符串省略，且不会写单元格文本、创建 hyperlink
 或改变 relationships/content types。
 
 对 tables 这类跨 part worksheet metadata API，注释还要说明是否只支持
-Streaming / new-workbook 路径、是否复制 table name / column names / style name、
+Streaming / new-workbook 路径、是否复制 table name / column names / style name /
+`show_totals_row` / `column_totals_functions`、
 是否生成 `xl/tables/tableN.xml`、worksheet `<tableParts>`、worksheet `.rels` 和
 content type override、relationship id 是否只在 worksheet owner 内有效、是否读取
-已写 header 行或推断列名、是否生成 `styles.xml`，以及是否支持 totals row、
-calculated columns、table resize、overlap checks、existing-file editing 和完整 Excel
-table UI。
+已写 header 行或推断列名、是否生成 `styles.xml`，以及是否仅支持 caller-supplied
+totals row 和列级 `totalsRowFunction` metadata。注释还必须写清它不计算 totals、
+不生成公式文本、`totalsRowLabel`、calculated columns、table resize、overlap checks、
+existing-file editing 或完整 Excel table UI。
 
 对 document properties 这类小型 workbook metadata API，注释还要说明它是否只支持
 new-workbook 输出、是否只写 `docProps/core.xml` 和 `docProps/app.xml`、是否复制

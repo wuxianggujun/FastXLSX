@@ -212,9 +212,14 @@ and release packaging, or the decision to make minizip the default backend.
     - `WorksheetWriter::add_table()` and `TableOptions` now write
       `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
       table content type overrides for new workbooks only.
-    - Keep automatic header inference, totals rows, calculated columns,
-      sort/filter criteria, custom styles, `styles.xml`, table resize, full
-      Excel table UI behavior, and existing-file editing out of scope.
+    - `TableOptions::show_totals_row` now supports only totals-row visibility
+      metadata for caller-supplied totals rows. `column_totals_functions` only
+      writes caller-supplied `totalsRowFunction` attributes; it does not
+      compute totals or generate formula text.
+    - Keep automatic header inference, totalsRowLabel, generated totals
+      formulas, calculated columns, sort/filter criteria, custom styles,
+      `styles.xml`, table resize, full Excel table UI behavior, and
+      existing-file editing out of scope.
 
 12. Images and passthrough objects.
     - Images need `stb` for image decoding/dimensions, plus media parts,
@@ -714,21 +719,28 @@ Do:
 - Allocate table parts, content type overrides, worksheet relationships, and
   worksheet `<tableParts>` references.
 - Keep worksheet relationship ids owner-local and compatible with hyperlinks.
-- Keep totals rows, calculated columns, sort/filter criteria, custom styles,
-  `styles.xml`, table resize, overlap checks, existing-file editing, and full
-  Excel table UI behavior out of this first slice.
+- Allow only `TableOptions::show_totals_row` for totals-row visibility metadata
+  and `column_totals_functions` for caller-supplied `totalsRowFunction`
+  attributes.
+- Keep totalsRowLabel, generated totals formulas, calculated columns,
+  sort/filter criteria, custom styles, `styles.xml`, table resize, overlap
+  checks, existing-file editing, and full Excel table UI behavior out of this
+  first slice.
 
 Accept when:
 - Structure tests compare table XML, worksheet relationships, worksheet
   `<tableParts>`, content types, XML escaping, table column attribute escaping,
   owner-local `rId`, coexistence with external hyperlinks under the same
   worksheet relationship owner, table style flags without generating
-  `xl/styles.xml`, duplicate names, invalid ranges/options, and
+  `xl/styles.xml`, `show_totals_row` true/false/default metadata,
+  caller-supplied `totalsRowFunction`, absence of generated formulas /
+  `totalsRowLabel`, duplicate names, invalid ranges/options, and
   mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed `InventoryTable` and `TotalsTable` as `ListObjects` with expected
-  ranges and headers, and confirmed `Plain` has no table object.
+  ranges and headers, confirmed `TotalsTable.ShowTotals=True` with totals row
+  range `A3:B3`, and confirmed `Plain` has no table object.
 - Excel COM, `openpyxl`, and an unpacked local `XlsxWriter` reference also
   confirm `fastxlsx-streaming-table-column-escape.xlsx` preserves table column
   headers containing `"`, `'`, `&`, `<`, and `>` without generating

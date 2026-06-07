@@ -298,17 +298,63 @@ std::uint32_t range_width(CellRange range)
     return range.last_column - range.first_column + 1;
 }
 
+std::string_view table_totals_function_name(TableTotalsFunction function)
+{
+    switch (function) {
+    case TableTotalsFunction::Sum:
+        return "sum";
+    case TableTotalsFunction::Count:
+        return "count";
+    case TableTotalsFunction::Average:
+        return "average";
+    case TableTotalsFunction::Maximum:
+        return "max";
+    case TableTotalsFunction::Minimum:
+        return "min";
+    case TableTotalsFunction::Product:
+        return "product";
+    case TableTotalsFunction::CountNumbers:
+        return "countNums";
+    case TableTotalsFunction::StandardDeviation:
+        return "stdDev";
+    case TableTotalsFunction::Variance:
+        return "var";
+    }
+
+    throw FastXlsxError("unknown table totals function");
+}
+
 void validate_table_options(CellRange range, const TableOptions& options)
 {
     (void)detail::range_reference(range);
     if (range.last_row == range.first_row) {
         throw FastXlsxError("table range must include at least one data row after the header");
     }
+    if (options.show_totals_row && range.last_row <= range.first_row + 1) {
+        throw FastXlsxError(
+            "table range with totals row metadata must include header, data, and totals rows");
+    }
     validate_table_name(options.name);
 
     const std::uint32_t width = range_width(range);
     if (options.column_names.size() != width) {
         throw FastXlsxError("table column name count must match the table range width");
+    }
+    if (!options.column_totals_functions.empty()
+        && options.column_totals_functions.size() != width) {
+        throw FastXlsxError("table totals function count must match the table range width");
+    }
+    if (!options.show_totals_row && !options.column_totals_functions.empty()) {
+        throw FastXlsxError("table totals functions require visible totals row metadata");
+    }
+    if (options.show_totals_row) {
+        const bool has_totals_function =
+            std::any_of(options.column_totals_functions.begin(),
+                options.column_totals_functions.end(),
+                [](const auto& function) { return function.has_value(); });
+        if (!has_totals_function) {
+            throw FastXlsxError("visible table totals rows require at least one totals function");
+        }
     }
 
     std::set<std::string> seen_column_names;
@@ -1034,9 +1080,17 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
     xml += detail::escape_xml_attribute(table.options.name);
     xml += R"(" ref=")";
     xml += detail::range_reference(table.range);
-    xml += R"(" totalsRowShown="0">)";
+    if (table.options.show_totals_row) {
+        xml += R"(" totalsRowCount="1">)";
+    } else {
+        xml += R"(" totalsRowShown="0">)";
+    }
     xml += R"(<autoFilter ref=")";
-    xml += detail::range_reference(table.range);
+    CellRange auto_filter_range = table.range;
+    if (table.options.show_totals_row) {
+        --auto_filter_range.last_row;
+    }
+    xml += detail::range_reference(auto_filter_range);
     xml += R"("/>)";
     xml += R"(<tableColumns count=")";
     xml += std::to_string(table.options.column_names.size());
@@ -1046,6 +1100,11 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
         xml += std::to_string(index + 1);
         xml += R"(" name=")";
         xml += detail::escape_xml_attribute(table.options.column_names[index]);
+        if (!table.options.column_totals_functions.empty()
+            && table.options.column_totals_functions[index].has_value()) {
+            xml += R"(" totalsRowFunction=")";
+            xml += table_totals_function_name(*table.options.column_totals_functions[index]);
+        }
         xml += R"("/>)";
     }
     xml += "</tableColumns>";

@@ -180,8 +180,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_
 ```
 
 该脚本只读打开 workbook，核对 `ImageMetadata` sheet 的 3 个 shapes、自定义
-`NamedOnly` 名称、默认 `Picture 3` 名称，以及首图 `AlternativeText`。Excel COM
-当前会把 drawing XML 的 `descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
+`NamedOnly` 名称、默认 `Picture 3` 名称、首图 `AlternativeText`、`editAs` 到
+Excel `Placement` 的映射，以及首图 `from_offset` / `to_offset` 对 `Shape.Left` /
+`Top` / `Width` / `Height` 的 EMU-to-points 偏移。Excel COM 当前会把 drawing XML 的
+`descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
 `xl/drawings/drawing*.xml` 为准。
 
 当前 streaming Phase 3 metadata 样例由 `fastxlsx.streaming` 在默认 preset 下生成，
@@ -327,8 +329,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_
 Python helper 检查 FastXLSX package XML、drawing `xdr:cNvPr name` / `descr`、XML
 attribute escape、relationships、content types 和 media entries，使用 `openpyxl`
 打开确认 3 张图片，并用 `XlsxWriter` 创建参考 workbook。Excel helper 只读打开 workbook
-并核对 shape 数量、custom/default shape name 和 `AlternativeText`。这些仍是本地
-QA artifact，不要提交，也不是默认 CTest 或运行时依赖。
+并核对 shape 数量、custom/default shape name、`AlternativeText`、`Placement` 和
+首图 marker offset 对 shape 几何的影响。这些仍是本地 QA artifact，不要提交，也不是
+默认 CTest 或运行时依赖。
 
 当前 table totals-row visibility metadata 样例也有固定本地 QA 脚本：
 

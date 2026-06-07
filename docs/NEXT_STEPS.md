@@ -841,7 +841,7 @@ Stages:
      `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`
      uses `tools/verify_image_metadata.py` for XML/openpyxl/XlsxWriter checks
      and `tools/verify_image_metadata_excel.ps1` for Excel COM shape name and
-     `AlternativeText` / `Placement` checks.
+     `AlternativeText` / `Placement` / marker-offset geometry checks.
    - When XML structure or Excel repair behavior is unclear, generate an
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.

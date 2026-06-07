@@ -476,9 +476,10 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   空 description 省略和默认 `Picture N` 名称。本机 `tools/verify_image_metadata.py`
   已拆包检查 drawing XML，并用 `openpyxl` / `XlsxWriter` 做本地 QA；
   `tools/verify_image_metadata_excel.ps1` 已用 Excel COM 检查 shape name、
-  AlternativeText 和 `Placement` 映射，其中 `oneCell` 映射为 `2`、`absolute` 映射为
-  `3`、默认 `twoCell` 映射为 `1`。该测试确认 metadata 不新增额外 drawing part、
-  worksheet relationships、content types 或 media part 语义。
+  AlternativeText、`Placement` 映射和首图 marker offset 对 `Shape.Left` / `Top` /
+  `Width` / `Height` 的 EMU-to-points 几何影响，其中 `oneCell` 映射为 `2`、
+  `absolute` 映射为 `3`、默认 `twoCell` 映射为 `1`。该测试确认 metadata 不新增额外
+  drawing part、worksheet relationships、content types 或 media part 语义。
 - 当前默认 preset 还覆盖多对象 relationship id 回归测试：同一 worksheet
   内多个 external hyperlink、一个 drawing、多个 table 共享 worksheet owner-local
   `rId` 序列，第二个 worksheet 重新从 `rId1` 计数，drawing `.rels` 内图片关系也按
@@ -506,8 +507,9 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   `xdr:cNvPr name` / `descr`、relationships、content types、media entries，并用
   `openpyxl` 打开确认 3 张图片、用 `XlsxWriter` 创建参考 workbook；`tools/verify_image_metadata_excel.ps1`
   用本机 Excel COM 只读打开，确认 3 个 shapes、自定义 `NamedOnly`、默认
-  `Picture 3` 和首图 `AlternativeText`。本机已验证 Excel COM 会把 `descr`
-  映射到 `Shape.AlternativeText`；结构语义仍以拆包后的 drawing XML 为准。
+  `Picture 3`、首图 `AlternativeText`、`Placement` 映射，以及首图 marker offset 对
+  shape 几何的影响。本机已验证 Excel COM 会把 `descr` 映射到
+  `Shape.AlternativeText`；结构语义仍以拆包后的 drawing XML 为准。
 - `.xlsx` 结构异常时，按 `docs/TESTING_WORKFLOW.md` 使用 Excel、`openpyxl`
   或 `XlsxWriter` 生成语义等价参考文件，拆包后对比 XML，重点检查
   content types、relationships、workbook、worksheet、shared strings 和 styles。

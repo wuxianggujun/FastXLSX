@@ -627,7 +627,8 @@ Validation:
   `NamedOnly`, default `Picture 3`, and mapped the first drawing `descr` to
   `Shape.AlternativeText`. It also confirmed `editAs` placement mapping:
   `oneCell` -> `Placement=2`, `absolute` -> `Placement=3`, and default
-  `twoCell` -> `Placement=1`.
+  `twoCell` -> `Placement=1`, plus first-image marker offsets mapped to
+  `Shape.Left` / `Top` / `Width` / `Height` point geometry.
 - Package relationship and content type checks remain required for every object type.
 - Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.
@@ -1247,8 +1248,8 @@ Allowed early slices:
      and local Excel COM validation. Current image metadata validation also has
      `tools/verify_image_metadata.py` for drawing XML / openpyxl / XlsxWriter
      checks and `tools/verify_image_metadata_excel.ps1` for Excel COM shape
-     metadata / placement checks; future image variants still need local Excel
-     visual verification when Excel is available. Structure problems require an
+     metadata / placement / marker-offset geometry checks; future image variants
+     still need local Excel visual verification when Excel is available. Structure problems require an
      Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
   5. Existing-workbook image read/edit/preservation: start only after package
      reader/writer and P13 preservation fixtures prove untouched media,

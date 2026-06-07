@@ -301,7 +301,7 @@ owner 和 drawing owner 的 relationship id 重置。
 `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`；
 本地 QA 可运行 `tools/verify_image_metadata.py` 做 package XML / openpyxl /
 XlsxWriter 检查，并运行 `tools/verify_image_metadata_excel.ps1` 做 Excel COM
-shape name / AlternativeText / Placement 检查。
+shape name / AlternativeText / Placement / marker-offset geometry 检查。
 
 Anchor 测试要覆盖起始/结束单元格、two-cell marker EMU offset、零尺寸、负尺寸、
 越界 anchor、负 offset 和超出 OpenXML coordinate 上界的 offset；不要为了 anchor
@@ -313,8 +313,9 @@ worksheet 数据。
 当前本机 Excel COM 验证结果应记录为 `Images` / `SecondImage` 各 1 个 shape、
 `Plain` 为 0 个 shape，锚点 `C1:F5` 和 `A1:B2`。
 image metadata 验证结果还应记录 shape count、custom/default shape names、
-`AlternativeText` 和 `Placement`；但 marker EMU offset 语义仍以拆包后的 drawing XML
-为准，不要宣称完整 UI parity、row/column resize 几何计算或 `oneCellAnchor` /
+`AlternativeText`、`Placement` 和首图 marker offset 对 `Shape.Left` / `Top` /
+`Width` / `Height` 的影响；但 marker EMU offset 语义仍以拆包后的 drawing XML 为准，
+不要宣称完整 UI parity、row/column resize 几何计算或 `oneCellAnchor` /
 `absoluteAnchor` 元素支持。
 结构异常时用 Excel、`openpyxl` 或 `XlsxWriter` 参考文件拆包对比 XML。已有文件编辑
 场景还要证明未修改 drawings、media、charts、macros 和 unknown parts 没有丢失，

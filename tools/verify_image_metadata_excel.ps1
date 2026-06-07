@@ -29,6 +29,27 @@ function Assert-True {
     }
 }
 
+function Assert-Near {
+    param(
+        [double]$Actual,
+        [double]$Expected,
+        [double]$Tolerance,
+        [string]$Message
+    )
+
+    if ([Math]::Abs($Actual - $Expected) -gt $Tolerance) {
+        throw "$Message expected $Expected +/- $Tolerance, got $Actual"
+    }
+}
+
+function Convert-EmuToPoint {
+    param(
+        [double]$Emu
+    )
+
+    return $Emu / 12700.0
+}
+
 function Get-ShapeByName {
     param(
         [object]$Worksheet,
@@ -86,10 +107,35 @@ try {
     Assert-Equal $namedOnly.Placement 3 "absolute editAs Excel placement"
     Assert-Equal $defaultNamed.Placement 1 "default twoCell editAs Excel placement"
 
+    Assert-Equal $describedShape.TopLeftCell.Address($false, $false) "A1" "offset image top-left cell"
+    Assert-Equal $describedShape.BottomRightCell.Address($false, $false) "C3" "offset image bottom-right cell"
+
+    $pointTolerance = 0.001
+    $fromColumnOffset = $describedShape.Left - $describedShape.TopLeftCell.Left
+    $fromRowOffset = $describedShape.Top - $describedShape.TopLeftCell.Top
+    $toColumnOffset =
+        ($describedShape.Left + $describedShape.Width) - $describedShape.BottomRightCell.Left
+    $toRowOffset =
+        ($describedShape.Top + $describedShape.Height) - $describedShape.BottomRightCell.Top
+
+    Assert-Near $fromColumnOffset (Convert-EmuToPoint 111.0) $pointTolerance `
+        "from marker column offset points"
+    Assert-Near $fromRowOffset (Convert-EmuToPoint 222.0) $pointTolerance `
+        "from marker row offset points"
+    Assert-Near $toColumnOffset (Convert-EmuToPoint 333.0) $pointTolerance `
+        "to marker column offset points"
+    Assert-Near $toRowOffset (Convert-EmuToPoint 444.0) $pointTolerance `
+        "to marker row offset points"
+
     $descriptionMatched = $false
     $shapeSummaries = @()
     foreach ($shape in @($worksheet.Shapes)) {
-        $shapeSummaries += "$($shape.Name) alt='$($shape.AlternativeText)' placement='$($shape.Placement)' topLeft='$($shape.TopLeftCell.Address($false, $false))'"
+        $shapeSummaries += (
+            "$($shape.Name) alt='$($shape.AlternativeText)' placement='$($shape.Placement)' " +
+            "topLeft='$($shape.TopLeftCell.Address($false, $false))' " +
+            "bottomRight='$($shape.BottomRightCell.Address($false, $false))' " +
+            "left='$($shape.Left)' top='$($shape.Top)' width='$($shape.Width)' height='$($shape.Height)'"
+        )
         if ([string]$shape.AlternativeText -eq $expectedDescription) {
             $descriptionMatched = $true
         }
@@ -97,7 +143,7 @@ try {
     Assert-True $descriptionMatched "Excel did not expose the custom image description as AlternativeText"
 
     Write-Host "OK: Excel opened image metadata workbook read-only: $resolved"
-    Write-Host "OK: Shape count, custom name, default name, AlternativeText, and editAs placement verified"
+    Write-Host "OK: Shape count, custom name, default name, AlternativeText, editAs placement, and marker offsets verified"
     foreach ($summary in $shapeSummaries) {
         Write-Host "OK: Shape $summary"
     }

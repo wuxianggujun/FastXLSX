@@ -585,8 +585,8 @@ Do not claim:
 
 ### P14 - Streaming-Only Data Validations
 
-Status: 基础 + prompt/error metadata. The streaming-only new-workbook worksheet
-slice is implemented.
+Status: 基础 + prompt/error metadata + multi-area `sqref`. The streaming-only
+new-workbook worksheet slice is implemented.
 
 Do:
 - Keep new-workbook `WorksheetWriter` metadata as the only supported surface.
@@ -595,6 +595,9 @@ Do:
 - Keep prompt/error metadata worksheet-local: `showInputMessage`,
   `showErrorMessage`, `errorStyle`, `promptTitle`, `prompt`, `errorTitle`, and
   `error` are attributes on `<dataValidation>`.
+- Keep multi-area data validation as one rule with a copied range list and one
+  space-separated `sqref`; `count` remains the number of `<dataValidation>`
+  elements, not the number of areas.
 - Extend the narrow rule surface only with structure tests, Doxygen comments,
   and Excel/reference XML validation.
 
@@ -609,6 +612,9 @@ Accept when:
   and error-only rules, `stop` / `warning` / `information` error styles, empty
   string omission, false flag omission, and no `.rels` / `styles.xml` /
   content type side effects.
+- Tests also cover multi-area `sqref` serialization, empty range list rejection,
+  invalid range rejection inside a multi-range list, and no relationship id
+  consumption by data validations.
 - Coexistence tests cover suffix ordering with relationship-backed metadata:
   `<dataValidations>` stays before `<hyperlinks>` and `<tableParts>`, and data
   validations do not consume worksheet-local `rId` values before hyperlinks and
@@ -619,10 +625,14 @@ Accept when:
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-prompts.xlsx`
   through `tools/verify_data_validation_prompts_excel.ps1` and
   `tools/verify_data_validation_prompts.py`.
+- Local Excel COM and Python QA are also recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-multi-range.xlsx`
+  through the same helpers using `-MultiRangePath` / `--multi-range-input`.
 
 Do not claim:
 - Full data validation semantics, formula parsing, value validation, overlap
-  checks, complete Excel UI behavior, or existing-file editing.
+  checks, range sorting/merging/deduplication, complete Excel UI behavior, or
+  existing-file editing.
 
 ### P15 - Hyperlinks
 

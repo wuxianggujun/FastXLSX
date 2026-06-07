@@ -70,6 +70,8 @@ EXPECTED_RULES: dict[str, dict[str, str | bool | None]] = {
     },
 }
 
+EXPECTED_MULTI_RANGE_SQREF = "A2:A10 C2:C10 E2:E10"
+
 
 def require(condition: bool, message: str) -> None:
     if not condition:
@@ -166,6 +168,54 @@ def verify_fastxlsx_package(path: Path) -> list[str]:
     return required
 
 
+def verify_multi_range_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "[Content_Types].xml",
+        "_rels/.rels",
+        "docProps/core.xml",
+        "docProps/app.xml",
+        "xl/workbook.xml",
+        "xl/_rels/workbook.xml.rels",
+        "xl/worksheets/sheet1.xml",
+    ]
+    for name in required:
+        require(name in names, f"missing multi-range package entry: {name}")
+
+    forbidden = [
+        "xl/worksheets/_rels/sheet1.xml.rels",
+        "xl/metadata.xml",
+        "xl/styles.xml",
+        "xl/calcChain.xml",
+    ]
+    for name in forbidden:
+        require(name not in names, f"unexpected multi-range package entry: {name}")
+
+    content_types = read_zip_text(path, "[Content_Types].xml")
+    require("dataValidation" not in content_types, "unexpected multi-range dataValidation content type")
+    require("styles" not in content_types, "unexpected multi-range styles content type")
+
+    workbook_rels = read_zip_text(path, "xl/_rels/workbook.xml.rels")
+    require(workbook_rels.count("<Relationship ") == 1, "unexpected multi-range workbook relationship count")
+
+    workbook_xml = read_zip_text(path, "xl/workbook.xml")
+    require("<calcPr" not in workbook_xml, "multi-range data validation should not request calculation")
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require("xmlns:r=" not in worksheet_xml, "multi-range worksheet should not declare relationships")
+    require('<dimension ref="A1:E2"/>' in worksheet_xml, "multi-range worksheet dimension mismatch")
+    require("<dataValidations count=\"1\">" in worksheet_xml, "multi-range dataValidations count mismatch")
+    require(worksheet_xml.count("<dataValidation ") == 1, "multi-range dataValidation item count mismatch")
+
+    fragment = (
+        '<dataValidation type="whole" allowBlank="1" operator="between" '
+        f'sqref="{EXPECTED_MULTI_RANGE_SQREF}"><formula1>1</formula1>'
+        "<formula2>10</formula2></dataValidation>"
+    )
+    require(fragment in worksheet_xml, "multi-range dataValidation XML fragment mismatch")
+    return {"verified_entries": required, "sqref": EXPECTED_MULTI_RANGE_SQREF}
+
+
 def import_openpyxl() -> Any:
     try:
         import openpyxl  # type: ignore
@@ -218,6 +268,41 @@ def verify_rules_with_openpyxl(path: Path) -> dict[str, dict[str, Any]]:
         workbook.close()
 
 
+def verify_multi_range_with_openpyxl(path: Path) -> dict[str, Any]:
+    openpyxl = import_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require("ValidationRanges" in workbook.sheetnames, "missing ValidationRanges worksheet")
+        worksheet = workbook["ValidationRanges"]
+        validations = list(worksheet.data_validations.dataValidation)
+        require(len(validations) == 1, f"expected 1 multi-range validation, got {len(validations)}")
+        validation = validations[0]
+        actual = {
+            "sqref": str(validation.sqref),
+            "ranges": str(validation.sqref).split(),
+            "type": validation.type,
+            "operator": validation.operator,
+            "formula1": validation.formula1,
+            "formula2": validation.formula2,
+        }
+        expected = {
+            "sqref": EXPECTED_MULTI_RANGE_SQREF,
+            "ranges": EXPECTED_MULTI_RANGE_SQREF.split(),
+            "type": "whole",
+            "operator": "between",
+            "formula1": "1",
+            "formula2": "10",
+        }
+        for key, expected_value in expected.items():
+            require(
+                actual[key] == expected_value,
+                f"multi-range {key} mismatch: expected {expected_value!r}, got {actual[key]!r}",
+            )
+        return actual
+    finally:
+        workbook.close()
+
+
 def create_openpyxl_reference(path: Path) -> None:
     openpyxl = import_openpyxl()
     from openpyxl.worksheet.datavalidation import DataValidation  # type: ignore
@@ -258,6 +343,25 @@ def create_openpyxl_reference(path: Path) -> None:
     custom.errorStyle = "stop"
     worksheet.add_data_validation(custom)
     custom.add("D2:D10")
+
+    workbook.save(path)
+
+
+def create_openpyxl_multi_range_reference(path: Path) -> None:
+    openpyxl = import_openpyxl()
+    from openpyxl.worksheet.datavalidation import DataValidation  # type: ignore
+
+    workbook = openpyxl.Workbook()
+    worksheet = workbook.active
+    worksheet.title = "ValidationRanges"
+    for col, value in enumerate(["A", "B", "C", "D", "E"], start=1):
+        worksheet.cell(row=1, column=col, value=value)
+    worksheet.append([1, "gap", 2, "gap", 3])
+
+    whole = DataValidation(type="whole", operator="between", formula1="1", formula2="10", allow_blank=True)
+    worksheet.add_data_validation(whole)
+    for range_ref in EXPECTED_MULTI_RANGE_SQREF.split():
+        whole.add(range_ref)
 
     workbook.save(path)
 
@@ -319,6 +423,12 @@ def main() -> int:
         help="FastXLSX data validation prompt/error workbook to verify.",
     )
     parser.add_argument(
+        "--multi-range-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-multi-range.xlsx"),
+        help="FastXLSX multi-range data validation workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/data-validation-prompts"),
@@ -327,16 +437,27 @@ def main() -> int:
     args = parser.parse_args()
 
     input_path = args.input.resolve()
+    multi_range_input_path = args.multi_range_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
+    require(
+        multi_range_input_path.exists(),
+        f"multi-range input workbook does not exist: {multi_range_input_path}",
+    )
     work_dir.mkdir(parents=True, exist_ok=True)
 
     verified_entries = verify_fastxlsx_package(input_path)
     fastxlsx_rules = verify_rules_with_openpyxl(input_path)
+    multi_range_package = verify_multi_range_package(multi_range_input_path)
+    multi_range_rule = verify_multi_range_with_openpyxl(multi_range_input_path)
 
     openpyxl_reference = work_dir / "reference-openpyxl-data-validation-prompts.xlsx"
     create_openpyxl_reference(openpyxl_reference)
     openpyxl_reference_rules = verify_rules_with_openpyxl(openpyxl_reference)
+
+    openpyxl_multi_range_reference = work_dir / "reference-openpyxl-data-validation-multi-range.xlsx"
+    create_openpyxl_multi_range_reference(openpyxl_multi_range_reference)
+    openpyxl_multi_range_reference_rule = verify_multi_range_with_openpyxl(openpyxl_multi_range_reference)
 
     xlsxwriter_reference = work_dir / "reference-xlsxwriter-data-validation-prompts.xlsx"
     xlsxwriter_status = create_xlsxwriter_reference(xlsxwriter_reference)
@@ -345,11 +466,21 @@ def main() -> int:
         "fastxlsx_input": str(input_path),
         "verified_fastxlsx_entries": verified_entries,
         "fastxlsx_rules": fastxlsx_rules,
+        "fastxlsx_multi_range_input": str(multi_range_input_path),
+        "fastxlsx_multi_range": {
+            "package": multi_range_package,
+            "openpyxl": multi_range_rule,
+        },
         "references": {
             "openpyxl": {
                 "status": "created",
                 "path": str(openpyxl_reference),
                 "rules": openpyxl_reference_rules,
+            },
+            "openpyxl_multi_range": {
+                "status": "created",
+                "path": str(openpyxl_multi_range_reference),
+                "rule": openpyxl_multi_range_reference_rule,
             },
             "xlsxwriter": {
                 "status": "created" if xlsxwriter_status else "skipped",

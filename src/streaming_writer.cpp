@@ -36,7 +36,7 @@ struct ColumnWidth {
 };
 
 struct DataValidation {
-    CellRange range;
+    std::vector<CellRange> ranges;
     DataValidationRule rule;
 };
 
@@ -798,7 +798,7 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
             xml += "\"";
         }
         xml += " sqref=\"";
-        xml += detail::range_reference(validation.range);
+        xml += detail::sqref(validation.ranges);
         xml += "\"><formula1>";
         xml += detail::escape_xml_text(validation.rule.formula1);
         xml += "</formula1>";
@@ -1426,10 +1426,28 @@ void WorksheetWriter::merge_cells(CellRange range)
 
 void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule rule)
 {
+    add_data_validation(std::span<const CellRange>(&range, 1), std::move(rule));
+}
+
+void WorksheetWriter::add_data_validation(
+    std::span<const CellRange> ranges, DataValidationRule rule)
+{
     ensure_mutable_worksheet(state_);
-    (void)detail::range_reference(range);
+    if (ranges.empty()) {
+        throw FastXlsxError("data validation range list cannot be empty");
+    }
+    for (const CellRange& range : ranges) {
+        (void)detail::range_reference(range);
+    }
     validate_data_validation_rule(rule);
-    state_->data_validations.push_back({range, std::move(rule)});
+    state_->data_validations.push_back(
+        {std::vector<CellRange>(ranges.begin(), ranges.end()), std::move(rule)});
+}
+
+void WorksheetWriter::add_data_validation(
+    std::initializer_list<CellRange> ranges, DataValidationRule rule)
+{
+    add_data_validation(std::span<const CellRange>(ranges.begin(), ranges.size()), std::move(rule));
 }
 
 void WorksheetWriter::add_external_hyperlink(

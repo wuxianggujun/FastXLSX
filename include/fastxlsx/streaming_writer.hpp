@@ -372,7 +372,7 @@ public:
     /// limits, or contains only one cell.
     void merge_cells(CellRange range);
 
-    /// Records a worksheet-local data validation rule.
+    /// Records a worksheet-local data validation rule for one range.
     ///
     /// API mode: Streaming worksheet metadata for new workbooks. The rule is
     /// emitted as `<dataValidations>` in the worksheet XML and does not add
@@ -384,6 +384,26 @@ public:
     /// @throws FastXlsxError if the range is invalid, the workbook is closed, or
     /// the rule shape is outside the current narrow data-validation surface.
     void add_data_validation(CellRange range, DataValidationRule rule);
+
+    /// Records one worksheet-local data validation rule for multiple ranges.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. Ranges are
+    /// copied into writer state and serialized as one space-separated `sqref`
+    /// attribute on a single `<dataValidation>` element. This does not check
+    /// overlapping ranges and has the same formula, relationship, content type,
+    /// style, and existing-file limits as the single-range overload. Memory
+    /// grows with the copied range count and rule text, not with worksheet row
+    /// or cell count.
+    ///
+    /// @throws FastXlsxError if the range list is empty, any range is invalid,
+    /// the workbook is closed, or the rule shape is outside the current narrow
+    /// data-validation surface.
+    void add_data_validation(std::span<const CellRange> ranges, DataValidationRule rule);
+
+    /// Convenience overload for multiple data-validation ranges.
+    ///
+    /// The initializer-list ranges are copied during this call.
+    void add_data_validation(std::initializer_list<CellRange> ranges, DataValidationRule rule);
 
     /// Records an external hyperlink on one worksheet cell.
     ///

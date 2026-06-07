@@ -623,6 +623,77 @@ void test_streaming_writer_data_validations()
         "dataValidation item count mismatch");
 }
 
+void test_streaming_writer_data_validation_multi_range_sqref()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-data-validation-multi-range.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ValidationRanges");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::text("B"),
+        fastxlsx::CellView::text("C"),
+        fastxlsx::CellView::text("D"),
+        fastxlsx::CellView::text("E"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(1.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(2.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(3.0),
+    });
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    sheet.add_data_validation({{2, 1, 10, 1}, {2, 3, 10, 3}, {2, 5, 10, 5}}, whole);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing multi-range validation worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "multi-range data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "multi-range data validation should not create metadata part");
+    check(!entries.contains("xl/styles.xml"),
+        "multi-range data validation should not create styles");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "multi-range data validation should not add content types");
+    check(content_types.find("styles") == std::string::npos,
+        "multi-range data validation should not add style content types");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "multi-range data validation should not add workbook relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "multi-range data validation formulas should not request calculation metadata");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "multi-range validation-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:E2\"/>",
+        "multi-range data validation dimension mismatch");
+    check_contains(worksheet_xml, "</sheetData><dataValidations count=\"1\">",
+        "multi-range dataValidations count mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"whole\" allowBlank=\"1\" operator=\"between\" "
+        "sqref=\"A2:A10 C2:C10 E2:E10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
+        "multi-range data validation sqref XML mismatch");
+    check(count_occurrences(worksheet_xml, "<dataValidation ") == 1,
+        "multi-range dataValidation item count mismatch");
+}
+
 void test_streaming_writer_data_validations_with_relationship_metadata()
 {
     const auto output_path =
@@ -648,7 +719,7 @@ void test_streaming_writer_data_validations_with_relationship_metadata()
     whole.error_style = fastxlsx::DataValidationErrorStyle::Stop;
     whole.error_title = "Range";
     whole.error = "Out of range";
-    sheet.add_data_validation({2, 1, 10, 1}, whole);
+    sheet.add_data_validation({{2, 1, 10, 1}, {12, 1, 14, 1}}, whole);
 
     sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
     sheet.add_external_hyperlink(3, 2, "https://example.com/more");
@@ -689,7 +760,7 @@ void test_streaming_writer_data_validations_with_relationship_metadata()
         "</sheetData><dataValidations count=\"1\"><dataValidation type=\"whole\" allowBlank=\"1\" "
         "showInputMessage=\"1\" showErrorMessage=\"1\" errorStyle=\"stop\" errorTitle=\"Range\" "
         "error=\"Out of range\" promptTitle=\"Input\" prompt=\"Use 1 to 10\" operator=\"between\" "
-        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation></dataValidations>"
+        "sqref=\"A2:A10 A12:A14\"><formula1>1</formula1><formula2>10</formula2></dataValidation></dataValidations>"
         "<hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/><hyperlink ref=\"B3\" r:id=\"rId2\"/></hyperlinks>"
         "<tableParts count=\"1\"><tablePart r:id=\"rId3\"/></tableParts></worksheet>",
         "dataValidations should not consume relationship ids before hyperlinks and tables");
@@ -2268,6 +2339,17 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet, &list] { sheet.add_data_validation({1, 1, 1, 16385}, list); },
         "dataValidations should reject a column beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet, &list] {
+            const std::span<const fastxlsx::CellRange> no_ranges;
+            sheet.add_data_validation(no_ranges, list);
+        },
+        "dataValidations should reject an empty multi-range list");
+    check_fastxlsx_error(
+        [&sheet, &list] {
+            sheet.add_data_validation({{1, 1, 1, 1}, {1, 0, 1, 1}}, list);
+        },
+        "dataValidations should reject an invalid range inside a multi-range list");
 
     check_fastxlsx_error(
         [&sheet] { sheet.add_external_hyperlink(0, 1, "https://example.com/"); },
@@ -2575,6 +2657,7 @@ int main()
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
+        test_streaming_writer_data_validation_multi_range_sqref();
         test_streaming_writer_data_validations_with_relationship_metadata();
         test_streaming_writer_data_validation_formula2_escape_and_namespace();
         test_streaming_writer_data_validation_prompt_error_metadata();

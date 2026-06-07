@@ -360,7 +360,8 @@ Validation:
 
 ### M8 - Streaming-Only Data Validations
 
-Status: 基础 + prompt/error metadata for streaming-only new-workbook worksheet data validations.
+Status: 基础 + prompt/error metadata + multi-area `sqref` for streaming-only
+new-workbook worksheet data validations.
 
 The first slice is implemented on `WorksheetWriter` only. It writes
 worksheet-local `<dataValidations>` XML and does not require package
@@ -379,13 +380,23 @@ Tasks:
   `showInputMessage`, `showErrorMessage`, `errorStyle`, `promptTitle`,
   `prompt`, `errorTitle`, and `error` as worksheet `<dataValidation>`
   attributes. Empty strings and false flags are omitted.
+- `WorksheetWriter::add_data_validation()` now also accepts multiple
+  `CellRange` values for one rule. The range list is copied into writer state
+  and serialized as one space-separated `sqref` attribute on a single
+  `<dataValidation>` element. `<dataValidations count>` remains the rule count,
+  not the number of `sqref` areas.
 - Do not parse formulas, validate cell values, check overlap, or claim full
-  Excel UI support.
+  Excel UI support. The multi-area path also does not sort, merge, deduplicate,
+  or check overlapping ranges.
 
 Validation:
 - `fastxlsx.streaming` covers `count`, `sqref`, `type`, `operator`,
   `allowBlank`, `formula1`, `formula2`, XML escaping, invalid ranges,
   invalid rule shapes, package relationship absence, and mutation-after-close.
+- `fastxlsx.streaming` covers multi-area `sqref` serialization for one data
+  validation rule, including `sqref="A2:A10 C2:C10 E2:E10"`, `count="1"`,
+  empty range list rejection, invalid range inside a multi-range list, and the
+  fact that data validations still do not consume worksheet-local `rId` values.
 - `fastxlsx.streaming` covers validation-only worksheet namespace behavior and
   `formula2` XML text escaping; validation-only worksheets do not declare
   `xmlns:r`, and `formula2` escapes `&`, `<`, and `>`.
@@ -407,6 +418,13 @@ Validation:
   loads prompt/error metadata with `openpyxl 3.1.2`, and creates `openpyxl` /
   `XlsxWriter 3.2.0` reference workbooks for local QA. It is not a runtime
   dependency and is not part of default CTest.
+- The same Python QA helper now accepts `--multi-range-input` and checks
+  `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-multi-range.xlsx`
+  by package XML and `openpyxl` multi-range `sqref` / type / formula reads. It
+  also creates an `openpyxl` multi-range reference workbook for XML comparison.
+- Local Excel COM read-only validation opened the multi-range workbook and
+  verified `ValidationRanges` has three validation areas: `A2:A10`, `C2:C10`,
+  and `E2:E10`.
 - `fastxlsx.streaming` also covers coexistence with relationship-backed
   worksheet metadata: `<dataValidations>` remains before `<hyperlinks>` and
   `<tableParts>`, and data validations do not consume worksheet-local `rId`

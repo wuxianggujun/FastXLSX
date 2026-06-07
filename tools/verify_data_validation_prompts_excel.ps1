@@ -1,5 +1,6 @@
 param(
-    [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-prompts.xlsx"
+    [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-prompts.xlsx",
+    [string]$MultiRangePath = "build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-multi-range.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,10 +49,31 @@ function Assert-Validation {
     }
 }
 
+function Assert-ValidationAreas {
+    param(
+        [object]$Worksheet,
+        [string[]]$ExpectedAreas
+    )
+
+    $validationRange = $Worksheet.Cells.SpecialCells(-4174)
+    $actualAreas = @()
+    for ($i = 1; $i -le $validationRange.Areas.Count; $i++) {
+        $actualAreas += $validationRange.Areas.Item($i).Address($false, $false)
+    }
+
+    Assert-Equal $actualAreas.Count $ExpectedAreas.Count "Validation area count"
+    for ($i = 0; $i -lt $ExpectedAreas.Count; $i++) {
+        Assert-Equal $actualAreas[$i] $ExpectedAreas[$i] "Validation area $($i + 1)"
+    }
+}
+
 $resolved = (Resolve-Path -LiteralPath $Path).Path
+$multiRangeResolved = (Resolve-Path -LiteralPath $MultiRangePath).Path
 $excel = $null
 $workbook = $null
 $worksheet = $null
+$multiRangeWorkbook = $null
+$multiRangeWorksheet = $null
 
 try {
     $excel = New-Object -ComObject Excel.Application
@@ -99,8 +121,39 @@ try {
 
     Write-Host "OK: Excel opened data-validation prompt/error workbook read-only: $resolved"
     Write-Host "OK: Validation prompt/error properties verified for A2:D2"
+
+    $workbook.Close($false) | Out-Null
+    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($worksheet)
+    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($workbook)
+    $worksheet = $null
+    $workbook = $null
+
+    $multiRangeWorkbook = $excel.Workbooks.Open($multiRangeResolved, 0, $true)
+    $multiRangeWorksheet = $multiRangeWorkbook.Worksheets.Item("ValidationRanges")
+
+    $expectedMultiRange = @{
+        Type = 1
+        Operator = 1
+        Formula1 = "1"
+        Formula2 = "10"
+        IgnoreBlank = $true
+    }
+
+    Assert-Validation $multiRangeWorksheet "A2" $expectedMultiRange
+    Assert-Validation $multiRangeWorksheet "A10" $expectedMultiRange
+    Assert-Validation $multiRangeWorksheet "C2" $expectedMultiRange
+    Assert-Validation $multiRangeWorksheet "C10" $expectedMultiRange
+    Assert-Validation $multiRangeWorksheet "E2" $expectedMultiRange
+    Assert-Validation $multiRangeWorksheet "E10" $expectedMultiRange
+    Assert-ValidationAreas $multiRangeWorksheet @("A2:A10", "C2:C10", "E2:E10")
+
+    Write-Host "OK: Excel opened data-validation multi-range workbook read-only: $multiRangeResolved"
+    Write-Host "OK: Multi-range validation properties verified for A/C/E validation areas"
 }
 finally {
+    if ($null -ne $multiRangeWorkbook) {
+        $multiRangeWorkbook.Close($false) | Out-Null
+    }
     if ($null -ne $workbook) {
         $workbook.Close($false) | Out-Null
     }
@@ -110,8 +163,14 @@ finally {
     if ($null -ne $worksheet) {
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($worksheet)
     }
+    if ($null -ne $multiRangeWorksheet) {
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($multiRangeWorksheet)
+    }
     if ($null -ne $workbook) {
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($workbook)
+    }
+    if ($null -ne $multiRangeWorkbook) {
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($multiRangeWorkbook)
     }
     if ($null -ne $excel) {
         [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel)

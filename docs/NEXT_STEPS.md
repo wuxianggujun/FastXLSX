@@ -647,7 +647,8 @@ Accept when:
 - Structure tests compare table XML, worksheet relationships, worksheet
   `<tableParts>`, content types, XML escaping, owner-local `rId`, coexistence
   with external hyperlinks under the same worksheet relationship owner,
-  duplicate names, invalid ranges/options, and mutation-after-close.
+  table style flags without generating `xl/styles.xml`, duplicate names,
+  invalid ranges/options, and mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed `InventoryTable` and `TotalsTable` as `ListObjects` with expected

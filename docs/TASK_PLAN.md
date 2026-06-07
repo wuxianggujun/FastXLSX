@@ -466,7 +466,13 @@ Validation:
 - `fastxlsx.streaming` table tests compare table XML, worksheet relationships,
   worksheet `<tableParts>`, content type overrides, owner-local `rId`,
   coexistence with external hyperlinks in the same worksheet relationship owner,
-  XML escaping, invalid ranges/options, duplicate names, and mutation-after-close.
+  XML escaping, table style flags without generating `xl/styles.xml`, invalid
+  ranges/options, duplicate names, and mutation-after-close.
+- Local Excel COM read-only validation opened
+  `build/windows-nmake-release/tests/fastxlsx-streaming-table-style-flags.xlsx`
+  and confirmed `StyleFlagTable` first/last/row/column style flags as
+  `True/True/False/True`; local `openpyxl` 3.1.2 read `TableStyleMedium4` and
+  the same flags.
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed worksheet `ListObjects` counts, `InventoryTable` / `TotalsTable`

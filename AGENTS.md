@@ -324,6 +324,11 @@ cmake --help
   Excel 打开验证 `Inventory`、`Totals` 和 `Plain` sheet 的 `ListObjects` 数量、
   表名、范围、header 文本和内建 table style flags；不要把这扩展成完整 table UI
   或已有文件编辑保证。
+  结构测试还覆盖 `TableOptions` 的四个 table style flags，并确认这些内建样式标志
+  只写入 `<tableStyleInfo>`，不会生成 `xl/styles.xml`。
+  本机 Excel COM 已只读打开
+  `build/windows-nmake-release/tests/fastxlsx-streaming-table-style-flags.xlsx`，
+  确认 `StyleFlagTable` 的 first/last/row/column flags 为 `True/True/False/True`。
   结构测试还覆盖 table 与 external hyperlinks 共存时 worksheet `.rels` 中的
   owner-local relationship id 分配，确认 `<tableParts>` 和 `<hyperlinks>` 引用
   各自匹配对应 `.rels` entry。

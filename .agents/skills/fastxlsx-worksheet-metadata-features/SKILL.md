@@ -102,7 +102,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - tables 结构测试应检查 `xl/tables/tableN.xml`、worksheet `<tableParts>`、
   worksheet `.rels`、table content type override、owner-local `rId`、与 hyperlinks
   共存时的关系 id、多对象关系 id 回归、XML escape、invalid range/options、
-  duplicate names 和 close 后 mutation。
+  table style flags 且不生成 `xl/styles.xml`、duplicate names 和 close 后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 如果 data validations 与 hyperlinks / tables 共存，检查 `<dataValidations>` 仍在
   `<hyperlinks>` 和 `<tableParts>` 之前，且 hyperlinks/table 的 `rId` 不被 data

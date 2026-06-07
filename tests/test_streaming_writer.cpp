@@ -958,6 +958,41 @@ void test_streaming_writer_tables()
         "plain worksheet should not include relationship namespace");
 }
 
+void test_streaming_writer_table_style_flags()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-table-style-flags.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("StyleFlags");
+
+    sheet.append_row({fastxlsx::CellView::text("Name"), fastxlsx::CellView::text("Value")});
+    sheet.append_row({fastxlsx::CellView::text("A"), fastxlsx::CellView::number(1.0)});
+
+    fastxlsx::TableOptions table;
+    table.name = "StyleFlagTable";
+    table.column_names = {"Name", "Value"};
+    table.style_name = "TableStyleMedium4";
+    table.show_first_column = true;
+    table.show_last_column = true;
+    table.show_row_stripes = false;
+    table.show_column_stripes = true;
+    sheet.add_table({1, 1, 2, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/styles.xml"),
+        "table style flags should not create a styles part");
+    check(entries.contains("xl/tables/table1.xml"),
+        "table style flags should create a table part");
+
+    const auto& table_xml = entries.at("xl/tables/table1.xml");
+    check_contains(table_xml,
+        R"(<tableStyleInfo name="TableStyleMedium4" showFirstColumn="1" showLastColumn="1" showRowStripes="0" showColumnStripes="1"/>)",
+        "table style flags XML mismatch");
+}
+
 void test_streaming_writer_images()
 {
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
@@ -1971,6 +2006,7 @@ int main()
         test_streaming_writer_data_validation_formula2_escape_and_namespace();
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_tables();
+        test_streaming_writer_table_style_flags();
         test_streaming_writer_images();
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();

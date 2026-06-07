@@ -645,14 +645,19 @@ Do:
 
 Accept when:
 - Structure tests compare table XML, worksheet relationships, worksheet
-  `<tableParts>`, content types, XML escaping, owner-local `rId`, coexistence
-  with external hyperlinks under the same worksheet relationship owner,
-  table style flags without generating `xl/styles.xml`, duplicate names,
-  invalid ranges/options, and mutation-after-close.
+  `<tableParts>`, content types, XML escaping, table column attribute escaping,
+  owner-local `rId`, coexistence with external hyperlinks under the same
+  worksheet relationship owner, table style flags without generating
+  `xl/styles.xml`, duplicate names, invalid ranges/options, and
+  mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed `InventoryTable` and `TotalsTable` as `ListObjects` with expected
   ranges and headers, and confirmed `Plain` has no table object.
+- Excel COM, `openpyxl`, and an unpacked local `XlsxWriter` reference also
+  confirm `fastxlsx-streaming-table-column-escape.xlsx` preserves table column
+  headers containing `"`, `'`, `&`, `<`, and `>` without generating
+  `xl/styles.xml` in the FastXLSX package.
 
 Do not claim:
 - Full table support, automatic header inference, custom style support,

@@ -329,6 +329,11 @@ cmake --help
   本机 Excel COM 已只读打开
   `build/windows-nmake-release/tests/fastxlsx-streaming-table-style-flags.xlsx`，
   确认 `StyleFlagTable` 的 first/last/row/column flags 为 `True/True/False/True`。
+  结构测试还覆盖 table column name 属性转义，包括双引号、单引号、`&`、`<` 和 `>`；
+  本机 Excel COM / `openpyxl` 已只读打开
+  `build/windows-nmake-release/tests/fastxlsx-streaming-table-column-escape.xlsx`，
+  确认 `EscapedColumnTable` 表头语义保持为 `Text "quoted"`、`Owner's Share`
+  和 `A&B<Limit>`；本机 `XlsxWriter` 3.2.0 参考 workbook 拆包后列名语义一致。
   结构测试还覆盖 table 与 external hyperlinks 共存时 worksheet `.rels` 中的
   owner-local relationship id 分配，确认 `<tableParts>` 和 `<hyperlinks>` 引用
   各自匹配对应 `.rels` entry。

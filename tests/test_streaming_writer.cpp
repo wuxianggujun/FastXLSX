@@ -993,6 +993,51 @@ void test_streaming_writer_table_style_flags()
         "table style flags XML mismatch");
 }
 
+void test_streaming_writer_table_column_attribute_escaping()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-table-column-escape.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("TableEscapes");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Text \"quoted\""),
+        fastxlsx::CellView::text("Owner's Share"),
+        fastxlsx::CellView::text("A&B<Limit>"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("alpha"),
+        fastxlsx::CellView::number(42.0),
+        fastxlsx::CellView::text("done"),
+    });
+
+    fastxlsx::TableOptions table;
+    table.name = "EscapedColumnTable";
+    table.column_names = {"Text \"quoted\"", "Owner's Share", "A&B<Limit>"};
+    table.style_name.clear();
+    sheet.add_table({1, 1, 2, 3}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/tables/table1.xml"),
+        "table column escape test should create a table part");
+    check(!entries.contains("xl/styles.xml"),
+        "table column escape test should not create a styles part");
+
+    const auto& table_xml = entries.at("xl/tables/table1.xml");
+    check_contains(table_xml,
+        R"(<tableColumn id="1" name="Text &quot;quoted&quot;"/>)",
+        "table column double-quote attribute escape mismatch");
+    check_contains(table_xml,
+        R"(<tableColumn id="2" name="Owner&apos;s Share"/>)",
+        "table column apostrophe attribute escape mismatch");
+    check_contains(table_xml,
+        R"(<tableColumn id="3" name="A&amp;B&lt;Limit&gt;"/>)",
+        "table column ampersand and angle-bracket attribute escape mismatch");
+}
+
 void test_streaming_writer_images()
 {
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
@@ -2007,6 +2052,7 @@ int main()
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_tables();
         test_streaming_writer_table_style_flags();
+        test_streaming_writer_table_column_attribute_escaping();
         test_streaming_writer_images();
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();

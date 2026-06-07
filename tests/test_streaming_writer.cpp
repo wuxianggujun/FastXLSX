@@ -70,6 +70,20 @@ void write_bytes(const std::filesystem::path& path, std::span<const std::byte> b
     }
 }
 
+bool bytes_equal(std::string_view text, std::span<const std::byte> bytes)
+{
+    if (text.size() != bytes.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (static_cast<unsigned char>(text[index])
+            != std::to_integer<unsigned char>(bytes[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 fastxlsx::TwoColorScaleRule make_two_color_scale(
     fastxlsx::ArgbColor lower, fastxlsx::ArgbColor upper)
 {
@@ -3536,6 +3550,104 @@ void test_streaming_writer_mixed_image_formats()
         "mixed JPEG drawing image relationship mismatch");
 }
 
+void test_streaming_writer_memory_images()
+{
+    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-memory-images.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("MemoryImages");
+    sheet.append_row({fastxlsx::CellView::text("memory")});
+
+    const auto& png_source = fastxlsx::test::tiny_rgba_png();
+    std::vector<unsigned char> mutable_png(png_source.begin(), png_source.end());
+    const auto mutable_png_bytes =
+        std::as_bytes(std::span<const unsigned char>(mutable_png.data(), mutable_png.size()));
+
+    fastxlsx::ImageOptions png_options;
+    png_options.edit_as = fastxlsx::ImageEditAs::OneCell;
+    png_options.from_offset = {101, 202};
+    png_options.to_offset = {303, 404};
+    png_options.name = "Memory PNG";
+    png_options.description = "PNG bytes from memory";
+    sheet.add_image(mutable_png_bytes, {1, 1, 2, 2}, png_options);
+    mutable_png.assign(mutable_png.size(), 0);
+
+    sheet.add_image(fastxlsx::test::tiny_jpeg_bytes(), {3, 2, 4, 3});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.png"), "missing memory PNG media part");
+    check(entries.contains("xl/media/image2.jpg"), "missing memory JPEG media part");
+    check(!entries.contains("xl/drawings/drawing2.xml"), "memory images should share worksheet drawing");
+    check(entries.at("xl/media/image1.png").size() == fastxlsx::test::tiny_rgba_png().size(),
+        "memory PNG media part byte size mismatch");
+    check(bytes_equal(entries.at("xl/media/image1.png"), fastxlsx::test::tiny_png_bytes()),
+        "memory PNG media bytes should be copied before caller buffer mutation");
+    check(entries.at("xl/media/image2.jpg").size() == fastxlsx::test::tiny_rgb_jpeg_header().size(),
+        "memory JPEG media part byte size mismatch");
+    check(bytes_equal(entries.at("xl/media/image2.jpg"), fastxlsx::test::tiny_jpeg_bytes()),
+        "memory JPEG media bytes mismatch");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(content_types,
+        R"(<Default Extension="png" ContentType="image/png"/>)",
+        "memory PNG content type default missing");
+    check_contains(content_types,
+        R"(<Default Extension="jpg" ContentType="image/jpeg"/>)",
+        "memory JPEG content type default missing");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>)",
+        "memory drawing content type override missing");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "</sheetData><drawing r:id=\"rId1\"/></worksheet>",
+        "memory image worksheet drawing relationship id mismatch");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>)",
+        "memory image worksheet drawing relationship mismatch");
+
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check(count_occurrences(drawing_xml, "<xdr:twoCellAnchor") == 2,
+        "memory image drawing anchor count mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>101</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>202</xdr:rowOff></xdr:from>)",
+        "memory image options from marker mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:to><xdr:col>2</xdr:col><xdr:colOff>303</xdr:colOff><xdr:row>2</xdr:row><xdr:rowOff>404</xdr:rowOff></xdr:to>)",
+        "memory image options to marker mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="1" name="Memory PNG" descr="PNG bytes from memory"/>)",
+        "memory image options metadata mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="2" name="Picture 2"/>)",
+        "memory image default picture name mismatch");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId1"/>)",
+        "memory PNG drawing relationship id mismatch");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId2"/>)",
+        "memory JPEG drawing relationship id mismatch");
+    check_contains(drawing_xml,
+        R"(<a:ext cx="9525" cy="9525"/>)",
+        "memory PNG intrinsic EMU size mismatch");
+    check_contains(drawing_xml,
+        R"(<a:ext cx="19050" cy="9525"/>)",
+        "memory JPEG intrinsic EMU size mismatch");
+
+    const auto& drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check(count_occurrences(drawing_rels, "<Relationship ") == 2,
+        "memory image drawing relationship count mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "memory PNG drawing image relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/>)",
+        "memory JPEG drawing image relationship mismatch");
+}
+
 void test_streaming_writer_image_anchor_markers()
 {
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-anchor-image-source.png";
@@ -4025,6 +4137,9 @@ void test_streaming_writer_rejects_mutation_after_close()
                 {1, 1, 1, 1});
         },
         "add_image should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] { sheet.add_image(fastxlsx::test::tiny_png_bytes(), {1, 1, 1, 1}); },
+        "add_image memory overload should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -4177,6 +4292,21 @@ void test_streaming_writer_invalid_ranges()
     check_fastxlsx_error(
         [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 16385}); },
         "images should reject an anchor column beyond Excel's limit");
+
+    const std::span<const std::byte> empty_image;
+    check_fastxlsx_error(
+        [&sheet, empty_image] { sheet.add_image(empty_image, {1, 1, 1, 1}); },
+        "memory images should reject an empty buffer");
+
+    std::vector<unsigned char> unsupported_image {0x00, 0x01, 0x02, 0x03};
+    check_fastxlsx_error(
+        [&sheet, &unsupported_image] {
+            sheet.add_image(
+                std::as_bytes(std::span<const unsigned char>(
+                    unsupported_image.data(), unsupported_image.size())),
+                {1, 1, 1, 1});
+        },
+        "memory images should reject unsupported headers");
 
     const auto valid_image_path =
         std::filesystem::current_path() / "fastxlsx-invalid-offset-image-source.png";
@@ -4544,6 +4674,7 @@ int main()
         test_streaming_writer_image_metadata();
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();
+        test_streaming_writer_memory_images();
         test_streaming_writer_image_anchor_markers();
         test_streaming_writer_mixed_object_relationship_ids();
         test_streaming_writer_shared_string_package();

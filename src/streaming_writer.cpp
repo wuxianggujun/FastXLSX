@@ -12,6 +12,7 @@
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -647,6 +648,30 @@ std::filesystem::path copy_image_to_temp_file(const std::filesystem::path& sourc
     if (input.bad()) {
         throw FastXlsxError("failed to read image file for package media part");
     }
+    if (!output) {
+        throw FastXlsxError("failed to write temporary image media file");
+    }
+
+    return temp_path;
+}
+
+std::filesystem::path copy_image_to_temp_file(std::span<const std::byte> bytes)
+{
+    if (bytes.empty()) {
+        throw FastXlsxError("image memory buffer cannot be empty");
+    }
+    if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max())) {
+        throw FastXlsxError("image memory buffer is too large for temporary media file");
+    }
+
+    const std::filesystem::path temp_path = make_temp_path();
+    std::ofstream output(temp_path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create temporary image media file");
+    }
+
+    output.write(
+        reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!output) {
         throw FastXlsxError("failed to write temporary image media file");
     }
@@ -2197,6 +2222,22 @@ void WorksheetWriter::add_image(
 
     const ImageInfo info = read_image_info(path);
     state_->images.push_back({anchor, info, copy_image_to_temp_file(path), std::move(options)});
+}
+
+void WorksheetWriter::add_image(std::span<const std::byte> bytes, CellRange anchor)
+{
+    add_image(bytes, anchor, {});
+}
+
+void WorksheetWriter::add_image(
+    std::span<const std::byte> bytes, CellRange anchor, ImageOptions options)
+{
+    ensure_mutable_worksheet(state_);
+    (void)detail::range_reference(anchor);
+    validate_image_options(options);
+
+    const ImageInfo info = read_image_info(bytes);
+    state_->images.push_back({anchor, info, copy_image_to_temp_file(bytes), std::move(options)});
 }
 
 WorkbookWriter::WorkbookWriter() = default;

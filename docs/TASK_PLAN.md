@@ -583,11 +583,14 @@ Order:
    attributes; it does not compute totals or generate formula text or totals row
    cell text.
 2. New-workbook-only image insertion has a narrow
-   `WorksheetWriter::add_image(path, anchor)` slice for PNG/JPEG files with the
-   default manifest dependency `stb`. It validates metadata with `read_image_info()`,
-   stores original image bytes as file-backed media entries, writes one drawing
-   part per worksheet with images, and does not mutate existing drawings or make
-   passthrough claims.
+   `WorksheetWriter::add_image(path, anchor)` and
+   `WorksheetWriter::add_image(bytes, anchor)` slice for PNG/JPEG sources with
+   the default manifest dependency `stb`. It validates metadata with
+   `read_image_info()`, stores original image bytes as file-backed media entries,
+   writes one drawing part per worksheet with images, and does not mutate
+   existing drawings or make passthrough claims. The memory-source overload
+   accepts `std::span<const std::byte>` only for the duration of the call, copies
+   caller bytes immediately, and does not retain the span or a decoded pixel buffer.
    `ImageOptions` adds only drawing marker / non-visual metadata: `from_offset`
    / `to_offset` write EMU values to two-cell marker `xdr:colOff` /
    `xdr:rowOff`, `edit_as` writes `xdr:twoCellAnchor editAs`, non-empty `name`
@@ -675,6 +678,15 @@ Validation:
   `-BasicPath` and `-MixedObjectPath` to check shape / hyperlink / table counts
   and anchors in local Excel COM. `openpyxl` may skip JPEG image loading, so
   JPEG media/drawing assertions remain XML/Excel-COM based.
+- Memory-source image QA now also covers
+  `build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx`.
+  CTest verifies media bytes are copied before caller-buffer mutation, PNG/JPEG
+  content types, shared drawing output, drawing/worksheet relationships, anchor
+  offsets, `cNvPr` metadata, and intrinsic EMU sizes. `tools/verify_image_metadata.py`
+  accepts `--memory-input` to check package XML, media signatures, `openpyxl`
+  smoke, and `XlsxWriter` reference generation; `tools/verify_image_metadata_excel.ps1`
+  accepts `-MemoryPath` to verify `MemoryImages` has two shapes with expected
+  anchors in local Excel COM.
 - Package relationship and content type checks remain required for every object type.
 - Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.
@@ -1354,15 +1366,19 @@ Allowed early slices:
      not EXIF/PNG/JPEG metadata, media filenames, anchor cell range changes,
      cell text, or existing drawing state.
   3. New-workbook insertion slice: current basic slice is
-     `WorksheetWriter::add_image(path, anchor)` for PNG/JPEG only, one two-cell
+     `WorksheetWriter::add_image(path, anchor)` and
+     `WorksheetWriter::add_image(bytes, anchor)` for PNG/JPEG only, one two-cell
      anchor strategy, generated media and drawing parts, worksheet `.rels`,
      drawing `.rels`, content type entries, and worksheet `<drawing>`
-     references.
+     references. The memory-source overload copies caller-owned bytes into a
+     temporary file-backed media entry and does not retain the span after return.
   4. Visual and reference validation: current basic slice has structure tests
      and local Excel COM validation. Current image metadata validation also has
      `tools/verify_image_metadata.py` for drawing XML / openpyxl / XlsxWriter
      checks and `tools/verify_image_metadata_excel.ps1` for Excel COM shape
-     metadata / placement / marker-offset geometry checks; future image variants
+     metadata / placement / marker-offset geometry checks. The same helpers now
+     support `--memory-input` and `-MemoryPath` for the memory-source image
+     workbook; future image variants
      still need local Excel visual verification when Excel is available. Structure problems require an
      Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
   5. Existing-workbook image read/edit/preservation: start only after package
@@ -1383,7 +1399,10 @@ Forbidden until separately designed and verified:
 - Do not treat `stb` as complete OpenXML image support. It does not write
   drawing XML, manage relationship ids, allocate media part names, or validate
   Excel package compatibility; FastXLSX does those only in the current narrow
-  `WorksheetWriter::add_image()` new-workbook slice.
+  `WorksheetWriter::add_image()` new-workbook path/memory-source slice.
+- Do not treat the memory-source image overload as arbitrary stream, URL,
+  base64, existing-workbook image preservation, drawing mutation, or complete
+  low-memory package streaming support.
 - Do not treat `ImageOptions::edit_as` as `oneCellAnchor` / `absoluteAnchor`
   element support, or treat `ImageOptions::from_offset` / `to_offset` as
   row/column resize geometry calculation, cross-application UI guarantees,

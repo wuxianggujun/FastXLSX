@@ -907,11 +907,16 @@ Stages:
    - This stage alone still does not create media parts, drawing XML,
      relationships, content types, anchors, or existing-workbook preservation.
 2. P17.1 - API shape and documentation.
-   Status: basic for `WorksheetWriter::add_image()`.
+   Status: basic for `WorksheetWriter::add_image()` path and memory-source overloads.
    - Document whether each image API is Streaming, Patch, or In-memory.
    - Public comments must state memory behavior for original image bytes,
      decoded pixels, anchor metadata, drawing/media part state, and package
      finalization.
+   - Current memory-source image overloads accept `std::span<const std::byte>`;
+     the caller-owned span only needs to remain valid during the call. FastXLSX
+     validates metadata with `read_image_info(bytes)`, immediately copies the
+     original bytes to a temporary file-backed media entry, and does not retain
+     the span or a decoded pixel buffer.
    - Current `ImageOptions` metadata is limited to drawing XML two-cell marker /
      non-visual picture properties: `from_offset` / `to_offset` write EMU values
      to marker `xdr:colOff` / `xdr:rowOff`, `edit_as` writes
@@ -925,6 +930,10 @@ Stages:
    - `WorksheetWriter::add_image(path, anchor)` accepts PNG/JPEG files by
      default, validates metadata with `read_image_info()`, and copies original
      image bytes into temporary file-backed media entries.
+   - `WorksheetWriter::add_image(bytes, anchor)` accepts caller-owned PNG/JPEG
+     memory spans, validates metadata with `read_image_info(bytes)`, copies the
+     original bytes into the same temporary file-backed media entry path, and
+     rejects empty buffers or unsupported image headers.
    - The first slice uses a simple two-cell anchor from a 1-based inclusive
      `CellRange`; it writes generated media parts, one drawing part per
      worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
@@ -960,6 +969,11 @@ Stages:
      `oneCell`, `absolute`, and default `twoCell`; `xdr:cNvPr name` / `descr`;
      XML attribute escaping; empty description omission; default `Picture N`
      names; and no extra relationship/content type/media side effects.
+   - Current memory-source image coverage writes
+     `build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx`;
+     structure tests verify PNG/JPEG media bytes, caller-buffer mutation safety,
+     shared drawing part output, drawing/worksheet relationships, content types,
+     anchor offsets, `cNvPr` metadata, and intrinsic EMU sizes.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.
@@ -977,8 +991,12 @@ Stages:
      `fastxlsx-streaming-images.xlsx` and `--mixed-object-input` /
      `-MixedObjectPath` for `fastxlsx-streaming-mixed-object-rels.xlsx`, covering
      basic media/drawing relationships and mixed hyperlink/drawing/table
-     owner-local relationship ids. `openpyxl` may skip JPEG image loading, so
-     XML and Excel COM remain authoritative for JPEG media/drawing counts.
+     owner-local relationship ids. They also accept `--memory-input` /
+     `-MemoryPath` for `fastxlsx-streaming-memory-images.xlsx`, covering
+     memory-source media bytes, package XML, `openpyxl` smoke,
+     `XlsxWriter` reference generation, and Excel COM anchors. `openpyxl` may
+     skip JPEG image loading, so XML and Excel COM remain authoritative for
+     JPEG media/drawing counts.
    - When XML structure or Excel repair behavior is unclear, generate an
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.
@@ -997,7 +1015,9 @@ Do:
 - Generate drawing parts, drawing relationships, worksheet relationships,
   worksheet drawing references, and content type entries together.
 - Keep current image media bytes file-backed in package entries; do not move
-  image bytes or decoded pixels into the worksheet row/cell hot path.
+  image bytes or decoded pixels into the worksheet row/cell hot path. For
+  memory-source image overloads, do not retain the caller-owned span after the
+  call returns.
 - Validate anchors without retaining a full worksheet DOM.
 
 Accept when:
@@ -1020,7 +1040,9 @@ Do not claim:
 - Image editing or broad drawing support beyond the implemented slice.
 - Picture support from `stb` dependency availability alone.
 - OpenXML image support beyond the narrow `WorksheetWriter::add_image()`
-  streaming new-workbook PNG/JPEG slice.
+  streaming new-workbook PNG/JPEG path/memory-source slice.
+- Arbitrary stream, URL, base64, or existing-workbook image source support from
+  the memory-source overload alone.
 - `oneCellAnchor` / `absoluteAnchor` element support, row/column resize geometry
   calculation from `ImageOptions::from_offset` / `to_offset`, complete image
   metadata, EXIF/PNG/JPEG metadata, accessibility UI parity, or existing drawing

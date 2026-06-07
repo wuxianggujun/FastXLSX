@@ -351,6 +351,113 @@ def verify_basic_with_openpyxl(path: Path) -> dict[str, Any]:
         workbook.close()
 
 
+def verify_memory_source_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "xl/media/image1.png",
+        "xl/media/image2.jpg",
+        "xl/drawings/drawing1.xml",
+        "xl/drawings/_rels/drawing1.xml.rels",
+        "xl/worksheets/sheet1.xml",
+        "xl/worksheets/_rels/sheet1.xml.rels",
+    ]
+    for name in required:
+        require(name in names, f"memory image sample missing package entry: {name}")
+    require("xl/drawings/drawing2.xml" not in names,
+            "memory image sample should share one drawing part")
+
+    png_bytes = read_zip_bytes(path, "xl/media/image1.png")
+    jpeg_bytes = read_zip_bytes(path, "xl/media/image2.jpg")
+    require(png_bytes.startswith(b"\x89PNG\r\n\x1a\n"), "memory PNG media signature mismatch")
+    require(jpeg_bytes.startswith(b"\xff\xd8") and jpeg_bytes.endswith(b"\xff\xd9"),
+            "memory JPEG media signature mismatch")
+
+    content_types = read_zip_text(path, "[Content_Types].xml")
+    require('<Default Extension="png" ContentType="image/png"/>' in content_types,
+            "memory image PNG content type default missing")
+    require('<Default Extension="jpg" ContentType="image/jpeg"/>' in content_types,
+            "memory image JPEG content type default missing")
+    require('/xl/drawings/drawing1.xml' in content_types,
+            "memory image drawing content type missing")
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('</sheetData><drawing r:id="rId1"/></worksheet>' in worksheet_xml,
+            "memory image worksheet drawing relationship id mismatch")
+
+    worksheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
+    require(relationship_count(worksheet_rels) == 1,
+            "memory image worksheet relationship count mismatch")
+    require('Id="rId1"' in worksheet_rels and 'Target="../drawings/drawing1.xml"' in worksheet_rels,
+            "memory image worksheet drawing relationship mismatch")
+
+    drawing_xml = read_zip_text(path, "xl/drawings/drawing1.xml")
+    require(count(drawing_xml, "<xdr:twoCellAnchor") == 2,
+            "memory image drawing anchor count mismatch")
+    require('editAs="oneCell"' in drawing_xml, "memory image oneCell editAs missing")
+    require('<xdr:colOff>101</xdr:colOff>' in drawing_xml
+            and '<xdr:rowOff>202</xdr:rowOff>' in drawing_xml
+            and '<xdr:colOff>303</xdr:colOff>' in drawing_xml
+            and '<xdr:rowOff>404</xdr:rowOff>' in drawing_xml,
+            "memory image marker offsets mismatch")
+    require('<xdr:cNvPr id="1" name="Memory PNG" descr="PNG bytes from memory"/>' in drawing_xml,
+            "memory image custom name/description mismatch")
+    require('<xdr:cNvPr id="2" name="Picture 2"/>' in drawing_xml,
+            "memory image default picture name mismatch")
+    require('<a:ext cx="9525" cy="9525"/>' in drawing_xml,
+            "memory PNG intrinsic EMU size mismatch")
+    require('<a:ext cx="19050" cy="9525"/>' in drawing_xml,
+            "memory JPEG intrinsic EMU size mismatch")
+
+    drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing1.xml.rels")
+    require(relationship_count(drawing_rels) == 2,
+            "memory image drawing relationship count mismatch")
+    require('Id="rId1"' in drawing_rels and 'Target="../media/image1.png"' in drawing_rels,
+            "memory PNG drawing relationship mismatch")
+    require('Id="rId2"' in drawing_rels and 'Target="../media/image2.jpg"' in drawing_rels,
+            "memory JPEG drawing relationship mismatch")
+
+    return {
+        "verified_entries": required,
+        "media_sizes": {
+            "xl/media/image1.png": len(png_bytes),
+            "xl/media/image2.jpg": len(jpeg_bytes),
+        },
+        "sheet": "MemoryImages",
+        "shapes": 2,
+    }
+
+
+def verify_memory_source_with_openpyxl(path: Path) -> dict[str, Any]:
+    try:
+        import openpyxl  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require("MemoryImages" in workbook.sheetnames,
+                f"memory image sheet names mismatch: {workbook.sheetnames!r}")
+        worksheet = workbook["MemoryImages"]
+        return {
+            "status": "opened",
+            "sheetnames": workbook.sheetnames,
+            "image_count_observed_by_openpyxl": len(getattr(worksheet, "_images", [])),
+            "warnings": [
+                str(item.message)
+                for item in caught_warnings
+                if "image" in str(item.message).lower()
+            ],
+            "note": (
+                "openpyxl is a reader-visible smoke check; package XML and Excel COM "
+                "remain authoritative for PNG/JPEG media and drawing semantics."
+            ),
+        }
+    finally:
+        workbook.close()
+
+
 def verify_mixed_object_package(path: Path) -> dict[str, Any]:
     names = zip_names(path)
     required = [
@@ -548,6 +655,12 @@ def main() -> int:
         help="FastXLSX mixed object relationship workbook to verify.",
     )
     parser.add_argument(
+        "--memory-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx"),
+        help="FastXLSX memory-source image workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/image-metadata"),
@@ -558,11 +671,13 @@ def main() -> int:
     input_path = args.input.resolve()
     basic_input_path = args.basic_input.resolve()
     mixed_object_input_path = args.mixed_object_input.resolve()
+    memory_input_path = args.memory_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
     require(basic_input_path.exists(), f"basic input workbook does not exist: {basic_input_path}")
     require(mixed_object_input_path.exists(),
             f"mixed-object input workbook does not exist: {mixed_object_input_path}")
+    require(memory_input_path.exists(), f"memory input workbook does not exist: {memory_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     package_report = verify_fastxlsx_package(input_path)
@@ -571,11 +686,17 @@ def main() -> int:
     basic_openpyxl_report = verify_basic_with_openpyxl(basic_input_path)
     mixed_package_report = verify_mixed_object_package(mixed_object_input_path)
     mixed_openpyxl_report = verify_mixed_object_with_openpyxl(mixed_object_input_path)
+    memory_package_report = verify_memory_source_package(memory_input_path)
+    memory_openpyxl_report = verify_memory_source_with_openpyxl(memory_input_path)
 
     with tempfile.TemporaryDirectory(dir=work_dir) as temp_dir:
         media_file = extract_reference_media(input_path, Path(temp_dir))
         xlsxwriter_report = create_xlsxwriter_reference(
             media_file, work_dir / "reference-xlsxwriter-image-metadata.xlsx")
+    with tempfile.TemporaryDirectory(dir=work_dir) as temp_dir:
+        memory_media_file = extract_reference_media(memory_input_path, Path(temp_dir))
+        memory_xlsxwriter_report = create_xlsxwriter_reference(
+            memory_media_file, work_dir / "reference-xlsxwriter-image-memory-source.xlsx")
 
     report = {
         "metadata": {
@@ -598,6 +719,14 @@ def main() -> int:
             "fastxlsx_package": mixed_package_report,
             "xlsx_libraries": {
                 "openpyxl": mixed_openpyxl_report,
+            },
+        },
+        "memory_source": {
+            "fastxlsx_input": str(memory_input_path),
+            "fastxlsx_package": memory_package_report,
+            "xlsx_libraries": {
+                "openpyxl": memory_openpyxl_report,
+                "xlsxwriter": memory_xlsxwriter_report,
             },
         },
     }

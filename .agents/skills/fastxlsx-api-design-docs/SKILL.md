@@ -38,8 +38,10 @@ color scale、basic data bar、basic 3Arrows icon set 和 table API 是 workshee
 Phase 5。
 当前 `ImageFormat`、`ImageInfo` 和 `read_image_info()` 是默认 `stb` PNG/JPEG
 图片元数据 API，只读取格式、尺寸和通道。当前 `WorksheetWriter::add_image()`
-是默认 `stb` streaming-only new-workbook PNG/JPEG 图片插入基础 API，会写
-OpenXML media/drawing parts，但不代表 existing-workbook 图片保真或完整 drawing 编辑。
+是默认 `stb` streaming-only new-workbook PNG/JPEG path 和 memory-source 图片插入基础
+API，会写 OpenXML media/drawing parts，但不代表 existing-workbook 图片保真或完整
+drawing 编辑。memory-source overload 接受 `std::span<const std::byte>`，span 只需在
+调用期间有效，并会把 caller bytes 同步复制到临时 file-backed media entry。
 当前 `ImageOptions` 只给该插入 API 增加 drawing XML anchor marker /
 non-visual metadata：`from_offset` / `to_offset` 写 two-cell marker `xdr:colOff` /
 `xdr:rowOff`，`edit_as` 写 `xdr:twoCellAnchor editAs`，非空 `name` / `description`
@@ -120,7 +122,8 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   media part、drawing XML、relationships、
   content types 或 anchors，也不代表图片插入或 existing-file 图片保真。
 - `WorksheetWriter::add_image()` 是 Streaming metadata/object API：当前通过默认
-  `stb` 依赖验证 PNG/JPEG 元数据，复制原始图片字节到临时 file-backed media entry，
+  `stb` 依赖验证 PNG/JPEG 元数据，复制原始图片字节到临时 file-backed media entry；
+  memory-source overload 不保留 caller span 或 decoded pixel buffer，
   并在 `close()`
   写 `xl/media/*`、`xl/drawings/drawing*.xml`、drawing `.rels`、worksheet `.rels`、
   worksheet `<drawing>` 和 content type entries。它不解码完整像素、不进入 row/cell
@@ -254,8 +257,11 @@ pixel buffer 的生命周期与内存成本；是否写 `xl/media/*`、drawing X
 worksheet `.rels`、worksheet `<drawing>` 和 content types；以及是否不支持裁剪、旋转、
 格式转换、existing drawing mutation 或 existing-file preservation。
 当前 `WorksheetWriter::add_image()` 注释应保持说明：Streaming / new-workbook-only、
-原始图片字节 file-backed、two-cell anchor、package side effects、无完整像素解码、
-无 existing-file editing、无 drawing mutation，且不牺牲 worksheet streaming 热路径。
+原始图片字节 file-backed、memory-source span lifetime、two-cell anchor、package side
+effects、无完整像素解码、无 existing-file editing、无 drawing mutation，且不牺牲
+worksheet streaming 热路径。
+memory-source overload 注释还要写清同步 copy-to-temp-file-backed media entry、空 buffer
+和 unsupported header 错误边界，并说明它不是任意 stream/URL/base64 图片源。
 涉及 `ImageOptions` 时还要写清：from/to marker EMU offset、`edit_as` 枚举和
 name/description 字符串复制成本、OpenXML token / XML attribute escape、空值行为、
 只写 two-cell marker `xdr:colOff` / `xdr:rowOff`、`xdr:twoCellAnchor editAs` 和

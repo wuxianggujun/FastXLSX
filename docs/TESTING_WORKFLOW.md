@@ -31,6 +31,14 @@ benchmark 混进默认单元测试。
 - content types 和 relationships。
 - part index 与未修改 part 保留。
 
+测试文件也应遵守职责边界。`tests/test_streaming_writer.cpp` 适合保留 streaming writer
+主流程、核心边界和跨功能集成测试；当某个 feature 已经有大量结构断言、负例、参考
+样例或独立 QA helper 时，应优先拆成 feature-specific 测试文件，例如 conditional
+formatting、data validations、hyperlinks、tables、images、styles 或 sharedStrings。
+集成测试只保留 suffix 顺序、relationship id、content type side effects、package
+side effects 和多对象共存等真正跨模块行为。不要为了少量小测试强行拆分；新增测试
+target 或源文件时必须同步更新 `tests/CMakeLists.txt`。
+
 ### 2. OpenXML 结构测试
 
 生成最小 `.xlsx` 后，至少检查这些 ZIP entry 和 XML part：
@@ -186,6 +194,9 @@ Streaming writer hot-path 边界样例应优先做拆包 XML 结构检查：
 - 图片功能必须确认图片显示、位置和尺寸符合预期；当前
   `WorksheetWriter::add_image()` 基础切片的推荐样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx`。
+- memory-source 图片样例还必须确认 caller buffer 后续修改不会改变 package 内
+  media bytes；当前推荐样例是
+  `build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx`。
 - 图片 metadata 功能还必须确认 drawing XML 的 `xdr:cNvPr name` / `descr` 与
   Excel 可见 shape metadata 对应；当前推荐样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。
@@ -274,7 +285,9 @@ shape、`Plain` sheet 没有 shape，并记录 Excel 报告的 `TopLeftCell` /
 `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。本机
 image QA 还会复用基础图片样例
 `build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx` 和混合对象关系样例
-`build/windows-nmake-release/tests/fastxlsx-streaming-mixed-object-rels.xlsx`。本机
+`build/windows-nmake-release/tests/fastxlsx-streaming-mixed-object-rels.xlsx`，以及
+memory-source 图片样例
+`build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx`。本机
 XML / `openpyxl` / Excel COM 验证可以运行：
 
 ```powershell
@@ -282,23 +295,27 @@ py tools\verify_image_metadata.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
   --basic-input build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
   --mixed-object-input build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
+  --memory-input build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx `
   --work-dir build\qa\image-metadata
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
   -BasicPath build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
-  -MixedObjectPath build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx
+  -MixedObjectPath build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
+  -MemoryPath build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx
 ```
 
 Python helper 会拆包检查 metadata drawing XML、basic media/drawing/table/hyperlink
-关系、mixed-object owner-local relationship ids，并用 `openpyxl` 核对 workbook、
-table 和 hyperlink semantics；`openpyxl` 可能跳过 JPEG 图片读取，因此 mixed-object
-图片数量以拆包 XML 和 Excel COM 为准。Excel helper 只读打开 workbook，核对
+关系、mixed-object owner-local relationship ids、memory-source media bytes /
+drawing relationships / content types，并用 `openpyxl` 核对 workbook、table 和
+hyperlink semantics；`openpyxl` 可能跳过 JPEG 图片读取，因此 mixed-object 和
+memory-source JPEG 图片数量以拆包 XML 和 Excel COM 为准。Excel helper 只读打开 workbook，核对
 `ImageMetadata` sheet 的 3 个 shapes、自定义
 `NamedOnly` 名称、默认 `Picture 3` 名称、首图 `AlternativeText`、`editAs` 到
 Excel `Placement` 的映射，以及首图 `from_offset` / `to_offset` 对 `Shape.Left` /
 `Top` / `Width` / `Height` 的 EMU-to-points 偏移；同时核对基础图片样例的
 `Images` / `SecondImage` / `Plain` shape counts、hyperlink/table counts 和 anchors，
-以及 mixed-object 样例的 hyperlinks / shapes / tables 数量。Excel COM 当前会把
+mixed-object 样例的 hyperlinks / shapes / tables 数量，以及 `MemoryImages` 中
+两张 memory-source 图片的 anchors。Excel COM 当前会把
 drawing XML 的 `descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
 `xl/drawings/drawing*.xml` 为准。
 
@@ -515,14 +532,18 @@ worksheet XML 为准。
 
 ```powershell
 py tools\verify_image_metadata.py `
-  --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
+  --memory-input build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
-  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
+  -MemoryPath build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx
 ```
 
 Python helper 检查 FastXLSX package XML、drawing `xdr:cNvPr name` / `descr`、XML
 attribute escape、relationships、content types 和 media entries，使用 `openpyxl`
-打开确认 3 张图片，并用 `XlsxWriter` 创建参考 workbook。Excel helper 只读打开 workbook
+打开确认 3 张图片，并用 `XlsxWriter` 创建参考 workbook；传入 `--memory-input` 时还会
+检查 memory-source package XML、media 签名、`openpyxl` smoke 和 `XlsxWriter` 参考
+workbook。Excel helper 只读打开 workbook
 并核对 shape 数量、custom/default shape name、`AlternativeText`、`Placement` 和
 首图 marker offset 对 shape 几何的影响。这些仍是本地 QA artifact，不要提交，也不是
 默认 CTest 或运行时依赖。

@@ -4,6 +4,7 @@
 #include <fastxlsx/workbook.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <initializer_list>
@@ -955,6 +956,30 @@ public:
     /// Same behavior as add_image(path, anchor), plus ImageOptions serialization
     /// to drawing anchor marker offsets / `xdr:cNvPr` attributes.
     void add_image(const std::filesystem::path& path, CellRange anchor, ImageOptions options);
+
+    /// Records a PNG/JPEG image from caller-owned memory.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The span only
+    /// needs to remain valid for the duration of this call. FastXLSX validates
+    /// the bytes through the required stb-backed image metadata helper, then
+    /// copies the original bytes to a temporary file-backed media entry so
+    /// close() can package them without retaining the caller span or putting
+    /// image bytes in worksheet row state. This creates the same media,
+    /// drawing, relationship, worksheet `<drawing>`, and content type side
+    /// effects as add_image(path, anchor). It does not decode a full pixel
+    /// buffer, crop, rotate, recompress, convert formats, mutate existing
+    /// drawings, or edit existing XLSX files.
+    ///
+    /// @throws FastXlsxError if the anchor range or ImageOptions offsets are
+    /// invalid, the workbook is closed, the memory buffer is empty or unreadable,
+    /// or the image format is outside the current PNG/JPEG slice.
+    void add_image(std::span<const std::byte> bytes, CellRange anchor);
+
+    /// Records a memory-backed PNG/JPEG image with optional drawing metadata.
+    ///
+    /// Same behavior as add_image(bytes, anchor), plus ImageOptions
+    /// serialization to drawing anchor marker offsets / `xdr:cNvPr` attributes.
+    void add_image(std::span<const std::byte> bytes, CellRange anchor, ImageOptions options);
 
 private:
     friend class WorkbookWriter;

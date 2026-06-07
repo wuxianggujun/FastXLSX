@@ -1,7 +1,8 @@
 param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx",
     [string]$BasicPath = "build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx",
-    [string]$MixedObjectPath = "build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx"
+    [string]$MixedObjectPath = "build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx",
+    [string]$MemoryPath = "build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,6 +120,45 @@ function Verify-BasicImageWorkbook {
             $workbook.Close($false) | Out-Null
         }
         foreach ($object in @($plain, $second, $images, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-MemoryImageWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("MemoryImages")
+
+        Assert-Equal $sheet.Shapes.Count 2 "MemoryImages shape count"
+        Assert-Equal $sheet.Shapes.Item(1).TopLeftCell.Address($false, $false) "A1" `
+            "MemoryImages first shape top-left"
+        Assert-Equal $sheet.Shapes.Item(1).BottomRightCell.Address($false, $false) "C3" `
+            "MemoryImages first shape bottom-right"
+        Assert-Equal $sheet.Shapes.Item(2).TopLeftCell.Address($false, $false) "B3" `
+            "MemoryImages second shape top-left"
+        Assert-Equal $sheet.Shapes.Item(2).BottomRightCell.Address($false, $false) "D5" `
+            "MemoryImages second shape bottom-right"
+
+        Write-Host "OK: Excel opened memory-source image workbook read-only: $resolved"
+        Write-Host "OK: MemoryImages shape count and anchors verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($sheet, $workbook)) {
             if ($null -ne $object) {
                 [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
             }
@@ -254,6 +294,7 @@ try {
 
     Verify-BasicImageWorkbook -Excel $excel -Path $BasicPath
     Verify-MixedObjectWorkbook -Excel $excel -Path $MixedObjectPath
+    Verify-MemoryImageWorkbook -Excel $excel -Path $MemoryPath
 }
 finally {
     if ($null -ne $workbook) {

@@ -926,29 +926,57 @@ void test_streaming_writer_font_styles()
     bold_italic_style_definition.font = bold_italic_font;
     const auto bold_italic_style = workbook.add_style(bold_italic_style_definition);
 
+    fastxlsx::CellFont red_font;
+    red_font.color = fastxlsx::ArgbColor {0xFF, 0xC0, 0x00, 0x00};
+    fastxlsx::CellStyle red_style_definition;
+    red_style_definition.font = red_font;
+    const auto red_style = workbook.add_style(red_style_definition);
+    const auto duplicate_red_style = workbook.add_style(red_style_definition);
+
+    fastxlsx::CellFont bold_red_font;
+    bold_red_font.bold = true;
+    bold_red_font.color = fastxlsx::ArgbColor {0xFF, 0xC0, 0x00, 0x00};
+    fastxlsx::CellStyle bold_red_style_definition;
+    bold_red_style_definition.font = bold_red_font;
+    const auto bold_red_style = workbook.add_style(bold_red_style_definition);
+
     fastxlsx::CellStyle number_bold_style_definition {"0.0"};
     number_bold_style_definition.font = bold_font;
     const auto number_bold_style = workbook.add_style(number_bold_style_definition);
+
+    fastxlsx::CellStyle number_red_style_definition {"0.0"};
+    number_red_style_definition.font = red_font;
+    const auto number_red_style = workbook.add_style(number_red_style_definition);
 
     check(bold_style.value() == 1, "first font style id should be 1");
     check(duplicate_bold_style.value() == 1, "duplicate bold style should reuse id");
     check(italic_style.value() == 2, "italic style should be second style id");
     check(bold_italic_style.value() == 3, "bold italic style should be third style id");
-    check(number_bold_style.value() == 4, "number plus bold style should be fourth style id");
+    check(red_style.value() == 4, "red font style should be fourth style id");
+    check(duplicate_red_style.value() == 4, "duplicate red font style should reuse id");
+    check(bold_red_style.value() == 5, "bold red font style should be fifth style id");
+    check(number_bold_style.value() == 6, "number plus bold style should be sixth style id");
+    check(number_red_style.value() == 7, "number plus red style should be seventh style id");
 
     auto sheet = workbook.add_worksheet("Fonts");
     sheet.append_row({
         fastxlsx::CellView::text("Bold"),
         fastxlsx::CellView::text("Italic"),
         fastxlsx::CellView::text("BoldItalic"),
+        fastxlsx::CellView::text("Red"),
+        fastxlsx::CellView::text("BoldRed"),
         fastxlsx::CellView::text("NumberBold"),
+        fastxlsx::CellView::text("NumberRed"),
         fastxlsx::CellView::text("Default"),
     });
     sheet.append_row({
         fastxlsx::CellView::text("bold").with_style(bold_style),
         fastxlsx::CellView::text("italic").with_style(italic_style),
         fastxlsx::CellView::boolean(true).with_style(bold_italic_style),
+        fastxlsx::CellView::text("red").with_style(red_style),
+        fastxlsx::CellView::text("bold red").with_style(bold_red_style),
         fastxlsx::CellView::number(12.5).with_style(number_bold_style),
+        fastxlsx::CellView::number(42.5).with_style(number_red_style),
         fastxlsx::CellView::text("plain"),
     });
 
@@ -965,7 +993,7 @@ void test_streaming_writer_font_styles()
         "font sample should create only one custom number format");
     check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="0.0"/>)",
         "font sample custom number format mismatch");
-    check_contains(styles_xml, R"(<fonts count="4">)",
+    check_contains(styles_xml, R"(<fonts count="6">)",
         "font sample custom font count mismatch");
     check_contains(styles_xml,
         R"(<font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
@@ -977,7 +1005,13 @@ void test_streaming_writer_font_styles()
         R"(<font><b/><i/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
         "bold italic font XML mismatch");
     check_contains(styles_xml,
-        R"(<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        R"(<font><sz val="11"/><color rgb="FFC00000"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
+        "red font XML mismatch");
+    check_contains(styles_xml,
+        R"(<font><b/><sz val="11"/><color rgb="FFC00000"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
+        "bold red font XML mismatch");
+    check_contains(styles_xml,
+        R"(<cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
         "font cellXfs default style mismatch");
     check_contains(styles_xml,
         R"(<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
@@ -989,11 +1023,20 @@ void test_streaming_writer_font_styles()
         R"(<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
         "bold italic xf mismatch");
     check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
+        "red xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
+        "bold red xf mismatch");
+    check_contains(styles_xml,
         R"(<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>)",
         "number plus bold xf should reuse bold font id");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="4" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>)",
+        "number plus red xf should reuse red font id");
 
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<dimension ref="A1:E2"/>)",
+    check_contains(worksheet_xml, R"(<dimension ref="A1:H2"/>)",
         "font worksheet dimension mismatch");
     check_contains(worksheet_xml,
         R"(<c r="A2" s="1" t="inlineStr"><is><t>bold</t></is></c>)",
@@ -1003,10 +1046,19 @@ void test_streaming_writer_font_styles()
         "italic styled text cell mismatch");
     check_contains(worksheet_xml, R"(<c r="C2" s="3" t="b"><v>1</v></c>)",
         "bold italic styled boolean cell mismatch");
-    check_contains(worksheet_xml, R"(<c r="D2" s="4"><v>12.5</v></c>)",
+    check_contains(worksheet_xml,
+        R"(<c r="D2" s="4" t="inlineStr"><is><t>red</t></is></c>)",
+        "red styled text cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="E2" s="5" t="inlineStr"><is><t>bold red</t></is></c>)",
+        "bold red styled text cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="F2" s="6"><v>12.5</v></c>)",
         "number plus bold styled number cell mismatch");
     check_contains(worksheet_xml,
-        R"(<c r="E2" t="inlineStr"><is><t>plain</t></is></c>)",
+        R"(<c r="G2" s="7"><v>42.5</v></c>)",
+        "number plus red styled number cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="H2" t="inlineStr"><is><t>plain</t></is></c>)",
         "default font sample cell mismatch");
     check(worksheet_xml.find("s=\"0\"") == std::string::npos,
         "default style should not be serialized as s=\"0\" in font sample");

@@ -3,7 +3,8 @@ param(
     [string]$BasicPath = "build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx",
     [string]$MixedObjectPath = "build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx",
     [string]$MemoryPath = "build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx",
-    [string]$HyperlinkPath = "build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlinks.xlsx"
+    [string]$HyperlinkPath = "build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlinks.xlsx",
+    [string]$MixedHyperlinkPath = "build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -222,6 +223,65 @@ function Verify-ImageHyperlinkWorkbook {
     }
 }
 
+function Verify-MixedImageHyperlinkWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+    $linkedShape = $null
+    $plainShape = $null
+    $cell = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("MixedImageLinks")
+        $cell = $sheet.Range("B2")
+
+        Assert-Equal $sheet.Shapes.Count 2 "MixedImageLinks shape count"
+        Assert-Equal $sheet.Hyperlinks.Count 2 "MixedImageLinks total hyperlink count"
+        Assert-Equal $cell.Hyperlinks.Count 1 "MixedImageLinks B2 cell hyperlink count"
+        Assert-Equal $sheet.ListObjects.Count 1 "MixedImageLinks table count"
+
+        $linkedShape = Get-ShapeByName $sheet "Linked Picture"
+        $plainShape = Get-ShapeByName $sheet "Picture 2"
+        Assert-True ($null -ne $linkedShape) "Excel did not expose the linked picture shape"
+        Assert-True ($null -ne $plainShape) "Excel did not expose the plain picture shape"
+
+        Assert-Equal $cell.Hyperlinks.Item(1).Address "https://example.com/cell-link" `
+            "MixedImageLinks B2 cell hyperlink address"
+        Assert-Equal $linkedShape.Hyperlink.Address "https://example.com/picture-link" `
+            "MixedImageLinks linked picture hyperlink address"
+        Assert-Equal $linkedShape.Hyperlink.ScreenTip "" `
+            "MixedImageLinks linked picture hyperlink tooltip"
+
+        Assert-Equal $linkedShape.TopLeftCell.Address($false, $false) "A3" `
+            "MixedImageLinks linked picture top-left"
+        Assert-Equal $linkedShape.BottomRightCell.Address($false, $false) "C5" `
+            "MixedImageLinks linked picture bottom-right"
+        Assert-Equal $plainShape.TopLeftCell.Address($false, $false) "C3" `
+            "MixedImageLinks plain picture top-left"
+        Assert-Equal $plainShape.BottomRightCell.Address($false, $false) "E5" `
+            "MixedImageLinks plain picture bottom-right"
+
+        Write-Host "OK: Excel opened mixed image hyperlink workbook read-only: $resolved"
+        Write-Host "OK: MixedImageLinks shape count, cell hyperlink, table count, and picture hyperlink verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($cell, $plainShape, $linkedShape, $sheet, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-MixedObjectWorkbook {
     param(
         [object]$Excel,
@@ -352,6 +412,7 @@ try {
     Verify-MixedObjectWorkbook -Excel $excel -Path $MixedObjectPath
     Verify-MemoryImageWorkbook -Excel $excel -Path $MemoryPath
     Verify-ImageHyperlinkWorkbook -Excel $excel -Path $HyperlinkPath
+    Verify-MixedImageHyperlinkWorkbook -Excel $excel -Path $MixedHyperlinkPath
 }
 finally {
     if ($null -ne $workbook) {

@@ -180,8 +180,11 @@ function Verify-FontStylesWorkbook {
         Assert-Equal $sheet.Range("A2").Value2 "bold" "Fonts A2 value"
         Assert-Equal $sheet.Range("B2").Value2 "italic" "Fonts B2 value"
         Assert-Equal $sheet.Range("C2").Value2 $true "Fonts C2 value"
-        Assert-Equal $sheet.Range("D2").Value2 12.5 "Fonts D2 value"
-        Assert-Equal $sheet.Range("E2").Value2 "plain" "Fonts E2 value"
+        Assert-Equal $sheet.Range("D2").Value2 "red" "Fonts D2 value"
+        Assert-Equal $sheet.Range("E2").Value2 "bold red" "Fonts E2 value"
+        Assert-Equal $sheet.Range("F2").Value2 12.5 "Fonts F2 value"
+        Assert-Equal $sheet.Range("G2").Value2 42.5 "Fonts G2 value"
+        Assert-Equal $sheet.Range("H2").Value2 "plain" "Fonts H2 value"
 
         Assert-Equal $sheet.Range("A2").Font.Bold $true "Fonts A2 bold"
         Assert-Equal $sheet.Range("A2").Font.Italic $false "Fonts A2 italic"
@@ -189,13 +192,18 @@ function Verify-FontStylesWorkbook {
         Assert-Equal $sheet.Range("B2").Font.Italic $true "Fonts B2 italic"
         Assert-Equal $sheet.Range("C2").Font.Bold $true "Fonts C2 bold"
         Assert-Equal $sheet.Range("C2").Font.Italic $true "Fonts C2 italic"
-        Assert-Equal $sheet.Range("D2").Font.Bold $true "Fonts D2 bold"
-        Assert-Equal $sheet.Range("D2").NumberFormat '0.0' "Fonts D2 number format"
-        Assert-Equal $sheet.Range("E2").Font.Bold $false "Fonts E2 bold"
-        Assert-Equal $sheet.Range("E2").Font.Italic $false "Fonts E2 italic"
+        Assert-Equal $sheet.Range("D2").Font.Color (New-OleRgb -Red 192 -Green 0 -Blue 0) "Fonts D2 color"
+        Assert-Equal $sheet.Range("E2").Font.Bold $true "Fonts E2 bold"
+        Assert-Equal $sheet.Range("E2").Font.Color (New-OleRgb -Red 192 -Green 0 -Blue 0) "Fonts E2 color"
+        Assert-Equal $sheet.Range("F2").Font.Bold $true "Fonts F2 bold"
+        Assert-Equal $sheet.Range("F2").NumberFormat '0.0' "Fonts F2 number format"
+        Assert-Equal $sheet.Range("G2").Font.Color (New-OleRgb -Red 192 -Green 0 -Blue 0) "Fonts G2 color"
+        Assert-Equal $sheet.Range("G2").NumberFormat '0.0' "Fonts G2 number format"
+        Assert-Equal $sheet.Range("H2").Font.Bold $false "Fonts H2 bold"
+        Assert-Equal $sheet.Range("H2").Font.Italic $false "Fonts H2 italic"
 
         Write-Host "OK: Excel opened bold/italic font styles workbook read-only: $resolved"
-        Write-Host "OK: Font.Bold, Font.Italic, and NumberFormat metadata verified"
+        Write-Host "OK: Font.Bold, Font.Italic, Font.Color, and NumberFormat metadata verified"
     }
     finally {
         if ($null -ne $workbook) {

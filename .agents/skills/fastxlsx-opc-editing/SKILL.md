@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-opc-editing
-description: "处理或规划 FastXLSX 已有文件编辑、OPC package、relationships、part index、part-level rewrite、小型 XML part 局部 DOM、模板填充和未知 part 保留边界。用于审查当前内部 OPC manifest/relationships、PartIndex、RelationshipGraph 基础，以及 PackageReader、生产 PackageWriter、TemplateEditor 等计划行为；不要据此宣称完整图片/VBA/table 支持。"
+description: "处理或规划 FastXLSX 已有文件编辑、OPC package、relationships、part index、part-level rewrite、EditPlan/DependencyAnalyzer、sheet 联动、小型 XML part 局部 DOM、模板填充和未知 part 保留边界。用于审查当前内部 OPC manifest/relationships、PartIndex、RelationshipGraph 基础，以及 PackageReader、PackageEditor、生产 PackageWriter、TemplateEditor 等计划行为；不要据此宣称完整图片/VBA/table 支持。"
 ---
 
 # FastXLSX OPC Editing
@@ -50,11 +50,14 @@ stored bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 可走 minizip-ng/DEFLATE。
 
 ## 核心编辑模型
 
-编辑基本单位是 OpenXML part，不是完整 workbook 对象图。
+编辑基本单位是 OpenXML part，不是完整 workbook 对象图。已有文件编辑不是
+streaming writer 的附属补丁；它应通过 PackageReader / PackageEditor / EditPlan /
+PackageWriter 形成独立 Patch 管线。
 
 ```text
 读取 package
 -> 建立 part index
+-> 生成 EditPlan / dependency analysis
 -> 标记修改过的 part
 -> 未修改 part 原样复制
 -> 修改 part 重新生成
@@ -63,6 +66,22 @@ stored bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 可走 minizip-ng/DEFLATE。
 
 这套模型的目标是保留 FastXLSX 尚不了解的 Excel 结构，包括图表、图片、宏和
 未知扩展；当前不能宣称完整图片、VBA 或 table 读写/编辑支持。
+
+单个 sheet 编辑也必须先判断联动 part。常见影响范围包括：
+
+- `xl/worksheets/sheetN.xml`
+- `xl/worksheets/_rels/sheetN.xml.rels`
+- `xl/sharedStrings.xml`
+- `xl/styles.xml`
+- `xl/tables/tableN.xml`
+- `xl/workbook.xml` / defined names / calcPr
+- `xl/calcChain.xml`
+- drawings、charts、pivot caches、VBA 和未知扩展 part
+
+默认策略应保守：未知或未修改 part 原样复制；改数据后可设置 fullCalcOnLoad，并对
+`calcChain.xml` 采用删除、重建或显式保留策略。涉及 sheet rename/delete/move、table
+resize、chart reference、defined names 或跨 sheet 公式引用时，必须有明确
+ReferencePolicy，不能静默破坏联动。
 
 图片关系链至少包括：
 
@@ -111,6 +130,10 @@ existing-file image passthrough、drawing 编辑或 package preservation。
 - `ContentTypeRegistry`
 - `PartIndex`
 - `RelationshipGraph`
+- `EditPlan`
+- `DependencyAnalyzer`
+- `ReferencePolicy`
+- `PartRewritePlanner`
 - `PackageManifest::set_part_write_mode`
 - `PackageManifest::mark_part_dirty`
 - `PackageManifest::mark_part_generated`
@@ -128,17 +151,20 @@ existing-file image passthrough、drawing 编辑或 package preservation。
 
 ## 推荐流程
 
-1. 确认本次编辑影响哪些 XLSX parts。
+1. 确认本次编辑影响哪些 XLSX parts，并生成 EditPlan。
 2. 对每个 part 分类：原样复制、流式重写、局部 DOM 重写。
-3. 同步维护 relationships 和 content types。
+3. 同步维护 relationships、content types、sharedStrings、styles 和 calc metadata。
 4. 大型 worksheet 走 event reader -> transformer -> stream writer。
 5. 未知和未修改 part 尽量 byte-preserved。
-6. 输出后做 package 结构和打开兼容性验证。
+6. 对 sheet 联动采用保守 ReferencePolicy：能更新才更新，不能更新则保留、触发重算或显式失败。
+7. 输出后做 package 结构和打开兼容性验证。
 
 ## 本轮计划边界
 
 - OPC edit plan：基础。内部 manifest、PartIndex、RelationshipGraph、content type
   registry 和 write-mode metadata 可作为规划入口。
+- EditPlan / DependencyAnalyzer：计划。它们是已有文件编辑的一等架构目标，当前不能当作
+  已实现 public API。
 - 基础 docProps 输出：基础。它只是新建 package 的 core/app 小型 XML part 配置，
   不是 `docProps/custom.xml`、完整 document properties API，也不是已有文件编辑。
 - Package read/copy/write：计划。当前已有 opt-in minizip package output backend，

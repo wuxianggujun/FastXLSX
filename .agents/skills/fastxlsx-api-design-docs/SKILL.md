@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-api-design-docs
-description: "设计或审查 FastXLSX public API、API 文档注释、任务计划和性能边界。用于 Workbook/WorksheetWriter/PackageEditor 类接口、Doxygen 注释、Streaming/Patch/In-memory 模式说明、API 易用性与性能取舍，以及防止便利 API 破坏流式主线。"
+description: "设计或审查 FastXLSX public API、API 文档注释、任务计划和性能边界。用于 Workbook/WorksheetWriter/PackageEditor/In-memory editor 类接口、Doxygen 注释、Streaming/Patch/In-memory 模式说明、EditPlan/DependencyAnalyzer 联动说明、API 易用性与性能取舍，以及防止便利 API 破坏流式主线或把编辑能力降级为补丁。"
 ---
 
 # FastXLSX API Design Docs
@@ -21,10 +21,11 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 `DataValidationOperator`、`DataValidationErrorStyle`、`ArgbColor`、`ColorScaleValueType`、
 `ColorScalePoint`、`TwoColorScaleRule`、`ThreeColorScaleRule`、`DataBarValueType`、
 `DataBarEndpoint`、`DataBarRule`、`IconSetStyle`、`IconSetValueType`、`IconSetRule`、
-`ImageEditAs`、`ImageAnchorOffset`、
+`ImageFormat`、`ImageInfo`、`ImagePixels`、`ImageEditAs`、`ImageAnchorOffset`、
 `ImageOptions`、`WorkbookWriter::add_style()`、`CellView::with_style()`、
+`read_image_info()`、`read_image_pixels()`、
 `WorksheetWriter::add_conditional_color_scale()`、`WorksheetWriter::add_conditional_data_bar()`、
-`WorksheetWriter::add_conditional_icon_set()` 和
+`WorksheetWriter::add_conditional_icon_set()`、`WorksheetWriter::add_image()` 和
 `FastXlsxError`。
 `Workbook::set_document_properties()`
 和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
@@ -38,7 +39,9 @@ streaming-only table API。`WorkbookWriter` / `WorksheetWriter` / `CellView`
 color scale、basic data bar、basic 3Arrows icon set 和 table API 是 worksheet metadata 基础切片，不等同完整 Phase 3 或完整
 Phase 5。
 当前 `ImageFormat`、`ImageInfo` 和 `read_image_info()` 是默认 `stb` PNG/JPEG
-图片元数据 API，只读取格式、尺寸和通道。当前 `WorksheetWriter::add_image()`
+图片元数据 API，只读取格式、尺寸和通道。当前 `ImagePixels` 和 `read_image_pixels()`
+是默认 `stb` PNG/JPEG 像素读取 API，会解码并分配完整 caller-owned decoded pixel
+buffer，不创建 package media part。当前 `WorksheetWriter::add_image()`
 是默认 `stb` streaming-only new-workbook PNG/JPEG path 和 memory-source 图片插入基础
 API，会写 OpenXML media/drawing parts，但不代表 existing-workbook 图片保真或完整
 drawing 编辑。memory-source overload 接受 `std::span<const std::byte>`，span 只需在
@@ -53,13 +56,19 @@ non-visual metadata：`from_offset` / `to_offset` 写 two-cell marker `xdr:colOf
 
 ## 核心原则
 
-API 可以易用，但不能为了易用性牺牲性能主线。
+API 可以易用，但不能为了易用性牺牲性能主线，也不能把已有文件编辑做成
+streaming writer 的事后补丁。FastXLSX 的 public API 应围绕共享 OpenXML/OPC
+底座上的 Streaming、Patch、In-memory 三条路径设计。
 
 - 大数据写入 API 优先 row iterator / chunk writer。
 - 大型 worksheet 不能被 public API 隐式转入 DOM 或完整 cell matrix。
 - 便利 API 必须写清适用范围。
+- 新增或修改便利 API 必须向 streaming 性能主线靠齐，不能为了易用性引入完整
+  worksheet cell matrix、DOM 或 cell map。
 - 只适合小文件的 API 应明确标记为 in-memory 路径。
 - 性能热路径不能因为高层包装落到通用 XML serializer。
+- Patch API 必须写清 part-level rewrite、unknown part preservation、EditPlan 影响范围、
+  relationships/content types/sharedStrings/styles/calc metadata side effects。
 - 当前 `Worksheet::append_row()` 是 append-only、streaming-oriented public API，
   但 Phase 1 实现会临时 buffer rows；不要把这个 buffer 当成长期大文件架构。
 - 当前 `WorksheetWriter` 骨架覆盖公式、行高、列宽、冻结窗格、自动筛选、
@@ -125,6 +134,11 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   并用 `stb_image` 的 header probing 读取 PNG/JPEG 格式、尺寸和通道。它不创建
   media part、drawing XML、relationships、
   content types 或 anchors，也不代表图片插入或 existing-file 图片保真。
+- `read_image_pixels()` 是图片像素 helper：当前默认 vcpkg manifest 依赖 `stb`，
+  会解码 PNG/JPEG 并在 `ImagePixels::pixels` 中分配完整 caller-owned decoded pixel
+  buffer；内存随像素宽高和通道数增长。它不创建 media part、drawing XML、relationships、
+  content types 或 anchors，也不同于 `WorksheetWriter::add_image()` 的 raw-byte/file-backed
+  media insertion 热路径。
 - `WorksheetWriter::add_image()` 是 Streaming metadata/object API：当前通过默认
   `stb` 依赖验证 PNG/JPEG 元数据，复制原始图片字节到临时 file-backed media entry；
   memory-source overload 不保留 caller span 或 decoded pixel buffer，
@@ -195,19 +209,22 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 设计或审查 API 时，先标记模式：
 
 - `Streaming`：新建 XLSX、大数据导出、多 sheet 批量写入。
-- `Patch`：已有 XLSX 编辑、part-level rewrite、模板替换。
-- `In-memory`：小文件复杂编辑，不承诺大文件低内存。
+- `Patch`：已有 XLSX 编辑、part-level rewrite、模板替换、EditPlan 驱动的联动 part 更新。
+- `In-memory`：小文件复杂编辑和真正随机访问，不承诺大文件低内存。
 
 任何 public API 都要说明它属于哪种模式，以及它是否允许随机访问或回写历史行。
 
 ## 文档注释要求
 
-public header 中的 API 应有 Doxygen 风格注释，至少说明：
+public header 中的 API 应有 Doxygen 风格注释。注释必须写清 Streaming/Patch/In-memory
+模式、内存行为、随机访问限制、OpenXML part 副作用和性能边界，至少说明：
 
 - API 所属模式。
 - 是否保留完整 worksheet 状态。
 - 输入顺序要求。
 - 是否允许随机访问。
+- Patch API 是否生成 EditPlan、会改写哪些 part、哪些 part 原样保留、是否设置
+  fullCalcOnLoad 或处理 `calcChain.xml`。
 - 字符串策略。
 - 样式、relationships 或 content types 副作用。
 - 错误处理方式。
@@ -232,11 +249,11 @@ handle、默认 id `0` 表示 default style、非默认 id 必须来自同一个
 `HorizontalAlignment::{Left,Center,Right}` 和
 `VerticalAlignment::{Top,Center,Bottom}` 是当前 alignment 子能力，false flags 或空 optional
 不贡献 style 属性；
-`CellFont::bold` / `CellFont::italic` 是当前唯一 font 子能力，false flags 或空 optional
-不贡献 style 属性；`CellFill::foreground` 是当前唯一 fill 子能力，使用 `ArgbColor`
+`CellFont::bold` / `CellFont::italic` 和 direct ARGB `CellFont::color` 是当前 font
+子能力，false flags 且空 `color` 或空 optional 不贡献 style 属性；`CellFill::foreground` 是当前唯一 fill 子能力，使用 `ArgbColor`
 写 solid foreground fill，空 optional 不贡献 style 属性。完全空 style 会被拒绝。
 重复完整 style 复用同一个 `StyleId`，相同 number format 在不同 style 组合中复用同一个
-custom `numFmtId`，相同 bold/italic font 组合在不同 style 组合中复用同一个 `fontId`，
+custom `numFmtId`，相同 bold/italic/color font 组合在不同 style 组合中复用同一个 `fontId`，
 相同 foreground ARGB fill 组合在不同 style 组合中复用同一个 `fillId`，
 format 只按字符串精确匹配去重。样式会生成
 `xl/styles.xml` / workbook relationship / content type override、cell 写 `s="N"`、
@@ -244,10 +261,12 @@ format 只按字符串精确匹配去重。样式会生成
 `applyAlignment="1"` / `<alignment .../>` attributes：`wrapText="1"`、
 `horizontal="left|center|right"` 和 `vertical="top|center|bottom"`；
 不计算行高，不代表完整 alignment；
-bold/italic font 只写 `<fonts>` 中的 `<b/>` / `<i/>`、`fontId` 和 `applyFont="1"`，
-不代表完整 font control。solid fill 只写 `<fills>` 中的 solid `<patternFill>`、
+bold/italic/direct ARGB font color 只写 `<fonts>` 中的 `<b/>` / `<i/>`、可选
+`<font><color rgb="..."/></font>`、`fontId` 和 `applyFont="1"`，不代表完整 font control。
+solid fill 只写 `<fills>` 中的 solid `<patternFill>`、
 `fgColor rgb`、`bgColor indexed="64"`、`fillId` 和 `applyFill="1"`，不代表完整
-fill/pattern/theme/tint/indexed palette control。当前不支持 font color、size、name、underline、
+fill/pattern/theme/tint/indexed palette control。当前不支持 font name、font size、underline、
+theme/tint/indexed font color、
 border/full alignment、rich text、dxf-backed conditional formatting、
 existing-file style preservation 或完整
 Excel formatting parity。当前 two-/three-color color scale、basic data bar 和 basic
@@ -297,10 +316,14 @@ patch；`stb` 是否只做 header probing、是否会解码完整像素、原始
 pixel buffer 的生命周期与内存成本；是否写 `xl/media/*`、drawing XML、drawing `.rels`、
 worksheet `.rels`、worksheet `<drawing>` 和 content types；以及是否不支持裁剪、旋转、
 格式转换、existing drawing mutation 或 existing-file preservation。
+当前 `ImagePixels` / `read_image_pixels()` 注释应写清：会分配完整 decoded pixel buffer，
+`ImagePixels::pixels` 由 caller 持有，内存随像素宽高和通道数增长；它只读像素，不写
+media/drawing parts、relationships、content types 或 anchors，也不是图片插入热路径。
 当前 `WorksheetWriter::add_image()` 注释应保持说明：Streaming / new-workbook-only、
 原始图片字节 file-backed、memory-source span lifetime、two-cell anchor、package side
 effects、无完整像素解码、无 existing-file editing、无 drawing mutation，且不牺牲
-worksheet streaming 热路径。
+worksheet streaming 热路径；它与 `read_image_pixels()` 不同，走 raw-byte/file-backed
+media insertion，不为插入保留 decoded pixel buffer。
 memory-source overload 注释还要写清同步 copy-to-temp-file-backed media entry、空 buffer
 和 unsupported header 错误边界，并说明它不是任意 stream/URL/base64 图片源。
 涉及 `ImageOptions` 时还要写清：from/to marker EMU offset、`edit_as` 枚举、
@@ -327,14 +350,19 @@ mutation 或 existing-file editing，也不承诺完整 Excel UI 或跨办公软
 - 是否需要文档注释。
 - 需要哪些单元测试、OpenXML 结构测试、Excel 可视化验证、拆包 XML 对比或 benchmark。
 - 是否改变 CMake target 或引入依赖。
+- 如果是 Patch / editing API，必须列出 EditPlan 影响范围、unknown part preservation、
+  relationship/content type side effects、sharedStrings/styles/calcChain 策略和 ReferencePolicy。
 
 如果任务要求“更易用”，必须同时说明为什么不会破坏 streaming 性能主线。
 
 ## 禁止事项
 
 - 不要让 `Workbook` 级便利 API 默认持有完整 worksheet。
+- 不要为了便利 API 引入完整 worksheet cell matrix、DOM 或 cell map。
 - 不要让 large worksheet 因 API 简化进入 DOM。
 - 不要把 streaming API 做成 DOM API 的附属补丁。
+- 不要把 PackageEditor / Patch API 做成 streaming writer 的附属补丁；已有文件编辑要有
+  独立模式、EditPlan 和 preservation 语义。
 - 不要隐藏压缩等级、字符串策略或 DOM 模式这类性能关键选择。
 - 不要用“高性能”“低内存”等模糊描述替代明确边界。
 

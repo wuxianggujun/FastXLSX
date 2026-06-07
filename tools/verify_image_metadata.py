@@ -604,6 +604,201 @@ def verify_image_hyperlink_with_openpyxl(path: Path) -> dict[str, Any]:
         workbook.close()
 
 
+def verify_mixed_image_hyperlink_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "xl/media/image1.png",
+        "xl/media/image2.jpg",
+        "xl/drawings/drawing1.xml",
+        "xl/drawings/_rels/drawing1.xml.rels",
+        "xl/worksheets/sheet1.xml",
+        "xl/worksheets/_rels/sheet1.xml.rels",
+        "xl/tables/table1.xml",
+    ]
+    for name in required:
+        require(name in names, f"mixed image hyperlink sample missing package entry: {name}")
+    require("xl/drawings/drawing2.xml" not in names,
+            "mixed image hyperlink sample should share one drawing part")
+    require("xl/media/image3.png" not in names,
+            "mixed image hyperlink sample should only write two media parts")
+    require("xl/worksheets/_rels/sheet2.xml.rels" not in names,
+            "mixed image hyperlink sample should not create a second worksheet rels part")
+
+    png_bytes = read_zip_bytes(path, "xl/media/image1.png")
+    jpeg_bytes = read_zip_bytes(path, "xl/media/image2.jpg")
+    require(png_bytes.startswith(b"\x89PNG\r\n\x1a\n"),
+            "mixed image hyperlink PNG media signature mismatch")
+    require(jpeg_bytes.startswith(b"\xff\xd8") and jpeg_bytes.endswith(b"\xff\xd9"),
+            "mixed image hyperlink JPEG media signature mismatch")
+
+    content_types = read_zip_text(path, "[Content_Types].xml")
+    require('<Default Extension="png" ContentType="image/png"/>' in content_types,
+            "mixed image hyperlink PNG content type default missing")
+    require('<Default Extension="jpg" ContentType="image/jpeg"/>' in content_types,
+            "mixed image hyperlink JPEG content type default missing")
+    require('/xl/drawings/drawing1.xml' in content_types,
+            "mixed image hyperlink drawing content type missing")
+    require('/xl/tables/table1.xml' in content_types,
+            "mixed image hyperlink table content type missing")
+    require("hyperlink" not in content_types,
+            "mixed image hyperlink should not add content type entries for hyperlinks")
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require(
+        '<hyperlinks><hyperlink ref="B2" r:id="rId1"/></hyperlinks>'
+        '<drawing r:id="rId2"/><tableParts count="1"><tablePart r:id="rId3"/></tableParts>'
+        in worksheet_xml,
+        "mixed image hyperlink worksheet suffix or relationship ids mismatch",
+    )
+    require("<c r=\"B2\" t=\"inlineStr\"><is><t>Cell link</t></is></c>" in worksheet_xml,
+            "mixed image hyperlink cell text should remain in worksheet XML")
+
+    worksheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
+    require(relationship_count(worksheet_rels) == 3,
+            "mixed image hyperlink worksheet relationship count mismatch")
+    for rel_id, fragment in [
+        ("rId1", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/cell-link" TargetMode="External"'),
+        ("rId2", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"'),
+        ("rId3", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"'),
+    ]:
+        require(f'Id="{rel_id}"' in worksheet_rels and fragment in worksheet_rels,
+                f"mixed image hyperlink worksheet relationship {rel_id} mismatch")
+
+    workbook_rels = read_zip_text(path, "xl/_rels/workbook.xml.rels")
+    require("relationships/hyperlink" not in workbook_rels,
+            "mixed image hyperlink should not create workbook hyperlink relationships")
+
+    drawing_xml = read_zip_text(path, "xl/drawings/drawing1.xml")
+    require(count(drawing_xml, "<xdr:twoCellAnchor") == 2,
+            "mixed image hyperlink drawing anchor count mismatch")
+    require(
+        '<xdr:cNvPr id="1" name="Linked Picture"><a:hlinkClick r:id="rId3"/></xdr:cNvPr>'
+        in drawing_xml,
+        "mixed image hyperlink picture hlinkClick mismatch",
+    )
+    require('<xdr:cNvPr id="2" name="Picture 2"/>' in drawing_xml,
+            "mixed image hyperlink plain picture cNvPr mismatch")
+    require('<a:blip r:embed="rId1"/>' in drawing_xml,
+            "mixed image hyperlink linked picture media rId mismatch")
+    require('<a:blip r:embed="rId2"/>' in drawing_xml,
+            "mixed image hyperlink plain picture media rId mismatch")
+
+    root = ElementTree.fromstring(drawing_xml)
+    anchors = root.findall("xdr:twoCellAnchor", NAMESPACES)
+    require(len(anchors) == 2, "parsed mixed image hyperlink anchor count mismatch")
+    parsed_pictures: list[dict[str, str | None]] = []
+    for anchor in anchors:
+        properties = anchor.find("xdr:pic/xdr:nvPicPr/xdr:cNvPr", NAMESPACES)
+        require(properties is not None, "missing mixed image hyperlink cNvPr")
+        hyperlink = properties.find("a:hlinkClick", NAMESPACES)
+        blip = anchor.find("xdr:pic/xdr:blipFill/a:blip", NAMESPACES)
+        require(blip is not None, "missing mixed image hyperlink media blip")
+        parsed_pictures.append(
+            {
+                "name": properties.attrib.get("name"),
+                "media_relationship_id": blip.attrib.get(
+                    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"),
+                "picture_hyperlink_relationship_id": None if hyperlink is None else hyperlink.attrib.get(
+                    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"),
+                "tooltip": None if hyperlink is None else hyperlink.attrib.get("tooltip"),
+                "from": marker_signature(anchor, "from"),
+                "to": marker_signature(anchor, "to"),
+            }
+        )
+    require(
+        parsed_pictures == [
+            {
+                "name": "Linked Picture",
+                "media_relationship_id": "rId1",
+                "picture_hyperlink_relationship_id": "rId3",
+                "tooltip": None,
+                "from": "0,2,0,0",
+                "to": "2,4,0,0",
+            },
+            {
+                "name": "Picture 2",
+                "media_relationship_id": "rId2",
+                "picture_hyperlink_relationship_id": None,
+                "tooltip": None,
+                "from": "2,2,0,0",
+                "to": "4,4,0,0",
+            },
+        ],
+        f"parsed mixed image hyperlink picture metadata mismatch: {parsed_pictures!r}",
+    )
+
+    drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing1.xml.rels")
+    require(relationship_count(drawing_rels) == 3,
+            "mixed image hyperlink drawing relationship count mismatch")
+    for rel_id, fragment in [
+        ("rId1", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"'),
+        ("rId2", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"'),
+        ("rId3", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/picture-link" TargetMode="External"'),
+    ]:
+        require(f'Id="{rel_id}"' in drawing_rels and fragment in drawing_rels,
+                f"mixed image hyperlink drawing relationship {rel_id} mismatch")
+
+    return {
+        "verified_entries": required,
+        "media_sizes": {
+            "xl/media/image1.png": len(png_bytes),
+            "xl/media/image2.jpg": len(jpeg_bytes),
+        },
+        "worksheet_relationships": {
+            "rId1": "cell hyperlink",
+            "rId2": "drawing",
+            "rId3": "table",
+        },
+        "drawing_relationships": {
+            "rId1": "PNG media",
+            "rId2": "JPEG media",
+            "rId3": "picture hyperlink",
+        },
+        "pictures": parsed_pictures,
+    }
+
+
+def verify_mixed_image_hyperlink_with_openpyxl(path: Path) -> dict[str, Any]:
+    try:
+        import openpyxl  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["MixedImageLinks"],
+                f"mixed image hyperlink sheet names mismatch: {workbook.sheetnames!r}")
+        worksheet = workbook["MixedImageLinks"]
+        cell_hyperlink = worksheet["B2"].hyperlink
+        require(cell_hyperlink is not None
+                and cell_hyperlink.target == "https://example.com/cell-link",
+                "mixed image hyperlink B2 cell hyperlink target mismatch")
+        require(list(worksheet.tables.keys()) == ["MixedImageLinkTable"],
+                f"mixed image hyperlink table names mismatch: {list(worksheet.tables.keys())!r}")
+        return {
+            "status": "opened",
+            "sheetnames": workbook.sheetnames,
+            "image_count_observed_by_openpyxl": len(getattr(worksheet, "_images", [])),
+            "tables": list(worksheet.tables.keys()),
+            "cell_hyperlinks": {
+                "MixedImageLinks!B2": cell_hyperlink.target,
+            },
+            "warnings": [
+                str(item.message)
+                for item in caught_warnings
+                if "image" in str(item.message).lower()
+            ],
+            "note": (
+                "openpyxl is a reader-visible smoke check; package XML and Excel COM "
+                "remain authoritative for picture hyperlink metadata."
+            ),
+        }
+    finally:
+        workbook.close()
+
+
 def verify_mixed_object_package(path: Path) -> dict[str, Any]:
     names = zip_names(path)
     required = [
@@ -835,6 +1030,17 @@ def main() -> int:
         help="FastXLSX picture hyperlink workbook to verify.",
     )
     parser.add_argument(
+        "--mixed-hyperlink-input",
+        "--mixed-image-hyperlink-input",
+        dest="mixed_hyperlink_input",
+        type=Path,
+        default=Path(
+            "build/windows-nmake-release/tests/"
+            "fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx"
+        ),
+        help="FastXLSX mixed cell/table/picture hyperlink image workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/image-metadata"),
@@ -847,6 +1053,7 @@ def main() -> int:
     mixed_object_input_path = args.mixed_object_input.resolve()
     memory_input_path = args.memory_input.resolve()
     hyperlink_input_path = args.hyperlink_input.resolve()
+    mixed_hyperlink_input_path = args.mixed_hyperlink_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
     require(basic_input_path.exists(), f"basic input workbook does not exist: {basic_input_path}")
@@ -855,6 +1062,8 @@ def main() -> int:
     require(memory_input_path.exists(), f"memory input workbook does not exist: {memory_input_path}")
     require(hyperlink_input_path.exists(),
             f"hyperlink input workbook does not exist: {hyperlink_input_path}")
+    require(mixed_hyperlink_input_path.exists(),
+            f"mixed hyperlink input workbook does not exist: {mixed_hyperlink_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     package_report = verify_fastxlsx_package(input_path)
@@ -867,6 +1076,10 @@ def main() -> int:
     memory_openpyxl_report = verify_memory_source_with_openpyxl(memory_input_path)
     hyperlink_package_report = verify_image_hyperlink_package(hyperlink_input_path)
     hyperlink_openpyxl_report = verify_image_hyperlink_with_openpyxl(hyperlink_input_path)
+    mixed_hyperlink_package_report = verify_mixed_image_hyperlink_package(
+        mixed_hyperlink_input_path)
+    mixed_hyperlink_openpyxl_report = verify_mixed_image_hyperlink_with_openpyxl(
+        mixed_hyperlink_input_path)
 
     with tempfile.TemporaryDirectory(dir=work_dir) as temp_dir:
         media_file = extract_reference_media(input_path, Path(temp_dir))
@@ -918,6 +1131,13 @@ def main() -> int:
             "xlsx_libraries": {
                 "openpyxl": hyperlink_openpyxl_report,
                 "xlsxwriter": hyperlink_xlsxwriter_report,
+            },
+        },
+        "mixed_image_hyperlinks": {
+            "fastxlsx_input": str(mixed_hyperlink_input_path),
+            "fastxlsx_package": mixed_hyperlink_package_report,
+            "xlsx_libraries": {
+                "openpyxl": mixed_hyperlink_openpyxl_report,
             },
         },
     }

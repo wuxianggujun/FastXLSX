@@ -296,7 +296,7 @@ def verify_font_styles_package(path: Path) -> dict[str, Any]:
             "font sample should create exactly one custom numFmt")
     require('<numFmt numFmtId="164" formatCode="0.0"/>' in styles_xml,
             "font sample custom number format mismatch")
-    require('<fonts count="4">' in styles_xml, "font collection count mismatch")
+    require('<fonts count="6">' in styles_xml, "font collection count mismatch")
     require(
         '<font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/>'
         '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
@@ -312,7 +312,17 @@ def verify_font_styles_package(path: Path) -> dict[str, Any]:
         '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
         "bold italic font XML mismatch",
     )
-    require('<cellXfs count="5">' in styles_xml, "font cellXfs count mismatch")
+    require(
+        '<font><sz val="11"/><color rgb="FFC00000"/><name val="Calibri"/>'
+        '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
+        "red font XML mismatch",
+    )
+    require(
+        '<font><b/><sz val="11"/><color rgb="FFC00000"/><name val="Calibri"/>'
+        '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
+        "bold red font XML mismatch",
+    )
+    require('<cellXfs count="8">' in styles_xml, "font cellXfs count mismatch")
     require(
         '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
         in styles_xml,
@@ -329,30 +339,59 @@ def verify_font_styles_package(path: Path) -> dict[str, Any]:
         "bold italic xf mismatch",
     )
     require(
+        '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        in styles_xml,
+        "red xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        in styles_xml,
+        "bold red xf mismatch",
+    )
+    require(
         '<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" '
         'applyNumberFormat="1" applyFont="1"/>' in styles_xml,
         "number plus bold xf mismatch",
     )
+    require(
+        '<xf numFmtId="164" fontId="4" fillId="0" borderId="0" xfId="0" '
+        'applyNumberFormat="1" applyFont="1"/>' in styles_xml,
+        "number plus red xf mismatch",
+    )
 
     worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
-    require('<dimension ref="A1:E2"/>' in worksheet_xml, "font worksheet dimension mismatch")
+    require('<dimension ref="A1:H2"/>' in worksheet_xml, "font worksheet dimension mismatch")
     require('<c r="A2" s="1" t="inlineStr"><is><t>bold</t></is></c>' in worksheet_xml,
             "bold styled text cell mismatch")
     require('<c r="B2" s="2" t="inlineStr"><is><t>italic</t></is></c>' in worksheet_xml,
             "italic styled text cell mismatch")
     require('<c r="C2" s="3" t="b"><v>1</v></c>' in worksheet_xml,
             "bold italic styled boolean cell mismatch")
-    require('<c r="D2" s="4"><v>12.5</v></c>' in worksheet_xml,
+    require('<c r="D2" s="4" t="inlineStr"><is><t>red</t></is></c>' in worksheet_xml,
+            "red styled text cell mismatch")
+    require('<c r="E2" s="5" t="inlineStr"><is><t>bold red</t></is></c>' in worksheet_xml,
+            "bold red styled text cell mismatch")
+    require('<c r="F2" s="6"><v>12.5</v></c>' in worksheet_xml,
             "number plus bold styled number cell mismatch")
-    require('<c r="E2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
+    require('<c r="G2" s="7"><v>42.5</v></c>' in worksheet_xml,
+            "number plus red styled number cell mismatch")
+    require('<c r="H2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
             "plain font sample cell mismatch")
     require('s="0"' not in worksheet_xml,
             "default style should not be serialized as s=\"0\"")
 
     return {
-        "style_ids": {"bold": 1, "italic": 2, "bold_italic": 3, "number_bold": 4},
+        "style_ids": {
+            "bold": 1,
+            "italic": 2,
+            "bold_italic": 3,
+            "red": 4,
+            "bold_red": 5,
+            "number_bold": 6,
+            "number_red": 7,
+        },
         "custom_number_format_ids": [164],
-        "custom_font_ids": [1, 2, 3],
+        "custom_font_ids": [1, 2, 3, 4, 5],
     }
 
 
@@ -530,12 +569,28 @@ def verify_with_openpyxl(
                 f"B2 italic mismatch: {fonts['B2'].font.italic!r}")
         require(fonts["C2"].font.bold is True and fonts["C2"].font.italic is True,
                 "C2 bold italic mismatch")
-        require(fonts["D2"].font.bold is True,
-                f"D2 bold mismatch: {fonts['D2'].font.bold!r}")
-        require(fonts["D2"].number_format == "0.0",
-                f"D2 number format mismatch: {fonts['D2'].number_format!r}")
-        require(fonts["E2"].font.bold is False and fonts["E2"].font.italic is False,
-                "E2 should keep default font flags")
+        require(fonts["D2"].font.color.type == "rgb",
+                f"D2 font color type mismatch: {fonts['D2'].font.color.type!r}")
+        require(fonts["D2"].font.color.rgb == "FFC00000",
+                f"D2 font color mismatch: {fonts['D2'].font.color.rgb!r}")
+        require(fonts["E2"].font.bold is True,
+                f"E2 bold mismatch: {fonts['E2'].font.bold!r}")
+        require(fonts["E2"].font.color.type == "rgb",
+                f"E2 font color type mismatch: {fonts['E2'].font.color.type!r}")
+        require(fonts["E2"].font.color.rgb == "FFC00000",
+                f"E2 font color mismatch: {fonts['E2'].font.color.rgb!r}")
+        require(fonts["F2"].font.bold is True,
+                f"F2 bold mismatch: {fonts['F2'].font.bold!r}")
+        require(fonts["F2"].number_format == "0.0",
+                f"F2 number format mismatch: {fonts['F2'].number_format!r}")
+        require(fonts["G2"].font.color.type == "rgb",
+                f"G2 font color type mismatch: {fonts['G2'].font.color.type!r}")
+        require(fonts["G2"].font.color.rgb == "FFC00000",
+                f"G2 font color mismatch: {fonts['G2'].font.color.rgb!r}")
+        require(fonts["G2"].number_format == "0.0",
+                f"G2 number format mismatch: {fonts['G2'].number_format!r}")
+        require(fonts["H2"].font.bold is False and fonts["H2"].font.italic is False,
+                "H2 should keep default font flags")
     finally:
         font_workbook.close()
 
@@ -590,7 +645,11 @@ def verify_with_openpyxl(
             "A2_bold": True,
             "B2_italic": True,
             "C2_bold_italic": True,
-            "D2_number_format": "0.0",
+            "D2_color": "FFC00000",
+            "E2_bold_color": "FFC00000",
+            "F2_number_format": "0.0",
+            "G2_color": "FFC00000",
+            "G2_number_format": "0.0",
         },
         "fill_styles": {
             "A2_fill": "FFFFEB84",
@@ -688,13 +747,28 @@ def create_xlsxwriter_font_reference(path: Path) -> dict[str, Any]:
         bold = workbook.add_format({"bold": True})
         italic = workbook.add_format({"italic": True})
         bold_italic = workbook.add_format({"bold": True, "italic": True})
+        red = workbook.add_format({"font_color": "#C00000"})
+        bold_red = workbook.add_format({"bold": True, "font_color": "#C00000"})
         number_bold = workbook.add_format({"num_format": "0.0", "bold": True})
-        sheet.write_row(0, 0, ["Bold", "Italic", "BoldItalic", "NumberBold", "Default"])
+        number_red = workbook.add_format({"num_format": "0.0", "font_color": "#C00000"})
+        sheet.write_row(0, 0, [
+            "Bold",
+            "Italic",
+            "BoldItalic",
+            "Red",
+            "BoldRed",
+            "NumberBold",
+            "NumberRed",
+            "Default",
+        ])
         sheet.write_string(1, 0, "bold", bold)
         sheet.write_string(1, 1, "italic", italic)
         sheet.write_boolean(1, 2, True, bold_italic)
-        sheet.write_number(1, 3, 12.5, number_bold)
-        sheet.write_string(1, 4, "plain")
+        sheet.write_string(1, 3, "red", red)
+        sheet.write_string(1, 4, "bold red", bold_red)
+        sheet.write_number(1, 5, 12.5, number_bold)
+        sheet.write_number(1, 6, 42.5, number_red)
+        sheet.write_string(1, 7, "plain")
     finally:
         workbook.close()
 

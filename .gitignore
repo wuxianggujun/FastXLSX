@@ -45,6 +45,13 @@ vcpkg_installed/
 *.tmp
 *.temp
 
+# Python generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # Generated example workbooks
 /fastxlsx-minimal-example.xlsx
 /fastxlsx-streaming-example.xlsx

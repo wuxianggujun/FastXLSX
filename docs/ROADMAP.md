@@ -3,7 +3,8 @@
 ## Phase 0：项目初始化
 
 - 建立项目名称、定位和文档。
-- 固定流式主线与 DOM 编辑边界。
+- 固定共享 OpenXML/OPC 底座与 Streaming / Patch / In-memory 三条 API 路径。
+- 固定流式主线、Patch 编辑主线与 DOM 编辑边界。
 - 明确性能目标。
 - 固定 `OpenXLSX`、`xlnt`、`FastExcel` 的参考边界。
 - 固定第一阶段依赖边界。
@@ -84,6 +85,7 @@ Phase 1 后续依赖工作：
 - API 体验可以参考 `OpenXLSX`，但实现不能继承 `OpenXLSX` 的完整 worksheet DOM 主路径。
 - 便利 API 必须写明适用范围；只适合小文件的 API 需要标记为 in-memory 路径。
 - public API 必须补文档注释，说明模式、内存行为、随机访问限制和性能注意事项。
+- 小文件随机编辑能力应作为独立 In-memory 路径规划，不能让它成为大数据默认路径。
 
 ## Phase 4：编辑已有 XLSX
 
@@ -94,11 +96,24 @@ existing-file editing、unknown part preservation 仍是计划。
 功能：
 
 - PackageReader。
+- PackageEditor。
+- EditPlan / DependencyAnalyzer。
 - PartIndex。
 - 未修改 part 原样复制。
 - 小型 XML part 局部 DOM 编辑。
 - 大型 worksheet 流式替换。
 - 模板填充。
+- Replace sheet data 并保留未修改 part。
+- 公式重算策略：设置 fullCalcOnLoad，明确 `calcChain.xml` 删除、重建或保留边界。
+- ReferencePolicy：对 sheet rename/delete/move、defined names、table ranges、chart refs
+  和跨 sheet 公式引用给出保守策略或显式失败。
+
+约束：
+
+- Phase 4 的核心不是“把 workbook 全量 DOM 化”，而是已有文件的可控编辑和保真保存。
+- 大型 worksheet patch 采用 event reader -> transformer -> stream writer。
+- 未知或未修改的 chart、image、VBA、pivot cache 和 extension part 默认原样复制。
+- 不承诺任意大型 worksheet 的 O(1) 随机 cell 读写。
 
 ## Phase 5：复杂对象
 
@@ -132,8 +147,11 @@ alt text/accessibility UI。
 FastXLSX 应该成为：
 
 ```text
-一个流式优先、编辑能力可靠、性能明显优于 OpenXLSX DOM 主路径，
-并在核心流式路径上对标 xlnt streaming API 的 C++ XLSX 引擎。
+一个可编辑的高性能 XLSX/OpenXML 引擎：
+大文件写入走 Streaming，
+已有文件编辑走 Patch / part-level rewrite，
+小文件复杂编辑走 In-memory，
+并在大数据路径上明显优于 OpenXLSX DOM 主路径。
 ```
 
 ## 持续性要求

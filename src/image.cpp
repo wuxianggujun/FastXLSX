@@ -5,8 +5,10 @@
 #include <array>
 #include <fstream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
@@ -71,6 +73,37 @@ ImageInfo make_image_info(ImageFormat format, int width, int height, int channel
     };
 }
 
+std::size_t checked_pixel_buffer_size(const ImageInfo& info)
+{
+    const std::size_t width = static_cast<std::size_t>(info.width);
+    const std::size_t height = static_cast<std::size_t>(info.height);
+    const std::size_t channels = static_cast<std::size_t>(info.channel_count);
+    const std::size_t max_size = std::numeric_limits<std::size_t>::max();
+
+    if (width != 0 && height > max_size / width) {
+        throw FastXlsxError("decoded image pixel buffer is too large");
+    }
+    const std::size_t pixel_count = width * height;
+    if (channels != 0 && pixel_count > max_size / channels) {
+        throw FastXlsxError("decoded image pixel buffer is too large");
+    }
+    return pixel_count * channels;
+}
+
+ImagePixels make_image_pixels(ImageFormat format, int width, int height, int channels, const stbi_uc* decoded)
+{
+    const ImageInfo info = make_image_info(format, width, height, channels);
+    const std::size_t pixel_buffer_size = checked_pixel_buffer_size(info);
+
+    return ImagePixels {
+        info.format,
+        info.width,
+        info.height,
+        info.channel_count,
+        std::vector<std::uint8_t>(decoded, decoded + pixel_buffer_size),
+    };
+}
+
 struct StreamCallbackState {
     std::ifstream* stream = nullptr;
 };
@@ -129,6 +162,62 @@ ImageInfo read_image_info_from_stb_stream(ImageFormat format, std::ifstream& str
     return make_image_info(format, width, height, channels);
 }
 
+ImagePixels read_image_pixels_from_stb_memory(ImageFormat format, std::span<const std::uint8_t> bytes)
+{
+    if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw FastXlsxError("image buffer is too large for stb_image");
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    const auto* data = reinterpret_cast<const stbi_uc*>(bytes.data());
+    stbi_uc* decoded = stbi_load_from_memory(
+        data, static_cast<int>(bytes.size()), &width, &height, &channels, 0);
+    if (decoded == nullptr) {
+        throw FastXlsxError("stb failed to decode image pixels");
+    }
+
+    std::unique_ptr<stbi_uc, decltype(&stbi_image_free)> decoded_guard(decoded, stbi_image_free);
+    return make_image_pixels(format, width, height, channels, decoded_guard.get());
+}
+
+std::vector<std::uint8_t> read_file_bytes_for_pixels(const std::filesystem::path& path)
+{
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw FastXlsxError("failed to open image file");
+    }
+
+    stream.seekg(0, std::ios::end);
+    const std::streampos end_position = stream.tellg();
+    if (end_position == std::streampos(-1)) {
+        throw FastXlsxError("failed to read image file");
+    }
+
+    const std::streamoff file_size = end_position - std::streampos(0);
+    if (file_size <= 0) {
+        throw FastXlsxError("image file is empty");
+    }
+    if (file_size > static_cast<std::streamoff>(std::numeric_limits<int>::max())) {
+        throw FastXlsxError("image buffer is too large for stb_image");
+    }
+
+    stream.seekg(0, std::ios::beg);
+    if (!stream) {
+        throw FastXlsxError("failed to rewind image file for read");
+    }
+
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(file_size));
+    const auto read_size = static_cast<std::streamsize>(file_size);
+    stream.read(reinterpret_cast<char*>(bytes.data()), read_size);
+    if (stream.gcount() != read_size) {
+        throw FastXlsxError("failed to read image file");
+    }
+
+    return bytes;
+}
+
 } // namespace
 
 ImageInfo read_image_info(const std::filesystem::path& path)
@@ -165,6 +254,23 @@ ImageInfo read_image_info(std::span<const std::byte> bytes)
     }
     const ImageFormat format = require_supported_format(bytes);
     return read_image_info_from_stb_memory(format, bytes);
+}
+
+ImagePixels read_image_pixels(const std::filesystem::path& path)
+{
+    std::vector<std::uint8_t> bytes = read_file_bytes_for_pixels(path);
+    return read_image_pixels(std::span<const std::uint8_t>(bytes.data(), bytes.size()));
+}
+
+ImagePixels read_image_pixels(std::span<const std::uint8_t> bytes)
+{
+    if (bytes.empty()) {
+        throw FastXlsxError("image buffer is empty");
+    }
+
+    const auto byte_span = std::as_bytes(bytes);
+    const ImageFormat format = require_supported_format(byte_span);
+    return read_image_pixels_from_stb_memory(format, bytes);
 }
 
 } // namespace fastxlsx

@@ -30,6 +30,10 @@ description: "实现或审查 FastXLSX streaming conditional formatting。用于
 - `tools/verify_conditional_formatting_icon_sets.py`
 - `tools/verify_conditional_formatting_icon_sets_excel.ps1`
 
+如果 conditional formatting 继续增长，先检查是否已经有 feature-specific 实现文件或
+测试文件；不要默认继续把所有新规则塞进 `src/streaming_writer.cpp` 和
+`tests/test_streaming_writer.cpp`。
+
 ## 当前事实
 
 - Color scale 是 streaming-only new-workbook worksheet metadata。当前支持
@@ -60,8 +64,11 @@ description: "实现或审查 FastXLSX streaming conditional formatting。用于
    range/rule 拷贝成本、finite endpoint、priority、multi-range 和副作用边界。
 3. 在 `src/streaming_writer.cpp` 中保持 lightweight metadata state，不读取历史 rows，
    不持有完整 worksheet cell matrix。
-4. 所有 validation 通过后再 push state 和分配/推进 priority，确保失败调用无副作用。
-5. 结构测试先覆盖拆包 XML，再跑本地 Python helper 和 Excel COM helper。
+4. 当 color scale、data bar、icon set 或后续规则的 XML 生成/校验/测试规模继续增长时，
+   优先拆到 conditional-formatting-specific helper 或测试文件；少量协调代码不要强拆。
+5. 所有 validation 通过后再 push state 和分配/推进 priority，确保失败调用无副作用。
+6. 结构测试先覆盖拆包 XML，再跑本地 Python helper 和 Excel COM helper。
+7. 新增 `.cpp` 或测试文件时，同步更新 `CMakeLists.txt` / `tests/CMakeLists.txt`。
 
 ## 常用命令
 
@@ -95,6 +102,8 @@ advanced/custom icon set support.
 - 不要声称支持 formula/cellIs、advanced/custom icon sets、top/bottom、duplicate/unique、dxf-backed styles、
   existing-file editing、conflict handling 或完整 Excel UI，除非对应代码和测试已落地。
 - 不要把 `openpyxl`、`XlsxWriter` 或 Excel COM 当成运行时依赖；它们只用于本地 QA/参考。
+- 不要继续无边界扩张 `src/streaming_writer.cpp` 或 `tests/test_streaming_writer.cpp`；
+  但也不要为了几个小分支强行拆出碎片文件。
 
 ## 验证清单
 

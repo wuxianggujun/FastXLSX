@@ -27,6 +27,9 @@ obligations.
 - Current public API includes `Workbook`, `Worksheet`, `Cell`, `WorkbookWriter`,
   `WorksheetWriter`, `CellView`, `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
+- Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
+  `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
+  owned decoded pixel buffers; this is separate from OpenXML image packaging.
 - Current public worksheet metadata API also includes `ArgbColor`,
   `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
   `ThreeColorScaleRule`, `DataBarValueType`, `DataBarEndpoint`, `DataBarRule`,
@@ -78,7 +81,8 @@ obligations.
   `WorkbookWriter::add_style(CellStyle)` registers workbook-local custom number
   formats, narrow `CellAlignment::wrap_text`, `HorizontalAlignment` and
   `VerticalAlignment` alignment metadata, narrow
-  `CellFont::bold` / `CellFont::italic` font metadata, and narrow
+  `CellFont::bold` / `CellFont::italic` plus optional direct ARGB
+  `CellFont::color` font metadata, and narrow
   `CellFill` solid foreground fill metadata,
   `CellView::with_style(StyleId)` writes cell `s="N"` references, and
   `WorkbookWriter::close()` emits `xl/styles.xml`, a styles content type
@@ -170,8 +174,8 @@ Mapping to `docs/NEXT_STEPS.md`: `P5` = `M3` sharedStrings hardening;
    - `FASTXLSX_ENABLE_MINIZIP_NG=ON` now uses `planned-runtime` to link
      `MINIZIP::minizip-ng`; keep this opt-in until CI cost and release packaging
      are verified.
-   - Default `stb` remains limited to the current image metadata helper and
-     streaming image insertion structure tests.
+   - Default `stb` remains limited to the current image metadata/pixel helpers
+     and streaming image insertion structure tests.
    - Record that `minizip-ng[core,zlib]` resolves through vcpkg `zlib`, not
      `zlib-ng`. `zlib-ng`, `expat`, and `pugixml` clean install successfully as
      planned-runtime dependencies, but current FastXLSX code does not use them.
@@ -347,7 +351,7 @@ Tasks:
 - Keep the current P9 style registry as the entry point for styles:
   workbook-local `StyleId`, `CellStyle::number_format`,
   `CellStyle::alignment.wrap_text`, optional horizontal/vertical alignment,
-  `CellStyle::font` bold/italic flags,
+  `CellStyle::font` bold/italic flags plus optional direct ARGB font color,
   `CellStyle::fill` solid foreground ARGB, generated `xl/styles.xml`, and cell `s="N"`
   references.
 - Add full font control, full fill/pattern control, borders, full alignment, rich text, and dxf-backed conditional
@@ -369,7 +373,7 @@ Validation:
 - Current style structure tests cover `xl/styles.xml`, style ids, custom
   `numFmtId`, `numFmtId` reuse across style combinations, wrap-text and
   limited horizontal/vertical alignment `applyAlignment` / `<alignment .../>`,
-  bold/italic font records,
+  bold/italic/direct-color font records, `<font><color rgb="..."/>`,
   `fontId` reuse and `applyFont="1"`, solid fill records, `fillId` reuse and
   `applyFill="1"`, worksheet style references,
   default `s="0"` omission, sharedStrings + styles coexistence, and invalid
@@ -603,6 +607,10 @@ Order:
    existing drawings or make passthrough claims. The memory-source overload
    accepts `std::span<const std::byte>` only for the duration of the call, copies
    caller bytes immediately, and does not retain the span or a decoded pixel buffer.
+   Separately, `ImagePixels` / `read_image_pixels(path|span)` decodes PNG/JPEG
+   through `stb` into an owned full pixel buffer for callers that explicitly need
+   pixels; it is not used by the `add_image()` streaming insertion hot path and
+   does not create media/drawing parts.
    `ImageOptions` adds only drawing marker / non-visual metadata: `from_offset`
    / `to_offset` write EMU values to two-cell marker `xdr:colOff` /
    `xdr:rowOff`, `edit_as` writes `xdr:twoCellAnchor editAs`, non-empty `name`
@@ -1088,14 +1096,16 @@ Tasks:
   `windows-nmake-release-benchmark-minizip`; both are manual build/run paths.
 - When no `--output` / `--result` is supplied, `fastxlsx_bench_streaming_writer`
   writes under the benchmark target binary directory. The manual tool rejects
-  `--sheets` above 1024 and keeps `office_open` as `not_run` until a real office
-  application check is performed.
+  `--sheets` above 1024 and writes `office_open` as `not_run`; Office validation
+  is recorded by a separate helper instead of mutating benchmark JSON.
 - Current matrix helper is `tools/run_benchmark_matrix.py`. It wraps one already
   built `fastxlsx_bench_streaming_writer` executable at a time, writes per-case
   `.xlsx` / schema-v3 `.json`, and produces `benchmark-matrix-report.json`.
   It can optionally use `openpyxl` for workbook readability and first/last cell
   checks. Excel verification remains a separate local step through
-  `tools/verify_benchmark_matrix_excel.ps1`.
+  `tools/verify_benchmark_matrix_excel.ps1`, which writes the sidecar
+  `benchmark-matrix-office-report.json` and does not rewrite the matrix report
+  or per-case JSON; `office_open` remains `not_run`.
 - Current benchmark JSON schema version is `3`. It records `string_pattern`,
   `package_entry_source_mode="worksheet-file-backed-chunked"`,
   `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`, and a
@@ -1166,12 +1176,12 @@ Current facts:
   runtime dependencies or default CI requirements.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
   present on the in-memory and streaming new-workbook paths. P9 streaming
-  number-format、wrap-text + limited horizontal/vertical alignment, bold/italic font and solid foreground fill styles are now 基础 through workbook-local style ids,
+  number-format、wrap-text + limited horizontal/vertical alignment, bold/italic/direct-color font and solid foreground fill styles are now 基础 through workbook-local style ids,
   `CellStyle::number_format`, `CellStyle::alignment.wrap_text`,
   optional horizontal/vertical alignment,
   `CellStyle::font`, `CellStyle::fill`, generated
   `xl/styles.xml`, and cell `s="N"` references. Custom document properties,
-  named ranges, full font control, full fill/pattern control, borders/full alignment, rich formatting,
+  named ranges, full font size/name/underline/theme color control, full fill/pattern control, borders/full alignment, rich formatting,
   dxf-backed conditional formatting, date cell type, and
   existing-file style preservation are still planned work.
 - Local QA helpers now exist for document properties:
@@ -1181,15 +1191,17 @@ Current facts:
   `tools/verify_document_properties_excel.ps1` opens both workbooks read-only
   through Excel COM and verifies the smoke sheets, while treating XML/openpyxl
   as authoritative when Excel COM does not expose built-in properties.
-- Local QA helpers now exist for number-format, wrap-text + limited horizontal/vertical alignment, bold/italic font, and solid fill styles:
+- Local QA helpers now exist for number-format, wrap-text + limited horizontal/vertical alignment, bold/italic/direct-color font, and solid fill styles:
   `tools/verify_styles_number_formats.py` checks FastXLSX package XML,
   `xl/styles.xml`, workbook relationships, worksheet `s="N"` references,
-  `openpyxl` number format / wrap-text / horizontal / vertical / bold-italic / solid-fill semantics, and optional `XlsxWriter` reference
-  creation; `tools/verify_styles_excel.ps1` opens the styles and
-  sharedStrings+styles samples plus the limited alignment sample read-only
-  through Excel COM and checks visible NumberFormat, WrapText, HorizontalAlignment,
+  `openpyxl` number format / wrap-text / horizontal / vertical / bold-italic /
+  direct font color / solid-fill semantics, and optional `XlsxWriter` reference
+  creation; `tools/verify_styles_excel.ps1` opens the number-format,
+  sharedStrings+styles, limited alignment, `fastxlsx-streaming-styles-fonts.xlsx`,
+  and solid-fill samples read-only through Excel COM and checks visible NumberFormat,
+  WrapText, HorizontalAlignment,
   VerticalAlignment, Font.Bold,
-  Font.Italic, Interior.Pattern, Interior.Color, values, and formulas.
+  Font.Italic, Font.Color, Interior.Pattern, Interior.Color, values, and formulas.
 
 Tasks:
 - Extend focused structure tests and Excel visual samples when metadata behavior
@@ -1308,8 +1320,9 @@ Required dependencies before broad implementation:
   styles, document properties, and relationship parts.
 - Streaming worksheet writer support for object anchors or references without
   holding full worksheet data.
-- `stb` image decode/dimension dependency is available through the default
-  vcpkg manifest path for `read_image_info()` and the current
+- `stb` image decode/dimension/pixel dependency is available through the
+  default vcpkg manifest path for `read_image_info()`, `read_image_pixels()`,
+  and the current
   `WorksheetWriter::add_image()` PNG/JPEG insertion slice.
 - Style and formula boundaries from Phase 3 where conditional formatting,
   tables, or validations depend on styles, ranges, formulas, or workbook
@@ -1376,15 +1389,18 @@ Allowed early slices:
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.
 - P17 image work must stay split into explicit stages:
-  1. Dependency discovery and metadata helper: verify default `stb` resolution,
-     include behavior, license, local CMake behavior, and CI cost.
+  1. Dependency discovery and metadata/pixel helpers: verify default `stb`
+     resolution, include behavior, license, local CMake behavior, and CI cost.
      Current P17a exposes `ImageInfo`, `ImageFormat`, and `read_image_info()`
-     for PNG/JPEG metadata only; its public comment must stay clear that the
-     helper reports dimensions, format, and channels only, and does not create
-     OpenXML image package parts, relationships, anchors, or compatibility
-     guarantees. Current `fastxlsx.image` coverage includes default default-STB
-     errors, PNG/JPEG file and memory metadata, unsupported memory/file
-     headers, empty memory buffer, empty file, and missing file.
+     for PNG/JPEG metadata, plus `ImagePixels` and `read_image_pixels(path|span)`
+     for PNG/JPEG decode into an owned full pixel buffer. Its public comments
+     must stay clear that these helpers do not create OpenXML image package
+     parts, relationships, anchors, or compatibility guarantees, and that pixel
+     decode is not the `WorksheetWriter::add_image()` streaming insertion hot
+     path. Current `fastxlsx.image` coverage includes default default-STB
+     errors, PNG/JPEG file and memory metadata, PNG/JPEG file and memory pixel
+     decode, unsupported memory/file headers, empty memory buffer, empty file,
+     and missing file.
   2. API design and documentation for insertion/editing: define
      Streaming/Patch/In-memory mode,
      memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,
@@ -1405,15 +1421,19 @@ Allowed early slices:
      anchor strategy, generated media and drawing parts, worksheet `.rels`,
      drawing `.rels`, content type entries, and worksheet `<drawing>`
      references. The memory-source overload copies caller-owned bytes into a
-     temporary file-backed media entry and does not retain the span after return.
+     temporary file-backed media entry, validates with `read_image_info()`, and
+     does not retain the span or decode a pixel buffer after return.
   4. Visual and reference validation: current basic slice has structure tests
      and local Excel COM validation. Current image metadata validation also has
      `tools/verify_image_metadata.py` for drawing XML / openpyxl / XlsxWriter
      checks and `tools/verify_image_metadata_excel.ps1` for Excel COM shape
      metadata / placement / marker-offset geometry checks. The same helpers now
      support `--memory-input` and `-MemoryPath` for the memory-source image
-     workbook, and `--hyperlink-input` / `-HyperlinkPath` for the picture
-     hyperlink workbook; future image variants
+     workbook, `--hyperlink-input` / `-HyperlinkPath` for the picture hyperlink
+     workbook, and `--mixed-hyperlink-input` /
+     `-MixedHyperlinkPath` for
+     `fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx`, which combines
+     picture hyperlinks with worksheet cell hyperlinks and tables; future image variants
      still need local Excel visual verification when Excel is available. Structure problems require an
      Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
   5. Existing-workbook image read/edit/preservation: start only after package
@@ -1435,6 +1455,10 @@ Forbidden until separately designed and verified:
   drawing XML, manage relationship ids, allocate media part names, or validate
   Excel package compatibility; FastXLSX does those only in the current narrow
   `WorksheetWriter::add_image()` new-workbook path/memory-source slice.
+- Do not treat `read_image_pixels()` as image insertion, format conversion,
+  drawing editing, existing-workbook image preservation, or a low-memory path;
+  it allocates a complete decoded pixel buffer and stays outside the
+  `WorksheetWriter::add_image()` row/cell hot path.
 - Do not treat the memory-source image overload as arbitrary stream, URL,
   base64, existing-workbook image preservation, drawing mutation, or complete
   low-memory package streaming support.

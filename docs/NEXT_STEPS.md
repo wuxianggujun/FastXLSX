@@ -46,6 +46,11 @@ that exist in code, CMake, tests, docs, or local verification.
   - `IconSetStyle`
   - `IconSetValueType`
   - `IconSetRule`
+  - `ImageFormat`
+  - `ImageInfo`
+  - `ImagePixels`
+  - `read_image_info()`
+  - `read_image_pixels()`
   - `WorkbookWriter::add_style()`
   - `CellView::with_style()`
   - `WorksheetWriter::add_conditional_color_scale()`
@@ -70,13 +75,13 @@ that exist in code, CMake, tests, docs, or local verification.
     metadata for new workbooks, not as `docProps/custom.xml`, existing-file
     editing, or a complete document-properties API.
   - Streaming-only number-format, wrap-text + limited horizontal/vertical alignment,
-    bold/italic font, and solid fill
+    bold/italic/direct-color font, and solid fill
     styles are visible through `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
     `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
     `xl/styles.xml`, workbook styles relationship, and focused structure tests.
     Treat this as the P9 foundation for custom number formats and narrow
-    `wrapText` plus limited horizontal/vertical alignment, bold/italic font flags,
-    and solid foreground fill, not as full font control,
+    `wrapText` plus limited horizontal/vertical alignment,
+    bold/italic/direct ARGB font metadata, and solid foreground fill, not as full font control,
     full fill/pattern control, border/full alignment, date cell type, dxf-backed conditional
     formatting, rich text, or existing-file style preservation. The current
     two-/three-color color scale, basic data bar, and basic 3Arrows icon set slices are worksheet metadata,
@@ -118,6 +123,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-styles-number-formats.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-styles-shared-strings.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-styles-fonts.xlsx`
   Manual `build-nmake` output may exist locally, but treat it as potentially
   stale unless it was regenerated after the current source change.
 
@@ -166,22 +172,24 @@ feature completion.
      backend, and preservation tests before any complete edit support is
      claimed.
 
-4. P9 styles number formats + limited alignment + bold/italic fonts + solid fills - 基础.
+4. P9 styles number formats + limited alignment + bold/italic/direct-color fonts + solid fills - 基础.
    - Current files show workbook-local `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
      `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
      `xl/styles.xml`, workbook styles relationship, and focused CTest coverage.
    - The current slices support custom number formats, narrow
      `CellAlignment::wrap_text`, limited `HorizontalAlignment` / `VerticalAlignment`,
-     narrow `CellFont::bold` / `italic`, and narrow
+     narrow `CellFont::bold` / `italic` plus optional direct ARGB `color`, and narrow
      `CellFill` solid foreground ARGB.
      Duplicate complete styles reuse the same style id; equal number-format
      strings reuse the same custom `numFmtId` across different style
-     combinations; equal bold/italic font combinations reuse the same `fontId`;
+     combinations; equal bold/italic/direct-color font combinations reuse the same `fontId`;
      equal foreground ARGB fills reuse the same `fillId`;
      default cells omit `s="0"`.
    - Current local QA uses `tools/verify_styles_number_formats.py` for
      package XML / `openpyxl` / optional `XlsxWriter` checks and
-     `tools/verify_styles_excel.ps1` for Excel COM read-only visible checks.
+     `tools/verify_styles_excel.ps1` for Excel COM read-only visible checks,
+     including `fastxlsx-streaming-styles-fonts.xlsx` bold, italic, direct
+     color, number+color, and default-cell scenarios.
    - Before expanding support wording, add separate tasks and tests for
      full font control, full fill/pattern control, borders/full alignment, date serial helper policy, conditional
      formatting, rich text, and existing-file style preservation.
@@ -232,7 +240,7 @@ commit or short series with its own tests and docs update.
    - Keep benchmark work out of default CTest.
 
 6. Phase 3 styles and metadata hardening.
-   - Current P9 number-format, limited alignment, bold/italic font, and solid fill styles are 基础 for
+   - Current P9 number-format, limited alignment, bold/italic/direct-color font, and solid fill styles are 基础 for
      streaming new workbooks: workbook-local style ids, generated
      `xl/styles.xml`, workbook relationship, and cell `s="N"` references.
    - Continue with full font control, full fill/pattern control, borders/full alignment only as separate registry
@@ -317,8 +325,9 @@ and release packaging, or the decision to make minizip the default backend.
       editing out of scope until separately designed.
 
 13. Images and passthrough objects.
-    - Images need `stb` for image decoding/dimensions, plus media parts,
-      drawings, drawing rels, worksheet rels, anchors, and content types.
+    - Current `stb` image helpers cover PNG/JPEG metadata and owned pixel decode;
+      image insertion still needs separate media parts, drawings, drawing rels,
+      worksheet rels, anchors, and content types.
     - Chart and VBA work starts as preservation, not native generation.
 
 ## Push-by-Push Execution Queue
@@ -515,8 +524,10 @@ Do:
 Accept when:
 - Default CTest remains lightweight and under the 60s boundary.
 - Benchmark results are reproducible enough to compare future regressions.
-- Matrix reports keep raw schema-v3 per-case JSON and do not overwrite
-  `office_open="not_run"` unless a separate Office validation tool actually ran.
+- Matrix reports keep raw schema-v3 per-case JSON and `office_open="not_run"`.
+  The separate Office validation helper writes the sidecar
+  `benchmark-matrix-office-report.json` and does not rewrite the matrix report
+  or per-case JSON.
 
 Do not claim:
 - Benchmark coverage from normal unit tests.
@@ -602,21 +613,23 @@ Do not claim:
 
 ### P9 - Style Registry Design and First Styles
 
-Status: 基础 for streaming-only custom number format, wrap-text + limited horizontal/vertical alignment, bold/italic font, and solid fill styles.
+Status: 基础 for streaming-only custom number format, wrap-text + limited horizontal/vertical alignment, bold/italic/direct-color font, and solid fill styles.
 
 Current foundation:
 - `StyleId` is a workbook-local handle; default `StyleId{}` is style `0`.
 - `CellAlignment` currently exposes `wrap_text` plus optional limited
   `HorizontalAlignment::{Left,Center,Right}` and
-  `VerticalAlignment::{Top,Center,Bottom}`; `CellFont` currently
-  exposes only `bold` / `italic`; `CellFill` currently exposes only solid foreground
+  `VerticalAlignment::{Top,Center,Bottom}`; `CellFont` currently exposes
+  `bold` / `italic` plus optional direct ARGB `color`; `CellFill` currently exposes only solid foreground
   `ArgbColor`; `CellStyle` stores `number_format` plus optional narrow alignment,
   font, and fill metadata.
 - `WorkbookWriter::add_style(CellStyle)` copies style metadata into workbook
   state, rejects empty styles, de-duplicates repeated complete styles, and
   reuses the same custom `numFmtId` for equal number-format strings across
-  different style combinations, the same `fontId` for equal bold/italic
-  font combinations, and the same `fillId` for equal foreground ARGB fills.
+  different style combinations, the same `fontId` for equal
+  bold/italic/direct-color font combinations, and the same `fillId` for equal
+  foreground ARGB fills. Direct font color is serialized in `xl/styles.xml` as
+  `<font><color rgb="..."/>` inside the generated font record.
 - `CellView::with_style(StyleId)` carries the style id into append-row cell XML.
 - `WorksheetWriter::append_row()` validates non-default style ids before
   advancing row count, dimensions, sharedStrings state, or formula recalculation
@@ -639,20 +652,22 @@ Do:
 Accept when:
 - CTest covers `xl/styles.xml`, style ids, worksheet `s="N"` references,
   custom `numFmtId`, XML attribute escape, wrap-text + limited horizontal/vertical
-  `applyAlignment` / `<alignment .../>`, bold/italic font records, `fontId` reuse,
-  `applyFont="1"`, solid fill records, `fillId` reuse, `applyFill="1"`,
+  `applyAlignment` / `<alignment .../>`, bold/italic/direct-color font records,
+  `<font><color rgb="..."/>`, `fontId` reuse, `applyFont="1"`, solid fill records, `fillId` reuse, `applyFill="1"`,
   sharedStrings + styles relationship ordering,
   default `s="0"` omission, and invalid foreign `StyleId` state hygiene.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM
   read-only NumberFormat, WrapText, HorizontalAlignment, VerticalAlignment,
-  Font.Bold, Font.Italic, Interior.Pattern, and Interior.Color checks.
+  Font.Bold, Font.Italic, Font.Color, Interior.Pattern, and Interior.Color
+  checks, including `fastxlsx-streaming-styles-fonts.xlsx`.
 
 Do not claim:
 - Full font control, full fill/pattern control, border, full alignment, rich text, dxf-backed conditional formatting,
   date cell type, existing-file style preservation, or full Excel formatting
-  parity from the number-format, limited alignment, bold/italic font, and solid fill slices.
+  parity from the number-format, limited alignment, bold/italic/direct-color font,
+  and solid fill slices.
 
 ### P10 - Configurable Document Properties API
 
@@ -921,7 +936,7 @@ slice are now started. Existing-workbook image read/edit/preservation still
 starts only after P13 proves preservation behavior.
 
 Stages:
-1. P17.0 - `stb` dependency discovery and image metadata helper. Status:
+1. P17.0 - `stb` dependency discovery and image metadata/pixel helpers. Status:
    basic.
    - Use `stb` for image decoding, dimensions, channels, and pixel access.
    - Keep it as a default vcpkg manifest dependency.
@@ -929,11 +944,18 @@ Stages:
      input, backed by `stbi_info`. Current tests also cover unsupported
      memory/file headers, empty
      memory buffer, empty file, and missing file.
+   - Current code also exposes `ImagePixels` and `read_image_pixels(path|span)`
+     for PNG/JPEG decode into an owned full pixel buffer. Current tests cover
+     PNG/JPEG file and memory pixel decode plus empty, missing, and unsupported
+     inputs.
    - The `read_image_info()` documentation must describe metadata reading only;
      it must not imply media part creation, drawing XML, relationships, content
      types, anchors, or existing-workbook preservation.
    - This stage alone still does not create media parts, drawing XML,
-     relationships, content types, anchors, or existing-workbook preservation.
+     relationships, content types, anchors, format conversion, drawing editing,
+     or existing-workbook preservation; `read_image_pixels()` allocates the full
+     decoded pixel buffer and is not used by the `WorksheetWriter::add_image()`
+     streaming insertion hot path.
 2. P17.1 - API shape and documentation.
    Status: basic for `WorksheetWriter::add_image()` path and memory-source overloads.
    - Document whether each image API is Streaming, Patch, or In-memory.
@@ -966,7 +988,8 @@ Stages:
    - `WorksheetWriter::add_image(bytes, anchor)` accepts caller-owned PNG/JPEG
      memory spans, validates metadata with `read_image_info(bytes)`, copies the
      original bytes into the same temporary file-backed media entry path, and
-     rejects empty buffers or unsupported image headers.
+     rejects empty buffers or unsupported image headers. It does not call
+     `read_image_pixels()` or retain decoded pixels.
    - The first slice uses a simple two-cell anchor from a 1-based inclusive
      `CellRange`; it writes generated media parts, one drawing part per
      worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
@@ -1040,6 +1063,10 @@ Stages:
      `fastxlsx-streaming-image-hyperlinks.xlsx`, covering drawing XML
      `a:hlinkClick`, drawing-local hyperlink `.rels`, `XlsxWriter` reference
      generation, `openpyxl` smoke, and Excel COM shape hyperlink checks.
+     They also accept `--mixed-hyperlink-input` /
+     `-MixedHyperlinkPath` for
+     `fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx`, covering mixed
+     picture hyperlinks, worksheet cell hyperlinks, and tables.
      `openpyxl` may skip JPEG image loading and does not expose picture
      hyperlink metadata, so XML and Excel COM remain authoritative for JPEG
      media/drawing counts and picture hyperlink semantics.
@@ -1068,11 +1095,13 @@ Do:
 
 Accept when:
 - vcpkg default manifest dependency `stb` resolution, include path, license, and local
-  CMake behavior are verified for the image metadata helper and image insertion
+  CMake behavior are verified for the image metadata/pixel helpers and image insertion
   structure tests. CI behavior for the default vcpkg path remains a hardening
   task until the workflow has passed.
 - Public API docs for any image surface describe mode, ordering, memory cost,
   decoded-pixel lifetime, package side effects, and unsupported operations.
+- `read_image_pixels()` docs and tests describe the owned full decoded buffer
+  allocation and its separation from streaming image insertion.
 - Package structure tests cover media, drawing XML, rels, and content types.
 - Image metadata tests cover `xdr:twoCellAnchor editAs` and `xdr:cNvPr name` /
   `descr` semantics, plus optional `a:hlinkClick` picture hyperlink semantics,
@@ -1088,6 +1117,9 @@ Do not claim:
 - Picture support from `stb` dependency availability alone.
 - OpenXML image support beyond the narrow `WorksheetWriter::add_image()`
   streaming new-workbook PNG/JPEG path/memory-source slice.
+- Format conversion, drawing editing, existing-workbook preservation, or
+  low-memory streaming insertion behavior from `ImagePixels` /
+  `read_image_pixels()`.
 - Arbitrary stream, URL, base64, or existing-workbook image source support from
   the memory-source overload alone.
 - `oneCellAnchor` / `absoluteAnchor` element support, row/column resize geometry
@@ -1208,7 +1240,7 @@ Current foundation:
 - P9 style registry exists for streaming new workbooks:
   workbook-local `StyleId`, `CellStyle::number_format`,
   `CellStyle::alignment.wrap_text`, optional horizontal/vertical alignment,
-  `CellStyle::font` bold/italic flags,
+  `CellStyle::font` bold/italic flags plus optional direct ARGB font color,
   `CellStyle::fill` solid foreground ARGB,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
   `xl/styles.xml`, and workbook styles relationship.
@@ -1223,7 +1255,7 @@ Next tasks:
 Validation:
 - Current style validation includes `xl/styles.xml`, style IDs, worksheet style
   references, custom number format escaping, wrap-text + limited horizontal/vertical alignment metadata,
-  bold/italic font metadata, solid fill metadata, sharedStrings coexistence, and Excel COM /
+  bold/italic/direct-color font metadata, solid fill metadata, sharedStrings coexistence, and Excel COM /
   `openpyxl` checks through the fixed local helpers.
 - Use Excel visual verification for style samples.
 - Use reference `.xlsx` files and XML comparison when Excel repairs output.

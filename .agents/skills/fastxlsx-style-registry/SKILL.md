@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-style-registry
-description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment、HorizontalAlignment、VerticalAlignment、CellFont、CellFill、CellStyle、WorkbookWriter::add_style()、CellView::with_style()、xl/styles.xml、number formats、wrap-text + limited horizontal/vertical alignment、bold/italic font、solid fill、worksheet s 属性、sharedStrings + styles 共存和样式 QA。用于 P9 styles、未来 full-font/full-fill/border/full-alignment、conditional formatting 与 styles 交互，或排查 Excel 修复样式输出。"
+description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment、HorizontalAlignment、VerticalAlignment、CellFont、CellFill、CellStyle、WorkbookWriter::add_style()、CellView::with_style()、xl/styles.xml、number formats、wrap-text + limited horizontal/vertical alignment、bold/italic/direct ARGB font color、solid fill、worksheet s 属性、sharedStrings + styles 共存和样式 QA。用于 P9 styles、未来 full-font/full-fill/border/full-alignment、conditional formatting 与 styles 交互，或排查 Excel 修复样式输出。"
 ---
 
 # FastXLSX Style Registry
@@ -24,17 +24,19 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
 ## 当前事实
 
 - 当前 P9 基础切片支持 streaming-only new-workbook custom number format styles、窄
-  wrap-text + limited horizontal/vertical alignment styles、窄 bold/italic font styles 和窄 solid foreground fill styles。
+  wrap-text + limited horizontal/vertical alignment styles、窄 bold/italic/direct ARGB font color styles
+  和窄 solid foreground fill styles。
 - `StyleId` 是 workbook-local handle；默认构造是 style `0`。非默认 id 必须来自同一个
   `WorkbookWriter::add_style()`。
 - `CellAlignment` 当前支持 `wrap_text`、`HorizontalAlignment::{Left,Center,Right}`
-  和 `VerticalAlignment::{Top,Center,Bottom}`；`CellFont` 当前只支持 `bold` / `italic`；
+  和 `VerticalAlignment::{Top,Center,Bottom}`；`CellFont` 当前只支持 `bold` / `italic`
+  和 direct ARGB `color`；
   `CellFill` 当前只支持 solid foreground `ArgbColor`；`CellStyle` 当前包含
   `number_format`、可选 `alignment`、可选 `font` 和可选 `fill`。完全空的 style
   会被拒绝；`alignment` 为空或 all-default 不贡献 style 属性；`font` 为空或
-  `bold=false && italic=false` 不贡献 style 属性；`fill` 为空不贡献 style 属性。
+  `bold=false && italic=false` 且 `color` 为空不贡献 style 属性；`fill` 为空不贡献 style 属性。
 - 重复完整 style 复用同一个 `StyleId`；相同 number format 在不同 style 组合中复用同一个
-  custom `numFmtId`；相同 bold/italic font 组合在不同 style 组合中复用同一个 `fontId`；
+  custom `numFmtId`；相同 bold/italic/color font 组合在不同 style 组合中复用同一个 `fontId`；
   相同 foreground ARGB fill 在不同 style 组合中复用同一个 `fillId`。
   number format 字符串只按精确文本匹配，不做 Excel 语义规范化。
 - `CellView::with_style()` 只把 style id 作为小句柄放进 cell view，不持有完整 cell
@@ -51,8 +53,9 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
 - alignment 只写 `cellXfs` 里的 `applyAlignment="1"` 和 `<alignment .../>`
   attributes：`wrapText="1"`、`horizontal="left|center|right"`、
   `vertical="top|center|bottom"`；不计算 row height，不代表完整 alignment。
-- bold/italic font 只写 `<fonts>` 里的 `<b/>` / `<i/>`、`fontId` 和 `applyFont="1"`；
-  不代表完整 font control、font color、font size、font name、underline 或 rich text。
+- bold/italic/direct ARGB font color 只写 `<fonts>` 里的 `<b/>` / `<i/>`、可选
+  `<font><color rgb="..."/></font>`、`fontId` 和 `applyFont="1"`；不代表完整 font control、
+  font name、font size、underline、theme/tint/indexed font color 或 rich text。
 - solid fill 只写 `<fills>` 里的 solid `<patternFill>`、`fgColor rgb`、
   `bgColor indexed="64"`、`fillId` 和 `applyFill="1"`；不代表 gradient fill、
   任意 pattern fill、theme/tint/indexed palette fill 或 `dxfs`。
@@ -86,8 +89,9 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
   `vertical="top|center|bottom"` 和 combined attributes。
 - alignment-only style 不创建 custom `numFmt`；number format + alignment 组合复用相同
   format string 的 custom `numFmtId`。
-- bold/italic font 写 `<fonts>`、`<b/>`、`<i/>`、`fontId` 和 `applyFont="1"`。
-- font-only style 不创建 custom `numFmt`；number format + bold 组合复用相同 font 的
+- bold/italic/direct ARGB font color 写 `<fonts>`、`<b/>`、`<i/>`、`<color rgb="..."/>`、
+  `fontId` 和 `applyFont="1"`。
+- font-only style 不创建 custom `numFmt`；number format + bold/color 组合复用相同 font 的
   `fontId`。
 - solid fill 写 `<fills>`、solid `<patternFill>`、`fgColor rgb`、`fillId` 和
   `applyFill="1"`。
@@ -123,14 +127,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_styles_excel.ps
 ```
 
 `verify_styles_number_formats.py` 做拆包 XML、`openpyxl` 语义和可选 `XlsxWriter`
-参考 workbook。`verify_styles_excel.ps1` 用本机 Excel COM 只读打开样例，核对值、
-公式、NumberFormat、WrapText、HorizontalAlignment、VerticalAlignment、Font.Bold、Font.Italic、Interior.Pattern 和 Interior.Color。
+参考 workbook。样例/QA 包括 `fastxlsx-streaming-styles-fonts.xlsx`。
+`verify_styles_excel.ps1` 用本机 Excel COM 只读打开样例，核对值、公式、NumberFormat、
+WrapText、HorizontalAlignment、VerticalAlignment、Font.Bold、Font.Italic、Font.Color、
+Interior.Pattern 和 Interior.Color。
 这些是本地 QA，不是运行时依赖，也不是默认 CI 强制项。
 
 ## 禁止事项
 
 - 不要把 P9 写成完整 styles 或 Excel formatting parity。
-- 不要声称支持 full font control、full fill/pattern control、border、full alignment、rich text、dxf-backed conditional formatting、
+- 不要声称支持 full font control、font name/size/underline/theme/tint/indexed/rich text、
+  full fill/pattern control、border、full alignment、dxf-backed conditional formatting、
   named styles、date cell type 或 existing-file style preservation，除非代码和测试已覆盖。
 - 不要把 `StyleId::value()` 当成跨 workbook 稳定 id。它只用于诊断和结构测试。
 - 不要为了样式方便引入 worksheet DOM、完整 cell matrix 或 cell map。

@@ -36,9 +36,15 @@ package writer 或生产级大文件性能完成。
 - 大数据 API 必须接受 row iterator 或 chunk writer。
 - 单元格 XML 热路径应直接写字节流，而不是通用 XML serializer。
 - API 易用性不能迫使 large worksheet 进入 DOM、完整 cell matrix 或 cell map。
+- Streaming worksheet 是大文件写入/重写主线，不是完整编辑架构本身；已有文件编辑应走
+  Patch / EditPlan / part-level rewrite，小文件随机编辑应走 In-memory 路径。
 - 大型 worksheet package entry finalization 禁止重新物化完整 worksheet XML。
 - file-backed/chunked entry 只覆盖 package entry source，不改变 row-order
   streaming、字符串策略状态或 ZIP backend 限制。
+- 不要让 `src/streaming_writer.cpp` 无限膨胀成所有 worksheet feature 的实现堆场；
+  它应优先保留流程编排、生命周期管理、热路径调用和跨功能协调。
+- 不要让 `tests/test_streaming_writer.cpp` 承载所有 streaming feature 的细粒度结构测试；
+  功能边界明确且测试规模继续增长时，应拆成 feature-specific 测试文件。
 
 ## 设计锚点
 
@@ -139,6 +145,10 @@ relationship/content type side effects；公式 cell 会在 workbook XML 写
    - `sharedStrings` 在去重收益值得维护状态时优先文件体积。
 5. 增量维护 dimensions，不要回头扫描全部 cells。
 6. 样式 ID 和 registry 与原始 row/cell streaming 分离。
+7. 当 conditional formatting、data validations、hyperlinks、tables、images、
+   styles 或 sharedStrings 已有独立 XML 序列化/状态/QA helper 时，优先拆到独立
+   helper 或 `.cpp`；少量协调代码和边界尚不稳定的小切片不要强拆。
+8. 新增 `.cpp` 或测试文件时，同步更新 `CMakeLists.txt` / `tests/CMakeLists.txt`。
 
 当前 dimension 行为是 append-order based：未 append 行或只 append 空行时
 `worksheet_dimension()` 写 `A1`；空行仍写 `<row r="N"></row>`；存在前导空行、数据行和

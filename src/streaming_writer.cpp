@@ -834,7 +834,8 @@ bool has_alignment_property(const CellStyle& style) noexcept
 
 bool has_font_property(const CellStyle& style) noexcept
 {
-    return style.font.has_value() && (style.font->bold || style.font->italic);
+    return style.font.has_value()
+        && (style.font->bold || style.font->italic || style.font->color.has_value());
 }
 
 bool has_fill_property(const CellStyle& style) noexcept
@@ -859,14 +860,33 @@ bool same_fill_properties(const CellFill& lhs, const CellFill& rhs) noexcept
     return same_argb_color(lhs.foreground, rhs.foreground);
 }
 
+bool same_font_properties(const CellFont& lhs, const CellFont& rhs) noexcept
+{
+    return lhs.bold == rhs.bold && lhs.italic == rhs.italic
+        && lhs.color.has_value() == rhs.color.has_value()
+        && (!lhs.color.has_value() || same_argb_color(*lhs.color, *rhs.color));
+}
+
+bool same_effective_font_properties(const CellStyle& lhs, const CellStyle& rhs) noexcept
+{
+    const bool lhs_has_font = has_font_property(lhs);
+    const bool rhs_has_font = has_font_property(rhs);
+    if (lhs_has_font != rhs_has_font) {
+        return false;
+    }
+    if (!lhs_has_font) {
+        return true;
+    }
+    return same_font_properties(*lhs.font, *rhs.font);
+}
+
 bool equivalent_style(const CellStyle& lhs, const CellStyle& rhs) noexcept
 {
     return lhs.number_format == rhs.number_format
         && has_wrap_text_alignment(lhs) == has_wrap_text_alignment(rhs)
         && horizontal_alignment(lhs) == horizontal_alignment(rhs)
         && vertical_alignment(lhs) == vertical_alignment(rhs)
-        && (lhs.font.has_value() && lhs.font->bold) == (rhs.font.has_value() && rhs.font->bold)
-        && (lhs.font.has_value() && lhs.font->italic) == (rhs.font.has_value() && rhs.font->italic)
+        && same_effective_font_properties(lhs, rhs)
         && lhs.fill.has_value() == rhs.fill.has_value()
         && (!lhs.fill.has_value() || same_fill_properties(*lhs.fill, *rhs.fill));
 }
@@ -919,11 +939,6 @@ std::size_t custom_font_count(const std::vector<RegisteredStyle>& styles) noexce
         }
     }
     return count;
-}
-
-bool same_font_properties(const CellFont& lhs, const CellFont& rhs) noexcept
-{
-    return lhs.bold == rhs.bold && lhs.italic == rhs.italic;
 }
 
 std::optional<std::uint32_t> find_font_id(
@@ -1188,7 +1203,15 @@ void append_font_xml(std::string& xml, const CellFont& font)
     if (font.italic) {
         xml += "<i/>";
     }
-    append_default_font_xml(xml);
+    xml += R"(<sz val="11"/>)";
+    if (font.color.has_value()) {
+        xml += R"(<color rgb=")";
+        xml += argb_color_value(*font.color);
+        xml += R"("/>)";
+    } else {
+        xml += R"(<color theme="1"/>)";
+    }
+    xml += R"(<name val="Calibri"/><family val="2"/><scheme val="minor"/>)";
     xml += "</font>";
 }
 

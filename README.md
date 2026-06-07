@@ -1,29 +1,34 @@
 # FastXLSX
 
-FastXLSX 是一个面向高性能 XLSX 处理的现代 C++ 库。
+[![爱发电](https://img.shields.io/badge/%E7%88%B1%E5%8F%91%E7%94%B5-%E6%94%AF%E6%8C%81%E5%BC%80%E6%BA%90-946ce6?style=flat-square)](https://ifdian.net/a/wuxianggujun)
+
+FastXLSX 是一个面向高性能 XLSX 处理和可控编辑的现代 C++ 库。
 
 项目目标不是简单延续 `FastExcel` 的旧实现，而是重新设计一个
-**流式优先、DOM 可选、面向 OpenXML 的 XLSX 引擎**。
+**可编辑的高性能 XLSX/OpenXML 引擎**：大文件走流式路径，已有文件走
+part-level patch，小文件保留 in-memory 随机编辑体验。
 
 ## 定位
 
 - 大数据写入路径：禁止依赖 DOM，必须流式生成 XML。
 - 读取路径：使用 SAX / event parser，避免整表加载。
-- 编辑路径：允许局部 DOM 或轻量对象模型，用于样式、工作簿元数据、
+- 编辑路径：作为核心主线设计，分为 Patch 编辑、In-memory 随机编辑和
+  大型 worksheet 受控流式重写。
+- 小型 XML part：允许局部 DOM 或轻量对象模型，用于样式、工作簿元数据、
   关系文件、小型 XML part 和复杂局部修改。
 - 未修改的 XLSX part：尽量原样透传，避免破坏图表、图片、宏和未知扩展。
 
 ## 设计原则
 
-1. 写入性能优先
+1. 新建大文件写入性能优先
    - worksheet.xml 使用流式写入。
    - 单元格 XML 热路径直接写入字节流。
    - 压缩等级可配置。
 
-2. 编辑能力保留
-   - 小型 XML part 可以使用局部 DOM。
-   - 大型 worksheet 通过事件流重写。
-   - 修改已有文件时采用 part-level rewrite。
+2. 编辑能力是一等主线
+   - Patch API 负责已有 XLSX 的 part-level rewrite 和未知 part 保留。
+   - In-memory API 负责小文件随机编辑体验。
+   - 大型 worksheet 编辑通过事件流扫描、转换和重写完成。
 
 3. OpenXML 结构清晰
    - OPC package、relationships、content types、workbook、worksheet、styles、
@@ -42,9 +47,9 @@ FastXLSX 是一个面向高性能 XLSX 处理的现代 C++ 库。
 FastXLSX 的当前定位是：
 
 ```text
-一个 C++20 / MSVC 2026 优先的高性能 XLSX 引擎，
-面向 C++ OpenXLSX 高频功能，采用流式优先架构，
-同时保留局部 DOM 编辑能力。
+一个 C++20 / MSVC 2026 优先的可编辑高性能 XLSX/OpenXML 引擎，
+共享 OpenXML/OPC 底座，
+同时提供 Streaming、Patch 和 In-memory 三条 API 路径。
 ```
 
 更详细的定位说明见：
@@ -136,9 +141,10 @@ FastXLSX
 - 压缩：`zlib-ng` 优先，保留 `zlib` fallback。
 - 大型 XML 流式读取：`Expat`。
 - 小型 XML DOM 编辑：`pugixml`。
-- Phase 5 图片读取/插入解码：`stb`，当前通过 opt-in
-  `FASTXLSX_ENABLE_STB=ON` / `planned-image` 接入，用于 PNG/JPEG
-  `read_image_info()` 元数据 helper；不属于默认构建，也不代表图片插入已完成。
+- Phase 5 图片读取/插入解码：`stb`，默认通过 vcpkg manifest 接入，用于
+  PNG/JPEG `read_image_info()` 元数据 helper 和
+  `WorksheetWriter::add_image()` 基础插入切片；仍不代表 existing-workbook
+  图片保真、drawing 编辑或完整图片功能。
 - 测试：`Catch2`。
 - 性能基准：`Google Benchmark`。
 
@@ -186,11 +192,31 @@ FastXLSX
 - 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
 
-`src/package_writer.*` 是当前内部 package writer 边界。默认无依赖构建仍调用
-`src/zip_store_writer.*` Phase 1 bootstrap；opt-in minizip 构建会写出
-DEFLATE-compressed ZIP entries。它仍不是 public package editing API，不要据此
-宣称 Zip64、真正 package streaming、已有文件编辑或大文件性能。
+`src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取
+`stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；
+opt-in minizip 构建会写出 DEFLATE-compressed ZIP entries。它仍不是 public package
+editing API，不要据此宣称 Zip64、真正 package streaming、已有文件编辑或大文件性能。
 
 ## 许可证
 
 FastXLSX 使用 MIT License，见 [LICENSE](LICENSE)。
+
+## 支持项目
+
+FastXLSX 长期免费开源，但持续开发高性能 XLSX 引擎需要大量测试、
+兼容性验证、性能对比和文档维护。
+
+如果这个项目帮你节省了时间，欢迎通过爱发电或赞赏码支持我继续维护：
+
+[支持无相孤君继续开源](https://ifdian.net/a/wuxianggujun)
+
+| 微信赞赏码 | 支付宝收款码 |
+| :---: | :---: |
+| <img src="docs/assets/donation/weixin.png" alt="微信赞赏码" width="220"> | <img src="docs/assets/donation/zhifubao.jpg" alt="支付宝收款码" width="220"> |
+
+你的支持会优先用于：
+
+- 完善 XLSX 写入、读取和编辑能力。
+- 补充 Excel、OpenXML、openpyxl、XlsxWriter 等兼容性验证。
+- 建立更完整的 benchmark 和真实大文件测试集。
+- 维护中文文档、示例和发布版本。

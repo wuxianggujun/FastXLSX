@@ -1,8 +1,8 @@
 #include <fastxlsx/streaming_writer.hpp>
 
+#include "image_test_bytes.hpp"
 #include "zip_test_utils.hpp"
 
-#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -56,25 +56,6 @@ std::size_t count_occurrences(const std::string& text, std::string_view fragment
         offset += fragment.size();
     }
     return count;
-}
-
-const std::array<unsigned char, 67>& tiny_rgba_png()
-{
-    static constexpr std::array<unsigned char, 67> bytes {
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-        0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    };
-    return bytes;
-}
-
-std::span<const std::byte> tiny_png_bytes()
-{
-    const auto& bytes = tiny_rgba_png();
-    return std::as_bytes(std::span<const unsigned char>(bytes.data(), bytes.size()));
 }
 
 void write_bytes(const std::filesystem::path& path, std::span<const std::byte> bytes)
@@ -865,7 +846,7 @@ void test_streaming_writer_tables()
 void test_streaming_writer_images()
 {
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
-    write_bytes(image_path, tiny_png_bytes());
+    write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
 #ifdef FASTXLSX_TEST_HAS_STB
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-images.xlsx";
@@ -914,7 +895,7 @@ void test_streaming_writer_images()
         "missing second worksheet drawing relationships");
     check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
         "plain worksheet should not create image relationships");
-    check(entries.at("xl/media/image1.png").size() == tiny_rgba_png().size(),
+    check(entries.at("xl/media/image1.png").size() == fastxlsx::test::tiny_rgba_png().size(),
         "first media part byte size mismatch");
 
     const auto& content_types = entries.at("[Content_Types].xml");
@@ -988,6 +969,46 @@ void test_streaming_writer_images()
     check_fastxlsx_error(
         [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 1}); },
         "streaming add_image should require opt-in stb support");
+#endif
+}
+
+void test_streaming_writer_jpeg_images()
+{
+#ifdef FASTXLSX_TEST_HAS_STB
+    const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.jpg";
+    write_bytes(image_path, fastxlsx::test::tiny_jpeg_bytes());
+    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-jpeg-images.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("JpegImage");
+    sheet.append_row({fastxlsx::CellView::text("jpeg")});
+    sheet.add_image(image_path, {1, 1, 2, 2});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.jpg"), "missing JPEG media part");
+    check(entries.at("xl/media/image1.jpg").size() == fastxlsx::test::tiny_rgb_jpeg_header().size(),
+        "JPEG media part byte size mismatch");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(content_types,
+        R"(<Default Extension="jpg" ContentType="image/jpeg"/>)",
+        "JPEG content type default missing");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "</sheetData><drawing r:id=\"rId1\"/></worksheet>",
+        "JPEG worksheet drawing relationship id mismatch");
+
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check_contains(drawing_xml,
+        R"(<a:ext cx="19050" cy="9525"/>)",
+        "JPEG intrinsic EMU size mismatch");
+
+    const auto& drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.jpg"/>)",
+        "JPEG drawing image relationship mismatch");
 #endif
 }
 
@@ -1608,6 +1629,7 @@ int main()
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_tables();
         test_streaming_writer_images();
+        test_streaming_writer_jpeg_images();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();

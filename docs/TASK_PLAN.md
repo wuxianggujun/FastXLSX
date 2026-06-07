@@ -456,9 +456,10 @@ Validation:
 - Reference workbooks from Excel or Python XLSX libraries remain the fallback
   when table XML structure or Excel repair behavior is unclear.
 - `fastxlsx.streaming` image tests under `windows-nmake-release-image` compare
-  `xl/media/image*.png`, `xl/drawings/drawing*.xml`, drawing `.rels`,
-  worksheet `.rels`, worksheet `<drawing>`, owner-local `rId`, PNG content type
-  defaults, and drawing content type overrides.
+  `xl/media/image*.png|jpg`, `xl/drawings/drawing*.xml`, drawing `.rels`,
+  worksheet `.rels`, worksheet `<drawing>`, owner-local `rId`, PNG/JPEG content
+  type defaults, JPEG drawing EMU sizing, JPEG media relationship targets, and
+  drawing content type overrides.
 - Local Excel COM visual verification passed for
   `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`;
   Excel opened the workbook, saw one shape on `Images`, one shape on

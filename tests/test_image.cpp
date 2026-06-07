@@ -1,6 +1,8 @@
 #include <fastxlsx/image.hpp>
 #include <fastxlsx/workbook.hpp>
 
+#include "image_test_bytes.hpp"
+
 #include <array>
 #include <cstddef>
 #include <filesystem>
@@ -38,25 +40,6 @@ void check_fastxlsx_error(Func func, const char* message)
     throw TestFailure(message);
 }
 
-const std::array<unsigned char, 67>& tiny_rgba_png()
-{
-    static constexpr std::array<unsigned char, 67> bytes {
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-        0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-    };
-    return bytes;
-}
-
-std::span<const std::byte> tiny_png_bytes()
-{
-    const auto& bytes = tiny_rgba_png();
-    return std::as_bytes(std::span<const unsigned char>(bytes.data(), bytes.size()));
-}
-
 void write_bytes(const std::filesystem::path& path, std::span<const std::byte> bytes)
 {
     std::ofstream output(path, std::ios::binary);
@@ -72,11 +55,17 @@ void write_bytes(const std::filesystem::path& path, std::span<const std::byte> b
 void test_image_info_memory()
 {
 #ifdef FASTXLSX_TEST_HAS_STB
-    const fastxlsx::ImageInfo info = fastxlsx::read_image_info(tiny_png_bytes());
-    check(info.format == fastxlsx::ImageFormat::Png, "PNG memory format detection failed");
-    check(info.width == 1, "PNG memory width failed");
-    check(info.height == 1, "PNG memory height failed");
-    check(info.channel_count == 4, "PNG memory channel count failed");
+    const fastxlsx::ImageInfo png_info = fastxlsx::read_image_info(fastxlsx::test::tiny_png_bytes());
+    check(png_info.format == fastxlsx::ImageFormat::Png, "PNG memory format detection failed");
+    check(png_info.width == 1, "PNG memory width failed");
+    check(png_info.height == 1, "PNG memory height failed");
+    check(png_info.channel_count == 4, "PNG memory channel count failed");
+
+    const fastxlsx::ImageInfo jpeg_info = fastxlsx::read_image_info(fastxlsx::test::tiny_jpeg_bytes());
+    check(jpeg_info.format == fastxlsx::ImageFormat::Jpeg, "JPEG memory format detection failed");
+    check(jpeg_info.width == 2, "JPEG memory width failed");
+    check(jpeg_info.height == 1, "JPEG memory height failed");
+    check(jpeg_info.channel_count == 3, "JPEG memory channel count failed");
 
     const std::array<unsigned char, 6> gif_header {'G', 'I', 'F', '8', '9', 'a'};
     check_fastxlsx_error(
@@ -87,22 +76,30 @@ void test_image_info_memory()
         "unsupported memory image format should fail");
 #else
     check_fastxlsx_error(
-        [] { (void)fastxlsx::read_image_info(tiny_png_bytes()); },
+        [] { (void)fastxlsx::read_image_info(fastxlsx::test::tiny_png_bytes()); },
         "image info memory reader should require opt-in stb support");
 #endif
 }
 
 void test_image_info_file()
 {
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-image-info.png";
-    write_bytes(output_path, tiny_png_bytes());
+    const auto png_path = std::filesystem::current_path() / "fastxlsx-image-info.png";
+    write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
+    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-image-info.jpg";
+    write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
 
 #ifdef FASTXLSX_TEST_HAS_STB
-    const fastxlsx::ImageInfo info = fastxlsx::read_image_info(output_path);
-    check(info.format == fastxlsx::ImageFormat::Png, "PNG file format detection failed");
-    check(info.width == 1, "PNG file width failed");
-    check(info.height == 1, "PNG file height failed");
-    check(info.channel_count == 4, "PNG file channel count failed");
+    const fastxlsx::ImageInfo png_info = fastxlsx::read_image_info(png_path);
+    check(png_info.format == fastxlsx::ImageFormat::Png, "PNG file format detection failed");
+    check(png_info.width == 1, "PNG file width failed");
+    check(png_info.height == 1, "PNG file height failed");
+    check(png_info.channel_count == 4, "PNG file channel count failed");
+
+    const fastxlsx::ImageInfo jpeg_info = fastxlsx::read_image_info(jpeg_path);
+    check(jpeg_info.format == fastxlsx::ImageFormat::Jpeg, "JPEG file format detection failed");
+    check(jpeg_info.width == 2, "JPEG file width failed");
+    check(jpeg_info.height == 1, "JPEG file height failed");
+    check(jpeg_info.channel_count == 3, "JPEG file channel count failed");
 
     check_fastxlsx_error(
         [] {
@@ -112,7 +109,7 @@ void test_image_info_file()
         "missing image file should fail");
 #else
     check_fastxlsx_error(
-        [&output_path] { (void)fastxlsx::read_image_info(output_path); },
+        [&png_path] { (void)fastxlsx::read_image_info(png_path); },
         "image info file reader should require opt-in stb support");
 #endif
 }

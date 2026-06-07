@@ -108,10 +108,12 @@ description: "规划或实现 FastXLSX 图片读取/插入、stb 图片解码、
 
 - 依赖阶段：`vcpkg install --dry-run --x-feature=planned-image` 可解析。
 - P17a 图片元数据阶段：默认无 `stb` CTest 通过；opt-in
-  `FASTXLSX_ENABLE_STB=ON` 构建下 `fastxlsx.image` 读取 PNG 文件/内存尺寸和通道通过。
+  `FASTXLSX_ENABLE_STB=ON` 构建下 `fastxlsx.image` 读取 PNG/JPEG 文件和内存尺寸、
+  格式、通道通过。
 - P17b 图片插入阶段：默认无 `stb` 时 `fastxlsx.streaming` 验证 `add_image()` 明确失败；
-  opt-in `FASTXLSX_ENABLE_STB=ON` 构建下验证 media/drawing/rels/content types 和
-  worksheet `<drawing>` 结构。
+  opt-in `FASTXLSX_ENABLE_STB=ON` 构建下验证 PNG/JPEG media、drawing、rels、
+  content types 和 worksheet `<drawing>` 结构；JPEG 覆盖 `.jpg` media entry、
+  `image/jpeg` default、drawing EMU 尺寸和 drawing `.rels` target。
 - CMake 接入阶段：VS2026/NMake configure/build/test 通过；CI 行为需要在 workflow
   真正运行 image preset 后再记录。
 - 结构测试：检查 `xl/media/*`、`xl/drawings/drawing*.xml`、

@@ -684,10 +684,11 @@ Stages:
    Status: basic local validation for the new-workbook-only insertion slice.
    - Use structure tests for media, drawing XML, relationship parts, content
      types, and worksheet drawing references.
-   - Current `fastxlsx.streaming` image tests verify `xl/media/image*.png`,
+   - Current `fastxlsx.streaming` image tests verify `xl/media/image*.png|jpg`,
      `xl/drawings/drawing*.xml`, drawing `.rels`, worksheet `.rels`, worksheet
-     `<drawing>`, owner-local relationship ids, PNG content type defaults, and
-     drawing content type overrides.
+     `<drawing>`, owner-local relationship ids, PNG/JPEG content type defaults,
+     JPEG drawing EMU sizing, JPEG media relationship targets, and drawing
+     content type overrides.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.

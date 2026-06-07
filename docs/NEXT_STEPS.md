@@ -803,6 +803,9 @@ Do:
 - Use `HyperlinkOptions` for optional display and tooltip metadata. Non-empty
   values are copied into writer state and written as worksheet `<hyperlink>`
   attributes only.
+- Keep picture/object hyperlinks separate from worksheet cell hyperlinks.
+  Picture hyperlinks belong to drawing XML and drawing-owned `.rels`, not
+  worksheet `<hyperlinks>`.
 - Keep hyperlink styles, URL reachability checks, internal target existence
   checks, named range semantics, and existing-file editing out of these first
   slices.
@@ -918,11 +921,16 @@ Stages:
      original bytes to a temporary file-backed media entry, and does not retain
      the span or a decoded pixel buffer.
    - Current `ImageOptions` metadata is limited to drawing XML two-cell marker /
-     non-visual picture properties: `from_offset` / `to_offset` write EMU values
-     to marker `xdr:colOff` / `xdr:rowOff`, `edit_as` writes
+     non-visual picture properties plus optional picture external hyperlink
+     metadata: `from_offset` / `to_offset` write EMU values to marker
+     `xdr:colOff` / `xdr:rowOff`, `edit_as` writes
      `xdr:twoCellAnchor editAs`, non-empty `name` writes `xdr:cNvPr name`,
-     non-empty `description` writes `descr`, empty `name` keeps generated
-     `Picture N`, and empty `description` is omitted.
+     non-empty `description` writes `descr`, non-empty
+     `external_hyperlink_url` writes `a:hlinkClick` under `xdr:cNvPr` and a
+     drawing-local external hyperlink relationship, and
+     `external_hyperlink_tooltip` writes the optional `tooltip` attribute.
+     Empty `name` keeps generated `Picture N`, empty `description` is omitted,
+     and empty hyperlink URL omits hyperlink metadata.
    - Any convenience API must explain why it does not force large worksheets
      into DOM, a full cell matrix, or the row/cell XML hot path.
 3. P17.2 - New-workbook-only insertion slice.
@@ -939,11 +947,13 @@ Stages:
      worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
      `<drawing>` references, and drawing/content type entries.
    - The current metadata increment copies image from/to marker EMU offsets,
-     `edit_as`, and `name` / `description` into writer state and writes them only
-     to drawing two-cell marker `xdr:colOff` / `xdr:rowOff`,
-     `xdr:twoCellAnchor editAs`, and `xdr:cNvPr` attributes; it does not modify
-     image bytes, media filenames, anchor cell ranges, relationships, content
-     types, or worksheet cell text.
+     `edit_as`, `name` / `description`, and optional external picture hyperlink
+     strings into writer state. It writes marker metadata to
+     `xdr:colOff` / `xdr:rowOff`, `xdr:twoCellAnchor editAs`, and
+     `xdr:cNvPr`; when `external_hyperlink_url` is non-empty, it also writes
+     `a:hlinkClick` and a drawing-local hyperlink relationship. It does not
+     modify image bytes, media filenames, anchor cell ranges, content types, or
+     worksheet cell text.
    - It does not crop, rotate, recompress, convert formats, mutate existing
      drawings, edit existing XLSX files, or prove existing-workbook image
      preservation.
@@ -974,6 +984,12 @@ Stages:
      structure tests verify PNG/JPEG media bytes, caller-buffer mutation safety,
      shared drawing part output, drawing/worksheet relationships, content types,
      anchor offsets, `cNvPr` metadata, and intrinsic EMU sizes.
+   - Current picture hyperlink coverage writes
+     `build/windows-nmake-release/tests/fastxlsx-streaming-image-hyperlinks.xlsx`;
+     structure tests verify `a:hlinkClick` under `xdr:cNvPr`, drawing-local
+     external hyperlink relationships with `TargetMode="External"`, XML
+     attribute escaping for URL and tooltip, worksheet relationship absence for
+     object hyperlinks, and stable `a:blip r:embed` image relationship ids.
    - Use local Excel visual verification for generated `.xlsx` samples when
      Excel is available, confirming no repair dialog and expected image
      position/size.
@@ -994,9 +1010,14 @@ Stages:
      owner-local relationship ids. They also accept `--memory-input` /
      `-MemoryPath` for `fastxlsx-streaming-memory-images.xlsx`, covering
      memory-source media bytes, package XML, `openpyxl` smoke,
-     `XlsxWriter` reference generation, and Excel COM anchors. `openpyxl` may
-     skip JPEG image loading, so XML and Excel COM remain authoritative for
-     JPEG media/drawing counts.
+     `XlsxWriter` reference generation, and Excel COM anchors. They also accept
+     `--hyperlink-input` / `-HyperlinkPath` for
+     `fastxlsx-streaming-image-hyperlinks.xlsx`, covering drawing XML
+     `a:hlinkClick`, drawing-local hyperlink `.rels`, `XlsxWriter` reference
+     generation, `openpyxl` smoke, and Excel COM shape hyperlink checks.
+     `openpyxl` may skip JPEG image loading and does not expose picture
+     hyperlink metadata, so XML and Excel COM remain authoritative for JPEG
+     media/drawing counts and picture hyperlink semantics.
    - When XML structure or Excel repair behavior is unclear, generate an
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.
@@ -1029,8 +1050,9 @@ Accept when:
   decoded-pixel lifetime, package side effects, and unsupported operations.
 - Package structure tests cover media, drawing XML, rels, and content types.
 - Image metadata tests cover `xdr:twoCellAnchor editAs` and `xdr:cNvPr name` /
-  `descr` semantics without changing media bytes, relationships, anchor
-  coordinates, or content types.
+  `descr` semantics, plus optional `a:hlinkClick` picture hyperlink semantics,
+  without changing media bytes, anchor coordinates, content types, worksheet
+  `<hyperlinks>`, or worksheet hyperlink relationships.
 - Excel visual verification confirms images display without repair and with the
   expected position and size.
 - Reference XML comparison is recorded when structure compatibility is
@@ -1047,6 +1069,9 @@ Do not claim:
   calculation from `ImageOptions::from_offset` / `to_offset`, complete image
   metadata, EXIF/PNG/JPEG metadata, accessibility UI parity, or existing drawing
   mutation from `ImageOptions` alone.
+- Cell hyperlink style, worksheet cell text, internal workbook picture links,
+  target reachability checks, complete hyperlink UI parity, or existing-file
+  hyperlink editing from `ImageOptions::external_hyperlink_url`.
 - Existing workbook image passthrough or preservation before P13 fixtures prove
   unmodified media/drawing/chart/VBA parts survive edits.
 

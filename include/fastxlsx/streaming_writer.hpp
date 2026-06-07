@@ -507,9 +507,11 @@ struct ImageAnchorOffset {
 /// API mode: Streaming worksheet metadata for new workbooks. Non-empty strings
 /// are copied into WorksheetWriter state and serialized only as drawing
 /// non-visual picture properties. Marker offsets are copied as lightweight EMU
-/// metadata and serialized on the existing two-cell anchor. These options do
-/// not change image bytes, relationships, content types, worksheet row/cell
-/// streaming, row/column size geometry, or the anchor cell range.
+/// metadata and serialized on the existing two-cell anchor. A non-empty
+/// external hyperlink URL is serialized as drawing metadata with a drawing-local
+/// external hyperlink relationship. These options do not change image bytes,
+/// content types, worksheet row/cell streaming, row/column size geometry, or
+/// the anchor cell range.
 struct ImageOptions {
     /// OpenXML two-cell anchor placement behavior.
     ImageEditAs edit_as = ImageEditAs::TwoCell;
@@ -531,6 +533,21 @@ struct ImageOptions {
     /// Empty omits the attribute. This is metadata only and does not create
     /// alt-text UI guarantees across spreadsheet applications.
     std::string description;
+
+    /// Optional external hyperlink URL for the picture object.
+    ///
+    /// Empty omits hyperlink metadata. A non-empty value creates a drawing-local
+    /// external hyperlink relationship and an `a:hlinkClick` child under
+    /// `xdr:cNvPr`. FastXLSX copies the string, does not validate URL
+    /// reachability, does not write worksheet cell hyperlinks, and does not
+    /// create hyperlink styles.
+    std::string external_hyperlink_url;
+
+    /// Optional picture hyperlink tooltip.
+    ///
+    /// Empty omits the tooltip attribute. This is only valid when
+    /// external_hyperlink_url is non-empty.
+    std::string external_hyperlink_tooltip;
 };
 
 /// Optional hyperlink display metadata.
@@ -942,9 +959,10 @@ public:
     /// or edit existing XLSX files.
     /// Optional ImageOptions values are copied into writer state and written
     /// only as drawing metadata: EMU offsets on the existing two-cell markers,
-    /// `editAs` on the anchor, and non-visual `xdr:cNvPr` name/description
-    /// attributes. Empty strings preserve the generated `Picture N` name and
-    /// omit the description.
+    /// `editAs` on the anchor, non-visual `xdr:cNvPr` name/description
+    /// attributes, and optional drawing-local external hyperlink metadata.
+    /// Empty strings preserve the generated `Picture N` name, omit the
+    /// description, and omit hyperlink metadata.
     ///
     /// @throws FastXlsxError if the anchor range or ImageOptions offsets are
     /// invalid, the workbook is closed, the file cannot be read, or the image

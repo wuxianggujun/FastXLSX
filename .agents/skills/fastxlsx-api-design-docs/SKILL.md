@@ -45,7 +45,10 @@ drawing 编辑。memory-source overload 接受 `std::span<const std::byte>`，sp
 当前 `ImageOptions` 只给该插入 API 增加 drawing XML anchor marker /
 non-visual metadata：`from_offset` / `to_offset` 写 two-cell marker `xdr:colOff` /
 `xdr:rowOff`，`edit_as` 写 `xdr:twoCellAnchor editAs`，非空 `name` / `description`
-写 `xdr:cNvPr name` / `descr`，空值走默认名或省略。
+写 `xdr:cNvPr name` / `descr`，空值走默认名或省略；非空
+`external_hyperlink_url` 会在 `xdr:cNvPr` 下写 `a:hlinkClick`，并在 drawing `.rels`
+创建 `TargetMode="External"` 的 hyperlink relationship，`external_hyperlink_tooltip`
+只写该 hyperlink metadata 的 tooltip attribute。
 
 ## 核心原则
 
@@ -133,14 +136,33 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   EMU 值、`edit_as` 枚举和非空 `name` / `description` 被复制进 writer state，并作为
   drawing XML two-cell marker `xdr:colOff` / `xdr:rowOff`、`xdr:twoCellAnchor editAs`
   和 `xdr:cNvPr` 的 `name` / `descr` attributes 输出；空 `name` 使用生成的
-  `Picture N`，空 `description` 省略。它不新增 media parts、relationships、
-  content types、styles 或 cell text，不改变 anchor cell range，不写 EXIF/PNG/JPEG
-  metadata，也不代表完整 alt text/accessibility UI。
+  `Picture N`，空 `description` 省略。非空 `external_hyperlink_url` 被复制进
+  writer state，并作为 drawing object external click metadata 输出为
+  `xdr:cNvPr/a:hlinkClick`；relationship 属于 drawing `.rels` owner，写
+  `TargetMode="External"`，可选 `external_hyperlink_tooltip` 只写 tooltip attribute。
+  除该 drawing hyperlink relationship 外，`ImageOptions` 不新增 media parts、worksheet
+  `<hyperlinks>`、worksheet hyperlink relationships、content types、styles、cell text 或
+  workbook relationships，不改变 anchor cell range，不写 EXIF/PNG/JPEG metadata，也不代表
+  完整 alt text/accessibility UI。
 - 当前 `Workbook::save()` 使用 internal package writer boundary；默认 ZIP backend 走
   stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
   backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
 - OPC/Phase 5 仍是内部 manifest / relationships 基础和规划，不要把
   `PackageEditor`、图片、VBA 或 table 支持写成当前完整能力。
+
+## 文件职责边界
+
+- public API 可以继续集中在现有 public headers，保持用户入口稳定。
+- 核心 writer 文件应保留流程编排、生命周期管理、热路径调用和必要的跨功能协调；
+  不应无限承载所有 feature 的 XML 序列化、校验和状态转换。
+- 当一个 feature 已有独立 public API、独立 XML 结构、独立状态、独立 QA helper
+  或大量边界测试时，任务计划应考虑 feature-specific 实现文件、detail helper 和
+  独立测试文件。
+- 测试组织应镜像功能边界：主 streaming 测试保留主流程和跨功能集成；feature 的
+  细粒度结构测试和负例应逐步拆分。
+- 新增 `.cpp` 或测试文件时，任务计划必须包含 CMake 列表同步。
+- 不要过度拆分：少量协调代码、一次性修正或尚未稳定的实验切片可以先留在现有文件，
+  等边界和增长趋势明确后再拆。
 
 ## Current Data Bar API Notes
 
@@ -262,13 +284,16 @@ effects、无完整像素解码、无 existing-file editing、无 drawing mutati
 worksheet streaming 热路径。
 memory-source overload 注释还要写清同步 copy-to-temp-file-backed media entry、空 buffer
 和 unsupported header 错误边界，并说明它不是任意 stream/URL/base64 图片源。
-涉及 `ImageOptions` 时还要写清：from/to marker EMU offset、`edit_as` 枚举和
-name/description 字符串复制成本、OpenXML token / XML attribute escape、空值行为、
-只写 two-cell marker `xdr:colOff` / `xdr:rowOff`、`xdr:twoCellAnchor editAs` 和
-`xdr:cNvPr name` / `descr`、不修改图片二进制/EXIF/media filename/anchor cell
-range/cell text、不支持 `oneCellAnchor` / `absoluteAnchor` 元素、row/column resize
-几何计算或 existing drawing mutation，以及不承诺完整 Excel UI 或跨办公软件
-accessibility 行为。
+涉及 `ImageOptions` 时还要写清：from/to marker EMU offset、`edit_as` 枚举、
+name/description 字符串和 external hyperlink URL/tooltip 的复制成本、
+OpenXML token / XML attribute escape、空值行为、只写 two-cell marker
+`xdr:colOff` / `xdr:rowOff`、`xdr:twoCellAnchor editAs`、`xdr:cNvPr name` /
+`descr` 和 `xdr:cNvPr/a:hlinkClick`；external picture link 只创建 drawing `.rels`
+里的 `TargetMode="External"` relationship，不写 worksheet `<hyperlinks>`、cell text、
+hyperlink style、workbook relationship 或 content type override。不修改图片二进制 /
+EXIF / media filename / anchor cell range，不校验 URL，不支持 internal picture link、
+`oneCellAnchor` / `absoluteAnchor` 元素、row/column resize 几何计算、existing drawing
+mutation 或 existing-file editing，也不承诺完整 Excel UI 或跨办公软件 accessibility 行为。
 
 涉及热路径的 API，还要说明是否会触发 DOM、跨行缓存、shared strings 状态增长、
 压缩等级影响或输出文件大小变化。

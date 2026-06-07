@@ -112,6 +112,11 @@ relationships 或 content type entries。
 图片结构测试还应检查 media part target、drawing relationship target、worksheet-local
 `rId` 一致性，以及 anchor 的起始/结束单元格和 two-cell marker EMU offset
 (`xdr:colOff` / `xdr:rowOff`) 语义。
+图片对象 hyperlink 还应检查 drawing XML 的 `xdr:cNvPr/a:hlinkClick`、
+drawing `.rels` 中 `Type=.../hyperlink` 且 `TargetMode="External"` 的关系、
+URL / tooltip XML attribute escape、`a:blip r:embed` 仍指向独立 image relationship、
+worksheet XML 中没有 `<hyperlinks>`，并确认 worksheet `.rels` 没有为图片对象
+hyperlink 新增 worksheet-owned hyperlink relationship。
 table 结构测试还应检查 `xl/tables/table*.xml`、worksheet `<tableParts>`、
 worksheet `.rels`、content type override、owner-local `rId`、`tableColumns`、
 `tableStyleInfo` 和 totals-row visibility metadata。当前
@@ -200,6 +205,9 @@ Streaming writer hot-path 边界样例应优先做拆包 XML 结构检查：
 - 图片 metadata 功能还必须确认 drawing XML 的 `xdr:cNvPr name` / `descr` 与
   Excel 可见 shape metadata 对应；当前推荐样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。
+- 图片对象 hyperlink 功能还必须确认 drawing XML 的 `a:hlinkClick`、drawing `.rels`
+  external hyperlink relationship 和 Excel 可见 shape hyperlink 对应；当前推荐样例是
+  `build/windows-nmake-release/tests/fastxlsx-streaming-image-hyperlinks.xlsx`。
 - table totals-row visibility metadata 必须用本机 Excel COM 或人工打开确认
   `ListObject.ShowTotals` 和 totals row 范围。当前推荐样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`，其中
@@ -287,7 +295,9 @@ image QA 还会复用基础图片样例
 `build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx` 和混合对象关系样例
 `build/windows-nmake-release/tests/fastxlsx-streaming-mixed-object-rels.xlsx`，以及
 memory-source 图片样例
-`build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx`。本机
+`build/windows-nmake-release/tests/fastxlsx-streaming-memory-images.xlsx`，以及图片对象
+hyperlink 样例
+`build/windows-nmake-release/tests/fastxlsx-streaming-image-hyperlinks.xlsx`。本机
 XML / `openpyxl` / Excel COM 验证可以运行：
 
 ```powershell
@@ -296,26 +306,31 @@ py tools\verify_image_metadata.py `
   --basic-input build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
   --mixed-object-input build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
   --memory-input build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx `
+  --hyperlink-input build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlinks.xlsx `
   --work-dir build\qa\image-metadata
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
   -BasicPath build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
   -MixedObjectPath build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
-  -MemoryPath build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx
+  -MemoryPath build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx `
+  -HyperlinkPath build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlinks.xlsx
 ```
 
 Python helper 会拆包检查 metadata drawing XML、basic media/drawing/table/hyperlink
 关系、mixed-object owner-local relationship ids、memory-source media bytes /
-drawing relationships / content types，并用 `openpyxl` 核对 workbook、table 和
-hyperlink semantics；`openpyxl` 可能跳过 JPEG 图片读取，因此 mixed-object 和
-memory-source JPEG 图片数量以拆包 XML 和 Excel COM 为准。Excel helper 只读打开 workbook，核对
+drawing relationships / content types、图片对象 `a:hlinkClick` 与 drawing-local
+hyperlink `.rels`，并用 `openpyxl` 核对 workbook、table 和 cell hyperlink semantics；
+`openpyxl` 可能跳过 JPEG 图片读取，且不暴露图片对象 hyperlink metadata，因此
+mixed-object / memory-source JPEG 图片数量和图片对象 hyperlink 语义以拆包 XML 和 Excel
+COM 为准。Excel helper 只读打开 workbook，核对
 `ImageMetadata` sheet 的 3 个 shapes、自定义
 `NamedOnly` 名称、默认 `Picture 3` 名称、首图 `AlternativeText`、`editAs` 到
 Excel `Placement` 的映射，以及首图 `from_offset` / `to_offset` 对 `Shape.Left` /
 `Top` / `Width` / `Height` 的 EMU-to-points 偏移；同时核对基础图片样例的
 `Images` / `SecondImage` / `Plain` shape counts、hyperlink/table counts 和 anchors，
 mixed-object 样例的 hyperlinks / shapes / tables 数量，以及 `MemoryImages` 中
-两张 memory-source 图片的 anchors。Excel COM 当前会把
+两张 memory-source 图片的 anchors，并核对 `ImageLinks` 中两张图片对象 hyperlink 的
+shape hyperlink address / tooltip。Excel COM 当前会把
 drawing XML 的 `descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
 `xl/drawings/drawing*.xml` 为准。
 

@@ -1590,6 +1590,30 @@ std::string drawing_relationship_id(std::size_t image_index)
     return worksheet_relationship_id(image_index);
 }
 
+bool has_external_hyperlink(const WorksheetImage& image) noexcept
+{
+    return !image.options.external_hyperlink_url.empty();
+}
+
+std::size_t image_hyperlink_index_before(
+    const detail::WorksheetWriterState& worksheet, std::size_t image_index) noexcept
+{
+    std::size_t count = 0;
+    for (std::size_t index = 0; index < image_index; ++index) {
+        if (has_external_hyperlink(worksheet.images[index])) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::string drawing_hyperlink_relationship_id(
+    const detail::WorksheetWriterState& worksheet, std::size_t image_index)
+{
+    return worksheet_relationship_id(
+        worksheet.images.size() + image_hyperlink_index_before(worksheet, image_index));
+}
+
 std::string_view image_edit_as_name(ImageEditAs edit_as)
 {
     switch (edit_as) {
@@ -1618,6 +1642,9 @@ void validate_image_options(const ImageOptions& options)
 {
     validate_image_offset(options.from_offset);
     validate_image_offset(options.to_offset);
+    if (options.external_hyperlink_url.empty() && !options.external_hyperlink_tooltip.empty()) {
+        throw FastXlsxError("image hyperlink tooltip requires an external hyperlink URL");
+    }
 }
 
 void validate_cell_style(const CellStyle& style)
@@ -1685,7 +1712,20 @@ std::string build_drawing_xml(
             xml += detail::escape_xml_attribute(image.options.description);
             xml += "\"";
         }
-        xml += R"(/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/>)";
+        if (has_external_hyperlink(image)) {
+            xml += R"(><a:hlinkClick r:id=")";
+            xml += drawing_hyperlink_relationship_id(worksheet, index);
+            xml += "\"";
+            if (!image.options.external_hyperlink_tooltip.empty()) {
+                xml += R"( tooltip=")";
+                xml += detail::escape_xml_attribute(image.options.external_hyperlink_tooltip);
+                xml += "\"";
+            }
+            xml += R"(/></xdr:cNvPr>)";
+        } else {
+            xml += "/>";
+        }
+        xml += R"(<xdr:cNvPicPr><a:picLocks noChangeAspect="1"/>)";
         xml += "</xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed=\"";
         xml += drawing_relationship_id(index);
         xml += R"("/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>)";
@@ -1707,6 +1747,8 @@ std::string build_drawing_relationships(
     detail::RelationshipSet relationships;
     constexpr std::string_view image_type =
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+    constexpr std::string_view hyperlink_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
 
     for (std::size_t index = 0; index < worksheet.images.size(); ++index) {
         const std::size_t package_image_index = first_image_index + index;
@@ -1714,6 +1756,16 @@ std::string build_drawing_relationships(
             std::string(image_type),
             "../media/image" + std::to_string(package_image_index + 1) + "."
                 + std::string(image_extension(worksheet.images[index].info.format)));
+    }
+    for (std::size_t index = 0; index < worksheet.images.size(); ++index) {
+        const WorksheetImage& image = worksheet.images[index];
+        if (!has_external_hyperlink(image)) {
+            continue;
+        }
+        relationships.add(drawing_hyperlink_relationship_id(worksheet, index),
+            std::string(hyperlink_type),
+            image.options.external_hyperlink_url,
+            detail::Relationship::TargetMode::External);
     }
 
     return detail::serialize_relationships(relationships);

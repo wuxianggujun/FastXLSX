@@ -48,6 +48,7 @@ EXPECTED_PICTURES: list[dict[str, str | None]] = [
 
 NAMESPACES = {
     "xdr": "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing",
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
 }
 
@@ -458,6 +459,151 @@ def verify_memory_source_with_openpyxl(path: Path) -> dict[str, Any]:
         workbook.close()
 
 
+def verify_image_hyperlink_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "xl/media/image1.png",
+        "xl/media/image2.jpg",
+        "xl/drawings/drawing1.xml",
+        "xl/drawings/_rels/drawing1.xml.rels",
+        "xl/worksheets/sheet1.xml",
+        "xl/worksheets/_rels/sheet1.xml.rels",
+    ]
+    for name in required:
+        require(name in names, f"image hyperlink sample missing package entry: {name}")
+    require("xl/drawings/drawing2.xml" not in names,
+            "image hyperlink sample should share one drawing part")
+
+    content_types = read_zip_text(path, "[Content_Types].xml")
+    require('<Default Extension="png" ContentType="image/png"/>' in content_types,
+            "image hyperlink PNG content type default missing")
+    require('<Default Extension="jpg" ContentType="image/jpeg"/>' in content_types,
+            "image hyperlink JPEG content type default missing")
+    require('/xl/drawings/drawing1.xml' in content_types,
+            "image hyperlink drawing content type missing")
+    require("hyperlink" not in content_types,
+            "image object hyperlink should not add content type entries")
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('</sheetData><drawing r:id="rId1"/></worksheet>' in worksheet_xml,
+            "image hyperlink worksheet drawing relationship id mismatch")
+    require("<hyperlinks>" not in worksheet_xml,
+            "image object hyperlinks should not create worksheet hyperlinks")
+
+    worksheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
+    require(relationship_count(worksheet_rels) == 1,
+            "image hyperlink worksheet relationship count mismatch")
+    require('Id="rId1"' in worksheet_rels and 'Target="../drawings/drawing1.xml"' in worksheet_rels,
+            "image hyperlink worksheet drawing relationship mismatch")
+    require("relationships/hyperlink" not in worksheet_rels,
+            "image object hyperlinks should stay in drawing relationships")
+
+    workbook_rels = read_zip_text(path, "xl/_rels/workbook.xml.rels")
+    require("relationships/hyperlink" not in workbook_rels,
+            "image object hyperlinks should not create workbook relationships")
+
+    drawing_xml = read_zip_text(path, "xl/drawings/drawing1.xml")
+    require(count(drawing_xml, "<xdr:twoCellAnchor") == 2,
+            "image hyperlink drawing anchor count mismatch")
+    require(
+        '<xdr:cNvPr id="1" name="Linked Path" descr="Path image link">'
+        '<a:hlinkClick r:id="rId3" tooltip="Open &quot;path&quot; &amp; &lt;tag&gt;"/>'
+        '</xdr:cNvPr>' in drawing_xml,
+        "path image hyperlink XML mismatch or tooltip escape failure",
+    )
+    require(
+        '<xdr:cNvPr id="2" name="Linked Memory"><a:hlinkClick r:id="rId4"/></xdr:cNvPr>'
+        in drawing_xml,
+        "memory image hyperlink XML mismatch",
+    )
+    require('<a:blip r:embed="rId1"/>' in drawing_xml,
+            "path image media relationship id should remain rId1")
+    require('<a:blip r:embed="rId2"/>' in drawing_xml,
+            "memory image media relationship id should remain rId2")
+
+    root = ElementTree.fromstring(drawing_xml)
+    anchors = root.findall("xdr:twoCellAnchor", NAMESPACES)
+    require(len(anchors) == 2, "parsed image hyperlink anchor count mismatch")
+    parsed_hyperlinks: list[dict[str, str | None]] = []
+    for anchor in anchors:
+        properties = anchor.find("xdr:pic/xdr:nvPicPr/xdr:cNvPr", NAMESPACES)
+        require(properties is not None, "missing image hyperlink cNvPr")
+        hyperlink = properties.find("a:hlinkClick", NAMESPACES)
+        require(hyperlink is not None, "missing image hyperlink hlinkClick")
+        parsed_hyperlinks.append(
+            {
+                "name": properties.attrib.get("name"),
+                "relationship_id": hyperlink.attrib.get(
+                    "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"),
+                "tooltip": hyperlink.attrib.get("tooltip"),
+            }
+        )
+    require(
+        parsed_hyperlinks == [
+            {
+                "name": "Linked Path",
+                "relationship_id": "rId3",
+                "tooltip": 'Open "path" & <tag>',
+            },
+            {
+                "name": "Linked Memory",
+                "relationship_id": "rId4",
+                "tooltip": None,
+            },
+        ],
+        f"parsed image hyperlink metadata mismatch: {parsed_hyperlinks!r}",
+    )
+
+    drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing1.xml.rels")
+    require(relationship_count(drawing_rels) == 4,
+            "image hyperlink drawing relationship count mismatch")
+    for rel_id, fragment in [
+        ("rId1", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"'),
+        ("rId2", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"'),
+        ("rId3", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/path?a=1&amp;b=2" TargetMode="External"'),
+        ("rId4", 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:image@example.com" TargetMode="External"'),
+    ]:
+        require(f'Id="{rel_id}"' in drawing_rels and fragment in drawing_rels,
+                f"image hyperlink drawing relationship {rel_id} mismatch")
+
+    return {
+        "verified_entries": required,
+        "hyperlinks": parsed_hyperlinks,
+        "relationship_model": "image relationships remain first; picture hyperlinks are drawing-local",
+    }
+
+
+def verify_image_hyperlink_with_openpyxl(path: Path) -> dict[str, Any]:
+    try:
+        import openpyxl  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require("ImageLinks" in workbook.sheetnames,
+                f"image hyperlink sheet names mismatch: {workbook.sheetnames!r}")
+        worksheet = workbook["ImageLinks"]
+        return {
+            "status": "opened",
+            "sheetnames": workbook.sheetnames,
+            "image_count_observed_by_openpyxl": len(getattr(worksheet, "_images", [])),
+            "warnings": [
+                str(item.message)
+                for item in caught_warnings
+                if "image" in str(item.message).lower()
+            ],
+            "note": (
+                "openpyxl is only a reader-visible smoke check here; package XML "
+                "and Excel COM are authoritative for picture hyperlink metadata."
+            ),
+        }
+    finally:
+        workbook.close()
+
+
 def verify_mixed_object_package(path: Path) -> dict[str, Any]:
     names = zip_names(path)
     required = [
@@ -628,6 +774,28 @@ def create_xlsxwriter_reference(media_file: Path, path: Path) -> dict[str, Any]:
     return {"status": "created", "path": str(path)}
 
 
+def create_xlsxwriter_hyperlink_reference(media_file: Path, path: Path) -> dict[str, Any]:
+    try:
+        import xlsxwriter  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module xlsxwriter is not installed"}
+
+    workbook = xlsxwriter.Workbook(str(path))
+    worksheet = workbook.add_worksheet("ImageLinks")
+    worksheet.write("A1", "Reference image hyperlink")
+    worksheet.insert_image(
+        "A2",
+        str(media_file),
+        {
+            "url": "https://example.com/path?a=1&b=2",
+            "tip": 'Open "path" & <tag>',
+            "description": "Path image link",
+        },
+    )
+    workbook.close()
+    return {"status": "created", "path": str(path)}
+
+
 def extract_reference_media(input_path: Path, work_dir: Path) -> Path:
     media_path = work_dir / "image1.png"
     media_path.write_bytes(read_zip_bytes(input_path, "xl/media/image1.png"))
@@ -661,6 +829,12 @@ def main() -> int:
         help="FastXLSX memory-source image workbook to verify.",
     )
     parser.add_argument(
+        "--hyperlink-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-image-hyperlinks.xlsx"),
+        help="FastXLSX picture hyperlink workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/image-metadata"),
@@ -672,12 +846,15 @@ def main() -> int:
     basic_input_path = args.basic_input.resolve()
     mixed_object_input_path = args.mixed_object_input.resolve()
     memory_input_path = args.memory_input.resolve()
+    hyperlink_input_path = args.hyperlink_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
     require(basic_input_path.exists(), f"basic input workbook does not exist: {basic_input_path}")
     require(mixed_object_input_path.exists(),
             f"mixed-object input workbook does not exist: {mixed_object_input_path}")
     require(memory_input_path.exists(), f"memory input workbook does not exist: {memory_input_path}")
+    require(hyperlink_input_path.exists(),
+            f"hyperlink input workbook does not exist: {hyperlink_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     package_report = verify_fastxlsx_package(input_path)
@@ -688,6 +865,8 @@ def main() -> int:
     mixed_openpyxl_report = verify_mixed_object_with_openpyxl(mixed_object_input_path)
     memory_package_report = verify_memory_source_package(memory_input_path)
     memory_openpyxl_report = verify_memory_source_with_openpyxl(memory_input_path)
+    hyperlink_package_report = verify_image_hyperlink_package(hyperlink_input_path)
+    hyperlink_openpyxl_report = verify_image_hyperlink_with_openpyxl(hyperlink_input_path)
 
     with tempfile.TemporaryDirectory(dir=work_dir) as temp_dir:
         media_file = extract_reference_media(input_path, Path(temp_dir))
@@ -697,6 +876,10 @@ def main() -> int:
         memory_media_file = extract_reference_media(memory_input_path, Path(temp_dir))
         memory_xlsxwriter_report = create_xlsxwriter_reference(
             memory_media_file, work_dir / "reference-xlsxwriter-image-memory-source.xlsx")
+    with tempfile.TemporaryDirectory(dir=work_dir) as temp_dir:
+        hyperlink_media_file = extract_reference_media(hyperlink_input_path, Path(temp_dir))
+        hyperlink_xlsxwriter_report = create_xlsxwriter_hyperlink_reference(
+            hyperlink_media_file, work_dir / "reference-xlsxwriter-image-hyperlink.xlsx")
 
     report = {
         "metadata": {
@@ -727,6 +910,14 @@ def main() -> int:
             "xlsx_libraries": {
                 "openpyxl": memory_openpyxl_report,
                 "xlsxwriter": memory_xlsxwriter_report,
+            },
+        },
+        "image_hyperlinks": {
+            "fastxlsx_input": str(hyperlink_input_path),
+            "fastxlsx_package": hyperlink_package_report,
+            "xlsx_libraries": {
+                "openpyxl": hyperlink_openpyxl_report,
+                "xlsxwriter": hyperlink_xlsxwriter_report,
             },
         },
     }

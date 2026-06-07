@@ -3648,6 +3648,173 @@ void test_streaming_writer_memory_images()
         "memory JPEG drawing image relationship mismatch");
 }
 
+void test_streaming_writer_image_hyperlinks()
+{
+    const auto image_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlinks-source.png";
+    write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
+
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlinks.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ImageLinks");
+    sheet.append_row({fastxlsx::CellView::text("linked images")});
+
+    fastxlsx::ImageOptions path_options;
+    path_options.name = "Linked Path";
+    path_options.description = "Path image link";
+    path_options.external_hyperlink_url = "https://example.com/path?a=1&b=2";
+    path_options.external_hyperlink_tooltip = R"(Open "path" & <tag>)";
+    sheet.add_image(image_path, {1, 1, 2, 2}, path_options);
+
+    fastxlsx::ImageOptions memory_options;
+    memory_options.name = "Linked Memory";
+    memory_options.external_hyperlink_url = "mailto:image@example.com";
+    sheet.add_image(fastxlsx::test::tiny_jpeg_bytes(), {3, 2, 4, 3}, memory_options);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.png"), "missing linked path image media part");
+    check(entries.contains("xl/media/image2.jpg"), "missing linked memory image media part");
+    check(entries.contains("xl/drawings/drawing1.xml"), "missing linked image drawing part");
+    check(!entries.contains("xl/drawings/drawing2.xml"),
+        "linked images on one sheet should share one drawing part");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "</sheetData><drawing r:id=\"rId1\"/></worksheet>",
+        "linked images should create only a worksheet drawing reference");
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 1,
+        "image object hyperlinks should not create worksheet hyperlink relationships");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>)",
+        "linked image worksheet drawing relationship mismatch");
+    check(worksheet_rels.find("relationships/hyperlink") == std::string::npos,
+        "image object hyperlinks should stay in drawing relationships");
+
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check(count_occurrences(drawing_xml, "<xdr:twoCellAnchor") == 2,
+        "linked image drawing anchor count mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="1" name="Linked Path" descr="Path image link"><a:hlinkClick r:id="rId3" tooltip="Open &quot;path&quot; &amp; &lt;tag&gt;"/></xdr:cNvPr>)",
+        "path image hyperlink XML mismatch or tooltip escape failure");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="2" name="Linked Memory"><a:hlinkClick r:id="rId4"/></xdr:cNvPr>)",
+        "memory image hyperlink XML mismatch");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId1"/>)",
+        "path image media relationship id should remain rId1");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId2"/>)",
+        "memory image media relationship id should remain rId2");
+
+    const auto& drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check(count_occurrences(drawing_rels, "<Relationship ") == 4,
+        "linked image drawing relationship count mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "linked path image relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/>)",
+        "linked memory image relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/path?a=1&amp;b=2" TargetMode="External"/>)",
+        "linked path image hyperlink relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:image@example.com" TargetMode="External"/>)",
+        "linked memory image hyperlink relationship mismatch");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "image object hyperlinks should not add content type entries");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("relationships/hyperlink") == std::string::npos,
+        "image object hyperlinks should not create workbook relationships");
+}
+
+void test_streaming_writer_image_hyperlinks_mixed_objects()
+{
+    const auto image_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlink-mixed-source.png";
+    write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
+
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("MixedImageLinks");
+    sheet.append_row({fastxlsx::CellView::text("Item"), fastxlsx::CellView::text("Link")});
+    sheet.append_row({fastxlsx::CellView::text("Widget"), fastxlsx::CellView::text("Cell link")});
+    sheet.add_external_hyperlink(2, 2, "https://example.com/cell-link");
+
+    fastxlsx::ImageOptions linked_image;
+    linked_image.name = "Linked Picture";
+    linked_image.external_hyperlink_url = "https://example.com/picture-link";
+    sheet.add_image(image_path, {3, 1, 4, 2}, linked_image);
+    sheet.add_image(fastxlsx::test::tiny_jpeg_bytes(), {3, 3, 4, 4});
+
+    fastxlsx::TableOptions table_options;
+    table_options.name = "MixedImageLinkTable";
+    table_options.column_names = {"Item", "Link"};
+    sheet.add_table({1, 1, 2, 2}, table_options);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<hyperlinks><hyperlink ref="B2" r:id="rId1"/></hyperlinks><drawing r:id="rId2"/><tableParts count="1"><tablePart r:id="rId3"/></tableParts>)",
+        "mixed image hyperlink worksheet suffix or relationship ids mismatch");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 3,
+        "mixed image hyperlink worksheet relationship count mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/cell-link" TargetMode="External"/>)",
+        "mixed image hyperlink cell hyperlink relationship mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>)",
+        "mixed image hyperlink drawing relationship mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "mixed image hyperlink table relationship mismatch");
+
+    const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="1" name="Linked Picture"><a:hlinkClick r:id="rId3"/></xdr:cNvPr>)",
+        "mixed image hyperlink drawing hyperlink XML mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:cNvPr id="2" name="Picture 2"/>)",
+        "mixed image hyperlink non-linked picture should keep plain cNvPr");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId1"/>)",
+        "mixed image hyperlink linked media relationship id mismatch");
+    check_contains(drawing_xml,
+        R"(<a:blip r:embed="rId2"/>)",
+        "mixed image hyperlink plain media relationship id mismatch");
+
+    const auto& drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check(count_occurrences(drawing_rels, "<Relationship ") == 3,
+        "mixed image hyperlink drawing relationship count mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "mixed image hyperlink first image relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/>)",
+        "mixed image hyperlink second image relationship mismatch");
+    check_contains(drawing_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/picture-link" TargetMode="External"/>)",
+        "mixed image hyperlink drawing hyperlink relationship mismatch");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("relationships/hyperlink") == std::string::npos,
+        "mixed image hyperlink should not create workbook hyperlink relationships");
+}
+
 void test_streaming_writer_image_anchor_markers()
 {
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-anchor-image-source.png";
@@ -4140,6 +4307,13 @@ void test_streaming_writer_rejects_mutation_after_close()
     check_fastxlsx_error(
         [&sheet] { sheet.add_image(fastxlsx::test::tiny_png_bytes(), {1, 1, 1, 1}); },
         "add_image memory overload should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] {
+            fastxlsx::ImageOptions options;
+            options.external_hyperlink_url = "https://example.com/after-close";
+            sheet.add_image(fastxlsx::test::tiny_png_bytes(), {1, 1, 1, 1}, options);
+        },
+        "add_image hyperlink metadata should reject mutation after workbook close");
 }
 
 void test_streaming_writer_invalid_ranges()
@@ -4325,6 +4499,14 @@ void test_streaming_writer_invalid_ranges()
             sheet.add_image(valid_image_path, {1, 1, 1, 1}, too_large_offset);
         },
         "images should reject anchor offsets beyond OpenXML coordinate bounds");
+
+    fastxlsx::ImageOptions tooltip_without_url;
+    tooltip_without_url.external_hyperlink_tooltip = "tooltip only";
+    check_fastxlsx_error(
+        [&sheet, &valid_image_path, &tooltip_without_url] {
+            sheet.add_image(valid_image_path, {1, 1, 1, 1}, tooltip_without_url);
+        },
+        "images should reject hyperlink tooltip without external hyperlink URL");
 }
 
 void test_streaming_writer_invalid_table_options()
@@ -4675,6 +4857,8 @@ int main()
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();
         test_streaming_writer_memory_images();
+        test_streaming_writer_image_hyperlinks();
+        test_streaming_writer_image_hyperlinks_mixed_objects();
         test_streaming_writer_image_anchor_markers();
         test_streaming_writer_mixed_object_relationship_ids();
         test_streaming_writer_shared_string_package();

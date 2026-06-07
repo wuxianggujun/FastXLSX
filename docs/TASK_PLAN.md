@@ -595,7 +595,11 @@ Order:
    / `to_offset` write EMU values to two-cell marker `xdr:colOff` /
    `xdr:rowOff`, `edit_as` writes `xdr:twoCellAnchor editAs`, non-empty `name`
    and `description` write `xdr:cNvPr name` / `descr`, empty `name` keeps
-   generated `Picture N`, and empty `description` is omitted.
+   generated `Picture N`, and empty `description` is omitted. Current
+   `external_hyperlink_url` / `external_hyperlink_tooltip` are still narrow
+   drawing object metadata: non-empty URL writes `a:hlinkClick` and a
+   drawing-owned external hyperlink relationship; tooltip without URL is
+   rejected.
 3. Existing-workbook image read/edit/preservation must wait until package
    reader/writer and preservation fixtures prove unknown and unmodified
    media/drawing/chart/VBA parts survive edits.
@@ -687,6 +691,15 @@ Validation:
   smoke, and `XlsxWriter` reference generation; `tools/verify_image_metadata_excel.ps1`
   accepts `-MemoryPath` to verify `MemoryImages` has two shapes with expected
   anchors in local Excel COM.
+- Picture hyperlink image QA now covers
+  `build/windows-nmake-release/tests/fastxlsx-streaming-image-hyperlinks.xlsx`.
+  CTest verifies drawing XML `a:hlinkClick`, drawing-local external hyperlink
+  relationships, URL/tooltip XML escaping, stable `a:blip r:embed` image
+  relationship ids, no worksheet `<hyperlinks>`, no worksheet hyperlink
+  relationships, and no content type side effects. `tools/verify_image_metadata.py`
+  accepts `--hyperlink-input` for package XML / `openpyxl` smoke /
+  `XlsxWriter` reference generation, and `tools/verify_image_metadata_excel.ps1`
+  accepts `-HyperlinkPath` for local Excel COM shape hyperlink validation.
 - Package relationship and content type checks remain required for every object type.
 - Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.
@@ -1362,9 +1375,13 @@ Allowed early slices:
      Current `ImageOptions` metadata belongs here as a narrow drawing XML
      option surface: it copies from/to marker EMU offsets, `edit_as`, and
      name/description strings and writes only two-cell marker `xdr:colOff` /
-     `xdr:rowOff`, `xdr:twoCellAnchor editAs`, and `xdr:cNvPr name` / `descr`,
-     not EXIF/PNG/JPEG metadata, media filenames, anchor cell range changes,
-     cell text, or existing drawing state.
+     `xdr:rowOff`, `xdr:twoCellAnchor editAs`, and `xdr:cNvPr name` / `descr`.
+     It also has narrow picture external hyperlink metadata:
+     `external_hyperlink_url` writes `a:hlinkClick` and a drawing-local external
+     hyperlink relationship, and `external_hyperlink_tooltip` writes the
+     optional tooltip attribute. It still does not write EXIF/PNG/JPEG metadata,
+     media filenames, anchor cell range changes, cell text, worksheet
+     `<hyperlinks>`, or existing drawing state.
   3. New-workbook insertion slice: current basic slice is
      `WorksheetWriter::add_image(path, anchor)` and
      `WorksheetWriter::add_image(bytes, anchor)` for PNG/JPEG only, one two-cell
@@ -1378,7 +1395,8 @@ Allowed early slices:
      checks and `tools/verify_image_metadata_excel.ps1` for Excel COM shape
      metadata / placement / marker-offset geometry checks. The same helpers now
      support `--memory-input` and `-MemoryPath` for the memory-source image
-     workbook; future image variants
+     workbook, and `--hyperlink-input` / `-HyperlinkPath` for the picture
+     hyperlink workbook; future image variants
      still need local Excel visual verification when Excel is available. Structure problems require an
      Excel / `openpyxl` / `XlsxWriter` reference workbook and XML comparison.
   5. Existing-workbook image read/edit/preservation: start only after package
@@ -1409,6 +1427,10 @@ Forbidden until separately designed and verified:
   drawing mutation, or existing-workbook image editing. Do not treat
   `ImageOptions::name` / `description` as complete image metadata, full alt
   text/accessibility UI, EXIF/PNG/JPEG metadata, or media filename semantics.
+- Do not treat `ImageOptions::external_hyperlink_url` as worksheet cell
+  hyperlink text/style, internal workbook picture hyperlink support, target
+  reachability validation, full hyperlink UI parity, existing-file hyperlink
+  editing, or broad drawing interaction support.
 - Do not add Excel, openpyxl, or XlsxWriter as runtime dependencies. They are
   reference and QA tools only.
 - Do not make an In-memory workbook model the default just to simplify complex

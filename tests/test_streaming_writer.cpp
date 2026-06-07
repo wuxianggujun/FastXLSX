@@ -1368,6 +1368,7 @@ void test_streaming_writer_tables()
     totals_table.name = "TotalsTable";
     totals_table.column_names = {"Metric", "Value"};
     totals_table.show_totals_row = true;
+    totals_table.column_totals_labels = {"Total", ""};
     totals_table.column_totals_functions.resize(2);
     totals_table.column_totals_functions[1] = fastxlsx::TableTotalsFunction::Sum;
     totals_table.style_name.clear();
@@ -1451,12 +1452,10 @@ void test_streaming_writer_tables()
         "second table autoFilter should exclude the totals row");
     check(second_table_xml.find("totalsRowShown=\"0\"") == std::string::npos,
         "visible totals row table should not also write hidden totals metadata");
-    check_contains(second_table_xml, R"(<tableColumn id="1" name="Metric"/>)",
-        "totals row table should leave columns without totals functions unchanged");
+    check_contains(second_table_xml, R"(<tableColumn id="1" name="Metric" totalsRowLabel="Total"/>)",
+        "totals row label metadata mismatch");
     check_contains(second_table_xml, R"(<tableColumn id="2" name="Value" totalsRowFunction="sum"/>)",
         "totals row function metadata mismatch");
-    check(second_table_xml.find("totalsRowLabel") == std::string::npos,
-        "totals row metadata should not generate column totals labels");
     check(second_table_xml.find("totalsRowFormula") == std::string::npos,
         "totals row metadata should not generate formula text");
     check(second_table_xml.find("calculatedColumnFormula") == std::string::npos,
@@ -1524,12 +1523,21 @@ void test_streaming_writer_table_column_attribute_escaping()
         fastxlsx::CellView::number(42.0),
         fastxlsx::CellView::text("done"),
     });
+    sheet.append_row({
+        fastxlsx::CellView::text("Total \"quoted\" & <done>"),
+        fastxlsx::CellView::number(42.0),
+        fastxlsx::CellView::text("Owner's Total"),
+    });
 
     fastxlsx::TableOptions table;
     table.name = "EscapedColumnTable";
     table.column_names = {"Text \"quoted\"", "Owner's Share", "A&B<Limit>"};
+    table.show_totals_row = true;
+    table.column_totals_labels = {"Total \"quoted\" & <done>", "", ""};
+    table.column_totals_functions.resize(3);
+    table.column_totals_functions[1] = fastxlsx::TableTotalsFunction::Sum;
     table.style_name.clear();
-    sheet.add_table({1, 1, 2, 3}, table);
+    sheet.add_table({1, 1, 3, 3}, table);
 
     workbook.close();
 
@@ -1541,14 +1549,18 @@ void test_streaming_writer_table_column_attribute_escaping()
 
     const auto& table_xml = entries.at("xl/tables/table1.xml");
     check_contains(table_xml,
-        R"(<tableColumn id="1" name="Text &quot;quoted&quot;"/>)",
+        R"(<tableColumn id="1" name="Text &quot;quoted&quot;" totalsRowLabel="Total &quot;quoted&quot; &amp; &lt;done&gt;"/>)",
         "table column double-quote attribute escape mismatch");
     check_contains(table_xml,
-        R"(<tableColumn id="2" name="Owner&apos;s Share"/>)",
+        R"(<tableColumn id="2" name="Owner&apos;s Share" totalsRowFunction="sum"/>)",
         "table column apostrophe attribute escape mismatch");
     check_contains(table_xml,
         R"(<tableColumn id="3" name="A&amp;B&lt;Limit&gt;"/>)",
         "table column ampersand and angle-bracket attribute escape mismatch");
+    check(table_xml.find("totalsRowLabel=\"\"") == std::string::npos,
+        "empty totals row labels should be omitted");
+    check(table_xml.find("totalsRowFormula") == std::string::npos,
+        "totals labels should not generate totals row formula text");
 }
 
 void test_streaming_writer_images()
@@ -2490,6 +2502,15 @@ void test_streaming_writer_invalid_table_options()
         },
         "tables should reject totals functions without visible totals row metadata");
 
+    fastxlsx::TableOptions totals_label_without_totals_row = valid;
+    totals_label_without_totals_row.name = "TotalsLabelWithoutTotalsRow";
+    totals_label_without_totals_row.column_totals_labels = {"Total", ""};
+    check_fastxlsx_error(
+        [&sheet, &totals_label_without_totals_row] {
+            sheet.add_table({1, 1, 2, 2}, totals_label_without_totals_row);
+        },
+        "tables should reject totals labels without visible totals row metadata");
+
     fastxlsx::TableOptions wrong_totals_function_count = valid;
     wrong_totals_function_count.name = "WrongTotalsFunctionCount";
     wrong_totals_function_count.show_totals_row = true;
@@ -2501,6 +2522,29 @@ void test_streaming_writer_invalid_table_options()
             sheet.add_table({1, 1, 3, 2}, wrong_totals_function_count);
         },
         "tables should reject a totals function count mismatch");
+
+    fastxlsx::TableOptions wrong_totals_label_count = valid;
+    wrong_totals_label_count.name = "WrongTotalsLabelCount";
+    wrong_totals_label_count.show_totals_row = true;
+    wrong_totals_label_count.column_totals_functions.resize(2);
+    wrong_totals_label_count.column_totals_functions[1] =
+        fastxlsx::TableTotalsFunction::Sum;
+    wrong_totals_label_count.column_totals_labels = {"Total"};
+    check_fastxlsx_error(
+        [&sheet, &wrong_totals_label_count] {
+            sheet.add_table({1, 1, 3, 2}, wrong_totals_label_count);
+        },
+        "tables should reject a totals label count mismatch");
+
+    fastxlsx::TableOptions labels_only_visible_totals = valid;
+    labels_only_visible_totals.name = "LabelsOnlyVisibleTotals";
+    labels_only_visible_totals.show_totals_row = true;
+    labels_only_visible_totals.column_totals_labels = {"Total", ""};
+    check_fastxlsx_error(
+        [&sheet, &labels_only_visible_totals] {
+            sheet.add_table({1, 1, 3, 2}, labels_only_visible_totals);
+        },
+        "visible totals rows with only labels should still require a totals function");
 
     fastxlsx::TableOptions empty_column_name = valid;
     empty_column_name.name = "EmptyColumnName";

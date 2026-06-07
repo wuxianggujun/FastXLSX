@@ -102,8 +102,10 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
             "TotalsTable autoFilter should exclude totals row")
     require('totalsRowFunction="sum"' in second_table_xml,
             "FastXLSX should emit the requested totals function metadata")
-    require("totalsRowLabel" not in second_table_xml,
-            "FastXLSX should not generate totals labels")
+    require('totalsRowLabel="Total"' in second_table_xml,
+            "FastXLSX should emit the requested totals label metadata")
+    require('totalsRowLabel=""' not in second_table_xml,
+            "FastXLSX should omit empty totals label metadata")
     require("totalsRowFormula" not in second_table_xml,
             "FastXLSX should not generate totals formula text")
     require("calculatedColumnFormula" not in second_table_xml,
@@ -115,6 +117,8 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
     columns = root.findall("main:tableColumns/main:tableColumn", NAMESPACES)
     require([column.attrib.get("name") for column in columns] == ["Metric", "Value"],
             "TotalsTable parsed column names mismatch")
+    require([column.attrib.get("totalsRowLabel") for column in columns] == ["Total", None],
+            "TotalsTable parsed totals labels mismatch")
     require([column.attrib.get("totalsRowFunction") for column in columns] == [None, "sum"],
             "TotalsTable parsed totals functions mismatch")
 
@@ -128,6 +132,7 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
             "ref": root.attrib.get("ref"),
             "totalsRowCount": root.attrib.get("totalsRowCount"),
             "column_names": [column.attrib.get("name") for column in columns],
+            "totals_labels": [column.attrib.get("totalsRowLabel") for column in columns],
             "totals_functions": [column.attrib.get("totalsRowFunction") for column in columns],
         },
     }
@@ -160,6 +165,9 @@ def verify_with_openpyxl(path: Path) -> dict[str, Any]:
                 "openpyxl TotalsTable totalsRowCount mismatch")
         require([column.name for column in totals_table.tableColumns] == ["Metric", "Value"],
                 "openpyxl TotalsTable column names mismatch")
+        require([getattr(column, "totalsRowLabel", None) for column in totals_table.tableColumns]
+                == ["Total", None],
+                "openpyxl TotalsTable totals labels mismatch")
         require([getattr(column, "totalsRowFunction", None) for column in totals_table.tableColumns]
                 == [None, "sum"],
                 "openpyxl TotalsTable totals functions mismatch")
@@ -170,6 +178,10 @@ def verify_with_openpyxl(path: Path) -> dict[str, Any]:
             "inventory_ref": inventory_table.ref,
             "totals_ref": totals_table.ref,
             "totalsRowCount": getattr(totals_table, "totalsRowCount", None),
+            "totals_labels": [
+                getattr(column, "totalsRowLabel", None)
+                for column in totals_table.tableColumns
+            ],
             "totals_functions": [
                 getattr(column, "totalsRowFunction", None)
                 for column in totals_table.tableColumns
@@ -196,7 +208,7 @@ def create_xlsxwriter_reference(path: Path) -> dict[str, Any]:
             "name": "TotalsTable",
             "total_row": True,
             "columns": [
-                {"header": "Metric"},
+                {"header": "Metric", "total_string": "Total"},
                 {"header": "Value", "total_function": "sum"},
             ],
         },
@@ -209,6 +221,8 @@ def create_xlsxwriter_reference(path: Path) -> dict[str, Any]:
             "XlsxWriter reference autoFilter did not exclude totals row")
     require('totalsRowFunction="sum"' in reference_xml,
             "XlsxWriter reference did not emit totalsRowFunction")
+    require('totalsRowLabel="Total"' in reference_xml,
+            "XlsxWriter reference did not emit totalsRowLabel")
     return {"status": "created", "path": str(path)}
 
 

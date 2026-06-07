@@ -207,7 +207,7 @@ struct TableOptions {
     /// This writes table metadata only. The caller must append the totals row
     /// cells and include that row in the table range before calling
     /// WorksheetWriter::add_table(). FastXLSX does not generate totals formulas,
-    /// labels, styles.xml, or calculated columns.
+    /// totals-row cell text, styles.xml, or calculated columns.
     bool show_totals_row = false;
 
     /// Optional per-column totals-row function metadata.
@@ -219,6 +219,16 @@ struct TableOptions {
     /// OpenXML attribute; it does not calculate, validate, or rewrite totals
     /// row cell values.
     std::vector<std::optional<TableTotalsFunction>> column_totals_functions;
+
+    /// Optional per-column totals-row label metadata.
+    ///
+    /// Empty means no column totals labels. When supplied, the vector size must
+    /// match column_names; empty strings omit the corresponding OpenXML
+    /// attribute. Labels require visible totals row metadata, and visible totals
+    /// rows still require at least one totals function metadata entry for Excel
+    /// compatibility. FastXLSX only writes the `totalsRowLabel` attribute and
+    /// does not write the cell text for the caller.
+    std::vector<std::string> column_totals_labels;
 
     /// Built-in Excel table style name. Empty string omits `<tableStyleInfo>`.
     std::string style_name = "TableStyleMedium2";
@@ -507,11 +517,11 @@ public:
     /// emitted as an `xl/tables/tableN.xml` part, a worksheet `<tableParts>`
     /// reference, a worksheet `.rels` relationship, and a table content type
     /// override. This API copies table name, column names, style name, optional
-    /// totals-row visibility, and optional per-column totals function metadata
-    /// into writer state. It does not inspect row data, infer headers,
-    /// calculate totals, generate formula text or labels, create styles.xml,
-    /// resize existing tables, edit existing XLSX files, or promise full Excel
-    /// table UI parity.
+    /// totals-row visibility, optional per-column totals function metadata, and
+    /// optional per-column totals labels into writer state. It does not inspect
+    /// row data, infer headers, calculate totals, generate formula text, write
+    /// totals row cell labels, create styles.xml, resize existing tables, edit
+    /// existing XLSX files, or promise full Excel table UI parity.
     ///
     /// @throws FastXlsxError if the range is invalid, contains only a header
     /// row, enables totals-row metadata without room for a data row, column

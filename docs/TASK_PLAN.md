@@ -540,8 +540,10 @@ Order:
    visibility metadata: true writes a one-row totals marker in table XML and
    keeps autoFilter on the header/data rows; false/default keeps explicit
    hidden totals metadata. `column_totals_functions` writes only caller-supplied
-   `totalsRowFunction` attributes for Excel compatibility; it does not compute
-   totals or generate formula text.
+   `totalsRowFunction` attributes for Excel compatibility, and
+   `column_totals_labels` writes only caller-supplied `totalsRowLabel`
+   attributes; it does not compute totals or generate formula text or totals row
+   cell text.
 2. New-workbook-only image insertion has a narrow
    `WorksheetWriter::add_image(path, anchor)` slice for PNG/JPEG files with the
    default manifest dependency `stb`. It validates metadata with `read_image_info()`,
@@ -564,8 +566,8 @@ Validation:
   coexistence with external hyperlinks in the same worksheet relationship owner,
   XML escaping, table column attribute escaping, table style flags without
   generating `xl/styles.xml`, `show_totals_row` true/false/default metadata,
-  caller-supplied `totalsRowFunction`, absence of generated formulas /
-  `totalsRowLabel`, invalid ranges/options, duplicate names, and
+  caller-supplied `totalsRowFunction` and `totalsRowLabel`, absence of generated
+  formulas / empty label attributes, invalid ranges/options, duplicate names, and
   mutation-after-close.
 - Local Excel COM read-only validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-table-style-flags.xlsx`
@@ -1201,8 +1203,10 @@ Allowed early slices:
   callers still write the totals row cells and include that row in the range.
   `column_totals_functions` only writes caller-supplied `totalsRowFunction`
   attributes and exists to keep visible totals rows compatible with Excel.
+  `column_totals_labels` only writes caller-supplied `totalsRowLabel` attributes;
+  callers still write the totals row cell text.
 - Complete table support remains planned: automatic header inference,
-  totalsRowLabel, generated totals formulas, calculated
+  generated totals formulas, calculated
   columns, sort/filter criteria, custom styles, `styles.xml`,
   table resize, existing-file editing, overlap checks, and full Excel table UI
   behavior are not implemented by the first slice.

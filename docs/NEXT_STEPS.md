@@ -214,10 +214,11 @@ and release packaging, or the decision to make minizip the default backend.
       table content type overrides for new workbooks only.
     - `TableOptions::show_totals_row` now supports only totals-row visibility
       metadata for caller-supplied totals rows. `column_totals_functions` only
-      writes caller-supplied `totalsRowFunction` attributes; it does not
-      compute totals or generate formula text.
-    - Keep automatic header inference, totalsRowLabel, generated totals
-      formulas, calculated columns, sort/filter criteria, custom styles,
+      writes caller-supplied `totalsRowFunction` attributes, and
+      `column_totals_labels` only writes caller-supplied `totalsRowLabel`
+      attributes; it does not compute totals or generate formula text / cell text.
+    - Keep automatic header inference, generated totals formulas, calculated
+      columns, sort/filter criteria, custom styles,
       `styles.xml`, table resize, full Excel table UI behavior, and
       existing-file editing out of scope.
 
@@ -719,10 +720,11 @@ Do:
 - Allocate table parts, content type overrides, worksheet relationships, and
   worksheet `<tableParts>` references.
 - Keep worksheet relationship ids owner-local and compatible with hyperlinks.
-- Allow only `TableOptions::show_totals_row` for totals-row visibility metadata
-  and `column_totals_functions` for caller-supplied `totalsRowFunction`
+- Allow only `TableOptions::show_totals_row` for totals-row visibility metadata,
+  `column_totals_functions` for caller-supplied `totalsRowFunction`
+  attributes, and `column_totals_labels` for caller-supplied `totalsRowLabel`
   attributes.
-- Keep totalsRowLabel, generated totals formulas, calculated columns,
+- Keep generated totals formulas, calculated columns,
   sort/filter criteria, custom styles, `styles.xml`, table resize, overlap
   checks, existing-file editing, and full Excel table UI behavior out of this
   first slice.
@@ -733,8 +735,8 @@ Accept when:
   owner-local `rId`, coexistence with external hyperlinks under the same
   worksheet relationship owner, table style flags without generating
   `xl/styles.xml`, `show_totals_row` true/false/default metadata,
-  caller-supplied `totalsRowFunction`, absence of generated formulas /
-  `totalsRowLabel`, duplicate names, invalid ranges/options, and
+  caller-supplied `totalsRowFunction` and `totalsRowLabel`, absence of generated
+  formulas / empty label attributes, duplicate names, invalid ranges/options, and
   mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM

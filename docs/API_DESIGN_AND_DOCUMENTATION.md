@@ -102,20 +102,22 @@ sharedStrings 或 formula recalculation metadata 前拒绝无效或 foreign styl
 workbook styles relationship，并在 worksheet cell 上写 `s="N"`；默认 style 不写
 `s="0"`，也不新增 worksheet `.rels`。当前不支持 font/fill/border/alignment、
 rich text、dxf-backed conditional formatting、existing-file style preservation 或完整
-Excel formatting parity。当前 two-/three-color color scale API 是 worksheet metadata，不代表
-styles registry 或 `dxfs` 已支持。
+Excel formatting parity。当前 two-/three-color color scale 和 basic data bar API 是
+worksheet metadata，不代表 styles registry 或 `dxfs` 已支持。
 
 对 conditional formatting 这类 worksheet metadata API，注释还要写清是否只支持
 Streaming / new-workbook 路径、是否复制规则 endpoint 和 range 列表、内存是否按规则数
-和 range 数增长、`ArgbColor` 是否序列化为 8 位大写 ARGB、`ColorScaleValueType`
-的 endpoint token 和 finite-only 数值边界、priority 是否按 worksheet 内调用顺序分配、
+和 range 数增长、`ArgbColor` 是否序列化为 8 位大写 ARGB、`ColorScaleValueType` /
+`DataBarValueType` 的 endpoint token 和 finite-only 数值边界、priority 是否按 worksheet 内调用顺序分配、
 multi-range `sqref` 是否排序/合并/去重/检查重叠，以及是否新增 relationships、
 content types、styles 或 calc metadata。当前
 `WorksheetWriter::add_conditional_color_scale()` 只写 worksheet-local two-/three-color
-`<conditionalFormatting><cfRule type="colorScale">` XML；它不写 `styles.xml`、`dxfs`、
-worksheet `.rels`、content type、cell text 或 `<calcPr>`，不支持 formula/cellIs、
-data bars、icon sets、top/bottom、duplicate/unique、dxf-backed styles、existing-file
-editing 或完整 Excel UI。
+`<conditionalFormatting><cfRule type="colorScale">` XML；
+`WorksheetWriter::add_conditional_data_bar()` 只写 worksheet-local basic
+`<cfRule type="dataBar">` XML。它们不写 `styles.xml`、`dxfs`、worksheet `.rels`、
+content type、cell text 或 `<calcPr>`，不支持 formula/cellIs、icon sets、top/bottom、
+duplicate/unique、advanced data bar negative color/axis/border/gradient/`extLst`、
+dxf-backed styles、existing-file editing 或完整 Excel UI。
 
 对 data validations 这类 worksheet metadata API，注释还要说明是否只写
 worksheet XML、是否新增 relationships/content types/styles、是否复制 range 列表、

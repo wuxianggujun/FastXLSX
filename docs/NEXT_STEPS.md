@@ -37,9 +37,13 @@ that exist in code, CMake, tests, docs, or local verification.
   - `ColorScalePoint`
   - `TwoColorScaleRule`
   - `ThreeColorScaleRule`
+  - `DataBarValueType`
+  - `DataBarEndpoint`
+  - `DataBarRule`
   - `WorkbookWriter::add_style()`
   - `CellView::with_style()`
   - `WorksheetWriter::add_conditional_color_scale()`
+  - `WorksheetWriter::add_conditional_data_bar()`
   - `FastXlsxError`
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
@@ -64,12 +68,15 @@ that exist in code, CMake, tests, docs, or local verification.
     structure tests. Treat this as the P9a custom number format foundation, not
     as font/fill/border/alignment, date cell type, dxf-backed conditional
     formatting, rich text, or existing-file style preservation. The current
-    two-/three-color color scale slice is worksheet metadata, not styles/dxfs support.
-  - Streaming-only two-/three-color conditional color scales are visible through
+    two-/three-color color scale and basic data bar slices are worksheet metadata,
+    not styles/dxfs support.
+  - Streaming-only two-/three-color conditional color scales and basic data bars are visible through
     `ArgbColor`, `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
-    `ThreeColorScaleRule`, and `WorksheetWriter::add_conditional_color_scale()`. Treat this as a
-    worksheet-local colorScale metadata slice only: no `styles.xml`, no `dxfs`,
-    no worksheet relationships, no content type overrides, no formula rules,
+    `ThreeColorScaleRule`, `DataBarValueType`, `DataBarEndpoint`, `DataBarRule`,
+    `WorksheetWriter::add_conditional_color_scale()`, and
+    `WorksheetWriter::add_conditional_data_bar()`. Treat this as worksheet-local
+    colorScale/dataBar metadata only: no `styles.xml`, no `dxfs`, no worksheet relationships,
+    no content type overrides, no formula rules,
     and no existing-file editing.
   - Internal `src/package_writer.*` boundary exists for new-workbook package
     output. Default builds delegate to the stored/no-compression
@@ -269,17 +276,18 @@ and release packaging, or the decision to make minizip the default backend.
       `styles.xml`, table resize, full Excel table UI behavior, and
       existing-file editing out of scope.
 
-12. Streaming-only conditional color scales - 基础.
+12. Streaming-only conditional formatting basic slices - 基础.
     - `WorksheetWriter::add_conditional_color_scale()` now writes worksheet-local
       two-/three-color `<conditionalFormatting><cfRule type="colorScale">` XML for new
-      workbooks only.
+      workbooks only. `WorksheetWriter::add_conditional_data_bar()` now writes
+      worksheet-local basic `<cfRule type="dataBar">` XML.
     - `ArgbColor` values serialize as uppercase eight-digit ARGB; `priority`
       is assigned by call order per worksheet; multi-range input writes one
       space-separated `sqref`.
     - The current slice does not generate `styles.xml`, `dxfs`, worksheet
       `.rels`, content type overrides, workbook relationships, cell text, or
       calculation metadata.
-    - Keep formula rules, cellIs, data bars, icon sets, dxf-backed styling,
+    - Keep formula rules, cellIs, icon sets, advanced data bars, dxf-backed styling,
       overlap/conflict handling, complete Excel UI behavior, and existing-file
       editing out of scope until separately designed.
 
@@ -1181,10 +1189,11 @@ Safe order:
 4. Tables now have a streaming-only new-workbook slice after table part
    allocation, content type override, worksheet rels, and table XML were kept
    consistent. Broader table support still needs separate design and tests.
-5. Two-color conditional color scales now have a streaming-only new-workbook
-   worksheet metadata slice. Broader conditional formatting still needs
-   separate design and tests for formula/cellIs rules, data bars, icon sets,
-   dxf-backed styles, conflict handling, and existing-file editing.
+5. Two-/three-color conditional color scales and basic data bars now have
+   streaming-only new-workbook worksheet metadata slices. Broader conditional
+   formatting still needs separate design and tests for formula/cellIs rules,
+   icon sets, advanced data bars, dxf-backed styles, conflict handling, and
+   existing-file editing.
 6. Images after `stb` decode/dimension behavior, media part allocation,
    drawing part generation, drawing rels, worksheet rels, anchors, and content
    types are in place.

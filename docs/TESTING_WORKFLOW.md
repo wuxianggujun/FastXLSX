@@ -116,18 +116,23 @@ table range overlap 测试只覆盖同一 worksheet 内 table-vs-table 矩形相
 table 允许、不同 worksheet 上相同 range 允许；不要把这扩展成与 data validations、
 images、merged ranges 或 autoFilter 的通用冲突检查。
 
-conditional color scale 结构测试要区分当前 two-/three-color worksheet metadata 切片和完整
-conditional formatting。当前 `WorksheetWriter::add_conditional_color_scale()` 应检查
+conditional formatting 结构测试要区分当前 two-/three-color color scale / basic data bar
+worksheet metadata 切片和完整 conditional formatting。当前
+`WorksheetWriter::add_conditional_color_scale()` 应检查
 worksheet `<conditionalFormatting sqref>`、`<cfRule type="colorScale" priority>`、
 two-color 的两个 `<cfvo>` / 两个 `<color rgb="AARRGGBB">`、three-color 的三个
 `<cfvo>` / 三个 `<color rgb="AARRGGBB">`、multi-range 空格分隔 `sqref`、同一 worksheet
 内 priority 递增且跨 worksheet 重置，以及 suffix 顺序
-`mergeCells -> conditionalFormatting -> dataValidations`。还要确认它不生成
+`mergeCells -> conditionalFormatting -> dataValidations`。当前
+`WorksheetWriter::add_conditional_data_bar()` 应检查
+`<cfRule type="dataBar" priority>`、两个 `<cfvo>`、一个 `<color rgb="AARRGGBB">`、
+multi-range 空格分隔 `sqref`、与 color scale 共享同一 worksheet-local priority 序列、
+同一 worksheet 内 priority 递增且跨 worksheet 重置，以及相同 suffix 顺序。还要确认它们不生成
 `xl/styles.xml`、`dxfs`、`xl/metadata.xml`、worksheet `.rels`、workbook relationships、
 content type entries、cell text 或 `<calcPr>`。非法 range、越界行列、空 multi-range、
 非有限 numeric endpoint、lower `Maximum`、upper `Minimum` 和 close 后 mutation 都应
 被拒绝，并且失败调用不能污染 worksheet metadata 或 dimension。不要把该切片扩展成
-formula/cellIs、dataBar、iconSet、dxf-backed styles、重叠检测、existing-file editing 或
+formula/cellIs、iconSet、advanced data bar、dxf-backed styles、重叠检测、existing-file editing 或
 完整 Excel UI。
 
 数值编码负例不需要 Excel 可视化验证，因为期望结果是不生成有效 `.xlsx`。测试应覆盖
@@ -181,12 +186,15 @@ Streaming writer hot-path 边界样例应优先做拆包 XML 结构检查：
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`，其中
   `InventoryTable` 应保持隐藏 totals row，`TotalsTable` 应显示 totals row 且范围为
   `A1:B3` / totals row `A3:B3`。
-- conditional color scale 必须用本机 Excel COM 或人工打开确认无修复弹窗，并检查
-  two-/three-color color scale 规则可见。当前基础样例是
+- conditional formatting 基础切片必须用本机 Excel COM 或人工打开确认无修复弹窗，并检查
+  two-/three-color color scale 或 basic data bar 规则可见。当前基础 color scale 样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx`
   和 `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx`，
   multi-range 样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-multi-range.xlsx`。
+  当前基础 data bar 样例是
+  `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-data-bar.xlsx`
+  和 `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx`。
 - 保存后再打开仍然正常。
 
 Excel 可视化验证是本地验收步骤，不应作为默认 CI 的强依赖。CI 可以做结构检查
@@ -565,6 +573,28 @@ Excel helper 只读打开 two-color、three-color 和 multi-range workbook，核
 `ColorScale!A2:A10`、`ThreeColorScale!A2:A10` 的 color scale 规则，以及
 multi-range 中 A/C/E 三段区域有规则而 B 列间隔区没有规则。
 这些是本地 QA artifact 和兼容性验证入口，不是运行时依赖，也不进入默认 CI。
+
+当前 conditional data bar 样例也有固定本地 QA 脚本：
+
+```powershell
+py tools\verify_conditional_formatting_data_bars.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar.xlsx `
+  --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-metadata-order.xlsx `
+  --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx `
+  --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-priorities.xlsx `
+  --work-dir build\qa\conditional-formatting-data-bars
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_formatting_data_bars_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar.xlsx `
+  -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx
+```
+
+Python helper 检查 package XML、`<cfRule type="dataBar">`、两个 `<cfvo>`、一个
+`<color rgb>`、multi-range `sqref`、与 color scale 共享 priority、无
+styles/dxfs/rels/content type/calcPr 副作用，并用 `openpyxl` 读取 basic 和 multi-range
+data bar；可用时会用 `XlsxWriter` 创建参考 workbook。Excel helper 只读打开 basic 和
+multi-range workbook，核对 Excel COM 可见的 data bar、bar color、ShowValue 和
+multi-area AppliesTo。XML 结构仍是权威；Excel/openpyxl/XlsxWriter 只作为本地
+QA/排障参考，不接入默认 CTest/CI，也不是运行时依赖。
 
 ## 拆包和 XML 对比
 

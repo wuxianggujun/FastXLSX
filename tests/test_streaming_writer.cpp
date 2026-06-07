@@ -89,6 +89,15 @@ fastxlsx::ThreeColorScaleRule make_three_color_scale(
     return rule;
 }
 
+fastxlsx::DataBarRule make_data_bar(fastxlsx::ArgbColor color)
+{
+    fastxlsx::DataBarRule rule;
+    rule.lower = {fastxlsx::DataBarValueType::Minimum, 0.0};
+    rule.upper = {fastxlsx::DataBarValueType::Maximum, 0.0};
+    rule.color = color;
+    return rule;
+}
+
 void test_streaming_writer_smoke_package()
 {
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-smoke.xlsx";
@@ -1233,6 +1242,14 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
         },
         "failed conditional formatting call should not mutate priority state");
 
+    fastxlsx::DataBarRule invalid_data_bar = make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6});
+    invalid_data_bar.lower.type = fastxlsx::DataBarValueType::Maximum;
+    check_fastxlsx_error(
+        [&sheet, &invalid_data_bar] {
+            sheet.add_conditional_data_bar({2, 1, 2, 1}, invalid_data_bar);
+        },
+        "failed data bar conditional formatting call should not mutate priority state");
+
     fastxlsx::TwoColorScaleRule percent_rule;
     percent_rule.lower = {
         fastxlsx::ColorScaleValueType::Percent,
@@ -1245,6 +1262,8 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
         fastxlsx::ArgbColor {0xFF, 0x5A, 0x8A, 0xD6},
     };
     sheet.add_conditional_color_scale({2, 1, 2, 1}, percent_rule);
+    sheet.add_conditional_data_bar(
+        {2, 1, 2, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
 
     workbook.close();
 
@@ -1255,18 +1274,251 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "<dimension ref=\"A1:A2\"/>",
         "conditional formatting ranges should not expand worksheet dimension");
-    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 2,
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 3,
         "failed conditional formatting call should not add a rule");
     check_contains(worksheet_xml, "<cfRule type=\"colorScale\" priority=\"1\">",
         "first successful conditional formatting priority mismatch");
     check_contains(worksheet_xml, "<cfRule type=\"colorScale\" priority=\"2\">",
         "second successful conditional formatting priority mismatch");
-    check(worksheet_xml.find("priority=\"3\"") == std::string::npos,
+    check_contains(worksheet_xml, "<cfRule type=\"dataBar\" priority=\"3\">",
+        "third successful data bar conditional formatting priority mismatch");
+    check(worksheet_xml.find("priority=\"4\"") == std::string::npos,
         "failed conditional formatting call should not consume a priority");
     check_contains(worksheet_xml,
         "<cfvo type=\"percent\" val=\"10\"/><cfvo type=\"percent\" val=\"90\"/>"
         "<color rgb=\"FFFFEB84\"/><color rgb=\"FF5A8AD6\"/>",
         "percent endpoint color scale XML mismatch");
+    check_contains(worksheet_xml,
+        "<cfRule type=\"dataBar\" priority=\"3\"><dataBar>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FF638EC6\"/></dataBar></cfRule>",
+        "valid data bar after failed calls XML mismatch");
+}
+
+void test_streaming_writer_conditional_formatting_data_bar()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-data-bar.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("DataBar");
+
+    sheet.append_row({fastxlsx::CellView::text("Score")});
+    for (int value = 1; value <= 9; ++value) {
+        sheet.append_row({fastxlsx::CellView::number(static_cast<double>(value))});
+    }
+
+    sheet.add_conditional_data_bar(
+        {2, 1, 10, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "conditional formatting data bar xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"),
+        "missing conditional formatting data bar worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "data bar should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"), "data bar should not create styles");
+    check(!entries.contains("xl/metadata.xml"), "data bar should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("styles") == std::string::npos,
+        "data bar should not add style content types");
+    check(content_types.find("conditionalFormatting") == std::string::npos,
+        "data bar should not add conditional formatting content types");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("styles") == std::string::npos,
+        "data bar should not add styles workbook relationship");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "data bar worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A10\"/>",
+        "data bar worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"dataBar\" priority=\"1\"><dataBar>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FF638EC6\"/></dataBar></cfRule></conditionalFormatting></worksheet>",
+        "data bar XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "data bar conditional formatting element count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfRule ") == 1,
+        "data bar conditional formatting rule count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfvo ") == 2, "data bar cfvo count mismatch");
+    check(count_occurrences(worksheet_xml, "<color rgb=") == 1, "data bar color count mismatch");
+}
+
+void test_streaming_writer_conditional_formatting_data_bar_metadata_order()
+{
+    const auto output_path = std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-data-bar-metadata-order.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("DataBarObjects");
+
+    sheet.append_row({fastxlsx::CellView::text("Value"), fastxlsx::CellView::text("Link")});
+    sheet.append_row({fastxlsx::CellView::number(5.0), fastxlsx::CellView::text("Docs")});
+    sheet.append_row({fastxlsx::CellView::number(7.0), fastxlsx::CellView::text("More")});
+
+    sheet.merge_cells({4, 1, 4, 2});
+    sheet.add_conditional_data_bar(
+        {2, 1, 10, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+    sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
+
+    fastxlsx::TableOptions table;
+    table.name = "DataBarTable";
+    table.column_names = {"Value", "Link"};
+    sheet.add_table({1, 1, 3, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "data bar relationship-backed metadata should still create worksheet relationships");
+    check(entries.contains("xl/tables/table1.xml"), "data bar metadata order test should create table part");
+    check(!entries.contains("xl/styles.xml"),
+        "data bar with other metadata should not create styles");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:B3\"/>",
+        "data bar metadata should not expand worksheet dimension");
+    check_contains(worksheet_xml,
+        "</sheetData><mergeCells count=\"1\"><mergeCell ref=\"A4:B4\"/></mergeCells>"
+        "<conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"dataBar\" priority=\"1\"><dataBar>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FF638EC6\"/></dataBar></cfRule></conditionalFormatting>"
+        "<dataValidations count=\"1\"><dataValidation type=\"whole\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>"
+        "</dataValidations><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId2\"/></tableParts></worksheet>",
+        "data bar suffix ordering or relationship ids mismatch");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 2,
+        "data bar should not add worksheet relationship entries");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs" TargetMode="External"/>)",
+        "data bar hyperlink relationship id should remain rId1");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "data bar table relationship id should remain rId2");
+}
+
+void test_streaming_writer_conditional_formatting_data_bar_multi_range_sqref()
+{
+    const auto output_path = std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("DataBarRanges");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::text("B"),
+        fastxlsx::CellView::text("C"),
+        fastxlsx::CellView::text("D"),
+        fastxlsx::CellView::text("E"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(1.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(2.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(3.0),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(4.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(6.0),
+    });
+
+    sheet.add_conditional_data_bar(
+        {{2, 1, 3, 1}, {2, 3, 3, 3}, {2, 5, 3, 5}},
+        make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "multi-range data bar should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"), "multi-range data bar should not create styles");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:E3\"/>",
+        "multi-range data bar dimension mismatch");
+    check_contains(worksheet_xml,
+        "<conditionalFormatting sqref=\"A2:A3 C2:C3 E2:E3\">"
+        "<cfRule type=\"dataBar\" priority=\"1\"><dataBar>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FF638EC6\"/></dataBar></cfRule></conditionalFormatting>",
+        "multi-range data bar sqref XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "multi-range data bar should be one conditionalFormatting element");
+}
+
+void test_streaming_writer_conditional_formatting_data_bar_priorities()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-data-bar-priorities.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto first = workbook.add_worksheet("First");
+    auto second = workbook.add_worksheet("Second");
+
+    first.append_row({fastxlsx::CellView::text("Value")});
+    first.append_row({fastxlsx::CellView::number(1.0)});
+    first.append_row({fastxlsx::CellView::number(2.0)});
+    first.add_conditional_color_scale(
+        {2, 1, 3, 1},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+            fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B}));
+    fastxlsx::DataBarRule numeric_rule = make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6});
+    numeric_rule.lower = {fastxlsx::DataBarValueType::Number, 0.0};
+    numeric_rule.upper = {fastxlsx::DataBarValueType::Percentile, 90.0};
+    first.add_conditional_data_bar({2, 1, 3, 1}, numeric_rule);
+
+    second.append_row({fastxlsx::CellView::text("Value")});
+    second.append_row({fastxlsx::CellView::number(3.0)});
+    second.add_conditional_data_bar(
+        {2, 1, 2, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& first_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, R"(<cfRule type="colorScale" priority="1">)",
+        "color scale priority should remain first");
+    check_contains(first_xml, R"(<cfRule type="dataBar" priority="2">)",
+        "data bar should share conditional formatting priority sequence");
+    check_contains(first_xml,
+        "<cfvo type=\"num\" val=\"0\"/><cfvo type=\"percentile\" val=\"90\"/>"
+        "<color rgb=\"FF638EC6\"/>",
+        "numeric/percentile data bar endpoint XML mismatch");
+
+    const auto& second_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_xml, R"(<cfRule type="dataBar" priority="1">)",
+        "data bar priority should reset per worksheet");
+    check(second_xml.find("priority=\"2\"") == std::string::npos,
+        "second worksheet data bar should not inherit first worksheet priority");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "data bar priorities first sheet should not create relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "data bar priorities second sheet should not create relationships");
 }
 
 void test_streaming_writer_invalid_conditional_formatting()
@@ -1285,6 +1537,7 @@ void test_streaming_writer_invalid_conditional_formatting()
         fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
         fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
         fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B});
+    const auto valid_data_bar = make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6});
     check_fastxlsx_error(
         [&sheet, &valid_rule] { sheet.add_conditional_color_scale({0, 1, 1, 1}, valid_rule); },
         "conditional formatting should reject a zero row");
@@ -1318,6 +1571,20 @@ void test_streaming_writer_invalid_conditional_formatting()
             sheet.add_conditional_color_scale({{1, 1, 1, 1}, {1, 0, 1, 1}}, valid_rule);
         },
         "conditional formatting should reject an invalid range inside a multi-range list");
+    check_fastxlsx_error(
+        [&sheet, &valid_data_bar] { sheet.add_conditional_data_bar({0, 1, 1, 1}, valid_data_bar); },
+        "data bar conditional formatting should reject a zero row");
+    check_fastxlsx_error(
+        [&sheet, &valid_data_bar] {
+            const std::span<const fastxlsx::CellRange> no_ranges;
+            sheet.add_conditional_data_bar(no_ranges, valid_data_bar);
+        },
+        "data bar conditional formatting should reject an empty multi-range list");
+    check_fastxlsx_error(
+        [&sheet, &valid_data_bar] {
+            sheet.add_conditional_data_bar({{1, 1, 1, 1}, {1, 0, 1, 1}}, valid_data_bar);
+        },
+        "data bar conditional formatting should reject an invalid range inside a multi-range list");
 
     fastxlsx::TwoColorScaleRule nan_rule = valid_rule;
     nan_rule.lower.type = fastxlsx::ColorScaleValueType::Number;
@@ -1366,6 +1633,40 @@ void test_streaming_writer_invalid_conditional_formatting()
             sheet.add_conditional_color_scale({1, 1, 1, 1}, middle_infinity_rule);
         },
         "three-color conditional formatting should reject non-finite midpoint values");
+
+    fastxlsx::DataBarRule data_bar_lower_max_rule = valid_data_bar;
+    data_bar_lower_max_rule.lower.type = fastxlsx::DataBarValueType::Maximum;
+    check_fastxlsx_error(
+        [&sheet, &data_bar_lower_max_rule] {
+            sheet.add_conditional_data_bar({1, 1, 1, 1}, data_bar_lower_max_rule);
+        },
+        "data bar conditional formatting should reject maximum as lower endpoint");
+
+    fastxlsx::DataBarRule data_bar_upper_min_rule = valid_data_bar;
+    data_bar_upper_min_rule.upper.type = fastxlsx::DataBarValueType::Minimum;
+    check_fastxlsx_error(
+        [&sheet, &data_bar_upper_min_rule] {
+            sheet.add_conditional_data_bar({1, 1, 1, 1}, data_bar_upper_min_rule);
+        },
+        "data bar conditional formatting should reject minimum as upper endpoint");
+
+    fastxlsx::DataBarRule data_bar_nan_rule = valid_data_bar;
+    data_bar_nan_rule.lower.type = fastxlsx::DataBarValueType::Number;
+    data_bar_nan_rule.lower.value = std::numeric_limits<double>::quiet_NaN();
+    check_fastxlsx_error(
+        [&sheet, &data_bar_nan_rule] {
+            sheet.add_conditional_data_bar({1, 1, 1, 1}, data_bar_nan_rule);
+        },
+        "data bar conditional formatting should reject non-finite lower numeric endpoints");
+
+    fastxlsx::DataBarRule data_bar_infinity_rule = valid_data_bar;
+    data_bar_infinity_rule.upper.type = fastxlsx::DataBarValueType::Percentile;
+    data_bar_infinity_rule.upper.value = std::numeric_limits<double>::infinity();
+    check_fastxlsx_error(
+        [&sheet, &data_bar_infinity_rule] {
+            sheet.add_conditional_data_bar({1, 1, 1, 1}, data_bar_infinity_rule);
+        },
+        "data bar conditional formatting should reject non-finite upper numeric endpoints");
 
     sheet.append_row({fastxlsx::CellView::number(1.0)});
     workbook.close();
@@ -3303,6 +3604,12 @@ void test_streaming_writer_rejects_mutation_after_close()
         "add_conditional_color_scale three-color should reject mutation after workbook close");
     check_fastxlsx_error(
         [&sheet] {
+            sheet.add_conditional_data_bar(
+                {1, 1, 1, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+        },
+        "add_conditional_data_bar should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] {
             fastxlsx::DataValidationRule rule;
             rule.type = fastxlsx::DataValidationType::List;
             rule.formula1 = "\"A,B\"";
@@ -3819,6 +4126,10 @@ int main()
         test_streaming_writer_conditional_formatting_multi_range_sqref();
         test_streaming_writer_conditional_formatting_priorities();
         test_streaming_writer_conditional_formatting_failed_call_preserves_priority();
+        test_streaming_writer_conditional_formatting_data_bar();
+        test_streaming_writer_conditional_formatting_data_bar_metadata_order();
+        test_streaming_writer_conditional_formatting_data_bar_multi_range_sqref();
+        test_streaming_writer_conditional_formatting_data_bar_priorities();
         test_streaming_writer_invalid_conditional_formatting();
         test_streaming_writer_data_validations();
         test_streaming_writer_data_validation_multi_range_sqref();

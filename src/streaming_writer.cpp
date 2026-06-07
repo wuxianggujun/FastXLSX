@@ -49,6 +49,12 @@ struct ConditionalColorScale {
     std::uint32_t priority = 1;
 };
 
+struct ConditionalDataBar {
+    std::vector<CellRange> ranges;
+    DataBarRule rule;
+    std::uint32_t priority = 1;
+};
+
 struct ExternalHyperlink {
     std::uint32_t row = 1;
     std::uint32_t column = 1;
@@ -220,6 +226,24 @@ std::string_view color_scale_value_type_name(ColorScaleValueType type)
     throw FastXlsxError("unknown color scale value type");
 }
 
+std::string_view data_bar_value_type_name(DataBarValueType type)
+{
+    switch (type) {
+    case DataBarValueType::Minimum:
+        return "min";
+    case DataBarValueType::Maximum:
+        return "max";
+    case DataBarValueType::Number:
+        return "num";
+    case DataBarValueType::Percent:
+        return "percent";
+    case DataBarValueType::Percentile:
+        return "percentile";
+    }
+
+    throw FastXlsxError("unknown data bar value type");
+}
+
 bool color_scale_value_type_requires_value(ColorScaleValueType type)
 {
     switch (type) {
@@ -233,6 +257,21 @@ bool color_scale_value_type_requires_value(ColorScaleValueType type)
     }
 
     throw FastXlsxError("unknown color scale value type");
+}
+
+bool data_bar_value_type_requires_value(DataBarValueType type)
+{
+    switch (type) {
+    case DataBarValueType::Minimum:
+    case DataBarValueType::Maximum:
+        return false;
+    case DataBarValueType::Number:
+    case DataBarValueType::Percent:
+    case DataBarValueType::Percentile:
+        return true;
+    }
+
+    throw FastXlsxError("unknown data bar value type");
 }
 
 std::string argb_color_value(ArgbColor color)
@@ -500,6 +539,26 @@ void validate_two_color_scale_rule(const TwoColorScaleRule& rule)
     validate_color_scale_point(rule.upper);
 }
 
+void validate_data_bar_endpoint(const DataBarEndpoint& endpoint)
+{
+    (void)data_bar_value_type_name(endpoint.type);
+    if (data_bar_value_type_requires_value(endpoint.type) && !std::isfinite(endpoint.value)) {
+        throw FastXlsxError("data bar endpoint values must be finite");
+    }
+}
+
+void validate_data_bar_rule(const DataBarRule& rule)
+{
+    if (rule.lower.type == DataBarValueType::Maximum) {
+        throw FastXlsxError("lower data bar endpoint cannot use maximum");
+    }
+    if (rule.upper.type == DataBarValueType::Minimum) {
+        throw FastXlsxError("upper data bar endpoint cannot use minimum");
+    }
+    validate_data_bar_endpoint(rule.lower);
+    validate_data_bar_endpoint(rule.upper);
+}
+
 void validate_three_color_scale_rule(const ThreeColorScaleRule& rule)
 {
     if (rule.lower.type == ColorScaleValueType::Maximum) {
@@ -620,7 +679,9 @@ struct WorksheetWriterState {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> frozen_panes;
     std::optional<CellRange> auto_filter;
     std::vector<CellRange> merged_ranges;
+    std::uint32_t next_conditional_format_priority = 1;
     std::vector<ConditionalColorScale> conditional_color_scales;
+    std::vector<ConditionalDataBar> conditional_data_bars;
     std::vector<DataValidation> data_validations;
     std::vector<ExternalHyperlink> external_hyperlinks;
     std::vector<InternalHyperlink> internal_hyperlinks;
@@ -984,30 +1045,71 @@ void append_color_scale_color_xml(std::string& xml, const ColorScalePoint& point
     xml += "\"/>";
 }
 
-std::string build_conditional_color_scales(const detail::WorksheetWriterState& worksheet)
+void append_data_bar_endpoint_xml(std::string& xml, const DataBarEndpoint& endpoint)
 {
-    if (worksheet.conditional_color_scales.empty()) {
+    xml += "<cfvo type=\"";
+    xml += data_bar_value_type_name(endpoint.type);
+    if (data_bar_value_type_requires_value(endpoint.type)) {
+        xml += "\" val=\"";
+        xml += format_number(endpoint.value);
+    }
+    xml += "\"/>";
+}
+
+void append_conditional_color_scale_xml(std::string& xml, const ConditionalColorScale& scale)
+{
+    xml += "<conditionalFormatting sqref=\"";
+    xml += detail::sqref(scale.ranges);
+    xml += "\"><cfRule type=\"colorScale\" priority=\"";
+    xml += std::to_string(scale.priority);
+    xml += "\"><colorScale>";
+    append_color_scale_point_xml(xml, scale.lower);
+    if (scale.midpoint.has_value()) {
+        append_color_scale_point_xml(xml, *scale.midpoint);
+    }
+    append_color_scale_point_xml(xml, scale.upper);
+    append_color_scale_color_xml(xml, scale.lower);
+    if (scale.midpoint.has_value()) {
+        append_color_scale_color_xml(xml, *scale.midpoint);
+    }
+    append_color_scale_color_xml(xml, scale.upper);
+    xml += "</colorScale></cfRule></conditionalFormatting>";
+}
+
+void append_conditional_data_bar_xml(std::string& xml, const ConditionalDataBar& bar)
+{
+    xml += "<conditionalFormatting sqref=\"";
+    xml += detail::sqref(bar.ranges);
+    xml += "\"><cfRule type=\"dataBar\" priority=\"";
+    xml += std::to_string(bar.priority);
+    xml += "\"><dataBar>";
+    append_data_bar_endpoint_xml(xml, bar.rule.lower);
+    append_data_bar_endpoint_xml(xml, bar.rule.upper);
+    xml += "<color rgb=\"";
+    xml += argb_color_value(bar.rule.color);
+    xml += "\"/></dataBar></cfRule></conditionalFormatting>";
+}
+
+std::string build_conditional_formattings(const detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.conditional_color_scales.empty() && worksheet.conditional_data_bars.empty()) {
         return {};
     }
 
     std::string xml;
-    for (const ConditionalColorScale& scale : worksheet.conditional_color_scales) {
-        xml += "<conditionalFormatting sqref=\"";
-        xml += detail::sqref(scale.ranges);
-        xml += "\"><cfRule type=\"colorScale\" priority=\"";
-        xml += std::to_string(scale.priority);
-        xml += "\"><colorScale>";
-        append_color_scale_point_xml(xml, scale.lower);
-        if (scale.midpoint.has_value()) {
-            append_color_scale_point_xml(xml, *scale.midpoint);
+    auto color_scale_it = worksheet.conditional_color_scales.begin();
+    auto data_bar_it = worksheet.conditional_data_bars.begin();
+    while (color_scale_it != worksheet.conditional_color_scales.end()
+        || data_bar_it != worksheet.conditional_data_bars.end()) {
+        if (data_bar_it == worksheet.conditional_data_bars.end()
+            || (color_scale_it != worksheet.conditional_color_scales.end()
+                && color_scale_it->priority < data_bar_it->priority)) {
+            append_conditional_color_scale_xml(xml, *color_scale_it);
+            ++color_scale_it;
+        } else {
+            append_conditional_data_bar_xml(xml, *data_bar_it);
+            ++data_bar_it;
         }
-        append_color_scale_point_xml(xml, scale.upper);
-        append_color_scale_color_xml(xml, scale.lower);
-        if (scale.midpoint.has_value()) {
-            append_color_scale_color_xml(xml, *scale.midpoint);
-        }
-        append_color_scale_color_xml(xml, scale.upper);
-        xml += "</colorScale></cfRule></conditionalFormatting>";
     }
     return xml;
 }
@@ -1201,7 +1303,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
         xml += "\"/>";
     }
     xml += build_merge_cells(worksheet);
-    xml += build_conditional_color_scales(worksheet);
+    xml += build_conditional_formattings(worksheet);
     xml += build_data_validations(worksheet);
     xml += build_hyperlinks(worksheet);
     xml += build_drawing_reference(worksheet);
@@ -1817,8 +1919,7 @@ void WorksheetWriter::add_conditional_color_scale(
         (void)detail::range_reference(range);
     }
     validate_two_color_scale_rule(rule);
-    const auto priority =
-        static_cast<std::uint32_t>(state_->conditional_color_scales.size() + 1);
+    const auto priority = state_->next_conditional_format_priority++;
     state_->conditional_color_scales.push_back(
         {std::vector<CellRange>(ranges.begin(), ranges.end()), rule.lower, std::nullopt, rule.upper, priority});
 }
@@ -1834,8 +1935,7 @@ void WorksheetWriter::add_conditional_color_scale(
         (void)detail::range_reference(range);
     }
     validate_three_color_scale_rule(rule);
-    const auto priority =
-        static_cast<std::uint32_t>(state_->conditional_color_scales.size() + 1);
+    const auto priority = state_->next_conditional_format_priority++;
     state_->conditional_color_scales.push_back(
         {std::vector<CellRange>(ranges.begin(), ranges.end()), rule.lower, rule.midpoint, rule.upper, priority});
 }
@@ -1852,6 +1952,32 @@ void WorksheetWriter::add_conditional_color_scale(
 {
     add_conditional_color_scale(
         std::span<const CellRange>(ranges.begin(), ranges.size()), rule);
+}
+
+void WorksheetWriter::add_conditional_data_bar(CellRange range, DataBarRule rule)
+{
+    add_conditional_data_bar(std::span<const CellRange>(&range, 1), rule);
+}
+
+void WorksheetWriter::add_conditional_data_bar(std::span<const CellRange> ranges, DataBarRule rule)
+{
+    ensure_mutable_worksheet(state_);
+    if (ranges.empty()) {
+        throw FastXlsxError("conditional data bar range list cannot be empty");
+    }
+    for (const CellRange& range : ranges) {
+        (void)detail::range_reference(range);
+    }
+    validate_data_bar_rule(rule);
+    const auto priority = state_->next_conditional_format_priority++;
+    state_->conditional_data_bars.push_back(
+        {std::vector<CellRange>(ranges.begin(), ranges.end()), rule, priority});
+}
+
+void WorksheetWriter::add_conditional_data_bar(
+    std::initializer_list<CellRange> ranges, DataBarRule rule)
+{
+    add_conditional_data_bar(std::span<const CellRange>(ranges.begin(), ranges.size()), rule);
 }
 
 void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule rule)

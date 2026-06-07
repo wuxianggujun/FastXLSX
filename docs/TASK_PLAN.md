@@ -29,8 +29,10 @@ obligations.
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
 - Current public worksheet metadata API also includes `ArgbColor`,
   `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
-  `ThreeColorScaleRule`, and `WorksheetWriter::add_conditional_color_scale()` for a narrow two-/three-color
-  conditional color scale slice.
+  `ThreeColorScaleRule`, `DataBarValueType`, `DataBarEndpoint`, `DataBarRule`,
+  `WorksheetWriter::add_conditional_color_scale()`, and
+  `WorksheetWriter::add_conditional_data_bar()` for narrow two-/three-color
+  conditional color scale and basic data bar slices.
 - A Phase 2 streaming writer skeleton exists in
   `include/fastxlsx/streaming_writer.hpp` and `src/streaming_writer.cpp`:
   `WorkbookWriter`, `WorksheetWriter`, and `CellView`.
@@ -77,8 +79,8 @@ obligations.
   override, and a workbook styles relationship when styles are registered. This
   is not font/fill/border/alignment support, rich text, dxf-backed conditional
   formatting, date cell type, or existing-file style preservation. The current
-  two-/three-color color scale slice is worksheet metadata, not styles registry or
-  `dxfs` support.
+  two-/three-color color scale and basic data bar slices are worksheet metadata,
+  not styles registry or `dxfs` support.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
   `strings` scenario, `50000 x 10 x 1 = 500000` cells, repeated/unique string
@@ -1306,18 +1308,20 @@ Allowed early slices:
   styles, `styles.xml`, table resize, existing-file editing, conflict checks
   against non-table worksheet metadata/objects, and full Excel table UI behavior
   are not implemented by the first slice.
-- Conditional formatting has a basic streaming-only, new-workbook two-/three-color
-  color scale slice through `WorksheetWriter::add_conditional_color_scale()`.
-  It writes worksheet-local `<conditionalFormatting>` with
-  `<cfRule type="colorScale">`, two or three `<cfvo>` endpoints, and matching
-  inline ARGB colors. `ColorScaleValueType::Minimum` / `Maximum` write no `val`;
-  `Number` / `Percent` / `Percentile` require finite numeric values. Priorities
-  are assigned by call order per worksheet, and multi-range input is serialized
-  as one space-separated `sqref`.
+- Conditional formatting has basic streaming-only, new-workbook two-/three-color
+  color scale and data bar slices through `WorksheetWriter::add_conditional_color_scale()`
+  and `WorksheetWriter::add_conditional_data_bar()`. They write worksheet-local
+  `<conditionalFormatting>` with `<cfRule type="colorScale">` or
+  `<cfRule type="dataBar">`. Color scales write two or three `<cfvo>` endpoints
+  and matching inline ARGB colors; data bars write two `<cfvo>` endpoints and one
+  inline ARGB bar color. `ColorScaleValueType` and `DataBarValueType` `Minimum` /
+  `Maximum` endpoints write no `val`; `Number` / `Percent` / `Percentile` require
+  finite numeric values. Priorities are shared by call order per worksheet, and
+  multi-range input is serialized as one space-separated `sqref`.
 - Complete conditional formatting remains planned: formula rules, cellIs,
-  data bars, icon sets, top/bottom, duplicate/unique, dxf-backed styles,
-  conflict handling, existing-file editing, and full Excel UI behavior are not
-  implemented by this slice.
+  icon sets, top/bottom, duplicate/unique, advanced data bar negative color/axis/
+  border/gradient/`extLst`, dxf-backed styles, conflict handling, existing-file
+  editing, and full Excel UI behavior are not implemented by these slices.
 - Image work must use `stb` for image decoding, dimensions, and pixel access;
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.
@@ -1402,6 +1406,11 @@ Validation:
   `openpyxl`, and optional `XlsxWriter` checks, and
   `tools/verify_conditional_formatting_color_scales_excel.ps1` for Excel COM
   read-only visual checks of the two-color, three-color, and multi-range workbooks.
+- Current conditional data bar local QA uses
+  `tools/verify_conditional_formatting_data_bars.py` for package XML,
+  `openpyxl`, and optional `XlsxWriter` reference checks, and
+  `tools/verify_conditional_formatting_data_bars_excel.ps1` for Excel COM
+  read-only visual checks of the basic and multi-range data bar workbooks.
 - On any structural mismatch, compare against Excel/openpyxl/XlsxWriter
   reference workbooks by unzipping packages and inspecting XML semantics.
 

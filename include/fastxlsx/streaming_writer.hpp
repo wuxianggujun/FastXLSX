@@ -175,6 +175,20 @@ enum class ColorScaleValueType {
     Percentile,
 };
 
+/// Value kind for a conditional-formatting data-bar endpoint.
+///
+/// API mode: Streaming worksheet metadata. Minimum and Maximum are serialized
+/// without `val`; Number, Percent, and Percentile require finite numeric values.
+/// This enum only supports the current basic data-bar slice and does not
+/// represent formula-based conditional formatting or dxf-backed rules.
+enum class DataBarValueType {
+    Minimum,
+    Maximum,
+    Number,
+    Percent,
+    Percentile,
+};
+
 /// One point of a conditional-formatting color scale.
 ///
 /// API mode: Streaming worksheet metadata. The point is copied into worksheet
@@ -230,6 +244,40 @@ struct ThreeColorScaleRule {
 
     /// Upper endpoint, defaulting to OpenXML `type="max"`.
     ColorScalePoint upper {ColorScaleValueType::Maximum, 0.0, ArgbColor {0xFF, 0xFF, 0xFF, 0xFF}};
+};
+
+/// One endpoint of a basic conditional-formatting data bar.
+///
+/// API mode: Streaming worksheet metadata. The endpoint is copied into
+/// worksheet state when added. FastXLSX writes it as one `<cfvo>` in worksheet
+/// XML; it does not create styles.xml, dxfs, worksheet relationships, or content
+/// type entries.
+struct DataBarEndpoint {
+    /// OpenXML `cfvo` type for this endpoint.
+    DataBarValueType type = DataBarValueType::Minimum;
+
+    /// Numeric `cfvo` value for Number, Percent, and Percentile endpoint types.
+    /// Ignored for Minimum and Maximum endpoint types.
+    double value = 0.0;
+};
+
+/// A narrow basic conditional-formatting data bar.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
+/// into WorksheetWriter state and serialized as worksheet-local
+/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
+/// call order per worksheet, shared with color-scale rules. This does not
+/// evaluate cell values, create styles.xml/dxfs, edit existing XLSX files, or
+/// promise full Excel conditional-formatting UI parity.
+struct DataBarRule {
+    /// Lower endpoint, defaulting to OpenXML `type="min"`.
+    DataBarEndpoint lower;
+
+    /// Upper endpoint, defaulting to OpenXML `type="max"`.
+    DataBarEndpoint upper {DataBarValueType::Maximum, 0.0};
+
+    /// Inline ARGB bar color.
+    ArgbColor color {0xFF, 0x63, 0x8E, 0xC6};
 };
 
 /// A streaming-only worksheet data-validation rule.
@@ -671,6 +719,40 @@ public:
     /// The initializer-list ranges are copied during this call.
     void add_conditional_color_scale(
         std::initializer_list<CellRange> ranges, ThreeColorScaleRule rule);
+
+    /// Records one worksheet-local basic conditional-formatting data bar.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The rule is
+    /// emitted as worksheet-local `<conditionalFormatting>` XML and does not add
+    /// package relationships, content types, styles.xml, dxfs, or cell text.
+    /// FastXLSX copies the two endpoints and bar color into writer state,
+    /// validates the range and finite numeric endpoint values, and assigns
+    /// priority by call order shared with color-scale rules. This first slice
+    /// does not support negative-bar colors, axes, borders, gradients, extLst,
+    /// formula endpoints, or existing XLSX editing.
+    ///
+    /// @throws FastXlsxError if the range is invalid, the workbook is closed, or
+    /// the rule shape is outside the current basic data-bar surface.
+    void add_conditional_data_bar(CellRange range, DataBarRule rule);
+
+    /// Records one basic conditional-formatting data bar for multiple ranges.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. Ranges are
+    /// copied into writer state and serialized as one space-separated `sqref`
+    /// attribute on a single `<conditionalFormatting>` element. This does not
+    /// sort, merge, deduplicate, or overlap-check ranges; memory grows with the
+    /// copied range count and number of rules, not with worksheet row or cell
+    /// count.
+    ///
+    /// @throws FastXlsxError if the range list is empty, any range is invalid,
+    /// the workbook is closed, or endpoint values are outside the current
+    /// finite-value data-bar surface.
+    void add_conditional_data_bar(std::span<const CellRange> ranges, DataBarRule rule);
+
+    /// Convenience overload for multiple basic data-bar ranges.
+    ///
+    /// The initializer-list ranges are copied during this call.
+    void add_conditional_data_bar(std::initializer_list<CellRange> ranges, DataBarRule rule);
 
     /// Records a worksheet-local data validation rule for one range.
     ///

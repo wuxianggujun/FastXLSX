@@ -8,14 +8,12 @@
 #include <optional>
 #include <string>
 
-#ifdef FASTXLSX_HAS_STB
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
 #define STBI_NO_HDR
 #define STBI_NO_LINEAR
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#endif
 
 namespace fastxlsx {
 namespace {
@@ -59,14 +57,6 @@ ImageFormat require_supported_format(std::span<const std::byte> bytes)
     }
     throw FastXlsxError("unsupported image format; current image info reader accepts PNG and JPEG");
 }
-
-#ifndef FASTXLSX_HAS_STB
-[[noreturn]] void throw_stb_disabled()
-{
-    throw FastXlsxError(
-        "FastXLSX was built without stb image support; configure with FASTXLSX_ENABLE_STB=ON");
-}
-#else
 
 ImageInfo make_image_info(ImageFormat format, int width, int height, int channels)
 {
@@ -139,16 +129,10 @@ ImageInfo read_image_info_from_stb_stream(ImageFormat format, std::ifstream& str
     return make_image_info(format, width, height, channels);
 }
 
-#endif
-
 } // namespace
 
 ImageInfo read_image_info(const std::filesystem::path& path)
 {
-#ifndef FASTXLSX_HAS_STB
-    (void)path;
-    throw_stb_disabled();
-#else
     std::ifstream stream(path, std::ios::binary);
     if (!stream) {
         throw FastXlsxError("failed to open image file");
@@ -172,21 +156,15 @@ ImageInfo read_image_info(const std::filesystem::path& path)
     }
 
     return read_image_info_from_stb_stream(format, stream);
-#endif
 }
 
 ImageInfo read_image_info(std::span<const std::byte> bytes)
 {
-#ifndef FASTXLSX_HAS_STB
-    (void)bytes;
-    throw_stb_disabled();
-#else
     if (bytes.empty()) {
         throw FastXlsxError("image buffer is empty");
     }
     const ImageFormat format = require_supported_format(bytes);
     return read_image_info_from_stb_memory(format, bytes);
-#endif
 }
 
 } // namespace fastxlsx

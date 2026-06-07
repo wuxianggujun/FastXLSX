@@ -6,7 +6,9 @@
   "homepage": "https://github.com/wuxianggujun/FastXLSX",
   "license": "MIT",
   "builtin-baseline": "81de6771512413aaf89ea77add5ad1fda126b9d0",
-  "dependencies": [],
+  "dependencies": [
+    "stb"
+  ],
   "features": {
     "planned-runtime": {
       "description": "Opt-in runtime dependencies for the minizip-ng package writer backend and planned ZIP/XML reader/editor work.",
@@ -21,12 +23,6 @@
         "zlib-ng",
         "expat",
         "pugixml"
-      ]
-    },
-    "planned-image": {
-      "description": "Opt-in image decoding dependency for FASTXLSX_ENABLE_STB image metadata helpers and future XLSX media/image features.",
-      "dependencies": [
-        "stb"
       ]
     },
     "planned-dev": {

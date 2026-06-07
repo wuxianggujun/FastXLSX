@@ -29,9 +29,9 @@ workbook location worksheet hyperlink API；`WorksheetWriter::add_table()` 和 `
 streaming-only table API。`WorkbookWriter` / `WorksheetWriter` / `CellView`
 是流式写入骨架；data validation、external/internal hyperlink 和 table API 是 worksheet
 metadata 基础切片，不等同完整 Phase 3 或完整 Phase 5。
-当前 `ImageFormat`、`ImageInfo` 和 `read_image_info()` 是 opt-in `stb` PNG/JPEG
+当前 `ImageFormat`、`ImageInfo` 和 `read_image_info()` 是默认 `stb` PNG/JPEG
 图片元数据 API，只读取格式、尺寸和通道。当前 `WorksheetWriter::add_image()`
-是 opt-in `stb` streaming-only new-workbook PNG/JPEG 图片插入基础 API，会写
+是默认 `stb` streaming-only new-workbook PNG/JPEG 图片插入基础 API，会写
 OpenXML media/drawing parts，但不代表 existing-workbook 图片保真或完整 drawing 编辑。
 当前 `ImageOptions` 只给该插入 API 增加 drawing XML anchor / non-visual metadata：
 `edit_as` 写 `xdr:twoCellAnchor editAs`，非空 `name` / `description` 写
@@ -58,9 +58,11 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 - `WorksheetWriter::add_data_validation()` 是 Streaming metadata API：规则、range 列表、
   公式文本和 prompt/error 文本被复制进 writer state，内存按规则数量、multi-area
   `sqref` 区域数量/文本长度、公式文本长度和 prompt/error 文本长度增长；
-  `showInputMessage`、`showErrorMessage`、`errorStyle`、
+  `showInputMessage`、`showErrorMessage`、`showDropDown`、`errorStyle`、
   `promptTitle`、`prompt`、`errorTitle` 和 `error` 只写为 worksheet `<dataValidation>`
-  attributes，空字符串和 false flags 省略。它不解析公式、不校验单元格值、不检查重叠、
+  attributes，空字符串和 false flags 省略。`hide_dropdown_arrow` 只对 list validation
+  有效，写出 OpenXML 反向命名的 `showDropDown="1"` 来隐藏 in-cell dropdown arrow。
+  它不解析公式、不校验单元格值、不检查重叠、
   不排序/合并/去重区域，不新增 relationships/content types/styles，也不支持
   existing-file editing 或完整 Excel UI。
 - `WorksheetWriter::add_external_hyperlink()` 是 Streaming metadata API：cell ref 和
@@ -89,13 +91,13 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   `docProps/app.xml`。它不创建 `docProps/custom.xml`，不支持任意 timestamps、
   custom document properties 或 existing-file editing，也不进入 worksheet row/cell
   热路径。
-- `read_image_info()` 是图片元数据 helper：默认无 `FASTXLSX_ENABLE_STB` 时抛出
-  `FastXlsxError`，opt-in `FASTXLSX_ENABLE_STB=ON` 时用 `stb_image` 的 header probing
-  读取 PNG/JPEG 格式、尺寸和通道。它不创建 media part、drawing XML、relationships、
+- `read_image_info()` 是图片元数据 helper：当前默认 vcpkg manifest 依赖 `stb`，
+  并用 `stb_image` 的 header probing 读取 PNG/JPEG 格式、尺寸和通道。它不创建
+  media part、drawing XML、relationships、
   content types 或 anchors，也不代表图片插入或 existing-file 图片保真。
-- `WorksheetWriter::add_image()` 是 Streaming metadata/object API：默认无
-  `FASTXLSX_ENABLE_STB` 时通过 `read_image_info()` 抛出明确错误；opt-in 时验证
-  PNG/JPEG 元数据，复制原始图片字节到临时 file-backed media entry，并在 `close()`
+- `WorksheetWriter::add_image()` 是 Streaming metadata/object API：当前通过默认
+  `stb` 依赖验证 PNG/JPEG 元数据，复制原始图片字节到临时 file-backed media entry，
+  并在 `close()`
   写 `xl/media/*`、`xl/drawings/drawing*.xml`、drawing `.rels`、worksheet `.rels`、
   worksheet `<drawing>` 和 content type entries。它不解码完整像素、不进入 row/cell
   热路径、不持有完整 worksheet matrix，也不支持裁剪、旋转、压缩、格式转换、
@@ -106,7 +108,7 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   `name` 使用生成的 `Picture N`，空 `description` 省略。它不新增 media parts、
   relationships、content types、styles 或 cell text，不改变 anchor 坐标，不写
   EXIF/PNG/JPEG metadata，也不代表完整 alt text/accessibility UI。
-- 当前 `Workbook::save()` 使用 internal package writer boundary；默认无依赖构建走
+- 当前 `Workbook::save()` 使用 internal package writer boundary；默认 ZIP backend 走
   stored ZIP bootstrap，`FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE
   backend。两者都不是已有文件编辑 API，也不承诺 Zip64 或 true package streaming。
 - OPC/Phase 5 仍是内部 manifest / relationships 基础和规划，不要把

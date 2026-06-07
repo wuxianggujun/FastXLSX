@@ -860,6 +860,7 @@ void test_streaming_writer_data_validation_prompt_error_metadata()
     fastxlsx::DataValidationRule list;
     list.type = fastxlsx::DataValidationType::List;
     list.formula1 = "\"A,B,C\"";
+    list.hide_dropdown_arrow = true;
     list.show_input_message = true;
     list.prompt_title = "Choice";
     list.prompt = "Pick A, B, or C";
@@ -923,7 +924,7 @@ void test_streaming_writer_data_validation_prompt_error_metadata()
         "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
         "whole prompt/error validation XML mismatch");
     check_contains(worksheet_xml,
-        "<dataValidation type=\"list\" showInputMessage=\"1\" promptTitle=\"Choice\" "
+        "<dataValidation type=\"list\" showDropDown=\"1\" showInputMessage=\"1\" promptTitle=\"Choice\" "
         "prompt=\"Pick A, B, or C\" sqref=\"B2:B10\"><formula1>\"A,B,C\"</formula1></dataValidation>",
         "prompt-only list validation XML mismatch");
     check_contains(worksheet_xml,
@@ -939,6 +940,10 @@ void test_streaming_writer_data_validation_prompt_error_metadata()
         "false showInputMessage should be omitted");
     check(worksheet_xml.find("showErrorMessage=\"0\"") == std::string::npos,
         "false showErrorMessage should be omitted");
+    check(count_occurrences(worksheet_xml, "showDropDown=\"1\"") == 1,
+        "hide dropdown arrow should be serialized only for the list validation");
+    check(worksheet_xml.find("showDropDown=\"0\"") == std::string::npos,
+        "false showDropDown should be omitted");
     check(worksheet_xml.find("promptTitle=\"\"") == std::string::npos,
         "empty promptTitle should be omitted");
     check(worksheet_xml.find("prompt=\"\"") == std::string::npos,
@@ -1530,7 +1535,6 @@ void test_streaming_writer_images()
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
-#ifdef FASTXLSX_TEST_HAS_STB
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-images.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -1651,14 +1655,6 @@ void test_streaming_writer_images()
     check_contains(second_drawing_xml,
         R"(<xdr:cNvPr id="2" name="Picture 2"/>)",
         "default drawing picture name should follow workbook image index");
-#else
-    auto workbook = fastxlsx::WorkbookWriter::create(
-        std::filesystem::current_path() / "fastxlsx-streaming-images-disabled.xlsx");
-    auto sheet = workbook.add_worksheet("Images");
-    check_fastxlsx_error(
-        [&sheet, &image_path] { sheet.add_image(image_path, {1, 1, 1, 1}); },
-        "streaming add_image should require opt-in stb support");
-#endif
 }
 
 void test_streaming_writer_image_metadata()
@@ -1667,7 +1663,6 @@ void test_streaming_writer_image_metadata()
         std::filesystem::current_path() / "fastxlsx-streaming-image-metadata-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
-#ifdef FASTXLSX_TEST_HAS_STB
     const auto output_path =
         std::filesystem::current_path() / "fastxlsx-streaming-image-metadata.xlsx";
 
@@ -1752,22 +1747,10 @@ void test_streaming_writer_image_metadata()
     check_contains(drawing_rels,
         R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image3.png"/>)",
         "image metadata third drawing relationship mismatch");
-#else
-    auto workbook = fastxlsx::WorkbookWriter::create(
-        std::filesystem::current_path() / "fastxlsx-streaming-image-metadata-disabled.xlsx");
-    auto sheet = workbook.add_worksheet("ImageMetadata");
-    fastxlsx::ImageOptions options;
-    options.name = "NoStb";
-    options.description = "Still metadata only";
-    check_fastxlsx_error(
-        [&sheet, &image_path, &options] { sheet.add_image(image_path, {1, 1, 1, 1}, options); },
-        "streaming add_image metadata should require opt-in stb support");
-#endif
 }
 
 void test_streaming_writer_jpeg_images()
 {
-#ifdef FASTXLSX_TEST_HAS_STB
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.jpg";
     write_bytes(image_path, fastxlsx::test::tiny_jpeg_bytes());
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-jpeg-images.xlsx";
@@ -1802,12 +1785,10 @@ void test_streaming_writer_jpeg_images()
     check_contains(drawing_rels,
         R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.jpg"/>)",
         "JPEG drawing image relationship mismatch");
-#endif
 }
 
 void test_streaming_writer_mixed_image_formats()
 {
-#ifdef FASTXLSX_TEST_HAS_STB
     const auto png_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-image-source.png";
     const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-image-source.jpg";
     write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
@@ -1871,12 +1852,10 @@ void test_streaming_writer_mixed_image_formats()
     check_contains(drawing_rels,
         R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/>)",
         "mixed JPEG drawing image relationship mismatch");
-#endif
 }
 
 void test_streaming_writer_image_anchor_markers()
 {
-#ifdef FASTXLSX_TEST_HAS_STB
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-anchor-image-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
@@ -1904,12 +1883,10 @@ void test_streaming_writer_image_anchor_markers()
     check_contains(drawing_xml,
         "<xdr:to><xdr:col>16384</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1048576</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>",
         "max-cell image to marker mismatch");
-#endif
 }
 
 void test_streaming_writer_mixed_object_relationship_ids()
 {
-#ifdef FASTXLSX_TEST_HAS_STB
     const auto png_path = std::filesystem::current_path() / "fastxlsx-streaming-object-rels-source.png";
     const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-streaming-object-rels-source.jpg";
     write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
@@ -2028,7 +2005,6 @@ void test_streaming_writer_mixed_object_relationship_ids()
     check_contains(second_drawing_rels,
         R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image3.png"/>)",
         "second drawing relationship id should reset for its drawing owner");
-#endif
 }
 
 void test_streaming_writer_shared_string_package()
@@ -2533,6 +2509,15 @@ void test_streaming_writer_invalid_data_validation_rules()
     check_fastxlsx_error(
         [&sheet, &whole_without_operator] { sheet.add_data_validation({1, 1, 1, 1}, whole_without_operator); },
         "whole dataValidations should require an operator");
+
+    fastxlsx::DataValidationRule whole_with_hidden_dropdown = whole_without_operator;
+    whole_with_hidden_dropdown.operator_type = fastxlsx::DataValidationOperator::Equal;
+    whole_with_hidden_dropdown.hide_dropdown_arrow = true;
+    check_fastxlsx_error(
+        [&sheet, &whole_with_hidden_dropdown] {
+            sheet.add_data_validation({1, 1, 1, 1}, whole_with_hidden_dropdown);
+        },
+        "non-list dataValidations should reject hidden dropdown arrows");
 
     fastxlsx::DataValidationRule between_without_formula2;
     between_without_formula2.type = fastxlsx::DataValidationType::Decimal;

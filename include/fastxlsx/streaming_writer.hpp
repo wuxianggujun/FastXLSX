@@ -135,6 +135,11 @@ struct DataValidationRule {
     /// Writes `allowBlank="1"` when true. Omitted when false.
     bool allow_blank = false;
 
+    /// Writes `showDropDown="1"` for list validations when true. OpenXML uses
+    /// the inverted name: this hides Excel's in-cell dropdown arrow. Omitted
+    /// when false.
+    bool hide_dropdown_arrow = false;
+
     /// Writes `showInputMessage="1"` when true. Omitted when false. Prompt
     /// text can still be stored when this flag is false.
     bool show_input_message = false;
@@ -316,8 +321,8 @@ private:
 /// API mode: Streaming. Rows are consumed in order and previously written rows
 /// cannot be modified through this handle. Worksheet rows are not retained as a
 /// full cell matrix by this API. Package finalization still assembles current
-/// parts at close(); dependency-free builds use the stored ZIP bootstrap, while
-/// FASTXLSX_ENABLE_MINIZIP_NG builds use the minizip-ng DEFLATE backend.
+/// parts at close(); the default ZIP backend uses the stored bootstrap writer,
+/// while FASTXLSX_ENABLE_MINIZIP_NG builds use the minizip-ng DEFLATE backend.
 ///
 /// A default-constructed WorksheetWriter is detached and will throw
 /// FastXlsxError from mutating operations. Valid handles are returned by
@@ -479,7 +484,7 @@ public:
     /// Records a PNG/JPEG image anchored to worksheet cells.
     ///
     /// API mode: Streaming worksheet metadata for new workbooks. The image file
-    /// is validated through the opt-in stb-backed image metadata helper, then
+    /// is validated through the required stb-backed image metadata helper, then
     /// copied to a temporary file-backed media entry so close() can package the
     /// original bytes without retaining them in worksheet row state. The anchor
     /// is written as a simple two-cell drawing anchor spanning the supplied
@@ -493,8 +498,8 @@ public:
     /// generated `Picture N` name and omit the description.
     ///
     /// @throws FastXlsxError if the anchor range is invalid, the workbook is
-    /// closed, stb support is disabled, the file cannot be read, or the image
-    /// format is outside the current PNG/JPEG slice.
+    /// closed, the file cannot be read, or the image format is outside the
+    /// current PNG/JPEG slice.
     void add_image(const std::filesystem::path& path, CellRange anchor);
 
     /// Records a PNG/JPEG image with optional drawing non-visual metadata.

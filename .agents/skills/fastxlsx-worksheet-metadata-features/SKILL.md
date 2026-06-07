@@ -32,7 +32,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   package relationships。当前 `DataValidationRule` 还支持 prompt/error metadata：
   `show_input_message`、`show_error_message`、`error_style`、`prompt_title`、`prompt`、
   `error_title` 和 `error` 只写成 `<dataValidation>` attributes，空字符串和 false
-  flags 省略，不生成 `styles.xml`，也不代表完整 Excel UI。当前还支持一条
+  flags 省略，不生成 `styles.xml`，也不代表完整 Excel UI。`hide_dropdown_arrow`
+  只对 list validation 有效，写出 OpenXML 反向命名的 `showDropDown="1"` 来隐藏
+  in-cell dropdown arrow；false 时省略。当前还支持一条
   data validation 规则对应多个 `CellRange`：range 列表复制进 writer state，并写成
   单个 `<dataValidation>` 的空格分隔 `sqref`；`count` 仍按规则数计算，不按区域数
   计算。
@@ -76,8 +78,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - Data validations：已有基础 streaming-only、新建 workbook、worksheet metadata 版本。
   当前覆盖 whole/decimal/list/date/time/textLength/custom 公式文本结构，以及
   prompt/error metadata attributes、attribute escape、空值省略、false flag 省略和
-  `stop` / `warning` / `information` error styles；当前还覆盖 multi-area `sqref`
-  序列化、空 range list 拒绝和 multi-range 内非法 range 拒绝。继续禁止已有文件
+  `stop` / `warning` / `information` error styles，以及 list-only `showDropDown`
+  反向语义；当前还覆盖 multi-area `sqref` 序列化、空 range list 拒绝和 multi-range
+  内非法 range 拒绝。继续禁止已有文件
   编辑、DOM、公式解析、单元格值校验、区域排序/合并/去重、重叠检查和完整 Excel UI
   保证。
 - Hyperlinks：已有基础 streaming-only、新建 workbook 版本，覆盖 external URL links
@@ -112,9 +115,10 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   invalid rule shapes、关系缺失、与 relationship-backed metadata 共存时不消耗
   worksheet-local `rId`、validation-only worksheet 不声明 `xmlns:r`、`formula2`
   XML text escape、prompt/error attributes、attribute escape、empty string omission、
-  false flag omission、`errorStyle` values、无 `styles.xml` / content type side effects，
-  multi-area `sqref` token / `count` 语义、空 range list 和 multi-range 内非法 range，
-  以及 close 后 mutation。
+  false flag omission、`errorStyle` values、list-only `showDropDown="1"` 且不写
+  `showDropDown="0"`、无 `styles.xml` / content type side effects，multi-area
+  `sqref` token / `count` 语义、空 range list 和 multi-range 内非法 range，以及
+  close 后 mutation。
 - external hyperlinks 结构测试应检查 worksheet XML `r:id` 与 worksheet `.rels` 一致、
   target XML escape、同一 worksheet 多个 hyperlink、跨 worksheet owner-local `rId`、
   plain sheet 不生成 `.rels`、不污染 workbook relationships、不新增 content type

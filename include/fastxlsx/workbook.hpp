@@ -193,9 +193,10 @@ private:
 /// the worksheet level so later large-data writers can avoid DOM-style random
 /// access. Phase 1 buffers rows until save(); use WorkbookWriter for large
 /// ordered exports that should not retain row data. Workbook::save() writes
-/// through the internal package writer boundary: dependency-free builds use the
-/// stored ZIP bootstrap, while builds configured with FASTXLSX_ENABLE_MINIZIP_NG
-/// use the minizip-ng DEFLATE backend. Both paths still assemble small package
+/// through the internal package writer boundary: the default ZIP backend uses
+/// the stored bootstrap writer, while builds configured with
+/// FASTXLSX_ENABLE_MINIZIP_NG use the minizip-ng DEFLATE backend. Both paths
+/// still assemble small package
 /// entries in memory; Zip64 and true package streaming are not public guarantees.
 class Workbook {
 public:

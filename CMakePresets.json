@@ -9,9 +9,10 @@
     {
       "name": "windows-nmake-release",
       "displayName": "Windows NMake Release",
-      "description": "Configure FastXLSX with NMake from a Visual Studio Developer Command Prompt. This preset does not use vcpkg.",
+      "description": "Configure FastXLSX with NMake and the default vcpkg manifest dependencies.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "FASTXLSX_BUILD_TESTS": "ON",
@@ -21,7 +22,7 @@
     {
       "name": "windows-nmake-release-vcpkg",
       "displayName": "Windows NMake Release with vcpkg Toolchain",
-      "description": "Configure with the vcpkg toolchain from VCPKG_ROOT without enabling optional FastXLSX runtime features.",
+      "description": "Compatibility preset for the default vcpkg-backed NMake Release configuration.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release-vcpkg",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -47,26 +48,12 @@
       }
     },
     {
-      "name": "windows-nmake-release-image",
-      "displayName": "Windows NMake Release with stb image metadata",
-      "description": "Configure the opt-in stb-backed PNG/JPEG image metadata helper through vcpkg planned-image.",
-      "generator": "NMake Makefiles",
-      "binaryDir": "${sourceDir}/build/windows-nmake-release-image",
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "FASTXLSX_BUILD_TESTS": "ON",
-        "FASTXLSX_BUILD_EXAMPLES": "OFF",
-        "FASTXLSX_ENABLE_STB": "ON",
-        "VCPKG_MANIFEST_FEATURES": "planned-image"
-      }
-    },
-    {
       "name": "windows-nmake-release-benchmark",
       "displayName": "Windows NMake Release Benchmark",
-      "description": "Configure opt-in manual FastXLSX benchmarks without vcpkg.",
+      "description": "Configure opt-in manual FastXLSX benchmarks with default vcpkg dependencies.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release-benchmark",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "FASTXLSX_BUILD_TESTS": "OFF",
@@ -105,10 +92,6 @@
       "configurePreset": "windows-nmake-release-minizip"
     },
     {
-      "name": "windows-nmake-release-image",
-      "configurePreset": "windows-nmake-release-image"
-    },
-    {
       "name": "windows-nmake-release-benchmark",
       "configurePreset": "windows-nmake-release-benchmark"
     },
@@ -143,17 +126,6 @@
     {
       "name": "windows-nmake-release-minizip",
       "configurePreset": "windows-nmake-release-minizip",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "timeout": 60
-      }
-    },
-    {
-      "name": "windows-nmake-release-image",
-      "configurePreset": "windows-nmake-release-image",
       "output": {
         "outputOnFailure": true
       },

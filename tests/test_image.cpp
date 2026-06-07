@@ -54,7 +54,6 @@ void write_bytes(const std::filesystem::path& path, std::span<const std::byte> b
 
 void test_image_info_memory()
 {
-#ifdef FASTXLSX_TEST_HAS_STB
     const fastxlsx::ImageInfo png_info = fastxlsx::read_image_info(fastxlsx::test::tiny_png_bytes());
     check(png_info.format == fastxlsx::ImageFormat::Png, "PNG memory format detection failed");
     check(png_info.width == 1, "PNG memory width failed");
@@ -78,11 +77,6 @@ void test_image_info_memory()
     check_fastxlsx_error(
         [] { (void)fastxlsx::read_image_info(std::span<const std::byte> {}); },
         "empty memory image buffer should fail");
-#else
-    check_fastxlsx_error(
-        [] { (void)fastxlsx::read_image_info(fastxlsx::test::tiny_png_bytes()); },
-        "image info memory reader should require opt-in stb support");
-#endif
 }
 
 void test_image_info_file()
@@ -92,7 +86,6 @@ void test_image_info_file()
     const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-image-info.jpg";
     write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
 
-#ifdef FASTXLSX_TEST_HAS_STB
     const fastxlsx::ImageInfo png_info = fastxlsx::read_image_info(png_path);
     check(png_info.format == fastxlsx::ImageFormat::Png, "PNG file format detection failed");
     check(png_info.width == 1, "PNG file width failed");
@@ -124,11 +117,6 @@ void test_image_info_file()
     check_fastxlsx_error(
         [&empty_path] { (void)fastxlsx::read_image_info(empty_path); },
         "empty image file should fail");
-#else
-    check_fastxlsx_error(
-        [&png_path] { (void)fastxlsx::read_image_info(png_path); },
-        "image info file reader should require opt-in stb support");
-#endif
 }
 
 } // namespace

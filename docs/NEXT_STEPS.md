@@ -99,8 +99,11 @@ feature completion.
      `FASTXLSX_ENABLE_MINIZIP_NG=ON` uses
      `find_package(minizip-ng CONFIG REQUIRED)` and `MINIZIP::minizip-ng`
      through the `windows-nmake-release-minizip` preset.
-   - The default preset and CI path intentionally avoid external vcpkg
-     dependencies.
+   - The default preset and default CI job now use the vcpkg toolchain because
+     `stb` is a default manifest dependency.
+   - CI now also has a separate opt-in vcpkg matrix for
+     `windows-nmake-release-minizip`; keep
+     remote runner cost and vcpkg availability as 基础 until the runs pass.
    - CI should run structural tests through the CTest preset/test properties
      that carry the 60s timeout; Excel visual verification remains a local
      validation step, not a CI hard dependency.
@@ -138,7 +141,8 @@ commit or short series with its own tests and docs update.
      window starts.
    - Keep `actions/checkout` on a Node.js 24-compatible major. Current workflow
      uses `actions/checkout@v5`.
-   - Keep CI on the no-vcpkg NMake preset until dependency work starts.
+   - Keep the default CI job on the vcpkg-backed NMake preset because the
+     default manifest now contains `stb`.
 
 3. Production ZIP backend hardening.
    - Keep the opt-in minizip backend tested while deciding whether it becomes
@@ -180,12 +184,12 @@ and release packaging, or the decision to make minizip the default backend.
    - Prove unknown and unmodified parts are preserved.
    - Use template workbooks with images, charts, macros, or unknown parts.
 
-9. Streaming-only data validations - 基础 + prompt/error metadata.
+9. Streaming-only data validations - 基础 + prompt/error/dropdown metadata.
    - `WorksheetWriter::add_data_validation()` now writes worksheet-local
      `<dataValidations>` for new workbooks only.
    - The current slice stores lightweight metadata, copies formula and
-     prompt/error strings into writer state, writes prompt/error fields as
-     worksheet `<dataValidation>` attributes, and does not add package
+     prompt/error strings into writer state, writes prompt/error and dropdown
+     fields as worksheet `<dataValidation>` attributes, and does not add package
      relationships, content types, or styles.
    - Keep richer validation semantics, overlap checks, formula parsing, and
      existing-file editing out of scope until separately designed.
@@ -256,17 +260,22 @@ Do:
   or action version.
 - Keep checkout on `actions/checkout@v5` unless GitHub Actions compatibility
   evidence requires another version.
-- Keep default CI on the no-vcpkg `windows-nmake-release` preset.
+- Keep default CI on the vcpkg-backed `windows-nmake-release` preset.
+- Keep optional backend CI in a separate vcpkg preset job for
+  `windows-nmake-release-minizip`.
 
 Accept when:
 - VS2026/NMake configure, build, and `ctest --preset windows-nmake-release`
   pass locally.
 - GitHub Actions runs the same preset path and passes.
+- GitHub Actions vcpkg paths pass for default `stb` and opt-in minizip when
+  workflow or dependency paths are touched.
 - Ordinary tests remain protected by the 60s CTest preset/test properties.
 - No Node.js 20 deprecation annotation appears for checkout.
 
 Do not claim:
 - vcpkg dependency readiness or Excel visual validation from CI alone.
+- full image/minizip production readiness from opt-in CI alone.
 
 ### P2 - Production ZIP Dependency Discovery
 
@@ -301,7 +310,7 @@ Status: baseline complete. New workbook output now goes through the internal
 `src/package_writer.*` boundary.
 
 Do:
-- Keep `src/zip_store_writer.*` as the dependency-free bootstrap implementation
+- Keep `src/zip_store_writer.*` as the stored ZIP bootstrap implementation
   behind that boundary.
 - Keep `PackageWriterBackend::Auto` selecting minizip when
   `FASTXLSX_ENABLE_MINIZIP_NG` is enabled and stored bootstrap otherwise.
@@ -585,8 +594,8 @@ Do not claim:
 
 ### P14 - Streaming-Only Data Validations
 
-Status: 基础 + prompt/error metadata + multi-area `sqref`. The streaming-only
-new-workbook worksheet slice is implemented.
+Status: 基础 + prompt/error/dropdown metadata + multi-area `sqref`. The
+streaming-only new-workbook worksheet slice is implemented.
 
 Do:
 - Keep new-workbook `WorksheetWriter` metadata as the only supported surface.
@@ -595,6 +604,9 @@ Do:
 - Keep prompt/error metadata worksheet-local: `showInputMessage`,
   `showErrorMessage`, `errorStyle`, `promptTitle`, `prompt`, `errorTitle`, and
   `error` are attributes on `<dataValidation>`.
+- Keep dropdown arrow metadata worksheet-local and list-only:
+  `hide_dropdown_arrow` writes OpenXML's inverted `showDropDown="1"` attribute
+  to hide the in-cell dropdown arrow. Omitted means the default visible arrow.
 - Keep multi-area data validation as one rule with a copied range list and one
   space-separated `sqref`; `count` remains the number of `<dataValidation>`
   elements, not the number of areas.
@@ -610,8 +622,8 @@ Accept when:
   escapes `&`, `<`, and `>`.
 - Tests also cover prompt/error attributes, XML attribute escaping, prompt-only
   and error-only rules, `stop` / `warning` / `information` error styles, empty
-  string omission, false flag omission, and no `.rels` / `styles.xml` /
-  content type side effects.
+  string omission, false flag omission, list-only `showDropDown="1"`, and no
+  `.rels` / `styles.xml` / content type side effects.
 - Tests also cover multi-area `sqref` serialization, empty range list rejection,
   invalid range rejection inside a multi-range list, and no relationship id
   consumption by data validations.
@@ -737,10 +749,10 @@ Stages:
 1. P17.0 - `stb` dependency discovery and image metadata helper. Status:
    basic.
    - Use `stb` for image decoding, dimensions, channels, and pixel access.
-   - Keep it opt-in through `FASTXLSX_ENABLE_STB=ON` and `planned-image`.
+   - Keep it as a default vcpkg manifest dependency.
    - Current code exposes PNG/JPEG `read_image_info()` for file and memory
-     input, backed by `stbi_info` when enabled and a clear FastXlsxError when
-     disabled. Current tests also cover unsupported memory/file headers, empty
+     input, backed by `stbi_info`. Current tests also cover unsupported
+     memory/file headers, empty
      memory buffer, empty file, and missing file.
    - The `read_image_info()` documentation must describe metadata reading only;
      it must not imply media part creation, drawing XML, relationships, content
@@ -762,9 +774,9 @@ Stages:
      into DOM, a full cell matrix, or the row/cell XML hot path.
 3. P17.2 - New-workbook-only insertion slice.
    Status: basic for streaming new workbooks.
-   - `WorksheetWriter::add_image(path, anchor)` accepts PNG/JPEG files when
-     `FASTXLSX_ENABLE_STB=ON`, validates metadata with `read_image_info()`, and
-     copies original image bytes into temporary file-backed media entries.
+   - `WorksheetWriter::add_image(path, anchor)` accepts PNG/JPEG files by
+     default, validates metadata with `read_image_info()`, and copies original
+     image bytes into temporary file-backed media entries.
    - The first slice uses a simple two-cell anchor from a 1-based inclusive
      `CellRange`; it writes generated media parts, one drawing part per
      worksheet with images, drawing `.rels`, worksheet `.rels`, worksheet
@@ -803,12 +815,12 @@ Stages:
      Excel is available, confirming no repair dialog and expected image
      position/size.
    - Current local Excel COM verification opened
-     `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`
+     `build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx`
      and confirmed 3 sheets, one shape on `Images`, one shape on `SecondImage`,
      zero shapes on `Plain`, first image at `C1:F5`, and second image at
      `A1:B2`.
    - Current local QA for
-     `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`
+     `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`
      uses `tools/verify_image_metadata.py` for XML/openpyxl/XlsxWriter checks
      and `tools/verify_image_metadata_excel.ps1` for Excel COM shape name and
      `AlternativeText` / `Placement` checks.
@@ -834,10 +846,10 @@ Do:
 - Validate anchors without retaining a full worksheet DOM.
 
 Accept when:
-- vcpkg `stb` feature resolution, include path, license, and local CMake
-  behavior are verified for the opt-in image metadata helper and image
-  insertion structure tests. CI behavior for `planned-image` remains a separate
-  hardening task unless a workflow starts running the image preset.
+- vcpkg default manifest dependency `stb` resolution, include path, license, and local
+  CMake behavior are verified for the image metadata helper and image insertion
+  structure tests. CI behavior for the default vcpkg path remains a hardening
+  task until the workflow has passed.
 - Public API docs for any image surface describe mode, ordering, memory cost,
   decoded-pixel lifetime, package side effects, and unsupported operations.
 - Package structure tests cover media, drawing XML, rels, and content types.
@@ -913,7 +925,8 @@ Do not claim:
      verifying the opt-in minizip backend.
    - Use `windows-nmake-release-vcpkg` only for generic vcpkg toolchain smoke;
      it is not the canonical P4/minizip backend validation path.
-   - The current CI workflow runs the no-vcpkg NMake preset first.
+   - The current CI workflow runs the vcpkg-backed NMake preset first and runs
+     minizip/image opt-in vcpkg presets in a separate matrix.
 
 3. Before future publishing, inspect staged files.
    - Confirm `.agents/skills/` is included.

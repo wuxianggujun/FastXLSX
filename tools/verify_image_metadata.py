@@ -234,7 +234,7 @@ def main() -> int:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx"),
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx"),
         help="FastXLSX image metadata workbook to verify.",
     )
     parser.add_argument(

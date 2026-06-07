@@ -74,7 +74,9 @@ relationship target、worksheet `sheetData`、cell reference 和 value type。
 data validations 结构测试还应检查 worksheet `<dataValidations>` 的 `count`、
 `sqref`、`type`、`operator`、`allowBlank`、`formula1`、`formula2`，以及 prompt/error
 metadata attributes：`showInputMessage`、`showErrorMessage`、`errorStyle`、
-`promptTitle`、`prompt`、`errorTitle` 和 `error`。这些 prompt/error 字段应做 XML
+`promptTitle`、`prompt`、`errorTitle` 和 `error`。如果涉及隐藏 list dropdown arrow，
+还要检查 `showDropDown="1"`；OpenXML 这个属性名是反向语义，表示隐藏 in-cell
+dropdown arrow，省略/false 表示保留默认可见箭头。这些 prompt/error 字段应做 XML
 attribute escape，空字符串和 false flags 应省略，并确认不会新增 worksheet `.rels`、
 `xl/metadata.xml`、`xl/styles.xml`、workbook relationships、content type side effects
 或 `<calcPr>`。multi-area `sqref` 测试还应检查空格分隔的区域 token、`count` 仍按
@@ -106,14 +108,18 @@ number / row height，`WorksheetWriter::set_column_width()` 拒绝非有限 widt
 - 样式、列宽、行高、合并单元格、冻结窗格等高级功能在后续实现时可见。
 - 图片功能必须确认图片显示、位置和尺寸符合预期；当前
   `WorksheetWriter::add_image()` 基础切片的推荐样例是
-  `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。
+  `build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx`。
 - 图片 metadata 功能还必须确认 drawing XML 的 `xdr:cNvPr name` / `descr` 与
   Excel 可见 shape metadata 对应；当前推荐样例是
-  `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`。
+  `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。
 - 保存后再打开仍然正常。
 
 Excel 可视化验证是本地验收步骤，不应作为默认 CI 的强依赖。CI 可以做结构检查
 和库级兼容测试；需要 Excel 的验证应明确标记为本机人工或本机自动化验证。
+当前 GitHub Actions workflow 的默认 `windows-nmake-release` job 已使用 vcpkg
+toolchain 并覆盖默认 `stb` 图片路径；独立 opt-in vcpkg matrix job 跑
+`windows-nmake-release-minizip`。这些 CI job 仍只执行 configure/build/CTest，
+不会运行 Excel COM、openpyxl / XlsxWriter 参考脚本或 benchmark。
 
 建议记录字段：
 
@@ -139,21 +145,21 @@ preset 路径通常是 `build/windows-nmake-release/tests/fastxlsx-phase1-minima
 `Sheet1`、`A1`、`B1`、`C1`、`A2`、`B2`。
 
 当前 streaming 图片样例由 `fastxlsx.streaming` 在
-`windows-nmake-release-image` preset 下生成，推荐路径是
-`build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`。本机
+`windows-nmake-release` preset 下生成，推荐路径是
+`build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx`。本机
 Excel COM 验证应确认 workbook 可打开、`Images` 和 `SecondImage` sheet 各有一个
 shape、`Plain` sheet 没有 shape，并记录 Excel 报告的 `TopLeftCell` /
 `BottomRightCell`。当前本机验证结果为 `Images` 上 `C1:F5`，`SecondImage` 上
 `A1:B2`。
 
 当前 streaming image metadata 样例由 `fastxlsx.streaming` 在
-`windows-nmake-release-image` preset 下生成，推荐路径是
-`build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`。本机
+`windows-nmake-release` preset 下生成，推荐路径是
+`build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。本机
 Excel COM 验证可以运行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
-  -Path build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx
 ```
 
 该脚本只读打开 workbook，核对 `ImageMetadata` sheet 的 3 个 shapes、自定义
@@ -281,22 +287,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_data_validation
   -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-multi-range.xlsx
 ```
 
-Python helper 检查 FastXLSX package XML、prompt/error attributes、无 `.rels` /
-`styles.xml` / content type 副作用，使用 `openpyxl` 读取四条 data validation，并创建
-`openpyxl` / `XlsxWriter` 参考 workbook。它还会检查 multi-range 样例的 package XML、
-`sqref="A2:A10 C2:C10 E2:E10"`、`count="1"` 和 `openpyxl` 多区域读取结果，并创建
-`openpyxl` multi-range 参考 workbook。Excel helper 只读打开 workbook 并核对
-`ValidationPrompt!A2:D2` 的 `Validation` 属性，同时打开 multi-range 样例确认
-`ValidationRanges` 中 A/C/E 三段 validation areas。Excel COM 会把 custom validation
-公式 `LEN(D2)>0` 返回为 `=LEN(D2)>0`，所以结构语义仍以拆包后的 worksheet XML 为准。
+Python helper 检查 FastXLSX package XML、prompt/error attributes、`showDropDown`
+attribute、无 `.rels` / `styles.xml` / content type 副作用，使用 `openpyxl` 读取
+四条 data validation，并创建 `openpyxl` / `XlsxWriter` 参考 workbook。它还会检查
+multi-range 样例的 package XML、`sqref="A2:A10 C2:C10 E2:E10"`、`count="1"` 和
+`openpyxl` 多区域读取结果，并创建 `openpyxl` multi-range 参考 workbook。Excel helper
+只读打开 workbook 并核对 `ValidationPrompt!A2:D2` 的 `Validation` 属性，其中
+`showDropDown="1"` 对应 Excel COM `Validation.InCellDropdown = False`；同时打开
+multi-range 样例确认 `ValidationRanges` 中 A/C/E 三段 validation areas。Excel COM
+会把 custom validation 公式 `LEN(D2)>0` 返回为 `=LEN(D2)>0`，所以结构语义仍以拆包后的
+worksheet XML 为准。
 
 当前 image metadata smoke 样例也有固定本地 QA 脚本：
 
 ```powershell
 py tools\verify_image_metadata.py `
-  --input build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
-  -Path build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx
 ```
 
 Python helper 检查 FastXLSX package XML、drawing `xdr:cNvPr name` / `descr`、XML

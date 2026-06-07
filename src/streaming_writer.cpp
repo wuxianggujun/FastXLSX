@@ -334,6 +334,10 @@ void validate_data_validation_rule(const DataValidationRule& rule)
         throw FastXlsxError("data validation formula1 cannot be empty");
     }
 
+    if (rule.hide_dropdown_arrow && rule.type != DataValidationType::List) {
+        throw FastXlsxError("hide_dropdown_arrow is only valid for list data validations");
+    }
+
     if (rule.type == DataValidationType::List || rule.type == DataValidationType::Custom) {
         if (rule.operator_type.has_value()) {
             throw FastXlsxError("list and custom data validations do not accept an operator");
@@ -760,6 +764,9 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
         xml += "\"";
         if (validation.rule.allow_blank) {
             xml += " allowBlank=\"1\"";
+        }
+        if (validation.rule.hide_dropdown_arrow) {
+            xml += " showDropDown=\"1\"";
         }
         if (validation.rule.show_input_message) {
             xml += " showInputMessage=\"1\"";

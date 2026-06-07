@@ -119,11 +119,16 @@ XLSX 语义层：FastXLSX 自研
 
 选择原因：
 
-- `stb` 是 header-only 库，适合 FastXLSX 保持轻量依赖边界。
+- `stb` 是默认必需的 header-only 图片依赖，但依赖边界仍保持清楚：它只处理图片读取/解码。
 - 本机 vcpkg metadata 已确认 port 名称为 `stb`，描述为 public domain
   header-only libraries，license 为 `MIT OR CC-PDDC`。
 - 本机 vcpkg usage 显示 CMake 用法是 `find_package(Stb REQUIRED)` 和
   `${Stb_INCLUDE_DIR}`，当前未见 imported target。
+  当前项目在 `CMakeLists.txt` 中显式使用 `find_package(Stb MODULE REQUIRED)`，
+  并把 `${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/stb` 以及根目录
+  `vcpkg_installed/*/share/stb` 加入 `CMAKE_MODULE_PATH`，同时从对应 `include`
+  目录预解析 `Stb_INCLUDE_DIR`，避免工具链偏向 config package 搜索时跳过 vcpkg
+  提供的 `FindStb.cmake`。
 - 图片功能需要解码层，但不需要引入 OpenCV、FreeImage、Qt 等重型图像框架。
 
 边界：
@@ -145,10 +150,9 @@ XLSX 语义层：FastXLSX 自研
 
 P17 图片任务的依赖接入应按阶段推进：
 
-1. 依赖发现阶段验证 `planned-image` / `stb` 的 vcpkg feature、include 路径、
-   license、CMake package/include 行为和 CI 安装成本。当前 P17a 已把
-   `FASTXLSX_ENABLE_STB=ON` 作为 opt-in CMake 接入口，用于 `read_image_info()`
-   PNG/JPEG 元数据 helper。
+1. 依赖发现阶段验证默认 `stb` vcpkg dependency、include 路径、license、
+   CMake package/include 行为和 CI 安装成本。当前 P17a 已把 `stb` 作为默认依赖，
+   用于 `read_image_info()` PNG/JPEG 元数据 helper。
 2. API 设计阶段先写清 Streaming / Patch / In-memory 模式、原始图片字节和 decoded
    pixel buffer 的内存边界、OpenXML package 副作用，以及为什么不会破坏 worksheet
    streaming 热路径。
@@ -286,13 +290,14 @@ P17 图片任务的依赖接入应按阶段推进：
 - 引入 Qt 依赖过重。
 - 不符合 FastXLSX 的独立 C++ 库定位。
 
-## 依赖数量目标
+## 规划运行依赖数量目标
 
-第一阶段控制在：
+第一阶段 ZIP/XML planned-runtime 依赖控制在：
 
 ```text
 运行依赖：4 个
 开发依赖：2 个
+默认图片依赖：1 个
 后期可选依赖：按 benchmark 和真实需求决定
 ```
 
@@ -303,6 +308,7 @@ minizip-ng
 zlib-ng / zlib
 Expat
 pugixml
+stb
 Catch2
 Google Benchmark
 ```
@@ -325,23 +331,21 @@ Google Benchmark
 
 这个 manifest 的边界是：
 
-- 默认 `dependencies` 为空。
-- 默认 CMake 配置和 CI 不安装、不链接任何外部 vcpkg 包。
+- 默认 `dependencies` 包含 `stb`，默认 CMake preset 和 CI 需要 vcpkg toolchain。
+- `stb` 用于 PNG/JPEG `read_image_info()` 元数据 helper，并支撑
+  `WorksheetWriter::add_image()` 的 streaming-only new-workbook PNG/JPEG 基础插入切片；
+  它不代表 existing-workbook 图片保真或完整 drawing 编辑。
 - `planned-runtime` 现在是 opt-in 运行依赖 feature：当前源码只使用其中的
   `minizip-ng[core,zlib]` 作为 package writer backend；`zlib-ng`、`expat`
   和 `pugixml` 仍是后续 ZIP/XML reader/editor 工作的计划依赖。
-- `planned-image` 记录图片解码依赖：`stb`。当前通过
-  `FASTXLSX_ENABLE_STB=ON` 接入 PNG/JPEG `read_image_info()` 元数据 helper，并支撑
-  `WorksheetWriter::add_image()` 的 streaming-only new-workbook PNG/JPEG 基础插入切片；
-  它不属于默认构建，也不代表 existing-workbook 图片保真或完整 drawing 编辑。
 - `planned-dev` 记录计划中的开发依赖：`catch2`、`benchmark`。
 - 本机已用 `vcpkg search` 确认上述 port 名称存在。
-- 本机已用 `vcpkg install --dry-run --x-feature=planned-runtime`、
-  `--x-feature=planned-image` 和 `--x-feature=planned-dev` 确认可选
-  feature 可解析到依赖图。
+- 本机已用 `vcpkg install --dry-run` 确认默认依赖可解析，并用
+  `--x-feature=planned-runtime` 和 `--x-feature=planned-dev` 确认可选 feature
+  可解析到依赖图。
 - 已验证 `FASTXLSX_ENABLE_MINIZIP_NG=ON` 时 CMake 使用
   `find_package(minizip-ng CONFIG REQUIRED)` 并链接 `MINIZIP::minizip-ng`。
-  默认无 vcpkg 构建仍不会触发该依赖。
+  默认 vcpkg-backed 构建仍不会触发该依赖。
 
 ### 当前 P2/P4 dependency and backend 记录
 
@@ -368,8 +372,8 @@ Google Benchmark
 
 当前 preset 边界：
 
-- `windows-nmake-release`：默认无 vcpkg、stored ZIP bootstrap。
-- `windows-nmake-release-vcpkg`：只配置 vcpkg toolchain，不启用 minizip backend。
+- `windows-nmake-release`：默认 vcpkg-backed、stored ZIP bootstrap。
+- `windows-nmake-release-vcpkg`：兼容默认 vcpkg-backed 配置，不启用 minizip backend。
 - `windows-nmake-release-minizip`：启用 `FASTXLSX_ENABLE_MINIZIP_NG=ON` 和
   `VCPKG_MANIFEST_FEATURES=planned-runtime`，验证 opt-in minizip backend。
 
@@ -389,11 +393,16 @@ ctest --test-dir build/windows-nmake-release-vcpkg-local --output-on-failure --t
 生成的 representative `.xlsx` 中 ZIP central directory method 为 `8`
 （DEFLATE），证明测试覆盖了 minizip backend，而不是误走 stored fallback。
 
-后续 CI 接入仍需单独验证 GitHub Actions 上的 vcpkg 缓存、安装耗时和失败行为。
+GitHub Actions workflow 现在默认 job 和 opt-in minizip job 都需要 vcpkg toolchain。
+默认 job 运行 `windows-nmake-release`，覆盖默认 `stb` 图片路径；opt-in job 运行
+`windows-nmake-release-minizip`。远端 runner 的 vcpkg availability、缓存、安装耗时
+和失败行为仍以实际 CI run 为准；不要只凭 workflow 配置宣称可选依赖路径已经生产化。
 
-对于 `stb`，已知 vcpkg CMake 用法目前是 `find_package(Stb REQUIRED)` 加
-`${Stb_INCLUDE_DIR}`，而不是 imported target。正式接入时要以本机和 CI 的实际
-toolchain 输出为准。
+对于 `stb`，已知 vcpkg CMake usage 目前是 `find_package(Stb REQUIRED)` 加
+`${Stb_INCLUDE_DIR}`，而不是 imported target。当前项目会把 vcpkg installed tree 的
+`share/stb` 加入 `CMAKE_MODULE_PATH`，从 installed include 目录预解析
+`Stb_INCLUDE_DIR`，再用 `find_package(Stb MODULE REQUIRED)` 强制走 vcpkg 安装的
+`FindStb.cmake`；后续调整时要以本机和 CI 的实际 toolchain 输出为准。
 
 暂不在叙述文档里硬编码具体版本号。
 版本应由 `vcpkg.json` baseline 和 CI 环境共同锁定。

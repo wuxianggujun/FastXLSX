@@ -28,9 +28,6 @@ if(FASTXLSX_ENABLE_MINIZIP_NG)
     target_link_libraries(fastxlsx_streaming_writer_tests PRIVATE MINIZIP::minizip-ng)
     target_compile_definitions(fastxlsx_streaming_writer_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
 endif()
-if(FASTXLSX_ENABLE_STB)
-    target_compile_definitions(fastxlsx_streaming_writer_tests PRIVATE FASTXLSX_TEST_HAS_STB=1)
-endif()
 
 add_test(NAME fastxlsx.streaming COMMAND fastxlsx_streaming_writer_tests)
 set_tests_properties(fastxlsx.streaming PROPERTIES
@@ -57,9 +54,6 @@ add_executable(fastxlsx_image_tests
 
 target_link_libraries(fastxlsx_image_tests PRIVATE FastXLSX::fastxlsx)
 target_compile_features(fastxlsx_image_tests PRIVATE cxx_std_20)
-if(FASTXLSX_ENABLE_STB)
-    target_compile_definitions(fastxlsx_image_tests PRIVATE FASTXLSX_TEST_HAS_STB=1)
-endif()
 
 add_test(NAME fastxlsx.image COMMAND fastxlsx_image_tests)
 set_tests_properties(fastxlsx.image PROPERTIES

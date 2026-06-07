@@ -21,6 +21,7 @@ EXPECTED_RULES: dict[str, dict[str, str | bool | None]] = {
         "operator": "between",
         "formula1": "1",
         "formula2": "10",
+        "showDropDown": False,
         "showInputMessage": True,
         "showErrorMessage": True,
         "errorStyle": "warning",
@@ -34,6 +35,7 @@ EXPECTED_RULES: dict[str, dict[str, str | bool | None]] = {
         "operator": None,
         "formula1": '"A,B,C"',
         "formula2": None,
+        "showDropDown": True,
         "showInputMessage": True,
         "showErrorMessage": False,
         "errorStyle": None,
@@ -47,6 +49,7 @@ EXPECTED_RULES: dict[str, dict[str, str | bool | None]] = {
         "operator": "greaterThan",
         "formula1": "0",
         "formula2": None,
+        "showDropDown": False,
         "showInputMessage": False,
         "showErrorMessage": True,
         "errorStyle": "information",
@@ -60,6 +63,7 @@ EXPECTED_RULES: dict[str, dict[str, str | bool | None]] = {
         "operator": None,
         "formula1": "LEN(D2)>0",
         "formula2": None,
+        "showDropDown": False,
         "showInputMessage": False,
         "showErrorMessage": False,
         "errorStyle": "stop",
@@ -139,7 +143,7 @@ def verify_fastxlsx_package(path: Path) -> list[str]:
             'sqref="A2:A10"><formula1>1</formula1><formula2>10</formula2></dataValidation>'
         ),
         (
-            '<dataValidation type="list" showInputMessage="1" promptTitle="Choice" '
+            '<dataValidation type="list" showDropDown="1" showInputMessage="1" promptTitle="Choice" '
             'prompt="Pick A, B, or C" sqref="B2:B10"><formula1>"A,B,C"</formula1></dataValidation>'
         ),
         (
@@ -158,6 +162,7 @@ def verify_fastxlsx_package(path: Path) -> list[str]:
     for forbidden_fragment in [
         'showInputMessage="0"',
         'showErrorMessage="0"',
+        'showDropDown="0"',
         'promptTitle=""',
         'prompt=""',
         'errorTitle=""',
@@ -249,6 +254,7 @@ def verify_rules_with_openpyxl(path: Path) -> dict[str, dict[str, Any]]:
                 "operator": validation.operator,
                 "formula1": validation.formula1,
                 "formula2": validation.formula2,
+                "showDropDown": normalize_bool(getattr(validation, "showDropDown", None)),
                 "showInputMessage": normalize_bool(validation.showInputMessage),
                 "showErrorMessage": normalize_bool(validation.showErrorMessage),
                 "errorStyle": validation.errorStyle,
@@ -325,6 +331,7 @@ def create_openpyxl_reference(path: Path) -> None:
     whole.add("A2:A10")
 
     list_rule = DataValidation(type="list", formula1='"A,B,C"')
+    list_rule.showDropDown = True
     list_rule.showInputMessage = True
     list_rule.promptTitle = "Choice"
     list_rule.prompt = "Pick A, B, or C"
@@ -395,6 +402,7 @@ def create_xlsxwriter_reference(path: Path) -> str | None:
         {
             "validate": "list",
             "source": ["A", "B", "C"],
+            "dropdown": False,
             "input_title": "Choice",
             "input_message": "Pick A, B, or C",
         },

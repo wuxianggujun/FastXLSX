@@ -89,10 +89,11 @@ width；小型 in-memory `Workbook` 路径在 `Workbook::save()` 序列化 works
 对 data validations 这类 worksheet metadata API，注释还要说明是否只写
 worksheet XML、是否新增 relationships/content types/styles、是否复制 range 列表、
 公式文本和 prompt/error 文本、multi-area `sqref` 是否排序/合并/去重/检查重叠、
-是否按属性写出 `showInputMessage`、`showErrorMessage`、
+是否按属性写出 `showInputMessage`、`showErrorMessage`、`showDropDown`、
 `errorStyle`、`promptTitle`、`prompt`、`errorTitle`、`error`，是否省略空字符串和
 false flag，是否解析公式或校验单元格值，以及是否支持 existing-file editing 或完整
-Excel UI。
+Excel UI。当前 `hide_dropdown_arrow` 只对 list validation 有效，写出 OpenXML
+反向命名的 `showDropDown="1"` 来隐藏 in-cell dropdown arrow；false 时省略。
 
 对 hyperlinks 这类 worksheet metadata API，注释还要区分 external relationship-backed
 链接和 internal location-only 链接。external API 要说明是否只支持 Streaming /

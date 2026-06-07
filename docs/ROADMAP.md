@@ -24,7 +24,7 @@
 
 当前 package writer 边界：
 
-- 默认无依赖构建使用内部 stored ZIP writer。
+- 默认 ZIP backend 使用内部 stored ZIP writer。
 - `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 `minizip-ng[core,zlib]` DEFLATE backend。
 - 无 Zip64。
 - 无真实 package streaming。
@@ -102,8 +102,8 @@ existing-file editing、unknown part preservation 仍是计划。
 
 ## Phase 5：复杂对象
 
-当前状态提示：`stb` 已通过 opt-in `FASTXLSX_ENABLE_STB=ON` /
-`planned-image` 接入 PNG/JPEG `read_image_info()` 元数据 helper。当前还存在
+当前状态提示：`stb` 已作为默认 vcpkg 依赖接入 PNG/JPEG `read_image_info()`
+元数据 helper。当前还存在
 `WorksheetWriter::add_image(path, anchor)` 的 streaming-only new-workbook
 PNG/JPEG 图片插入基础切片，会写 media/drawing parts、drawing rels、
 worksheet rels、worksheet `<drawing>` 和 content types。它不代表图片编辑、

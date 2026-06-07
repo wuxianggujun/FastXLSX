@@ -15,7 +15,6 @@ option(FASTXLSX_BUILD_EXAMPLES "Build FastXLSX examples" OFF)
 option(FASTXLSX_BUILD_BENCHMARKS "Build FastXLSX manual benchmark tools" OFF)
 option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" ON)
 option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZIP writer backend" OFF)
-option(FASTXLSX_ENABLE_STB "Enable stb-backed PNG/JPEG image metadata helpers" OFF)
 
 add_library(fastxlsx
     src/image.cpp
@@ -36,16 +35,22 @@ target_compile_features(fastxlsx PUBLIC cxx_std_20)
 
 add_library(FastXLSX::fastxlsx ALIAS fastxlsx)
 
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/stb")
+    list(APPEND _fastxlsx_stb_include_dirs "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
+endif()
+file(GLOB _fastxlsx_stb_module_dirs "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/*/share/stb")
+list(APPEND CMAKE_MODULE_PATH ${_fastxlsx_stb_module_dirs})
+file(GLOB _fastxlsx_stb_manifest_include_dirs "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/*/include")
+list(APPEND _fastxlsx_stb_include_dirs ${_fastxlsx_stb_manifest_include_dirs})
+find_path(Stb_INCLUDE_DIR NAMES stb_image.h PATHS ${_fastxlsx_stb_include_dirs} NO_DEFAULT_PATH)
+find_package(Stb MODULE REQUIRED)
+target_include_directories(fastxlsx PRIVATE ${Stb_INCLUDE_DIR})
+
 if(FASTXLSX_ENABLE_MINIZIP_NG)
     find_package(minizip-ng CONFIG REQUIRED)
     target_link_libraries(fastxlsx PRIVATE MINIZIP::minizip-ng)
     target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_MINIZIP_NG=1)
-endif()
-
-if(FASTXLSX_ENABLE_STB)
-    find_package(Stb REQUIRED)
-    target_include_directories(fastxlsx PRIVATE ${Stb_INCLUDE_DIR})
-    target_compile_definitions(fastxlsx PRIVATE FASTXLSX_HAS_STB=1)
 endif()
 
 if(FASTXLSX_BUILD_TESTS)

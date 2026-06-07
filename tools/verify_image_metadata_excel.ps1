@@ -1,5 +1,5 @@
 param(
-    [string]$Path = "build\windows-nmake-release-image\tests\fastxlsx-streaming-image-metadata.xlsx"
+    [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx"
 )
 
 $ErrorActionPreference = "Stop"

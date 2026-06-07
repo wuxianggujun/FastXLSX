@@ -94,10 +94,12 @@ obligations.
   to `https://github.com/wuxianggujun/FastXLSX.git`.
 - Current visible root files include `vcpkg.json`, `CMakePresets.json`, and
   `.github/workflows/ci.yml` as 基础 engineering entry points. The manifest keeps
-  runtime/dev dependencies in planned features rather than default dependencies,
-  the presets target the VS2026/MSVC 2026 NMake workflow, and the CI workflow
-  runs the no-vcpkg preset path. Treat these files as 基础 until package target
-  names and CI runner behavior are verified.
+  `stb` as a default dependency and keeps other runtime/dev dependencies in
+  planned features. The presets target the VS2026/MSVC 2026 NMake workflow.
+  The CI workflow runs the vcpkg-backed default preset first and has an opt-in
+  vcpkg matrix for the minizip preset. Treat remote CI cost and runner vcpkg
+  behavior as
+  基础 until the GitHub Actions runs prove them.
 - The current CMake file has an `FASTXLSX_BUILD_EXAMPLES` branch, and an
   `examples/` directory is visible in the working tree; do not treat examples
   as a release surface until the files and validation are part of the specific
@@ -126,19 +128,24 @@ Mapping to `docs/NEXT_STEPS.md`: `P5` = `M3` sharedStrings hardening;
      `XlsxWriter` where useful, and size/memory behavior.
 
 2. vcpkg / CMakePresets / CI - 基础.
-   - Keep `vcpkg.json` conservative: no default third-party dependencies, with
-     `planned-runtime`, `planned-image`, and `planned-dev` features only.
+   - Keep `vcpkg.json` conservative: `stb` is the default third-party
+     dependency; `planned-runtime` and `planned-dev` remain opt-in/planned
+     features.
    - `FASTXLSX_ENABLE_MINIZIP_NG=ON` now uses `planned-runtime` to link
      `MINIZIP::minizip-ng`; keep this opt-in until CI cost and release packaging
      are verified.
+   - Default `stb` remains limited to the current image metadata helper and
+     streaming image insertion structure tests.
    - Record that `minizip-ng[core,zlib]` resolves through vcpkg `zlib`, not
      `zlib-ng`. `zlib-ng`, `expat`, and `pugixml` clean install successfully as
      planned-runtime dependencies, but current FastXLSX code does not use them.
    - Keep `CMakePresets.json` centered on the VS2026/MSVC 2026 NMake workflow;
      use the vcpkg preset only when toolchain behavior is being verified.
    - Keep CI as a structural and unit-test gate. The current workflow calls the
-     CTest preset, and the preset/test properties carry the 60s timeout.
-     Excel visual verification remains local, and benchmark jobs stay opt-in.
+     default CTest preset in the vcpkg-backed job and the minizip CTest preset
+     in an opt-in vcpkg matrix job. Preset/test properties carry the
+     60s timeout. Excel visual verification remains local, and benchmark jobs
+     stay opt-in.
 
 3. OPC edit plan - 基础.
    - Continue from the internal manifest, relationship/content-type models,
@@ -193,11 +200,16 @@ Tasks:
   `cmake --preset windows-nmake-release`,
   `cmake --build --preset windows-nmake-release`,
   `ctest --preset windows-nmake-release`.
+- Keep opt-in vcpkg CI coverage separate from the default job:
+  `windows-nmake-release` validates the default stb-backed image path, and
+  `windows-nmake-release-minizip` validates the minizip backend path.
 
 Validation:
 - `git diff --check`.
 - Skill validation after skill edits.
 - VS2026/NMake preset build and CTest.
+- VS2026/NMake default and opt-in minizip preset builds/CTest when touching
+  workflow, dependencies, package writer, or image support.
 - GitHub Actions CI passes.
 - No Node.js 20 deprecation annotation appears for checkout.
 
@@ -377,9 +389,11 @@ Tasks:
 - The first slice writes only worksheet `<dataValidations>` and does not add
   worksheet `.rels`, workbook relationships, or content type overrides.
 - `DataValidationRule` now stores optional prompt/error metadata and writes
-  `showInputMessage`, `showErrorMessage`, `errorStyle`, `promptTitle`,
-  `prompt`, `errorTitle`, and `error` as worksheet `<dataValidation>`
-  attributes. Empty strings and false flags are omitted.
+  `showInputMessage`, `showErrorMessage`, `showDropDown`, `errorStyle`,
+  `promptTitle`, `prompt`, `errorTitle`, and `error` as worksheet
+  `<dataValidation>` attributes. Empty strings and false flags are omitted.
+  `hide_dropdown_arrow` is valid only for list validations; it writes OpenXML's
+  inverted `showDropDown="1"` attribute to hide the in-cell dropdown arrow.
 - `WorksheetWriter::add_data_validation()` now also accepts multiple
   `CellRange` values for one rule. The range list is copied into writer state
   and serialized as one space-separated `sqref` attribute on a single
@@ -402,22 +416,25 @@ Validation:
   `xmlns:r`, and `formula2` escapes `&`, `<`, and `>`.
 - `fastxlsx.streaming` covers prompt/error metadata attributes, XML attribute
   escaping, prompt-only/error-only rules, all three current `errorStyle`
-  values, empty string omission, false flag omission, and absence of worksheet
-  `.rels`, `xl/metadata.xml`, `xl/styles.xml`, workbook relationships, content
-  type side effects, and `<calcPr>`.
+  values, list-only `showDropDown="1"` serialization, empty string omission,
+  false flag omission, and absence of worksheet `.rels`, `xl/metadata.xml`,
+  `xl/styles.xml`, workbook relationships, content type side effects, and
+  `<calcPr>`.
 - Local Excel COM read-only validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-formula2-escape.xlsx`
   and read `A2` validation formula2 as `=LEN(A2&"<max>")`; local `openpyxl`
   3.1.2 loaded one data validation with formula2 `LEN(A2&"<max>")`.
 - Local Excel COM read-only validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-prompts.xlsx`
-  and verified `ValidationPrompt!A2:D2` prompt/error properties. Excel COM
-  returns the custom formula as `=LEN(D2)>0`; XML structure remains the source
-  of truth for emitted formula text.
+  and verified `ValidationPrompt!A2:D2` prompt/error properties and list
+  dropdown visibility. Excel COM reports the hidden dropdown arrow through
+  `Validation.InCellDropdown = False`; it returns the custom formula as
+  `=LEN(D2)>0`. XML structure remains the source of truth for emitted formula
+  text.
 - `tools/verify_data_validation_prompts.py` checks the FastXLSX package XML,
-  loads prompt/error metadata with `openpyxl 3.1.2`, and creates `openpyxl` /
-  `XlsxWriter 3.2.0` reference workbooks for local QA. It is not a runtime
-  dependency and is not part of default CTest.
+  loads prompt/error and `showDropDown` metadata with `openpyxl 3.1.2`, and
+  creates `openpyxl` / `XlsxWriter 3.2.0` reference workbooks for local QA. It
+  is not a runtime dependency and is not part of default CTest.
 - The same Python QA helper now accepts `--multi-range-input` and checks
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validation-multi-range.xlsx`
   by package XML and `openpyxl` multi-range `sqref` / type / formula reads. It
@@ -520,8 +537,8 @@ Order:
    `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
    table content type overrides for new workbooks only.
 2. New-workbook-only image insertion has a narrow
-   `WorksheetWriter::add_image(path, anchor)` slice for PNG/JPEG files behind
-   `FASTXLSX_ENABLE_STB=ON`. It validates metadata with `read_image_info()`,
+   `WorksheetWriter::add_image(path, anchor)` slice for PNG/JPEG files with the
+   default manifest dependency `stb`. It validates metadata with `read_image_info()`,
    stores original image bytes as file-backed media entries, writes one drawing
    part per worksheet with images, and does not mutate existing drawings or make
    passthrough claims.
@@ -559,7 +576,7 @@ Validation:
   names, `A1:C3` / `A1:B2` ranges, header text, and basic built-in style flags.
 - Reference workbooks from Excel or Python XLSX libraries remain the fallback
   when table XML structure or Excel repair behavior is unclear.
-- `fastxlsx.streaming` image tests under `windows-nmake-release-image` compare
+- `fastxlsx.streaming` image tests under `windows-nmake-release` compare
   `xl/media/image*.png|jpg`, `xl/drawings/drawing*.xml`, drawing `.rels`,
   worksheet `.rels`, worksheet `<drawing>`, owner-local `rId`, PNG/JPEG content
   type defaults, JPEG drawing EMU sizing, JPEG media relationship targets, and
@@ -574,7 +591,7 @@ Validation:
   / `descr`; XML attribute escape; empty description omission; default
   `Picture N` names; and no extra drawing part / worksheet relationship /
   content type / media side effects. Local Python QA for
-  `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`
+  `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`
   uses `tools/verify_image_metadata.py` to parse package XML, open with
   `openpyxl`, and create a `XlsxWriter` reference workbook.
 - The current mixed-object relationship regression covers multiple external
@@ -583,16 +600,16 @@ Validation:
   across worksheets, global table/drawing/media numbering, and drawing-local
   image relationship ids.
 - Local Excel COM read-only validation opened
-  `build/windows-nmake-release-image/tests/fastxlsx-streaming-mixed-object-rels.xlsx`
+  `build/windows-nmake-release/tests/fastxlsx-streaming-mixed-object-rels.xlsx`
   and confirmed object counts: `Objects` has 2 hyperlinks / 2 shapes / 2 tables,
   `MoreObjects` has 1 / 1 / 1, and `Plain` has 0 / 0 / 0.
 - Local Excel COM visual verification passed for
-  `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`;
+  `build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx`;
   Excel opened the workbook, saw one shape on `Images`, one shape on
   `SecondImage`, zero shapes on `Plain`, and reported anchors `C1:F5` and
   `A1:B2`.
 - Local Excel COM image metadata verification passed for
-  `build/windows-nmake-release-image/tests/fastxlsx-streaming-image-metadata.xlsx`;
+  `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`;
   Excel opened the workbook, saw 3 shapes on `ImageMetadata`, exposed custom
   `NamedOnly`, default `Picture 3`, and mapped the first drawing `descr` to
   `Shape.AlternativeText`. It also confirmed `editAs` placement mapping:
@@ -740,8 +757,8 @@ Validation:
 Status: 基础.
 
 Current decision:
-- Keep the small internal stored ZIP writer as the dependency-free bootstrap
-  backend for the default preset.
+- Keep the small internal stored ZIP writer as the default ZIP bootstrap
+  backend.
 - Use the opt-in minizip-ng backend for DEFLATE package output validation.
 - Neither backend is a public existing-file editing API.
 
@@ -843,7 +860,7 @@ Validation:
 ## Phase 2 Work Items - High-Performance Streaming Writer
 
 Status: 进行中. The public streaming writer skeleton exists, and final package
-output can use either the dependency-free bootstrap or the opt-in minizip-ng
+output can use either the stored ZIP bootstrap or the opt-in minizip-ng
 backend. True package streaming remains 计划.
 
 Current facts:
@@ -1138,10 +1155,9 @@ Required dependencies before broad implementation:
   styles, document properties, and relationship parts.
 - Streaming worksheet writer support for object anchors or references without
   holding full worksheet data.
-- `stb` image decode/dimension dependency is available through the opt-in
-  `FASTXLSX_ENABLE_STB=ON` / `planned-image` path for `read_image_info()` and
-  the current `WorksheetWriter::add_image()` PNG/JPEG insertion slice.
-  This is still opt-in and not default-build image support.
+- `stb` image decode/dimension dependency is available through the default
+  vcpkg manifest path for `read_image_info()` and the current
+  `WorksheetWriter::add_image()` PNG/JPEG insertion slice.
 - Style and formula boundaries from Phase 3 where conditional formatting,
   tables, or validations depend on styles, ranges, formulas, or workbook
   metadata.
@@ -1183,13 +1199,13 @@ Allowed early slices:
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.
 - P17 image work must stay split into explicit stages:
-  1. Dependency discovery and metadata helper: verify `planned-image` / `stb`
-     resolution, include behavior, license, local CMake behavior, and CI cost.
+  1. Dependency discovery and metadata helper: verify default `stb` resolution,
+     include behavior, license, local CMake behavior, and CI cost.
      Current P17a exposes `ImageInfo`, `ImageFormat`, and `read_image_info()`
      for PNG/JPEG metadata only; its public comment must stay clear that the
      helper reports dimensions, format, and channels only, and does not create
      OpenXML image package parts, relationships, anchors, or compatibility
-     guarantees. Current `fastxlsx.image` coverage includes default no-STB
+     guarantees. Current `fastxlsx.image` coverage includes default default-STB
      errors, PNG/JPEG file and memory metadata, unsupported memory/file
      headers, empty memory buffer, empty file, and missing file.
   2. API design and documentation for insertion/editing: define

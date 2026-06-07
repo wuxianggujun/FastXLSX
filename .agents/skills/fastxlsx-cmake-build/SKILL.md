@@ -13,15 +13,7 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 - `docs/DEPENDENCIES.md`
 - `.gitignore`
 
-引用 `vcpkg.json`、`CMakePresets.json`、`examples/`、CI 文件或真实测试源码前，
-先确认它们是否存在。当前可见 `vcpkg.json`、`CMakePresets.json`、
-`.github/workflows/ci.yml` 和 `examples/`，但这些只能写为基础：
-默认构建仍不接入第三方依赖；`FASTXLSX_ENABLE_MINIZIP_NG=ON` 才通过
-`planned-runtime` 接入 `find_package(minizip-ng CONFIG REQUIRED)` /
-`MINIZIP::minizip-ng`；`FASTXLSX_ENABLE_STB=ON` 才通过 `planned-image`
-接入 `find_package(Stb REQUIRED)` / `${Stb_INCLUDE_DIR}`，用于 PNG/JPEG
-`read_image_info()` 元数据 helper 和 `WorksheetWriter::add_image()` 的 streaming
-图片插入基础切片。CI 路径不能在本地文档里写成已验证完成。
+引用 `vcpkg.json`、`CMakePresets.json`、`examples/`、CI 文件或真实测试源码前，先确认它们是否存在。当前可见 `vcpkg.json`、`CMakePresets.json`、`.github/workflows/ci.yml` 和 `examples/`，但这些只能写为基础。默认构建现在通过 vcpkg manifest 接入 `stb`，用于 PNG/JPEG `read_image_info()` 元数据 helper 和 `WorksheetWriter::add_image()` 的 streaming 图片插入基础切片；`FASTXLSX_ENABLE_MINIZIP_NG=ON` 才通过 `planned-runtime` 接入 `find_package(minizip-ng CONFIG REQUIRED)` / `MINIZIP::minizip-ng`。CI workflow 现在有默认 vcpkg-backed job 和 opt-in minizip vcpkg matrix job；远端 vcpkg availability、安装耗时和缓存行为必须以实际 CI run 为准。
 
 ## 当前 CMake 事实
 
@@ -44,8 +36,12 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
   - `FASTXLSX_ENABLE_DOM_EDITING` 默认 `ON`。
   - `FASTXLSX_ENABLE_MINIZIP_NG` 默认 `OFF`，启用后链接 `MINIZIP::minizip-ng`
     并定义 `FASTXLSX_HAS_MINIZIP_NG`。
-  - `FASTXLSX_ENABLE_STB` 默认 `OFF`，启用后使用 `Stb_INCLUDE_DIR` 并定义
-    `FASTXLSX_HAS_STB`。
+- 当前没有单独的 stb 开关；顶层 CMake 在 vcpkg manifest 环境下把
+  `${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/stb` 和根目录
+  `vcpkg_installed/*/share/stb` 加入 `CMAKE_MODULE_PATH`，
+  从对应 installed include 目录预解析 `Stb_INCLUDE_DIR`，再调用
+  `find_package(Stb MODULE REQUIRED)`，并把 `${Stb_INCLUDE_DIR}` 作为 `fastxlsx`
+  的 private include path。
 - `tests/CMakeLists.txt` 注册 `fastxlsx_tests`、`fastxlsx_streaming_writer_tests`
   `fastxlsx_opc_tests` 和 `fastxlsx_image_tests`，CTest 名称是
   `fastxlsx.unit`、`fastxlsx.streaming`、`fastxlsx.opc` 和 `fastxlsx.image`。
@@ -74,16 +70,12 @@ cmake --help
 的环境里失败。
 
 当前可见 `CMakePresets.json` 提供：
-
-- `windows-nmake-release`：默认无 vcpkg。
-- `windows-nmake-release-vcpkg`：只启用 vcpkg toolchain。
+- `windows-nmake-release`：默认 vcpkg-backed NMake release，安装默认 `stb`。
+- `windows-nmake-release-vcpkg`：兼容别名式 vcpkg toolchain preset。
 - `windows-nmake-release-minizip`：启用 `planned-runtime` 和
   `FASTXLSX_ENABLE_MINIZIP_NG=ON`，用于 opt-in minizip backend 验证。
-- `windows-nmake-release-image`：启用 `planned-image` 和
-  `FASTXLSX_ENABLE_STB=ON`，用于 opt-in stb 图片元数据 helper 和 streaming
-  图片插入结构验证。
 - `windows-nmake-release-benchmark`：启用 `FASTXLSX_BUILD_BENCHMARKS=ON`，
-  不启用 vcpkg，不进入默认 CTest。
+  使用默认 vcpkg 依赖，不进入默认 CTest。
 - `windows-nmake-release-benchmark-minizip`：启用 benchmark 和 minizip backend，
   用于手工对比 stored bootstrap 与 minizip/DEFLATE 输出。
 
@@ -101,10 +93,10 @@ cmake --help
 
 ## 依赖处理
 
-- 当前 `vcpkg.json` 是基础入口：默认依赖为空，planned features 包含
+- 当前 `vcpkg.json` 是基础入口：默认依赖包含 `stb`；planned features 包含
   `minizip-ng`、`zlib-ng`、`expat`、`pugixml`、`catch2` 和 `benchmark`。
-- 当前代码真正使用的第三方依赖只有 opt-in `minizip-ng[core,zlib]` backend
-  和 opt-in `stb` 图片元数据 helper / streaming 图片插入结构。
+- 当前代码真正使用的第三方依赖是默认 `stb` 图片元数据 helper / streaming
+  图片插入结构，以及 opt-in `minizip-ng[core,zlib]` backend。
 - 未使用的依赖不要提前加 `find_package` 或 link。
 - 接入前必须验证真实 port 名、feature、imported target、triplet 行为和许可证。
 - 依赖接入遵守 `fastxlsx-dependency-policy`。
@@ -113,13 +105,13 @@ cmake --help
 
 ## 本轮计划边界
 
-- vcpkg：基础。manifest 默认无依赖；minizip backend 是 opt-in，不代表
+- vcpkg：基础。manifest 默认依赖包含 `stb`；minizip backend 是 opt-in，不代表
   `zlib-ng`、`expat`、`pugixml`、Catch2 或 Benchmark 已接入源码。
-- CMakePresets：基础。preset 可见，默认以 VS2026/MSVC 2026 + NMake 为主线。
-- CI：基础。workflow 可见，目标是结构测试和 CTest 60s 门禁；当前 CI 通过
-  `ctest --preset windows-nmake-release` 运行，超时来自 CTest preset 和
-  `tests/CMakeLists.txt` 的测试属性。Excel 可视化验证仍是本地步骤，大型
-  benchmark 不进入默认 CI。
+- CMakePresets：基础。preset 可见，默认以 VS2026/MSVC 2026 + NMake + vcpkg 为主线。
+- CI：基础。workflow 可见，目标是结构测试和 CTest 60s 门禁；默认 job 通过
+  `ctest --preset windows-nmake-release` 运行，opt-in vcpkg matrix job 通过
+  `ctest --preset windows-nmake-release-minizip` 运行。Excel 可视化验证仍是本地步骤，
+  大型 benchmark 不进入 CI。
 
 ## 验证
 
@@ -130,21 +122,14 @@ ctest --preset windows-nmake-release
 ```
 
 验证 minizip backend：
-
 ```powershell
 cmake --preset windows-nmake-release-minizip
 cmake --build --preset windows-nmake-release-minizip
 ctest --preset windows-nmake-release-minizip
 ```
 
-验证 stb 图片元数据 helper 和 streaming 图片插入结构：
-
-```powershell
-cmake --preset windows-nmake-release-image
-cmake --build --preset windows-nmake-release-image
-ctest --preset windows-nmake-release-image
-```
-
+修改 CI、vcpkg features、minizip backend 或 image/stb 路径时，默认 preset
+和相关 opt-in minizip preset 都要本地验证；推送后再确认对应 GitHub Actions job 真实通过。
 构建手工 benchmark：
 
 ```powershell

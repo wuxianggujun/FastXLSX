@@ -44,6 +44,7 @@ function Assert-Validation {
         switch ($key) {
             "ShowInput" { Assert-Bool $validation.ShowInput $Expected[$key] "$Address ShowInput" }
             "ShowError" { Assert-Bool $validation.ShowError $Expected[$key] "$Address ShowError" }
+            "InCellDropdown" { Assert-Bool $validation.InCellDropdown $Expected[$key] "$Address InCellDropdown" }
             default { Assert-Equal $validation.$key $Expected[$key] "$Address $key" }
         }
     }
@@ -100,6 +101,7 @@ try {
 
     Assert-Validation $worksheet "B2" @{
         Type = 3
+        InCellDropdown = $false
         ShowInput = $true
         InputTitle = "Choice"
         InputMessage = "Pick A, B, or C"

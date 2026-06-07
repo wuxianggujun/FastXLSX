@@ -1681,7 +1681,8 @@ void WorkbookWriter::close()
         throw FastXlsxError("workbook must contain at least one worksheet");
     }
     std::vector<detail::PackageEntry> entries;
-    const bool write_shared_strings = uses_shared_strings(*state_);
+    const bool write_shared_strings =
+        uses_shared_strings(*state_) && state_->shared_strings.count > 0;
     detail::PackageManifest manifest =
         detail::make_minimal_workbook_manifest(state_->worksheets.size(), write_shared_strings);
     const std::size_t table_count = count_tables(state_->worksheets);

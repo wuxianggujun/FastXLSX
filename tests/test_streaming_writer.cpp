@@ -2266,6 +2266,60 @@ void test_streaming_writer_shared_strings_workbook_scope_and_crlf()
         "workbook-scope shared strings order or preserve mapping mismatch");
 }
 
+void test_streaming_writer_shared_string_option_without_string_cells()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-shared-strings-empty-table.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    auto sheet = workbook.add_worksheet("NoStrings");
+
+    sheet.append_row({
+        fastxlsx::CellView::number(42.0),
+        fastxlsx::CellView::boolean(true),
+        fastxlsx::CellView::formula("A1+1"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "shared string option without strings xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "shared string option without string cells should not create sharedStrings.xml");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("/xl/sharedStrings.xml") == std::string::npos,
+        "shared string option without string cells should not create sharedStrings content type");
+    check(content_types.find(
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml")
+            == std::string::npos,
+        "shared string option without string cells should not create sharedStrings MIME type");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("relationships/sharedStrings") == std::string::npos,
+        "shared string option without string cells should not create sharedStrings relationship");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(<calcPr calcId="124519" fullCalcOnLoad="1"/>)",
+        "formula without shared strings should still request recalculation");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find(" t=\"s\"") == std::string::npos,
+        "worksheet without string cells should not reference shared strings");
+    check(worksheet_xml.find("inlineStr") == std::string::npos,
+        "worksheet without string cells should not write inline strings");
+    check_contains(
+        worksheet_xml, R"(<c r="A1"><v>42</v></c>)", "numeric cell should still be written");
+    check_contains(
+        worksheet_xml, R"(<c r="B1" t="b"><v>1</v></c>)", "boolean cell should still be written");
+    check_contains(
+        worksheet_xml, R"(<c r="C1"><f>A1+1</f></c>)", "formula cell should still be written");
+}
+
 void test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias()
 {
     const auto output_path =
@@ -2862,6 +2916,7 @@ int main()
         test_streaming_writer_mixed_object_relationship_ids();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
+        test_streaming_writer_shared_string_option_without_string_cells();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();
         test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();

@@ -52,6 +52,11 @@ docProps/core.xml
 docProps/app.xml
 ```
 
+sharedStrings 检查要区分 presence 和 absence：实际写入字符串 cell 并产生 shared
+string entry 时，检查 `xl/sharedStrings.xml`、content type override、workbook
+relationship 和 worksheet `t="s"` 引用；如果只是启用了 `StringStrategy::SharedString`
+但没有字符串 cell，则应反向确认这些 sharedStrings package artifacts 都不存在。
+
 如果功能使用了 configurable document properties，还要检查 `docProps/core.xml`
 中的 creator、lastModifiedBy、title、subject、description、keywords、category，
 以及 `docProps/app.xml` 中的 Application 和 AppVersion。结构测试必须覆盖 XML
@@ -216,6 +221,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_shared_strings_
 
 该脚本只读打开 workbook，核对 `Shared` sheet、`A1:D3` used range 和当前 smoke
 样例中的字符串值；它不保存 workbook，也不进入默认 CI。
+
+当前 `fastxlsx.streaming` 还包含 sharedStrings 空表结构回归样例：
+`build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings-empty-table.xlsx`。
+该样例在 `StringStrategy::SharedString` 下只写数字、布尔和公式 cell；结构测试确认
+不生成空 `xl/sharedStrings.xml`、sharedStrings content type 或 workbook relationship，
+worksheet 不写 `t="s"` 或 `inlineStr`，同时公式仍写出 workbook recalculation metadata。
+它主要是 package hygiene 回归，不需要接入默认 CI 专用 Excel COM 脚本；本机可用
+Excel COM 一次性只读打开确认无修复弹窗和 `NoStrings!A1:C1` 值/公式语义。如果出现
+Excel 修复弹窗，再按下面参考对比流程用 Excel / `openpyxl` / `XlsxWriter` 生成等价
+参考文件并拆包对比。
 
 ## 结构异常时的参考对比流程
 

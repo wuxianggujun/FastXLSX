@@ -54,6 +54,12 @@ obligations.
   in the current files. Treat this as sharedStrings 进行中 until CTest, Excel
   visual verification, reference XML comparison, and size/memory behavior are
   recorded for the intended scope.
+- Current structure tests also cover the empty-table edge: when
+  `StringStrategy::SharedString` is enabled but rows contain only numeric,
+  boolean, and formula cells, the package does not create an empty
+  `xl/sharedStrings.xml`, sharedStrings content type, or workbook relationship;
+  the worksheet does not write `t="s"` or `inlineStr`, and formulas still request
+  workbook recalculation.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
   `strings` scenario, `50000 x 10 x 1 = 500000` cells, repeated/unique string
@@ -119,6 +125,9 @@ Mapping to `docs/NEXT_STEPS.md`: `P5` = `M3` sharedStrings hardening;
    - Continue validating the visible shared string API option, table, package
      part, content type, relationship, worksheet `t="s"` references, escaping,
      and duplicate-count behavior.
+   - Keep the no-string-cell edge covered: `StringStrategy::SharedString`
+     should not emit an empty `xl/sharedStrings.xml`, content type, workbook
+     relationship, `t="s"`, or `inlineStr` when no string cells were appended.
    - The 2026-06-07 `500000`-cell manual benchmark snapshot records that
      repeated/shared was smaller and faster than repeated/inline, while
      unique/shared used much higher peak memory and produced a larger file than
@@ -949,6 +958,12 @@ Current facts:
   comparison is now recorded through the local QA helper; Excel COM read-only
   validation is also recorded. XlsxWriter comparison is recorded through system
   `py`; Python environments without `xlsxwriter` should record that branch as skipped.
+- The empty-table sharedStrings regression test writes
+  `fastxlsx-streaming-shared-strings-empty-table.xlsx` with
+  `StringStrategy::SharedString` and only number/boolean/formula cells, then
+  verifies no empty `xl/sharedStrings.xml`, sharedStrings content type, workbook
+  relationship, `t="s"`, or `inlineStr` is produced. The same test confirms the
+  formula cell still causes workbook recalculation metadata.
 - No 10,000,000-cell benchmark result is recorded in this plan.
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.

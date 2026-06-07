@@ -38,6 +38,10 @@ that exist in code, CMake, tests, docs, or local verification.
     `xl/sharedStrings.xml` package entry generation, and focused structure
     tests are visible in the current files. Treat this as sharedStrings
     进行中, not as a production-ready string strategy.
+  - Current structure tests also cover the no-string-cell edge: enabling
+    `StringStrategy::SharedString` without appending string cells must not emit
+    an empty `xl/sharedStrings.xml`, sharedStrings content type, workbook
+    relationship, `t="s"`, or `inlineStr`.
   - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
     is visible in the current files through `DocumentProperties`,
     `Workbook::set_document_properties()`, and
@@ -368,6 +372,8 @@ Do:
 - Keep `inlineStr` as the default low-memory path.
 - Add tests for `count`, `uniqueCount`, escaping, `xml:space`, duplicates, and
   worksheet `t="s"` references.
+- Keep the empty shared string table path clean: if `SharedString` mode sees no
+  string cells, do not write a dead sharedStrings part or relationship.
 - Measure repeated-string and mostly-unique-string behavior with the opt-in
   benchmark `--string-pattern repeated|unique` inputs before widening support
   wording.

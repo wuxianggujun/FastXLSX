@@ -1128,7 +1128,11 @@ void append_conditional_data_bar_xml(std::string& xml, const ConditionalDataBar&
     xml += detail::sqref(bar.ranges);
     xml += "\"><cfRule type=\"dataBar\" priority=\"";
     xml += std::to_string(bar.priority);
-    xml += "\"><dataBar>";
+    xml += "\"><dataBar";
+    if (!bar.rule.show_value) {
+        xml += " showValue=\"0\"";
+    }
+    xml += ">";
     append_data_bar_endpoint_xml(xml, bar.rule.lower);
     append_data_bar_endpoint_xml(xml, bar.rule.upper);
     xml += "<color rgb=\"";

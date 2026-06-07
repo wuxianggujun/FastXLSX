@@ -287,7 +287,8 @@ and release packaging, or the decision to make minizip the default backend.
     - `WorksheetWriter::add_conditional_color_scale()` now writes worksheet-local
       two-/three-color `<conditionalFormatting><cfRule type="colorScale">` XML for new
       workbooks only. `WorksheetWriter::add_conditional_data_bar()` now writes
-      worksheet-local basic `<cfRule type="dataBar">` XML.
+      worksheet-local basic `<cfRule type="dataBar">` XML, including optional
+      `showValue="0"` when `DataBarRule::show_value=false`.
       `WorksheetWriter::add_conditional_icon_set()` now writes worksheet-local
       basic built-in `3Arrows` `<cfRule type="iconSet">` XML.
     - `ArgbColor` values serialize as uppercase eight-digit ARGB; `priority`

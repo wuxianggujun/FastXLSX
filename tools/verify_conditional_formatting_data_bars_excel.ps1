@@ -1,5 +1,6 @@
 param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar.xlsx",
+    [string]$MetadataOrderPath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-metadata-order.xlsx",
     [string]$MultiRangePath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx"
 )
 
@@ -44,6 +45,7 @@ function Rgb-Long {
 function Assert-DataBar {
     param(
         [object]$FormatCondition,
+        [bool]$ShowValue,
         [string]$MessagePrefix
     )
 
@@ -51,7 +53,7 @@ function Assert-DataBar {
     Assert-Equal $FormatCondition.MinPoint.Type 1 "$MessagePrefix min point type"
     Assert-Equal $FormatCondition.MaxPoint.Type 2 "$MessagePrefix max point type"
     Assert-Equal $FormatCondition.BarColor.Color (Rgb-Long 99 142 198) "$MessagePrefix bar color"
-    Assert-Bool $FormatCondition.ShowValue $true "$MessagePrefix ShowValue"
+    Assert-Bool $FormatCondition.ShowValue $ShowValue "$MessagePrefix ShowValue"
 }
 
 function Verify-BasicWorkbook {
@@ -75,10 +77,45 @@ function Verify-BasicWorkbook {
         Assert-Equal $sheet.Range("A2:A10").FormatConditions.Count 1 "DataBar FormatConditions count"
 
         $formatCondition = $sheet.Range("A2:A10").FormatConditions.Item(1)
-        Assert-DataBar $formatCondition "DataBar A2:A10"
+        Assert-DataBar $formatCondition $true "DataBar A2:A10"
 
         Write-Host "OK: Excel opened conditional formatting data-bar workbook read-only: $resolved"
         Write-Host "OK: DataBar!A2:A10 has one basic data bar rule"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($formatCondition, $sheet, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-MetadataOrderWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+    $formatCondition = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("DataBarObjects")
+
+        Assert-Equal $sheet.Range("A2:A10").FormatConditions.Count 1 "DataBarObjects FormatConditions count"
+
+        $formatCondition = $sheet.Range("A2:A10").FormatConditions.Item(1)
+        Assert-DataBar $formatCondition $false "DataBarObjects A2:A10"
+
+        Write-Host "OK: Excel opened data-bar metadata-order workbook read-only: $resolved"
+        Write-Host "OK: DataBarObjects!A2:A10 preserves showValue=false data bar metadata"
     }
     finally {
         if ($null -ne $workbook) {
@@ -114,7 +151,7 @@ function Verify-MultiRangeWorkbook {
         Assert-Equal $sheet.Range("B2").FormatConditions.Count 0 "B2 should not have data bar"
 
         $formatCondition = $sheet.Range("A2").FormatConditions.Item(1)
-        Assert-DataBar $formatCondition "DataBarRanges multi-range"
+        Assert-DataBar $formatCondition $true "DataBarRanges multi-range"
 
         $appliesTo = $formatCondition.AppliesTo
         Assert-Equal $appliesTo.Areas.Count 3 "DataBarRanges AppliesTo area count"
@@ -145,6 +182,7 @@ try {
     $excel.DisplayAlerts = $false
 
     Verify-BasicWorkbook -Excel $excel -Path $Path
+    Verify-MetadataOrderWorkbook -Excel $excel -Path $MetadataOrderPath
     Verify-MultiRangeWorkbook -Excel $excel -Path $MultiRangePath
 }
 finally {

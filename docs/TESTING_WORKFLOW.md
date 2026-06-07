@@ -127,6 +127,7 @@ two-color 的两个 `<cfvo>` / 两个 `<color rgb="AARRGGBB">`、three-color 的
 `mergeCells -> conditionalFormatting -> dataValidations`。当前
 `WorksheetWriter::add_conditional_data_bar()` 应检查
 `<cfRule type="dataBar" priority>`、两个 `<cfvo>`、一个 `<color rgb="AARRGGBB">`、
+可选 `showValue="0"`、
 multi-range 空格分隔 `sqref`、与 color scale 共享同一 worksheet-local priority 序列、
 同一 worksheet 内 priority 递增且跨 worksheet 重置，以及相同 suffix 顺序。当前
 `WorksheetWriter::add_conditional_icon_set()` 应检查
@@ -595,14 +596,15 @@ py tools\verify_conditional_formatting_data_bars.py `
   --work-dir build\qa\conditional-formatting-data-bars
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_formatting_data_bars_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar.xlsx `
+  -MetadataOrderPath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-metadata-order.xlsx `
   -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx
 ```
 
 Python helper 检查 package XML、`<cfRule type="dataBar">`、两个 `<cfvo>`、一个
-`<color rgb>`、multi-range `sqref`、与 color scale 共享 priority、无
+`<color rgb>`、可选 `showValue="0"`、multi-range `sqref`、与 color scale 共享 priority、无
 styles/dxfs/rels/content type/calcPr 副作用，并用 `openpyxl` 读取 basic 和 multi-range
 data bar；可用时会用 `XlsxWriter` 创建参考 workbook。Excel helper 只读打开 basic 和
-multi-range workbook，核对 Excel COM 可见的 data bar、bar color、ShowValue 和
+metadata-order、multi-range workbook，核对 Excel COM 可见的 data bar、bar color、ShowValue 和
 multi-area AppliesTo。XML 结构仍是权威；Excel/openpyxl/XlsxWriter 只作为本地
 QA/排障参考，不接入默认 CTest/CI，也不是运行时依赖。
 

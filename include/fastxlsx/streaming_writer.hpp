@@ -287,7 +287,7 @@ struct DataBarEndpoint {
 /// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
 /// into WorksheetWriter state and serialized as worksheet-local
 /// `<conditionalFormatting>` XML during close(). Priorities are assigned by
-/// call order per worksheet, shared with color-scale rules. This does not
+/// call order per worksheet, shared with color-scale and icon-set rules. This does not
 /// evaluate cell values, create styles.xml/dxfs, edit existing XLSX files, or
 /// promise full Excel conditional-formatting UI parity.
 struct DataBarRule {
@@ -299,6 +299,10 @@ struct DataBarRule {
 
     /// Inline ARGB bar color.
     ArgbColor color {0xFF, 0x63, 0x8E, 0xC6};
+
+    /// Whether Excel should display the cell value next to the data bar.
+    /// The default is omitted from XML; `false` writes `showValue="0"`.
+    bool show_value = true;
 };
 
 /// A narrow built-in conditional-formatting icon set.

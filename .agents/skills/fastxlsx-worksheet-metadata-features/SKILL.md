@@ -108,10 +108,11 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   字符串会复制进 writer state，空字符串省略，不改变 `.rels` / content types / styles。
 - Conditional formatting：已有基础 streaming-only、新建 workbook two-/three-color color scale
   和 basic data bar / basic 3Arrows icon set 切片。当前只保存 range 列表、color-scale
-  points、data-bar endpoints、icon-set thresholds、inline ARGB color 和 worksheet-local priority；写出 worksheet-local
+  points、data-bar endpoints、data-bar `show_value` flag、icon-set thresholds、inline ARGB color
+  和 worksheet-local priority；写出 worksheet-local
   `<conditionalFormatting>`，不生成 styles/dxfs/rels/content type/calcPr 副作用。
   Color scale 写 `<cfRule type="colorScale">`，data bar 写 `<cfRule type="dataBar">`、
-  两个 `<cfvo>` 和一个 `<color rgb="AARRGGBB">`，icon set 写 built-in `3Arrows`
+  两个 `<cfvo>`、一个 `<color rgb="AARRGGBB">` 和可选 `showValue="0"`，icon set 写 built-in `3Arrows`
   和三枚 finite 严格递增 `<cfvo>`。继续禁止 formula/cellIs、
   advanced data bars、advanced/custom icon sets、dxf-backed styles、existing-file editing、range
   排序/合并/去重、重叠检测和完整 Excel UI。
@@ -173,7 +174,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - conditional formatting 结构测试应检查 worksheet `<conditionalFormatting sqref>`、
   `<cfRule type="colorScale" priority>`、two-color 的两个 `<cfvo>` / 两个 `<color>`、
   three-color 的三个 `<cfvo>` / 三个 `<color rgb="AARRGGBB">`、
-  basic data bar 的 `<cfRule type="dataBar">`、两个 `<cfvo>` / 一个 `<color rgb>`、
+  basic data bar 的 `<cfRule type="dataBar">`、两个 `<cfvo>` / 一个 `<color rgb>` / `showValue="0"`、
   basic icon set 的 `<cfRule type="iconSet">`、`3Arrows` / 三个 `<cfvo>`、
   multi-range `sqref`、priority 顺序、suffix 顺序、无 `styles.xml` / `dxfs` /
   worksheet `.rels` / content type / workbook relationship / `<calcPr>` 副作用、

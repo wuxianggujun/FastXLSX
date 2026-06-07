@@ -115,7 +115,8 @@ content types、styles 或 calc metadata。当前
 `WorksheetWriter::add_conditional_color_scale()` 只写 worksheet-local two-/three-color
 `<conditionalFormatting><cfRule type="colorScale">` XML；
 `WorksheetWriter::add_conditional_data_bar()` 只写 worksheet-local basic
-`<cfRule type="dataBar">` XML；`WorksheetWriter::add_conditional_icon_set()` 只写
+`<cfRule type="dataBar">` XML，`DataBarRule::show_value=false` 只会写
+`<dataBar showValue="0">`；`WorksheetWriter::add_conditional_icon_set()` 只写
 worksheet-local basic built-in `3Arrows` `<cfRule type="iconSet">` XML，要求三枚有限且
 严格递增的阈值。它们不写 `styles.xml`、`dxfs`、worksheet `.rels`、content type、
 cell text 或 `<calcPr>`，不支持 formula/cellIs、advanced/custom icon sets、top/bottom、

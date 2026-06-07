@@ -1390,8 +1390,9 @@ void test_streaming_writer_conditional_formatting_data_bar_metadata_order()
     sheet.append_row({fastxlsx::CellView::number(7.0), fastxlsx::CellView::text("More")});
 
     sheet.merge_cells({4, 1, 4, 2});
-    sheet.add_conditional_data_bar(
-        {2, 1, 10, 1}, make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6}));
+    auto data_bar_rule = make_data_bar(fastxlsx::ArgbColor {0xFF, 0x63, 0x8E, 0xC6});
+    data_bar_rule.show_value = false;
+    sheet.add_conditional_data_bar({2, 1, 10, 1}, data_bar_rule);
 
     fastxlsx::DataValidationRule whole;
     whole.type = fastxlsx::DataValidationType::Whole;
@@ -1421,7 +1422,7 @@ void test_streaming_writer_conditional_formatting_data_bar_metadata_order()
     check_contains(worksheet_xml,
         "</sheetData><mergeCells count=\"1\"><mergeCell ref=\"A4:B4\"/></mergeCells>"
         "<conditionalFormatting sqref=\"A2:A10\">"
-        "<cfRule type=\"dataBar\" priority=\"1\"><dataBar>"
+        "<cfRule type=\"dataBar\" priority=\"1\"><dataBar showValue=\"0\">"
         "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
         "<color rgb=\"FF638EC6\"/></dataBar></cfRule></conditionalFormatting>"
         "<dataValidations count=\"1\"><dataValidation type=\"whole\" operator=\"between\" "

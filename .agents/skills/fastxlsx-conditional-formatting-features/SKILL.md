@@ -36,7 +36,8 @@ description: "实现或审查 FastXLSX streaming conditional formatting。用于
   two-/three-color `colorScale`，写 worksheet-local
   `<conditionalFormatting><cfRule type="colorScale">`。
 - Data bar 是 streaming-only new-workbook worksheet metadata。当前只支持 basic
-  `dataBar`，写两个 `<cfvo>` 和一个 inline ARGB `<color>`。
+  `dataBar`，写两个 `<cfvo>`、一个 inline ARGB `<color>`，以及可选
+  `showValue="0"`。
 - Icon set 是 streaming-only new-workbook worksheet metadata。当前只支持 built-in
   `3Arrows`，写三个 finite 且严格递增的 `<cfvo>` threshold，可选写
   `showValue="0"` 和 `reverse="1"`。
@@ -82,7 +83,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_for
 
 - 不要把 color scale、basic data bar 或 basic 3Arrows icon set 写成完整 conditional formatting。
 - 不要为了 API 易用性让 large worksheet 进入 DOM、cell map 或完整 worksheet matrix。
-- 不要把 advanced data bar 的 negative color、axis、border、gradient、`extLst` 当成已支持。
+- 不要把 `DataBarRule::show_value` 写成 advanced data bar；negative color、axis、border、
+  gradient、`extLst` 仍未支持。
 - 不要声称支持 formula/cellIs、advanced/custom icon sets、top/bottom、duplicate/unique、dxf-backed styles、
   existing-file editing、conflict handling 或完整 Excel UI，除非对应代码和测试已落地。
 - 不要把 `openpyxl`、`XlsxWriter` 或 Excel COM 当成运行时依赖；它们只用于本地 QA/参考。
@@ -90,7 +92,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_for
 ## 验证清单
 
 - CTest 覆盖 `<conditionalFormatting sqref>`、`<cfRule type>`、`<cfvo>`、`<color rgb>`、
-  priority、multi-range `sqref` 和 suffix 顺序。
+  data bar `showValue="0"`、priority、multi-range `sqref` 和 suffix 顺序。
 - 失败路径覆盖 invalid range、empty range list、non-finite endpoint、非法 endpoint shape、
   icon set descending/duplicate thresholds、failed call state hygiene 和 mutation-after-close。
 - Package absence 覆盖无 `styles.xml`、`dxfs`、`xl/metadata.xml`、worksheet `.rels`、

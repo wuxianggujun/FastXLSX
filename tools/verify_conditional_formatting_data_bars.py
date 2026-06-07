@@ -131,7 +131,7 @@ def verify_metadata_order_package(path: Path) -> dict[str, Any]:
     expected_order = (
         '</sheetData><mergeCells count="1"><mergeCell ref="A4:B4"/></mergeCells>'
         f'<conditionalFormatting sqref="{EXPECTED_BASIC_SQREF}">'
-        '<cfRule type="dataBar" priority="1"><dataBar>'
+        '<cfRule type="dataBar" priority="1"><dataBar showValue="0">'
         '<cfvo type="min"/><cfvo type="max"/>'
         f'<color rgb="{EXPECTED_BAR_COLOR}"/>'
         '</dataBar></cfRule></conditionalFormatting>'
@@ -152,7 +152,10 @@ def verify_metadata_order_package(path: Path) -> dict[str, Any]:
             "hyperlink relationship should remain rId1")
     require('Id="rId2"' in worksheet_rels and "relationships/table" in worksheet_rels,
             "table relationship should remain rId2")
-    return {"suffix_order": "mergeCells -> conditionalFormatting -> dataValidations"}
+    return {
+        "suffix_order": "mergeCells -> conditionalFormatting -> dataValidations",
+        "show_value": False,
+    }
 
 
 def verify_multi_range_package(path: Path) -> dict[str, Any]:

@@ -144,13 +144,16 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 - `DataBarValueType`, `DataBarEndpoint`, `DataBarRule`, and
   `WorksheetWriter::add_conditional_data_bar()` are public API symbols.
 - API mode is Streaming / new-workbook-only worksheet metadata.
-- The API copies range lists, two endpoints, and bar color into writer state;
-  memory grows with rule count and copied range count, not worksheet cell count.
+- The API copies range lists, two endpoints, bar color, and the `show_value`
+  flag into writer state; memory grows with rule count and copied range count,
+  not worksheet cell count.
 - `DataBarValueType::Minimum` / `Maximum` write no `val`; `Number` / `Percent`
   / `Percentile` require finite numeric values. Lower endpoints cannot use
   `Maximum`; upper endpoints cannot use `Minimum`.
 - Data bars share worksheet-local priority order with color scales and write one
   space-separated `sqref` for multi-range calls.
+- `DataBarRule::show_value=false` writes only the basic data bar XML attribute
+  `showValue="0"`; the default is omitted.
 - The API does not create `styles.xml`, `dxfs`, worksheet `.rels`, content type
   entries, workbook relationships, cell text, or `<calcPr>`.
 - Do not document it as formula/cellIs, advanced/custom icon sets, advanced data bars
@@ -212,7 +215,8 @@ new-workbook-only、规则/range 拷贝成本、`ArgbColor` 8 位大写 ARGB 序
 行为、是否新增 relationships/content types/styles/calc metadata、无公式求值、无冲突
 检测、无 existing-file editing 和无完整 Excel UI。当前
 `WorksheetWriter::add_conditional_color_scale()` 只覆盖 two-/three-color color scale；
-`WorksheetWriter::add_conditional_data_bar()` 只覆盖 basic data bar；
+`WorksheetWriter::add_conditional_data_bar()` 只覆盖 basic data bar，`DataBarRule::show_value=false`
+只写 `showValue="0"`；
 `WorksheetWriter::add_conditional_icon_set()` 只覆盖 basic built-in `3Arrows` icon set；
 不要写成 formula/cellIs、advanced data bars、advanced/custom icon sets、dxf-backed styles
 或完整 conditional formatting。

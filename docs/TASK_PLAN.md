@@ -1317,7 +1317,8 @@ Allowed early slices:
   `<conditionalFormatting>` with `<cfRule type="colorScale">`,
   `<cfRule type="dataBar">`, or `<cfRule type="iconSet">`. Color scales write
   two or three `<cfvo>` endpoints and matching inline ARGB colors; data bars
-  write two `<cfvo>` endpoints and one inline ARGB bar color; icon sets currently
+  write two `<cfvo>` endpoints, one inline ARGB bar color, and optional
+  `showValue="0"` when `DataBarRule::show_value=false`; icon sets currently
   write built-in `3Arrows` with three finite strictly ascending `Number` /
   `Percent` / `Percentile` thresholds plus optional `showValue` / `reverse`
   attributes. `ColorScaleValueType` and `DataBarValueType` `Minimum` /
@@ -1417,7 +1418,7 @@ Validation:
   `tools/verify_conditional_formatting_data_bars.py` for package XML,
   `openpyxl`, and optional `XlsxWriter` reference checks, and
   `tools/verify_conditional_formatting_data_bars_excel.ps1` for Excel COM
-  read-only visual checks of the basic and multi-range data bar workbooks.
+  read-only visual checks of the basic, metadata-order, and multi-range data bar workbooks.
 - Current conditional icon set local QA uses
   `tools/verify_conditional_formatting_icon_sets.py` for package XML,
   `openpyxl`, and optional `XlsxWriter` reference checks, and

@@ -27,6 +27,10 @@ obligations.
 - Current public API includes `Workbook`, `Worksheet`, `Cell`, `WorkbookWriter`,
   `WorksheetWriter`, `CellView`, `StyleId`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
+- Current public worksheet metadata API also includes `ArgbColor`,
+  `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`, and
+  `WorksheetWriter::add_conditional_color_scale()` for a narrow two-color
+  conditional color scale slice.
 - A Phase 2 streaming writer skeleton exists in
   `include/fastxlsx/streaming_writer.hpp` and `src/streaming_writer.cpp`:
   `WorkbookWriter`, `WorksheetWriter`, and `CellView`.
@@ -71,8 +75,10 @@ obligations.
   formats, `CellView::with_style(StyleId)` writes cell `s="N"` references, and
   `WorkbookWriter::close()` emits `xl/styles.xml`, a styles content type
   override, and a workbook styles relationship when styles are registered. This
-  is not font/fill/border/alignment support, rich text, conditional formatting,
-  date cell type, or existing-file style preservation.
+  is not font/fill/border/alignment support, rich text, dxf-backed conditional
+  formatting, date cell type, or existing-file style preservation. The current
+  two-color color scale slice is worksheet metadata, not styles registry or
+  `dxfs` support.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
   `strings` scenario, `50000 x 10 x 1 = 500000` cells, repeated/unique string
@@ -333,9 +339,9 @@ Tasks:
 - Keep the current P9a style registry as the entry point for styles:
   workbook-local `StyleId`, `CellStyle::number_format`, generated
   `xl/styles.xml`, and cell `s="N"` references.
-- Add fonts, fills, borders, alignment, rich text, and conditional formatting
-  only as separate registry-backed slices with their own structure and Excel
-  validation.
+- Add fonts, fills, borders, alignment, rich text, and dxf-backed conditional
+  formatting only as separate registry-backed slices with their own structure
+  and Excel validation.
 - Decide formula calculation boundaries: write-only formula text, cached values,
   calc mode, and `calcChain`.
 - Keep configurable document properties as a small-part metadata API limited to
@@ -1122,7 +1128,7 @@ Current facts:
   number-format styles are now 基础 through workbook-local style ids,
   `CellStyle::number_format`, generated `xl/styles.xml`, and cell `s="N"`
   references. Custom document properties, named ranges, fonts/fills/borders/
-  alignment, rich formatting, conditional formatting, date cell type, and
+  alignment, rich formatting, dxf-backed conditional formatting, date cell type, and
   existing-file style preservation are still planned work.
 - Local QA helpers now exist for document properties:
   `tools/verify_document_properties.py` checks the in-memory and streaming
@@ -1235,7 +1241,9 @@ Validation:
 
 ## Phase 5 Work Items - Complex Objects
 
-Status: 计划. Keep Phase 5 support in plan-only language.
+Status: 基础 for several streaming-only new-workbook slices; complete Phase 5,
+existing-file editing, object preservation, and full Excel UI parity remain
+计划. Keep each implemented slice described narrowly.
 
 Phase 5 features listed by the roadmap:
 - Pictures and image reading/insertion.
@@ -1298,9 +1306,18 @@ Allowed early slices:
   styles, `styles.xml`, table resize, existing-file editing, conflict checks
   against non-table worksheet metadata/objects, and full Excel table UI behavior
   are not implemented by the first slice.
-- Conditional formatting may be added as worksheet metadata only if it does not
-  force a large worksheet DOM and does not put validation/formatting logic into
-  the cell XML hot path.
+- Conditional formatting has a basic streaming-only, new-workbook two-color
+  color scale slice through `WorksheetWriter::add_conditional_color_scale()`.
+  It writes worksheet-local `<conditionalFormatting>` with
+  `<cfRule type="colorScale">`, two `<cfvo>` endpoints, and two inline
+  ARGB colors. `ColorScaleValueType::Minimum` / `Maximum` write no `val`;
+  `Number` / `Percent` / `Percentile` require finite numeric values. Priorities
+  are assigned by call order per worksheet, and multi-range input is serialized
+  as one space-separated `sqref`.
+- Complete conditional formatting remains planned: formula rules, cellIs,
+  data bars, icon sets, top/bottom, duplicate/unique, dxf-backed styles,
+  conflict handling, existing-file editing, and full Excel UI behavior are not
+  implemented by this slice.
 - Image work must use `stb` for image decoding, dimensions, and pixel access;
   FastXLSX still owns media part allocation, drawing XML, drawing relationships,
   worksheet relationships, content types, anchors, and package preservation.
@@ -1380,6 +1397,11 @@ Validation:
 - Use local Excel visual verification when available, especially for pictures,
   tables, validations, conditional formatting, chart passthrough, and VBA
   passthrough.
+- Current conditional color scale local QA uses
+  `tools/verify_conditional_formatting_color_scales.py` for package XML,
+  `openpyxl`, and optional `XlsxWriter` checks, and
+  `tools/verify_conditional_formatting_color_scales_excel.ps1` for Excel COM
+  read-only visual checks of the basic and multi-range workbooks.
 - On any structural mismatch, compare against Excel/openpyxl/XlsxWriter
   reference workbooks by unzipping packages and inspecting XML semantics.
 

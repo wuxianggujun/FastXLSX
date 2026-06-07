@@ -41,6 +41,12 @@ struct DataValidation {
     DataValidationRule rule;
 };
 
+struct ConditionalColorScale {
+    std::vector<CellRange> ranges;
+    TwoColorScaleRule rule;
+    std::uint32_t priority = 1;
+};
+
 struct ExternalHyperlink {
     std::uint32_t row = 1;
     std::uint32_t column = 1;
@@ -192,6 +198,55 @@ std::string_view data_validation_error_style_name(DataValidationErrorStyle error
     }
 
     throw FastXlsxError("unknown data validation error style");
+}
+
+std::string_view color_scale_value_type_name(ColorScaleValueType type)
+{
+    switch (type) {
+    case ColorScaleValueType::Minimum:
+        return "min";
+    case ColorScaleValueType::Maximum:
+        return "max";
+    case ColorScaleValueType::Number:
+        return "num";
+    case ColorScaleValueType::Percent:
+        return "percent";
+    case ColorScaleValueType::Percentile:
+        return "percentile";
+    }
+
+    throw FastXlsxError("unknown color scale value type");
+}
+
+bool color_scale_value_type_requires_value(ColorScaleValueType type)
+{
+    switch (type) {
+    case ColorScaleValueType::Minimum:
+    case ColorScaleValueType::Maximum:
+        return false;
+    case ColorScaleValueType::Number:
+    case ColorScaleValueType::Percent:
+    case ColorScaleValueType::Percentile:
+        return true;
+    }
+
+    throw FastXlsxError("unknown color scale value type");
+}
+
+std::string argb_color_value(ArgbColor color)
+{
+    constexpr char hex_digits[] = "0123456789ABCDEF";
+    std::string value;
+    value.reserve(8);
+    const auto append_byte = [&value, &hex_digits](std::uint8_t byte) {
+        value.push_back(hex_digits[(byte >> 4U) & 0x0FU]);
+        value.push_back(hex_digits[byte & 0x0FU]);
+    };
+    append_byte(color.alpha);
+    append_byte(color.red);
+    append_byte(color.green);
+    append_byte(color.blue);
+    return value;
 }
 
 std::string worksheet_relationship_id(std::size_t index)
@@ -423,6 +478,26 @@ void validate_data_validation_rule(const DataValidationRule& rule)
     }
 }
 
+void validate_color_scale_point(const ColorScalePoint& point)
+{
+    (void)color_scale_value_type_name(point.type);
+    if (color_scale_value_type_requires_value(point.type) && !std::isfinite(point.value)) {
+        throw FastXlsxError("color scale endpoint values must be finite");
+    }
+}
+
+void validate_two_color_scale_rule(const TwoColorScaleRule& rule)
+{
+    if (rule.lower.type == ColorScaleValueType::Maximum) {
+        throw FastXlsxError("lower color scale endpoint cannot use maximum");
+    }
+    if (rule.upper.type == ColorScaleValueType::Minimum) {
+        throw FastXlsxError("upper color scale endpoint cannot use minimum");
+    }
+    validate_color_scale_point(rule.lower);
+    validate_color_scale_point(rule.upper);
+}
+
 std::filesystem::path make_temp_path()
 {
     static std::atomic<std::uint64_t> counter {0};
@@ -526,6 +601,7 @@ struct WorksheetWriterState {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> frozen_panes;
     std::optional<CellRange> auto_filter;
     std::vector<CellRange> merged_ranges;
+    std::vector<ConditionalColorScale> conditional_color_scales;
     std::vector<DataValidation> data_validations;
     std::vector<ExternalHyperlink> external_hyperlinks;
     std::vector<InternalHyperlink> internal_hyperlinks;
@@ -871,6 +947,41 @@ std::string build_merge_cells(const detail::WorksheetWriterState& worksheet)
     return xml;
 }
 
+void append_color_scale_point_xml(std::string& xml, const ColorScalePoint& point)
+{
+    xml += "<cfvo type=\"";
+    xml += color_scale_value_type_name(point.type);
+    if (color_scale_value_type_requires_value(point.type)) {
+        xml += "\" val=\"";
+        xml += format_number(point.value);
+    }
+    xml += "\"/>";
+}
+
+std::string build_conditional_color_scales(const detail::WorksheetWriterState& worksheet)
+{
+    if (worksheet.conditional_color_scales.empty()) {
+        return {};
+    }
+
+    std::string xml;
+    for (const ConditionalColorScale& scale : worksheet.conditional_color_scales) {
+        xml += "<conditionalFormatting sqref=\"";
+        xml += detail::sqref(scale.ranges);
+        xml += "\"><cfRule type=\"colorScale\" priority=\"";
+        xml += std::to_string(scale.priority);
+        xml += "\"><colorScale>";
+        append_color_scale_point_xml(xml, scale.rule.lower);
+        append_color_scale_point_xml(xml, scale.rule.upper);
+        xml += "<color rgb=\"";
+        xml += argb_color_value(scale.rule.lower.color);
+        xml += "\"/><color rgb=\"";
+        xml += argb_color_value(scale.rule.upper.color);
+        xml += "\"/></colorScale></cfRule></conditionalFormatting>";
+    }
+    return xml;
+}
+
 std::string build_data_validations(const detail::WorksheetWriterState& worksheet)
 {
     if (worksheet.data_validations.empty()) {
@@ -1060,6 +1171,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
         xml += "\"/>";
     }
     xml += build_merge_cells(worksheet);
+    xml += build_conditional_color_scales(worksheet);
     xml += build_data_validations(worksheet);
     xml += build_hyperlinks(worksheet);
     xml += build_drawing_reference(worksheet);
@@ -1652,6 +1764,35 @@ void WorksheetWriter::merge_cells(CellRange range)
         throw FastXlsxError("merged range must include more than one cell");
     }
     state_->merged_ranges.push_back(range);
+}
+
+void WorksheetWriter::add_conditional_color_scale(CellRange range, TwoColorScaleRule rule)
+{
+    add_conditional_color_scale(std::span<const CellRange>(&range, 1), rule);
+}
+
+void WorksheetWriter::add_conditional_color_scale(
+    std::span<const CellRange> ranges, TwoColorScaleRule rule)
+{
+    ensure_mutable_worksheet(state_);
+    if (ranges.empty()) {
+        throw FastXlsxError("conditional color scale range list cannot be empty");
+    }
+    for (const CellRange& range : ranges) {
+        (void)detail::range_reference(range);
+    }
+    validate_two_color_scale_rule(rule);
+    const auto priority =
+        static_cast<std::uint32_t>(state_->conditional_color_scales.size() + 1);
+    state_->conditional_color_scales.push_back(
+        {std::vector<CellRange>(ranges.begin(), ranges.end()), rule, priority});
+}
+
+void WorksheetWriter::add_conditional_color_scale(
+    std::initializer_list<CellRange> ranges, TwoColorScaleRule rule)
+{
+    add_conditional_color_scale(
+        std::span<const CellRange>(ranges.begin(), ranges.size()), rule);
 }
 
 void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule rule)

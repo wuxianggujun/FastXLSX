@@ -32,8 +32,13 @@ that exist in code, CMake, tests, docs, or local verification.
   - `DataValidationRule`
   - `DataValidationType`
   - `DataValidationOperator`
+  - `ArgbColor`
+  - `ColorScaleValueType`
+  - `ColorScalePoint`
+  - `TwoColorScaleRule`
   - `WorkbookWriter::add_style()`
   - `CellView::with_style()`
+  - `WorksheetWriter::add_conditional_color_scale()`
   - `FastXlsxError`
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
@@ -56,8 +61,15 @@ that exist in code, CMake, tests, docs, or local verification.
     `CellStyle`, `WorkbookWriter::add_style()`, `CellView::with_style()`,
     generated `xl/styles.xml`, workbook styles relationship, and focused
     structure tests. Treat this as the P9a custom number format foundation, not
-    as font/fill/border/alignment, date cell type, conditional formatting,
-    rich text, or existing-file style preservation.
+    as font/fill/border/alignment, date cell type, dxf-backed conditional
+    formatting, rich text, or existing-file style preservation. The current
+    two-color color scale slice is worksheet metadata, not styles/dxfs support.
+  - Streaming-only two-color conditional color scales are visible through
+    `ArgbColor`, `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
+    and `WorksheetWriter::add_conditional_color_scale()`. Treat this as a
+    worksheet-local colorScale metadata slice only: no `styles.xml`, no `dxfs`,
+    no worksheet relationships, no content type overrides, no formula rules,
+    and no existing-file editing.
   - Internal `src/package_writer.*` boundary exists for new-workbook package
     output. Default builds delegate to the stored/no-compression
     `src/zip_store_writer.*` bootstrap backend; opt-in minizip builds use
@@ -256,7 +268,21 @@ and release packaging, or the decision to make minizip the default backend.
       `styles.xml`, table resize, full Excel table UI behavior, and
       existing-file editing out of scope.
 
-12. Images and passthrough objects.
+12. Streaming-only conditional color scales - 基础.
+    - `WorksheetWriter::add_conditional_color_scale()` now writes worksheet-local
+      two-color `<conditionalFormatting><cfRule type="colorScale">` XML for new
+      workbooks only.
+    - `ArgbColor` values serialize as uppercase eight-digit ARGB; `priority`
+      is assigned by call order per worksheet; multi-range input writes one
+      space-separated `sqref`.
+    - The current slice does not generate `styles.xml`, `dxfs`, worksheet
+      `.rels`, content type overrides, workbook relationships, cell text, or
+      calculation metadata.
+    - Keep formula rules, cellIs, data bars, icon sets, dxf-backed styling,
+      overlap/conflict handling, complete Excel UI behavior, and existing-file
+      editing out of scope until separately designed.
+
+13. Images and passthrough objects.
     - Images need `stb` for image decoding/dimensions, plus media parts,
       drawings, drawing rels, worksheet rels, anchors, and content types.
     - Chart and VBA work starts as preservation, not native generation.
@@ -579,9 +605,9 @@ Accept when:
   read-only NumberFormat checks.
 
 Do not claim:
-- Font, fill, border, alignment, rich text, conditional formatting, date cell
-  type, existing-file style preservation, or full Excel formatting parity from
-  the number-format slice.
+- Font, fill, border, alignment, rich text, dxf-backed conditional formatting,
+  date cell type, existing-file style preservation, or full Excel formatting
+  parity from the number-format slice.
 
 ### P10 - Configurable Document Properties API
 
@@ -1136,7 +1162,9 @@ Validation:
 
 ### 5. Phase 5 Complex Objects
 
-Status: 计划. Keep full object support in plan-only language.
+Status: 基础 for several streaming-only new-workbook slices. Keep complete
+object support, existing-file editing, and preservation support in plan-only
+language.
 
 Safe order:
 1. Data validations as streaming-only worksheet metadata for new workbooks.
@@ -1152,10 +1180,14 @@ Safe order:
 4. Tables now have a streaming-only new-workbook slice after table part
    allocation, content type override, worksheet rels, and table XML were kept
    consistent. Broader table support still needs separate design and tests.
-5. Images after `stb` decode/dimension behavior, media part allocation,
+5. Two-color conditional color scales now have a streaming-only new-workbook
+   worksheet metadata slice. Broader conditional formatting still needs
+   separate design and tests for formula/cellIs rules, data bars, icon sets,
+   dxf-backed styles, conflict handling, and existing-file editing.
+6. Images after `stb` decode/dimension behavior, media part allocation,
    drawing part generation, drawing rels, worksheet rels, anchors, and content
    types are in place.
-6. Chart and VBA passthrough only after existing-package read/copy is proven.
+7. Chart and VBA passthrough only after existing-package read/copy is proven.
 
 Validation:
 - For every new object type, compare against an Excel or `openpyxl` /

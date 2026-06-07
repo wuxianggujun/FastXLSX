@@ -70,6 +70,15 @@ void write_bytes(const std::filesystem::path& path, std::span<const std::byte> b
     }
 }
 
+fastxlsx::TwoColorScaleRule make_two_color_scale(
+    fastxlsx::ArgbColor lower, fastxlsx::ArgbColor upper)
+{
+    fastxlsx::TwoColorScaleRule rule;
+    rule.lower = {fastxlsx::ColorScaleValueType::Minimum, 0.0, lower};
+    rule.upper = {fastxlsx::ColorScaleValueType::Maximum, 0.0, upper};
+    return rule;
+}
+
 void test_streaming_writer_smoke_package()
 {
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-smoke.xlsx";
@@ -839,6 +848,445 @@ void test_streaming_writer_file_backed_body_round_trip()
         "file-backed worksheet last sentinel missing");
     check_contains(
         worksheet_xml, "</sheetData></worksheet>", "file-backed worksheet footer was truncated");
+}
+
+void test_streaming_writer_conditional_formatting_two_color_scale()
+{
+    const auto output_path =
+        std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ColorScale");
+
+    sheet.append_row({fastxlsx::CellView::text("Score")});
+    for (int value = 1; value <= 9; ++value) {
+        sheet.append_row({fastxlsx::CellView::number(static_cast<double>(value))});
+    }
+
+    sheet.add_conditional_color_scale(
+        {2, 1, 10, 1},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
+            fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50}));
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "conditional formatting color scale xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"),
+        "missing conditional formatting worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "conditional formatting should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"),
+        "two-color scale should not create styles.xml or dxfs");
+    check(!entries.contains("xl/metadata.xml"),
+        "two-color scale should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("conditionalFormatting") == std::string::npos,
+        "conditional formatting should not add content type overrides");
+    check(content_types.find("styles.xml") == std::string::npos,
+        "two-color scale should not add styles content type");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "two-color scale should not add workbook relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "two-color scale should not request calculation metadata");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "conditional formatting-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A10\"/>",
+        "conditional formatting worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"colorScale\" priority=\"1\"><colorScale>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FFFF0000\"/><color rgb=\"FF00B050\"/>"
+        "</colorScale></cfRule></conditionalFormatting></worksheet>",
+        "two-color scale XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "conditional formatting element count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfRule ") == 1,
+        "conditional formatting rule count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfvo ") == 2,
+        "two-color scale cfvo count mismatch");
+    check(count_occurrences(worksheet_xml, "<color rgb=") == 2,
+        "two-color scale color count mismatch");
+}
+
+void test_streaming_writer_conditional_formatting_metadata_order()
+{
+    const auto output_path =
+        std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-metadata-order.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Objects");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Value"),
+        fastxlsx::CellView::text("Link"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::text("Docs"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(7.0),
+        fastxlsx::CellView::text("More"),
+    });
+
+    sheet.merge_cells({4, 1, 4, 2});
+    sheet.add_conditional_color_scale(
+        {2, 1, 10, 1},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
+            fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50}));
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+
+    sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
+
+    fastxlsx::TableOptions table;
+    table.name = "ConditionalFormatTable";
+    table.column_names = {"Value", "Link"};
+    sheet.add_table({1, 1, 3, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "relationship-backed metadata should still create worksheet relationships");
+    check(entries.contains("xl/tables/table1.xml"),
+        "conditional formatting metadata order test should create table part");
+    check(!entries.contains("xl/styles.xml"),
+        "conditional formatting with other metadata should not create styles");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:B3\"/>",
+        "conditional formatting metadata should not expand worksheet dimension");
+    check_contains(worksheet_xml,
+        "</sheetData><mergeCells count=\"1\"><mergeCell ref=\"A4:B4\"/></mergeCells>"
+        "<conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"colorScale\" priority=\"1\"><colorScale>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FFFF0000\"/><color rgb=\"FF00B050\"/>"
+        "</colorScale></cfRule></conditionalFormatting>"
+        "<dataValidations count=\"1\"><dataValidation type=\"whole\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>"
+        "</dataValidations><hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId2\"/></tableParts></worksheet>",
+        "conditional formatting suffix ordering or relationship ids mismatch");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 2,
+        "conditional formatting should not add worksheet relationship entries");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs" TargetMode="External"/>)",
+        "hyperlink relationship id should remain rId1");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table relationship id should remain rId2 after conditional formatting");
+}
+
+void test_streaming_writer_conditional_formatting_multi_range_sqref()
+{
+    const auto output_path =
+        std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-multi-range.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ColorScaleRanges");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::text("B"),
+        fastxlsx::CellView::text("C"),
+        fastxlsx::CellView::text("D"),
+        fastxlsx::CellView::text("E"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(1.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(2.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(3.0),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(4.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(6.0),
+    });
+
+    sheet.add_conditional_color_scale(
+        {{2, 1, 3, 1}, {2, 3, 3, 3}, {2, 5, 3, 5}},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
+            fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50}));
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing multi-range color scale worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "multi-range color scale should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"),
+        "multi-range color scale should not create styles");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:E3\"/>",
+        "multi-range color scale dimension mismatch");
+    check_contains(worksheet_xml,
+        "<conditionalFormatting sqref=\"A2:A3 C2:C3 E2:E3\">"
+        "<cfRule type=\"colorScale\" priority=\"1\"><colorScale>"
+        "<cfvo type=\"min\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FFFF0000\"/><color rgb=\"FF00B050\"/>"
+        "</colorScale></cfRule></conditionalFormatting>",
+        "multi-range color scale sqref XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "multi-range color scale should be one conditionalFormatting element");
+}
+
+void test_streaming_writer_conditional_formatting_priorities()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-priorities.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto first = workbook.add_worksheet("First");
+    auto second = workbook.add_worksheet("Second");
+    auto plain = workbook.add_worksheet("Plain");
+
+    first.append_row({fastxlsx::CellView::text("Value")});
+    first.append_row({fastxlsx::CellView::number(1.0)});
+    first.append_row({fastxlsx::CellView::number(2.0)});
+    first.add_conditional_color_scale(
+        {2, 1, 3, 1},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+            fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B}));
+    fastxlsx::TwoColorScaleRule numeric_rule;
+    numeric_rule.lower = {
+        fastxlsx::ColorScaleValueType::Number,
+        0.0,
+        fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
+    };
+    numeric_rule.upper = {
+        fastxlsx::ColorScaleValueType::Percentile,
+        90.0,
+        fastxlsx::ArgbColor {0xFF, 0x5A, 0x8A, 0xD6},
+    };
+    first.add_conditional_color_scale({2, 1, 3, 1}, numeric_rule);
+
+    second.append_row({fastxlsx::CellView::text("Value")});
+    second.append_row({fastxlsx::CellView::number(3.0)});
+    second.add_conditional_color_scale(
+        {2, 1, 2, 1},
+        make_two_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
+            fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50}));
+
+    plain.append_row({fastxlsx::CellView::text("No formatting")});
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& first_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(count_occurrences(first_xml, "<conditionalFormatting ") == 2,
+        "first worksheet conditional formatting count mismatch");
+    check_contains(first_xml, "priority=\"1\"", "first worksheet missing first priority");
+    check_contains(first_xml, "priority=\"2\"", "first worksheet missing second priority");
+    check_contains(first_xml,
+        "<cfvo type=\"num\" val=\"0\"/><cfvo type=\"percentile\" val=\"90\"/>"
+        "<color rgb=\"FFFFEB84\"/><color rgb=\"FF5A8AD6\"/>",
+        "number/percentile color scale endpoint XML mismatch");
+
+    const auto& second_xml = entries.at("xl/worksheets/sheet2.xml");
+    check(count_occurrences(second_xml, "<conditionalFormatting ") == 1,
+        "second worksheet conditional formatting count mismatch");
+    check_contains(second_xml, "priority=\"1\"", "second worksheet priority should reset to 1");
+    check(second_xml.find("priority=\"2\"") == std::string::npos,
+        "second worksheet should not inherit first worksheet priority");
+
+    const auto& plain_xml = entries.at("xl/worksheets/sheet3.xml");
+    check(plain_xml.find("<conditionalFormatting") == std::string::npos,
+        "plain worksheet should not contain conditional formatting");
+    check(plain_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not declare relationship namespace");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "conditional formatting-only first sheet should not create relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "conditional formatting-only second sheet should not create relationships");
+}
+
+void test_streaming_writer_conditional_formatting_failed_call_preserves_priority()
+{
+    const auto output_path = std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-failed-call-priority.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Priority");
+
+    sheet.append_row({fastxlsx::CellView::text("Value")});
+    sheet.append_row({fastxlsx::CellView::number(42.0)});
+
+    const auto valid_rule = make_two_color_scale(
+        fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+        fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B});
+    sheet.add_conditional_color_scale({2, 1, 2, 1}, valid_rule);
+
+    fastxlsx::TwoColorScaleRule invalid_rule = valid_rule;
+    invalid_rule.upper.type = fastxlsx::ColorScaleValueType::Minimum;
+    check_fastxlsx_error(
+        [&sheet, &invalid_rule] {
+            sheet.add_conditional_color_scale({2, 1, 2, 1}, invalid_rule);
+        },
+        "failed conditional formatting call should not mutate priority state");
+
+    fastxlsx::TwoColorScaleRule percent_rule;
+    percent_rule.lower = {
+        fastxlsx::ColorScaleValueType::Percent,
+        10.0,
+        fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
+    };
+    percent_rule.upper = {
+        fastxlsx::ColorScaleValueType::Percent,
+        90.0,
+        fastxlsx::ArgbColor {0xFF, 0x5A, 0x8A, 0xD6},
+    };
+    sheet.add_conditional_color_scale({2, 1, 2, 1}, percent_rule);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "conditional formatting failed-call sample should not create worksheet relationships");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A2\"/>",
+        "conditional formatting ranges should not expand worksheet dimension");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 2,
+        "failed conditional formatting call should not add a rule");
+    check_contains(worksheet_xml, "<cfRule type=\"colorScale\" priority=\"1\">",
+        "first successful conditional formatting priority mismatch");
+    check_contains(worksheet_xml, "<cfRule type=\"colorScale\" priority=\"2\">",
+        "second successful conditional formatting priority mismatch");
+    check(worksheet_xml.find("priority=\"3\"") == std::string::npos,
+        "failed conditional formatting call should not consume a priority");
+    check_contains(worksheet_xml,
+        "<cfvo type=\"percent\" val=\"10\"/><cfvo type=\"percent\" val=\"90\"/>"
+        "<color rgb=\"FFFFEB84\"/><color rgb=\"FF5A8AD6\"/>",
+        "percent endpoint color scale XML mismatch");
+}
+
+void test_streaming_writer_invalid_conditional_formatting()
+{
+    const auto output_path =
+        std::filesystem::current_path()
+        / "fastxlsx-streaming-invalid-conditional-formatting.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("InvalidCF");
+
+    const auto valid_rule = make_two_color_scale(
+        fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
+        fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50});
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] { sheet.add_conditional_color_scale({0, 1, 1, 1}, valid_rule); },
+        "conditional formatting should reject a zero row");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] { sheet.add_conditional_color_scale({1, 0, 1, 1}, valid_rule); },
+        "conditional formatting should reject a zero column");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] { sheet.add_conditional_color_scale({2, 1, 1, 1}, valid_rule); },
+        "conditional formatting should reject a reversed row range");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] { sheet.add_conditional_color_scale({1, 2, 1, 1}, valid_rule); },
+        "conditional formatting should reject a reversed column range");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1048577, 1}, valid_rule);
+        },
+        "conditional formatting should reject a row beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1, 16385}, valid_rule);
+        },
+        "conditional formatting should reject a column beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] {
+            const std::span<const fastxlsx::CellRange> no_ranges;
+            sheet.add_conditional_color_scale(no_ranges, valid_rule);
+        },
+        "conditional formatting should reject an empty multi-range list");
+    check_fastxlsx_error(
+        [&sheet, &valid_rule] {
+            sheet.add_conditional_color_scale({{1, 1, 1, 1}, {1, 0, 1, 1}}, valid_rule);
+        },
+        "conditional formatting should reject an invalid range inside a multi-range list");
+
+    fastxlsx::TwoColorScaleRule nan_rule = valid_rule;
+    nan_rule.lower.type = fastxlsx::ColorScaleValueType::Number;
+    nan_rule.lower.value = std::numeric_limits<double>::quiet_NaN();
+    check_fastxlsx_error(
+        [&sheet, &nan_rule] { sheet.add_conditional_color_scale({1, 1, 1, 1}, nan_rule); },
+        "conditional formatting should reject non-finite numeric endpoints");
+
+    fastxlsx::TwoColorScaleRule infinity_rule = valid_rule;
+    infinity_rule.upper.type = fastxlsx::ColorScaleValueType::Number;
+    infinity_rule.upper.value = std::numeric_limits<double>::infinity();
+    check_fastxlsx_error(
+        [&sheet, &infinity_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1, 1}, infinity_rule);
+        },
+        "conditional formatting should reject non-finite upper numeric endpoints");
+
+    fastxlsx::TwoColorScaleRule lower_max_rule = valid_rule;
+    lower_max_rule.lower.type = fastxlsx::ColorScaleValueType::Maximum;
+    check_fastxlsx_error(
+        [&sheet, &lower_max_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1, 1}, lower_max_rule);
+        },
+        "conditional formatting should reject maximum as lower endpoint");
+
+    fastxlsx::TwoColorScaleRule upper_min_rule = valid_rule;
+    upper_min_rule.upper.type = fastxlsx::ColorScaleValueType::Minimum;
+    check_fastxlsx_error(
+        [&sheet, &upper_min_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1, 1}, upper_min_rule);
+        },
+        "conditional formatting should reject minimum as upper endpoint");
+
+    sheet.append_row({fastxlsx::CellView::number(1.0)});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("<conditionalFormatting") == std::string::npos,
+        "failed conditional formatting calls should not mutate worksheet metadata");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A1\"/>",
+        "failed conditional formatting calls should not advance dimension");
+    check(!entries.contains("xl/styles.xml"),
+        "failed conditional formatting calls should not create styles");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "failed conditional formatting calls should not create relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "failed conditional formatting calls should not request recalculation");
 }
 
 void test_streaming_writer_data_validations()
@@ -2739,6 +3187,15 @@ void test_streaming_writer_rejects_mutation_after_close()
         "merge_cells should reject mutation after workbook close");
     check_fastxlsx_error(
         [&sheet] {
+            sheet.add_conditional_color_scale(
+                {1, 1, 1, 1},
+                make_two_color_scale(
+                    fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
+                    fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50}));
+        },
+        "add_conditional_color_scale should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] {
             fastxlsx::DataValidationRule rule;
             rule.type = fastxlsx::DataValidationType::List;
             rule.formula1 = "\"A,B\"";
@@ -3249,6 +3706,12 @@ int main()
         test_streaming_writer_foreign_style_collision_is_rejected();
         test_streaming_writer_invalid_style_registration();
         test_streaming_writer_file_backed_body_round_trip();
+        test_streaming_writer_conditional_formatting_two_color_scale();
+        test_streaming_writer_conditional_formatting_metadata_order();
+        test_streaming_writer_conditional_formatting_multi_range_sqref();
+        test_streaming_writer_conditional_formatting_priorities();
+        test_streaming_writer_conditional_formatting_failed_call_preserves_priority();
+        test_streaming_writer_invalid_conditional_formatting();
         test_streaming_writer_data_validations();
         test_streaming_writer_data_validation_multi_range_sqref();
         test_streaming_writer_data_validations_with_relationship_metadata();

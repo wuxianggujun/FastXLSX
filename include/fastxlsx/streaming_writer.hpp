@@ -89,6 +89,18 @@ struct CellStyle {
     std::string number_format;
 };
 
+/// ARGB color written as an eight-digit OpenXML `rgb` value.
+///
+/// API mode: Streaming worksheet metadata. The strongly typed representation
+/// avoids accepting partially validated color strings in performance-sensitive
+/// writer paths. Values are serialized as uppercase ARGB hex.
+struct ArgbColor {
+    std::uint8_t alpha = 0xFF;
+    std::uint8_t red = 0;
+    std::uint8_t green = 0;
+    std::uint8_t blue = 0;
+};
+
 /// Options for WorkbookWriter.
 ///
 /// API mode: Streaming. Options are captured by WorkbookWriter::create() and are
@@ -147,6 +159,54 @@ enum class DataValidationErrorStyle {
     Stop,
     Warning,
     Information,
+};
+
+/// Value kind for a conditional-formatting color-scale endpoint.
+///
+/// API mode: Streaming worksheet metadata. Minimum and Maximum are serialized
+/// without `val`; Number, Percent, and Percentile require finite numeric values.
+/// This enum only supports the current color-scale slice and does not represent
+/// formula-based conditional formatting or dxf-backed formatting rules.
+enum class ColorScaleValueType {
+    Minimum,
+    Maximum,
+    Number,
+    Percent,
+    Percentile,
+};
+
+/// One endpoint of a two-color conditional-formatting color scale.
+///
+/// API mode: Streaming worksheet metadata. The point is copied into worksheet
+/// state when added. FastXLSX writes it as one `<cfvo>` plus one inline
+/// `<color rgb="..."/>` in worksheet XML; it does not create styles.xml, dxfs,
+/// worksheet relationships, or content type entries.
+struct ColorScalePoint {
+    /// OpenXML `cfvo` type for this endpoint.
+    ColorScaleValueType type = ColorScaleValueType::Minimum;
+
+    /// Numeric `cfvo` value for Number, Percent, and Percentile endpoint types.
+    /// Ignored for Minimum and Maximum endpoint types.
+    double value = 0.0;
+
+    /// Inline ARGB color for this endpoint.
+    ArgbColor color;
+};
+
+/// A narrow two-color conditional-formatting color scale.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
+/// into WorksheetWriter state and serialized as worksheet-local
+/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
+/// call order per worksheet. This does not evaluate cell values, inspect prior
+/// rows, create styles.xml/dxfs, edit existing XLSX files, or promise full Excel
+/// conditional-formatting UI parity.
+struct TwoColorScaleRule {
+    /// Lower endpoint, defaulting to OpenXML `type="min"`.
+    ColorScalePoint lower;
+
+    /// Upper endpoint, defaulting to OpenXML `type="max"`.
+    ColorScalePoint upper {ColorScaleValueType::Maximum, 0.0, ArgbColor {0xFF, 0xFF, 0xFF, 0xFF}};
 };
 
 /// A streaming-only worksheet data-validation rule.
@@ -520,6 +580,40 @@ public:
     /// @throws FastXlsxError if the range is invalid, outside Excel worksheet
     /// limits, or contains only one cell.
     void merge_cells(CellRange range);
+
+    /// Records one worksheet-local two-color conditional-formatting color scale.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The rule is
+    /// emitted as worksheet-local `<conditionalFormatting>` XML and does not add
+    /// package relationships, content types, styles.xml, dxfs, or cell text.
+    /// FastXLSX copies the two endpoints into writer state, validates the range
+    /// and finite numeric endpoint values, and assigns priority by call order.
+    /// It does not parse formulas, evaluate cell values, normalize overlapping
+    /// rules, or edit existing XLSX files.
+    ///
+    /// @throws FastXlsxError if the range is invalid, the workbook is closed, or
+    /// the rule shape is outside the current narrow two-color scale surface.
+    void add_conditional_color_scale(CellRange range, TwoColorScaleRule rule);
+
+    /// Records one two-color conditional-formatting rule for multiple ranges.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. Ranges are
+    /// copied into writer state and serialized as one space-separated `sqref`
+    /// attribute on a single `<conditionalFormatting>` element. This does not
+    /// sort, merge, deduplicate, or overlap-check ranges; memory grows with the
+    /// copied range count and number of rules, not with worksheet row or cell
+    /// count.
+    ///
+    /// @throws FastXlsxError if the range list is empty, any range is invalid,
+    /// the workbook is closed, or endpoint values are outside the current
+    /// finite-value color-scale surface.
+    void add_conditional_color_scale(std::span<const CellRange> ranges, TwoColorScaleRule rule);
+
+    /// Convenience overload for multiple conditional-formatting ranges.
+    ///
+    /// The initializer-list ranges are copied during this call.
+    void add_conditional_color_scale(
+        std::initializer_list<CellRange> ranges, TwoColorScaleRule rule);
 
     /// Records a worksheet-local data validation rule for one range.
     ///

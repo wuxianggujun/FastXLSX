@@ -39,6 +39,9 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellStyle、W
 - worksheet cell 使用非默认 style 时写 `s="N"`；默认 style 不写 `s="0"`。
 - sharedStrings + styles 可以共存：styled shared string cell 同时写 `s="N"` 和 `t="s"`；
   workbook relationship 顺序保持 sheets、sharedStrings、styles。
+- 当前 two-color conditional color scale 不是 style registry 功能：它写 worksheet-local
+  `<conditionalFormatting>`，不生成 `styles.xml` 或 `dxfs`。不要把它当成 P9a styles
+  完整 conditional formatting 支持。
 
 ## 推荐流程
 
@@ -90,7 +93,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_styles_excel.ps
 ## 禁止事项
 
 - 不要把 P9a 写成完整 styles 或 Excel formatting parity。
-- 不要声称支持 font、fill、border、alignment、rich text、conditional formatting、
+- 不要声称支持 font、fill、border、alignment、rich text、dxf-backed conditional formatting、
   named styles、date cell type 或 existing-file style preservation，除非代码和测试已覆盖。
 - 不要把 `StyleId::value()` 当成跨 workbook 稳定 id。它只用于诊断和结构测试。
 - 不要为了样式方便引入 worksheet DOM、完整 cell matrix 或 cell map。

@@ -26,7 +26,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 - `WorkbookWriter` / `WorksheetWriter` 是当前 streaming 新建 workbook 路径。
 - worksheet 已有 metadata 写出骨架：列宽、冻结窗格、自动筛选、合并单元格、
-  streaming-only data validations、external/internal hyperlinks 和 tables。
+  streaming-only data validations、external/internal hyperlinks、two-color conditional
+  color scales 和 tables。
 - `WorksheetWriter::add_data_validation()` 当前只支持新建 workbook 的 worksheet XML
   metadata，写出 `<dataValidations>`，不新增 worksheet `.rels`、content types 或
   package relationships。当前 `DataValidationRule` 还支持 prompt/error metadata：
@@ -54,6 +55,15 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。当前只拒绝同一 worksheet
   内 table-vs-table range overlap，不检查与 data validations、images、merged ranges
   或 autoFilter 的冲突。
+- `WorksheetWriter::add_conditional_color_scale()` 当前只支持新建 workbook 的
+  streaming-only two-color conditional color scale。它把 `TwoColorScaleRule` 写成
+  worksheet-local `<conditionalFormatting><cfRule type="colorScale">` XML，`ArgbColor`
+  序列化为 8 位大写 ARGB，priority 按同一 worksheet 内调用顺序分配。它不新增
+  worksheet `.rels`、workbook relationships、content types、`styles.xml`、`dxfs`、
+  `xl/metadata.xml`、cell text 或 `<calcPr>`。`Number` / `Percent` / `Percentile`
+  endpoint 要求有限 numeric value；lower 不能用 `Maximum`，upper 不能用 `Minimum`。
+  multi-range overload 会复制 range 列表并写成一个空格分隔 `sqref`，不排序、合并、
+  去重或检查重叠。
 - 大型 worksheet 路径禁止 DOM，metadata 必须以小向量/轻量结构记录，再在
   worksheet XML 正确位置输出。
 - `RelationshipSet` 可表达 external target，但只有同时写 worksheet `<hyperlinks>`、
@@ -94,8 +104,11 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   不创建 hyperlink 样式、不支持 target 存在性校验、已有文件编辑或完整 Excel UI 行为。
   `HyperlinkOptions` 当前只支持基础 `display` / `tooltip` worksheet attributes；非空
   字符串会复制进 writer state，空字符串省略，不改变 `.rels` / content types / styles。
-- Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
-  公式和 range 依赖不会进入大型 DOM。
+- Conditional formatting：已有基础 streaming-only、新建 workbook two-color color scale
+  版本。当前只保存 range 列表、两个 color-scale endpoints 和 priority；写出
+  worksheet-local `<conditionalFormatting>`，不生成 styles/dxfs/rels/content type/calcPr
+  副作用。继续禁止 formula/cellIs、data bars、icon sets、dxf-backed styles、
+  existing-file editing、range 排序/合并/去重、重叠检测和完整 Excel UI。
 - Tables：已有基础 streaming-only、新建 workbook 版本。当前只保存 range、table name、
   column names、style flags、`show_totals_row`、`column_totals_functions` 和
   `column_totals_labels`；`show_totals_row` 只表示 table totals row 可见性，
@@ -113,6 +126,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - 不要因为基础 hyperlink slices（external URL + internal location）已存在就宣称完整 hyperlinks 已支持。
 - 不要因为 streaming-only table slice 已存在就宣称完整 tables 已支持。
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。
+- 不要把 two-color color scale 写成完整 conditional formatting、styles registry 或
+  `dxfs` 支持。
 - 不要在没有 PackageReader/PackageWriter 前宣称 existing XLSX editing 或 unknown part passthrough。
 - 不要把 Excel、`openpyxl` 或 `XlsxWriter` 加为运行时依赖；它们只能用于测试和排障参考。
 
@@ -149,6 +164,12 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   `totalsRowFunction` / `totalsRowLabel`、无公式文本 / 空 label attribute、duplicate names、
   same-worksheet table range overlap、adjacent/cross-worksheet non-overlap 和 close
   后 mutation。
+- conditional color scale 结构测试应检查 worksheet `<conditionalFormatting sqref>`、
+  `<cfRule type="colorScale" priority>`、两个 `<cfvo>`、两个 `<color rgb="AARRGGBB">`、
+  multi-range `sqref`、priority 顺序、suffix 顺序、无 `styles.xml` / `dxfs` /
+  worksheet `.rels` / content type / workbook relationship / `<calcPr>` 副作用、
+  invalid ranges、empty range list、非有限 endpoint、lower `Maximum`、upper `Minimum`
+  和 close 后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 如果 data validations 与 hyperlinks / tables 共存，检查 `<dataValidations>` 仍在
   `<hyperlinks>` 和 `<tableParts>` 之前，且 hyperlinks/table 的 `rId` 不被 data

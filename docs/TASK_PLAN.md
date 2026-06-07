@@ -964,6 +964,13 @@ Current facts:
   verifies no empty `xl/sharedStrings.xml`, sharedStrings content type, workbook
   relationship, `t="s"`, or `inlineStr` is produced. The same test confirms the
   formula cell still causes workbook recalculation metadata.
+- Local QA helpers now exist for that absence sample:
+  `tools/verify_shared_strings_absence.py` verifies ZIP/package absence
+  semantics, `openpyxl` values/formula semantics, and optional `XlsxWriter`
+  reference generation; `tools/verify_shared_strings_absence_excel.ps1`
+  opens the workbook read-only through local Excel COM and checks
+  `NoStrings!A1:C1`. These helpers are manual QA, not default CTest/CI or
+  runtime dependencies.
 - No 10,000,000-cell benchmark result is recorded in this plan.
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.

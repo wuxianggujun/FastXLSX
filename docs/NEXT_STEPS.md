@@ -374,6 +374,9 @@ Do:
   worksheet `t="s"` references.
 - Keep the empty shared string table path clean: if `SharedString` mode sees no
   string cells, do not write a dead sharedStrings part or relationship.
+- Keep `tools/verify_shared_strings_absence.py` and
+  `tools/verify_shared_strings_absence_excel.ps1` aligned with the generated
+  absence sample whenever the sample shape changes.
 - Measure repeated-string and mostly-unique-string behavior with the opt-in
   benchmark `--string-pattern repeated|unique` inputs before widening support
   wording.

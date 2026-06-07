@@ -227,10 +227,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_shared_strings_
 该样例在 `StringStrategy::SharedString` 下只写数字、布尔和公式 cell；结构测试确认
 不生成空 `xl/sharedStrings.xml`、sharedStrings content type 或 workbook relationship，
 worksheet 不写 `t="s"` 或 `inlineStr`，同时公式仍写出 workbook recalculation metadata。
-它主要是 package hygiene 回归，不需要接入默认 CI 专用 Excel COM 脚本；本机可用
-Excel COM 一次性只读打开确认无修复弹窗和 `NoStrings!A1:C1` 值/公式语义。如果出现
-Excel 修复弹窗，再按下面参考对比流程用 Excel / `openpyxl` / `XlsxWriter` 生成等价
-参考文件并拆包对比。
+它主要是 package hygiene 回归，不接入默认 CI；本地 QA 可以运行：
+
+```powershell
+py tools\verify_shared_strings_absence.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings-empty-table.xlsx `
+  --work-dir build\qa\shared-strings-absence
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_shared_strings_absence_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings-empty-table.xlsx
+```
+
+Python helper 会检查 ZIP absence 语义、`openpyxl` 读取值/公式，并在可用时创建
+`XlsxWriter` 参考 workbook。Excel helper 会只读打开 workbook，确认无修复弹窗并核对
+`NoStrings!A1:C1`。如果出现 Excel 修复弹窗，再按下面参考对比流程用 Excel /
+`openpyxl` / `XlsxWriter` 生成等价参考文件并拆包对比。
 
 ## 结构异常时的参考对比流程
 

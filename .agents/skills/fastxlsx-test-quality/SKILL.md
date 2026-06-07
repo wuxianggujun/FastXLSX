@@ -231,6 +231,18 @@ worksheet `t="s"` index、`xl/sharedStrings.xml` count/uniqueCount 和当前 smo
 样例没有 `xl/sharedStrings.xml`、sharedStrings content type、workbook relationship、
 worksheet `t="s"` 或 `inlineStr`。已有 sharedStrings smoke 仍应跑上述 Python/Excel
 本地 QA，防止正常有字符串路径回退。
+当前空表样例也有固定本地 QA helper：
+```powershell
+py tools\verify_shared_strings_absence.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings-empty-table.xlsx `
+  --work-dir build\qa\shared-strings-absence
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_shared_strings_absence_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-shared-strings-empty-table.xlsx
+```
+
+第一个脚本检查 ZIP absence 语义、`openpyxl` 可读值/公式，并在可用时创建
+`XlsxWriter` 参考 workbook；第二个脚本用本机 Excel COM 只读打开并核对
+`NoStrings!A1:C1`。它们是本地 QA/排障工具，不接入默认 CTest，也不是运行时依赖。
 
 当前已有本地 data validation prompt/error QA helper：
 ```powershell

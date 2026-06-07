@@ -677,7 +677,8 @@ Stages:
    - Keep it opt-in through `FASTXLSX_ENABLE_STB=ON` and `planned-image`.
    - Current code exposes PNG/JPEG `read_image_info()` for file and memory
      input, backed by `stbi_info` when enabled and a clear FastXlsxError when
-     disabled.
+     disabled. Current tests also cover unsupported memory/file headers, empty
+     memory buffer, empty file, and missing file.
    - The `read_image_info()` documentation must describe metadata reading only;
      it must not imply media part creation, drawing XML, relationships, content
      types, anchors, or existing-workbook preservation.

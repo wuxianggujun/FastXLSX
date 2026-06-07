@@ -42,8 +42,8 @@ struct ImageInfo {
 /// FastXlsxError.
 ///
 /// @throws FastXlsxError if stb support is disabled, the file cannot be opened,
-/// the format is outside the current PNG/JPEG slice, or stb cannot read image
-/// metadata.
+/// the file is empty, the format is outside the current PNG/JPEG slice, or stb
+/// cannot read image metadata.
 [[nodiscard]] ImageInfo read_image_info(const std::filesystem::path& path);
 
 /// Reads PNG/JPEG image dimensions and channel count from memory.

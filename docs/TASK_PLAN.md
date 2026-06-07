@@ -1089,7 +1089,9 @@ Allowed early slices:
      for PNG/JPEG metadata only; its public comment must stay clear that the
      helper reports dimensions, format, and channels only, and does not create
      OpenXML image package parts, relationships, anchors, or compatibility
-     guarantees.
+     guarantees. Current `fastxlsx.image` coverage includes default no-STB
+     errors, PNG/JPEG file and memory metadata, unsupported memory/file
+     headers, empty memory buffer, empty file, and missing file.
   2. API design and documentation for insertion/editing: define
      Streaming/Patch/In-memory mode,
      memory cost, image-byte / decoded-pixel lifetime, OpenXML side effects,

@@ -74,6 +74,10 @@ void test_image_info_memory()
                 std::as_bytes(std::span<const unsigned char>(gif_header.data(), gif_header.size())));
         },
         "unsupported memory image format should fail");
+
+    check_fastxlsx_error(
+        [] { (void)fastxlsx::read_image_info(std::span<const std::byte> {}); },
+        "empty memory image buffer should fail");
 #else
     check_fastxlsx_error(
         [] { (void)fastxlsx::read_image_info(fastxlsx::test::tiny_png_bytes()); },
@@ -107,6 +111,19 @@ void test_image_info_file()
                 std::filesystem::current_path() / "fastxlsx-missing-image.png");
         },
         "missing image file should fail");
+
+    const std::array<unsigned char, 6> gif_header {'G', 'I', 'F', '8', '9', 'a'};
+    const auto gif_path = std::filesystem::current_path() / "fastxlsx-image-info.gif";
+    write_bytes(gif_path, std::as_bytes(std::span<const unsigned char>(gif_header.data(), gif_header.size())));
+    check_fastxlsx_error(
+        [&gif_path] { (void)fastxlsx::read_image_info(gif_path); },
+        "unsupported image file format should fail");
+
+    const auto empty_path = std::filesystem::current_path() / "fastxlsx-image-info-empty.png";
+    write_bytes(empty_path, std::span<const std::byte> {});
+    check_fastxlsx_error(
+        [&empty_path] { (void)fastxlsx::read_image_info(empty_path); },
+        "empty image file should fail");
 #else
     check_fastxlsx_error(
         [&png_path] { (void)fastxlsx::read_image_info(png_path); },

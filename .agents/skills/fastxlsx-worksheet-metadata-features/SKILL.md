@@ -94,13 +94,13 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   `allowBlank`、`formula1`、`formula2`、XML escape、invalid ranges、
   invalid rule shapes、关系缺失和 close 后 mutation。
 - external hyperlinks 结构测试应检查 worksheet XML `r:id` 与 worksheet `.rels` 一致、
-  target XML escape、owner-local `rId`、plain sheet 不生成 `.rels`、不污染 workbook
-  relationships、不新增 content type override、invalid cell、empty target 和 close 后
-  mutation。
+  target XML escape、同一 worksheet 多个 hyperlink、跨 worksheet owner-local `rId`、
+  plain sheet 不生成 `.rels`、不污染 workbook relationships、不新增 content type
+  override、invalid cell、empty target 和 close 后 mutation。
 - tables 结构测试应检查 `xl/tables/tableN.xml`、worksheet `<tableParts>`、
   worksheet `.rels`、table content type override、owner-local `rId`、与 hyperlinks
-  共存时的关系 id、XML escape、invalid range/options、duplicate names 和 close 后
-  mutation。
+  共存时的关系 id、多对象关系 id 回归、XML escape、invalid range/options、
+  duplicate names 和 close 后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 本机有 Excel 时打开关键 `.xlsx`，确认无修复弹窗并检查可视化结果。
 - 结构失败时拆包对比 FastXLSX 输出、Excel 修复文件和参考文件的 XML 语义。

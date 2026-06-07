@@ -609,8 +609,10 @@ Accept when:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
 - Package relationship parts and content types are correct, including no
   workbook relationship pollution and no content type override for `.rels`.
-- Tests cover target XML escaping, plain sheets without `.rels`, invalid
-  row/column references, empty target URLs, and mutation-after-close.
+- Tests cover target XML escaping, multiple hyperlinks in one worksheet,
+  worksheet-owner-local `rId` allocation across worksheets, plain sheets without
+  `.rels`, invalid row/column references, empty target URLs, and
+  mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`.
 
@@ -636,8 +638,9 @@ Do:
 
 Accept when:
 - Structure tests compare table XML, worksheet relationships, worksheet
-  `<tableParts>`, content types, XML escaping, owner-local `rId`, duplicate
-  names, invalid ranges/options, and mutation-after-close.
+  `<tableParts>`, content types, XML escaping, owner-local `rId`, coexistence
+  with external hyperlinks under the same worksheet relationship owner,
+  duplicate names, invalid ranges/options, and mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed `InventoryTable` and `TotalsTable` as `ListObjects` with expected
@@ -698,6 +701,10 @@ Stages:
      content type overrides. Mixed PNG/JPEG coverage also checks one worksheet
      sharing a single drawing part with multiple anchors, global media numbering,
      and drawing-owner-local image relationship ids.
+   - Current mixed-object relationship coverage checks multiple external
+     hyperlinks, one drawing, and multiple tables under the same worksheet
+     relationship owner, plus owner-local `rId` reset across worksheets and
+     drawing-local image relationship ids.
    - Current anchor boundary coverage checks maximum legal Excel row/column
      marker serialization, including 0-based drawing marker values such as
      `<xdr:col>16383</xdr:col>` and `<xdr:row>1048575</xdr:row>`.

@@ -305,11 +305,17 @@ cmake --help
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`；
   本机已用 Excel 打开验证 `Links`、`MoreLinks` 和 `Plain` sheet 的
   `Hyperlinks` 集合、Address 和 TextToDisplay，确认链接不替代单元格文本。
+  结构测试还覆盖同一 worksheet 内多个 external hyperlink 的 owner-local
+  `rId1` / `rId2` 分配，并确认不同 worksheet 的 relationship id 各自从 owner
+  内局部计数，不污染 workbook relationships。
 - 当前 `fastxlsx.streaming` tables 推荐 preset 输出样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`。本机已用
   Excel 打开验证 `Inventory`、`Totals` 和 `Plain` sheet 的 `ListObjects` 数量、
   表名、范围、header 文本和内建 table style flags；不要把这扩展成完整 table UI
   或已有文件编辑保证。
+  结构测试还覆盖 table 与 external hyperlinks 共存时 worksheet `.rels` 中的
+  owner-local relationship id 分配，确认 `<tableParts>` 和 `<hyperlinks>` 引用
+  各自匹配对应 `.rels` entry。
 - 当前 `fastxlsx.streaming` Phase 3 metadata 推荐 preset 输出样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`。本机已用
   Excel COM 打开验证 `Metadata` sheet、`B2` / `C2` 公式、row 2 高度、A/C 列宽、
@@ -344,6 +350,14 @@ cmake --help
   `CellRange` 最大合法行列会序列化为 drawing XML 的 0-based marker，例如
   `<xdr:col>16383</xdr:col>` 和 `<xdr:row>1048575</xdr:row>`；这只是结构边界测试，
   不是百万行/最大列大文件性能证明。
+- 当前 opt-in image preset 还覆盖多对象 relationship id 回归测试：同一 worksheet
+  内多个 external hyperlink、一个 drawing、多个 table 共享 worksheet owner-local
+  `rId` 序列，第二个 worksheet 重新从 `rId1` 计数，drawing `.rels` 内图片关系也按
+  drawing owner 局部计数；这只是结构一致性测试，不代表完整对象功能。
+  本机 Excel COM 已只读打开
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-mixed-object-rels.xlsx`，
+  确认 `Objects` 为 2 个 hyperlinks / 2 个 shapes / 2 个 tables，
+  `MoreObjects` 为 1 / 1 / 1，`Plain` 为 0 / 0 / 0。
 - 当前 sharedStrings benchmark 小样例位于
   `build/windows-nmake-release-benchmark/benchmarks/sharedstrings-v3-*.xlsx`。本机已用
   Excel COM 只读打开 `sharedstrings-v3-repeated-inline.xlsx`、

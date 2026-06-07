@@ -415,9 +415,10 @@ Validation:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
 - Package contains the expected worksheet relationship parts and no workbook
   relationship pollution, content type override, or metadata part.
-- `fastxlsx.streaming` covers target XML escaping, owner-local `rId` allocation,
-  sheets without hyperlinks, invalid row/column references, empty target URLs,
-  and mutation-after-close.
+- `fastxlsx.streaming` covers target XML escaping, multiple hyperlinks in one
+  worksheet, worksheet-owner-local `rId` allocation across worksheets, sheets
+  without hyperlinks, invalid row/column references, empty target URLs, and
+  mutation-after-close.
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`;
   Excel COM confirmed worksheet `Hyperlinks` counts, Address values, and
@@ -447,8 +448,9 @@ Order:
 
 Validation:
 - `fastxlsx.streaming` table tests compare table XML, worksheet relationships,
-  worksheet `<tableParts>`, content type overrides, owner-local `rId`, XML
-  escaping, invalid ranges/options, duplicate names, and mutation-after-close.
+  worksheet `<tableParts>`, content type overrides, owner-local `rId`,
+  coexistence with external hyperlinks in the same worksheet relationship owner,
+  XML escaping, invalid ranges/options, duplicate names, and mutation-after-close.
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed worksheet `ListObjects` counts, `InventoryTable` / `TotalsTable`
@@ -465,6 +467,15 @@ Validation:
   slice also covers maximum legal anchor marker serialization: Excel-boundary
   `CellRange` coordinates are written as 0-based drawing marker values such as
   `<xdr:col>16383</xdr:col>` and `<xdr:row>1048575</xdr:row>`.
+- The current mixed-object relationship regression covers multiple external
+  hyperlinks, one drawing, and multiple tables under the same worksheet
+  relationship owner; it verifies worksheet-local `rId` ordering, owner reset
+  across worksheets, global table/drawing/media numbering, and drawing-local
+  image relationship ids.
+- Local Excel COM read-only validation opened
+  `build/windows-nmake-release-image/tests/fastxlsx-streaming-mixed-object-rels.xlsx`
+  and confirmed object counts: `Objects` has 2 hyperlinks / 2 shapes / 2 tables,
+  `MoreObjects` has 1 / 1 / 1, and `Plain` has 0 / 0 / 0.
 - Local Excel COM visual verification passed for
   `build/windows-nmake-release-image/tests/fastxlsx-streaming-images.xlsx`;
   Excel opened the workbook, saw one shape on `Images`, one shape on

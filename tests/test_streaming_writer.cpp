@@ -1114,6 +1114,130 @@ void test_streaming_writer_image_anchor_markers()
 #endif
 }
 
+void test_streaming_writer_mixed_object_relationship_ids()
+{
+#ifdef FASTXLSX_TEST_HAS_STB
+    const auto png_path = std::filesystem::current_path() / "fastxlsx-streaming-object-rels-source.png";
+    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-streaming-object-rels-source.jpg";
+    write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
+    write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
+
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-mixed-object-rels.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto first = workbook.add_worksheet("Objects");
+    auto second = workbook.add_worksheet("MoreObjects");
+    auto plain = workbook.add_worksheet("Plain");
+
+    first.append_row({fastxlsx::CellView::text("Name"), fastxlsx::CellView::text("Link")});
+    first.append_row({fastxlsx::CellView::text("Widget"), fastxlsx::CellView::text("Docs")});
+    first.append_row({fastxlsx::CellView::text("Kind"), fastxlsx::CellView::text("Value")});
+    first.append_row({fastxlsx::CellView::text("Image"), fastxlsx::CellView::text("Two")});
+    first.add_external_hyperlink(2, 1, "https://example.com/widget");
+    first.add_external_hyperlink(2, 2, "https://example.com/docs");
+    first.add_image(png_path, {1, 3, 2, 3});
+    first.add_image(jpeg_path, {3, 3, 4, 3});
+
+    fastxlsx::TableOptions first_table;
+    first_table.name = "ObjectTableOne";
+    first_table.column_names = {"Name", "Link"};
+    first.add_table({1, 1, 2, 2}, first_table);
+
+    fastxlsx::TableOptions second_table;
+    second_table.name = "ObjectTableTwo";
+    second_table.column_names = {"Kind", "Value"};
+    first.add_table({3, 1, 4, 2}, second_table);
+
+    second.append_row({fastxlsx::CellView::text("Name"), fastxlsx::CellView::text("Link")});
+    second.append_row({fastxlsx::CellView::text("Gadget"), fastxlsx::CellView::text("More")});
+    second.add_external_hyperlink(2, 1, "https://example.com/gadget");
+    second.add_image(png_path, {1, 3, 2, 3});
+
+    fastxlsx::TableOptions third_table;
+    third_table.name = "ObjectTableThree";
+    third_table.column_names = {"Name", "Link"};
+    second.add_table({1, 1, 2, 2}, third_table);
+
+    plain.append_row({fastxlsx::CellView::text("No object relationships")});
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/media/image1.png"), "missing first object media part");
+    check(entries.contains("xl/media/image2.jpg"), "missing second object media part");
+    check(entries.contains("xl/media/image3.png"), "missing third object media part");
+    check(entries.contains("xl/drawings/drawing1.xml"), "missing first object drawing part");
+    check(entries.contains("xl/drawings/drawing2.xml"), "missing second object drawing part");
+    check(!entries.contains("xl/drawings/drawing3.xml"), "plain sheet should not create a drawing part");
+    check(entries.contains("xl/tables/table1.xml"), "missing first object table part");
+    check(entries.contains("xl/tables/table2.xml"), "missing second object table part");
+    check(entries.contains("xl/tables/table3.xml"), "missing third object table part");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "plain sheet should not create object relationships");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\"/>"
+        "<hyperlink ref=\"B2\" r:id=\"rId2\"/></hyperlinks><drawing r:id=\"rId3\"/>"
+        "<tableParts count=\"2\"><tablePart r:id=\"rId4\"/><tablePart r:id=\"rId5\"/></tableParts></worksheet>",
+        "first object sheet relationship ids should be hyperlink, drawing, then tables");
+
+    const auto& first_sheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(first_sheet_rels, "<Relationship ") == 5,
+        "first object sheet relationship count mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/widget" TargetMode="External"/>)",
+        "first object hyperlink relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs" TargetMode="External"/>)",
+        "second object hyperlink relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>)",
+        "first object drawing relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "first object table relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table2.xml"/>)",
+        "second object table relationship mismatch");
+
+    const auto& first_drawing_rels = entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    check(count_occurrences(first_drawing_rels, "<Relationship ") == 2,
+        "first object drawing relationship count mismatch");
+    check_contains(first_drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>)",
+        "first object PNG drawing relationship mismatch");
+    check_contains(first_drawing_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image2.jpg"/>)",
+        "first object JPEG drawing relationship mismatch");
+
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\"/></hyperlinks>"
+        "<drawing r:id=\"rId2\"/><tableParts count=\"1\"><tablePart r:id=\"rId3\"/></tableParts></worksheet>",
+        "second object sheet relationship ids should reset per worksheet owner");
+
+    const auto& second_sheet_rels = entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    check(count_occurrences(second_sheet_rels, "<Relationship ") == 3,
+        "second object sheet relationship count mismatch");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/gadget" TargetMode="External"/>)",
+        "second sheet hyperlink relationship mismatch");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing2.xml"/>)",
+        "second sheet drawing relationship mismatch");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table3.xml"/>)",
+        "second sheet table relationship mismatch");
+
+    const auto& second_drawing_rels = entries.at("xl/drawings/_rels/drawing2.xml.rels");
+    check_contains(second_drawing_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image3.png"/>)",
+        "second drawing relationship id should reset for its drawing owner");
+#endif
+}
+
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
@@ -1734,6 +1858,7 @@ int main()
         test_streaming_writer_jpeg_images();
         test_streaming_writer_mixed_image_formats();
         test_streaming_writer_image_anchor_markers();
+        test_streaming_writer_mixed_object_relationship_ids();
         test_streaming_writer_shared_string_package();
         test_streaming_writer_shared_strings_workbook_scope_and_crlf();
         test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias();

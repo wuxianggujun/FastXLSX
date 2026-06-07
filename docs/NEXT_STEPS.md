@@ -455,7 +455,10 @@ Do:
   preserves empty `<row r="N"></row>` elements, and keeps a trailing appended
   empty row in the generated dimension. Current in-memory tests also lock empty
   worksheet, single empty row, `XFD1` max-column dimension, and 16385-column
-  rejection. Do not introduce a full cell matrix just to mimic Excel `UsedRange`.
+  rejection. Current streaming tests also lock legal `XFD1` max-column output,
+  legal sparse `1048576` max-row output through the test-only hook, and
+  failed-append state hygiene. Do not introduce a full cell matrix just to mimic
+  Excel `UsedRange`.
 - Add or update Doxygen comments for public APIs touched by the change.
 
 Accept when:

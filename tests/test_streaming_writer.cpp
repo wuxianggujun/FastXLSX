@@ -334,6 +334,128 @@ void test_streaming_writer_empty_rows_dimension()
         "sparse empty-row worksheet XML mismatch");
 }
 
+void test_streaming_writer_max_column_boundary()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-max-column-boundary.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("MaxColumn");
+
+    std::vector<fastxlsx::CellView> max_columns(16384, fastxlsx::CellView::number(1.0));
+    sheet.append_row(std::span<const fastxlsx::CellView>(max_columns.data(), max_columns.size()));
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "max-column streaming xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:XFD1\"/>",
+        "max-column streaming worksheet dimension mismatch");
+    check_contains(worksheet_xml, "<c r=\"A1\"><v>1</v></c>",
+        "max-column streaming first cell reference mismatch");
+    check_contains(worksheet_xml, "<c r=\"XFD1\"><v>1</v></c>",
+        "max-column streaming last cell reference mismatch");
+    check(worksheet_xml.find("XFE1") == std::string::npos,
+        "max-column streaming worksheet should not write a column beyond XFD");
+}
+
+void test_streaming_writer_max_row_boundary_with_test_hook()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-max-row-boundary.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("MaxRow");
+
+    fastxlsx::detail::testing_set_worksheet_row_count(sheet, 1048575);
+    sheet.append_row({
+        fastxlsx::CellView::number(45500.0),
+        fastxlsx::CellView::boolean(true),
+        fastxlsx::CellView::formula("A1048576+1"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "max-row streaming xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:C1048576\"/>",
+        "max-row streaming worksheet dimension mismatch");
+    check_contains(worksheet_xml, "<row r=\"1048576\">",
+        "max-row streaming worksheet should serialize the last legal row");
+    check_contains(worksheet_xml, "<c r=\"A1048576\"><v>45500</v></c>",
+        "max-row streaming numeric cell reference mismatch");
+    check_contains(worksheet_xml, "<c r=\"B1048576\" t=\"b\"><v>1</v></c>",
+        "max-row streaming boolean cell reference mismatch");
+    check_contains(worksheet_xml, "<c r=\"C1048576\"><f>A1048576+1</f></c>",
+        "max-row streaming formula cell reference mismatch");
+    check(worksheet_xml.find("1048577") == std::string::npos,
+        "max-row streaming worksheet should not write a row beyond Excel's limit");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, "<calcPr calcId=\"124519\" fullCalcOnLoad=\"1\"/>",
+        "max-row streaming formula should request workbook recalculation");
+}
+
+void test_streaming_writer_failed_append_preserves_state()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-failed-append-state.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path, options);
+    auto sheet = workbook.add_worksheet("FailedAppend");
+
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {
+                    fastxlsx::CellView::text("bad shared string"),
+                    fastxlsx::CellView::formula("A1+1"),
+                },
+                fastxlsx::RowOptions {0.0});
+        },
+        "append_row should reject invalid row height before mutating streaming state");
+
+    sheet.append_row({fastxlsx::CellView::number(7.0)});
+
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_row(
+                {fastxlsx::CellView::number(std::numeric_limits<double>::quiet_NaN())});
+        },
+        "append_row should reject NaN before consuming a row number");
+
+    sheet.append_row({fastxlsx::CellView::boolean(true)});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "failed-append state xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "failed append should not create an unused sharedStrings part");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A2\"/>",
+        "failed append should not advance the streaming dimension");
+    check_contains(worksheet_xml, "<row r=\"1\"><c r=\"A1\"><v>7</v></c></row>",
+        "first valid row should remain row 1 after a failed append");
+    check_contains(worksheet_xml, "<row r=\"2\"><c r=\"A2\" t=\"b\"><v>1</v></c></row>",
+        "second valid row should remain row 2 after a failed append");
+    check(worksheet_xml.find("<row r=\"3\"") == std::string::npos,
+        "failed append should not leave a gap in row numbers");
+    check(worksheet_xml.find("bad shared string") == std::string::npos,
+        "failed append should not serialize rejected text cells");
+    check(worksheet_xml.find("<f>A1+1</f>") == std::string::npos,
+        "failed append should not serialize rejected formulas");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "failed append should not mark the workbook for formula recalculation");
+}
+
 void test_streaming_writer_phase3_metadata_structure()
 {
     const auto output_path =
@@ -2893,6 +3015,9 @@ int main()
         test_streaming_writer_smoke_package();
         test_streaming_writer_document_properties();
         test_streaming_writer_empty_rows_dimension();
+        test_streaming_writer_max_column_boundary();
+        test_streaming_writer_max_row_boundary_with_test_hook();
+        test_streaming_writer_failed_append_preserves_state();
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();

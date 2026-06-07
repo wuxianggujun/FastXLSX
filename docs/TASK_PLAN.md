@@ -43,6 +43,11 @@ obligations.
   still serialize `<row r="N"></row>`; sparse worksheets with a trailing empty
   appended row keep that final row in the dimension, for example `A1:C3`.
   This is a generated XML invariant, not an Excel `UsedRange` claim.
+- Current streaming structure tests also lock the legal max-column row
+  (`A1:XFD1` with 16,384 cells), the legal max-row sparse output path
+  (`A1:C1048576` through the test-only row counter hook), and the invariant that
+  failed `append_row()` validation does not advance row numbers, dimensions,
+  sharedStrings state, or formula recalculation metadata.
 - `append_row()` row-limit coverage now uses `FASTXLSX_ENABLE_TEST_HOOKS` and
   `fastxlsx::detail::testing_set_worksheet_row_count()` in the streaming test
   build to inject `row_count = 1048576`, then verifies the next append is
@@ -998,9 +1003,12 @@ Tasks:
   empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
   streaming dimension XML without requiring DOM backtracking. Current in-memory
   tests lock empty worksheet, single empty row, `XFD1` max-column dimension, and
-  16385-column rejection. Current `append_row()` row limit coverage uses a
-  test-only hook to avoid a million-row default CTest loop; column-limit coverage
-  uses oversized row vectors in focused tests, not a large-data benchmark.
+  16385-column rejection. Current streaming tests also lock legal `XFD1`
+  max-column output, legal sparse `1048576` max-row output through the test-only
+  hook, and failed-append state hygiene. Current `append_row()` row limit
+  rejection coverage uses a test-only hook to avoid a million-row default CTest
+  loop; column-limit rejection coverage uses oversized row vectors in focused
+  tests, not a large-data benchmark.
 - Add an opt-in benchmark target or command; do not put large benchmarks in
   default CTest.
 - Current preset entry points are `windows-nmake-release-benchmark` and

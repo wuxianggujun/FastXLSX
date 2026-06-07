@@ -113,6 +113,29 @@ number / row height，`WorksheetWriter::set_column_width()` 拒绝非有限 widt
 结构测试或排障时还要确认 worksheet XML 中没有写出 `nan`、`inf` 或 `-inf` 这类
 非法数字文本。
 
+Streaming writer hot-path 边界样例应优先做拆包 XML 结构检查：
+
+- `fastxlsx-streaming-empty-row-dimensions.xlsx`：确认无行和只含空行 worksheet 的
+  `<dimension ref="A1"/>`，确认空行写出 `<row r="N"></row>`，确认前导空行 +
+  数据行 + 尾部空行样例的 generated dimension 是 `A1:C3`。Excel `UsedRange`
+  可能更窄，不能用它反推生成 XML 语义。
+- `fastxlsx-streaming-max-column-boundary.xlsx`：确认单行 16,384 个 cells 写到
+  `XFD1`，dimension 是 `A1:XFD1`，且没有 `XFE1`。这是结构边界，不是宽表
+  benchmark。本机 `openpyxl` 和 Excel COM 已只读打开验证 `MaxColumn!A1=1` 和
+  `MaxColumn!XFD1=1`。
+- `fastxlsx-streaming-max-row-boundary.xlsx`：用 test-only hook 低成本覆盖合法
+  `1048576` 行写出，确认 `A1048576` / `B1048576` / `C1048576`、dimension
+  `A1:C1048576` 和公式重算 metadata，且没有 `1048577`。不要把
+  `FASTXLSX_ENABLE_TEST_HOOKS` 或 `testing_set_worksheet_row_count()` 写成
+  public API、百万行导出证明或性能 benchmark。本机 `openpyxl` 和 Excel COM 已只读
+  打开验证 `MaxRow!A1048576=45500`、`B1048576=TRUE` 和 `C1048576` 公式；Excel
+  `UsedRange` 会定位到实际非空的 `A1048576:C1048576`，不能用
+  `UsedRange.Rows.Count` 反推 generated dimension。
+- `fastxlsx-streaming-failed-append-state.xlsx`：确认非法 `append_row()` 在抛错前
+  不推进 row number / dimension，不写被拒绝 text / formula，不创建空
+  `xl/sharedStrings.xml`，也不污染 workbook `<calcPr>`。本机 `openpyxl` 和 Excel COM
+  已只读打开验证 `FailedAppend!A1=7` 和 `FailedAppend!A2=TRUE`。
+
 ### 3. 本机 Excel 可视化验证
 
 本机有 Excel 时，生成的关键样例必须用 Excel 打开做可视化验证。

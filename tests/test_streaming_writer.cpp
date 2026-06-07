@@ -913,6 +913,122 @@ void test_streaming_writer_font_styles()
         "default style should not be serialized as s=\"0\" in font sample");
 }
 
+void test_streaming_writer_fill_styles()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-styles-fills.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+
+    fastxlsx::CellFill yellow_fill {fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84}};
+    fastxlsx::CellStyle yellow_style_definition;
+    yellow_style_definition.fill = yellow_fill;
+    const auto yellow_style = workbook.add_style(yellow_style_definition);
+    const auto duplicate_yellow_style = workbook.add_style(yellow_style_definition);
+
+    fastxlsx::CellFill blue_fill {fastxlsx::ArgbColor {0xFF, 0x5A, 0x8A, 0xD6}};
+    fastxlsx::CellStyle blue_style_definition;
+    blue_style_definition.fill = blue_fill;
+    const auto blue_style = workbook.add_style(blue_style_definition);
+
+    fastxlsx::CellStyle number_yellow_style_definition {"0.0"};
+    number_yellow_style_definition.fill = yellow_fill;
+    const auto number_yellow_style = workbook.add_style(number_yellow_style_definition);
+
+    fastxlsx::CellFont bold_font;
+    bold_font.bold = true;
+    fastxlsx::CellStyle bold_yellow_style_definition;
+    bold_yellow_style_definition.font = bold_font;
+    bold_yellow_style_definition.fill = yellow_fill;
+    const auto bold_yellow_style = workbook.add_style(bold_yellow_style_definition);
+
+    check(yellow_style.value() == 1, "first fill style id should be 1");
+    check(duplicate_yellow_style.value() == 1, "duplicate fill style should reuse id");
+    check(blue_style.value() == 2, "blue fill style should be second style id");
+    check(number_yellow_style.value() == 3, "number plus fill style should be third style id");
+    check(bold_yellow_style.value() == 4, "font plus fill style should be fourth style id");
+
+    auto sheet = workbook.add_worksheet("Fills");
+    sheet.append_row({
+        fastxlsx::CellView::text("Yellow"),
+        fastxlsx::CellView::text("Blue"),
+        fastxlsx::CellView::text("NumberYellow"),
+        fastxlsx::CellView::text("BoldYellow"),
+        fastxlsx::CellView::text("Default"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("yellow").with_style(yellow_style),
+        fastxlsx::CellView::text("blue").with_style(blue_style),
+        fastxlsx::CellView::number(12.5).with_style(number_yellow_style),
+        fastxlsx::CellView::text("bold yellow").with_style(bold_yellow_style),
+        fastxlsx::CellView::text("plain"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "fill styles xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "missing fill styles part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "fill styles should not create worksheet relationships");
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "fill styles inline sample should not create sharedStrings.xml");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="1">)",
+        "fill sample should create only one custom number format");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="0.0"/>)",
+        "fill sample custom number format mismatch");
+    check_contains(styles_xml, R"(<fonts count="2">)",
+        "fill sample should create default font plus bold font");
+    check_contains(styles_xml, R"(<fills count="4">)",
+        "fill sample custom fill count mismatch");
+    check_contains(styles_xml,
+        R"(<fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>)",
+        "fill sample should keep the default fill records");
+    check_contains(styles_xml,
+        R"(<fill><patternFill patternType="solid"><fgColor rgb="FFFFEB84"/><bgColor indexed="64"/></patternFill></fill>)",
+        "yellow solid fill XML mismatch");
+    check_contains(styles_xml,
+        R"(<fill><patternFill patternType="solid"><fgColor rgb="FF5A8AD6"/><bgColor indexed="64"/></patternFill></fill>)",
+        "blue solid fill XML mismatch");
+    check_contains(styles_xml,
+        R"(<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "fill cellXfs default style mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/>)",
+        "yellow fill xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>)",
+        "blue fill xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="2" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/>)",
+        "number plus fill xf should reuse yellow fill id");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>)",
+        "font plus fill xf should reuse yellow fill id");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E2"/>)",
+        "fill worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" s="1" t="inlineStr"><is><t>yellow</t></is></c>)",
+        "yellow fill styled text cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" s="2" t="inlineStr"><is><t>blue</t></is></c>)",
+        "blue fill styled text cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="C2" s="3"><v>12.5</v></c>)",
+        "number plus fill styled number cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" s="4" t="inlineStr"><is><t>bold yellow</t></is></c>)",
+        "font plus fill styled text cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="E2" t="inlineStr"><is><t>plain</t></is></c>)",
+        "default fill sample cell mismatch");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "default style should not be serialized as s=\"0\" in fill sample");
+}
+
 void test_streaming_writer_styles_with_shared_strings()
 {
     const auto output_path =
@@ -5036,6 +5152,7 @@ int main()
         test_streaming_writer_number_format_styles();
         test_streaming_writer_alignment_styles();
         test_streaming_writer_font_styles();
+        test_streaming_writer_fill_styles();
         test_streaming_writer_styles_with_shared_strings();
         test_streaming_writer_invalid_style_preserves_state();
         test_streaming_writer_foreign_style_collision_is_rejected();

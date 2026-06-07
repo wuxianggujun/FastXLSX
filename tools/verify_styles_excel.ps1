@@ -2,7 +2,8 @@ param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx",
     [string]$SharedPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx",
     [string]$AlignmentPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx",
-    [string]$FontPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx"
+    [string]$FontPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx",
+    [string]$FillPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-fills.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,6 +18,16 @@ function Assert-Equal {
     if ($Actual -ne $Expected) {
         throw "$Message expected '$Expected' but got '$Actual'"
     }
+}
+
+function New-OleRgb {
+    param(
+        [int]$Red,
+        [int]$Green,
+        [int]$Blue
+    )
+
+    return $Red + ($Green * 256) + ($Blue * 65536)
 }
 
 function Verify-StylesWorkbook {
@@ -177,6 +188,54 @@ function Verify-FontStylesWorkbook {
     }
 }
 
+function Verify-FillStylesWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("Fills")
+
+        Assert-Equal $sheet.Range("A2").Value2 "yellow" "Fills A2 value"
+        Assert-Equal $sheet.Range("B2").Value2 "blue" "Fills B2 value"
+        Assert-Equal $sheet.Range("C2").Value2 12.5 "Fills C2 value"
+        Assert-Equal $sheet.Range("D2").Value2 "bold yellow" "Fills D2 value"
+        Assert-Equal $sheet.Range("E2").Value2 "plain" "Fills E2 value"
+
+        $yellow = New-OleRgb -Red 255 -Green 235 -Blue 132
+        $blue = New-OleRgb -Red 90 -Green 138 -Blue 214
+
+        Assert-Equal $sheet.Range("A2").Interior.Pattern 1 "Fills A2 pattern"
+        Assert-Equal $sheet.Range("A2").Interior.Color $yellow "Fills A2 color"
+        Assert-Equal $sheet.Range("B2").Interior.Pattern 1 "Fills B2 pattern"
+        Assert-Equal $sheet.Range("B2").Interior.Color $blue "Fills B2 color"
+        Assert-Equal $sheet.Range("C2").Interior.Color $yellow "Fills C2 color"
+        Assert-Equal $sheet.Range("C2").NumberFormat '0.0' "Fills C2 number format"
+        Assert-Equal $sheet.Range("D2").Interior.Color $yellow "Fills D2 color"
+        Assert-Equal $sheet.Range("D2").Font.Bold $true "Fills D2 bold"
+        Assert-Equal $sheet.Range("E2").Interior.Pattern -4142 "Fills E2 default pattern"
+
+        Write-Host "OK: Excel opened solid fill styles workbook read-only: $resolved"
+        Write-Host "OK: Interior.Pattern, Interior.Color, NumberFormat, and Font.Bold verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($sheet, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 $excel = $null
 
 try {
@@ -188,6 +247,7 @@ try {
     Verify-SharedStylesWorkbook -Excel $excel -Path $SharedPath
     Verify-AlignmentStylesWorkbook -Excel $excel -Path $AlignmentPath
     Verify-FontStylesWorkbook -Excel $excel -Path $FontPath
+    Verify-FillStylesWorkbook -Excel $excel -Path $FillPath
 }
 finally {
     if ($null -ne $excel) {

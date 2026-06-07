@@ -297,8 +297,94 @@ def verify_font_styles_package(path: Path) -> dict[str, Any]:
     }
 
 
+def verify_fill_styles_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "[Content_Types].xml",
+        "xl/workbook.xml",
+        "xl/_rels/workbook.xml.rels",
+        "xl/worksheets/sheet1.xml",
+        "xl/styles.xml",
+    ]
+    for name in required:
+        require(name in names, f"fill styles sample missing package entry: {name}")
+
+    require("xl/worksheets/_rels/sheet1.xml.rels" not in names,
+            "fill styles sample should not create worksheet relationships")
+    require("xl/sharedStrings.xml" not in names,
+            "fill styles sample should not create sharedStrings.xml")
+
+    styles_xml = read_zip_text(path, "xl/styles.xml")
+    require('<numFmts count="1">' in styles_xml,
+            "fill sample should create exactly one custom numFmt")
+    require('<numFmt numFmtId="164" formatCode="0.0"/>' in styles_xml,
+            "fill sample custom number format mismatch")
+    require('<fonts count="2">' in styles_xml,
+            "fill sample should create default font plus bold font")
+    require('<fills count="4">' in styles_xml, "fill collection count mismatch")
+    require(
+        '<fill><patternFill patternType="none"/></fill>'
+        '<fill><patternFill patternType="gray125"/></fill>' in styles_xml,
+        "default fill records mismatch",
+    )
+    require(
+        '<fill><patternFill patternType="solid"><fgColor rgb="FFFFEB84"/>'
+        '<bgColor indexed="64"/></patternFill></fill>' in styles_xml,
+        "yellow solid fill XML mismatch",
+    )
+    require(
+        '<fill><patternFill patternType="solid"><fgColor rgb="FF5A8AD6"/>'
+        '<bgColor indexed="64"/></patternFill></fill>' in styles_xml,
+        "blue solid fill XML mismatch",
+    )
+    require('<cellXfs count="5">' in styles_xml, "fill cellXfs count mismatch")
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="2" borderId="0" xfId="0" applyFill="1"/>'
+        in styles_xml,
+        "yellow fill xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="3" borderId="0" xfId="0" applyFill="1"/>'
+        in styles_xml,
+        "blue fill xf mismatch",
+    )
+    require(
+        '<xf numFmtId="164" fontId="0" fillId="2" borderId="0" xfId="0" '
+        'applyNumberFormat="1" applyFill="1"/>' in styles_xml,
+        "number plus fill xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" '
+        'applyFont="1" applyFill="1"/>' in styles_xml,
+        "font plus fill xf mismatch",
+    )
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('<dimension ref="A1:E2"/>' in worksheet_xml, "fill worksheet dimension mismatch")
+    require('<c r="A2" s="1" t="inlineStr"><is><t>yellow</t></is></c>' in worksheet_xml,
+            "yellow styled text cell mismatch")
+    require('<c r="B2" s="2" t="inlineStr"><is><t>blue</t></is></c>' in worksheet_xml,
+            "blue styled text cell mismatch")
+    require('<c r="C2" s="3"><v>12.5</v></c>' in worksheet_xml,
+            "number plus fill styled number cell mismatch")
+    require('<c r="D2" s="4" t="inlineStr"><is><t>bold yellow</t></is></c>'
+            in worksheet_xml,
+            "font plus fill styled text cell mismatch")
+    require('<c r="E2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
+            "plain fill sample cell mismatch")
+    require('s="0"' not in worksheet_xml,
+            "default style should not be serialized as s=\"0\"")
+
+    return {
+        "style_ids": {"yellow": 1, "blue": 2, "number_yellow": 3, "bold_yellow": 4},
+        "custom_number_format_ids": [164],
+        "custom_font_ids": [1],
+        "custom_fill_ids": [2, 3],
+    }
+
+
 def verify_with_openpyxl(
-    path: Path, shared_path: Path, alignment_path: Path, font_path: Path) -> dict[str, Any]:
+    path: Path, shared_path: Path, alignment_path: Path, font_path: Path, fill_path: Path) -> dict[str, Any]:
     try:
         import openpyxl  # type: ignore
     except ModuleNotFoundError:
@@ -374,6 +460,30 @@ def verify_with_openpyxl(
     finally:
         font_workbook.close()
 
+    fill_workbook = openpyxl.load_workbook(fill_path, read_only=False, data_only=False)
+    try:
+        fills = fill_workbook["Fills"]
+        require(fills["A2"].fill.fill_type == "solid",
+                f"A2 fill type mismatch: {fills['A2'].fill.fill_type!r}")
+        require(fills["A2"].fill.fgColor.rgb == "FFFFEB84",
+                f"A2 fill color mismatch: {fills['A2'].fill.fgColor.rgb!r}")
+        require(fills["B2"].fill.fill_type == "solid",
+                f"B2 fill type mismatch: {fills['B2'].fill.fill_type!r}")
+        require(fills["B2"].fill.fgColor.rgb == "FF5A8AD6",
+                f"B2 fill color mismatch: {fills['B2'].fill.fgColor.rgb!r}")
+        require(fills["C2"].number_format == "0.0",
+                f"C2 number format mismatch: {fills['C2'].number_format!r}")
+        require(fills["C2"].fill.fgColor.rgb == "FFFFEB84",
+                f"C2 fill color mismatch: {fills['C2'].fill.fgColor.rgb!r}")
+        require(fills["D2"].font.bold is True,
+                f"D2 bold mismatch: {fills['D2'].font.bold!r}")
+        require(fills["D2"].fill.fgColor.rgb == "FFFFEB84",
+                f"D2 fill color mismatch: {fills['D2'].fill.fgColor.rgb!r}")
+        require(fills["E2"].fill.fill_type != "solid",
+                f"E2 should keep default non-solid fill: {fills['E2'].fill.fill_type!r}")
+    finally:
+        fill_workbook.close()
+
     return {
         "status": "opened",
         "styles": {
@@ -394,6 +504,12 @@ def verify_with_openpyxl(
             "B2_italic": True,
             "C2_bold_italic": True,
             "D2_number_format": "0.0",
+        },
+        "fill_styles": {
+            "A2_fill": "FFFFEB84",
+            "B2_fill": "FF5A8AD6",
+            "C2_number_format": "0.0",
+            "D2_bold": True,
         },
     }
 
@@ -470,6 +586,31 @@ def create_xlsxwriter_font_reference(path: Path) -> dict[str, Any]:
     return {"status": "created", "path": str(path)}
 
 
+def create_xlsxwriter_fill_reference(path: Path) -> dict[str, Any]:
+    try:
+        import xlsxwriter  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module xlsxwriter is not installed"}
+
+    workbook = xlsxwriter.Workbook(path)
+    try:
+        sheet = workbook.add_worksheet("Fills")
+        yellow = workbook.add_format({"bg_color": "#FFEB84"})
+        blue = workbook.add_format({"bg_color": "#5A8AD6"})
+        number_yellow = workbook.add_format({"num_format": "0.0", "bg_color": "#FFEB84"})
+        bold_yellow = workbook.add_format({"bold": True, "bg_color": "#FFEB84"})
+        sheet.write_row(0, 0, ["Yellow", "Blue", "NumberYellow", "BoldYellow", "Default"])
+        sheet.write_string(1, 0, "yellow", yellow)
+        sheet.write_string(1, 1, "blue", blue)
+        sheet.write_number(1, 2, 12.5, number_yellow)
+        sheet.write_string(1, 3, "bold yellow", bold_yellow)
+        sheet.write_string(1, 4, "plain")
+    finally:
+        workbook.close()
+
+    return {"status": "created", "path": str(path)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -497,6 +638,12 @@ def main() -> int:
         help="FastXLSX bold/italic font styles workbook to verify.",
     )
     parser.add_argument(
+        "--fill-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-styles-fills.xlsx"),
+        help="FastXLSX solid fill styles workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/styles-number-formats"),
@@ -508,12 +655,14 @@ def main() -> int:
     shared_input_path = args.shared_input.resolve()
     alignment_input_path = args.alignment_input.resolve()
     font_input_path = args.font_input.resolve()
+    fill_input_path = args.fill_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
     require(shared_input_path.exists(), f"shared input workbook does not exist: {shared_input_path}")
     require(alignment_input_path.exists(),
             f"alignment input workbook does not exist: {alignment_input_path}")
     require(font_input_path.exists(), f"font input workbook does not exist: {font_input_path}")
+    require(fill_input_path.exists(), f"fill input workbook does not exist: {fill_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     report = {
@@ -521,19 +670,24 @@ def main() -> int:
         "fastxlsx_shared_input": str(shared_input_path),
         "fastxlsx_alignment_input": str(alignment_input_path),
         "fastxlsx_font_input": str(font_input_path),
+        "fastxlsx_fill_input": str(fill_input_path),
         "fastxlsx_package": verify_styles_package(input_path),
         "fastxlsx_shared_package": verify_shared_styles_package(shared_input_path),
         "fastxlsx_alignment_package": verify_alignment_styles_package(alignment_input_path),
         "fastxlsx_font_package": verify_font_styles_package(font_input_path),
+        "fastxlsx_fill_package": verify_fill_styles_package(fill_input_path),
         "xlsx_libraries": {
             "openpyxl": verify_with_openpyxl(
-                input_path, shared_input_path, alignment_input_path, font_input_path),
+                input_path, shared_input_path, alignment_input_path, font_input_path,
+                fill_input_path),
             "xlsxwriter": create_xlsxwriter_reference(
                 work_dir / "reference-xlsxwriter-styles-number-formats.xlsx"),
             "xlsxwriter_alignment": create_xlsxwriter_alignment_reference(
                 work_dir / "reference-xlsxwriter-styles-alignment.xlsx"),
             "xlsxwriter_fonts": create_xlsxwriter_font_reference(
                 work_dir / "reference-xlsxwriter-styles-fonts.xlsx"),
+            "xlsxwriter_fills": create_xlsxwriter_fill_reference(
+                work_dir / "reference-xlsxwriter-styles-fills.xlsx"),
         },
     }
 

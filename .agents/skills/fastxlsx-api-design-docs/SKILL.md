@@ -16,7 +16,7 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
 包括 `Workbook`、`Worksheet`、`Cell`、`DocumentProperties`、`WorkbookWriter`、
-`WorksheetWriter`、`CellView`、`StyleId`、`CellAlignment`、`CellFont`、`CellStyle`、`DataValidationRule`、`DataValidationType`、
+`WorksheetWriter`、`CellView`、`StyleId`、`CellAlignment`、`CellFont`、`CellFill`、`CellStyle`、`DataValidationRule`、`DataValidationType`、
 `DataValidationOperator`、`DataValidationErrorStyle`、`ArgbColor`、`ColorScaleValueType`、
 `ColorScalePoint`、`TwoColorScaleRule`、`ThreeColorScaleRule`、`DataBarValueType`、
 `DataBarEndpoint`、`DataBarRule`、`IconSetStyle`、`IconSetValueType`、`IconSetRule`、
@@ -230,16 +230,20 @@ handle、默认 id `0` 表示 default style、非默认 id 必须来自同一个
 `CellStyle::number_format` 可为空，表示不改变 number format；`CellAlignment::wrap_text`
 是当前唯一 alignment 子能力，false 或空 optional 不贡献 style 属性；
 `CellFont::bold` / `CellFont::italic` 是当前唯一 font 子能力，false flags 或空 optional
-不贡献 style 属性。完全空 style 会被拒绝。
+不贡献 style 属性；`CellFill::foreground` 是当前唯一 fill 子能力，使用 `ArgbColor`
+写 solid foreground fill，空 optional 不贡献 style 属性。完全空 style 会被拒绝。
 重复完整 style 复用同一个 `StyleId`，相同 number format 在不同 style 组合中复用同一个
 custom `numFmtId`，相同 bold/italic font 组合在不同 style 组合中复用同一个 `fontId`，
+相同 foreground ARGB fill 组合在不同 style 组合中复用同一个 `fillId`，
 format 只按字符串精确匹配去重。样式会生成
 `xl/styles.xml` / workbook relationship / content type override、cell 写 `s="N"`、
 默认 `s="0"` 省略、不创建 worksheet `.rels`。wrap-text alignment 只写
 `applyAlignment="1"` / `<alignment wrapText="1"/>`，不计算行高，不代表完整 alignment；
 bold/italic font 只写 `<fonts>` 中的 `<b/>` / `<i/>`、`fontId` 和 `applyFont="1"`，
-不代表完整 font control。当前不支持 font color、size、name、underline、
-fill/border/full alignment、rich text、dxf-backed conditional formatting、
+不代表完整 font control。solid fill 只写 `<fills>` 中的 solid `<patternFill>`、
+`fgColor rgb`、`bgColor indexed="64"`、`fillId` 和 `applyFill="1"`，不代表完整
+fill/pattern/theme/tint/indexed palette control。当前不支持 font color、size、name、underline、
+border/full alignment、rich text、dxf-backed conditional formatting、
 existing-file style preservation 或完整
 Excel formatting parity。当前 two-/three-color color scale、basic data bar 和 basic
 3Arrows icon set 是 worksheet

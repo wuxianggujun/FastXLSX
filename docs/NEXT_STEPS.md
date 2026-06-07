@@ -30,6 +30,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `StyleId`
   - `CellAlignment`
   - `CellFont`
+  - `CellFill`
   - `CellStyle`
   - `DataValidationRule`
   - `DataValidationType`
@@ -68,13 +69,13 @@ that exist in code, CMake, tests, docs, or local verification.
     `WorkbookWriterOptions::document_properties`. Treat this as core/app
     metadata for new workbooks, not as `docProps/custom.xml`, existing-file
     editing, or a complete document-properties API.
-  - Streaming-only number-format, wrap-text alignment, and bold/italic font
-    styles are visible through `StyleId`, `CellAlignment`, `CellFont`, `CellStyle`,
+  - Streaming-only number-format, wrap-text alignment, bold/italic font, and solid fill
+    styles are visible through `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
     `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
     `xl/styles.xml`, workbook styles relationship, and focused structure tests.
     Treat this as the P9 foundation for custom number formats and narrow
-    `wrapText` alignment plus bold/italic font flags, not as full font control,
-    fill/border/full alignment, date cell type, dxf-backed conditional
+    `wrapText` alignment, bold/italic font flags, and solid foreground fill, not as full font control,
+    full fill/pattern control, border/full alignment, date cell type, dxf-backed conditional
     formatting, rich text, or existing-file style preservation. The current
     two-/three-color color scale, basic data bar, and basic 3Arrows icon set slices are worksheet metadata,
     not styles/dxfs support.
@@ -163,21 +164,23 @@ feature completion.
      backend, and preservation tests before any complete edit support is
      claimed.
 
-4. P9 styles number formats + wrap-text alignment + bold/italic fonts - 基础.
-   - Current files show workbook-local `StyleId`, `CellAlignment`, `CellFont`, `CellStyle`,
+4. P9 styles number formats + wrap-text alignment + bold/italic fonts + solid fills - 基础.
+   - Current files show workbook-local `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
      `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
      `xl/styles.xml`, workbook styles relationship, and focused CTest coverage.
    - The current slices support custom number formats, narrow
-     `CellAlignment::wrap_text`, and narrow `CellFont::bold` / `italic`.
+     `CellAlignment::wrap_text`, narrow `CellFont::bold` / `italic`, and narrow
+     `CellFill` solid foreground ARGB.
      Duplicate complete styles reuse the same style id; equal number-format
      strings reuse the same custom `numFmtId` across different style
      combinations; equal bold/italic font combinations reuse the same `fontId`;
+     equal foreground ARGB fills reuse the same `fillId`;
      default cells omit `s="0"`.
    - Current local QA uses `tools/verify_styles_number_formats.py` for
      package XML / `openpyxl` / optional `XlsxWriter` checks and
      `tools/verify_styles_excel.ps1` for Excel COM read-only visible checks.
    - Before expanding support wording, add separate tasks and tests for
-     full font control, fills/borders/full alignment, date serial helper policy, conditional
+     full font control, full fill/pattern control, borders/full alignment, date serial helper policy, conditional
      formatting, rich text, and existing-file style preservation.
 
 ## Repository State
@@ -226,10 +229,10 @@ commit or short series with its own tests and docs update.
    - Keep benchmark work out of default CTest.
 
 6. Phase 3 styles and metadata hardening.
-   - Current P9 number-format, wrap-text alignment, and bold/italic font styles are 基础 for
+   - Current P9 number-format, wrap-text alignment, bold/italic font, and solid fill styles are 基础 for
      streaming new workbooks: workbook-local style ids, generated
      `xl/styles.xml`, workbook relationship, and cell `s="N"` references.
-   - Continue with full font control, fills/borders/full alignment only as separate registry
+   - Continue with full font control, full fill/pattern control, borders/full alignment only as separate registry
      slices with structure tests and Excel visual verification.
    - Decide formula cached-value and calc behavior boundaries separately from
      styles.
@@ -596,18 +599,19 @@ Do not claim:
 
 ### P9 - Style Registry Design and First Styles
 
-Status: 基础 for streaming-only custom number format, wrap-text alignment, and bold/italic font styles.
+Status: 基础 for streaming-only custom number format, wrap-text alignment, bold/italic font, and solid fill styles.
 
 Current foundation:
 - `StyleId` is a workbook-local handle; default `StyleId{}` is style `0`.
 - `CellAlignment` currently exposes only `wrap_text`; `CellFont` currently
-  exposes only `bold` / `italic`; `CellStyle` stores `number_format` plus
-  optional narrow alignment and font metadata.
+  exposes only `bold` / `italic`; `CellFill` currently exposes only solid foreground
+  `ArgbColor`; `CellStyle` stores `number_format` plus optional narrow alignment,
+  font, and fill metadata.
 - `WorkbookWriter::add_style(CellStyle)` copies style metadata into workbook
   state, rejects empty styles, de-duplicates repeated complete styles, and
   reuses the same custom `numFmtId` for equal number-format strings across
-  different style combinations plus the same `fontId` for equal bold/italic
-  font combinations.
+  different style combinations, the same `fontId` for equal bold/italic
+  font combinations, and the same `fillId` for equal foreground ARGB fills.
 - `CellView::with_style(StyleId)` carries the style id into append-row cell XML.
 - `WorksheetWriter::append_row()` validates non-default style ids before
   advancing row count, dimensions, sharedStrings state, or formula recalculation
@@ -622,7 +626,7 @@ Do:
 - Keep `xl/styles.xml` as a small workbook-level part. Do not create worksheet
   `.rels` for styles.
 - Keep style validation before row-state mutation.
-- Add future full-font/fill/border/full-alignment slices through the same registry, not
+- Add future full-font/full-fill/border/full-alignment slices through the same registry, not
   through ad hoc cell XML fragments.
 - Document every style API as Streaming / new-workbook-only until existing-file
   style preservation exists.
@@ -631,17 +635,19 @@ Accept when:
 - CTest covers `xl/styles.xml`, style ids, worksheet `s="N"` references,
   custom `numFmtId`, XML attribute escape, wrap-text `applyAlignment` /
   `<alignment wrapText="1"/>`, bold/italic font records, `fontId` reuse,
-  `applyFont="1"`, sharedStrings + styles relationship ordering,
+  `applyFont="1"`, solid fill records, `fillId` reuse, `applyFill="1"`,
+  sharedStrings + styles relationship ordering,
   default `s="0"` omission, and invalid foreign `StyleId` state hygiene.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM
-  read-only NumberFormat, WrapText, Font.Bold, and Font.Italic checks.
+  read-only NumberFormat, WrapText, Font.Bold, Font.Italic, Interior.Pattern,
+  and Interior.Color checks.
 
 Do not claim:
-- Full font control, fill, border, full alignment, rich text, dxf-backed conditional formatting,
+- Full font control, full fill/pattern control, border, full alignment, rich text, dxf-backed conditional formatting,
   date cell type, existing-file style preservation, or full Excel formatting
-  parity from the number-format, wrap-text alignment, and bold/italic font slices.
+  parity from the number-format, wrap-text alignment, bold/italic font, and solid fill slices.
 
 ### P10 - Configurable Document Properties API
 
@@ -1197,20 +1203,21 @@ Current foundation:
 - P9 style registry exists for streaming new workbooks:
   workbook-local `StyleId`, `CellStyle::number_format`,
   `CellStyle::alignment.wrap_text`, `CellStyle::font` bold/italic flags,
+  `CellStyle::fill` solid foreground ARGB,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
   `xl/styles.xml`, and workbook styles relationship.
 - Full Phase 3 remains 计划.
 
 Next tasks:
 - Harden style docs and reference QA when the sample shape changes.
-- Add full font control, fills/borders/full alignment only as separate registry-backed slices.
+- Add full font control, full fill/pattern control, borders/full alignment only as separate registry-backed slices.
 - Add calc mode and cached formula behavior decisions before claiming formula
   compatibility beyond write-only formulas.
 
 Validation:
 - Current style validation includes `xl/styles.xml`, style IDs, worksheet style
   references, custom number format escaping, wrap-text alignment metadata,
-  bold/italic font metadata, sharedStrings coexistence, and Excel COM /
+  bold/italic font metadata, solid fill metadata, sharedStrings coexistence, and Excel COM /
   `openpyxl` checks through the fixed local helpers.
 - Use Excel visual verification for style samples.
 - Use reference `.xlsx` files and XML comparison when Excel repairs output.

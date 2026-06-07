@@ -103,14 +103,44 @@ struct CellFont {
     bool italic = false;
 };
 
+/// ARGB color written as an eight-digit OpenXML `rgb` value.
+///
+/// API mode: Streaming worksheet/style metadata. The strongly typed representation
+/// avoids accepting partially validated color strings in performance-sensitive
+/// writer paths. Values are serialized as uppercase ARGB hex.
+struct ArgbColor {
+    std::uint8_t alpha = 0xFF;
+    std::uint8_t red = 0;
+    std::uint8_t green = 0;
+    std::uint8_t blue = 0;
+};
+
+/// Narrow streaming cell fill metadata registered through CellStyle.
+///
+/// API mode: Streaming style metadata for new workbooks. The current fill slice
+/// supports only a solid foreground ARGB color. It is serialized as
+/// workbook-level `xl/styles.xml` fill metadata and does not imply gradient
+/// fills, pattern fills beyond `solid`, theme fills, dxf conditional formatting,
+/// worksheet DOM, or existing-file style preservation.
+struct CellFill {
+    explicit constexpr CellFill(ArgbColor foreground_color) noexcept
+        : foreground(foreground_color)
+    {
+    }
+
+    /// Foreground color written as `<fgColor rgb="..."/>` in a solid fill.
+    ArgbColor foreground;
+};
+
 /// Narrow streaming cell style registered at workbook scope.
 ///
 /// API mode: Streaming style metadata for new workbooks. The current style
-/// slices support custom number formats, a narrow wrap-text alignment flag, and
-/// narrow bold/italic font flags. Styles are copied into workbook state,
-/// serialized to `xl/styles.xml` during WorkbookWriter::close(), and referenced
-/// by per-cell `s` attributes. This does not create worksheet relationships, a
-/// worksheet DOM, a full cell matrix, or existing-file edits.
+/// slices support custom number formats, a narrow wrap-text alignment flag,
+/// narrow bold/italic font flags, and a narrow solid foreground fill. Styles
+/// are copied into workbook state, serialized to `xl/styles.xml` during
+/// WorkbookWriter::close(), and referenced by per-cell `s` attributes. This
+/// does not create worksheet relationships, a worksheet DOM, a full cell
+/// matrix, or existing-file edits.
 struct CellStyle {
     /// Custom Excel number format code. Empty means the style does not change
     /// number formatting.
@@ -124,18 +154,11 @@ struct CellStyle {
     /// Optional narrow font metadata. Only bold and italic are currently
     /// supported; an empty optional or false flags contribute no style property.
     std::optional<CellFont> font;
-};
 
-/// ARGB color written as an eight-digit OpenXML `rgb` value.
-///
-/// API mode: Streaming worksheet metadata. The strongly typed representation
-/// avoids accepting partially validated color strings in performance-sensitive
-/// writer paths. Values are serialized as uppercase ARGB hex.
-struct ArgbColor {
-    std::uint8_t alpha = 0xFF;
-    std::uint8_t red = 0;
-    std::uint8_t green = 0;
-    std::uint8_t blue = 0;
+    /// Optional narrow fill metadata. When present, the current slice writes a
+    /// solid foreground ARGB fill; an empty optional contributes no style
+    /// property.
+    std::optional<CellFill> fill;
 };
 
 /// Options for WorkbookWriter.
@@ -1088,11 +1111,11 @@ public:
     /// API mode: Streaming style metadata for new workbooks. The style is
     /// copied into workbook state and written to `xl/styles.xml` only when the
     /// workbook is closed. The current slices support custom number formats,
-    /// wrap-text alignment, and bold/italic font flags; fill, border, full
-    /// alignment, full font control, rich text, conditional formatting, and
-    /// existing-file style preservation remain outside this API. Registering a
-    /// style does not touch worksheet row XML until a CellView carries the
-    /// returned id through with_style().
+    /// wrap-text alignment, bold/italic font flags, and solid foreground fills;
+    /// border, full fill/pattern control, full alignment, full font control,
+    /// rich text, conditional formatting, and existing-file style preservation
+    /// remain outside this API. Registering a style does not touch worksheet
+    /// row XML until a CellView carries the returned id through with_style().
     ///
     /// @throws FastXlsxError if the writer is uninitialized or closed, or the
     /// style contains no property supported by the current narrow slice.

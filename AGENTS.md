@@ -298,6 +298,10 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_s
 只累计 worksheet body row XML 写入字节数，不包含 worksheet header/footer、
 sharedStrings 临时文件、小型 XML parts、media 文件、ZIP/backend 缓冲、
 package assembly 峰值内存或 OS 文件系统开销；不能据此宣称完整低内存或大文件性能。
+当前 `tools/run_benchmark_matrix.py` 是 opt-in 本地矩阵 runner，只包装一个已构建的
+`fastxlsx_bench_streaming_writer` exe 并聚合 schema-v3 JSON；stored/minizip 要分别传入
+各自 preset 的 exe 和输出目录。`tools/verify_benchmark_matrix_excel.ps1` 可本机只读打开
+report 中的部分 workbook，但不会改写 benchmark JSON 的 `office_open="not_run"`。
 
 如果其他机器上的 Visual Studio 2026 对应新的 CMake 生成器名称，用下面命令确认：
 

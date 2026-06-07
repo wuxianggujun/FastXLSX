@@ -408,6 +408,9 @@ could affect the writer hot path.
 
 Do:
 - Use the opt-in manual benchmark target `fastxlsx_bench_streaming_writer`.
+- Use `tools/run_benchmark_matrix.py` when a repeatable local small matrix is
+  needed; pass one already-built benchmark exe at a time and keep stored/minizip
+  results in separate output dirs.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
 - Record data scale, string strategy, compression setting, package entry source
   mode, string pattern, temporary worksheet part footprint availability, time,
@@ -422,6 +425,8 @@ Do:
 Accept when:
 - Default CTest remains lightweight and under the 60s boundary.
 - Benchmark results are reproducible enough to compare future regressions.
+- Matrix reports keep raw schema-v3 per-case JSON and do not overwrite
+  `office_open="not_run"` unless a separate Office validation tool actually ran.
 
 Do not claim:
 - Benchmark coverage from normal unit tests.

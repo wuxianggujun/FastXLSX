@@ -159,6 +159,29 @@ XML 对比结论：
 验证日期：
 ```
 
+## Benchmark 本地 QA
+
+Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：
+
+```powershell
+py tools\run_benchmark_matrix.py `
+  --bench-exe build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_streaming_writer.exe `
+  --output-dir build\qa\benchmark-matrix `
+  --rows 1000 --cols 10 --sheets 1 `
+  --verify-openpyxl
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_benchmark_matrix_excel.ps1 `
+  -ReportPath build\qa\benchmark-matrix\benchmark-matrix-report.json `
+  -MaxWorkbooks 4
+```
+
+`run_benchmark_matrix.py` 只调用已构建的 `fastxlsx_bench_streaming_writer`，检查
+schema-v3 JSON 字段并可选用 `openpyxl` 读取输出 workbook。Excel helper 只读打开
+report 中的前几个 workbook，核对 `Sheet1` 的 used range 和首尾值。不同 ZIP backend
+要分别构建并传入对应 benchmark exe；不要把 `office_open=not_run` 写成自动 Office
+验证，也不要把小矩阵写成大文件性能结论。需要更新 sharedStrings 趋势记录时，再显式用
+`--rows 50000 --cols 10 --sheets 1` 运行 strings repeated/unique 的 inline/shared
+矩阵，并单独记录 Excel COM / openpyxl 读取结果。
+
 当前 Phase 1 smoke 样例由 `fastxlsx.unit` 生成，位于测试工作目录。推荐
 preset 路径通常是 `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`。
 如果使用手写 `-B build-nmake` 命令，也可能生成

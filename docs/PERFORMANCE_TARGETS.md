@@ -164,6 +164,40 @@ binary dir，例如 `build/windows-nmake-release-benchmark/benchmarks/`。手工
 拒绝超过 1024 个 worksheet 的输入；这只是 benchmark 工具边界，不代表
 FastXLSX public API 的 worksheet 数量承诺。
 
+### P6 Benchmark Matrix Helper
+
+`tools/run_benchmark_matrix.py` 是现有 benchmark 可执行文件的本地外层 runner。
+它不改 C++ benchmark schema，不进入默认 CTest/CI，也不自动证明 Office 兼容性。
+默认小矩阵会覆盖 numeric、mixed、strings，inline/shared，以及 repeated/unique
+字符串分布；不同 ZIP backend 应分别传入对应 preset 构建出的 benchmark exe。
+
+默认 stored-bootstrap runner 示例：
+
+```powershell
+py tools\run_benchmark_matrix.py `
+  --bench-exe build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_streaming_writer.exe `
+  --output-dir build\qa\benchmark-matrix `
+  --rows 1000 --cols 10 --sheets 1 `
+  --verify-openpyxl
+```
+
+opt-in minizip runner 示例：
+
+```powershell
+py tools\run_benchmark_matrix.py `
+  --bench-exe build\windows-nmake-release-benchmark-minizip\benchmarks\fastxlsx_bench_streaming_writer.exe `
+  --output-dir build\qa\benchmark-matrix-minizip `
+  --rows 1000 --cols 10 --sheets 1 `
+  --verify-openpyxl
+```
+
+runner 会保留每个 case 的 `.xlsx` 和原始 schema-v3 `.json`，并写
+`benchmark-matrix-report.json` 聚合命令、输入规模、结果字段和可选 `openpyxl`
+读取结果。`office_open` 字段仍保持 benchmark 工具原始值 `not_run`；本机 Excel
+验证是独立步骤，可用 `tools/verify_benchmark_matrix_excel.ps1` 只读打开 report 中的
+部分 workbook 并核对 `Sheet1` 使用范围和首尾值。不要把该 helper 的小规模输出写成
+sharedStrings 生产就绪、完整低内存、大文件性能或 Google Benchmark 结论。
+
 ## 当前手工 Benchmark 记录
 
 2026-06-07 本机 VS2026 / NMake release benchmark preset 下，使用

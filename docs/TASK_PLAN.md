@@ -382,6 +382,15 @@ Validation:
 - `fastxlsx.streaming` covers `count`, `sqref`, `type`, `operator`,
   `allowBlank`, `formula1`, `formula2`, XML escaping, invalid ranges,
   invalid rule shapes, package relationship absence, and mutation-after-close.
+- `fastxlsx.streaming` also covers coexistence with relationship-backed
+  worksheet metadata: `<dataValidations>` remains before `<hyperlinks>` and
+  `<tableParts>`, and data validations do not consume worksheet-local `rId`
+  values before hyperlinks and tables.
+- Local Excel COM read-only validation opened
+  `build/windows-nmake-release/tests/fastxlsx-streaming-validation-relationship-metadata.xlsx`
+  and confirmed 2 hyperlinks, 1 table, and validation on `A2`; local
+  `openpyxl` 3.1.2 also loaded 1 data validation, `ValidationRelTable`, and
+  the two hyperlink targets.
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`.
   Excel COM normalizes list formulas by removing outer literal quotes and adds

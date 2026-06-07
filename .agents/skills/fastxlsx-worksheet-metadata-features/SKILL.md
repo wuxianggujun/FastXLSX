@@ -92,7 +92,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - worksheet XML 中 metadata 位置符合 OpenXML 结构要求。
 - data validations 结构测试应检查 `count`、`sqref`、`type`、`operator`、
   `allowBlank`、`formula1`、`formula2`、XML escape、invalid ranges、
-  invalid rule shapes、关系缺失和 close 后 mutation。
+  invalid rule shapes、关系缺失、与 relationship-backed metadata 共存时不消耗
+  worksheet-local `rId`，以及 close 后 mutation。
 - external hyperlinks 结构测试应检查 worksheet XML `r:id` 与 worksheet `.rels` 一致、
   target XML escape、同一 worksheet 多个 hyperlink、跨 worksheet owner-local `rId`、
   plain sheet 不生成 `.rels`、不污染 workbook relationships、不新增 content type
@@ -102,5 +103,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   共存时的关系 id、多对象关系 id 回归、XML escape、invalid range/options、
   duplicate names 和 close 后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
+- 如果 data validations 与 hyperlinks / tables 共存，检查 `<dataValidations>` 仍在
+  `<hyperlinks>` 和 `<tableParts>` 之前，且 hyperlinks/table 的 `rId` 不被 data
+  validations 偏移。
 - 本机有 Excel 时打开关键 `.xlsx`，确认无修复弹窗并检查可视化结果。
 - 结构失败时拆包对比 FastXLSX 输出、Excel 修复文件和参考文件的 XML 语义。

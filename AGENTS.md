@@ -301,6 +301,12 @@ cmake --help
   本机已用 Excel 打开验证 `Validation` sheet、`A2:G10` validation 类型、
   operator 和公式返回值。Excel COM 会把 list 公式外层引号去掉，并给函数公式
   返回值加 `=` 前缀；结构测试仍以拆包后的 worksheet XML 语义为准。
+  结构测试还覆盖 data validations 与 external hyperlinks / tables 共存时的
+  worksheet suffix 顺序，确认 `<dataValidations>` 写在 `<hyperlinks>` 和
+  `<tableParts>` 之前，且 data validation 不消耗 worksheet-local relationship id。
+  本机 Excel COM 已只读打开
+  `build/windows-nmake-release/tests/fastxlsx-streaming-validation-relationship-metadata.xlsx`，
+  确认 2 个 hyperlink、1 个 table，且 `A2` 有 validation。
 - 当前 `fastxlsx.streaming` external hyperlinks 推荐 preset 输出样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`；
   本机已用 Excel 打开验证 `Links`、`MoreLinks` 和 `Plain` sheet 的

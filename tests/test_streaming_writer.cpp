@@ -615,6 +615,82 @@ void test_streaming_writer_data_validations()
         "dataValidation item count mismatch");
 }
 
+void test_streaming_writer_data_validations_with_relationship_metadata()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-validation-relationship-metadata.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ValidationRels");
+
+    sheet.append_row({fastxlsx::CellView::text("Value"), fastxlsx::CellView::text("Link")});
+    sheet.append_row({fastxlsx::CellView::number(5.0), fastxlsx::CellView::text("Docs")});
+    sheet.append_row({fastxlsx::CellView::number(7.0), fastxlsx::CellView::text("More")});
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+
+    sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
+    sheet.add_external_hyperlink(3, 2, "https://example.com/more");
+
+    fastxlsx::TableOptions table;
+    table.name = "ValidationRelTable";
+    table.column_names = {"Value", "Link"};
+    sheet.add_table({1, 1, 3, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "validation relationship metadata sheet should create worksheet relationships");
+    check(entries.contains("xl/tables/table1.xml"),
+        "validation relationship metadata sheet should create table part");
+    check(!entries.contains("xl/metadata.xml"),
+        "data validation relationship metadata should not create metadata part");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "data validation relationship metadata should not add workbook relationships");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "data validation relationship metadata should not add data validation content types");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>)",
+        "validation relationship metadata table content type missing");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "validation relationship metadata worksheet should include relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:B3\"/>",
+        "validation relationship metadata dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><dataValidations count=\"1\"><dataValidation type=\"whole\" allowBlank=\"1\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation></dataValidations>"
+        "<hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/><hyperlink ref=\"B3\" r:id=\"rId2\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId3\"/></tableParts></worksheet>",
+        "dataValidations should not consume relationship ids before hyperlinks and tables");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 3,
+        "validation relationship metadata relationship count mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs" TargetMode="External"/>)",
+        "first validation relationship metadata hyperlink relationship mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/more" TargetMode="External"/>)",
+        "second validation relationship metadata hyperlink relationship mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "validation relationship metadata table relationship mismatch");
+}
+
 void test_streaming_writer_external_hyperlinks()
 {
     const auto output_path =
@@ -1852,6 +1928,7 @@ int main()
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_data_validations();
+        test_streaming_writer_data_validations_with_relationship_metadata();
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_tables();
         test_streaming_writer_images();

@@ -584,6 +584,10 @@ Accept when:
 - Current tests cover `count`, `sqref`, `type`, `operator`, `allowBlank`,
   `formula1`, `formula2`, invalid ranges, invalid rule shapes, XML escaping,
   package relationship absence, and mutation-after-close behavior.
+- Coexistence tests cover suffix ordering with relationship-backed metadata:
+  `<dataValidations>` stays before `<hyperlinks>` and `<tableParts>`, and data
+  validations do not consume worksheet-local `rId` values before hyperlinks and
+  tables.
 - Local Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`.
 

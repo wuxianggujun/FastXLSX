@@ -173,11 +173,41 @@ def verify_alignment_styles_package(path: Path) -> dict[str, Any]:
     require('<fonts count="1">' in styles_xml, "alignment slice should keep default fonts")
     require('<fills count="2">' in styles_xml, "alignment slice should keep default fills")
     require('<borders count="1">' in styles_xml, "alignment slice should keep default borders")
-    require('<cellXfs count="4">' in styles_xml, "alignment cellXfs count mismatch")
+    require('<cellXfs count="10">' in styles_xml, "alignment cellXfs count mismatch")
     require(
         '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
         'applyAlignment="1"><alignment wrapText="1"/></xf>' in styles_xml,
-        "alignment-only xf mismatch",
+        "wrap-text alignment xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment horizontal="left"/></xf>' in styles_xml,
+        "left alignment xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment horizontal="center"/></xf>' in styles_xml,
+        "center alignment xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment horizontal="right"/></xf>' in styles_xml,
+        "right alignment xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment vertical="top"/></xf>' in styles_xml,
+        "top alignment xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment vertical="center"/></xf>' in styles_xml,
+        "middle alignment xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" '
+        'applyAlignment="1"><alignment vertical="bottom"/></xf>' in styles_xml,
+        "bottom alignment xf mismatch",
     )
     require(
         '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" '
@@ -186,32 +216,61 @@ def verify_alignment_styles_package(path: Path) -> dict[str, Any]:
     )
     require(
         '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" '
-        'applyNumberFormat="1" applyAlignment="1"><alignment wrapText="1"/></xf>'
+        'applyNumberFormat="1" applyAlignment="1">'
+        '<alignment wrapText="1" horizontal="center" vertical="center"/></xf>'
         in styles_xml,
-        "number plus alignment xf mismatch",
+        "number plus combined alignment xf mismatch",
     )
-    require(count(styles_xml, '<alignment wrapText="1"/>') == 2,
-            "alignment sample should write exactly two wrapText records")
+    require(count(styles_xml, 'applyAlignment="1"') == 8,
+            "alignment sample should write eight alignment xfs")
 
     worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
-    require('<dimension ref="A1:D2"/>' in worksheet_xml,
+    require('<dimension ref="A1:J2"/>' in worksheet_xml,
             "alignment worksheet dimension mismatch")
     require('<c r="A2" s="1" t="inlineStr"><is><t>line 1\nline 2</t></is></c>'
             in worksheet_xml,
             "wrapped string cell mismatch")
-    require('<c r="B2" s="2"><v>12.5</v></c>' in worksheet_xml,
+    require('<c r="B2" s="2" t="inlineStr"><is><t>left</t></is></c>'
+            in worksheet_xml,
+            "left aligned string cell mismatch")
+    require('<c r="C2" s="3" t="inlineStr"><is><t>center</t></is></c>'
+            in worksheet_xml,
+            "center aligned string cell mismatch")
+    require('<c r="D2" s="4" t="inlineStr"><is><t>right</t></is></c>'
+            in worksheet_xml,
+            "right aligned string cell mismatch")
+    require('<c r="E2" s="5" t="inlineStr"><is><t>top</t></is></c>'
+            in worksheet_xml,
+            "top aligned string cell mismatch")
+    require('<c r="F2" s="6" t="inlineStr"><is><t>middle</t></is></c>'
+            in worksheet_xml,
+            "middle aligned string cell mismatch")
+    require('<c r="G2" s="7" t="inlineStr"><is><t>bottom</t></is></c>'
+            in worksheet_xml,
+            "bottom aligned string cell mismatch")
+    require('<c r="H2" s="8"><v>12.5</v></c>' in worksheet_xml,
             "number-only styled cell mismatch")
-    require('<c r="C2" s="3"><v>42.5</v></c>' in worksheet_xml,
+    require('<c r="I2" s="9"><v>42.5</v></c>' in worksheet_xml,
             "number plus alignment styled cell mismatch")
-    require('<c r="D2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
+    require('<c r="J2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
             "default inline string cell mismatch")
     require('s="0"' not in worksheet_xml,
             "default style should not be serialized as s=\"0\"")
 
     return {
-        "style_ids": {"wrap_text": 1, "number_format": 2, "number_format_wrap_text": 3},
+        "style_ids": {
+            "wrap_text": 1,
+            "horizontal_left": 2,
+            "horizontal_center": 3,
+            "horizontal_right": 4,
+            "vertical_top": 5,
+            "vertical_center": 6,
+            "vertical_bottom": 7,
+            "number_format": 8,
+            "number_format_combined_alignment": 9,
+        },
         "custom_number_format_ids": [164],
-        "alignment_records": 2,
+        "alignment_records": 8,
     }
 
 
@@ -425,16 +484,36 @@ def verify_with_openpyxl(
                 "wrapped string value mismatch")
         require(alignment["A2"].alignment.wrap_text is True,
                 f"A2 wrap_text mismatch: {alignment['A2'].alignment.wrap_text!r}")
-        require(alignment["B2"].number_format == "0.0",
-                f"B2 number format mismatch: {alignment['B2'].number_format!r}")
-        require(alignment["B2"].alignment.wrap_text is not True,
-                f"B2 should not wrap text: {alignment['B2'].alignment.wrap_text!r}")
-        require(alignment["C2"].number_format == "0.0",
-                f"C2 number format mismatch: {alignment['C2'].number_format!r}")
-        require(alignment["C2"].alignment.wrap_text is True,
-                f"C2 wrap_text mismatch: {alignment['C2'].alignment.wrap_text!r}")
-        require(alignment["D2"].alignment.wrap_text is not True,
-                f"D2 should keep default wrap_text: {alignment['D2'].alignment.wrap_text!r}")
+        require(alignment["B2"].alignment.horizontal == "left",
+                f"B2 horizontal mismatch: {alignment['B2'].alignment.horizontal!r}")
+        require(alignment["C2"].alignment.horizontal == "center",
+                f"C2 horizontal mismatch: {alignment['C2'].alignment.horizontal!r}")
+        require(alignment["D2"].alignment.horizontal == "right",
+                f"D2 horizontal mismatch: {alignment['D2'].alignment.horizontal!r}")
+        require(alignment["E2"].alignment.vertical == "top",
+                f"E2 vertical mismatch: {alignment['E2'].alignment.vertical!r}")
+        require(alignment["F2"].alignment.vertical == "center",
+                f"F2 vertical mismatch: {alignment['F2'].alignment.vertical!r}")
+        require(alignment["G2"].alignment.vertical == "bottom",
+                f"G2 vertical mismatch: {alignment['G2'].alignment.vertical!r}")
+        require(alignment["H2"].number_format == "0.0",
+                f"H2 number format mismatch: {alignment['H2'].number_format!r}")
+        require(alignment["H2"].alignment.wrap_text is not True,
+                f"H2 should not wrap text: {alignment['H2'].alignment.wrap_text!r}")
+        require(alignment["I2"].number_format == "0.0",
+                f"I2 number format mismatch: {alignment['I2'].number_format!r}")
+        require(alignment["I2"].alignment.wrap_text is True,
+                f"I2 wrap_text mismatch: {alignment['I2'].alignment.wrap_text!r}")
+        require(alignment["I2"].alignment.horizontal == "center",
+                f"I2 horizontal mismatch: {alignment['I2'].alignment.horizontal!r}")
+        require(alignment["I2"].alignment.vertical == "center",
+                f"I2 vertical mismatch: {alignment['I2'].alignment.vertical!r}")
+        require(alignment["J2"].alignment.wrap_text is not True,
+                f"J2 should keep default wrap_text: {alignment['J2'].alignment.wrap_text!r}")
+        require(alignment["J2"].alignment.horizontal is None,
+                f"J2 should keep default horizontal alignment: {alignment['J2'].alignment.horizontal!r}")
+        require(alignment["J2"].alignment.vertical is None,
+                f"J2 should keep default vertical alignment: {alignment['J2'].alignment.vertical!r}")
     finally:
         alignment_workbook.close()
 
@@ -495,9 +574,17 @@ def verify_with_openpyxl(
         "shared_styles": {"A1": "@", "B1": "General"},
         "alignment_styles": {
             "A2_wrap_text": True,
-            "B2_number_format": "0.0",
-            "C2_number_format": "0.0",
-            "C2_wrap_text": True,
+            "B2_horizontal": "left",
+            "C2_horizontal": "center",
+            "D2_horizontal": "right",
+            "E2_vertical": "top",
+            "F2_vertical": "center",
+            "G2_vertical": "bottom",
+            "H2_number_format": "0.0",
+            "I2_number_format": "0.0",
+            "I2_wrap_text": True,
+            "I2_horizontal": "center",
+            "I2_vertical": "center",
         },
         "font_styles": {
             "A2_bold": True,
@@ -548,13 +635,41 @@ def create_xlsxwriter_alignment_reference(path: Path) -> dict[str, Any]:
     try:
         sheet = workbook.add_worksheet("Alignment")
         wrap_text = workbook.add_format({"text_wrap": True})
+        left = workbook.add_format({"align": "left"})
+        center = workbook.add_format({"align": "center"})
+        right = workbook.add_format({"align": "right"})
+        top = workbook.add_format({"valign": "top"})
+        middle = workbook.add_format({"valign": "vcenter"})
+        bottom = workbook.add_format({"valign": "bottom"})
         number = workbook.add_format({"num_format": "0.0"})
-        number_wrap = workbook.add_format({"num_format": "0.0", "text_wrap": True})
-        sheet.write_row(0, 0, ["Wrapped", "Number", "Both", "Default"])
+        number_combined = workbook.add_format({
+            "num_format": "0.0",
+            "text_wrap": True,
+            "align": "center",
+            "valign": "vcenter",
+        })
+        sheet.write_row(0, 0, [
+            "Wrapped",
+            "Left",
+            "Center",
+            "Right",
+            "Top",
+            "Middle",
+            "Bottom",
+            "Number",
+            "Combined",
+            "Default",
+        ])
         sheet.write_string(1, 0, "line 1\nline 2", wrap_text)
-        sheet.write_number(1, 1, 12.5, number)
-        sheet.write_number(1, 2, 42.5, number_wrap)
-        sheet.write_string(1, 3, "plain")
+        sheet.write_string(1, 1, "left", left)
+        sheet.write_string(1, 2, "center", center)
+        sheet.write_string(1, 3, "right", right)
+        sheet.write_string(1, 4, "top", top)
+        sheet.write_string(1, 5, "middle", middle)
+        sheet.write_string(1, 6, "bottom", bottom)
+        sheet.write_number(1, 7, 12.5, number)
+        sheet.write_number(1, 8, 42.5, number_combined)
+        sheet.write_string(1, 9, "plain")
     finally:
         workbook.close()
 
@@ -629,7 +744,7 @@ def main() -> int:
         "--alignment-input",
         type=Path,
         default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-styles-alignment.xlsx"),
-        help="FastXLSX wrap-text alignment styles workbook to verify.",
+        help="FastXLSX limited alignment styles workbook to verify.",
     )
     parser.add_argument(
         "--font-input",

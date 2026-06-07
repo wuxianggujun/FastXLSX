@@ -65,12 +65,13 @@ string entry 时，检查 `xl/sharedStrings.xml`、content type override、workb
 relationship 和 worksheet `t="s"` 引用；如果只是启用了 `StringStrategy::SharedString`
 但没有字符串 cell，则应反向确认这些 sharedStrings package artifacts 都不存在。
 
-styles 检查要区分当前 P9 number-format / wrap-text alignment / bold-italic font /
+styles 检查要区分当前 P9 number-format / wrap-text + limited horizontal/vertical alignment / bold-italic font /
 solid fill 切片和完整样式系统。使用
 `WorkbookWriter::add_style()` / `CellView::with_style()` 后，应检查 `xl/styles.xml`、
 styles content type override、workbook styles relationship、custom `numFmts`、
-`cellXfs` 默认/自定义 style 记录、wrap-text alignment 的 `applyAlignment="1"` /
-`<alignment wrapText="1"/>`、bold/italic font 的 `<fonts count>`、`<b/>`、`<i/>`、
+`cellXfs` 默认/自定义 style 记录、alignment 的 `applyAlignment="1"` /
+`<alignment wrapText="1"/>`、`horizontal="left|center|right"`、
+`vertical="top|center|bottom"` 和 combined alignment attributes、bold/italic font 的 `<fonts count>`、`<b/>`、`<i/>`、
 `fontId` 和 `applyFont="1"`、solid fill 的 `<fills count>`、solid `<patternFill>`、
 `fgColor rgb`、`fillId` 和 `applyFill="1"`、worksheet cell `s="N"` 引用、默认 style 不写
 `s="0"`，以及 styles 不创建 worksheet `.rels`。alignment-only style 不应创建
@@ -527,14 +528,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_styles_excel.ps
 
 Python helper 检查 FastXLSX package XML、`xl/styles.xml`、content types、workbook
 relationships、worksheet `s` attributes、custom number format XML escape、
-sharedStrings + styles relationship ordering、wrap-text alignment XML、bold/italic
-font XML 和 solid fill XML，并用 `openpyxl` 核对 `NumberFormat` / `wrap_text` / font flags /
-fill 语义；可用时还会创建 `XlsxWriter`
+sharedStrings + styles relationship ordering、wrap-text / horizontal / vertical alignment XML、bold/italic
+font XML 和 solid fill XML，并用 `openpyxl` 核对 `NumberFormat` / `wrap_text` /
+`horizontal` / `vertical` / font flags / fill 语义；可用时还会创建 `XlsxWriter`
 参考 workbook。Excel helper 只读打开 number-format、sharedStrings + styles 和
-wrap-text alignment / font / fill 样例，核对值、公式、可见 NumberFormat、WrapText、
-Font.Bold、Font.Italic、Interior.Pattern 和 Interior.Color。两者都是本地
+limited alignment / font / fill 样例，核对值、公式、可见 NumberFormat、WrapText、
+HorizontalAlignment、VerticalAlignment、Font.Bold、Font.Italic、Interior.Pattern 和 Interior.Color。两者都是本地
 QA artifact 和兼容性验证入口，不是运行时依赖，也不进入默认 CI。当前样式范围只覆盖
-自定义 number format、窄 wrap-text alignment、窄 bold/italic font 和窄 solid foreground fill；
+自定义 number format、窄 wrap-text + limited horizontal/vertical alignment、
+窄 bold/italic font 和窄 solid foreground fill；
 字体颜色/字号/名称/下划线、gradient fill、任意 pattern fill、theme/tint/indexed palette fill、
 边框、完整对齐、date cell type、rich text、
 dxf-backed conditional formatting、existing-file style preservation 和完整 Excel

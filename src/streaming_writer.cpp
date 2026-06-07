@@ -810,6 +810,28 @@ bool has_wrap_text_alignment(const CellStyle& style) noexcept
     return style.alignment.has_value() && style.alignment->wrap_text;
 }
 
+std::optional<HorizontalAlignment> horizontal_alignment(const CellStyle& style) noexcept
+{
+    if (!style.alignment.has_value()) {
+        return std::nullopt;
+    }
+    return style.alignment->horizontal;
+}
+
+std::optional<VerticalAlignment> vertical_alignment(const CellStyle& style) noexcept
+{
+    if (!style.alignment.has_value()) {
+        return std::nullopt;
+    }
+    return style.alignment->vertical;
+}
+
+bool has_alignment_property(const CellStyle& style) noexcept
+{
+    return has_wrap_text_alignment(style) || horizontal_alignment(style).has_value()
+        || vertical_alignment(style).has_value();
+}
+
 bool has_font_property(const CellStyle& style) noexcept
 {
     return style.font.has_value() && (style.font->bold || style.font->italic);
@@ -822,7 +844,7 @@ bool has_fill_property(const CellStyle& style) noexcept
 
 bool has_supported_style_property(const CellStyle& style) noexcept
 {
-    return has_number_format(style) || has_wrap_text_alignment(style)
+    return has_number_format(style) || has_alignment_property(style)
         || has_font_property(style) || has_fill_property(style);
 }
 
@@ -841,6 +863,8 @@ bool equivalent_style(const CellStyle& lhs, const CellStyle& rhs) noexcept
 {
     return lhs.number_format == rhs.number_format
         && has_wrap_text_alignment(lhs) == has_wrap_text_alignment(rhs)
+        && horizontal_alignment(lhs) == horizontal_alignment(rhs)
+        && vertical_alignment(lhs) == vertical_alignment(rhs)
         && (lhs.font.has_value() && lhs.font->bold) == (rhs.font.has_value() && rhs.font->bold)
         && (lhs.font.has_value() && lhs.font->italic) == (rhs.font.has_value() && rhs.font->italic)
         && lhs.fill.has_value() == rhs.fill.has_value()
@@ -1175,6 +1199,51 @@ void append_fill_xml(std::string& xml, const CellFill& fill)
     xml += R"("/><bgColor indexed="64"/></patternFill></fill>)";
 }
 
+std::string_view horizontal_alignment_token(HorizontalAlignment alignment)
+{
+    switch (alignment) {
+    case HorizontalAlignment::Left:
+        return "left";
+    case HorizontalAlignment::Center:
+        return "center";
+    case HorizontalAlignment::Right:
+        return "right";
+    }
+    throw FastXlsxError("unsupported horizontal alignment");
+}
+
+std::string_view vertical_alignment_token(VerticalAlignment alignment)
+{
+    switch (alignment) {
+    case VerticalAlignment::Top:
+        return "top";
+    case VerticalAlignment::Center:
+        return "center";
+    case VerticalAlignment::Bottom:
+        return "bottom";
+    }
+    throw FastXlsxError("unsupported vertical alignment");
+}
+
+void append_alignment_xml(std::string& xml, const CellStyle& style)
+{
+    xml += "<alignment";
+    if (has_wrap_text_alignment(style)) {
+        xml += R"( wrapText="1")";
+    }
+    if (const auto horizontal = horizontal_alignment(style)) {
+        xml += R"( horizontal=")";
+        xml += horizontal_alignment_token(*horizontal);
+        xml += '"';
+    }
+    if (const auto vertical = vertical_alignment(style)) {
+        xml += R"( vertical=")";
+        xml += vertical_alignment_token(*vertical);
+        xml += '"';
+    }
+    xml += "/>";
+}
+
 std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
 {
     std::string xml;
@@ -1262,11 +1331,13 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
         if (style.fill_id != 0) {
             xml += R"( applyFill="1")";
         }
-        if (has_wrap_text_alignment(style.style)) {
+        if (has_alignment_property(style.style)) {
             xml += R"( applyAlignment="1")";
         }
-        if (has_wrap_text_alignment(style.style)) {
-            xml += R"(><alignment wrapText="1"/></xf>)";
+        if (has_alignment_property(style.style)) {
+            xml += ">";
+            append_alignment_xml(xml, style.style);
+            xml += "</xf>";
         } else {
             xml += "/>";
         }
@@ -1894,6 +1965,12 @@ void validate_cell_style(const CellStyle& style)
 {
     if (!has_supported_style_property(style)) {
         throw FastXlsxError("cell style must set at least one supported property");
+    }
+    if (const auto horizontal = horizontal_alignment(style)) {
+        static_cast<void>(horizontal_alignment_token(*horizontal));
+    }
+    if (const auto vertical = vertical_alignment(style)) {
+        static_cast<void>(vertical_alignment_token(*vertical));
     }
 }
 

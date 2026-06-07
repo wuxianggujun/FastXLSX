@@ -78,15 +78,39 @@ private:
     std::uintptr_t owner_token_ = 0;
 };
 
+/// Horizontal alignment values for the current narrow streaming style slice.
+enum class HorizontalAlignment {
+    Left,
+    Center,
+    Right,
+};
+
+/// Vertical alignment values for the current narrow streaming style slice.
+enum class VerticalAlignment {
+    Top,
+    Center,
+    Bottom,
+};
+
 /// Narrow streaming cell alignment metadata registered through CellStyle.
 ///
 /// API mode: Streaming style metadata for new workbooks. The current alignment
-/// slice supports only wrap text. It is serialized as workbook-level
-/// `xl/styles.xml` cell-format metadata and does not imply full alignment,
-/// row-height calculation, worksheet DOM, or existing-file style preservation.
+/// slice supports wrap text plus limited horizontal/vertical alignment values.
+/// It is serialized as workbook-level `xl/styles.xml` cell-format metadata and
+/// does not imply full alignment, row-height calculation, text rotation,
+/// indentation, shrink-to-fit, worksheet DOM, or existing-file style
+/// preservation.
 struct CellAlignment {
     /// Enables OpenXML `wrapText="1"` on the generated cell format.
     bool wrap_text = false;
+
+    /// Optional horizontal alignment. Empty means the style does not change
+    /// horizontal alignment.
+    std::optional<HorizontalAlignment> horizontal;
+
+    /// Optional vertical alignment. Empty means the style does not change
+    /// vertical alignment.
+    std::optional<VerticalAlignment> vertical;
 };
 
 /// Narrow streaming cell font metadata registered through CellStyle.
@@ -135,8 +159,9 @@ struct CellFill {
 /// Narrow streaming cell style registered at workbook scope.
 ///
 /// API mode: Streaming style metadata for new workbooks. The current style
-/// slices support custom number formats, a narrow wrap-text alignment flag,
-/// narrow bold/italic font flags, and a narrow solid foreground fill. Styles
+/// slices support custom number formats, narrow wrap-text plus limited
+/// horizontal/vertical alignment values, narrow bold/italic font flags, and a
+/// narrow solid foreground fill. Styles
 /// are copied into workbook state, serialized to `xl/styles.xml` during
 /// WorkbookWriter::close(), and referenced by per-cell `s` attributes. This
 /// does not create worksheet relationships, a worksheet DOM, a full cell
@@ -146,9 +171,9 @@ struct CellStyle {
     /// number formatting.
     std::string number_format;
 
-    /// Optional narrow alignment metadata. Only `wrap_text=true` is currently
-    /// supported; an empty optional or `wrap_text=false` contributes no style
-    /// property.
+    /// Optional narrow alignment metadata. `wrap_text=true` and the limited
+    /// horizontal/vertical enum values are currently supported; an empty
+    /// optional or all-default metadata contributes no style property.
     std::optional<CellAlignment> alignment;
 
     /// Optional narrow font metadata. Only bold and italic are currently
@@ -1111,7 +1136,8 @@ public:
     /// API mode: Streaming style metadata for new workbooks. The style is
     /// copied into workbook state and written to `xl/styles.xml` only when the
     /// workbook is closed. The current slices support custom number formats,
-    /// wrap-text alignment, bold/italic font flags, and solid foreground fills;
+    /// wrap-text plus limited horizontal/vertical alignment, bold/italic font
+    /// flags, and solid foreground fills;
     /// border, full fill/pattern control, full alignment, full font control,
     /// rich text, conditional formatting, and existing-file style preservation
     /// remain outside this API. Registering a style does not touch worksheet

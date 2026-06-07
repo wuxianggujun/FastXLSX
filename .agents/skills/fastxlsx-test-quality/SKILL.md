@@ -202,11 +202,11 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
   固定本地 QA 入口是 `tools/verify_phase3_metadata.py` 和
   `tools/verify_phase3_metadata_excel.ps1`；它们分别做拆包 XML / `openpyxl`
   检查和 Excel COM 只读可视化检查，不接入默认 CTest/CI。
-- 当前 P9 number-format + wrap-text alignment + bold/italic font + solid fill styles 推荐 preset 样例为
+- 当前 P9 number-format + wrap-text + limited horizontal/vertical alignment + bold/italic font + solid fill styles 推荐 preset 样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-styles-number-formats.xlsx`，
   sharedStrings + styles 样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-styles-shared-strings.xlsx`，
-  wrap-text alignment 样例为
+  limited alignment 样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-styles-alignment.xlsx`，bold/italic
   font 样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-styles-fonts.xlsx`，solid fill 样例为
@@ -214,7 +214,9 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
   结构测试必须覆盖 `xl/styles.xml`、styles content type override、workbook styles
   relationship、custom `numFmts` / `cellXfs`、worksheet `s="N"`、默认 `s="0"` 省略、
   alignment-only style 不创建 custom `numFmt`、`applyAlignment="1"` /
-  `<alignment wrapText="1"/>`、number format + alignment 复用 custom `numFmtId`、
+  `<alignment wrapText="1"/>`、`horizontal="left|center|right"`、
+  `vertical="top|center|bottom"`、combined alignment attributes、
+  number format + alignment 复用 custom `numFmtId`、
   font-only style 不创建 custom `numFmt`、`<fonts>`、`<b/>`、`<i/>`、`fontId` 复用、
   `applyFont="1"`、number format + bold 复用 custom `numFmtId` 和 `fontId`、
   fill-only style 不创建 custom `numFmt`、solid `<patternFill>`、`fgColor rgb`、`fillId` 复用、
@@ -222,7 +224,8 @@ Phase 1 质量不只是“能编译”。生成的 `.xlsx` 应检查：
   sharedStrings + styles 共存，以及 foreign `StyleId` 数值碰撞也在 row state 变更前
   被拒绝。固定本地 QA 入口是 `tools/verify_styles_number_formats.py` 和
   `tools/verify_styles_excel.ps1`；它们分别做拆包 XML / `openpyxl` / 可选
-  `XlsxWriter` 检查和 Excel COM 只读 NumberFormat / WrapText / Font.Bold / Font.Italic /
+  `XlsxWriter` 检查和 Excel COM 只读 NumberFormat / WrapText /
+  HorizontalAlignment / VerticalAlignment / Font.Bold / Font.Italic /
   Interior.Pattern / Interior.Color
   检查，不接入默认
   CTest/CI，也不是运行时依赖。

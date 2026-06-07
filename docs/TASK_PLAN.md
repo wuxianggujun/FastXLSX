@@ -76,7 +76,8 @@ obligations.
   workbook recalculation.
 - Streaming-only styles now have a P9 foundation:
   `WorkbookWriter::add_style(CellStyle)` registers workbook-local custom number
-  formats, narrow `CellAlignment::wrap_text` alignment metadata, narrow
+  formats, narrow `CellAlignment::wrap_text`, `HorizontalAlignment` and
+  `VerticalAlignment` alignment metadata, narrow
   `CellFont::bold` / `CellFont::italic` font metadata, and narrow
   `CellFill` solid foreground fill metadata,
   `CellView::with_style(StyleId)` writes cell `s="N"` references, and
@@ -345,7 +346,8 @@ Tasks:
   surface expands.
 - Keep the current P9 style registry as the entry point for styles:
   workbook-local `StyleId`, `CellStyle::number_format`,
-  `CellStyle::alignment.wrap_text`, `CellStyle::font` bold/italic flags,
+  `CellStyle::alignment.wrap_text`, optional horizontal/vertical alignment,
+  `CellStyle::font` bold/italic flags,
   `CellStyle::fill` solid foreground ARGB, generated `xl/styles.xml`, and cell `s="N"`
   references.
 - Add full font control, full fill/pattern control, borders, full alignment, rich text, and dxf-backed conditional
@@ -365,8 +367,9 @@ Validation:
   auto filters, multiple merged ranges, worksheet suffix ordering, and absence
   of relationship/content-type side effects for these metadata-only features.
 - Current style structure tests cover `xl/styles.xml`, style ids, custom
-  `numFmtId`, `numFmtId` reuse across style combinations, wrap-text alignment
-  `applyAlignment` / `<alignment wrapText="1"/>`, bold/italic font records,
+  `numFmtId`, `numFmtId` reuse across style combinations, wrap-text and
+  limited horizontal/vertical alignment `applyAlignment` / `<alignment .../>`,
+  bold/italic font records,
   `fontId` reuse and `applyFont="1"`, solid fill records, `fillId` reuse and
   `applyFill="1"`, worksheet style references,
   default `s="0"` omission, sharedStrings + styles coexistence, and invalid
@@ -1163,8 +1166,9 @@ Current facts:
   runtime dependencies or default CI requirements.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
   present on the in-memory and streaming new-workbook paths. P9 streaming
-  number-format、wrap-text alignment, bold/italic font and solid foreground fill styles are now 基础 through workbook-local style ids,
+  number-format、wrap-text + limited horizontal/vertical alignment, bold/italic font and solid foreground fill styles are now 基础 through workbook-local style ids,
   `CellStyle::number_format`, `CellStyle::alignment.wrap_text`,
+  optional horizontal/vertical alignment,
   `CellStyle::font`, `CellStyle::fill`, generated
   `xl/styles.xml`, and cell `s="N"` references. Custom document properties,
   named ranges, full font control, full fill/pattern control, borders/full alignment, rich formatting,
@@ -1177,13 +1181,14 @@ Current facts:
   `tools/verify_document_properties_excel.ps1` opens both workbooks read-only
   through Excel COM and verifies the smoke sheets, while treating XML/openpyxl
   as authoritative when Excel COM does not expose built-in properties.
-- Local QA helpers now exist for number-format, wrap-text alignment, bold/italic font, and solid fill styles:
+- Local QA helpers now exist for number-format, wrap-text + limited horizontal/vertical alignment, bold/italic font, and solid fill styles:
   `tools/verify_styles_number_formats.py` checks FastXLSX package XML,
   `xl/styles.xml`, workbook relationships, worksheet `s="N"` references,
-  `openpyxl` number format / wrap-text / bold-italic / solid-fill semantics, and optional `XlsxWriter` reference
+  `openpyxl` number format / wrap-text / horizontal / vertical / bold-italic / solid-fill semantics, and optional `XlsxWriter` reference
   creation; `tools/verify_styles_excel.ps1` opens the styles and
-  sharedStrings+styles samples plus the wrap-text alignment sample read-only
-  through Excel COM and checks visible NumberFormat, WrapText, Font.Bold,
+  sharedStrings+styles samples plus the limited alignment sample read-only
+  through Excel COM and checks visible NumberFormat, WrapText, HorizontalAlignment,
+  VerticalAlignment, Font.Bold,
   Font.Italic, Interior.Pattern, Interior.Color, values, and formulas.
 
 Tasks:

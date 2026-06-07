@@ -723,29 +723,92 @@ void test_streaming_writer_alignment_styles()
     const auto wrap_text_style = workbook.add_style(wrap_text_style_definition);
     const auto duplicate_wrap_text_style = workbook.add_style(wrap_text_style_definition);
 
+    fastxlsx::CellAlignment left_alignment;
+    left_alignment.horizontal = fastxlsx::HorizontalAlignment::Left;
+    fastxlsx::CellStyle left_style_definition;
+    left_style_definition.alignment = left_alignment;
+    const auto left_style = workbook.add_style(left_style_definition);
+
+    fastxlsx::CellAlignment center_alignment;
+    center_alignment.horizontal = fastxlsx::HorizontalAlignment::Center;
+    fastxlsx::CellStyle center_style_definition;
+    center_style_definition.alignment = center_alignment;
+    const auto center_style = workbook.add_style(center_style_definition);
+
+    fastxlsx::CellAlignment right_alignment;
+    right_alignment.horizontal = fastxlsx::HorizontalAlignment::Right;
+    fastxlsx::CellStyle right_style_definition;
+    right_style_definition.alignment = right_alignment;
+    const auto right_style = workbook.add_style(right_style_definition);
+
+    fastxlsx::CellAlignment top_alignment;
+    top_alignment.vertical = fastxlsx::VerticalAlignment::Top;
+    fastxlsx::CellStyle top_style_definition;
+    top_style_definition.alignment = top_alignment;
+    const auto top_style = workbook.add_style(top_style_definition);
+
+    fastxlsx::CellAlignment middle_alignment;
+    middle_alignment.vertical = fastxlsx::VerticalAlignment::Center;
+    fastxlsx::CellStyle middle_style_definition;
+    middle_style_definition.alignment = middle_alignment;
+    const auto middle_style = workbook.add_style(middle_style_definition);
+
+    fastxlsx::CellAlignment bottom_alignment;
+    bottom_alignment.vertical = fastxlsx::VerticalAlignment::Bottom;
+    fastxlsx::CellStyle bottom_style_definition;
+    bottom_style_definition.alignment = bottom_alignment;
+    const auto bottom_style = workbook.add_style(bottom_style_definition);
+
     fastxlsx::CellStyle number_style_definition {"0.0"};
     const auto number_style = workbook.add_style(number_style_definition);
 
-    fastxlsx::CellStyle number_wrap_style_definition {"0.0"};
-    number_wrap_style_definition.alignment = fastxlsx::CellAlignment {true};
-    const auto number_wrap_style = workbook.add_style(number_wrap_style_definition);
+    fastxlsx::CellAlignment combined_alignment;
+    combined_alignment.wrap_text = true;
+    combined_alignment.horizontal = fastxlsx::HorizontalAlignment::Center;
+    combined_alignment.vertical = fastxlsx::VerticalAlignment::Center;
+    fastxlsx::CellStyle number_combined_style_definition {"0.0"};
+    number_combined_style_definition.alignment = combined_alignment;
+    const auto number_combined_style = workbook.add_style(number_combined_style_definition);
+    const auto duplicate_number_combined_style =
+        workbook.add_style(number_combined_style_definition);
 
     check(wrap_text_style.value() == 1, "first alignment style id should be 1");
     check(duplicate_wrap_text_style.value() == 1, "duplicate alignment style should reuse id");
-    check(number_style.value() == 2, "number format style should be second style id");
-    check(number_wrap_style.value() == 3, "combined number/alignment style should be third style id");
+    check(left_style.value() == 2, "left alignment style should be second style id");
+    check(center_style.value() == 3, "center alignment style should be third style id");
+    check(right_style.value() == 4, "right alignment style should be fourth style id");
+    check(top_style.value() == 5, "top alignment style should be fifth style id");
+    check(middle_style.value() == 6, "middle alignment style should be sixth style id");
+    check(bottom_style.value() == 7, "bottom alignment style should be seventh style id");
+    check(number_style.value() == 8, "number format style should be eighth style id");
+    check(number_combined_style.value() == 9,
+        "combined number/alignment style should be ninth style id");
+    check(duplicate_number_combined_style.value() == 9,
+        "duplicate combined number/alignment style should reuse id");
 
     auto sheet = workbook.add_worksheet("Alignment");
     sheet.append_row({
         fastxlsx::CellView::text("Wrapped"),
+        fastxlsx::CellView::text("Left"),
+        fastxlsx::CellView::text("Center"),
+        fastxlsx::CellView::text("Right"),
+        fastxlsx::CellView::text("Top"),
+        fastxlsx::CellView::text("Middle"),
+        fastxlsx::CellView::text("Bottom"),
         fastxlsx::CellView::text("Number"),
-        fastxlsx::CellView::text("Both"),
+        fastxlsx::CellView::text("Combined"),
         fastxlsx::CellView::text("Default"),
     });
     sheet.append_row({
         fastxlsx::CellView::text("line 1\nline 2").with_style(wrap_text_style),
+        fastxlsx::CellView::text("left").with_style(left_style),
+        fastxlsx::CellView::text("center").with_style(center_style),
+        fastxlsx::CellView::text("right").with_style(right_style),
+        fastxlsx::CellView::text("top").with_style(top_style),
+        fastxlsx::CellView::text("middle").with_style(middle_style),
+        fastxlsx::CellView::text("bottom").with_style(bottom_style),
         fastxlsx::CellView::number(12.5).with_style(number_style),
-        fastxlsx::CellView::number(42.5).with_style(number_wrap_style),
+        fastxlsx::CellView::number(42.5).with_style(number_combined_style),
         fastxlsx::CellView::text("plain"),
     });
 
@@ -771,30 +834,66 @@ void test_streaming_writer_alignment_styles()
     check_contains(styles_xml, R"(<borders count="1">)",
         "alignment slice should keep default borders only");
     check_contains(styles_xml,
-        R"(<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        R"(<cellXfs count="10"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
         "alignment cellXfs default style mismatch");
     check_contains(styles_xml,
         R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1"/></xf>)",
-        "alignment-only xf mismatch");
+        "wrap-text alignment xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left"/></xf>)",
+        "left alignment xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center"/></xf>)",
+        "center alignment xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="right"/></xf>)",
+        "right alignment xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top"/></xf>)",
+        "top alignment xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="center"/></xf>)",
+        "middle alignment xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="bottom"/></xf>)",
+        "bottom alignment xf mismatch");
     check_contains(styles_xml,
         R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
         "number-only xf mismatch");
     check_contains(styles_xml,
-        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment wrapText="1"/></xf>)",
-        "number plus alignment xf mismatch");
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment wrapText="1" horizontal="center" vertical="center"/></xf>)",
+        "number plus combined alignment xf mismatch");
 
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+    check_contains(worksheet_xml, R"(<dimension ref="A1:J2"/>)",
         "alignment worksheet dimension mismatch");
     check_contains(worksheet_xml,
         "<c r=\"A2\" s=\"1\" t=\"inlineStr\"><is><t>line 1\nline 2</t></is></c>",
         "wrapped inline string cell mismatch");
-    check_contains(worksheet_xml, R"(<c r="B2" s="2"><v>12.5</v></c>)",
+    check_contains(worksheet_xml,
+        R"(<c r="B2" s="2" t="inlineStr"><is><t>left</t></is></c>)",
+        "left aligned string cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="C2" s="3" t="inlineStr"><is><t>center</t></is></c>)",
+        "center aligned string cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" s="4" t="inlineStr"><is><t>right</t></is></c>)",
+        "right aligned string cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="E2" s="5" t="inlineStr"><is><t>top</t></is></c>)",
+        "top aligned string cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="F2" s="6" t="inlineStr"><is><t>middle</t></is></c>)",
+        "middle aligned string cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="G2" s="7" t="inlineStr"><is><t>bottom</t></is></c>)",
+        "bottom aligned string cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="H2" s="8"><v>12.5</v></c>)",
         "number-only styled cell mismatch");
-    check_contains(worksheet_xml, R"(<c r="C2" s="3"><v>42.5</v></c>)",
+    check_contains(worksheet_xml, R"(<c r="I2" s="9"><v>42.5</v></c>)",
         "number plus alignment styled cell mismatch");
     check_contains(worksheet_xml,
-        R"(<c r="D2" t="inlineStr"><is><t>plain</t></is></c>)",
+        R"(<c r="J2" t="inlineStr"><is><t>plain</t></is></c>)",
         "default inline string cell mismatch");
     check(worksheet_xml.find("s=\"0\"") == std::string::npos,
         "default style should not be serialized as s=\"0\" in alignment sample");
@@ -1155,6 +1254,26 @@ void test_streaming_writer_invalid_style_registration()
             static_cast<void>(workbook.add_style(false_alignment_style));
         },
         "add_style should reject alignment metadata without a supported property");
+
+    fastxlsx::CellStyle invalid_horizontal_alignment_style;
+    fastxlsx::CellAlignment invalid_horizontal_alignment;
+    invalid_horizontal_alignment.horizontal = static_cast<fastxlsx::HorizontalAlignment>(99);
+    invalid_horizontal_alignment_style.alignment = invalid_horizontal_alignment;
+    check_fastxlsx_error(
+        [&workbook, invalid_horizontal_alignment_style] {
+            static_cast<void>(workbook.add_style(invalid_horizontal_alignment_style));
+        },
+        "add_style should reject unsupported horizontal alignment");
+
+    fastxlsx::CellStyle invalid_vertical_alignment_style;
+    fastxlsx::CellAlignment invalid_vertical_alignment;
+    invalid_vertical_alignment.vertical = static_cast<fastxlsx::VerticalAlignment>(99);
+    invalid_vertical_alignment_style.alignment = invalid_vertical_alignment;
+    check_fastxlsx_error(
+        [&workbook, invalid_vertical_alignment_style] {
+            static_cast<void>(workbook.add_style(invalid_vertical_alignment_style));
+        },
+        "add_style should reject unsupported vertical alignment");
 
     fastxlsx::CellStyle false_font_style;
     false_font_style.font = fastxlsx::CellFont {};

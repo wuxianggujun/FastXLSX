@@ -109,6 +109,13 @@ function Verify-AlignmentStylesWorkbook {
         [string]$Path
     )
 
+    $xlHAlignLeft = -4131
+    $xlHAlignCenter = -4108
+    $xlHAlignRight = -4152
+    $xlVAlignTop = -4160
+    $xlVAlignCenter = -4108
+    $xlVAlignBottom = -4107
+
     $resolved = (Resolve-Path -LiteralPath $Path).Path
     $workbook = $null
     $sheet = $null
@@ -118,17 +125,31 @@ function Verify-AlignmentStylesWorkbook {
         $sheet = $workbook.Worksheets.Item("Alignment")
 
         Assert-Equal $sheet.Range("A2").Value2 "line 1`nline 2" "Alignment A2 value"
-        Assert-Equal $sheet.Range("B2").Value2 12.5 "Alignment B2 value"
-        Assert-Equal $sheet.Range("C2").Value2 42.5 "Alignment C2 value"
-        Assert-Equal $sheet.Range("D2").Value2 "plain" "Alignment D2 value"
+        Assert-Equal $sheet.Range("B2").Value2 "left" "Alignment B2 value"
+        Assert-Equal $sheet.Range("C2").Value2 "center" "Alignment C2 value"
+        Assert-Equal $sheet.Range("D2").Value2 "right" "Alignment D2 value"
+        Assert-Equal $sheet.Range("E2").Value2 "top" "Alignment E2 value"
+        Assert-Equal $sheet.Range("F2").Value2 "middle" "Alignment F2 value"
+        Assert-Equal $sheet.Range("G2").Value2 "bottom" "Alignment G2 value"
+        Assert-Equal $sheet.Range("H2").Value2 12.5 "Alignment H2 value"
+        Assert-Equal $sheet.Range("I2").Value2 42.5 "Alignment I2 value"
+        Assert-Equal $sheet.Range("J2").Value2 "plain" "Alignment J2 value"
 
         Assert-Equal $sheet.Range("A2").WrapText $true "Alignment A2 wrap text"
-        Assert-Equal $sheet.Range("B2").NumberFormat '0.0' "Alignment B2 number format"
-        Assert-Equal $sheet.Range("C2").NumberFormat '0.0' "Alignment C2 number format"
-        Assert-Equal $sheet.Range("C2").WrapText $true "Alignment C2 wrap text"
+        Assert-Equal $sheet.Range("B2").HorizontalAlignment $xlHAlignLeft "Alignment B2 horizontal alignment"
+        Assert-Equal $sheet.Range("C2").HorizontalAlignment $xlHAlignCenter "Alignment C2 horizontal alignment"
+        Assert-Equal $sheet.Range("D2").HorizontalAlignment $xlHAlignRight "Alignment D2 horizontal alignment"
+        Assert-Equal $sheet.Range("E2").VerticalAlignment $xlVAlignTop "Alignment E2 vertical alignment"
+        Assert-Equal $sheet.Range("F2").VerticalAlignment $xlVAlignCenter "Alignment F2 vertical alignment"
+        Assert-Equal $sheet.Range("G2").VerticalAlignment $xlVAlignBottom "Alignment G2 vertical alignment"
+        Assert-Equal $sheet.Range("H2").NumberFormat '0.0' "Alignment H2 number format"
+        Assert-Equal $sheet.Range("I2").NumberFormat '0.0' "Alignment I2 number format"
+        Assert-Equal $sheet.Range("I2").WrapText $true "Alignment I2 wrap text"
+        Assert-Equal $sheet.Range("I2").HorizontalAlignment $xlHAlignCenter "Alignment I2 horizontal alignment"
+        Assert-Equal $sheet.Range("I2").VerticalAlignment $xlVAlignCenter "Alignment I2 vertical alignment"
 
-        Write-Host "OK: Excel opened wrap-text alignment styles workbook read-only: $resolved"
-        Write-Host "OK: WrapText and NumberFormat metadata verified"
+        Write-Host "OK: Excel opened limited alignment styles workbook read-only: $resolved"
+        Write-Host "OK: WrapText, horizontal/vertical alignment, and NumberFormat metadata verified"
     }
     finally {
         if ($null -ne $workbook) {

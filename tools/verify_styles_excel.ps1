@@ -1,7 +1,8 @@
 param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx",
     [string]$SharedPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx",
-    [string]$AlignmentPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx"
+    [string]$AlignmentPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx",
+    [string]$FontPath = "build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -130,6 +131,52 @@ function Verify-AlignmentStylesWorkbook {
     }
 }
 
+function Verify-FontStylesWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("Fonts")
+
+        Assert-Equal $sheet.Range("A2").Value2 "bold" "Fonts A2 value"
+        Assert-Equal $sheet.Range("B2").Value2 "italic" "Fonts B2 value"
+        Assert-Equal $sheet.Range("C2").Value2 $true "Fonts C2 value"
+        Assert-Equal $sheet.Range("D2").Value2 12.5 "Fonts D2 value"
+        Assert-Equal $sheet.Range("E2").Value2 "plain" "Fonts E2 value"
+
+        Assert-Equal $sheet.Range("A2").Font.Bold $true "Fonts A2 bold"
+        Assert-Equal $sheet.Range("A2").Font.Italic $false "Fonts A2 italic"
+        Assert-Equal $sheet.Range("B2").Font.Bold $false "Fonts B2 bold"
+        Assert-Equal $sheet.Range("B2").Font.Italic $true "Fonts B2 italic"
+        Assert-Equal $sheet.Range("C2").Font.Bold $true "Fonts C2 bold"
+        Assert-Equal $sheet.Range("C2").Font.Italic $true "Fonts C2 italic"
+        Assert-Equal $sheet.Range("D2").Font.Bold $true "Fonts D2 bold"
+        Assert-Equal $sheet.Range("D2").NumberFormat '0.0' "Fonts D2 number format"
+        Assert-Equal $sheet.Range("E2").Font.Bold $false "Fonts E2 bold"
+        Assert-Equal $sheet.Range("E2").Font.Italic $false "Fonts E2 italic"
+
+        Write-Host "OK: Excel opened bold/italic font styles workbook read-only: $resolved"
+        Write-Host "OK: Font.Bold, Font.Italic, and NumberFormat metadata verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($sheet, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 $excel = $null
 
 try {
@@ -140,6 +187,7 @@ try {
     Verify-StylesWorkbook -Excel $excel -Path $Path
     Verify-SharedStylesWorkbook -Excel $excel -Path $SharedPath
     Verify-AlignmentStylesWorkbook -Excel $excel -Path $AlignmentPath
+    Verify-FontStylesWorkbook -Excel $excel -Path $FontPath
 }
 finally {
     if ($null -ne $excel) {

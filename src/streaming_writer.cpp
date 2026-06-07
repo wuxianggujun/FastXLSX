@@ -91,6 +91,7 @@ struct WorksheetImage {
 struct RegisteredStyle {
     CellStyle style;
     std::uint32_t number_format_id = 0;
+    std::uint32_t font_id = 0;
 };
 
 std::string format_number(double value)
@@ -808,15 +809,23 @@ bool has_wrap_text_alignment(const CellStyle& style) noexcept
     return style.alignment.has_value() && style.alignment->wrap_text;
 }
 
+bool has_font_property(const CellStyle& style) noexcept
+{
+    return style.font.has_value() && (style.font->bold || style.font->italic);
+}
+
 bool has_supported_style_property(const CellStyle& style) noexcept
 {
-    return has_number_format(style) || has_wrap_text_alignment(style);
+    return has_number_format(style) || has_wrap_text_alignment(style)
+        || has_font_property(style);
 }
 
 bool equivalent_style(const CellStyle& lhs, const CellStyle& rhs) noexcept
 {
     return lhs.number_format == rhs.number_format
-        && has_wrap_text_alignment(lhs) == has_wrap_text_alignment(rhs);
+        && has_wrap_text_alignment(lhs) == has_wrap_text_alignment(rhs)
+        && (lhs.font.has_value() && lhs.font->bold) == (rhs.font.has_value() && rhs.font->bold)
+        && (lhs.font.has_value() && lhs.font->italic) == (rhs.font.has_value() && rhs.font->italic);
 }
 
 std::size_t custom_number_format_count(const std::vector<RegisteredStyle>& styles) noexcept
@@ -849,6 +858,43 @@ std::optional<std::uint32_t> find_number_format_id(
         return std::nullopt;
     }
     return existing->number_format_id;
+}
+
+std::size_t custom_font_count(const std::vector<RegisteredStyle>& styles) noexcept
+{
+    std::size_t count = 0;
+    for (auto style = styles.begin(); style != styles.end(); ++style) {
+        if (style->font_id == 0) {
+            continue;
+        }
+        const bool already_seen = std::any_of(styles.begin(), style,
+            [id = style->font_id](const RegisteredStyle& previous) {
+                return previous.font_id == id;
+            });
+        if (!already_seen) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool same_font_properties(const CellFont& lhs, const CellFont& rhs) noexcept
+{
+    return lhs.bold == rhs.bold && lhs.italic == rhs.italic;
+}
+
+std::optional<std::uint32_t> find_font_id(
+    const std::vector<RegisteredStyle>& styles, const CellFont& font)
+{
+    const auto existing = std::find_if(styles.begin(), styles.end(),
+        [&font](const RegisteredStyle& registered_style) {
+            return registered_style.font_id != 0 && registered_style.style.font.has_value()
+                && same_font_properties(*registered_style.style.font, font);
+        });
+    if (existing == styles.end()) {
+        return std::nullopt;
+    }
+    return existing->font_id;
 }
 
 bool row_has_formula(std::span<const CellView> cells) noexcept
@@ -1053,6 +1099,24 @@ void write_shared_strings_file(
     write_stream(stream, "</sst>", "failed to write temporary sharedStrings XML");
 }
 
+void append_default_font_xml(std::string& xml)
+{
+    xml += R"(<sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/>)";
+}
+
+void append_font_xml(std::string& xml, const CellFont& font)
+{
+    xml += "<font>";
+    if (font.bold) {
+        xml += "<b/>";
+    }
+    if (font.italic) {
+        xml += "<i/>";
+    }
+    append_default_font_xml(xml);
+    xml += "</font>";
+}
+
 std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
 {
     std::string xml;
@@ -1082,7 +1146,25 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
         }
         xml += "</numFmts>";
     }
-    xml += R"(<fonts count="1"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font></fonts>)";
+    xml += R"(<fonts count=")";
+    xml += std::to_string(custom_font_count(styles) + 1);
+    xml += R"("><font>)";
+    append_default_font_xml(xml);
+    xml += "</font>";
+    for (auto style = styles.begin(); style != styles.end(); ++style) {
+        if (style->font_id == 0 || !style->style.font.has_value()) {
+            continue;
+        }
+        const bool already_emitted = std::any_of(styles.begin(), style,
+            [id = style->font_id](const RegisteredStyle& previous) {
+                return previous.font_id == id;
+            });
+        if (already_emitted) {
+            continue;
+        }
+        append_font_xml(xml, *style->style.font);
+    }
+    xml += "</fonts>";
     xml += R"(<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>)";
     xml += R"(<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>)";
     xml += R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)";
@@ -1092,9 +1174,14 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
     for (const RegisteredStyle& style : styles) {
         xml += R"(<xf numFmtId=")";
         xml += std::to_string(style.number_format_id);
-        xml += R"(" fontId="0" fillId="0" borderId="0" xfId="0")";
+        xml += R"(" fontId=")";
+        xml += std::to_string(style.font_id);
+        xml += R"(" fillId="0" borderId="0" xfId="0")";
         if (style.number_format_id != 0) {
             xml += R"( applyNumberFormat="1")";
+        }
+        if (style.font_id != 0) {
+            xml += R"( applyFont="1")";
         }
         if (has_wrap_text_alignment(style.style)) {
             xml += R"( applyAlignment="1")";
@@ -2430,7 +2517,21 @@ StyleId WorkbookWriter::add_style(CellStyle style)
         }
     }
 
-    state_->styles.push_back({std::move(style), number_format_id});
+    std::uint32_t font_id = 0;
+    if (has_font_property(style)) {
+        if (const auto existing_font_id = find_font_id(state_->styles, *style.font)) {
+            font_id = *existing_font_id;
+        } else {
+            const std::size_t font_count = custom_font_count(state_->styles);
+            if (font_count
+                >= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+                throw FastXlsxError("too many custom fonts");
+            }
+            font_id = static_cast<std::uint32_t>(font_count + 1);
+        }
+    }
+
+    state_->styles.push_back({std::move(style), number_format_id, font_id});
     return StyleId(static_cast<std::uint32_t>(state_->styles.size()),
         reinterpret_cast<std::uintptr_t>(state_.get()));
 }

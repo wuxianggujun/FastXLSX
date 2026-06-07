@@ -215,7 +215,90 @@ def verify_alignment_styles_package(path: Path) -> dict[str, Any]:
     }
 
 
-def verify_with_openpyxl(path: Path, shared_path: Path, alignment_path: Path) -> dict[str, Any]:
+def verify_font_styles_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "[Content_Types].xml",
+        "xl/workbook.xml",
+        "xl/_rels/workbook.xml.rels",
+        "xl/worksheets/sheet1.xml",
+        "xl/styles.xml",
+    ]
+    for name in required:
+        require(name in names, f"font styles sample missing package entry: {name}")
+
+    require("xl/worksheets/_rels/sheet1.xml.rels" not in names,
+            "font styles sample should not create worksheet relationships")
+    require("xl/sharedStrings.xml" not in names,
+            "font styles sample should not create sharedStrings.xml")
+
+    styles_xml = read_zip_text(path, "xl/styles.xml")
+    require('<numFmts count="1">' in styles_xml,
+            "font sample should create exactly one custom numFmt")
+    require('<numFmt numFmtId="164" formatCode="0.0"/>' in styles_xml,
+            "font sample custom number format mismatch")
+    require('<fonts count="4">' in styles_xml, "font collection count mismatch")
+    require(
+        '<font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/>'
+        '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
+        "bold font XML mismatch",
+    )
+    require(
+        '<font><i/><sz val="11"/><color theme="1"/><name val="Calibri"/>'
+        '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
+        "italic font XML mismatch",
+    )
+    require(
+        '<font><b/><i/><sz val="11"/><color theme="1"/><name val="Calibri"/>'
+        '<family val="2"/><scheme val="minor"/></font>' in styles_xml,
+        "bold italic font XML mismatch",
+    )
+    require('<cellXfs count="5">' in styles_xml, "font cellXfs count mismatch")
+    require(
+        '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        in styles_xml,
+        "bold xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        in styles_xml,
+        "italic xf mismatch",
+    )
+    require(
+        '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+        in styles_xml,
+        "bold italic xf mismatch",
+    )
+    require(
+        '<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" '
+        'applyNumberFormat="1" applyFont="1"/>' in styles_xml,
+        "number plus bold xf mismatch",
+    )
+
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('<dimension ref="A1:E2"/>' in worksheet_xml, "font worksheet dimension mismatch")
+    require('<c r="A2" s="1" t="inlineStr"><is><t>bold</t></is></c>' in worksheet_xml,
+            "bold styled text cell mismatch")
+    require('<c r="B2" s="2" t="inlineStr"><is><t>italic</t></is></c>' in worksheet_xml,
+            "italic styled text cell mismatch")
+    require('<c r="C2" s="3" t="b"><v>1</v></c>' in worksheet_xml,
+            "bold italic styled boolean cell mismatch")
+    require('<c r="D2" s="4"><v>12.5</v></c>' in worksheet_xml,
+            "number plus bold styled number cell mismatch")
+    require('<c r="E2" t="inlineStr"><is><t>plain</t></is></c>' in worksheet_xml,
+            "plain font sample cell mismatch")
+    require('s="0"' not in worksheet_xml,
+            "default style should not be serialized as s=\"0\"")
+
+    return {
+        "style_ids": {"bold": 1, "italic": 2, "bold_italic": 3, "number_bold": 4},
+        "custom_number_format_ids": [164],
+        "custom_font_ids": [1, 2, 3],
+    }
+
+
+def verify_with_openpyxl(
+    path: Path, shared_path: Path, alignment_path: Path, font_path: Path) -> dict[str, Any]:
     try:
         import openpyxl  # type: ignore
     except ModuleNotFoundError:
@@ -269,6 +352,28 @@ def verify_with_openpyxl(path: Path, shared_path: Path, alignment_path: Path) ->
     finally:
         alignment_workbook.close()
 
+    font_workbook = openpyxl.load_workbook(font_path, read_only=False, data_only=False)
+    try:
+        fonts = font_workbook["Fonts"]
+        require(fonts["A2"].font.bold is True,
+                f"A2 bold mismatch: {fonts['A2'].font.bold!r}")
+        require(fonts["A2"].font.italic is False,
+                f"A2 italic mismatch: {fonts['A2'].font.italic!r}")
+        require(fonts["B2"].font.bold is False,
+                f"B2 bold mismatch: {fonts['B2'].font.bold!r}")
+        require(fonts["B2"].font.italic is True,
+                f"B2 italic mismatch: {fonts['B2'].font.italic!r}")
+        require(fonts["C2"].font.bold is True and fonts["C2"].font.italic is True,
+                "C2 bold italic mismatch")
+        require(fonts["D2"].font.bold is True,
+                f"D2 bold mismatch: {fonts['D2'].font.bold!r}")
+        require(fonts["D2"].number_format == "0.0",
+                f"D2 number format mismatch: {fonts['D2'].number_format!r}")
+        require(fonts["E2"].font.bold is False and fonts["E2"].font.italic is False,
+                "E2 should keep default font flags")
+    finally:
+        font_workbook.close()
+
     return {
         "status": "opened",
         "styles": {
@@ -283,6 +388,12 @@ def verify_with_openpyxl(path: Path, shared_path: Path, alignment_path: Path) ->
             "B2_number_format": "0.0",
             "C2_number_format": "0.0",
             "C2_wrap_text": True,
+        },
+        "font_styles": {
+            "A2_bold": True,
+            "B2_italic": True,
+            "C2_bold_italic": True,
+            "D2_number_format": "0.0",
         },
     }
 
@@ -334,6 +445,31 @@ def create_xlsxwriter_alignment_reference(path: Path) -> dict[str, Any]:
     return {"status": "created", "path": str(path)}
 
 
+def create_xlsxwriter_font_reference(path: Path) -> dict[str, Any]:
+    try:
+        import xlsxwriter  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module xlsxwriter is not installed"}
+
+    workbook = xlsxwriter.Workbook(path)
+    try:
+        sheet = workbook.add_worksheet("Fonts")
+        bold = workbook.add_format({"bold": True})
+        italic = workbook.add_format({"italic": True})
+        bold_italic = workbook.add_format({"bold": True, "italic": True})
+        number_bold = workbook.add_format({"num_format": "0.0", "bold": True})
+        sheet.write_row(0, 0, ["Bold", "Italic", "BoldItalic", "NumberBold", "Default"])
+        sheet.write_string(1, 0, "bold", bold)
+        sheet.write_string(1, 1, "italic", italic)
+        sheet.write_boolean(1, 2, True, bold_italic)
+        sheet.write_number(1, 3, 12.5, number_bold)
+        sheet.write_string(1, 4, "plain")
+    finally:
+        workbook.close()
+
+    return {"status": "created", "path": str(path)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -355,6 +491,12 @@ def main() -> int:
         help="FastXLSX wrap-text alignment styles workbook to verify.",
     )
     parser.add_argument(
+        "--font-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-styles-fonts.xlsx"),
+        help="FastXLSX bold/italic font styles workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/styles-number-formats"),
@@ -365,26 +507,33 @@ def main() -> int:
     input_path = args.input.resolve()
     shared_input_path = args.shared_input.resolve()
     alignment_input_path = args.alignment_input.resolve()
+    font_input_path = args.font_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
     require(shared_input_path.exists(), f"shared input workbook does not exist: {shared_input_path}")
     require(alignment_input_path.exists(),
             f"alignment input workbook does not exist: {alignment_input_path}")
+    require(font_input_path.exists(), f"font input workbook does not exist: {font_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     report = {
         "fastxlsx_input": str(input_path),
         "fastxlsx_shared_input": str(shared_input_path),
         "fastxlsx_alignment_input": str(alignment_input_path),
+        "fastxlsx_font_input": str(font_input_path),
         "fastxlsx_package": verify_styles_package(input_path),
         "fastxlsx_shared_package": verify_shared_styles_package(shared_input_path),
         "fastxlsx_alignment_package": verify_alignment_styles_package(alignment_input_path),
+        "fastxlsx_font_package": verify_font_styles_package(font_input_path),
         "xlsx_libraries": {
-            "openpyxl": verify_with_openpyxl(input_path, shared_input_path, alignment_input_path),
+            "openpyxl": verify_with_openpyxl(
+                input_path, shared_input_path, alignment_input_path, font_input_path),
             "xlsxwriter": create_xlsxwriter_reference(
                 work_dir / "reference-xlsxwriter-styles-number-formats.xlsx"),
             "xlsxwriter_alignment": create_xlsxwriter_alignment_reference(
                 work_dir / "reference-xlsxwriter-styles-alignment.xlsx"),
+            "xlsxwriter_fonts": create_xlsxwriter_font_reference(
+                work_dir / "reference-xlsxwriter-styles-fonts.xlsx"),
         },
     }
 

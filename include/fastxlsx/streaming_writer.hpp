@@ -89,14 +89,28 @@ struct CellAlignment {
     bool wrap_text = false;
 };
 
+/// Narrow streaming cell font metadata registered through CellStyle.
+///
+/// API mode: Streaming style metadata for new workbooks. The current font slice
+/// supports only bold and italic flags. It is serialized as workbook-level
+/// `xl/styles.xml` font metadata and does not imply font color, size, family,
+/// underline, rich text, theme handling, or existing-file style preservation.
+struct CellFont {
+    /// Writes OpenXML `<b/>` in the generated font record.
+    bool bold = false;
+
+    /// Writes OpenXML `<i/>` in the generated font record.
+    bool italic = false;
+};
+
 /// Narrow streaming cell style registered at workbook scope.
 ///
 /// API mode: Streaming style metadata for new workbooks. The current style
-/// slices support custom number formats and a narrow wrap-text alignment flag.
-/// Styles are copied into workbook state, serialized to `xl/styles.xml` during
-/// WorkbookWriter::close(), and referenced by per-cell `s` attributes. This
-/// does not create worksheet relationships, a worksheet DOM, a full cell
-/// matrix, or existing-file edits.
+/// slices support custom number formats, a narrow wrap-text alignment flag, and
+/// narrow bold/italic font flags. Styles are copied into workbook state,
+/// serialized to `xl/styles.xml` during WorkbookWriter::close(), and referenced
+/// by per-cell `s` attributes. This does not create worksheet relationships, a
+/// worksheet DOM, a full cell matrix, or existing-file edits.
 struct CellStyle {
     /// Custom Excel number format code. Empty means the style does not change
     /// number formatting.
@@ -106,6 +120,10 @@ struct CellStyle {
     /// supported; an empty optional or `wrap_text=false` contributes no style
     /// property.
     std::optional<CellAlignment> alignment;
+
+    /// Optional narrow font metadata. Only bold and italic are currently
+    /// supported; an empty optional or false flags contribute no style property.
+    std::optional<CellFont> font;
 };
 
 /// ARGB color written as an eight-digit OpenXML `rgb` value.
@@ -1069,11 +1087,12 @@ public:
     ///
     /// API mode: Streaming style metadata for new workbooks. The style is
     /// copied into workbook state and written to `xl/styles.xml` only when the
-    /// workbook is closed. The current slices support custom number formats and
-    /// wrap-text alignment; font, fill, border, full alignment, rich text,
-    /// conditional formatting, and existing-file style preservation remain
-    /// outside this API. Registering a style does not touch worksheet row XML
-    /// until a CellView carries the returned id through with_style().
+    /// workbook is closed. The current slices support custom number formats,
+    /// wrap-text alignment, and bold/italic font flags; fill, border, full
+    /// alignment, full font control, rich text, conditional formatting, and
+    /// existing-file style preservation remain outside this API. Registering a
+    /// style does not touch worksheet row XML until a CellView carries the
+    /// returned id through with_style().
     ///
     /// @throws FastXlsxError if the writer is uninitialized or closed, or the
     /// style contains no property supported by the current narrow slice.

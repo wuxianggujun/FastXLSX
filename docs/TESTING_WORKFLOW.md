@@ -65,14 +65,16 @@ string entry 时，检查 `xl/sharedStrings.xml`、content type override、workb
 relationship 和 worksheet `t="s"` 引用；如果只是启用了 `StringStrategy::SharedString`
 但没有字符串 cell，则应反向确认这些 sharedStrings package artifacts 都不存在。
 
-styles 检查要区分当前 P9 number-format / wrap-text alignment 切片和完整样式系统。使用
+styles 检查要区分当前 P9 number-format / wrap-text alignment / bold-italic font 切片和完整样式系统。使用
 `WorkbookWriter::add_style()` / `CellView::with_style()` 后，应检查 `xl/styles.xml`、
 styles content type override、workbook styles relationship、custom `numFmts`、
 `cellXfs` 默认/自定义 style 记录、wrap-text alignment 的 `applyAlignment="1"` /
-`<alignment wrapText="1"/>`、worksheet cell `s="N"` 引用、默认 style 不写
+`<alignment wrapText="1"/>`、bold/italic font 的 `<fonts count>`、`<b/>`、`<i/>`、
+`fontId` 和 `applyFont="1"`、worksheet cell `s="N"` 引用、默认 style 不写
 `s="0"`，以及 styles 不创建 worksheet `.rels`。alignment-only style 不应创建
 custom `numFmt`；number format + alignment 组合应复用相同 number format 的 custom
-`numFmtId`。sharedStrings + styles 共存时，
+`numFmtId`；font-only style 不应创建 custom `numFmt`；number format + bold 组合应复用
+相同 bold font 的 `fontId`。sharedStrings + styles 共存时，
 还要检查 workbook `.rels` 中 sharedStrings relationship 在 styles relationship 之前，
 并检查 styled shared string cell 同时写出 `s="N"` 和 `t="s"`。foreign `StyleId`
 失败路径必须确认在推进 row number、dimension、sharedStrings 或公式重算 metadata 前
@@ -509,21 +511,25 @@ py tools\verify_styles_number_formats.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx `
   --shared-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx `
   --alignment-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx `
+  --font-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx `
   --work-dir build\qa\styles-number-formats
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_styles_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx `
   -SharedPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx `
-  -AlignmentPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx
+  -AlignmentPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx `
+  -FontPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx
 ```
 
 Python helper 检查 FastXLSX package XML、`xl/styles.xml`、content types、workbook
 relationships、worksheet `s` attributes、custom number format XML escape、
-sharedStrings + styles relationship ordering、wrap-text alignment XML，并用
-`openpyxl` 核对 `NumberFormat` / `wrap_text` 语义；可用时还会创建 `XlsxWriter`
+sharedStrings + styles relationship ordering、wrap-text alignment XML 和 bold/italic
+font XML，并用 `openpyxl` 核对 `NumberFormat` / `wrap_text` / font flags 语义；可用时还会创建 `XlsxWriter`
 参考 workbook。Excel helper 只读打开 number-format、sharedStrings + styles 和
-wrap-text alignment 样例，核对值、公式、可见 NumberFormat 和 WrapText。两者都是本地
+wrap-text alignment / font 样例，核对值、公式、可见 NumberFormat、WrapText、Font.Bold
+和 Font.Italic。两者都是本地
 QA artifact 和兼容性验证入口，不是运行时依赖，也不进入默认 CI。当前样式范围只覆盖
-自定义 number format 和窄 wrap-text alignment；字体、填充、边框、完整对齐、date cell type、rich text、
+自定义 number format、窄 wrap-text alignment 和窄 bold/italic font；字体颜色/字号/名称/下划线、
+填充、边框、完整对齐、date cell type、rich text、
 dxf-backed conditional formatting、existing-file style preservation 和完整 Excel
 formatting parity 仍需单独任务和验证。
 

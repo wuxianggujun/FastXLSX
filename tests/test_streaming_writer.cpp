@@ -800,6 +800,119 @@ void test_streaming_writer_alignment_styles()
         "default style should not be serialized as s=\"0\" in alignment sample");
 }
 
+void test_streaming_writer_font_styles()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-styles-fonts.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+
+    fastxlsx::CellFont bold_font;
+    bold_font.bold = true;
+    fastxlsx::CellStyle bold_style_definition;
+    bold_style_definition.font = bold_font;
+    const auto bold_style = workbook.add_style(bold_style_definition);
+    const auto duplicate_bold_style = workbook.add_style(bold_style_definition);
+
+    fastxlsx::CellFont italic_font;
+    italic_font.italic = true;
+    fastxlsx::CellStyle italic_style_definition;
+    italic_style_definition.font = italic_font;
+    const auto italic_style = workbook.add_style(italic_style_definition);
+
+    fastxlsx::CellFont bold_italic_font;
+    bold_italic_font.bold = true;
+    bold_italic_font.italic = true;
+    fastxlsx::CellStyle bold_italic_style_definition;
+    bold_italic_style_definition.font = bold_italic_font;
+    const auto bold_italic_style = workbook.add_style(bold_italic_style_definition);
+
+    fastxlsx::CellStyle number_bold_style_definition {"0.0"};
+    number_bold_style_definition.font = bold_font;
+    const auto number_bold_style = workbook.add_style(number_bold_style_definition);
+
+    check(bold_style.value() == 1, "first font style id should be 1");
+    check(duplicate_bold_style.value() == 1, "duplicate bold style should reuse id");
+    check(italic_style.value() == 2, "italic style should be second style id");
+    check(bold_italic_style.value() == 3, "bold italic style should be third style id");
+    check(number_bold_style.value() == 4, "number plus bold style should be fourth style id");
+
+    auto sheet = workbook.add_worksheet("Fonts");
+    sheet.append_row({
+        fastxlsx::CellView::text("Bold"),
+        fastxlsx::CellView::text("Italic"),
+        fastxlsx::CellView::text("BoldItalic"),
+        fastxlsx::CellView::text("NumberBold"),
+        fastxlsx::CellView::text("Default"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("bold").with_style(bold_style),
+        fastxlsx::CellView::text("italic").with_style(italic_style),
+        fastxlsx::CellView::boolean(true).with_style(bold_italic_style),
+        fastxlsx::CellView::number(12.5).with_style(number_bold_style),
+        fastxlsx::CellView::text("plain"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "font styles xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "missing font styles part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "font styles should not create worksheet relationships");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="1">)",
+        "font sample should create only one custom number format");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="0.0"/>)",
+        "font sample custom number format mismatch");
+    check_contains(styles_xml, R"(<fonts count="4">)",
+        "font sample custom font count mismatch");
+    check_contains(styles_xml,
+        R"(<font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
+        "bold font XML mismatch");
+    check_contains(styles_xml,
+        R"(<font><i/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
+        "italic font XML mismatch");
+    check_contains(styles_xml,
+        R"(<font><b/><i/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
+        "bold italic font XML mismatch");
+    check_contains(styles_xml,
+        R"(<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "font cellXfs default style mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
+        "bold xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
+        "italic xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
+        "bold italic xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>)",
+        "number plus bold xf should reuse bold font id");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E2"/>)",
+        "font worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" s="1" t="inlineStr"><is><t>bold</t></is></c>)",
+        "bold styled text cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" s="2" t="inlineStr"><is><t>italic</t></is></c>)",
+        "italic styled text cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="C2" s="3" t="b"><v>1</v></c>)",
+        "bold italic styled boolean cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="D2" s="4"><v>12.5</v></c>)",
+        "number plus bold styled number cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="E2" t="inlineStr"><is><t>plain</t></is></c>)",
+        "default font sample cell mismatch");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "default style should not be serialized as s=\"0\" in font sample");
+}
+
 void test_streaming_writer_styles_with_shared_strings()
 {
     const auto output_path =
@@ -926,6 +1039,12 @@ void test_streaming_writer_invalid_style_registration()
             static_cast<void>(workbook.add_style(false_alignment_style));
         },
         "add_style should reject alignment metadata without a supported property");
+
+    fastxlsx::CellStyle false_font_style;
+    false_font_style.font = fastxlsx::CellFont {};
+    check_fastxlsx_error(
+        [&workbook, false_font_style] { static_cast<void>(workbook.add_style(false_font_style)); },
+        "add_style should reject font metadata without a supported property");
 
     workbook.add_worksheet("Registration").append_row({fastxlsx::CellView::text("done")});
     workbook.close();
@@ -4916,6 +5035,7 @@ int main()
         test_streaming_writer_phase3_metadata_structure();
         test_streaming_writer_number_format_styles();
         test_streaming_writer_alignment_styles();
+        test_streaming_writer_font_styles();
         test_streaming_writer_styles_with_shared_strings();
         test_streaming_writer_invalid_style_preserves_state();
         test_streaming_writer_foreign_style_collision_is_rejected();

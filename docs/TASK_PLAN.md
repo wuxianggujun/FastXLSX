@@ -25,7 +25,7 @@ obligations.
 - `docs/API_DESIGN_AND_DOCUMENTATION.md` requires public API documentation and
   forbids API convenience from sacrificing the streaming/performance path.
 - Current public API includes `Workbook`, `Worksheet`, `Cell`, `WorkbookWriter`,
-  `WorksheetWriter`, `CellView`, `StyleId`, `CellStyle`,
+  `WorksheetWriter`, `CellView`, `StyleId`, `CellAlignment`, `CellFont`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
 - Current public worksheet metadata API also includes `ArgbColor`,
   `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
@@ -76,11 +76,12 @@ obligations.
   workbook recalculation.
 - Streaming-only styles now have a P9 foundation:
   `WorkbookWriter::add_style(CellStyle)` registers workbook-local custom number
-  formats and narrow `CellAlignment::wrap_text` alignment metadata,
+  formats, narrow `CellAlignment::wrap_text` alignment metadata, and narrow
+  `CellFont::bold` / `CellFont::italic` font metadata,
   `CellView::with_style(StyleId)` writes cell `s="N"` references, and
   `WorkbookWriter::close()` emits `xl/styles.xml`, a styles content type
   override, and a workbook styles relationship when styles are registered. This
-  is not font/fill/border/full-alignment support, rich text, dxf-backed conditional
+  is not full-font/fill/border/full-alignment support, rich text, dxf-backed conditional
   formatting, date cell type, or existing-file style preservation. The current
   two-/three-color color scale, basic data bar, and basic 3Arrows icon set slices are worksheet metadata,
   not styles registry or `dxfs` support.
@@ -343,9 +344,10 @@ Tasks:
   surface expands.
 - Keep the current P9 style registry as the entry point for styles:
   workbook-local `StyleId`, `CellStyle::number_format`,
-  `CellStyle::alignment.wrap_text`, generated `xl/styles.xml`, and cell `s="N"`
+  `CellStyle::alignment.wrap_text`, `CellStyle::font` bold/italic flags,
+  generated `xl/styles.xml`, and cell `s="N"`
   references.
-- Add fonts, fills, borders, full alignment, rich text, and dxf-backed conditional
+- Add full font control, fills, borders, full alignment, rich text, and dxf-backed conditional
   formatting only as separate registry-backed slices with their own structure
   and Excel validation.
 - Decide formula calculation boundaries: write-only formula text, cached values,
@@ -363,9 +365,10 @@ Validation:
   of relationship/content-type side effects for these metadata-only features.
 - Current style structure tests cover `xl/styles.xml`, style ids, custom
   `numFmtId`, `numFmtId` reuse across style combinations, wrap-text alignment
-  `applyAlignment` / `<alignment wrapText="1"/>`, worksheet style references,
+  `applyAlignment` / `<alignment wrapText="1"/>`, bold/italic font records,
+  `fontId` reuse and `applyFont="1"`, worksheet style references,
   default `s="0"` omission, sharedStrings + styles coexistence, and invalid
-  foreign style id state hygiene. Future structure tests still need fonts/fills/borders/full alignment,
+  foreign style id state hygiene. Future structure tests still need full font control, fills/borders/full alignment,
   custom document properties, named ranges, and worksheet references when those
   features are implemented.
 - Public APIs have Doxygen comments stating mode, memory behavior, ordering,
@@ -1157,10 +1160,11 @@ Current facts:
   runtime dependencies or default CI requirements.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
   present on the in-memory and streaming new-workbook paths. P9 streaming
-  number-format and wrap-text alignment styles are now 基础 through workbook-local style ids,
-  `CellStyle::number_format`, `CellStyle::alignment.wrap_text`, generated
+  number-format、wrap-text alignment and bold/italic font styles are now 基础 through workbook-local style ids,
+  `CellStyle::number_format`, `CellStyle::alignment.wrap_text`,
+  `CellStyle::font`, generated
   `xl/styles.xml`, and cell `s="N"` references. Custom document properties,
-  named ranges, fonts/fills/borders/full alignment, rich formatting,
+  named ranges, full font control, fills/borders/full alignment, rich formatting,
   dxf-backed conditional formatting, date cell type, and
   existing-file style preservation are still planned work.
 - Local QA helpers now exist for document properties:
@@ -1170,13 +1174,14 @@ Current facts:
   `tools/verify_document_properties_excel.ps1` opens both workbooks read-only
   through Excel COM and verifies the smoke sheets, while treating XML/openpyxl
   as authoritative when Excel COM does not expose built-in properties.
-- Local QA helpers now exist for number-format and wrap-text alignment styles:
+- Local QA helpers now exist for number-format, wrap-text alignment, and bold/italic font styles:
   `tools/verify_styles_number_formats.py` checks FastXLSX package XML,
   `xl/styles.xml`, workbook relationships, worksheet `s="N"` references,
-  `openpyxl` number format / wrap-text semantics, and optional `XlsxWriter` reference
+  `openpyxl` number format / wrap-text / bold-italic semantics, and optional `XlsxWriter` reference
   creation; `tools/verify_styles_excel.ps1` opens the styles and
   sharedStrings+styles samples plus the wrap-text alignment sample read-only
-  through Excel COM and checks visible NumberFormat, WrapText, values, and formulas.
+  through Excel COM and checks visible NumberFormat, WrapText, Font.Bold,
+  Font.Italic, values, and formulas.
 
 Tasks:
 - Extend focused structure tests and Excel visual samples when metadata behavior

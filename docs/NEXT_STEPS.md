@@ -477,7 +477,7 @@ Do not claim:
 
 ### P8 - Phase 3 Metadata Tests
 
-Status: basic focused structure and local Excel validation exists for the
+Status: basic focused structure and fixed local QA helpers exist for the
 current streaming metadata skeleton. Continue when this surface changes or when
 styles/formula calculation work begins.
 
@@ -491,6 +491,9 @@ Do:
   sizing, frozen panes, auto filters, and merged cells. Current local Excel COM
   validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`.
+- Keep `tools/verify_phase3_metadata.py` and
+  `tools/verify_phase3_metadata_excel.ps1` current when this sample shape
+  changes. These helpers are local QA only; do not add them to default CTest/CI.
 - Document formula boundaries: write-only formula text unless cached values,
   calculation mode, and calc chain are implemented. Current formula cells only
   add `<calcPr calcId="124519" fullCalcOnLoad="1"/>` to request recalculation on
@@ -501,6 +504,7 @@ Accept when:
   metadata surface.
 - Python XLSX reference checks such as `openpyxl` are recorded when workbook
   calculation metadata changes.
+- The Phase 3 metadata helper report is refreshed when the sample changes.
 - Docs still mark full Phase 3 as planned.
 
 Do not claim:

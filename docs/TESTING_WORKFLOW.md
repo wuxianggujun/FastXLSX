@@ -247,6 +247,23 @@ auto filter `B2:D4`、merge areas `A3:B3` / `C4:D4`、`SplitRow=2` 和
 `SplitColumn=3`。这不代表公式计算、cached values、calcChain、styles 或完整
 Phase 3 已完成。
 
+固定本地 QA 入口：
+
+```powershell
+py tools\verify_phase3_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx `
+  --work-dir build\qa\phase3-metadata
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_phase3_metadata_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+```
+
+Python helper 会检查 package entries、side-effect absence、worksheet XML、`calcPr`、
+formula XML escape、row height、column width records、frozen pane、auto filter、
+merge ranges、suffix ordering，并用 `openpyxl` 核对 reader-visible semantics。
+Excel helper 只读打开 workbook，核对可见公式、row height、列宽可见变化、
+冻结窗格、自动筛选和合并区域。Excel COM 会对 row height / column width 做显示单位
+换算；精确 XML 数值仍以拆包结构测试为准。
+
 当前 document properties 样例由 `fastxlsx.unit` 和 `fastxlsx.streaming` 在默认
 preset 下生成，推荐路径分别是
 `build/windows-nmake-release/tests/fastxlsx-document-properties.xlsx` 和

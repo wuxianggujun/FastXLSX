@@ -56,7 +56,9 @@ relationship/content type side effects；公式 cell 会在 workbook XML 写
 `<calcPr calcId="124519" fullCalcOnLoad="1"/>` 请求打开后重算，但仍不生成
 `xl/calcChain.xml`。本机 Excel COM 已验证
 `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx` 可打开并显示
-公式、行高、列宽、自动筛选、合并区域和冻结窗格。这些仍是写入骨架能力，不等同
+公式、行高、列宽、自动筛选、合并区域和冻结窗格；当前固定本地 QA 入口是
+`tools/verify_phase3_metadata.py` 和 `tools/verify_phase3_metadata_excel.ps1`。
+这些仍是写入骨架能力，不等同
 公式计算、cached values、calcChain、styles 或完整 Phase 3。
 
 当前 sharedStrings 基础：

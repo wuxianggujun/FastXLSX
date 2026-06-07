@@ -312,8 +312,8 @@ Validation:
 
 ### M5 - Phase 3 Metadata and Styles
 
-Status: foundation exists for some worksheet metadata; focused structure and
-local Excel validation now cover the current write skeleton. Full Phase 3
+Status: foundation exists for some worksheet metadata; focused structure tests
+and fixed local QA helpers now cover the current write skeleton. Full Phase 3
 remains planned.
 
 Do this after the streaming writer boundaries are clear.
@@ -1084,6 +1084,13 @@ Current facts:
   `SplitRow=2` / `SplitColumn=3` frozen panes. Local `openpyxl` 3.1.2 reads
   `calcId=124519` and `fullCalcOnLoad=True`, and the generated package still
   does not contain `xl/calcChain.xml`.
+- Local QA helpers now exist for that sample:
+  `tools/verify_phase3_metadata.py` checks package XML, side-effect absence,
+  formula XML escape, metadata ordering and `openpyxl` semantics; and
+  `tools/verify_phase3_metadata_excel.ps1` opens the workbook read-only through
+  Excel COM to check visible formulas, row height, column width visibility,
+  auto filter, merge areas and frozen panes. They are local QA tools, not
+  runtime dependencies or default CI requirements.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
   present on the in-memory and streaming new-workbook paths. Styles, custom
   document properties, named ranges, style registries, and rich formatting are

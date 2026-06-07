@@ -453,8 +453,10 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   `SplitRow=2` / `SplitColumn=3` frozen panes。公式 cell 会在 `xl/workbook.xml`
   写出 `<calcPr calcId="124519" fullCalcOnLoad="1"/>` 请求 Excel 打开后重算；
   本机 `openpyxl` 3.1.2 已读到 `calcId=124519` 和 `fullCalcOnLoad=True`，并确认
-  没有 `xl/calcChain.xml`。不要把这扩展成公式计算、cached values、calcChain、
-  styles 或完整 Phase 3。
+  没有 `xl/calcChain.xml`。当前本地 QA 入口是 `tools/verify_phase3_metadata.py`
+  和 `tools/verify_phase3_metadata_excel.ps1`，分别做拆包 XML / `openpyxl` 检查和
+  Excel COM 只读可视化检查；不要把这扩展成公式计算、cached values、calcChain、
+  styles、默认 CI 强依赖或完整 Phase 3。
 - 当前 `fastxlsx.streaming` 空行 dimension 推荐 preset 输出样例为
   `build/windows-nmake-release/tests/fastxlsx-streaming-empty-row-dimensions.xlsx`。
   结构测试确认无行 worksheet 和只含空行 worksheet 的 `<dimension ref="A1"/>`，

@@ -642,6 +642,14 @@ Validation:
   `oneCell` -> `Placement=2`, `absolute` -> `Placement=3`, and default
   `twoCell` -> `Placement=1`, plus first-image marker offsets mapped to
   `Shape.Left` / `Top` / `Width` / `Height` point geometry.
+- Image QA helpers now also cover the basic image sample and mixed-object
+  relationship sample: `tools/verify_image_metadata.py` accepts `--basic-input`
+  and `--mixed-object-input` to check package XML, media/drawing parts,
+  worksheet/drawing relationships, table/hyperlink coexistence, and `openpyxl`
+  reader-visible semantics; `tools/verify_image_metadata_excel.ps1` accepts
+  `-BasicPath` and `-MixedObjectPath` to check shape / hyperlink / table counts
+  and anchors in local Excel COM. `openpyxl` may skip JPEG image loading, so
+  JPEG media/drawing assertions remain XML/Excel-COM based.
 - Package relationship and content type checks remain required for every object type.
 - Excel visual verification remains required for every object type.
 - Preservation tests for chart/VBA passthrough before any edit claims.

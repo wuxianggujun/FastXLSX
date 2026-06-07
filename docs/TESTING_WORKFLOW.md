@@ -223,18 +223,34 @@ shape、`Plain` sheet 没有 shape，并记录 Excel 报告的 `TopLeftCell` /
 当前 streaming image metadata 样例由 `fastxlsx.streaming` 在
 `windows-nmake-release` preset 下生成，推荐路径是
 `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`。本机
-Excel COM 验证可以运行：
+image QA 还会复用基础图片样例
+`build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx` 和混合对象关系样例
+`build/windows-nmake-release/tests/fastxlsx-streaming-mixed-object-rels.xlsx`。本机
+XML / `openpyxl` / Excel COM 验证可以运行：
 
 ```powershell
+py tools\verify_image_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
+  --basic-input build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
+  --mixed-object-input build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
+  --work-dir build\qa\image-metadata
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
-  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
+  -BasicPath build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
+  -MixedObjectPath build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx
 ```
 
-该脚本只读打开 workbook，核对 `ImageMetadata` sheet 的 3 个 shapes、自定义
+Python helper 会拆包检查 metadata drawing XML、basic media/drawing/table/hyperlink
+关系、mixed-object owner-local relationship ids，并用 `openpyxl` 核对 workbook、
+table 和 hyperlink semantics；`openpyxl` 可能跳过 JPEG 图片读取，因此 mixed-object
+图片数量以拆包 XML 和 Excel COM 为准。Excel helper 只读打开 workbook，核对
+`ImageMetadata` sheet 的 3 个 shapes、自定义
 `NamedOnly` 名称、默认 `Picture 3` 名称、首图 `AlternativeText`、`editAs` 到
 Excel `Placement` 的映射，以及首图 `from_offset` / `to_offset` 对 `Shape.Left` /
-`Top` / `Width` / `Height` 的 EMU-to-points 偏移。Excel COM 当前会把 drawing XML 的
-`descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
+`Top` / `Width` / `Height` 的 EMU-to-points 偏移；同时核对基础图片样例的
+`Images` / `SecondImage` / `Plain` shape counts、hyperlink/table counts 和 anchors，
+以及 mixed-object 样例的 hyperlinks / shapes / tables 数量。Excel COM 当前会把
+drawing XML 的 `descr` 暴露为 `Shape.AlternativeText`；结构真相仍以拆包后的
 `xl/drawings/drawing*.xml` 为准。
 
 当前 streaming Phase 3 metadata 样例由 `fastxlsx.streaming` 在默认 preset 下生成，

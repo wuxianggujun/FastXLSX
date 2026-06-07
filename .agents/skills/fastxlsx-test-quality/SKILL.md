@@ -333,7 +333,10 @@ owner 和 drawing owner 的 relationship id 重置。
 `build/windows-nmake-release/tests/fastxlsx-streaming-image-metadata.xlsx`；
 本地 QA 可运行 `tools/verify_image_metadata.py` 做 package XML / openpyxl /
 XlsxWriter 检查，并运行 `tools/verify_image_metadata_excel.ps1` 做 Excel COM
-shape name / AlternativeText / Placement / marker-offset geometry 检查。
+shape name / AlternativeText / Placement / marker-offset geometry 检查。当前这两个
+helper 还支持 basic image 和 mixed-object relationship 样例参数：
+`--basic-input` / `-BasicPath` 与 `--mixed-object-input` / `-MixedObjectPath`；`openpyxl`
+可能跳过 JPEG 图片读取，JPEG media/drawing 关系以拆包 XML 和 Excel COM 为准。
 
 Anchor 测试要覆盖起始/结束单元格、two-cell marker EMU offset、零尺寸、负尺寸、
 越界 anchor、负 offset 和超出 OpenXML coordinate 上界的 offset；不要为了 anchor

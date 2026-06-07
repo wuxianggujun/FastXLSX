@@ -1,5 +1,7 @@
 param(
-    [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx"
+    [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx",
+    [string]$BasicPath = "build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx",
+    [string]$MixedObjectPath = "build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx"
 )
 
 $ErrorActionPreference = "Stop"
@@ -78,6 +80,108 @@ function Get-ShapeByAlternativeText {
     return $null
 }
 
+function Verify-BasicImageWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $images = $null
+    $second = $null
+    $plain = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $images = $workbook.Worksheets.Item("Images")
+        $second = $workbook.Worksheets.Item("SecondImage")
+        $plain = $workbook.Worksheets.Item("Plain")
+
+        Assert-Equal $images.Shapes.Count 1 "Images shape count"
+        Assert-Equal $second.Shapes.Count 1 "SecondImage shape count"
+        Assert-Equal $plain.Shapes.Count 0 "Plain shape count"
+        Assert-Equal $images.Hyperlinks.Count 1 "Images hyperlink count"
+        Assert-Equal $images.ListObjects.Count 1 "Images table count"
+
+        $firstShape = $images.Shapes.Item(1)
+        $secondShape = $second.Shapes.Item(1)
+        Assert-Equal $firstShape.TopLeftCell.Address($false, $false) "C1" "Images shape top-left"
+        Assert-Equal $firstShape.BottomRightCell.Address($false, $false) "F5" "Images shape bottom-right"
+        Assert-Equal $secondShape.TopLeftCell.Address($false, $false) "A1" "SecondImage shape top-left"
+        Assert-Equal $secondShape.BottomRightCell.Address($false, $false) "B2" "SecondImage shape bottom-right"
+
+        Write-Host "OK: Excel opened basic image workbook read-only: $resolved"
+        Write-Host "OK: Images/SecondImage/Plain shape counts, hyperlink count, table count, and anchors verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($plain, $second, $images, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-MixedObjectWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $objects = $null
+    $moreObjects = $null
+    $plain = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $objects = $workbook.Worksheets.Item("Objects")
+        $moreObjects = $workbook.Worksheets.Item("MoreObjects")
+        $plain = $workbook.Worksheets.Item("Plain")
+
+        Assert-Equal $objects.Hyperlinks.Count 2 "Objects hyperlink count"
+        Assert-Equal $objects.Shapes.Count 2 "Objects shape count"
+        Assert-Equal $objects.ListObjects.Count 2 "Objects table count"
+        Assert-Equal $moreObjects.Hyperlinks.Count 1 "MoreObjects hyperlink count"
+        Assert-Equal $moreObjects.Shapes.Count 1 "MoreObjects shape count"
+        Assert-Equal $moreObjects.ListObjects.Count 1 "MoreObjects table count"
+        Assert-Equal $plain.Hyperlinks.Count 0 "Plain hyperlink count"
+        Assert-Equal $plain.Shapes.Count 0 "Plain shape count"
+        Assert-Equal $plain.ListObjects.Count 0 "Plain table count"
+
+        Assert-Equal $objects.Shapes.Item(1).TopLeftCell.Address($false, $false) "C1" `
+            "Objects first shape top-left"
+        Assert-Equal $objects.Shapes.Item(1).BottomRightCell.Address($false, $false) "D3" `
+            "Objects first shape bottom-right"
+        Assert-Equal $objects.Shapes.Item(2).TopLeftCell.Address($false, $false) "C3" `
+            "Objects second shape top-left"
+        Assert-Equal $objects.Shapes.Item(2).BottomRightCell.Address($false, $false) "D5" `
+            "Objects second shape bottom-right"
+        Assert-Equal $moreObjects.Shapes.Item(1).TopLeftCell.Address($false, $false) "C1" `
+            "MoreObjects shape top-left"
+        Assert-Equal $moreObjects.Shapes.Item(1).BottomRightCell.Address($false, $false) "D3" `
+            "MoreObjects shape bottom-right"
+
+        Write-Host "OK: Excel opened mixed-object workbook read-only: $resolved"
+        Write-Host "OK: Objects/MoreObjects/Plain hyperlink, shape, table counts and anchors verified"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($plain, $moreObjects, $objects, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 $resolved = (Resolve-Path -LiteralPath $Path).Path
 $excel = $null
 $workbook = $null
@@ -147,6 +251,9 @@ try {
     foreach ($summary in $shapeSummaries) {
         Write-Host "OK: Shape $summary"
     }
+
+    Verify-BasicImageWorkbook -Excel $excel -Path $BasicPath
+    Verify-MixedObjectWorkbook -Excel $excel -Path $MixedObjectPath
 }
 finally {
     if ($null -ne $workbook) {

@@ -516,12 +516,16 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   会在同一 worksheet 的三个 anchors 中写 `editAs="oneCell"`、`editAs="absolute"`、
   默认 `editAs="twoCell"`、自定义 `xdr:cNvPr name`、`descr`、XML attribute escape、
   空 description 省略和默认 `Picture N` 名称。本机 `tools/verify_image_metadata.py`
-  已拆包检查 drawing XML，并用 `openpyxl` / `XlsxWriter` 做本地 QA；
-  `tools/verify_image_metadata_excel.ps1` 已用 Excel COM 检查 shape name、
-  AlternativeText、`Placement` 映射和首图 marker offset 对 `Shape.Left` / `Top` /
-  `Width` / `Height` 的 EMU-to-points 几何影响，其中 `oneCell` 映射为 `2`、
-  `absolute` 映射为 `3`、默认 `twoCell` 映射为 `1`。该测试确认 metadata 不新增额外
-  drawing part、worksheet relationships、content types 或 media part 语义。
+  已拆包检查 drawing XML，并用 `openpyxl` / `XlsxWriter` 做本地 QA；该 helper 现在
+  还可通过 `--basic-input` 检查 `fastxlsx-streaming-images.xlsx`，并通过
+  `--mixed-object-input` 检查 `fastxlsx-streaming-mixed-object-rels.xlsx` 的 media /
+  drawing / worksheet rels / table / hyperlink 关系。`tools/verify_image_metadata_excel.ps1`
+  已用 Excel COM 检查 shape name、AlternativeText、`Placement` 映射和首图 marker
+  offset 对 `Shape.Left` / `Top` / `Width` / `Height` 的 EMU-to-points 几何影响，
+  也会核对基础图片和 mixed-object 样例的 shape / hyperlink / table counts 与 anchors。
+  `openpyxl` 可能跳过 JPEG 图片读取；JPEG media/drawing 关系以拆包 XML 和 Excel COM
+  为准。该测试确认 metadata 不新增额外 drawing part、worksheet relationships、
+  content types 或 media part 语义。
 - 当前默认 preset 还覆盖多对象 relationship id 回归测试：同一 worksheet
   内多个 external hyperlink、一个 drawing、多个 table 共享 worksheet owner-local
   `rId` 序列，第二个 worksheet 重新从 `rId1` 计数，drawing `.rels` 内图片关系也按

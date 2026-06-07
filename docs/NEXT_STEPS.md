@@ -870,6 +870,12 @@ Stages:
      uses `tools/verify_image_metadata.py` for XML/openpyxl/XlsxWriter checks
      and `tools/verify_image_metadata_excel.ps1` for Excel COM shape name and
      `AlternativeText` / `Placement` / marker-offset geometry checks.
+     The same helpers now accept `--basic-input` / `-BasicPath` for
+     `fastxlsx-streaming-images.xlsx` and `--mixed-object-input` /
+     `-MixedObjectPath` for `fastxlsx-streaming-mixed-object-rels.xlsx`, covering
+     basic media/drawing relationships and mixed hyperlink/drawing/table
+     owner-local relationship ids. `openpyxl` may skip JPEG image loading, so
+     XML and Excel COM remain authoritative for JPEG media/drawing counts.
    - When XML structure or Excel repair behavior is unclear, generate an
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.

@@ -12,6 +12,7 @@ import argparse
 import json
 import sys
 import tempfile
+import warnings
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,10 @@ def read_zip_bytes(path: Path, name: str) -> bytes:
 def zip_names(path: Path) -> set[str]:
     with zipfile.ZipFile(path) as archive:
         return set(archive.namelist())
+
+
+def count(text: str, fragment: str) -> int:
+    return text.count(fragment)
 
 
 def relationship_count(xml: str) -> int:
@@ -204,7 +209,7 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
     }
 
 
-def verify_with_openpyxl(path: Path) -> dict[str, Any]:
+def verify_metadata_with_openpyxl(path: Path) -> dict[str, Any]:
     try:
         import openpyxl  # type: ignore
     except ModuleNotFoundError:
@@ -220,6 +225,279 @@ def verify_with_openpyxl(path: Path) -> dict[str, Any]:
             "status": "opened",
             "sheetnames": workbook.sheetnames,
             "image_count": len(images),
+        }
+    finally:
+        workbook.close()
+
+
+def verify_basic_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "xl/media/image1.png",
+        "xl/media/image2.png",
+        "xl/drawings/drawing1.xml",
+        "xl/drawings/drawing2.xml",
+        "xl/drawings/_rels/drawing1.xml.rels",
+        "xl/drawings/_rels/drawing2.xml.rels",
+        "xl/worksheets/_rels/sheet1.xml.rels",
+        "xl/worksheets/_rels/sheet2.xml.rels",
+        "xl/tables/table1.xml",
+    ]
+    for name in required:
+        require(name in names, f"basic image sample missing package entry: {name}")
+    require("xl/worksheets/_rels/sheet3.xml.rels" not in names,
+            "basic image plain sheet should not create worksheet relationships")
+
+    content_types = read_zip_text(path, "[Content_Types].xml")
+    require('<Default Extension="png" ContentType="image/png"/>' in content_types,
+            "basic image PNG content type default missing")
+    require('/xl/drawings/drawing1.xml' in content_types,
+            "basic image first drawing content type missing")
+    require('/xl/drawings/drawing2.xml' in content_types,
+            "basic image second drawing content type missing")
+
+    first_sheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require(
+        '</sheetData><hyperlinks><hyperlink ref="A2" r:id="rId1"/></hyperlinks>'
+        '<drawing r:id="rId2"/><tableParts count="1"><tablePart r:id="rId3"/></tableParts></worksheet>'
+        in first_sheet_xml,
+        "basic image first worksheet suffix order mismatch",
+    )
+
+    first_sheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
+    require(relationship_count(first_sheet_rels) == 3,
+            "basic image first worksheet relationship count mismatch")
+    require('Id="rId1"' in first_sheet_rels and 'Target="https://example.com/items/widget"' in first_sheet_rels,
+            "basic image hyperlink relationship mismatch")
+    require('Id="rId2"' in first_sheet_rels and 'Target="../drawings/drawing1.xml"' in first_sheet_rels,
+            "basic image drawing relationship mismatch")
+    require('Id="rId3"' in first_sheet_rels and 'Target="../tables/table1.xml"' in first_sheet_rels,
+            "basic image table relationship mismatch")
+
+    first_drawing_xml = read_zip_text(path, "xl/drawings/drawing1.xml")
+    require(count(first_drawing_xml, "<xdr:twoCellAnchor") == 1,
+            "basic image first drawing anchor count mismatch")
+    require("<xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row>" in first_drawing_xml,
+            "basic image first drawing from marker mismatch")
+    require("<xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row>" in first_drawing_xml,
+            "basic image first drawing to marker mismatch")
+    require('<xdr:cNvPr id="1" name="Picture 1"/>' in first_drawing_xml,
+            "basic image first picture name mismatch")
+
+    first_drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing1.xml.rels")
+    require(relationship_count(first_drawing_rels) == 1,
+            "basic image first drawing relationship count mismatch")
+    require('Target="../media/image1.png"' in first_drawing_rels,
+            "basic image first drawing media target mismatch")
+
+    second_sheet_xml = read_zip_text(path, "xl/worksheets/sheet2.xml")
+    require('</sheetData><drawing r:id="rId1"/></worksheet>' in second_sheet_xml,
+            "basic image second worksheet drawing relationship id mismatch")
+    second_sheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet2.xml.rels")
+    require(relationship_count(second_sheet_rels) == 1,
+            "basic image second worksheet relationship count mismatch")
+    require('Id="rId1"' in second_sheet_rels and 'Target="../drawings/drawing2.xml"' in second_sheet_rels,
+            "basic image second worksheet drawing relationship mismatch")
+    second_drawing_xml = read_zip_text(path, "xl/drawings/drawing2.xml")
+    require('<xdr:cNvPr id="2" name="Picture 2"/>' in second_drawing_xml,
+            "basic image second picture name mismatch")
+    second_drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing2.xml.rels")
+    require('Target="../media/image2.png"' in second_drawing_rels,
+            "basic image second drawing media target mismatch")
+
+    return {
+        "verified_entries": required,
+        "sheets": {
+            "Images": {"shapes": 1, "hyperlinks": 1, "tables": 1},
+            "SecondImage": {"shapes": 1},
+            "Plain": {"shapes": 0},
+        },
+    }
+
+
+def verify_basic_with_openpyxl(path: Path) -> dict[str, Any]:
+    try:
+        import openpyxl  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Images", "SecondImage", "Plain"],
+                f"basic image sheet names mismatch: {workbook.sheetnames!r}")
+        images = workbook["Images"]
+        second = workbook["SecondImage"]
+        plain = workbook["Plain"]
+        require(len(getattr(images, "_images", [])) == 1, "basic Images image count mismatch")
+        require(len(getattr(second, "_images", [])) == 1, "basic SecondImage image count mismatch")
+        require(len(getattr(plain, "_images", [])) == 0, "basic Plain image count mismatch")
+        hyperlink = images["A2"].hyperlink
+        require(hyperlink is not None and hyperlink.target == "https://example.com/items/widget",
+                "basic Images A2 hyperlink target mismatch")
+        require(list(images.tables.keys()) == ["ImageTable"],
+                f"basic Images table names mismatch: {list(images.tables.keys())!r}")
+        return {
+            "status": "opened",
+            "sheetnames": workbook.sheetnames,
+            "image_counts": {
+                "Images": len(getattr(images, "_images", [])),
+                "SecondImage": len(getattr(second, "_images", [])),
+                "Plain": len(getattr(plain, "_images", [])),
+            },
+            "images_a2_hyperlink": hyperlink.target,
+            "images_tables": list(images.tables.keys()),
+        }
+    finally:
+        workbook.close()
+
+
+def verify_mixed_object_package(path: Path) -> dict[str, Any]:
+    names = zip_names(path)
+    required = [
+        "xl/media/image1.png",
+        "xl/media/image2.jpg",
+        "xl/media/image3.png",
+        "xl/drawings/drawing1.xml",
+        "xl/drawings/drawing2.xml",
+        "xl/drawings/_rels/drawing1.xml.rels",
+        "xl/drawings/_rels/drawing2.xml.rels",
+        "xl/tables/table1.xml",
+        "xl/tables/table2.xml",
+        "xl/tables/table3.xml",
+        "xl/worksheets/_rels/sheet1.xml.rels",
+        "xl/worksheets/_rels/sheet2.xml.rels",
+    ]
+    for name in required:
+        require(name in names, f"mixed object sample missing package entry: {name}")
+    require("xl/drawings/drawing3.xml" not in names,
+            "mixed object plain sheet should not create drawing3.xml")
+    require("xl/worksheets/_rels/sheet3.xml.rels" not in names,
+            "mixed object plain sheet should not create worksheet relationships")
+
+    content_types = read_zip_text(path, "[Content_Types].xml")
+    require('<Default Extension="png" ContentType="image/png"/>' in content_types,
+            "mixed object PNG content type default missing")
+    require('<Default Extension="jpg" ContentType="image/jpeg"/>' in content_types,
+            "mixed object JPG content type default missing")
+
+    first_sheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require(
+        '</sheetData><hyperlinks><hyperlink ref="A2" r:id="rId1"/>'
+        '<hyperlink ref="B2" r:id="rId2"/></hyperlinks><drawing r:id="rId3"/>'
+        '<tableParts count="2"><tablePart r:id="rId4"/><tablePart r:id="rId5"/></tableParts></worksheet>'
+        in first_sheet_xml,
+        "mixed object first worksheet relationship order mismatch",
+    )
+    first_sheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet1.xml.rels")
+    require(relationship_count(first_sheet_rels) == 5,
+            "mixed object first worksheet relationship count mismatch")
+    for fragment in [
+        ('rId1', 'Target="https://example.com/widget"'),
+        ('rId2', 'Target="https://example.com/docs"'),
+        ('rId3', 'Target="../drawings/drawing1.xml"'),
+        ('rId4', 'Target="../tables/table1.xml"'),
+        ('rId5', 'Target="../tables/table2.xml"'),
+    ]:
+        require(f'Id="{fragment[0]}"' in first_sheet_rels and fragment[1] in first_sheet_rels,
+                f"mixed object first worksheet relationship {fragment[0]} mismatch")
+
+    first_drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing1.xml.rels")
+    require(relationship_count(first_drawing_rels) == 2,
+            "mixed object first drawing relationship count mismatch")
+    require('Id="rId1"' in first_drawing_rels and 'Target="../media/image1.png"' in first_drawing_rels,
+            "mixed object first drawing PNG relationship mismatch")
+    require('Id="rId2"' in first_drawing_rels and 'Target="../media/image2.jpg"' in first_drawing_rels,
+            "mixed object first drawing JPEG relationship mismatch")
+    require(count(read_zip_text(path, "xl/drawings/drawing1.xml"), "<xdr:twoCellAnchor") == 2,
+            "mixed object first drawing anchor count mismatch")
+
+    second_sheet_xml = read_zip_text(path, "xl/worksheets/sheet2.xml")
+    require(
+        '</sheetData><hyperlinks><hyperlink ref="A2" r:id="rId1"/></hyperlinks>'
+        '<drawing r:id="rId2"/><tableParts count="1"><tablePart r:id="rId3"/></tableParts></worksheet>'
+        in second_sheet_xml,
+        "mixed object second worksheet relationship order mismatch",
+    )
+    second_sheet_rels = read_zip_text(path, "xl/worksheets/_rels/sheet2.xml.rels")
+    require(relationship_count(second_sheet_rels) == 3,
+            "mixed object second worksheet relationship count mismatch")
+    for fragment in [
+        ('rId1', 'Target="https://example.com/gadget"'),
+        ('rId2', 'Target="../drawings/drawing2.xml"'),
+        ('rId3', 'Target="../tables/table3.xml"'),
+    ]:
+        require(f'Id="{fragment[0]}"' in second_sheet_rels and fragment[1] in second_sheet_rels,
+                f"mixed object second worksheet relationship {fragment[0]} mismatch")
+    second_drawing_rels = read_zip_text(path, "xl/drawings/_rels/drawing2.xml.rels")
+    require(relationship_count(second_drawing_rels) == 1,
+            "mixed object second drawing relationship count mismatch")
+    require('Id="rId1"' in second_drawing_rels and 'Target="../media/image3.png"' in second_drawing_rels,
+            "mixed object second drawing relationship id should reset")
+
+    return {
+        "verified_entries": required,
+        "relationship_model": "owner-local worksheet and drawing relationship ids",
+    }
+
+
+def verify_mixed_object_with_openpyxl(path: Path) -> dict[str, Any]:
+    try:
+        import openpyxl  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Objects", "MoreObjects", "Plain"],
+                f"mixed object sheet names mismatch: {workbook.sheetnames!r}")
+        objects = workbook["Objects"]
+        more = workbook["MoreObjects"]
+        plain = workbook["Plain"]
+        require(objects["A2"].hyperlink is not None
+                and objects["A2"].hyperlink.target == "https://example.com/widget",
+                "mixed object Objects A2 hyperlink mismatch")
+        require(objects["B2"].hyperlink is not None
+                and objects["B2"].hyperlink.target == "https://example.com/docs",
+                "mixed object Objects B2 hyperlink mismatch")
+        require(more["A2"].hyperlink is not None
+                and more["A2"].hyperlink.target == "https://example.com/gadget",
+                "mixed object MoreObjects A2 hyperlink mismatch")
+        require(list(objects.tables.keys()) == ["ObjectTableOne", "ObjectTableTwo"],
+                f"mixed object Objects table names mismatch: {list(objects.tables.keys())!r}")
+        require(list(more.tables.keys()) == ["ObjectTableThree"],
+                f"mixed object MoreObjects table names mismatch: {list(more.tables.keys())!r}")
+        require(list(plain.tables.keys()) == [], "mixed object Plain should not expose tables")
+        require(len(getattr(plain, "_images", [])) == 0,
+                "mixed object Plain should not expose images")
+        return {
+            "status": "opened",
+            "sheetnames": workbook.sheetnames,
+            "image_counts_observed_by_openpyxl": {
+                "Objects": len(getattr(objects, "_images", [])),
+                "MoreObjects": len(getattr(more, "_images", [])),
+                "Plain": len(getattr(plain, "_images", [])),
+            },
+            "tables": {
+                "Objects": list(objects.tables.keys()),
+                "MoreObjects": list(more.tables.keys()),
+                "Plain": list(plain.tables.keys()),
+            },
+            "hyperlinks": {
+                "Objects!A2": objects["A2"].hyperlink.target,
+                "Objects!B2": objects["B2"].hyperlink.target,
+                "MoreObjects!A2": more["A2"].hyperlink.target,
+            },
+            "warnings": [
+                str(item.message)
+                for item in caught_warnings
+                if "image" in str(item.message).lower()
+            ],
+            "note": (
+                "openpyxl may skip JPEG image loading; package XML checks remain "
+                "authoritative for media and drawing relationship counts."
+            ),
         }
     finally:
         workbook.close()
@@ -258,6 +536,18 @@ def main() -> int:
         help="FastXLSX image metadata workbook to verify.",
     )
     parser.add_argument(
+        "--basic-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-images.xlsx"),
+        help="FastXLSX basic image workbook to verify.",
+    )
+    parser.add_argument(
+        "--mixed-object-input",
+        type=Path,
+        default=Path("build/windows-nmake-release/tests/fastxlsx-streaming-mixed-object-rels.xlsx"),
+        help="FastXLSX mixed object relationship workbook to verify.",
+    )
+    parser.add_argument(
         "--work-dir",
         type=Path,
         default=Path("build/qa/image-metadata"),
@@ -266,12 +556,21 @@ def main() -> int:
     args = parser.parse_args()
 
     input_path = args.input.resolve()
+    basic_input_path = args.basic_input.resolve()
+    mixed_object_input_path = args.mixed_object_input.resolve()
     work_dir = args.work_dir.resolve()
     require(input_path.exists(), f"input workbook does not exist: {input_path}")
+    require(basic_input_path.exists(), f"basic input workbook does not exist: {basic_input_path}")
+    require(mixed_object_input_path.exists(),
+            f"mixed-object input workbook does not exist: {mixed_object_input_path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
     package_report = verify_fastxlsx_package(input_path)
-    openpyxl_report = verify_with_openpyxl(input_path)
+    openpyxl_report = verify_metadata_with_openpyxl(input_path)
+    basic_package_report = verify_basic_package(basic_input_path)
+    basic_openpyxl_report = verify_basic_with_openpyxl(basic_input_path)
+    mixed_package_report = verify_mixed_object_package(mixed_object_input_path)
+    mixed_openpyxl_report = verify_mixed_object_with_openpyxl(mixed_object_input_path)
 
     with tempfile.TemporaryDirectory(dir=work_dir) as temp_dir:
         media_file = extract_reference_media(input_path, Path(temp_dir))
@@ -279,11 +578,27 @@ def main() -> int:
             media_file, work_dir / "reference-xlsxwriter-image-metadata.xlsx")
 
     report = {
-        "fastxlsx_input": str(input_path),
-        "fastxlsx_package": package_report,
-        "xlsx_libraries": {
-            "openpyxl": openpyxl_report,
-            "xlsxwriter": xlsxwriter_report,
+        "metadata": {
+            "fastxlsx_input": str(input_path),
+            "fastxlsx_package": package_report,
+            "xlsx_libraries": {
+                "openpyxl": openpyxl_report,
+                "xlsxwriter": xlsxwriter_report,
+            },
+        },
+        "basic": {
+            "fastxlsx_input": str(basic_input_path),
+            "fastxlsx_package": basic_package_report,
+            "xlsx_libraries": {
+                "openpyxl": basic_openpyxl_report,
+            },
+        },
+        "mixed_object_relationships": {
+            "fastxlsx_input": str(mixed_object_input_path),
+            "fastxlsx_package": mixed_package_report,
+            "xlsx_libraries": {
+                "openpyxl": mixed_openpyxl_report,
+            },
         },
     }
     report_path = work_dir / "report.json"

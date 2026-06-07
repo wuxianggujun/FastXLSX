@@ -114,9 +114,10 @@ Streaming / new-workbook 路径、是否复制 table name / column names / style
 content type override、relationship id 是否只在 worksheet owner 内有效、是否读取
 已写 header 行或推断列名、是否生成 `styles.xml`，以及是否仅支持 caller-supplied
 totals row、列级 `totalsRowFunction` metadata 和列级 `totalsRowLabel` metadata。
-注释还必须写清它不计算 totals、不生成公式文本、totals row 单元格文本、
-calculated columns、table resize、overlap checks、existing-file editing 或完整
-Excel table UI。
+注释还必须写清它只拒绝同一 worksheet 内 table-vs-table range overlap，不检查与
+data validations、images、merged ranges 或 autoFilter 的冲突；它不计算 totals、
+不生成公式文本、totals row 单元格文本、calculated columns、table resize、
+existing-file editing 或完整 Excel table UI。
 
 对 document properties 这类小型 workbook metadata API，注释还要说明它是否只支持
 new-workbook 输出、是否只写 `docProps/core.xml` 和 `docProps/app.xml`、是否复制

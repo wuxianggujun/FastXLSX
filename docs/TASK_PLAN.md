@@ -567,8 +567,9 @@ Validation:
   XML escaping, table column attribute escaping, table style flags without
   generating `xl/styles.xml`, `show_totals_row` true/false/default metadata,
   caller-supplied `totalsRowFunction` and `totalsRowLabel`, absence of generated
-  formulas / empty label attributes, invalid ranges/options, duplicate names, and
-  mutation-after-close.
+  formulas / empty label attributes, invalid ranges/options, duplicate names,
+  same-worksheet table range overlap rejection, adjacent table allowance,
+  cross-worksheet same-range allowance, and mutation-after-close.
 - Local Excel COM read-only validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-table-style-flags.xlsx`
   and confirmed `StyleFlagTable` first/last/row/column style flags as
@@ -1206,10 +1207,10 @@ Allowed early slices:
   `column_totals_labels` only writes caller-supplied `totalsRowLabel` attributes;
   callers still write the totals row cell text.
 - Complete table support remains planned: automatic header inference,
-  generated totals formulas, calculated
-  columns, sort/filter criteria, custom styles, `styles.xml`,
-  table resize, existing-file editing, overlap checks, and full Excel table UI
-  behavior are not implemented by the first slice.
+  generated totals formulas, calculated columns, sort/filter criteria, custom
+  styles, `styles.xml`, table resize, existing-file editing, conflict checks
+  against non-table worksheet metadata/objects, and full Excel table UI behavior
+  are not implemented by the first slice.
 - Conditional formatting may be added as worksheet metadata only if it does not
   force a large worksheet DOM and does not put validation/formatting logic into
   the cell XML hot path.

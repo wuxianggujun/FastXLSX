@@ -724,10 +724,11 @@ Do:
   `column_totals_functions` for caller-supplied `totalsRowFunction`
   attributes, and `column_totals_labels` for caller-supplied `totalsRowLabel`
   attributes.
-- Keep generated totals formulas, calculated columns,
-  sort/filter criteria, custom styles, `styles.xml`, table resize, overlap
-  checks, existing-file editing, and full Excel table UI behavior out of this
-  first slice.
+- Allow only same-worksheet table-vs-table range overlap rejection. Keep
+  generated totals formulas, calculated columns, sort/filter criteria, custom
+  styles, `styles.xml`, table resize, conflict checks against non-table
+  worksheet metadata/objects, existing-file editing, and full Excel table UI
+  behavior out of this first slice.
 
 Accept when:
 - Structure tests compare table XML, worksheet relationships, worksheet
@@ -736,8 +737,9 @@ Accept when:
   worksheet relationship owner, table style flags without generating
   `xl/styles.xml`, `show_totals_row` true/false/default metadata,
   caller-supplied `totalsRowFunction` and `totalsRowLabel`, absence of generated
-  formulas / empty label attributes, duplicate names, invalid ranges/options, and
-  mutation-after-close.
+  formulas / empty label attributes, duplicate names, invalid ranges/options,
+  same-worksheet table range overlap rejection, adjacent table allowance,
+  cross-worksheet same-range allowance, and mutation-after-close.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`; Excel COM
   confirmed `InventoryTable` and `TotalsTable` as `ListObjects` with expected

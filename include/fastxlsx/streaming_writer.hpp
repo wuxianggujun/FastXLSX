@@ -525,8 +525,9 @@ public:
     ///
     /// @throws FastXlsxError if the range is invalid, contains only a header
     /// row, enables totals-row metadata without room for a data row, column
-    /// names do not match the range width, names are invalid or duplicated, or
-    /// the workbook is closed.
+    /// names do not match the range width, names are invalid or duplicated,
+    /// overlaps an existing table range in the same worksheet, or the workbook
+    /// is closed.
     void add_table(CellRange range, TableOptions options);
 
     /// Records a PNG/JPEG image anchored to worksheet cells.

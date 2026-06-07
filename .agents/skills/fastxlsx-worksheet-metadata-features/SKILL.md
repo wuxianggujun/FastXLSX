@@ -51,7 +51,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   content type override；`TableOptions::show_totals_row` 只写 totals-row visibility
   metadata，`column_totals_functions` 只写 caller-supplied `totalsRowFunction`
   attributes，`column_totals_labels` 只写 caller-supplied `totalsRowLabel` attributes。
-  它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。
+  它不读取已写 header 行，不推断列名，也不生成 `styles.xml`。当前只拒绝同一 worksheet
+  内 table-vs-table range overlap，不检查与 data validations、images、merged ranges
+  或 autoFilter 的冲突。
 - 大型 worksheet 路径禁止 DOM，metadata 必须以小向量/轻量结构记录，再在
   worksheet XML 正确位置输出。
 - `RelationshipSet` 可表达 external target，但只有同时写 worksheet `<hyperlinks>`、
@@ -100,7 +102,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   `column_totals_functions` 只写 caller-supplied `totalsRowFunction` attributes，
   `column_totals_labels` 只写 caller-supplied `totalsRowLabel` attributes，不计算 totals、
   不生成公式文本、totals row 单元格文本或样式。
-  不支持 calculated columns、sort/filter criteria、custom styles、table resize、
+  当前只拒绝同一 worksheet 内 table-vs-table range overlap；不支持 calculated columns、sort/filter criteria、custom styles、table resize、
   已有文件编辑或完整 Excel table UI。
 - Images/Pictures：保持计划；不要把它当成 data validations 那样的纯 worksheet XML
   切片。需要 `fastxlsx-image-media-features` 和 OPC graph/package 边界。
@@ -144,7 +146,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   共存时的关系 id、多对象关系 id 回归、XML escape、table column attribute
   escape、invalid range/options、table style flags 且不生成 `xl/styles.xml`、
   `show_totals_row` true/false/default metadata、caller-supplied
-  `totalsRowFunction` / `totalsRowLabel`、无公式文本 / 空 label attribute、duplicate names 和 close
+  `totalsRowFunction` / `totalsRowLabel`、无公式文本 / 空 label attribute、duplicate names、
+  same-worksheet table range overlap、adjacent/cross-worksheet non-overlap 和 close
   后 mutation。
 - 如果功能新增 relationships，检查 worksheet XML 引用、`.rels` id、content types 同步。
 - 如果 data validations 与 hyperlinks / tables 共存，检查 `<dataValidations>` 仍在

@@ -91,7 +91,8 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   `column_totals_functions` 只写 caller-supplied `totalsRowFunction` attributes；
   `column_totals_labels` 只写 caller-supplied `totalsRowLabel` attributes；它不计算
   totals、不生成公式文本、totals row 单元格文本、样式、table resize 或 existing-file
-  editing。
+  editing。当前只拒绝同一 worksheet 内 table-vs-table range overlap，不检查与 data
+  validations、images、merged ranges 或 autoFilter 的冲突。
 - `DocumentProperties` 是 new-workbook 小型 metadata API：字符串值被复制进
   `Workbook` 或 `WorkbookWriter` state，并写入 `docProps/core.xml` /
   `docProps/app.xml`。它不创建 `docProps/custom.xml`，不支持任意 timestamps、
@@ -171,9 +172,9 @@ table name / column names / style name / `show_totals_row` / `column_totals_func
 拷贝、`xl/tables/tableN.xml`、worksheet `<tableParts>`、worksheet `.rels`、
 content type override、worksheet-owner-local `rId`、不读取已写 header 行、不推断列名、
 不生成 `styles.xml`、只支持 totals-row visibility metadata、caller-supplied
-`totalsRowFunction` attributes 和 caller-supplied `totalsRowLabel` attributes、无公式
-生成、无 totals row 单元格文本、无 table resize、无 existing-file editing，以及不代表
-完整 table 支持。
+`totalsRowFunction` attributes 和 caller-supplied `totalsRowLabel` attributes、只拒绝
+同一 worksheet 内 table-vs-table range overlap、无公式生成、无 totals row 单元格文本、
+无 table resize、无 existing-file editing，以及不代表完整 table 支持。
 document properties 这类 workbook metadata API 还要写清：new-workbook-only、
 字符串值拷贝、只写 `docProps/core.xml` 和 `docProps/app.xml`、package relationships
 与 content type side effects、不创建 `docProps/custom.xml`、无 arbitrary timestamp

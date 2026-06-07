@@ -298,6 +298,12 @@ std::uint32_t range_width(CellRange range)
     return range.last_column - range.first_column + 1;
 }
 
+bool ranges_overlap(CellRange left, CellRange right)
+{
+    return left.first_row <= right.last_row && right.first_row <= left.last_row
+        && left.first_column <= right.last_column && right.first_column <= left.last_column;
+}
+
 std::string_view table_totals_function_name(TableTotalsFunction function)
 {
     switch (function) {
@@ -1571,6 +1577,11 @@ void WorksheetWriter::add_table(CellRange range, TableOptions options)
 {
     ensure_mutable_worksheet(state_);
     validate_table_options(range, options);
+    for (const WorksheetTable& existing : state_->tables) {
+        if (ranges_overlap(range, existing.range)) {
+            throw FastXlsxError("table ranges cannot overlap within a worksheet");
+        }
+    }
     if (state_->workbook != nullptr && workbook_has_table_name(*state_->workbook, options.name)) {
         throw FastXlsxError("table names must be unique within a workbook");
     }

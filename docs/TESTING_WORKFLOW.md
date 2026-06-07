@@ -96,6 +96,9 @@ true 路径写 `totalsRowCount="1"`，且 `<autoFilter>` 范围只覆盖 header/
 如果使用 `column_totals_functions` / `column_totals_labels`，测试必须确认只写调用方
 声明的 `totalsRowFunction` / `totalsRowLabel` attributes，不计算 totals、不生成公式文本、
 totals row 单元格文本、空 label attribute 或 `xl/styles.xml`。
+table range overlap 测试只覆盖同一 worksheet 内 table-vs-table 矩形相交拒绝、相邻
+table 允许、不同 worksheet 上相同 range 允许；不要把这扩展成与 data validations、
+images、merged ranges 或 autoFilter 的通用冲突检查。
 
 数值编码负例不需要 Excel 可视化验证，因为期望结果是不生成有效 `.xlsx`。测试应覆盖
 `NaN`、`+Inf` 和 `-Inf`，并确认 in-memory 路径在 `Workbook::save()` 抛
@@ -343,6 +346,22 @@ helper 只读打开 workbook 并核对 `InventoryTable.ShowTotals=False`、
 `TotalsTable.ShowTotals=True`、`TotalsTable` 范围、totals row 范围和 Value 列 totals
 calculation。结构异常时仍以拆包后的 table XML 语义为准。脚本应从项目根目录运行；
 `build/qa/table-totals/` 下的 report 和参考 workbook 只是本地 QA artifact，不提交。
+
+当前 table range-overlap 样例也有固定本地 QA 脚本：
+
+```powershell
+py tools\verify_table_overlap_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-table-range-overlap.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_table_overlap_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-table-range-overlap.xlsx
+```
+
+Python helper 检查 FastXLSX package XML、`tableParts` count、`table1.xml` 到
+`table4.xml` 的 table name/ref、无 `table5.xml` 和无 `xl/styles.xml`，并用
+`openpyxl` 读取 `Tables` / `OtherTables` 的 table ranges。Excel helper 只读打开
+workbook 并核对 `Tables` sheet 有 3 个相邻 tables，`OtherTables` sheet 有 1 个
+同 range table。它们只验证 table-vs-table overlap 边界，不代表完整 table conflict
+analysis。
 
 ## 拆包和 XML 对比
 

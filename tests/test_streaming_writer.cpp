@@ -1563,6 +1563,70 @@ void test_streaming_writer_table_column_attribute_escaping()
         "totals labels should not generate totals row formula text");
 }
 
+void test_streaming_writer_table_range_overlap()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-table-range-overlap.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Tables");
+    auto other_sheet = workbook.add_worksheet("OtherTables");
+
+    for (int row = 0; row < 4; ++row) {
+        sheet.append_row({
+            fastxlsx::CellView::text(row == 0 ? "A" : "a"),
+            fastxlsx::CellView::text(row == 0 ? "B" : "b"),
+            fastxlsx::CellView::text(row == 0 ? "C" : "c"),
+            fastxlsx::CellView::text(row == 0 ? "D" : "d"),
+        });
+        other_sheet.append_row({
+            fastxlsx::CellView::text(row == 0 ? "A" : "a"),
+            fastxlsx::CellView::text(row == 0 ? "B" : "b"),
+        });
+    }
+
+    fastxlsx::TableOptions first_table;
+    first_table.name = "FirstTable";
+    first_table.column_names = {"A", "B"};
+    first_table.style_name.clear();
+    sheet.add_table({1, 1, 2, 2}, first_table);
+
+    fastxlsx::TableOptions adjacent_columns = first_table;
+    adjacent_columns.name = "AdjacentColumnsTable";
+    adjacent_columns.column_names = {"C", "D"};
+    sheet.add_table({1, 3, 2, 4}, adjacent_columns);
+
+    fastxlsx::TableOptions adjacent_rows = first_table;
+    adjacent_rows.name = "AdjacentRowsTable";
+    sheet.add_table({3, 1, 4, 2}, adjacent_rows);
+
+    fastxlsx::TableOptions overlapping = first_table;
+    overlapping.name = "OverlappingTable";
+    check_fastxlsx_error(
+        [&sheet, &overlapping] { sheet.add_table({2, 2, 3, 3}, overlapping); },
+        "tables should reject overlapping ranges in the same worksheet");
+
+    fastxlsx::TableOptions other_sheet_table = first_table;
+    other_sheet_table.name = "OtherSheetTable";
+    other_sheet.add_table({1, 1, 2, 2}, other_sheet_table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(first_sheet_xml, R"(<tableParts count="3">)",
+        "non-overlapping tables in the same worksheet should all be kept");
+    check_contains(second_sheet_xml, R"(<tableParts count="1">)",
+        "same table range on a different worksheet should be allowed");
+    check(entries.contains("xl/tables/table1.xml"), "missing first overlap test table");
+    check(entries.contains("xl/tables/table2.xml"), "missing adjacent-column table");
+    check(entries.contains("xl/tables/table3.xml"), "missing adjacent-row table");
+    check(entries.contains("xl/tables/table4.xml"), "missing cross-worksheet table");
+    check(!entries.contains("xl/tables/table5.xml"),
+        "rejected overlapping table should not create a table part");
+}
+
 void test_streaming_writer_images()
 {
     const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
@@ -2766,6 +2830,7 @@ int main()
         test_streaming_writer_tables();
         test_streaming_writer_table_style_flags();
         test_streaming_writer_table_column_attribute_escaping();
+        test_streaming_writer_table_range_overlap();
         test_streaming_writer_images();
         test_streaming_writer_image_metadata();
         test_streaming_writer_jpeg_images();

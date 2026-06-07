@@ -189,6 +189,24 @@ struct TableOptions {
     bool show_column_stripes = false;
 };
 
+/// How a two-cell image anchor should behave when cells move or resize.
+///
+/// API mode: Streaming worksheet drawing metadata for new workbooks. This only
+/// selects the OpenXML `xdr:twoCellAnchor editAs` attribute. It does not change
+/// anchor coordinates, image bytes, relationships, content types, or worksheet
+/// row/cell streaming.
+enum class ImageEditAs {
+    /// Move and size with cells. Serialized as `editAs="twoCell"`.
+    TwoCell,
+
+    /// Move with cells but do not size with cells. Serialized as
+    /// `editAs="oneCell"`.
+    OneCell,
+
+    /// Do not move or size with cells. Serialized as `editAs="absolute"`.
+    Absolute,
+};
+
 /// Optional metadata for an inserted worksheet image.
 ///
 /// API mode: Streaming worksheet metadata for new workbooks. Non-empty strings
@@ -196,6 +214,9 @@ struct TableOptions {
 /// non-visual picture properties. They do not change image bytes, anchor
 /// geometry, relationships, content types, or worksheet row/cell streaming.
 struct ImageOptions {
+    /// OpenXML two-cell anchor placement behavior.
+    ImageEditAs edit_as = ImageEditAs::TwoCell;
+
     /// Optional drawing object name written as `xdr:cNvPr name`.
     ///
     /// Empty keeps the generated `Picture N` name. The caller is responsible
@@ -466,9 +487,10 @@ public:
     /// drawing `.rels`, worksheet `.rels`, a worksheet `<drawing>` reference,
     /// and drawing/content type entries. It does not crop, rotate, recompress,
     /// convert formats, mutate existing drawings, or edit existing XLSX files.
-    /// Optional ImageOptions strings are copied into writer state and written
-    /// only as drawing non-visual metadata; empty values preserve the generated
-    /// `Picture N` name and omit the description.
+    /// Optional ImageOptions values are copied into writer state and written
+    /// only as drawing metadata: `editAs` on the anchor and non-visual
+    /// `xdr:cNvPr` name/description attributes. Empty strings preserve the
+    /// generated `Picture N` name and omit the description.
     ///
     /// @throws FastXlsxError if the anchor range is invalid, the workbook is
     /// closed, stb support is disabled, the file cannot be read, or the image
@@ -478,7 +500,7 @@ public:
     /// Records a PNG/JPEG image with optional drawing non-visual metadata.
     ///
     /// Same behavior as add_image(path, anchor), plus ImageOptions serialization
-    /// to drawing `xdr:cNvPr` attributes.
+    /// to drawing anchor / `xdr:cNvPr` attributes.
     void add_image(const std::filesystem::path& path, CellRange anchor, ImageOptions options);
 
 private:

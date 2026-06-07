@@ -1064,6 +1064,20 @@ std::string drawing_relationship_id(std::size_t image_index)
     return worksheet_relationship_id(image_index);
 }
 
+std::string_view image_edit_as_name(ImageEditAs edit_as)
+{
+    switch (edit_as) {
+    case ImageEditAs::TwoCell:
+        return "twoCell";
+    case ImageEditAs::OneCell:
+        return "oneCell";
+    case ImageEditAs::Absolute:
+        return "absolute";
+    }
+
+    throw FastXlsxError("unknown image editAs mode");
+}
+
 std::string build_drawing_marker_xml(
     std::string_view element_name, std::uint32_t row, std::uint32_t column)
 {
@@ -1095,7 +1109,9 @@ std::string build_drawing_xml(
         const std::uint64_t width_emu = static_cast<std::uint64_t>(image.info.width) * 9525U;
         const std::uint64_t height_emu = static_cast<std::uint64_t>(image.info.height) * 9525U;
 
-        xml += R"(<xdr:twoCellAnchor editAs="twoCell">)";
+        xml += R"(<xdr:twoCellAnchor editAs=")";
+        xml += image_edit_as_name(image.options.edit_as);
+        xml += R"(">)";
         xml += build_drawing_marker_xml("from", image.anchor.first_row, image.anchor.first_column);
         xml += build_drawing_marker_xml("to", image.anchor.last_row + 1, image.anchor.last_column + 1);
         xml += "<xdr:pic><xdr:nvPicPr><xdr:cNvPr id=\"";

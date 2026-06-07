@@ -23,16 +23,19 @@ EXPECTED_PICTURES: list[dict[str, str | None]] = [
         "id": "1",
         "name": 'Logo "A&B<1>\'',
         "description": 'Alt "quoted" & <tag> \'owner\'',
+        "edit_as": "oneCell",
     },
     {
         "id": "2",
         "name": "NamedOnly",
         "description": None,
+        "edit_as": "absolute",
     },
     {
         "id": "3",
         "name": "Picture 3",
         "description": None,
+        "edit_as": "twoCell",
     },
 ]
 
@@ -127,6 +130,11 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
 
     drawing_xml = read_zip_text(path, "xl/drawings/drawing1.xml")
     require(drawing_xml.count("<xdr:twoCellAnchor") == 3, "drawing anchor count mismatch")
+    for edit_as in ["oneCell", "absolute", "twoCell"]:
+        require(
+            drawing_xml.count(f'editAs="{edit_as}"') == 1,
+            f"drawing editAs {edit_as} count mismatch",
+        )
     require(
         '<xdr:cNvPr id="1" name="Logo &quot;A&amp;B&lt;1&gt;&apos;" '
         'descr="Alt &quot;quoted&quot; &amp; &lt;tag&gt; &apos;owner&apos;"/>'
@@ -157,6 +165,7 @@ def verify_fastxlsx_package(path: Path) -> dict[str, Any]:
                 "id": properties.attrib.get("id"),
                 "name": properties.attrib.get("name"),
                 "description": properties.attrib.get("descr"),
+                "edit_as": anchor.attrib.get("editAs"),
             }
         )
     require(parsed == EXPECTED_PICTURES, f"parsed image metadata mismatch: {parsed!r}")

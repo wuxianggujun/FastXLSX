@@ -349,9 +349,11 @@ xl/worksheets/_rels/sheet*.xml.rels
 - 重点比较 OpenXML 语义：part 是否存在、关系是否正确、content type 是否正确、
   sheet/cell/value/type 是否正确。
 - 图片对比应重点看 media part 是否存在、relationship target 是否有效、worksheet
-  `<drawing>` 引用是否匹配、anchor 语义是否等价；如果涉及图片 name/description，
-  还要核对 `xdr:cNvPr` 的 `name` / `descr` attributes、XML attribute escape、
-  空 description 省略和默认 `Picture N` 名称，而不是要求 XML 字节完全一致。
+  `<drawing>` 引用是否匹配、anchor 语义是否等价；如果涉及图片 `ImageOptions`，
+  还要核对 `xdr:twoCellAnchor editAs`、`xdr:cNvPr` 的 `name` / `descr` attributes、
+  XML attribute escape、空 description 省略和默认 `Picture N` 名称，而不是要求 XML
+  字节完全一致。不要把 `editAs` 检查写成 `oneCellAnchor` / `absoluteAnchor` 元素支持
+  或 row/column resize 几何计算保证。
 - namespace、属性顺序、默认值、压缩方式可能不同，不应直接当成错误。
 - 如果 Excel 打开后自动修复，应保存 Excel 修复后的文件，再拆包比较修复前后差异。
 

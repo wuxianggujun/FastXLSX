@@ -108,9 +108,10 @@ existing-file editing、unknown part preservation 仍是计划。
 PNG/JPEG 图片插入基础切片，会写 media/drawing parts、drawing rels、
 worksheet rels、worksheet `<drawing>` 和 content types。它不代表图片编辑、
 existing-workbook 图片保真、drawing mutation、裁剪、旋转、压缩或格式转换。
-当前 `ImageOptions` 只补充 drawing XML `xdr:cNvPr name` / `descr` metadata；
-它不代表完整图片 metadata、EXIF/PNG/JPEG metadata、media filename 语义或完整
-alt text/accessibility UI。
+当前 `ImageOptions` 只补充 drawing XML `xdr:twoCellAnchor editAs` 和
+`xdr:cNvPr name` / `descr` metadata；它不代表 `oneCellAnchor` / `absoluteAnchor`
+元素支持、row/column resize 几何计算、完整图片 metadata、EXIF/PNG/JPEG metadata、
+media filename 语义或完整 alt text/accessibility UI。
 图片、超链接、table、chart/VBA passthrough 不能仅凭本 roadmap 条目宣称支持；
 以 `TASK_PLAN.md`、`NEXT_STEPS.md`、`AGENTS.md` 的 current verified state 为准。
 

@@ -1675,11 +1675,13 @@ void test_streaming_writer_image_metadata()
     auto sheet = workbook.add_worksheet("ImageMetadata");
 
     fastxlsx::ImageOptions escaped_options;
+    escaped_options.edit_as = fastxlsx::ImageEditAs::OneCell;
     escaped_options.name = R"(Logo "A&B<1>')";
     escaped_options.description = R"(Alt "quoted" & <tag> 'owner')";
     sheet.add_image(image_path, {1, 1, 2, 2}, escaped_options);
 
     fastxlsx::ImageOptions named_only;
+    named_only.edit_as = fastxlsx::ImageEditAs::Absolute;
     named_only.name = "NamedOnly";
     sheet.add_image(image_path, {3, 1, 4, 2}, named_only);
 
@@ -1697,6 +1699,21 @@ void test_streaming_writer_image_metadata()
     const auto& drawing_xml = entries.at("xl/drawings/drawing1.xml");
     check(count_occurrences(drawing_xml, "<xdr:twoCellAnchor") == 3,
         "image metadata drawing anchor count mismatch");
+    check(count_occurrences(drawing_xml, R"(editAs="oneCell")") == 1,
+        "image metadata oneCell editAs count mismatch");
+    check(count_occurrences(drawing_xml, R"(editAs="absolute")") == 1,
+        "image metadata absolute editAs count mismatch");
+    check(count_occurrences(drawing_xml, R"(editAs="twoCell")") == 1,
+        "image metadata default twoCell editAs count mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>0</xdr:col>)",
+        "image metadata oneCell anchor mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:twoCellAnchor editAs="absolute"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>2</xdr:row>)",
+        "image metadata absolute anchor mismatch");
+    check_contains(drawing_xml,
+        R"(<xdr:twoCellAnchor editAs="twoCell"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row>)",
+        "image metadata default twoCell anchor mismatch");
     check_contains(drawing_xml,
         R"(<xdr:cNvPr id="1" name="Logo &quot;A&amp;B&lt;1&gt;&apos;" descr="Alt &quot;quoted&quot; &amp; &lt;tag&gt; &apos;owner&apos;"/>)",
         "image metadata name/description attribute escape mismatch");

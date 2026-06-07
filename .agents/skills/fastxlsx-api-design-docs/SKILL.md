@@ -44,6 +44,10 @@ API 可以易用，但不能为了易用性牺牲性能主线。
 - 当前 `WorksheetWriter` 骨架覆盖公式、行高、列宽、冻结窗格、自动筛选、
   合并单元格和 data validations 的写入 XML；这些不代表完整 Phase 3 或
   Phase 5 功能集。
+- 当前 `Cell::formula()` / `CellView::formula()` 写入 worksheet `<f>`，并让包含公式
+  cell 的新建 workbook 在 `xl/workbook.xml` 写 `<calcPr calcId="124519"
+  fullCalcOnLoad="1"/>` 请求打开后重算；这不是公式求值、cached value 或
+  `calcChain.xml` 支持。
 - `WorksheetWriter::add_data_validation()` 是 Streaming metadata API：规则和公式文本
   被复制进 writer state，内存按规则数量和公式文本长度增长；它不解析公式、不校验
   单元格值、不检查重叠、不新增 relationships/content types，也不支持 existing-file editing。

@@ -97,8 +97,10 @@ public:
     /// Creates a write-only formula cell.
     ///
     /// API mode: Streaming-compatible metadata. FastXLSX writes the formula
-    /// text to worksheet XML but does not parse it, evaluate it, manage
-    /// calcChain, or provide a cached value in the current implementation.
+    /// text to worksheet XML and generated workbooks with formula cells request
+    /// full recalculation on load through workbook calculation metadata.
+    /// FastXLSX does not parse formulas, evaluate them, manage calcChain, or
+    /// provide cached values in the current implementation.
     static Cell formula(std::string value);
 
     /// Returns the stored value kind for the Phase 1 in-memory cell.

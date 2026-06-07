@@ -441,6 +441,7 @@ struct WorksheetWriterState {
     std::vector<ExternalHyperlink> external_hyperlinks;
     std::vector<WorksheetTable> tables;
     std::vector<WorksheetImage> images;
+    bool has_formula = false;
     std::string row_buffer;
 };
 
@@ -472,6 +473,12 @@ namespace {
 bool uses_shared_strings(const detail::WorkbookWriterState& workbook) noexcept
 {
     return workbook.options.string_strategy == StringStrategy::SharedString;
+}
+
+bool row_has_formula(std::span<const CellView> cells) noexcept
+{
+    return std::any_of(cells.begin(), cells.end(),
+        [](const CellView& cell) { return cell.type() == CellView::Type::Formula; });
 }
 
 void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
@@ -580,7 +587,11 @@ std::string worksheet_dimension(const detail::WorksheetWriterState& worksheet)
     return "A1:" + detail::cell_reference(worksheet.row_count, worksheet.max_column);
 }
 
-std::string build_workbook(const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets)
+constexpr std::string_view recalculation_calc_id = "124519";
+
+std::string build_workbook(
+    const std::vector<std::unique_ptr<detail::WorksheetWriterState>>& worksheets,
+    bool full_calc_on_load)
 {
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
@@ -596,7 +607,13 @@ std::string build_workbook(const std::vector<std::unique_ptr<detail::WorksheetWr
         xml += std::to_string(index + 1);
         xml += R"("/>)";
     }
-    xml += "</sheets></workbook>";
+    xml += "</sheets>";
+    if (full_calc_on_load) {
+        xml += R"(<calcPr calcId=")";
+        xml += recalculation_calc_id;
+        xml += R"(" fullCalcOnLoad="1"/>)";
+    }
+    xml += "</workbook>";
     return xml;
 }
 
@@ -1239,6 +1256,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
 
     ++state_->row_count;
     state_->max_column = std::max(state_->max_column, static_cast<std::uint32_t>(cells.size()));
+    state_->has_formula = state_->has_formula || row_has_formula(cells);
 
     std::string& row_xml = state_->row_buffer;
     row_xml.clear();
@@ -1446,7 +1464,9 @@ void WorkbookWriter::close()
         {"docProps/core.xml", detail::build_core_properties(state_->options.document_properties)});
     entries.push_back(
         {"docProps/app.xml", detail::build_extended_properties(state_->options.document_properties)});
-    entries.push_back({"xl/workbook.xml", build_workbook(state_->worksheets)});
+    const bool full_calc_on_load = std::any_of(state_->worksheets.begin(), state_->worksheets.end(),
+        [](const auto& worksheet) { return worksheet->has_formula; });
+    entries.push_back({"xl/workbook.xml", build_workbook(state_->worksheets, full_calc_on_load)});
     entries.push_back(
         {"xl/_rels/workbook.xml.rels", detail::serialize_relationships(*workbook_relationships)});
 

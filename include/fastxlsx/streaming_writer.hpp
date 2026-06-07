@@ -189,8 +189,10 @@ public:
 
     /// Creates a write-only formula cell view.
     ///
-    /// FastXLSX writes the formula text but does not parse, evaluate, cache, or
-    /// maintain calculation-chain metadata in the current implementation.
+    /// FastXLSX writes the formula text and generated workbooks with formula
+    /// cells request full recalculation on load through workbook calculation
+    /// metadata. It does not parse, evaluate, cache, or maintain
+    /// calculation-chain metadata in the current implementation.
     static CellView formula(std::string_view value) noexcept;
 
     /// Returns the value kind consumed by WorksheetWriter::append_row().

@@ -145,6 +145,8 @@ void test_streaming_writer_smoke_package()
     const auto& workbook_xml = entries.at("xl/workbook.xml");
     check_contains(workbook_xml, "name=\"Streaming\"", "workbook streaming sheet name missing");
     check_contains(workbook_xml, "r:id=\"rId1\"", "workbook relationship id missing");
+    check_contains(workbook_xml, R"(<calcPr calcId="124519" fullCalcOnLoad="1"/>)",
+        "streaming formulas should request full recalculation on load");
 
     const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
     check_contains(
@@ -395,6 +397,12 @@ void test_streaming_writer_phase3_metadata_structure()
     const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
     check(count_occurrences(workbook_rels, "<Relationship ") == 1,
         "phase3 metadata should not add workbook relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(<calcPr calcId="124519" fullCalcOnLoad="1"/>)",
+        "phase3 formula metadata should request full recalculation on load");
+    check(!entries.contains("xl/calcChain.xml"),
+        "phase3 formula metadata should not create calcChain");
 
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
     check(worksheet_xml.find("xmlns:r=") == std::string::npos,
@@ -722,6 +730,9 @@ void test_streaming_writer_data_validation_formula2_escape_and_namespace()
         "formula2 escape data validation should not add content types");
 
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "data validation formulas should not request workbook recalculation metadata");
     check(worksheet_xml.find("xmlns:r=") == std::string::npos,
         "validation-only worksheet should not declare relationship namespace");
     check_contains(worksheet_xml,

@@ -906,8 +906,11 @@ Status: 基础. Early write skeletons exist for several high-frequency features.
 Full Phase 3 remains 计划.
 
 Current facts:
-- Formula cells are write-only. FastXLSX writes `<f>` text but does not parse
-  formulas, calculate results, maintain `calcChain`, or guarantee cached values.
+- Formula cells are write-only. FastXLSX writes `<f>` text and generated
+  workbooks with formula cells include `<calcPr calcId="124519"
+  fullCalcOnLoad="1"/>` in `xl/workbook.xml` to request recalculation on load.
+  It does not parse formulas, calculate results, maintain `calcChain`, or
+  guarantee cached values.
 - `RowOptions::height` exists for row height metadata.
 - `WorksheetWriter::set_column_width()` records column width ranges.
 - `WorksheetWriter::freeze_panes()` records a frozen pane split.
@@ -916,14 +919,17 @@ Current facts:
 - These features are metadata-oriented and currently live on the streaming
   writer path.
 - `fastxlsx.streaming` includes a focused Phase 3 metadata structure test for
-  formula XML escaping, row height, column widths, last-call-wins frozen panes,
-  last-call-wins auto filters, merged ranges, suffix ordering, and absence of
-  relationship/content-type side effects.
+  formula XML escaping, workbook calcPr full-recalculation metadata, row height,
+  column widths, last-call-wins frozen panes, last-call-wins auto filters,
+  merged ranges, suffix ordering, and absence of relationship/content-type side
+  effects.
 - Local Excel COM validation has opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`
   and confirmed `Metadata` sheet, `B2` / `C2` formulas, row 2 height, A/C
   column widths, `B2:D4` auto filter, `A3:B3` / `C4:D4` merge areas, and
-  `SplitRow=2` / `SplitColumn=3` frozen panes.
+  `SplitRow=2` / `SplitColumn=3` frozen panes. Local `openpyxl` 3.1.2 reads
+  `calcId=124519` and `fullCalcOnLoad=True`, and the generated package still
+  does not contain `xl/calcChain.xml`.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` metadata is
   present on the in-memory and streaming new-workbook paths. Styles, custom
   document properties, named ranges, style registries, and rich formatting are
@@ -944,8 +950,9 @@ Tasks:
 API documentation requirements:
 - Each public feature API must state whether it is Streaming, Patch, or
   In-memory.
-- Formula APIs must say they only write formula text until calculation, cached
-  values, and calcChain support are explicitly implemented.
+- Formula APIs must say they only write formula text and request full
+  recalculation on load until calculation, cached values, and calcChain support
+  are explicitly implemented.
 - Column, row, freeze, filter, and merge APIs must document range validation,
   ordering constraints, side effects on worksheet XML, and memory cost.
 - Convenience APIs must not imply random access to already-written large

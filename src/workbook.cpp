@@ -80,7 +80,21 @@ void validate_sheet_name(std::string_view name)
     }
 }
 
-std::string build_workbook(const std::vector<Worksheet>& worksheets)
+constexpr std::string_view recalculation_calc_id = "124519";
+
+bool rows_have_formula(const std::vector<detail::WorksheetRowData>& rows) noexcept
+{
+    for (const auto& row_data : rows) {
+        for (const Cell& cell : row_data.cells) {
+            if (cell.type() == Cell::Type::Formula) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::string build_workbook(const std::vector<Worksheet>& worksheets, bool full_calc_on_load)
 {
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
@@ -96,7 +110,13 @@ std::string build_workbook(const std::vector<Worksheet>& worksheets)
         xml += std::to_string(index + 1);
         xml += R"("/>)";
     }
-    xml += "</sheets></workbook>";
+    xml += "</sheets>";
+    if (full_calc_on_load) {
+        xml += R"(<calcPr calcId=")";
+        xml += recalculation_calc_id;
+        xml += R"(" fullCalcOnLoad="1"/>)";
+    }
+    xml += "</workbook>";
     return xml;
 }
 
@@ -314,6 +334,9 @@ void Workbook::save(const std::filesystem::path& path) const
         throw FastXlsxError("workbook must contain at least one worksheet");
     }
 
+    const bool full_calc_on_load = std::any_of(worksheets_.begin(), worksheets_.end(),
+        [](const Worksheet& worksheet) { return rows_have_formula(worksheet.rows_); });
+
     std::vector<detail::PackageEntry> entries;
     const detail::PackageManifest manifest =
         detail::make_minimal_workbook_manifest(worksheets_.size());
@@ -328,7 +351,7 @@ void Workbook::save(const std::filesystem::path& path) const
     entries.push_back({"_rels/.rels", detail::serialize_relationships(manifest.package_relationships())});
     entries.push_back({"docProps/core.xml", detail::build_core_properties(document_properties_)});
     entries.push_back({"docProps/app.xml", detail::build_extended_properties(document_properties_)});
-    entries.push_back({"xl/workbook.xml", build_workbook(worksheets_)});
+    entries.push_back({"xl/workbook.xml", build_workbook(worksheets_, full_calc_on_load)});
     entries.push_back({"xl/_rels/workbook.xml.rels", detail::serialize_relationships(*workbook_relationships)});
 
     for (std::size_t index = 0; index < worksheets_.size(); ++index) {

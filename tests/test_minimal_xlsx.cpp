@@ -303,6 +303,11 @@ void test_workbook_formula_and_row_height_metadata()
     check(std::filesystem::exists(output_path), "formula and row height xlsx was not generated");
 
     const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find(R"(<calcPr calcId="124519" fullCalcOnLoad="1"/>)")
+            != std::string::npos,
+        "formula workbook should request full recalculation on load");
+
     const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
     check(worksheet_xml.find("<dimension ref=\"A1:C2\"/>") != std::string::npos,
         "formula workbook dimension mismatch");

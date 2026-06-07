@@ -443,18 +443,22 @@ Do:
 - Keep structure tests for existing metadata writer paths current. The current
   `fastxlsx.streaming` slice checks formula XML escaping, row height, column
   width records, last-call-wins frozen panes, last-call-wins auto filters,
-  merged ranges, suffix ordering, and absence of relationship/content-type side
-  effects.
+  merged ranges, suffix ordering, workbook calcPr full-recalculation metadata,
+  and absence of relationship/content-type side effects.
 - Keep Excel visual samples current for visible formula cells, row/column
   sizing, frozen panes, auto filters, and merged cells. Current local Excel COM
   validation opened
   `build/windows-nmake-release/tests/fastxlsx-streaming-phase3-metadata.xlsx`.
 - Document formula boundaries: write-only formula text unless cached values,
-  calculation mode, and calc chain are implemented.
+  calculation mode, and calc chain are implemented. Current formula cells only
+  add `<calcPr calcId="124519" fullCalcOnLoad="1"/>` to request recalculation on
+  load; they do not provide cached values or `calcChain.xml`.
 
 Accept when:
 - XML structure tests and local Excel checks are recorded for the touched
   metadata surface.
+- Python XLSX reference checks such as `openpyxl` are recorded when workbook
+  calculation metadata changes.
 - Docs still mark full Phase 3 as planned.
 
 Do not claim:

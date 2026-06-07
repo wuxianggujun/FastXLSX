@@ -1,5 +1,6 @@
 param(
     [string]$Path = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx",
+    [string]$ThreeColorPath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx",
     [string]$MultiRangePath = "build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-multi-range.xlsx"
 )
 
@@ -47,6 +48,28 @@ function Assert-ColorScale {
     Assert-Equal $high.FormatColor.Color (Rgb-Long 0 176 80) "$MessagePrefix high color"
 }
 
+function Assert-ThreeColorScale {
+    param(
+        [object]$FormatCondition,
+        [string]$MessagePrefix
+    )
+
+    Assert-Equal $FormatCondition.Type 3 "$MessagePrefix FormatCondition type"
+    Assert-Equal $FormatCondition.ColorScaleCriteria.Count 3 "$MessagePrefix criteria count"
+
+    $low = $FormatCondition.ColorScaleCriteria.Item(1)
+    $middle = $FormatCondition.ColorScaleCriteria.Item(2)
+    $high = $FormatCondition.ColorScaleCriteria.Item(3)
+    Assert-Equal $low.Type 1 "$MessagePrefix low criterion type"
+    Assert-Equal $middle.Type 5 "$MessagePrefix middle criterion type"
+    Assert-Equal $middle.Value 50 "$MessagePrefix middle criterion value"
+    Assert-Equal $high.Type 2 "$MessagePrefix high criterion type"
+
+    Assert-Equal $low.FormatColor.Color (Rgb-Long 248 105 107) "$MessagePrefix low color"
+    Assert-Equal $middle.FormatColor.Color (Rgb-Long 255 235 132) "$MessagePrefix middle color"
+    Assert-Equal $high.FormatColor.Color (Rgb-Long 99 190 123) "$MessagePrefix high color"
+}
+
 function Verify-BasicWorkbook {
     param(
         [object]$Excel,
@@ -72,6 +95,44 @@ function Verify-BasicWorkbook {
 
         Write-Host "OK: Excel opened conditional formatting color-scale workbook read-only: $resolved"
         Write-Host "OK: ColorScale!A2:A10 has one two-color scale rule"
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+        }
+        foreach ($object in @($formatCondition, $sheet, $workbook)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-ThreeColorWorkbook {
+    param(
+        [object]$Excel,
+        [string]$Path
+    )
+
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $workbook = $null
+    $sheet = $null
+    $formatCondition = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($resolved, 0, $true)
+        $sheet = $workbook.Worksheets.Item("ThreeColorScale")
+
+        Assert-Equal $sheet.Range("A1").Value2 "Score" "ThreeColorScale A1 value"
+        Assert-Equal $sheet.Range("A2").Value2 1 "ThreeColorScale A2 value"
+        Assert-Equal $sheet.Range("A10").Value2 9 "ThreeColorScale A10 value"
+        Assert-Equal $sheet.Range("A2:A10").FormatConditions.Count 1 "ThreeColorScale FormatConditions count"
+
+        $formatCondition = $sheet.Range("A2:A10").FormatConditions.Item(1)
+        Assert-ThreeColorScale $formatCondition "ThreeColorScale A2:A10"
+
+        Write-Host "OK: Excel opened conditional formatting three-color workbook read-only: $resolved"
+        Write-Host "OK: ThreeColorScale!A2:A10 has one three-color scale rule"
     }
     finally {
         if ($null -ne $workbook) {
@@ -138,6 +199,7 @@ try {
     $excel.DisplayAlerts = $false
 
     Verify-BasicWorkbook -Excel $excel -Path $Path
+    Verify-ThreeColorWorkbook -Excel $excel -Path $ThreeColorPath
     Verify-MultiRangeWorkbook -Excel $excel -Path $MultiRangePath
 }
 finally {

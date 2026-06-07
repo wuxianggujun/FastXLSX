@@ -175,7 +175,7 @@ enum class ColorScaleValueType {
     Percentile,
 };
 
-/// One endpoint of a two-color conditional-formatting color scale.
+/// One point of a conditional-formatting color scale.
 ///
 /// API mode: Streaming worksheet metadata. The point is copied into worksheet
 /// state when added. FastXLSX writes it as one `<cfvo>` plus one inline
@@ -204,6 +204,29 @@ struct ColorScalePoint {
 struct TwoColorScaleRule {
     /// Lower endpoint, defaulting to OpenXML `type="min"`.
     ColorScalePoint lower;
+
+    /// Upper endpoint, defaulting to OpenXML `type="max"`.
+    ColorScalePoint upper {ColorScaleValueType::Maximum, 0.0, ArgbColor {0xFF, 0xFF, 0xFF, 0xFF}};
+};
+
+/// A narrow three-color conditional-formatting color scale.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. The rule is copied
+/// into WorksheetWriter state and serialized as worksheet-local
+/// `<conditionalFormatting>` XML during close(). Priorities are assigned by
+/// call order per worksheet. This does not evaluate cell values, inspect prior
+/// rows, create styles.xml/dxfs, edit existing XLSX files, or promise full Excel
+/// conditional-formatting UI parity.
+struct ThreeColorScaleRule {
+    /// Lower endpoint, defaulting to OpenXML `type="min"`.
+    ColorScalePoint lower;
+
+    /// Midpoint, defaulting to OpenXML `type="percentile" val="50"`.
+    ColorScalePoint midpoint {
+        ColorScaleValueType::Percentile,
+        50.0,
+        ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
+    };
 
     /// Upper endpoint, defaulting to OpenXML `type="max"`.
     ColorScalePoint upper {ColorScaleValueType::Maximum, 0.0, ArgbColor {0xFF, 0xFF, 0xFF, 0xFF}};
@@ -595,6 +618,20 @@ public:
     /// the rule shape is outside the current narrow two-color scale surface.
     void add_conditional_color_scale(CellRange range, TwoColorScaleRule rule);
 
+    /// Records one worksheet-local three-color conditional-formatting color scale.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. The rule is
+    /// emitted as worksheet-local `<conditionalFormatting>` XML and does not add
+    /// package relationships, content types, styles.xml, dxfs, or cell text.
+    /// FastXLSX copies the three points into writer state, validates the range
+    /// and finite numeric point values, and assigns priority by call order.
+    /// It does not parse formulas, evaluate cell values, normalize overlapping
+    /// rules, or edit existing XLSX files.
+    ///
+    /// @throws FastXlsxError if the range is invalid, the workbook is closed, or
+    /// the rule shape is outside the current narrow three-color scale surface.
+    void add_conditional_color_scale(CellRange range, ThreeColorScaleRule rule);
+
     /// Records one two-color conditional-formatting rule for multiple ranges.
     ///
     /// API mode: Streaming worksheet metadata for new workbooks. Ranges are
@@ -609,11 +646,31 @@ public:
     /// finite-value color-scale surface.
     void add_conditional_color_scale(std::span<const CellRange> ranges, TwoColorScaleRule rule);
 
+    /// Records one three-color conditional-formatting rule for multiple ranges.
+    ///
+    /// API mode: Streaming worksheet metadata for new workbooks. Ranges are
+    /// copied into writer state and serialized as one space-separated `sqref`
+    /// attribute on a single `<conditionalFormatting>` element. This does not
+    /// sort, merge, deduplicate, or overlap-check ranges; memory grows with the
+    /// copied range count and number of rules, not with worksheet row or cell
+    /// count.
+    ///
+    /// @throws FastXlsxError if the range list is empty, any range is invalid,
+    /// the workbook is closed, or point values are outside the current
+    /// finite-value color-scale surface.
+    void add_conditional_color_scale(std::span<const CellRange> ranges, ThreeColorScaleRule rule);
+
     /// Convenience overload for multiple conditional-formatting ranges.
     ///
     /// The initializer-list ranges are copied during this call.
     void add_conditional_color_scale(
         std::initializer_list<CellRange> ranges, TwoColorScaleRule rule);
+
+    /// Convenience overload for multiple three-color conditional-formatting ranges.
+    ///
+    /// The initializer-list ranges are copied during this call.
+    void add_conditional_color_scale(
+        std::initializer_list<CellRange> ranges, ThreeColorScaleRule rule);
 
     /// Records a worksheet-local data validation rule for one range.
     ///

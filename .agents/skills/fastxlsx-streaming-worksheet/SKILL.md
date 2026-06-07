@@ -61,7 +61,7 @@ relationship/content type side effects；公式 cell 会在 workbook XML 写
 这些仍是写入骨架能力，不等同
 公式计算、cached values、calcChain、styles 或完整 Phase 3。
 
-当前 two-color conditional color scale 基础：
+当前 two-/three-color conditional color scale 基础：
 - `WorksheetWriter::add_conditional_color_scale()` 是 streaming-only new-workbook
   worksheet metadata API。
 - `ArgbColor` 写成 8 位大写 ARGB；`ColorScaleValueType` 支持 min/max/num/percent/
@@ -104,7 +104,7 @@ relationship/content type side effects；公式 cell 会在 workbook XML 写
   styles 时写 `xl/styles.xml`、workbook relationship 和 content type override，不创建
   worksheet `.rels`。
 - 这不是 font/fill/border/alignment、date cell type、dxf-backed conditional formatting、
-  rich text 或 existing-file style preservation；当前 two-color color scale 是 worksheet
+  rich text 或 existing-file style preservation；当前 two-/three-color color scale 是 worksheet
   metadata，不是 styles registry 或 `dxfs` 支持。
 
 这些仍主要是文档中的设计名，使用前先确认源码是否存在：

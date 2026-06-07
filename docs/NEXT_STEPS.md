@@ -36,6 +36,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `ColorScaleValueType`
   - `ColorScalePoint`
   - `TwoColorScaleRule`
+  - `ThreeColorScaleRule`
   - `WorkbookWriter::add_style()`
   - `CellView::with_style()`
   - `WorksheetWriter::add_conditional_color_scale()`
@@ -63,10 +64,10 @@ that exist in code, CMake, tests, docs, or local verification.
     structure tests. Treat this as the P9a custom number format foundation, not
     as font/fill/border/alignment, date cell type, dxf-backed conditional
     formatting, rich text, or existing-file style preservation. The current
-    two-color color scale slice is worksheet metadata, not styles/dxfs support.
-  - Streaming-only two-color conditional color scales are visible through
+    two-/three-color color scale slice is worksheet metadata, not styles/dxfs support.
+  - Streaming-only two-/three-color conditional color scales are visible through
     `ArgbColor`, `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
-    and `WorksheetWriter::add_conditional_color_scale()`. Treat this as a
+    `ThreeColorScaleRule`, and `WorksheetWriter::add_conditional_color_scale()`. Treat this as a
     worksheet-local colorScale metadata slice only: no `styles.xml`, no `dxfs`,
     no worksheet relationships, no content type overrides, no formula rules,
     and no existing-file editing.
@@ -270,7 +271,7 @@ and release packaging, or the decision to make minizip the default backend.
 
 12. Streaming-only conditional color scales - 基础.
     - `WorksheetWriter::add_conditional_color_scale()` now writes worksheet-local
-      two-color `<conditionalFormatting><cfRule type="colorScale">` XML for new
+      two-/three-color `<conditionalFormatting><cfRule type="colorScale">` XML for new
       workbooks only.
     - `ArgbColor` values serialize as uppercase eight-digit ARGB; `priority`
       is assigned by call order per worksheet; multi-range input writes one

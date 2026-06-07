@@ -28,8 +28,8 @@ obligations.
   `WorksheetWriter`, `CellView`, `StyleId`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
 - Current public worksheet metadata API also includes `ArgbColor`,
-  `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`, and
-  `WorksheetWriter::add_conditional_color_scale()` for a narrow two-color
+  `ColorScaleValueType`, `ColorScalePoint`, `TwoColorScaleRule`,
+  `ThreeColorScaleRule`, and `WorksheetWriter::add_conditional_color_scale()` for a narrow two-/three-color
   conditional color scale slice.
 - A Phase 2 streaming writer skeleton exists in
   `include/fastxlsx/streaming_writer.hpp` and `src/streaming_writer.cpp`:
@@ -77,7 +77,7 @@ obligations.
   override, and a workbook styles relationship when styles are registered. This
   is not font/fill/border/alignment support, rich text, dxf-backed conditional
   formatting, date cell type, or existing-file style preservation. The current
-  two-color color scale slice is worksheet metadata, not styles registry or
+  two-/three-color color scale slice is worksheet metadata, not styles registry or
   `dxfs` support.
 - A small manual sharedStrings benchmark record now exists in
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
@@ -1306,11 +1306,11 @@ Allowed early slices:
   styles, `styles.xml`, table resize, existing-file editing, conflict checks
   against non-table worksheet metadata/objects, and full Excel table UI behavior
   are not implemented by the first slice.
-- Conditional formatting has a basic streaming-only, new-workbook two-color
+- Conditional formatting has a basic streaming-only, new-workbook two-/three-color
   color scale slice through `WorksheetWriter::add_conditional_color_scale()`.
   It writes worksheet-local `<conditionalFormatting>` with
-  `<cfRule type="colorScale">`, two `<cfvo>` endpoints, and two inline
-  ARGB colors. `ColorScaleValueType::Minimum` / `Maximum` write no `val`;
+  `<cfRule type="colorScale">`, two or three `<cfvo>` endpoints, and matching
+  inline ARGB colors. `ColorScaleValueType::Minimum` / `Maximum` write no `val`;
   `Number` / `Percent` / `Percentile` require finite numeric values. Priorities
   are assigned by call order per worksheet, and multi-range input is serialized
   as one space-separated `sqref`.
@@ -1401,7 +1401,7 @@ Validation:
   `tools/verify_conditional_formatting_color_scales.py` for package XML,
   `openpyxl`, and optional `XlsxWriter` checks, and
   `tools/verify_conditional_formatting_color_scales_excel.ps1` for Excel COM
-  read-only visual checks of the basic and multi-range workbooks.
+  read-only visual checks of the two-color, three-color, and multi-range workbooks.
 - On any structural mismatch, compare against Excel/openpyxl/XlsxWriter
   reference workbooks by unzipping packages and inspecting XML semantics.
 

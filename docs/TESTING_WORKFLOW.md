@@ -116,10 +116,11 @@ table range overlap 测试只覆盖同一 worksheet 内 table-vs-table 矩形相
 table 允许、不同 worksheet 上相同 range 允许；不要把这扩展成与 data validations、
 images、merged ranges 或 autoFilter 的通用冲突检查。
 
-conditional color scale 结构测试要区分当前 two-color worksheet metadata 切片和完整
+conditional color scale 结构测试要区分当前 two-/three-color worksheet metadata 切片和完整
 conditional formatting。当前 `WorksheetWriter::add_conditional_color_scale()` 应检查
-worksheet `<conditionalFormatting sqref>`、`<cfRule type="colorScale" priority>`、两个
-`<cfvo>`、两个 `<color rgb="AARRGGBB">`、multi-range 空格分隔 `sqref`、同一 worksheet
+worksheet `<conditionalFormatting sqref>`、`<cfRule type="colorScale" priority>`、
+two-color 的两个 `<cfvo>` / 两个 `<color rgb="AARRGGBB">`、three-color 的三个
+`<cfvo>` / 三个 `<color rgb="AARRGGBB">`、multi-range 空格分隔 `sqref`、同一 worksheet
 内 priority 递增且跨 worksheet 重置，以及 suffix 顺序
 `mergeCells -> conditionalFormatting -> dataValidations`。还要确认它不生成
 `xl/styles.xml`、`dxfs`、`xl/metadata.xml`、worksheet `.rels`、workbook relationships、
@@ -181,8 +182,9 @@ Streaming writer hot-path 边界样例应优先做拆包 XML 结构检查：
   `InventoryTable` 应保持隐藏 totals row，`TotalsTable` 应显示 totals row 且范围为
   `A1:B3` / totals row `A3:B3`。
 - conditional color scale 必须用本机 Excel COM 或人工打开确认无修复弹窗，并检查
-  two-color color scale 规则可见。当前基础样例是
-  `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx`，
+  two-/three-color color scale 规则可见。当前基础样例是
+  `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx`
+  和 `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx`，
   multi-range 样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-multi-range.xlsx`。
 - 保存后再打开仍然正常。
@@ -546,19 +548,22 @@ analysis。
 py tools\verify_conditional_formatting_color_scales.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx `
   --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-metadata-order.xlsx `
+  --three-color-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx `
   --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-multi-range.xlsx `
   --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-priorities.xlsx `
   --work-dir build\qa\conditional-formatting-color-scales
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_conditional_formatting_color_scales_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx `
+  -ThreeColorPath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx `
   -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-multi-range.xlsx
 ```
 
 Python helper 检查 package XML、suffix ordering、relationship id 不偏移、multi-range
 `sqref`、priority、无 styles/dxfs/rels/content type/calcPr 副作用，并用 `openpyxl`
-读取 basic 和 multi-range 条件格式；可用时会用 `XlsxWriter` 创建参考 workbook。
-Excel helper 只读打开 basic 和 multi-range workbook，核对 `ColorScale!A2:A10`
-有一条 two-color scale，multi-range 中 A/C/E 三段区域有规则而 B 列间隔区没有规则。
+读取 two-color、three-color 和 multi-range 条件格式；可用时会用 `XlsxWriter` 创建参考 workbook。
+Excel helper 只读打开 two-color、three-color 和 multi-range workbook，核对
+`ColorScale!A2:A10`、`ThreeColorScale!A2:A10` 的 color scale 规则，以及
+multi-range 中 A/C/E 三段区域有规则而 B 列间隔区没有规则。
 这些是本地 QA artifact 和兼容性验证入口，不是运行时依赖，也不进入默认 CI。
 
 ## 拆包和 XML 对比

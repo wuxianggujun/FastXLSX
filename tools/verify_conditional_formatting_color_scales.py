@@ -20,6 +20,9 @@ EXPECTED_BASIC_SQREF = "A2:A10"
 EXPECTED_MULTI_RANGE_SQREF = "A2:A3 C2:C3 E2:E3"
 EXPECTED_LOW_COLOR = "FFFF0000"
 EXPECTED_HIGH_COLOR = "FF00B050"
+EXPECTED_THREE_LOW_COLOR = "FFF8696B"
+EXPECTED_THREE_MID_COLOR = "FFFFEB84"
+EXPECTED_THREE_HIGH_COLOR = "FF63BE7B"
 
 
 def require(condition: bool, message: str) -> None:
@@ -104,6 +107,33 @@ def verify_basic_package(path: Path) -> dict[str, Any]:
     require(worksheet_xml.count("<cfRule ") == 1, "basic cfRule count mismatch")
     require(worksheet_xml.count("<cfvo ") == 2, "basic cfvo count mismatch")
     require(worksheet_xml.count("<color rgb=") == 2, "basic color count mismatch")
+    for forbidden_fragment in ["dxfId=", "<dataBar", "<iconSet", "<formula>", "<dxfs"]:
+        require(forbidden_fragment not in worksheet_xml,
+                f"unexpected unsupported conditional-formatting fragment: {forbidden_fragment}")
+    return {"side_effects": side_effects, "sqref": EXPECTED_BASIC_SQREF}
+
+
+def verify_three_color_package(path: Path) -> dict[str, Any]:
+    side_effects = verify_no_package_side_effects(path)
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require("xmlns:r=" not in worksheet_xml,
+            "three-color worksheet should not declare relationship namespace")
+    require('<dimension ref="A1:A10"/>' in worksheet_xml, "three-color worksheet dimension mismatch")
+    fragment = (
+        f'<conditionalFormatting sqref="{EXPECTED_BASIC_SQREF}">'
+        '<cfRule type="colorScale" priority="1"><colorScale>'
+        '<cfvo type="min"/><cfvo type="percentile" val="50"/><cfvo type="max"/>'
+        f'<color rgb="{EXPECTED_THREE_LOW_COLOR}"/>'
+        f'<color rgb="{EXPECTED_THREE_MID_COLOR}"/>'
+        f'<color rgb="{EXPECTED_THREE_HIGH_COLOR}"/>'
+        '</colorScale></cfRule></conditionalFormatting>'
+    )
+    require(fragment in worksheet_xml, "three-color scale XML fragment mismatch")
+    require(worksheet_xml.count("<conditionalFormatting ") == 1,
+            "three-color conditionalFormatting count mismatch")
+    require(worksheet_xml.count("<cfRule ") == 1, "three-color cfRule count mismatch")
+    require(worksheet_xml.count("<cfvo ") == 3, "three-color cfvo count mismatch")
+    require(worksheet_xml.count("<color rgb=") == 3, "three-color color count mismatch")
     for forbidden_fragment in ["dxfId=", "<dataBar", "<iconSet", "<formula>", "<dxfs"]:
         require(forbidden_fragment not in worksheet_xml,
                 f"unexpected unsupported conditional-formatting fragment: {forbidden_fragment}")
@@ -221,6 +251,42 @@ def verify_openpyxl_basic(path: Path) -> dict[str, Any]:
         workbook.close()
 
 
+def verify_openpyxl_three_color(path: Path) -> dict[str, Any]:
+    try:
+        import openpyxl  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module openpyxl is not installed"}
+
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        worksheet = workbook["ThreeColorScale"]
+        rules = list(worksheet.conditional_formatting)
+        require(len(rules) == 1, f"expected 1 conditional formatting range, got {len(rules)}")
+        cf_range = rules[0]
+        sqref = str(getattr(cf_range, "sqref", cf_range))
+        require(sqref == EXPECTED_BASIC_SQREF,
+                f"three-color conditional formatting sqref mismatch: {sqref}")
+        rule = worksheet.conditional_formatting[cf_range][0]
+        require(rule.type == "colorScale", f"three-color rule type mismatch: {rule.type!r}")
+        require(rule.priority == 1, f"three-color rule priority mismatch: {rule.priority!r}")
+        require(len(rule.colorScale.cfvo) == 3, "three-color openpyxl cfvo count mismatch")
+        require(rule.colorScale.cfvo[0].type == "min", "three-color first cfvo type mismatch")
+        require(rule.colorScale.cfvo[1].type == "percentile", "three-color midpoint cfvo type mismatch")
+        require(float(rule.colorScale.cfvo[1].val) == 50.0, "three-color midpoint value mismatch")
+        require(rule.colorScale.cfvo[2].type == "max", "three-color last cfvo type mismatch")
+        colors = [color.rgb for color in rule.colorScale.color]
+        expected_colors = [EXPECTED_THREE_LOW_COLOR, EXPECTED_THREE_MID_COLOR, EXPECTED_THREE_HIGH_COLOR]
+        require(colors == expected_colors, f"three-color openpyxl color mismatch: {colors!r}")
+        return {
+            "status": "opened",
+            "sqref": sqref,
+            "priority": rule.priority,
+            "colors": colors,
+        }
+    finally:
+        workbook.close()
+
+
 def verify_openpyxl_multi_range(path: Path) -> dict[str, Any]:
     try:
         import openpyxl  # type: ignore
@@ -279,6 +345,39 @@ def create_xlsxwriter_reference(path: Path) -> dict[str, Any]:
     return {"status": "created", "path": str(path)}
 
 
+def create_xlsxwriter_three_color_reference(path: Path) -> dict[str, Any]:
+    try:
+        import xlsxwriter  # type: ignore
+    except ModuleNotFoundError:
+        return {"status": "skipped", "reason": "Python module xlsxwriter is not installed"}
+
+    workbook = xlsxwriter.Workbook(str(path))
+    try:
+        worksheet = workbook.add_worksheet("ThreeColorScale")
+        worksheet.write(0, 0, "Score")
+        for index, value in enumerate(range(1, 10), start=1):
+            worksheet.write(index, 0, value)
+        worksheet.conditional_format(
+            1,
+            0,
+            9,
+            0,
+            {
+                "type": "3_color_scale",
+                "min_type": "min",
+                "mid_type": "percentile",
+                "mid_value": 50,
+                "max_type": "max",
+                "min_color": "#F8696B",
+                "mid_color": "#FFEB84",
+                "max_color": "#63BE7B",
+            },
+        )
+    finally:
+        workbook.close()
+    return {"status": "created", "path": str(path)}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -298,6 +397,15 @@ def main() -> int:
             "fastxlsx-streaming-conditional-formatting-metadata-order.xlsx"
         ),
         help="FastXLSX conditional formatting + relationship-backed metadata workbook.",
+    )
+    parser.add_argument(
+        "--three-color-input",
+        type=Path,
+        default=Path(
+            "build/windows-nmake-release/tests/"
+            "fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx"
+        ),
+        help="FastXLSX three-color scale workbook to verify.",
     )
     parser.add_argument(
         "--multi-range-input",
@@ -327,10 +435,11 @@ def main() -> int:
 
     input_path = args.input.resolve()
     metadata_order_path = args.metadata_order_input.resolve()
+    three_color_path = args.three_color_input.resolve()
     multi_range_path = args.multi_range_input.resolve()
     priorities_path = args.priorities_input.resolve()
     work_dir = args.work_dir.resolve()
-    for path in [input_path, metadata_order_path, multi_range_path, priorities_path]:
+    for path in [input_path, metadata_order_path, three_color_path, multi_range_path, priorities_path]:
         require(path.exists(), f"input workbook does not exist: {path}")
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -339,15 +448,21 @@ def main() -> int:
         "fastxlsx_package": verify_basic_package(input_path),
         "metadata_order_input": str(metadata_order_path),
         "metadata_order": verify_metadata_order_package(metadata_order_path),
+        "three_color_input": str(three_color_path),
+        "three_color": verify_three_color_package(three_color_path),
         "multi_range_input": str(multi_range_path),
         "multi_range": verify_multi_range_package(multi_range_path),
         "priorities_input": str(priorities_path),
         "priorities": verify_priorities_package(priorities_path),
         "xlsx_libraries": {
             "openpyxl": verify_openpyxl_basic(input_path),
+            "openpyxl_three_color": verify_openpyxl_three_color(three_color_path),
             "openpyxl_multi_range": verify_openpyxl_multi_range(multi_range_path),
             "xlsxwriter": create_xlsxwriter_reference(
                 work_dir / "reference-xlsxwriter-conditional-formatting-color-scale.xlsx"
+            ),
+            "xlsxwriter_three_color": create_xlsxwriter_three_color_reference(
+                work_dir / "reference-xlsxwriter-conditional-formatting-three-color-scale.xlsx"
             ),
         },
     }

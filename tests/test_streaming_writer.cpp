@@ -79,6 +79,16 @@ fastxlsx::TwoColorScaleRule make_two_color_scale(
     return rule;
 }
 
+fastxlsx::ThreeColorScaleRule make_three_color_scale(
+    fastxlsx::ArgbColor lower, fastxlsx::ArgbColor midpoint, fastxlsx::ArgbColor upper)
+{
+    fastxlsx::ThreeColorScaleRule rule;
+    rule.lower = {fastxlsx::ColorScaleValueType::Minimum, 0.0, lower};
+    rule.midpoint = {fastxlsx::ColorScaleValueType::Percentile, 50.0, midpoint};
+    rule.upper = {fastxlsx::ColorScaleValueType::Maximum, 0.0, upper};
+    return rule;
+}
+
 void test_streaming_writer_smoke_package()
 {
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-smoke.xlsx";
@@ -920,6 +930,73 @@ void test_streaming_writer_conditional_formatting_two_color_scale()
         "two-color scale color count mismatch");
 }
 
+void test_streaming_writer_conditional_formatting_three_color_scale()
+{
+    const auto output_path =
+        std::filesystem::current_path()
+        / "fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ThreeColorScale");
+
+    sheet.append_row({fastxlsx::CellView::text("Score")});
+    for (int value = 1; value <= 9; ++value) {
+        sheet.append_row({fastxlsx::CellView::number(static_cast<double>(value))});
+    }
+
+    sheet.add_conditional_color_scale(
+        {2, 1, 10, 1},
+        make_three_color_scale(
+            fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+            fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
+            fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B}));
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "conditional formatting three-color scale xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"),
+        "missing conditional formatting three-color worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "three-color scale should not create worksheet relationships");
+    check(!entries.contains("xl/styles.xml"),
+        "three-color scale should not create styles");
+    check(!entries.contains("xl/metadata.xml"),
+        "three-color scale should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("styles") == std::string::npos,
+        "three-color scale should not add style content types");
+    check(content_types.find("conditionalFormatting") == std::string::npos,
+        "three-color scale should not add conditional formatting content types");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find("styles") == std::string::npos,
+        "three-color scale should not add styles workbook relationship");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "three-color scale worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:A10\"/>",
+        "three-color scale worksheet dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><conditionalFormatting sqref=\"A2:A10\">"
+        "<cfRule type=\"colorScale\" priority=\"1\"><colorScale>"
+        "<cfvo type=\"min\"/><cfvo type=\"percentile\" val=\"50\"/><cfvo type=\"max\"/>"
+        "<color rgb=\"FFF8696B\"/><color rgb=\"FFFFEB84\"/><color rgb=\"FF63BE7B\"/>"
+        "</colorScale></cfRule></conditionalFormatting></worksheet>",
+        "three-color scale XML mismatch");
+    check(count_occurrences(worksheet_xml, "<conditionalFormatting ") == 1,
+        "three-color conditional formatting element count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfRule ") == 1,
+        "three-color conditional formatting rule count mismatch");
+    check(count_occurrences(worksheet_xml, "<cfvo ") == 3,
+        "three-color scale cfvo count mismatch");
+    check(count_occurrences(worksheet_xml, "<color rgb=") == 3,
+        "three-color scale color count mismatch");
+}
+
 void test_streaming_writer_conditional_formatting_metadata_order()
 {
     const auto output_path =
@@ -1204,6 +1281,10 @@ void test_streaming_writer_invalid_conditional_formatting()
     const auto valid_rule = make_two_color_scale(
         fastxlsx::ArgbColor {0xFF, 0xFF, 0x00, 0x00},
         fastxlsx::ArgbColor {0xFF, 0x00, 0xB0, 0x50});
+    const auto valid_three_color_rule = make_three_color_scale(
+        fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+        fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
+        fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B});
     check_fastxlsx_error(
         [&sheet, &valid_rule] { sheet.add_conditional_color_scale({0, 1, 1, 1}, valid_rule); },
         "conditional formatting should reject a zero row");
@@ -1269,6 +1350,22 @@ void test_streaming_writer_invalid_conditional_formatting()
             sheet.add_conditional_color_scale({1, 1, 1, 1}, upper_min_rule);
         },
         "conditional formatting should reject minimum as upper endpoint");
+
+    fastxlsx::ThreeColorScaleRule middle_min_rule = valid_three_color_rule;
+    middle_min_rule.midpoint.type = fastxlsx::ColorScaleValueType::Minimum;
+    check_fastxlsx_error(
+        [&sheet, &middle_min_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1, 1}, middle_min_rule);
+        },
+        "three-color conditional formatting should reject minimum as midpoint");
+
+    fastxlsx::ThreeColorScaleRule middle_infinity_rule = valid_three_color_rule;
+    middle_infinity_rule.midpoint.value = std::numeric_limits<double>::infinity();
+    check_fastxlsx_error(
+        [&sheet, &middle_infinity_rule] {
+            sheet.add_conditional_color_scale({1, 1, 1, 1}, middle_infinity_rule);
+        },
+        "three-color conditional formatting should reject non-finite midpoint values");
 
     sheet.append_row({fastxlsx::CellView::number(1.0)});
     workbook.close();
@@ -3196,6 +3293,16 @@ void test_streaming_writer_rejects_mutation_after_close()
         "add_conditional_color_scale should reject mutation after workbook close");
     check_fastxlsx_error(
         [&sheet] {
+            sheet.add_conditional_color_scale(
+                {1, 1, 1, 1},
+                make_three_color_scale(
+                    fastxlsx::ArgbColor {0xFF, 0xF8, 0x69, 0x6B},
+                    fastxlsx::ArgbColor {0xFF, 0xFF, 0xEB, 0x84},
+                    fastxlsx::ArgbColor {0xFF, 0x63, 0xBE, 0x7B}));
+        },
+        "add_conditional_color_scale three-color should reject mutation after workbook close");
+    check_fastxlsx_error(
+        [&sheet] {
             fastxlsx::DataValidationRule rule;
             rule.type = fastxlsx::DataValidationType::List;
             rule.formula1 = "\"A,B\"";
@@ -3707,6 +3814,7 @@ int main()
         test_streaming_writer_invalid_style_registration();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_conditional_formatting_two_color_scale();
+        test_streaming_writer_conditional_formatting_three_color_scale();
         test_streaming_writer_conditional_formatting_metadata_order();
         test_streaming_writer_conditional_formatting_multi_range_sqref();
         test_streaming_writer_conditional_formatting_priorities();

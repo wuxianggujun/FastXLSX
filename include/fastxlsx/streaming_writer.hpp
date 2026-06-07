@@ -150,6 +150,20 @@ struct TableOptions {
     bool show_column_stripes = false;
 };
 
+/// Optional hyperlink display metadata.
+///
+/// API mode: Streaming worksheet metadata for new workbooks. Empty strings are
+/// omitted. Non-empty strings are copied into writer state and emitted as
+/// worksheet `<hyperlink>` attributes. These options do not write cell text,
+/// create hyperlink styles, validate targets, or edit existing XLSX files.
+struct HyperlinkOptions {
+    /// Optional display text written as the OpenXML `display` attribute.
+    std::string display;
+
+    /// Optional screen-tip text written as the OpenXML `tooltip` attribute.
+    std::string tooltip;
+};
+
 /// A cell view consumed immediately by WorksheetWriter.
 ///
 /// API mode: Streaming. Text and formula values are non-owning string views and
@@ -319,13 +333,15 @@ public:
     /// `xl/worksheets/_rels/sheetN.xml.rels` relationship with
     /// `TargetMode="External"`. This API copies the target URL into writer
     /// state, does not write or style the cell value, does not check URL
-    /// reachability, and does not support internal workbook links or editing
-    /// existing XLSX files.
+    /// reachability, and does not edit existing XLSX files. Optional display
+    /// and tooltip strings are serialized as hyperlink attributes only; they do
+    /// not create styles or write the underlying cell value.
     ///
     /// @throws FastXlsxError if the cell reference is outside Excel worksheet
     /// limits, the target URL is empty, or the workbook is closed.
     void add_external_hyperlink(
-        std::uint32_t row, std::uint32_t column, std::string target_url);
+        std::uint32_t row, std::uint32_t column, std::string target_url,
+        HyperlinkOptions options = {});
 
     /// Records an internal workbook hyperlink on one worksheet cell.
     ///
@@ -335,12 +351,15 @@ public:
     /// relationships, or content type overrides. This API copies the location
     /// text into writer state, does not write or style the cell value, does not
     /// validate that the target sheet or cell exists, and does not edit
-    /// existing XLSX files.
+    /// existing XLSX files. Optional display and tooltip strings are serialized
+    /// as hyperlink attributes only; they do not create styles or write the
+    /// underlying cell value.
     ///
     /// @throws FastXlsxError if the cell reference is outside Excel worksheet
     /// limits, the location is empty, or the workbook is closed.
     void add_internal_hyperlink(
-        std::uint32_t row, std::uint32_t column, std::string location);
+        std::uint32_t row, std::uint32_t column, std::string location,
+        HyperlinkOptions options = {});
 
     /// Records a worksheet table range for a new workbook.
     ///

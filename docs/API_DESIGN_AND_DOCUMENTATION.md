@@ -96,8 +96,10 @@ new-workbook 路径、是否复制 URL 文本、是否写 worksheet `<hyperlinks
 relationships 或 content type overrides、是否会写单元格文本或样式，以及是否校验 URL
 可达性或支持 existing-file editing。internal API 要说明是否复制 location 文本、是否写
 worksheet `<hyperlink location="...">`、是否不创建 `.rels` 或 `r:id`、是否校验目标
-sheet/range/named range 是否存在、是否写 display/tooltip/style，以及是否支持
-existing-file editing。
+sheet/range/named range 是否存在，以及是否支持 existing-file editing。`HyperlinkOptions`
+要说明非空 display/tooltip 会复制进 writer state 并写成 worksheet `<hyperlink>`
+attributes，空字符串省略，且不会写单元格文本、创建 hyperlink 样式、生成 `styles.xml`
+或改变 relationships/content types。
 
 对 tables 这类跨 part worksheet metadata API，注释还要说明是否只支持
 Streaming / new-workbook 路径、是否复制 table name / column names / style name、

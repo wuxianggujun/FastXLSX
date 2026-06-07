@@ -67,6 +67,7 @@ that exist in code, CMake, tests, docs, or local verification.
   - `build/windows-nmake-release/tests/fastxlsx-streaming-data-validations.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-internal-hyperlinks.xlsx`
+  - `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`
   Manual `build-nmake` output may exist locally, but treat it as potentially
   stale unless it was regenerated after the current source change.
 
@@ -195,9 +196,11 @@ and release packaging, or the decision to make minizip the default backend.
       `<hyperlink location="...">` for new workbooks only, without worksheet
       `.rels`, workbook relationships, content type overrides, or `rId`
       consumption.
-    - Keep hyperlink styles, tooltip/display attributes, target existence
-      validation, full Excel UI behavior, and existing-file editing out of
-      scope until separately designed.
+    - `HyperlinkOptions` now writes optional `display` / `tooltip` attributes
+      on external and internal worksheet `<hyperlink>` elements.
+    - Keep hyperlink styles, target existence validation, full Excel UI
+      behavior, and existing-file editing out of scope until separately
+      designed.
 
 11. Streaming-only tables - 基础.
     - `WorksheetWriter::add_table()` and `TableOptions` now write
@@ -624,9 +627,12 @@ Do:
 - Write internal hyperlinks as worksheet `location` attributes only; do not
   create worksheet `.rels`, workbook relationships, content type overrides, or
   consume worksheet-local `rId` values.
-- Keep hyperlink styles, tooltip/display attributes, URL reachability checks,
-  internal target existence checks, named range semantics, and existing-file
-  editing out of these first slices.
+- Use `HyperlinkOptions` for optional display and tooltip metadata. Non-empty
+  values are copied into writer state and written as worksheet `<hyperlink>`
+  attributes only.
+- Keep hyperlink styles, URL reachability checks, internal target existence
+  checks, named range semantics, and existing-file editing out of these first
+  slices.
 
 Accept when:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
@@ -640,6 +646,15 @@ Accept when:
   worksheet-owner-local `rId` allocation across worksheets, plain sheets without
   `.rels`, invalid row/column references, empty target URLs, empty internal
   locations, and mutation-after-close.
+- Tests cover `display` / `tooltip` attribute serialization for external and
+  internal hyperlinks, XML attribute escaping, display-only, tooltip-only,
+  explicitly empty options being omitted, unchanged relationship behavior, and
+  no `styles.xml`.
+- Local `openpyxl` 3.1.2 and Excel COM validation is recorded for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`.
+  Excel COM validates `ScreenTip`, external `Address`, internal `SubAddress`,
+  hyperlink counts, and unchanged cell text; `TextToDisplay` remains the cell
+  text in these samples.
 - Excel visual verification is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`.
 - Excel visual verification is recorded for
@@ -649,9 +664,8 @@ Accept when:
 
 Do not claim:
 - Full hyperlink support from these basic slices.
-- Hyperlink styles, tooltip/display attributes, target existence validation,
-  named range semantics, existing-file editing, unknown part preservation, or
-  complete Excel UI parity.
+- Hyperlink styles, target existence validation, named range semantics,
+  existing-file editing, unknown part preservation, or complete Excel UI parity.
 
 ### P16 - Tables
 

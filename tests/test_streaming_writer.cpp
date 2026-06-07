@@ -995,6 +995,116 @@ void test_streaming_writer_internal_hyperlink_with_table_relationship_id()
         "internal hyperlink should not create hyperlink relationship entries");
 }
 
+void test_streaming_writer_hyperlink_display_tooltips()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-hyperlink-display-tooltips.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto external = workbook.add_worksheet("ExternalAttrs");
+    auto internal = workbook.add_worksheet("InternalAttrs");
+    auto target = workbook.add_worksheet("Target");
+
+    external.append_row({
+        fastxlsx::CellView::text("External both"),
+        fastxlsx::CellView::text("External display"),
+        fastxlsx::CellView::text("External tooltip"),
+    });
+    fastxlsx::HyperlinkOptions external_both;
+    external_both.display = "Open & <Docs> \"Q\" 'A'";
+    external_both.tooltip = "External tip & <more> \"Q\" 'A'";
+    external.add_external_hyperlink(1, 1, "https://example.com/both", external_both);
+    fastxlsx::HyperlinkOptions external_display;
+    external_display.display = "Display only";
+    external.add_external_hyperlink(1, 2, "https://example.com/display", external_display);
+    fastxlsx::HyperlinkOptions external_tooltip;
+    external_tooltip.tooltip = "Tooltip only";
+    external.add_external_hyperlink(1, 3, "https://example.com/tooltip", external_tooltip);
+
+    internal.append_row({
+        fastxlsx::CellView::text("Internal both"),
+        fastxlsx::CellView::text("Internal display"),
+        fastxlsx::CellView::text("Internal tooltip"),
+        fastxlsx::CellView::text("Internal empty options"),
+    });
+    fastxlsx::HyperlinkOptions internal_both;
+    internal_both.display = "Jump & <Target> \"Q\" 'A'";
+    internal_both.tooltip = "Internal tip & <more> \"Q\" 'A'";
+    internal.add_internal_hyperlink(1, 1, "Target!A1", internal_both);
+    fastxlsx::HyperlinkOptions internal_display;
+    internal_display.display = "Internal display only";
+    internal.add_internal_hyperlink(1, 2, "Target!A2", internal_display);
+    fastxlsx::HyperlinkOptions internal_tooltip;
+    internal_tooltip.tooltip = "Internal tooltip only";
+    internal.add_internal_hyperlink(1, 3, "Target!A3", internal_tooltip);
+    internal.add_internal_hyperlink(1, 4, "Target!D4", fastxlsx::HyperlinkOptions {});
+
+    target.append_row({
+        fastxlsx::CellView::text("A1"),
+        fastxlsx::CellView::text("A2"),
+        fastxlsx::CellView::text("A3"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "hyperlink display/tooltip xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "external display/tooltip hyperlinks should keep worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "internal display/tooltip hyperlinks should not create worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "target sheet should not create worksheet relationships");
+
+    const auto& external_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(external_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\" "
+        "display=\"Open &amp; &lt;Docs&gt; &quot;Q&quot; &apos;A&apos;\" "
+        "tooltip=\"External tip &amp; &lt;more&gt; &quot;Q&quot; &apos;A&apos;\"/>"
+        "<hyperlink ref=\"B1\" r:id=\"rId2\" display=\"Display only\"/>"
+        "<hyperlink ref=\"C1\" r:id=\"rId3\" tooltip=\"Tooltip only\"/></hyperlinks>",
+        "external hyperlink display/tooltip XML mismatch");
+    check_contains(external_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>External both</t></is></c>",
+        "external hyperlink display should not replace cell text");
+
+    const auto& external_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(external_rels, "<Relationship ") == 3,
+        "external display/tooltip hyperlinks should only create URL relationships");
+    check(external_rels.find("display=") == std::string::npos,
+        "display attribute should not be written to worksheet relationships");
+    check(external_rels.find("tooltip=") == std::string::npos,
+        "tooltip attribute should not be written to worksheet relationships");
+
+    const auto& internal_xml = entries.at("xl/worksheets/sheet2.xml");
+    check(internal_xml.find("xmlns:r=") == std::string::npos,
+        "internal display/tooltip worksheet should not declare relationship namespace");
+    check(internal_xml.find("r:id=") == std::string::npos,
+        "internal display/tooltip hyperlinks should not use relationship ids");
+    check_contains(internal_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" location=\"Target!A1\" "
+        "display=\"Jump &amp; &lt;Target&gt; &quot;Q&quot; &apos;A&apos;\" "
+        "tooltip=\"Internal tip &amp; &lt;more&gt; &quot;Q&quot; &apos;A&apos;\"/>"
+        "<hyperlink ref=\"B1\" location=\"Target!A2\" display=\"Internal display only\"/>"
+        "<hyperlink ref=\"C1\" location=\"Target!A3\" tooltip=\"Internal tooltip only\"/>"
+        "<hyperlink ref=\"D1\" location=\"Target!D4\"/></hyperlinks>",
+        "internal hyperlink display/tooltip XML mismatch");
+    check(internal_xml.find("display=\"\"") == std::string::npos,
+        "explicit empty display should be omitted");
+    check(internal_xml.find("tooltip=\"\"") == std::string::npos,
+        "explicit empty tooltip should be omitted");
+    check_contains(internal_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>Internal both</t></is></c>",
+        "internal hyperlink display should not replace cell text");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "hyperlink display/tooltip should not add content type overrides");
+    check(content_types.find("styles.xml") == std::string::npos,
+        "hyperlink display/tooltip should not create styles");
+}
+
 void test_streaming_writer_tables()
 {
     const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-tables.xlsx";
@@ -2237,6 +2347,7 @@ int main()
         test_streaming_writer_external_hyperlinks();
         test_streaming_writer_internal_hyperlinks();
         test_streaming_writer_internal_hyperlink_with_table_relationship_id();
+        test_streaming_writer_hyperlink_display_tooltips();
         test_streaming_writer_tables();
         test_streaming_writer_table_style_flags();
         test_streaming_writer_table_column_attribute_escaping();

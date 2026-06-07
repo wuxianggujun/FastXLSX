@@ -420,6 +420,10 @@ Tasks:
   URL as lightweight worksheet metadata.
 - `WorksheetWriter::add_internal_hyperlink()` stores a cell reference and
   workbook location text as lightweight worksheet metadata.
+- `HyperlinkOptions` stores optional display and tooltip text for either
+  external or internal hyperlinks. Non-empty values are copied into writer state
+  and serialized only as worksheet `<hyperlink>` `display` / `tooltip`
+  attributes.
 - Relationship ids are allocated per worksheet owner as `rId1`, `rId2`, and so
   on, and internal hyperlinks do not consume relationship ids.
 - The writer emits worksheet `<hyperlinks>` plus
@@ -430,9 +434,9 @@ Tasks:
   type overrides.
 - The relationship type is the OpenXML hyperlink relationship type and uses
   `TargetMode="External"`.
-- The first slice does not write cell text, create hyperlink styles, validate
-  URL reachability or internal target existence, expose tooltip/display
-  attributes, edit existing XLSX files, or claim full Excel UI parity.
+- The first slices do not write cell text, create hyperlink styles, validate
+  URL reachability or internal target existence, edit existing XLSX files, or
+  claim full Excel UI parity.
 
 Validation:
 - Tests prove worksheet XML `r:id` values match worksheet `.rels`.
@@ -446,6 +450,17 @@ Validation:
   worksheet, worksheet-owner-local `rId` allocation across worksheets, sheets
   without hyperlinks, invalid row/column references, empty target URLs,
   empty internal locations, and mutation-after-close.
+- `fastxlsx.streaming` covers optional `display` / `tooltip` attributes for
+  external and internal hyperlinks, attribute XML escaping, display-only,
+  tooltip-only, explicitly empty options being omitted, unchanged `.rels`
+  semantics, no content type pollution, and no `styles.xml`.
+- Local `openpyxl` 3.1.2 validation passed for
+  `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`;
+  it read external/internal `display` and `tooltip` fields and confirmed no
+  `.rels`, content type, or styles side effects. Local Excel COM read-only
+  validation also passed for hyperlink counts, external `Address`, internal
+  `SubAddress`, `ScreenTip`, and unchanged cell text; Excel COM `TextToDisplay`
+  continues to return the underlying cell text for these samples.
 - Local Excel visual verification passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-external-hyperlinks.xlsx`;
   Excel COM confirmed worksheet `Hyperlinks` counts, Address values, and
@@ -1092,10 +1107,12 @@ Allowed early slices:
   `WorksheetWriter::add_internal_hyperlink()`. External links write worksheet
   `.rels`; internal links write `location` only and do not consume worksheet
   `rId` values. Both avoid DOM and existing-file editing.
-- Complete hyperlink support remains planned: tooltip/display attributes,
-  hyperlink styles, target existence validation, named range semantics,
-  existing-file editing, and full Excel UI behavior are not implemented by the
-  first slices.
+- `HyperlinkOptions` has a basic streaming-only, new-workbook slice for
+  worksheet `display` / `tooltip` attributes. It does not write cell text,
+  create hyperlink styles, alter relationships, or validate targets.
+- Complete hyperlink support remains planned: hyperlink styles, target
+  existence validation, named range semantics, existing-file editing, and full
+  Excel UI behavior are not implemented by the first slices.
 - Tables have a basic streaming-only, new-workbook slice through
   `WorksheetWriter::add_table()` and `TableOptions`. It writes worksheet
   `<tableParts>`, worksheet `.rels`, `xl/tables/tableN.xml`, and table content

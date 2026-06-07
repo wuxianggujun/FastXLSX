@@ -44,12 +44,14 @@ struct ExternalHyperlink {
     std::uint32_t row = 1;
     std::uint32_t column = 1;
     std::string target_url;
+    HyperlinkOptions options;
 };
 
 struct InternalHyperlink {
     std::uint32_t row = 1;
     std::uint32_t column = 1;
     std::string location;
+    HyperlinkOptions options;
 };
 
 struct WorksheetTable {
@@ -778,14 +780,36 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
         xml += detail::cell_reference(hyperlink.row, hyperlink.column);
         xml += "\" r:id=\"";
         xml += worksheet_relationship_id(index);
-        xml += "\"/>";
+        xml += "\"";
+        if (!hyperlink.options.display.empty()) {
+            xml += " display=\"";
+            xml += detail::escape_xml_attribute(hyperlink.options.display);
+            xml += "\"";
+        }
+        if (!hyperlink.options.tooltip.empty()) {
+            xml += " tooltip=\"";
+            xml += detail::escape_xml_attribute(hyperlink.options.tooltip);
+            xml += "\"";
+        }
+        xml += "/>";
     }
     for (const InternalHyperlink& hyperlink : worksheet.internal_hyperlinks) {
         xml += "<hyperlink ref=\"";
         xml += detail::cell_reference(hyperlink.row, hyperlink.column);
         xml += "\" location=\"";
         xml += detail::escape_xml_attribute(hyperlink.location);
-        xml += "\"/>";
+        xml += "\"";
+        if (!hyperlink.options.display.empty()) {
+            xml += " display=\"";
+            xml += detail::escape_xml_attribute(hyperlink.options.display);
+            xml += "\"";
+        }
+        if (!hyperlink.options.tooltip.empty()) {
+            xml += " tooltip=\"";
+            xml += detail::escape_xml_attribute(hyperlink.options.tooltip);
+            xml += "\"";
+        }
+        xml += "/>";
     }
     xml += "</hyperlinks>";
     return xml;
@@ -1352,25 +1376,29 @@ void WorksheetWriter::add_data_validation(CellRange range, DataValidationRule ru
 }
 
 void WorksheetWriter::add_external_hyperlink(
-    std::uint32_t row, std::uint32_t column, std::string target_url)
+    std::uint32_t row, std::uint32_t column, std::string target_url,
+    HyperlinkOptions options)
 {
     ensure_mutable_worksheet(state_);
     (void)detail::cell_reference(row, column);
     if (target_url.empty()) {
         throw FastXlsxError("external hyperlink target URL cannot be empty");
     }
-    state_->external_hyperlinks.push_back({row, column, std::move(target_url)});
+    state_->external_hyperlinks.push_back(
+        {row, column, std::move(target_url), std::move(options)});
 }
 
 void WorksheetWriter::add_internal_hyperlink(
-    std::uint32_t row, std::uint32_t column, std::string location)
+    std::uint32_t row, std::uint32_t column, std::string location,
+    HyperlinkOptions options)
 {
     ensure_mutable_worksheet(state_);
     (void)detail::cell_reference(row, column);
     if (location.empty()) {
         throw FastXlsxError("internal hyperlink location cannot be empty");
     }
-    state_->internal_hyperlinks.push_back({row, column, std::move(location)});
+    state_->internal_hyperlinks.push_back(
+        {row, column, std::move(location), std::move(options)});
 }
 
 void WorksheetWriter::add_table(CellRange range, TableOptions options)

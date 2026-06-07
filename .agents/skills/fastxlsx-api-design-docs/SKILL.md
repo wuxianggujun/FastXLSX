@@ -20,6 +20,7 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 `DataValidationOperator` 和 `FastXlsxError`。`Workbook::set_document_properties()`
 和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
 docProps metadata API；它们只写 `docProps/core.xml` 和 `docProps/app.xml`。
+`HyperlinkOptions` 是当前 streaming hyperlink display/tooltip metadata API。
 `WorksheetWriter::add_external_hyperlink()` 是当前 external URL
 worksheet hyperlink API；`WorksheetWriter::add_internal_hyperlink()` 是当前 internal
 workbook location worksheet hyperlink API；`WorksheetWriter::add_table()` 和 `TableOptions` 是当前
@@ -53,16 +54,21 @@ API 可以易用，但不能为了易用性牺牲性能主线。
   被复制进 writer state，内存按规则数量和公式文本长度增长；它不解析公式、不校验
   单元格值、不检查重叠、不新增 relationships/content types，也不支持 existing-file editing。
 - `WorksheetWriter::add_external_hyperlink()` 是 Streaming metadata API：cell ref 和
-  target URL 被复制进 writer state，内存按链接数量和 URL 文本长度增长；它会新增
+  target URL 被复制进 writer state，内存按链接数量、URL 文本长度以及可选 display/tooltip
+  文本长度增长；它会新增
   worksheet `<hyperlinks>` 和 worksheet `.rels`，但不新增 workbook relationships 或
   content type overrides，不写单元格文本、不创建 hyperlink 样式、不校验 URL 可达性，
   也不支持 existing-file editing。
 - `WorksheetWriter::add_internal_hyperlink()` 是 Streaming metadata API：cell ref 和
-  workbook location 文本被复制进 writer state，内存按链接数量和 location 文本长度增长；
+  workbook location 文本被复制进 writer state，内存按链接数量、location 文本长度以及
+  可选 display/tooltip 文本长度增长；
   它只新增 worksheet `<hyperlinks>` 中的 `location` 属性，不新增 worksheet `.rels`、
   workbook relationships 或 content type overrides，不消耗 worksheet-local `rId`，不写
   单元格文本、不创建 hyperlink 样式、不校验 target sheet/range/named range 是否存在，也
   不支持 existing-file editing。
+- `HyperlinkOptions` 是 Streaming metadata options：非空 `display` / `tooltip` 只写成
+  worksheet `<hyperlink>` attributes，空字符串省略；它不写 cell text、不生成 `styles.xml`、
+  不改变 relationships/content types，也不代表完整 Excel hyperlink UI。
 - `WorksheetWriter::add_table()` 是 Streaming metadata API：range、table name、
   column names 和 style flags 被复制进 writer state，内存按表数量和文本长度增长；
   它会新增 `xl/tables/tableN.xml`、worksheet `<tableParts>`、worksheet `.rels` 和
@@ -130,8 +136,9 @@ new-workbook-only、规则数量内存成本、公式文本拷贝、无公式求
 hyperlinks 这类 worksheet metadata API 还要写清：Streaming-only、
 new-workbook-only、URL/location 文本拷贝、external 链接的 worksheet `<hyperlinks>` 与
 worksheet `.rels` 副作用、worksheet-owner-local `rId`、internal 链接是否只写 `location`
-且不创建 `.rels` / `r:id`、不写单元格文本、不创建 hyperlink 样式、无 URL 可达性校验、
-无 internal target 存在性校验、无 existing-file editing，以及不代表完整 hyperlink 支持。
+且不创建 `.rels` / `r:id`、`HyperlinkOptions` 是否只写 display/tooltip attributes 并省略
+空字符串、不写单元格文本、不创建 hyperlink 样式、无 URL 可达性校验、无 internal target
+存在性校验、无 existing-file editing，以及不代表完整 hyperlink 支持。
 tables 这类跨 part worksheet metadata API 还要写清：Streaming-only、new-workbook-only、
 table name / column names / style name 拷贝、`xl/tables/tableN.xml`、worksheet
 `<tableParts>`、worksheet `.rels`、content type override、worksheet-owner-local `rId`、

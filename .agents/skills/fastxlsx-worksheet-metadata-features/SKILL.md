@@ -73,8 +73,9 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - Hyperlinks：已有基础 streaming-only、新建 workbook 版本，覆盖 external URL links
   和 internal workbook location links。External 写 cell ref + target URL + worksheet
   `.rels`；internal 写 cell ref + `location` 且不写 `.rels`。当前不写单元格文本、
-  不创建 hyperlink 样式、不支持 tooltip/display 属性、target 存在性校验、已有文件编辑
-  或完整 Excel UI 行为。
+  不创建 hyperlink 样式、不支持 target 存在性校验、已有文件编辑或完整 Excel UI 行为。
+  `HyperlinkOptions` 当前只支持基础 `display` / `tooltip` worksheet attributes；非空
+  字符串会复制进 writer state，空字符串省略，不改变 `.rels` / content types / styles。
 - Conditional formatting：保持计划；如果只写 worksheet metadata，也必须确认样式、
   公式和 range 依赖不会进入大型 DOM。
 - Tables：已有基础 streaming-only、新建 workbook 版本。当前只保存 range、table name、
@@ -109,6 +110,10 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   internal-only worksheet 不生成 `.rels`、不声明 `xmlns:r`、不写 `r:id`、不污染 workbook
   relationships 或 content types，mixed external/internal 场景下 external `rId` 不被
   internal hyperlink 消耗，以及 invalid cell、empty location 和 close 后 mutation。
+- hyperlink display/tooltip 结构测试应检查 external/internal 两条路径的 `display` 和
+  `tooltip` attribute XML escape、display-only、tooltip-only、显式空 options 被省略、
+  `.rels` 不写 display/tooltip、不新增 styles/content types，并确认 relationship id
+  不偏移。
 - tables 结构测试应检查 `xl/tables/tableN.xml`、worksheet `<tableParts>`、
   worksheet `.rels`、table content type override、owner-local `rId`、与 hyperlinks
   共存时的关系 id、多对象关系 id 回归、XML escape、table column attribute

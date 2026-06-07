@@ -778,6 +778,9 @@ Validation:
 - Tests inspect ZIP entries and key XML semantics.
 - Tests check relationships, content type defaults/overrides, cell references,
   value types, and escaped string values.
+- Document properties local QA can be run with `tools/verify_document_properties.py`
+  and `tools/verify_document_properties_excel.ps1`; these helpers are manual QA
+  only and do not expand scope to custom properties or existing-file editing.
 
 ### Phase 1.4 - ZIP Backend
 
@@ -1095,6 +1098,13 @@ Current facts:
   present on the in-memory and streaming new-workbook paths. Styles, custom
   document properties, named ranges, style registries, and rich formatting are
   still planned work.
+- Local QA helpers now exist for document properties:
+  `tools/verify_document_properties.py` checks the in-memory and streaming
+  sample packages, core/app XML, content types, relationships, XML escaping,
+  absence of `docProps/custom.xml`, and `openpyxl` core-property semantics;
+  `tools/verify_document_properties_excel.ps1` opens both workbooks read-only
+  through Excel COM and verifies the smoke sheets, while treating XML/openpyxl
+  as authoritative when Excel COM does not expose built-in properties.
 
 Tasks:
 - Extend focused structure tests and Excel visual samples when metadata behavior

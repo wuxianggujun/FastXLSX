@@ -528,7 +528,7 @@ Do not claim:
 
 ### P10 - Configurable Document Properties API
 
-Status: 基础.
+Status: 基础 + fixed local QA helpers.
 
 Current foundation:
 - Public `DocumentProperties` exists for small new-workbook metadata.
@@ -537,6 +537,11 @@ Current foundation:
   `docProps/app.xml`.
 - The current scope does not generate `docProps/custom.xml` and does not edit
   existing XLSX files.
+- Fixed local QA helpers now exist:
+  `tools/verify_document_properties.py` checks ZIP/XML and `openpyxl`
+  core-property semantics for the in-memory and streaming samples, and
+  `tools/verify_document_properties_excel.ps1` opens both samples read-only in
+  local Excel COM for workbook-open and smoke-sheet validation.
 
 Start after the static `docProps/core.xml` and `docProps/app.xml` baseline stays
 stable.
@@ -550,6 +555,8 @@ Accept when:
 - Structure tests check `docProps/core.xml`, `docProps/app.xml`, relationships,
   and content types.
 - Excel opens samples and displays expected document metadata where applicable.
+- Python/XML and Excel helper output is recorded when document-property behavior
+  changes.
 
 Do not claim:
 - `docProps/custom.xml`, existing-file editing, arbitrary timestamps, or full

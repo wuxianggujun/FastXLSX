@@ -230,6 +230,9 @@ accessibility 行为。
 - 便利 API 不会隐式 DOM 化大型 worksheet。
 - 测试计划包含结构验证和必要的 Excel 可视化验证。
 - document properties 测试覆盖 core/app docProps 字段、XML escape、relationships、
-  content types，并确认不生成 `docProps/custom.xml`。
+  content types，并确认不生成 `docProps/custom.xml`。当前本地 QA helper 是
+  `tools/verify_document_properties.py` 和 `tools/verify_document_properties_excel.ps1`；
+  只把它们当作 XML/openpyxl/Excel COM 验证入口，不要把它们写成运行时依赖、
+  默认 CI 要求或完整 document properties 支持。
 - 数值相关 API 注释写清 `NaN` / `+Inf` / `-Inf` 拒绝边界，且测试覆盖拒绝路径。
 - 性能敏感 API 有 benchmark 或明确后续 benchmark 任务。

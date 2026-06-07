@@ -273,6 +273,25 @@ BuiltinDocumentProperties 中的 Title、Author、Subject、Keywords 和 Categor
 Excel COM 未暴露或规范化的字段以拆包后的 `docProps/core.xml` / `docProps/app.xml`
 结构测试为准。
 
+固定本地 QA 入口：
+
+```powershell
+py tools\verify_document_properties.py `
+  --in-memory-input build\windows-nmake-release\tests\fastxlsx-document-properties.xlsx `
+  --streaming-input build\windows-nmake-release\tests\fastxlsx-streaming-document-properties.xlsx `
+  --work-dir build\qa\document-properties
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_document_properties_excel.ps1 `
+  -InMemoryPath build\windows-nmake-release\tests\fastxlsx-document-properties.xlsx `
+  -StreamingPath build\windows-nmake-release\tests\fastxlsx-streaming-document-properties.xlsx
+```
+
+Python helper 会检查两个 workbook 的 `docProps/core.xml`、`docProps/app.xml`、
+content type overrides、package relationships、XML escape、无 `docProps/custom.xml`，
+并用 `openpyxl` 核对 core properties 和 smoke sheet value。Excel helper 只读打开
+两个 workbook 并核对 `Props!A1` / `StreamProps!A1`；如果当前 Excel COM session 能
+稳定暴露 `BuiltinDocumentProperties`，脚本会同步核对 Title / Author / Subject /
+Keywords / Category，否则记录为 XML/openpyxl helper authoritative。
+
 当前 sharedStrings 样例由 `fastxlsx.streaming` 在默认 preset 下生成，推荐路径是
 `build/windows-nmake-release/tests/fastxlsx-streaming-shared-strings.xlsx`。本机
 Excel COM 验证可以运行：

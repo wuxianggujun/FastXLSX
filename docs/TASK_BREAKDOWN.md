@@ -159,14 +159,24 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 类型：设计。
 
 输出：
-- 冻结首个 MVP 用例，建议优先保持窄范围：
-  by-name worksheet `<sheetData>` patch 或一个 small metadata part rewrite。
-- 写清用户故事是 future `WorkbookEditor` 语义，内部实现仍可走 `PackageEditor`。
-- 明确不支持随机 cell editing、sharedStrings index migration、style merge、
-  relationship repair 和 table/drawing semantic sync。
+- 冻结首个 MVP 用例为 **internal by-name worksheet `<sheetData>` patch**。
+- 用户故事按 future `WorkbookEditor` 语义描述：打开已有 `.xlsx`，按 sheet name
+  定位已有 worksheet，只替换该 worksheet 的 `<sheetData>` payload，再 `save_as()`
+  输出新 package。
+- 当前实施入口仍是 internal `PackageEditor::replace_worksheet_sheet_data_by_name()`；
+  不新增 public `WorkbookEditor`、public `PackageEditor` 或随机 cell API。
+- MVP 输入是 caller 已生成的完整 `<sheetData>` / `<sheetData/>` XML payload。
+  helper 只做 bounded local rewrite，保留同一 worksheet 的外围 XML metadata，
+  并复用现有 calcChain remove / `fullCalcOnLoad`、relationship/content-type audit
+  和 unknown/unmodified part preservation 路径。
+- 明确不支持随机 cell editing、sharedStrings index migration、style id migration、
+  style merge、relationship repair/pruning、table/drawing semantic sync、range 修复、
+  dimension 重算或大文件 streaming worksheet transformer。
 
 验收：
 - `TASK_PLAN.md` / `NEXT_STEPS.md` / 本文档对 MVP 范围一致。
+- 文档只把该能力写成 internal Patch MVP / template-fill 小切片，不能写成 public
+  existing-file editor 已完成。
 
 ### P4.2 Package Boundary Hardening
 

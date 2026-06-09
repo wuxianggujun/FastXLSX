@@ -1435,6 +1435,15 @@ Tasks:
   unknown parts before claiming broad safe editing.
 - Add a separate In-memory editor task for small-file random editing after the
   Patch save contract is clear.
+- Freeze the first Patch MVP as the internal by-name worksheet `<sheetData>`
+  patch: open an existing `.xlsx`, locate an existing worksheet by sheet name,
+  replace only its `<sheetData>` / `<sheetData/>` payload with caller-generated
+  XML, and `save_as()` a new package through the internal `PackageEditor`
+  path. This is the future `WorkbookEditor` user story, but the current
+  implementation remains internal and must not expose public `WorkbookEditor`,
+  public `PackageEditor`, random cell editing, sharedStrings/style migration,
+  relationship repair/pruning, table/drawing semantic sync, range repair,
+  dimension recalculation, or a large-file streaming worksheet transformer.
 
 Validation:
 - Input/output package comparison proves unmodified parts remain present.

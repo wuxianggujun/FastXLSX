@@ -460,6 +460,16 @@ invalid/malformed replacement XML、source worksheet 缺失 `sheetData`，以及
 `<sheetData>` 起始标签存在但闭合标签损坏/缺失时，只能写成失败不污染
 EditPlan、manifest、package-entry audit、calc policy 或 copied output bytes；不能写成
 XML repair。
+
+P4.1 冻结的第一个 Patch MVP 就是上述 internal by-name worksheet `<sheetData>`
+patch。对外用户故事可以按 future `WorkbookEditor` 描述，但当前代码入口仍只能写成
+internal `PackageEditor::replace_worksheet_sheet_data_by_name()`；它接受 caller 已生成的
+完整 `<sheetData>` / `<sheetData/>` XML payload，做 bounded local rewrite，并沿用现有
+calcChain remove / `fullCalcOnLoad`、relationship/content-type audit 和
+unknown/unmodified part preservation 路径。不要把它写成 public `WorkbookEditor`、
+public `PackageEditor`、随机 cell editing、sharedStrings/style id migration、style
+merge、relationship repair/pruning、table/drawing semantic sync、range 修复、dimension
+重算或大文件 streaming worksheet transformer。
 no-op `PackageEditor::save_as()` roundtrip coverage 只能描述为 linked-object fixture
 中全部源 entries 的 entry order、stored entry method / CRC / uncompressed size 和
 bytes copy baseline，以及初始 copy-original plan 没有 metadata package-entry side

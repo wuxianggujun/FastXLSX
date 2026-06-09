@@ -1034,6 +1034,34 @@ Do not claim:
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.
 
+### P4.1 - Patch MVP Use Case Freeze
+
+Status: planned documentation gate.
+
+The first Patch MVP is frozen as an internal by-name worksheet `<sheetData>`
+patch. The future user story is `WorkbookEditor`-shaped: open an existing
+`.xlsx`, select an existing worksheet by sheet name, replace that worksheet's
+`<sheetData>` / `<sheetData/>` payload with caller-generated XML, and `save_as()`
+a new package. Current implementation remains internal
+`PackageEditor::replace_worksheet_sheet_data_by_name()`.
+
+Accept when:
+- `TASK_BREAKDOWN.md`, `TASK_PLAN.md`, and this file agree that the MVP is the
+  internal by-name `<sheetData>` patch, not a generic metadata rewrite choice.
+- The docs state that the helper is a bounded local rewrite and reuses existing
+  calcChain remove / `fullCalcOnLoad`, relationship/content-type audit, and
+  unknown/unmodified part preservation behavior.
+- Non-goals are explicit: public `WorkbookEditor`, public `PackageEditor`,
+  random cell editing, sharedStrings index migration, style id migration/style
+  merge, relationship repair/pruning, table/drawing semantic sync, range
+  repair, dimension recalculation, and large-file streaming worksheet
+  transformation.
+
+Do not claim:
+- Existing-file editing is public API.
+- The caller can set arbitrary cells directly.
+- The helper migrates shared strings/styles or repairs object relationships.
+
 ### Historical P2 Detail - Production ZIP Dependency Discovery
 
 Status: baseline complete for the minizip backend. `minizip-ng[core,zlib]` now

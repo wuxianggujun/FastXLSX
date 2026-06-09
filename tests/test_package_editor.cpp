@@ -23179,6 +23179,206 @@ void test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip()
     check_entry_bytes(output_reader, "docProps/app.xml", app_properties_before);
 }
 
+void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
+{
+    const std::filesystem::path writer_source_path =
+        output_path("fastxlsx-package-editor-writer-unknown-base.xlsx");
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-writer-unknown-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-writer-unknown-output.xlsx");
+    const std::string unknown_bytes = std::string("writer-opaque\0payload", 21);
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(writer_source_path, options);
+        const auto text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+        auto editable = workbook.add_worksheet("Patch Source");
+        auto untouched = workbook.add_worksheet("Untouched");
+
+        editable.append_row({
+            fastxlsx::CellView::text("old text").with_style(text_style),
+            fastxlsx::CellView::number(7.0),
+        });
+        untouched.append_row({
+            fastxlsx::CellView::text("keep me").with_style(text_style),
+            fastxlsx::CellView::number(99.0),
+        });
+
+        workbook.close();
+    }
+
+    const fastxlsx::detail::PackageReader writer_reader =
+        fastxlsx::detail::PackageReader::open(writer_source_path);
+    std::string augmented_content_types =
+        writer_reader.read_entry("[Content_Types].xml");
+    check(augmented_content_types.find(R"(Default Extension="bin")")
+            == std::string::npos,
+        "writer package fixture should not already contain a bin default");
+    const std::size_t content_types_close = augmented_content_types.rfind("</Types>");
+    check(content_types_close != std::string::npos,
+        "writer package fixture should contain a closing Types element");
+    augmented_content_types.insert(content_types_close,
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)");
+
+    std::vector<fastxlsx::detail::PackageEntry> augmented_entries;
+    for (const fastxlsx::detail::PackageReaderEntry& entry : writer_reader.entries()) {
+        std::string data = writer_reader.read_entry(entry.name);
+        if (entry.name == "[Content_Types].xml") {
+            data = augmented_content_types;
+        }
+        augmented_entries.emplace_back(entry.name, std::move(data));
+    }
+    augmented_entries.emplace_back("custom/opaque.bin", unknown_bytes);
+    fastxlsx::detail::write_package(source_path, augmented_entries,
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName untouched_part("/xl/worksheets/sheet2.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    check(source_reader.worksheet_part_by_sheet_name("Patch Source") == worksheet_part,
+        "augmented writer package should locate the editable sheet by name");
+    check(source_reader.worksheet_part_by_sheet_name("Untouched") == untouched_part,
+        "augmented writer package should locate the untouched sheet by name");
+    check(source_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "augmented writer package should not contain calcChain");
+    check(source_reader.content_types().default_for("bin") != nullptr,
+        "augmented writer package should expose unknown bin content type default");
+    check(source_reader.content_types().override_for(unknown_part) == nullptr,
+        "augmented writer package should not promote unknown bin entry to override");
+
+    const std::string editable_sheet_before =
+        source_reader.read_entry("xl/worksheets/sheet1.xml");
+    const std::size_t writer_prolog_end = editable_sheet_before.find("<worksheet");
+    check(writer_prolog_end != std::string::npos && writer_prolog_end > 0,
+        "augmented writer source worksheet should preserve the XML declaration");
+    const std::string writer_prolog = editable_sheet_before.substr(0, writer_prolog_end);
+    const std::string untouched_sheet_before =
+        source_reader.read_entry("xl/worksheets/sheet2.xml");
+    const std::string content_types_before =
+        source_reader.read_entry("[Content_Types].xml");
+    const std::string package_relationships_before =
+        source_reader.read_entry("_rels/.rels");
+    const std::string workbook_relationships_before =
+        source_reader.read_entry("xl/_rels/workbook.xml.rels");
+    const std::string shared_strings_before =
+        source_reader.read_entry("xl/sharedStrings.xml");
+    const std::string styles_before =
+        source_reader.read_entry("xl/styles.xml");
+    const std::string core_properties_before =
+        source_reader.read_entry("docProps/core.xml");
+    const std::string app_properties_before =
+        source_reader.read_entry("docProps/app.xml");
+    check_entry_bytes(source_reader, "custom/opaque.bin", unknown_bytes);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    const std::string replacement_sheet_data =
+        R"(<sheetData><row r="1"><c r="A1" s="1" t="s"><v>0</v></c></row></sheetData>)";
+    editor.replace_worksheet_sheet_data_by_name("Patch Source", replacement_sheet_data);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "writer unknown sheetData patch should local-DOM-rewrite target worksheet");
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr
+            && workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "writer unknown sheetData patch should rewrite workbook calc metadata");
+    const auto* unknown_plan = editor.edit_plan().find_part(unknown_part);
+    check(unknown_plan != nullptr
+            && unknown_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "writer unknown sheetData patch should keep unknown part copy-original");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "writer unknown sheetData patch should not invent calcChain removal");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "writer unknown sheetData patch should request full calculation");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "writer unknown output plan should local-DOM-rewrite target worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "writer unknown output plan should rewrite workbook calc metadata");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet2.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve untouched worksheet");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve sharedStrings");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve styles");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer unknown output plan should preserve unknown entry");
+    check(find_output_entry_plan(output_plan.entries, "xl/calcChain.xml") == nullptr,
+        "writer unknown output plan should not create calcChain");
+
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "writer unknown output should not contain calcChain");
+    check(output_entries.find("custom/opaque.bin") != output_entries.end(),
+        "writer unknown output should preserve the unknown entry");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Patch Source") == worksheet_part,
+        "writer unknown output should keep editable sheet lookup readable");
+    check(output_reader.worksheet_part_by_sheet_name("Untouched") == untouched_part,
+        "writer unknown output should keep untouched sheet lookup readable");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.rfind(writer_prolog, 0) == 0,
+        "writer unknown output should preserve the worksheet XML declaration/prolog");
+    check_contains(worksheet_xml, replacement_sheet_data,
+        "writer unknown output should write replacement sheetData");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "writer unknown output should remove the old target sheetData cells");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "writer unknown output should request full recalculation in workbook XML");
+
+    check_entry_bytes(output_reader, "xl/worksheets/sheet2.xml", untouched_sheet_before);
+    check_entry_bytes(output_reader, "[Content_Types].xml", content_types_before);
+    check_entry_bytes(output_reader, "_rels/.rels", package_relationships_before);
+    check_entry_bytes(
+        output_reader, "xl/_rels/workbook.xml.rels", workbook_relationships_before);
+    check_entry_bytes(output_reader, "xl/sharedStrings.xml", shared_strings_before);
+    check_entry_bytes(output_reader, "xl/styles.xml", styles_before);
+    check_entry_bytes(output_reader, "docProps/core.xml", core_properties_before);
+    check_entry_bytes(output_reader, "docProps/app.xml", app_properties_before);
+    check_entry_bytes(output_reader, "custom/opaque.bin", unknown_bytes);
+    check(output_reader.content_types().default_for("bin") != nullptr,
+        "writer unknown output should preserve unknown bin content type default");
+    check(output_reader.content_types().override_for(unknown_part) == nullptr,
+        "writer unknown output should not promote unknown bin entry to override");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "writer unknown output should preserve sharedStrings content type override");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "writer unknown output should preserve styles content type override");
+}
+
 void test_package_editor_replaces_worksheet_by_sheet_name()
 {
     LinkedObjectSourcePackage source =
@@ -32543,6 +32743,7 @@ int main()
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_segment_targets();
         test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();
+        test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry();
         test_package_editor_replaces_worksheet_by_sheet_name();
         test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name();
         test_package_editor_replaces_sheet_data_by_planned_workbook_sheet_name();

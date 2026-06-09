@@ -279,6 +279,9 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   - 输出保留 untouched worksheet、docProps、content types、package relationships、
     workbook relationships、sharedStrings、styles 和相关 bytes，并保持 internal Patch
     MVP 口径。
+  - 额外聚合回归会在 writer-source package 中注入 unknown entry，并验证 by-name
+    `sheetData` Patch 后该 unknown bytes、默认 content type 和其它 source-owned
+    metadata 仍按 copy-original 保留。
 
 验收：
 - 拆包 XML 检查通过。

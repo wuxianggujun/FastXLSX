@@ -22614,6 +22614,139 @@ void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name()
         "sheet-name sheetData replacement should keep unknown extension default content type");
 }
 
+void test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_metadata_copy_original()
+{
+    SourcePackage source;
+    source.path = output_path("fastxlsx-package-editor-sheetdata-no-calcchain-source.xlsx");
+    source.content_types = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)";
+    source.package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(</Relationships>)";
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
+        R"(</Relationships>)";
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>)"
+        R"(</workbook>)";
+    source.worksheet =
+        R"(<worksheet><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    source.unknown = std::string("opaque\0bytes", 12);
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-sheetdata-no-calcchain-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string replacement_sheet_data =
+        R"(<sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData>)";
+    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "no-calcChain sheetData patch should not record calcChain removal");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "no-calcChain sheetData patch should not rewrite content types");
+    check(editor.edit_plan().find_package_entry("_rels/.rels") == nullptr,
+        "no-calcChain sheetData patch should not rewrite package relationships");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") != nullptr,
+        "no-calcChain sheetData patch should audit preserved workbook relationships");
+    check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == nullptr,
+        "no-calcChain sheetData patch should not invent worksheet relationships audit");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "no-calcChain sheetData patch should still request workbook recalculation");
+    check(editor.edit_plan().calc_chain_action() == fastxlsx::detail::CalcChainAction::Remove,
+        "no-calcChain sheetData patch should keep default calcChain action");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "no-calcChain sheetData patch should local-DOM-rewrite worksheet");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "no-calcChain sheetData patch should local-DOM-rewrite workbook calc metadata");
+    check(editor.manifest().find_part(calc_chain_part) == nullptr,
+        "no-calcChain sheetData patch should not add calcChain to manifest");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "no-calcChain sheetData output plan should rewrite worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "no-calcChain sheetData output plan should rewrite workbook calc metadata");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "no-calcChain sheetData output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "no-calcChain sheetData output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "no-calcChain sheetData output plan should preserve workbook relationships");
+    check(find_output_entry_plan(
+              output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels") == nullptr,
+        "no-calcChain sheetData output plan should not create worksheet relationships");
+    check(find_output_entry_plan(output_plan.entries, "xl/calcChain.xml") == nullptr,
+        "no-calcChain sheetData output plan should not create calcChain output");
+    check(output_plan.removed_parts.empty(),
+        "no-calcChain sheetData output plan should not omit parts");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "no-calcChain sheetData output should not create calcChain");
+    check(entries.find("xl/worksheets/_rels/sheet1.xml.rels") == entries.end(),
+        "no-calcChain sheetData output should not create worksheet relationships");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "no-calcChain sheetData output should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "no-calcChain sheetData output should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "no-calcChain sheetData output should preserve workbook relationships bytes");
+    check(output_reader.relationships_for(worksheet_part) == nullptr,
+        "no-calcChain sheetData output should keep worksheet relationships absent");
+    check(output_reader.content_types().override_for(calc_chain_part) == nullptr,
+        "no-calcChain sheetData output should keep calcChain content type absent");
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, replacement_sheet_data,
+        "no-calcChain sheetData output should write replacement sheetData");
+    check_not_contains(worksheet_xml, R"(<v>1</v>)",
+        "no-calcChain sheetData output should remove old sheetData rows");
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "no-calcChain sheetData output should request full calculation");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "no-calcChain sheetData output should preserve unknown bytes");
+}
+
 void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets()
 {
     LinkedObjectSourcePackage source =
@@ -32406,6 +32539,7 @@ int main()
         test_package_editor_custom_xml_properties_removal_then_item_replacement_keeps_properties_omitted();
         test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name();
+        test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_metadata_copy_original();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_segment_targets();
         test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();

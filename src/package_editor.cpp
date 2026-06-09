@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <exception>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -2056,7 +2057,12 @@ PackageEntry materialize_planned_output_entry(const PackageReader& reader,
         return PackageEntry {plan.entry_name, replacement->data};
     }
     if (plan.source_entry) {
-        return PackageEntry {plan.entry_name, reader.read_entry(plan.entry_name)};
+        try {
+            return PackageEntry {plan.entry_name, reader.read_entry(plan.entry_name)};
+        } catch (const std::exception& error) {
+            throw FastXlsxError("failed to copy source package entry '" + plan.entry_name
+                + "': " + error.what());
+        }
     }
     throw FastXlsxError("planned output entry has no payload: " + plan.entry_name);
 }

@@ -287,6 +287,28 @@ std::filesystem::path output_path(std::string_view name)
     return std::filesystem::current_path() / std::string(name);
 }
 
+void write_binary_file(const std::filesystem::path& path, std::string_view data)
+{
+    std::ofstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw TestFailure("failed to open test file for writing");
+    }
+    stream.write(data.data(), static_cast<std::streamsize>(data.size()));
+    if (!stream) {
+        throw TestFailure("failed to write test file");
+    }
+}
+
+void corrupt_first_occurrence(std::string& data, std::string_view needle)
+{
+    const std::string marker(needle);
+    const std::size_t offset = data.find(marker);
+    if (offset == std::string::npos) {
+        throw TestFailure("test payload marker not found");
+    }
+    data[offset] = data[offset] == 'X' ? 'Y' : 'X';
+}
+
 void expect_replace_failure(fastxlsx::detail::PackageEditor& editor,
     fastxlsx::detail::PartName part_name,
     fastxlsx::detail::PartWriteMode write_mode,
@@ -31484,6 +31506,139 @@ void test_package_editor_rejects_saving_over_source_package()
         "later safe output should preserve unknown bytes after rejected save_as guard");
 }
 
+void test_package_editor_save_as_copy_original_read_failure_preserves_state_and_output()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-copy-failure-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-copy-failure-output.xlsx");
+    const std::string output_sentinel = "do not overwrite this failed output";
+    write_binary_file(output, output_sentinel);
+
+    std::string source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(
+        source_bytes, std::string_view(source.unknown.data(), source.unknown.size()));
+    write_binary_file(source.path, source_bytes);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const std::string replacement_core =
+        "<cp:coreProperties><dc:creator>Queued</dc:creator></cp:coreProperties>";
+    editor.replace_part(core_part, replacement_core,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t queued_worksheet_relationship_reference_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t queued_worksheet_payload_dependency_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t queued_workbook_payload_dependency_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+    const bool queued_full_calculation_on_load =
+        editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+    const fastxlsx::detail::PackageEditorOutputPlan queued_output_plan =
+        editor.planned_output();
+
+    bool failed = false;
+    try {
+        editor.save_as(output);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "failed to copy source package entry",
+            "copy-original failure should include copy context");
+        check_contains(error.what(), "custom/opaque.bin",
+            "copy-original failure should include the source entry name");
+        check_contains(error.what(), "CRC",
+            "copy-original failure should preserve the reader failure reason");
+    }
+    check(failed,
+        "PackageEditor should reject save_as when a copy-original source entry cannot be read");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "copy-original read failure should not change queued edit-plan entries");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "copy-original read failure should not add edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "copy-original read failure should not change package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "copy-original read failure should not change removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "copy-original read failure should not change removed package-entry audits");
+    check(editor.edit_plan().relationship_target_audits().size()
+            == queued_relationship_target_audit_count,
+        "copy-original read failure should not change relationship target audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == queued_worksheet_relationship_reference_audit_count,
+        "copy-original read failure should not change worksheet reference audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == queued_worksheet_payload_dependency_audit_count,
+        "copy-original read failure should not change worksheet payload audits");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == queued_workbook_payload_dependency_audit_count,
+        "copy-original read failure should not change workbook payload audits");
+    check(editor.edit_plan().full_calculation_on_load()
+            == queued_full_calculation_on_load,
+        "copy-original read failure should not change fullCalcOnLoad intent");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "copy-original read failure should not change calcChain policy");
+    check_manifest_write_mode(editor, core_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "copy-original read failure should keep queued core replacement active");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "copy-original read failure should keep opaque part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.entries.size() == queued_output_plan.entries.size(),
+        "copy-original read failure should keep output-plan entry count stable");
+    check(output_plan.notes.size() == queued_output_plan.notes.size(),
+        "copy-original read failure should keep output-plan notes stable");
+    check(output_plan.removed_parts.size() == queued_output_plan.removed_parts.size(),
+        "copy-original read failure should keep output-plan removed parts stable");
+    check(output_plan.removed_package_entries.size()
+            == queued_output_plan.removed_package_entries.size(),
+        "copy-original read failure should keep output-plan package-entry omissions stable");
+    check(output_plan.relationship_target_audits.size()
+            == queued_output_plan.relationship_target_audits.size(),
+        "copy-original read failure should keep output-plan relationship audits stable");
+    check(output_plan.worksheet_relationship_reference_audits.size()
+            == queued_output_plan.worksheet_relationship_reference_audits.size(),
+        "copy-original read failure should keep output-plan worksheet audits stable");
+    check(output_plan.worksheet_payload_dependency_audits.size()
+            == queued_output_plan.worksheet_payload_dependency_audits.size(),
+        "copy-original read failure should keep output-plan worksheet payload audits stable");
+    check(output_plan.workbook_payload_dependency_audits.size()
+            == queued_output_plan.workbook_payload_dependency_audits.size(),
+        "copy-original read failure should keep output-plan workbook payload audits stable");
+    check(output_plan.full_calculation_on_load
+            == queued_output_plan.full_calculation_on_load,
+        "copy-original read failure should keep output-plan fullCalcOnLoad stable");
+    check(output_plan.calc_chain_action == queued_output_plan.calc_chain_action,
+        "copy-original read failure should keep output-plan calcChain policy stable");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "copy-original read failure should keep planned core rewrite");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "copy-original read failure should keep planned opaque copy-original");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "copy-original read failure should not overwrite an existing output file");
+}
+
 void test_package_editor_rejects_invalid_replacements()
 {
     const SourcePackage source =
@@ -32165,6 +32320,7 @@ int main()
         test_package_editor_rejects_malformed_workbook_metadata_without_state_changes();
         test_package_editor_rejects_worksheet_rewrite_without_workbook_metadata();
         test_package_editor_rejects_saving_over_source_package();
+        test_package_editor_save_as_copy_original_read_failure_preserves_state_and_output();
         test_package_editor_rejects_invalid_replacements();
         test_package_editor_rejects_metadata_entry_replacements_without_state_changes();
         test_package_editor_rejects_invalid_removals_without_state_changes();

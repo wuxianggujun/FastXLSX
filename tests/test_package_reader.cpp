@@ -1282,6 +1282,30 @@ void test_package_reader_rejects_bad_zip()
     expect_open_failure(path, "PackageReader should reject invalid ZIP packages");
 }
 
+void test_package_reader_rejects_central_directory_trailing_data_before_eocd()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-central-trailing-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml",
+                R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)"},
+            {"xl/workbook.xml", "<workbook/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    const std::size_t eocd_offset = find_end_of_central_directory(data);
+    data.insert(eocd_offset, "unsupported trailing central directory data");
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-central-trailing.xlsx");
+    write_file(path, data);
+
+    expect_open_failure(path,
+        "PackageReader should reject unsupported data between central directory and EOCD");
+}
+
 #ifndef FASTXLSX_TEST_HAS_MINIZIP_NG
 void test_package_reader_rejects_compressed_entries_without_minizip()
 {
@@ -1932,6 +1956,7 @@ int main()
         test_package_reader_rejects_duplicate_entries();
         test_package_reader_rejects_invalid_entry_names();
         test_package_reader_rejects_bad_zip();
+        test_package_reader_rejects_central_directory_trailing_data_before_eocd();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
         test_package_reader_reads_deflated_entries_with_minizip();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();

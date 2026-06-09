@@ -1020,9 +1020,17 @@ void validate_central_directory_bounds(
     const EndOfCentralDirectory& eocd, std::uint64_t file_size)
 {
     if (eocd.central_directory_offset > file_size
-        || eocd.central_directory_size > file_size - eocd.central_directory_offset
-        || eocd.central_directory_offset + eocd.central_directory_size > eocd.offset) {
+        || eocd.central_directory_size > file_size - eocd.central_directory_offset) {
         throw FastXlsxError("ZIP central directory is outside the package bounds");
+    }
+
+    const std::uint64_t central_directory_end =
+        eocd.central_directory_offset + eocd.central_directory_size;
+    if (central_directory_end > eocd.offset) {
+        throw FastXlsxError("ZIP central directory is outside the package bounds");
+    }
+    if (central_directory_end != eocd.offset) {
+        throw FastXlsxError("ZIP central directory has unsupported trailing data before EOCD");
     }
 }
 

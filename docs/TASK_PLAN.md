@@ -10,6 +10,11 @@ In-memory modes. Keep tasks factual and update this file whenever an
 implementation task changes API shape, editing semantics, performance behavior,
 dependencies, CMake targets, or test obligations.
 
+Use `docs/TASK_BREAKDOWN.md` as the execution-level companion to this plan.
+This file records milestones and long-term gates; `TASK_BREAKDOWN.md` splits
+the current lane into small tasks with inputs, outputs, touched files,
+parallelism, acceptance checks, and explicit non-goals.
+
 ## Current Verified State
 
 - `CMakeLists.txt` defines project `FastXLSX` as C++20.
@@ -1043,13 +1048,15 @@ claiming completion.
 
 Current priority: move the next task lane from "writer performance first" to
 "editing architecture first, writer performance still hardened in parallel".
-Mapping to `docs/NEXT_STEPS.md`: `P2` / `P3` / `P4` are the next editing
-architecture and Patch MVP lane; `P7` is the small-file In-memory lane; `P9`
-through `P12` are the continued writer/performance hardening lane.
+Mapping to `docs/NEXT_STEPS.md`: `P2` / `P3` are the internal editing
+architecture and package foundation lane; `P4.0` is the API surface
+unification design gate; `P4` is the Patch MVP lane; `P7` is the small-file
+In-memory lane; `P9` through `P12` are the continued writer/performance
+hardening lane.
 
 1. Phase plan and agent context reset - 基础.
-   - Keep `TASK_PLAN.md`, `NEXT_STEPS.md`, `ROADMAP.md`, `AGENTS.md`, and
-     project skills aligned with the new product positioning.
+   - Keep `TASK_PLAN.md`, `TASK_BREAKDOWN.md`, `NEXT_STEPS.md`, `ROADMAP.md`,
+     `AGENTS.md`, and project skills aligned with the new product positioning.
    - Treat concurrent or stale agent work as input to reconcile, not as proof
      that a roadmap symbol is implemented.
    - Keep the cross-language XLSX reference matrix current in
@@ -1069,7 +1076,18 @@ through `P12` are the continued writer/performance hardening lane.
      preservation, targeted part rewrite, relationship/content type sync, and
      `calcChain` / `fullCalcOnLoad` policy.
 
-3. In-memory small-file editing - 计划.
+3. API surface unification - 计划.
+   - Add a design gate before widening Patch or In-memory public APIs.
+   - Keep user-facing facades consistent: `WorkbookWriter` for Streaming,
+     `Workbook` for small new-workbook creation, and future `WorkbookEditor` /
+     `WorksheetEditor` for existing-file editing.
+   - Keep low-level `PackageReader`, `PackageEditor`, `EditPlan`,
+     `PartIndex`, and `RelationshipGraph` internal unless a later task proves
+     a stable low-level public API is needed.
+   - Define the `CellView` / `Cell` / future `CellValue` split before adding
+     random cell editing APIs.
+
+4. In-memory small-file editing - 计划.
    - Add a separate small-workbook random editing path for `get_cell()`,
      `set_cell()`, `erase_cell()`, sheet add/delete/rename, and save-as.
    - Keep limits explicit: this path can hold a workbook or worksheet model in
@@ -1077,7 +1095,7 @@ through `P12` are the continued writer/performance hardening lane.
    - Share cell encoding, styles, sharedStrings, relationships, and validation
      rules with Streaming/Patch where practical.
 
-4. Writer and performance hardening - 进行中 / 基础.
+5. Writer and performance hardening - 进行中 / 基础.
    - Keep `inlineStr` as the default low-memory path and keep sharedStrings as
      an explicit size/performance strategy.
    - Keep the opt-in minizip backend, file-backed/chunked worksheet entries,
@@ -1101,19 +1119,21 @@ Updated milestone order:
 2. M6 / Phase 4 - turn internal OPC groundwork into an edit architecture:
    `PackageReader`, `PackageEditor`, `EditPlan`, `DependencyAnalyzer`,
    `ReferencePolicy`, and `PartRewritePlanner`.
-3. M7 / Phase 4 - implement the Patch MVP: open existing workbook, build part
+3. M6.5 / API surface unification - define the public facade matrix and shared
+   value-type vocabulary before public Patch / In-memory APIs widen.
+4. M7 / Phase 4 - implement the Patch MVP: open existing workbook, build part
    index and relationship graph, copy unchanged parts, rewrite one targeted
    sheet or small metadata part, sync content types/relationships, and set a
    conservative calc policy.
-4. New In-memory lane - add small-file random editing after the Patch contract
+5. New In-memory lane - add small-file random editing after the Patch contract
    is clear; do not make it the large-data default.
-5. Phase 3 / Phase 5 linkage - harden sheet-local object dependencies:
+6. Phase 3 / Phase 5 linkage - harden sheet-local object dependencies:
    sharedStrings, styles, tables, hyperlinks, validations, conditional
    formatting, drawings, defined names, and calc metadata.
-6. Phase 2 / performance lane - continue production ZIP, sharedStrings,
+7. Phase 2 / performance lane - continue production ZIP, sharedStrings,
    file-backed/chunked package entries, benchmarks, and streaming hot-path work
    as supporting work, not as the only product direction.
-7. M10 / Phase 5 preservation - expand complex objects only after Patch
+8. M10 / Phase 5 preservation - expand complex objects only after Patch
    preservation tests prove unmodified media, drawings, charts, VBA, and
    unknown parts survive unrelated edits.
 
@@ -1345,13 +1365,59 @@ Validation:
   type lookup, write-mode transitions, and error paths.
 - Docs continue to say this is not complete existing-file editing.
 
+### M6.5 - API Surface Unification Design
+
+Status: planned documentation gate.
+
+Use this lane before broadening Patch MVP or In-memory public APIs. The goal is
+to keep the public API coherent while still preserving the real Streaming /
+Patch / In-memory performance boundaries.
+
+Tasks:
+- Define the public facade matrix:
+  `WorkbookWriter` / `WorksheetWriter` / `CellView` for large new-workbook
+  Streaming; `Workbook` / `Worksheet` / `Cell` for small new-workbook
+  convenience creation; future `WorkbookEditor` / `WorksheetEditor` for
+  existing-file editing and random small-file workflows.
+- Keep `PackageReader`, `PackageEditor`, `EditPlan`, `DependencyAnalyzer`,
+  `PartIndex`, `RelationshipGraph`, and low-level content type / relationship
+  models internal until a separate task proves a stable low-level public API is
+  needed.
+- Define shared public value types before adding new APIs: `CellRange`,
+  `StyleId`, `CellStyle`, `DocumentProperties`, `HyperlinkOptions`,
+  `ImageOptions`, and future `CellValue`.
+- Define the cell value split:
+  `CellView` remains streaming-only and non-owning; `Cell` remains an owning
+  convenience value for small workbook creation; future `CellValue` is the
+  semantic value used by editor and In-memory APIs; future `CellRecord` /
+  `CellStore` are internal storage, not the default public model.
+- Standardize method names across modes: `add_worksheet`, `worksheet` /
+  `try_worksheet`, `append_row`, `set_cell`, `save`, and `save_as`.
+- Add documentation examples that show the three intended user-facing paths
+  without claiming unimplemented symbols are available today.
+
+Validation:
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`, `docs/ARCHITECTURE.md`,
+  `docs/TASK_BREAKDOWN.md`, and this file agree on facade names, shared value
+  types, and internal/public boundaries.
+- Future Patch and In-memory tasks can state which facade they extend before
+  implementation starts.
+- Docs explicitly mark `WorkbookEditor`, `WorksheetEditor`, and `CellValue` as
+  future design targets until code exists.
+
+Do not claim:
+- Implemented `WorkbookEditor`, random cell editing, public `PackageEditor`, or
+  broad existing-file editing from this documentation task.
+- That one monolithic class can hide Streaming/Patch/In-memory costs.
+
 ### M7 - Existing Package Reader/Writer and Preservation
 
 Status: planned.
 
 Do this after M6 has the edit contract and enough package/backend support to
-copy parts safely. Do not wait for every performance task or every Phase 5
-new-workbook slice before starting the Patch MVP.
+copy parts safely, and after M6.5 has fixed the public-facing API vocabulary.
+Do not wait for every performance task or every Phase 5 new-workbook slice
+before starting the Patch MVP.
 
 Tasks:
 - Read `[Content_Types].xml`, package `.rels`, part `.rels`, and package entries.
@@ -1737,11 +1803,18 @@ Validation:
 Use this map to decide when a task can start:
 
 - M1 should stay current before every implementation push.
+- `docs/TASK_BREAKDOWN.md` should be consulted before starting any P4.0, P4,
+  P5, P6, or P7 task; if a task cannot fill the breakdown template, it is not
+  ready to execute.
 - M6 is now the primary next architecture lane. It must define the Patch mode
   contract before public existing-file edit APIs are exposed.
+- M6.5 must run before public Patch or In-memory APIs widen. It fixes the
+  facade names, shared value types, and `CellView` / `Cell` / future
+  `CellValue` boundary.
 - M7 can start once M6 has enough edit-plan and package-copy semantics to prove
-  an end-to-end Patch MVP. It does not need to wait for every Phase 2
-  performance task or every Phase 5 new-workbook feature.
+  an end-to-end Patch MVP and M6.5 has fixed the public vocabulary. It does not
+  need to wait for every Phase 2 performance task or every Phase 5
+  new-workbook feature.
 - M7.5 can start after the Patch save contract is clear enough to share
   package preservation, relationship, styles, sharedStrings, and calc metadata
   rules with the small-file editor.
@@ -2260,9 +2333,13 @@ that preserves untouched entry bytes while replacing one existing part. Complete
 existing package editing and broad unknown-part preservation through a real OPC
 rewrite pipeline remain 计划.
 
-Updated priority: Phase 4 is the next main product lane. The goal is not to
-finish every writer benchmark first; the goal is to prove a safe Patch MVP that
-can edit an existing workbook without dropping unknown or unmodified parts.
+Updated priority: Phase 4 remains the next main product lane, but it must not be
+executed as one broad task. Use `docs/TASK_BREAKDOWN.md` to run the current
+order: package read/copy/write foundation, `P4.0 API surface unification`, then
+a narrow Patch MVP that can edit an existing workbook without dropping unknown
+or unmodified parts. The goal is not to finish every writer benchmark first,
+but public Patch / In-memory APIs also must not widen before P4.0 fixes the
+facade vocabulary.
 
 Current facts:
 - Current code emits `[Content_Types].xml`, `_rels/.rels`, `xl/workbook.xml`,

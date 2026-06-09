@@ -1332,40 +1332,55 @@ FastXLSX
 
 ## 三条 API 路径
 
+三条路径共享 OpenXML/OPC 底座，但 public API 不能按内部层级裸露给用户。对外应保持
+三个稳定门面：
+
+- `WorkbookWriter` / `WorksheetWriter` / `CellView`：大文件新建导出。
+- `Workbook` / `Worksheet` / `Cell`：小文件新建和简单生成。
+- 未来 `WorkbookEditor` / `WorksheetEditor` / `CellValue`：已有文件编辑和小文件随机编辑。
+
+当前内部 `PackageReader`、`PackageEditor`、`EditPlan`、`PartIndex` 和
+`RelationshipGraph` 是 Patch 底座，不等于稳定 public API。只有当后续任务证明需要
+低层 package API 时，才单独设计并暴露。
+
 ### 1. Streaming：创建新 XLSX
 
 ```text
-WorkbookBuilder
+WorkbookWriter
 → WorksheetWriter
+→ CellView / row iterator
 → XML streaming
-→ OPC package writer
+→ internal package writer
 → .xlsx
 ```
 
-这条路径禁止 DOM。
+这条路径禁止大型 worksheet DOM，也不承诺随机回写已输出历史行。
 
 ### 2. Patch：编辑已有 XLSX（规划路径）
 
 ```text
-PackageReader
-→ PartIndex
+future WorkbookEditor facade
+→ internal PackageReader
+→ PartIndex / RelationshipGraph
 → EditPlan / DependencyAnalyzer
-→ 修改目标 part
-→ 未修改 part 原样复制
-→ 被修改 part 流式重写或局部 DOM 重写
-→ PackageWriter
+→ internal PackageEditor
+→ copy-original + targeted rewrite
+→ internal package writer
 ```
 
 这条路径允许局部 DOM，但不能对大型 worksheet 使用 DOM。它负责模板填充、
-sheet 替换、已有文件局部修改、未知 part 保留和必要的联动 part 更新。
+sheet 替换、已有文件局部修改、未知 part 保留和必要的联动 part 更新。对外 API 应优先
+使用 workbook / worksheet / cell / range 语义；不要让普通用户为了编辑 sheet 先理解
+part name、relationship owner 或 content type override。
 
 ### 3. In-memory：小文件随机编辑（规划路径）
 
 ```text
-Workbook::open
+future WorkbookEditor / WorksheetEditor
+→ CellValue API boundary
 → 小型 WorkbookModel / WorksheetModel
-→ get_cell / set_cell / local object edits
-→ PackageWriter
+→ compact CellStore / CellRecord
+→ internal package writer
 ```
 
 这条路径可以提供接近 `OpenXLSX` 的编辑体验，但必须显式声明适用范围：它服务小文件
@@ -1375,6 +1390,24 @@ In-memory 的内部模型不应直接复用当前 owning `Cell` 作为长期 cel
 紧凑 `CellRecord` / `CellStore`，把 row/column、类型、style id、字符串 id、公式 id
 和数值 payload 分开保存，并提供 cell 数、估算内存和预算上限等 guardrail。public
 API 可以继续返回或接受便利 `Cell` / `CellValue`，但它们不应决定内部存储布局。
+
+统一命名约束：
+
+- 创建 worksheet 使用 `add_worksheet(name)`。
+- 取得已有 worksheet 使用 `worksheet(name)` 或 `try_worksheet(name)`。
+- 按顺序追加行使用 `append_row(...)`。
+- 随机写入单元格使用 `set_cell(...)`，只属于 In-memory / future editor 语义。
+- 新建 workbook 保存使用 `save(path)` 或 writer 的 `close()`。
+- 已有文件编辑输出使用 `save_as(path)`，避免暗示当前支持原地 atomic 覆盖。
+
+统一 cell 边界：
+
+```text
+CellView  -> Streaming-only non-owning input view
+Cell      -> small new-workbook owning convenience value
+CellValue -> future semantic editor/in-memory API value
+CellStore -> future compact internal storage
+```
 
 ## EditPlan 和联动边界
 
@@ -1500,3 +1533,4 @@ public headers 可以继续保持稳定入口；内部 `.cpp`、XML writer helpe
 cell matrix、DOM 热路径或无关重构。
 
 更详细的 API 设计和文档注释要求见 [API 设计与文档注释](API_DESIGN_AND_DOCUMENTATION.md)。
+执行层任务拆分和并行/串行边界见 [任务拆分设计](TASK_BREAKDOWN.md)。

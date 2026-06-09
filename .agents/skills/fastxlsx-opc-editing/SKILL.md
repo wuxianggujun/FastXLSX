@@ -1364,10 +1364,13 @@ existing-file image passthrough、drawing 编辑或 package preservation。
 
 - OPC edit plan：基础。内部 manifest、PartIndex、RelationshipGraph、content type
   registry 和 write-mode metadata 可作为规划入口。
-- 当前默认推进线：先把 Phase 4 编辑架构和 Patch MVP 设计清楚，再扩大已有文件对象
-  编辑范围。writer/backend/sharedStrings/benchmark 可继续并行硬化，但不应阻塞
-  `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、
-  `ReferencePolicy` 和 preservation fixture 的设计。
+- 当前默认推进线：先按 `docs/TASK_BREAKDOWN.md` 完成 `P4.0 API surface unification`，
+  统一 public facade、命名、`CellView` / `Cell` / future `CellValue` 边界和
+  internal/public 分界；再推进窄 Patch MVP、preservation fixture、dependency policy
+  和后续 In-memory 子任务。writer/backend/sharedStrings/benchmark 可继续并行硬化，
+  但不应阻塞 `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、
+  `ReferencePolicy` 和 preservation fixture 的设计，也不能绕过 P4.0 直接扩大 public
+  Patch API。
 - EditPlan / DependencyAnalyzer / ReferencePolicy / PartRewritePlanner：基础。
   它们是内部 Patch 计划元数据，只能表达 copy-original、目标 part rewrite、
   registered-part removal audit、worksheet dependency notes、沿已知 internal worksheet relationship target 的保守遍历

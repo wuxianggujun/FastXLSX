@@ -15,6 +15,105 @@ API 设计必须和项目定位对齐：FastXLSX 是可编辑的高性能 XLSX/O
 - 已有文件编辑 API 必须说明 part-level rewrite、未知 part 保留、联动 part 更新和
   公式重算策略。
 
+## API 统一原则
+
+FastXLSX 的 public API 必须看起来属于同一个库。分层是为了性能和编辑语义，不是为了
+把内部模块名逐层暴露给用户。
+
+统一 API 的目标不是把 Streaming、Patch 和 In-memory 全部塞进一个巨大 `Workbook`
+类，而是统一概念、命名、值类型、错误模型和文档口径：
+
+- 大文件新建导出使用 `WorkbookWriter` / `WorksheetWriter` / `CellView`。
+- 小文件新建和简单生成继续使用 `Workbook` / `Worksheet` / `Cell`。
+- 未来已有文件编辑的 public facade 应优先命名为 `WorkbookEditor` /
+  `WorksheetEditor`，让用户面对 workbook / worksheet 概念，而不是直接面对 OPC
+  package 概念。
+- 当前内部 `PackageReader` / `PackageEditor` / `EditPlan` /
+  `DependencyAnalyzer` / `RelationshipGraph` 先作为 Patch 底座和审计模型保留在
+  internal/detail 边界；不要因为内部 Patch MVP 已经可用，就急着把这些类型作为
+  稳定 public API 发布。
+
+推荐的 public API 形状：
+
+```cpp
+// Streaming: 大文件新建导出，按行顺序写入。
+auto writer = WorkbookWriter::create(path);
+auto sheet = writer.add_worksheet("Data");
+sheet.append_row({CellView::text("A")});
+writer.close();
+
+// Small new workbook: 小文件便捷创建，可在 save() 前持有较小状态。
+auto wb = Workbook::create();
+auto& small_sheet = wb.add_worksheet("Data");
+small_sheet.append_row({Cell::text("A")});
+wb.save(path);
+
+// Future existing-file editing: 已有文件编辑，对外用 workbook 语义。
+auto editor = WorkbookEditor::open(input_path);
+auto editable_sheet = editor.worksheet("Data");
+editable_sheet.set_cell("A1", CellValue::text("A"));
+editor.save_as(output_path);
+```
+
+统一命名规则：
+
+- 创建 sheet 使用 `add_worksheet(name)`。
+- 查找已有 sheet 使用 `worksheet(name)` 或 `try_worksheet(name)`，不要混用
+  `get_sheet()`、`sheet_by_name()`、`select_sheet()` 等同义词。
+- 追加行使用 `append_row(...)`；随机写单元格使用 `set_cell(...)`，只能出现在
+  In-memory / future editor 语义里。
+- 保存新文件使用 `save(path)` 或 writer 的 `close()`；已有文件编辑输出使用
+  `save_as(path)`，避免暗示当前支持原地 atomic 覆盖。
+- 能用 workbook / worksheet / cell / range 语言表达的 public API，不应要求用户先理解
+  part、relationship owner、content type override 或 package entry。
+
+统一值类型规则：
+
+- `CellRange` 是跨 Streaming metadata、图片 anchor、未来 Patch / In-memory range
+  操作都应复用的 public range 值。
+- `StyleId`、`CellStyle`、`DocumentProperties`、`HyperlinkOptions`、
+  `ImageOptions` 等应保持 workbook / worksheet 语义，不要泄漏底层 part 名。
+- `CellValue` 应作为未来统一的单元格语义值：number、text、boolean、formula、
+  blank 以及可选 style reference。它可以被 `Cell`、未来 `WorkbookEditor::set_cell()`
+  和 In-memory editor 共同使用。
+- `Cell` 可以继续作为小文件新建路径的 owning convenience value 或 `CellValue` 的
+  轻量包装，但不要把它定义成所有模式的内部存储单元。
+- `CellView` 必须保持 Streaming-only 的非 owning view：它可以引用调用方短生命周期
+  数据，只在 `append_row()` 调用期间被消费，不应进入 Patch / In-memory 的长期状态。
+
+简化后的 cell 边界：
+
+```text
+CellView  -> Streaming 输入视图，非 owning，热路径轻量
+Cell      -> 小文件创建便利值，owning，不代表大型 worksheet 内部存储
+CellValue -> 未来统一语义值，适合作为 editor / in-memory / API 边界
+CellRecord / CellStore -> 未来内部紧凑存储，不作为 public API 默认暴露
+```
+
+Public API 概念矩阵：
+
+```text
+概念            Streaming              Small new workbook       Future editor
+创建入口        WorkbookWriter          Workbook                 WorkbookEditor
+sheet 入口      add_worksheet           add_worksheet            worksheet / try_worksheet
+追加行          append_row(CellView)    append_row(Cell)         append_row(CellValue)
+随机写 cell     不支持                  不作为大文件路径承诺      set_cell(CellValue)
+读取 cell       不支持                  可作为小文件能力规划      get_cell / try_cell
+保存            close                   save                     save_as
+范围值          CellRange               CellRange                CellRange
+样式句柄        StyleId                 StyleId                  StyleId
+错误            FastXlsxError           FastXlsxError            FastXlsxError
+```
+
+该矩阵是命名和职责约束，不代表 future editor 已经实现。任何文档或示例在使用
+`WorkbookEditor`、`WorksheetEditor`、`CellValue`、`get_cell()`、`set_cell()` 前，
+都必须标明它们是未来 public design target，直到对应 public header、实现和测试存在。
+
+任何新增 public API 任务都必须先回答两个问题：
+
+1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？
+2. 它复用哪些已有 public 值类型，是否不必要地暴露了 internal OPC / package 类型？
+
 ## API 分层原则
 
 FastXLSX 可以提供多层 API，但每层都要标明成本。
@@ -1266,6 +1365,7 @@ unsupported header 的错误边界，以及它不是任意 stream/URL/base64 图
 
 规划 API 或实现任务时，任务说明必须写清：
 
+- 对应的 `docs/TASK_BREAKDOWN.md` 子任务编号；没有拆分编号的较大任务应先拆分再执行。
 - 属于哪个阶段：Phase 1、Phase 2、Phase 3、Phase 4 或 Phase 5。
 - 使用哪种 API 模式：Streaming、Patch 或 In-memory。
 - 是否触碰性能热路径。

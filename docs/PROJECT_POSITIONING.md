@@ -107,6 +107,10 @@ sharedStrings 和 worksheet XML 语义层。
 
 不承诺的是“百万行 worksheet 像二维数组一样任意随机读写，同时仍保持低内存”。
 
+当前执行策略也不能把 `Patch` 或 `In-memory` 作为大块任务直接实现。后续应按
+[任务拆分设计](TASK_BREAKDOWN.md) 先完成 `P4.0 API surface unification`，再进入
+窄 Patch MVP 和 preservation / dependency 子任务。
+
 ### 2. 流式优先
 
 大数据写入必须走流式路径。
@@ -197,6 +201,7 @@ In-memory editor
 EditPlan
 dependency analyzer
 OpenXLSX-like API
+API surface unification
 xlnt-inspired producer consumer split
 high-performance editable XLSX engine
 editable XLSX package

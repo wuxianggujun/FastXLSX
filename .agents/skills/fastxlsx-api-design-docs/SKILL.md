@@ -12,7 +12,13 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 - `docs/EDITING_MODEL.md`
 - `docs/PERFORMANCE_TARGETS.md`
 - `docs/ROADMAP.md`
+- `docs/TASK_BREAKDOWN.md`
 - `README.md`
+
+执行 API 设计或任务计划时，必须先从 `docs/TASK_BREAKDOWN.md` 选择最小子任务编号。
+不要再把“任务 4”或整个 Phase 4 当作一个可直接执行的大任务；当前顺序是先完成
+`P4.0 API surface unification`，再推进窄 Patch MVP、preservation、dependency
+policy 和 In-memory 子任务。
 
 再检查 `include/` 和 `src/`，确认 API 是否已经实现。当前已实现的 public API
 包括 `Workbook`、`Worksheet`、`Cell`、`DocumentProperties`、`WorkbookWriter`、
@@ -1614,6 +1620,7 @@ mutation 或 existing-file editing，也不承诺完整 Excel UI 或跨办公软
 
 规划 API 任务时，任务说明必须写清：
 
+- 对应的 `docs/TASK_BREAKDOWN.md` 子任务编号；没有拆分编号的大任务必须先拆分。
 - 所属 Phase。
 - API 模式。
 - 是否触碰性能热路径。
@@ -1622,9 +1629,12 @@ mutation 或 existing-file editing，也不承诺完整 Excel UI 或跨办公软
 - 是否改变 CMake target 或引入依赖。
 - 如果是 Patch / editing API，必须列出 EditPlan 影响范围、unknown part preservation、
   relationship/content type side effects、sharedStrings/styles/calcChain 策略和 ReferencePolicy。
-- 阶段排序必须体现当前方向：Phase 4 编辑架构、Patch MVP 和后续 In-memory
-  小文件随机编辑是一等任务；writer/backend/sharedStrings/benchmark 工作是性能支撑线，
-  不能把编辑能力长期排到所有性能任务之后。
+- 阶段排序必须体现当前方向：先完成 `P4.0 API surface unification`，统一
+  `WorkbookWriter` / `Workbook` / future `WorkbookEditor` 门面、
+  `CellView` / `Cell` / future `CellValue` 边界和 internal/public 分界；再进入窄
+  Patch MVP、preservation fixture、sheet dependency policy 和后续 In-memory
+  小文件随机编辑。writer/backend/sharedStrings/benchmark 工作是性能支撑线，
+  不能把编辑能力长期排到所有性能任务之后，也不能绕过 P4.0 直接扩大 public Patch API。
 - 如果借鉴其他语言或生态的 XLSX 库，必须写清借鉴对象、借鉴点和不借鉴的架构缺点；
   例如 API 体验归 In-memory，低内存写入归 Streaming，已有文件保真归 Patch / OPC。
 

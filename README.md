@@ -61,6 +61,7 @@ FastXLSX 的当前定位是：
 - [测试流程](docs/TESTING_WORKFLOW.md)
 - [API 设计与文档注释](docs/API_DESIGN_AND_DOCUMENTATION.md)
 - [后续推进清单](docs/NEXT_STEPS.md)
+- [任务拆分设计](docs/TASK_BREAKDOWN.md)
 
 ## 构建与测试
 
@@ -97,6 +98,7 @@ FastXLSX
 │   ├── PERFORMANCE_TARGETS.md
 │   ├── PROJECT_POSITIONING.md
 │   ├── ROADMAP.md
+│   ├── TASK_BREAKDOWN.md
 │   ├── TASK_PLAN.md
 │   ├── TESTING_WORKFLOW.md
 │   └── TECHNICAL_COMPARISON.md
@@ -172,7 +174,7 @@ FastXLSX
   这只是静态文档属性元数据，不代表完整 document properties public API。
 - 行高、列宽、冻结窗格、自动筛选和合并单元格的写入骨架。
 - 内部 OPC manifest / relationships / `PartIndex` / `RelationshipGraph`
-  基础；Phase 5 已有文件编辑仍是规划。
+  基础；已有文件编辑当前只有 internal Patch groundwork，不是 public editing API。
 - 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
   进入 ZIP backend。默认构建使用 stored/no-compression bootstrap；
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
@@ -191,6 +193,8 @@ FastXLSX
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
 - 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
+- `P4.0 API surface unification` 仍是下一轮 public API 设计门槛；在它完成前，
+  不应扩大 public `WorkbookEditor` / `CellValue` / existing-file editing API。
 
 `src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取
 `stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；

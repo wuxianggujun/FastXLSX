@@ -20,8 +20,9 @@ P3 package read/copy/write foundation
 → P8 large worksheet controlled editing
 ```
 
-当前重点不是继续扩大一个笼统的“任务 4”，而是先完成 `P4.0`，让 public API
-命名、值类型和 internal/public 边界稳定下来。
+当前重点不是继续扩大一个笼统的“任务 4”。`P4.0` 已形成 public API 统一文档基线，
+`P4.1` 已冻结首个 Patch MVP 用例；后续推进必须从 `P4.2` 之后选择最小缺口，
+且不得绕过该基线直接扩大 public Patch / In-memory API。
 
 ## 执行规则
 
@@ -36,12 +37,14 @@ P3 package read/copy/write foundation
 
 ## P4.0 - API Surface Unification Design
 
-状态：计划，文档优先。
+状态：基础完成，后续 API 任务继续引用。
 
 目标：在继续扩大 Patch MVP 或 In-memory API 前，统一 public facade、命名、值类型和
 internal/public 边界。
 
 ### P4.0.1 Public Facade Matrix
+
+状态：已完成文档基线。
 
 类型：文档设计。
 
@@ -78,6 +81,8 @@ internal/public 边界。
 
 ### P4.0.2 Cell Value Boundary
 
+状态：已完成文档基线。
+
 类型：文档设计，后续可进入 public header 设计。
 
 输入：
@@ -109,6 +114,8 @@ internal/public 边界。
 
 ### P4.0.3 Public Naming Rules
 
+状态：已完成文档基线。
+
 类型：文档设计。
 
 输出：
@@ -128,6 +135,8 @@ internal/public 边界。
 - 不为同一行为增加多个 public 同义 API。
 
 ### P4.0.4 API Examples and Documentation Contract
+
+状态：已完成文档基线。
 
 类型：文档设计。
 
@@ -149,12 +158,14 @@ internal/public 边界。
 
 ## P4 - Patch MVP
 
-状态：计划，已有 internal groundwork。
+状态：进行中，首个 internal MVP 路径已有基础覆盖。
 
 目标：证明一个窄 existing-file edit 可以打开已有 workbook、定位目标、改写一个目标
 part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy。
 
 ### P4.1 MVP Use Case Freeze
+
+状态：已完成。
 
 类型：设计。
 
@@ -180,6 +191,8 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ### P4.2 Package Boundary Hardening
 
+状态：基础完成，可继续按失败路径补小切片。
+
 类型：代码 + 测试。
 
 输入：
@@ -189,6 +202,11 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 输出：
 - 更清晰的 package read/copy/write failure behavior。
 - 继续证明失败不污染 `EditPlan`、manifest、package-entry audit、calc policy 和输出 bytes。
+- 当前已覆盖：
+  - package reader central directory bounds hardening。
+  - `PackageEditor::save_as()` copy-original source entry 读取失败时带 entry 上下文，
+    且不污染状态、不覆盖既有输出。
+  - writer backend failure 时带输出路径上下文，且不污染状态、不覆盖既有输出。
 
 主要文件：
 - `src/package_reader.*`
@@ -202,11 +220,22 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ### P4.3 Relationship and Content-Type Side Effects
 
+状态：基础完成，后续缺口转入 P5 / P6 按对象和依赖类型拆分。
+
 类型：代码 + 测试。
 
 输出：
 - 针对 MVP edit 的 relationships/content types 同步策略。
 - 明确哪些 side effect 是 helper 管理，哪些只是 audit note。
+- 当前已覆盖：
+  - 有 `calcChain` 的 `sheetData` patch 会按默认策略重写 workbook calc metadata、
+    移除 stale calcChain content type / workbook relationship，并保留 worksheet
+    `.rels`、linked parts、sharedStrings、styles、VBA 和 unknown parts。
+  - 无 `calcChain` 的 by-name `sheetData` patch 只改 worksheet 与 workbook calc
+    metadata，保留 `[Content_Types].xml`、package `_rels/.rels` 和 workbook `.rels`
+    为 copy-original，不发明 worksheet `.rels` 或 calcChain。
+  - audit-only notes 只提示 sharedStrings、styles、worksheet-local metadata 和
+    linked parts 需要 caller review，不做 repair/pruning。
 
 验收：
 - 测试覆盖 content type override、package rels、workbook rels、worksheet rels 的保留或重写。
@@ -214,11 +243,20 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ### P4.4 Calc Policy Slice
 
+状态：基础完成。
+
 类型：代码 + 测试。
 
 输出：
 - `fullCalcOnLoad`、`calcChain.xml` remove/preserve/rebuild 的窄策略。
 - Rebuild 若未实现，必须显式失败或保持 planned。
+- 当前已覆盖：
+  - 默认 remove：数据/公式相关 worksheet 或 `sheetData` rewrite 会请求
+    `fullCalcOnLoad` 并省略 stale `xl/calcChain.xml`。
+  - preserve：显式策略会保留现有 calcChain payload / owner `.rels`，同时更新
+    workbook recalculation metadata。
+  - rebuild：当前未实现，必须显式失败且不污染 `EditPlan`、manifest、package-entry
+    audit、calc policy 或输出 bytes。
 
 验收：
 - 修改数据或公式相关 payload 时，输出 calc metadata 行为可预测。
@@ -226,12 +264,21 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ### P4.5 MVP End-to-End Fixture
 
+状态：基础完成，Excel 可视化记录仍是后续 QA 缺口。
+
 类型：测试 + 文档。
 
 输出：
 - 一个真实 writer-source 或 fixture workbook 的 end-to-end Patch 回归。
 - 验证目标 part 改写，未修改 worksheet、docProps、content types、relationships、
   sharedStrings/styles 和 unknown parts 保留。
+- 当前已覆盖：
+  - `WorkbookWriter` 生成 package 后，经 `PackageReader` 解析 workbook sheet catalog，
+    再由 internal `PackageEditor::replace_worksheet_sheet_data_by_name()` 替换目标
+    sheet `<sheetData>` 并 `save_as()`。
+  - 输出保留 untouched worksheet、docProps、content types、package relationships、
+    workbook relationships、sharedStrings、styles 和相关 bytes，并保持 internal Patch
+    MVP 口径。
 
 验收：
 - 拆包 XML 检查通过。

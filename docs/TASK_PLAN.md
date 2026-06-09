@@ -1065,19 +1065,21 @@ hardening lane.
      compatibility references.
    - Do not claim runtime behavior from doc-only changes.
 
-2. Editing architecture and Patch MVP - 计划, with internal groundwork 基础.
+2. Editing architecture and Patch MVP - 进行中, with internal MVP groundwork 基础.
    - Continue from the internal manifest, relationship/content-type models,
      `PartIndex`, `RelationshipGraph`, content type registry helper, and
      package-part write modes.
    - Continue `PackageReader` and the internal `PackageEditor` copy/replace
      foundation, and keep `EditPlan`, `DependencyAnalyzer`, `ReferencePolicy`,
      and `PartRewritePlanner` explicit before exposing public edit APIs.
-   - The first usable edit target should prove open-existing, copy-original
-     preservation, targeted part rewrite, relationship/content type sync, and
-     `calcChain` / `fullCalcOnLoad` policy.
+   - The first usable edit target is frozen as the internal by-name worksheet
+     `<sheetData>` patch. Current tests already prove open-existing,
+     copy-original preservation, targeted `sheetData` rewrite, narrow
+     relationship/content-type side effects, and `calcChain` /
+     `fullCalcOnLoad` policy for that path.
 
-3. API surface unification - 计划.
-   - Add a design gate before widening Patch or In-memory public APIs.
+3. API surface unification - 基础.
+   - Keep this design gate before widening Patch or In-memory public APIs.
    - Keep user-facing facades consistent: `WorkbookWriter` for Streaming,
      `Workbook` for small new-workbook creation, and future `WorkbookEditor` /
      `WorksheetEditor` for existing-file editing.
@@ -1367,7 +1369,7 @@ Validation:
 
 ### M6.5 - API Surface Unification Design
 
-Status: planned documentation gate.
+Status: baseline complete documentation gate.
 
 Use this lane before broadening Patch MVP or In-memory public APIs. The goal is
 to keep the public API coherent while still preserving the real Streaming /
@@ -1412,7 +1414,7 @@ Do not claim:
 
 ### M7 - Existing Package Reader/Writer and Preservation
 
-Status: planned.
+Status: in progress with internal MVP foundation.
 
 Do this after M6 has the edit contract and enough package/backend support to
 copy parts safely, and after M6.5 has fixed the public-facing API vocabulary.

@@ -758,10 +758,10 @@ feature completion.
    - Do not expose complete existing-file editing until preservation tests prove
      unknown and unmodified parts survive.
 
-3. API surface unification - 计划.
-   - Before broadening Patch or In-memory public APIs, freeze the public facade
-     vocabulary: `WorkbookWriter` for Streaming, `Workbook` for small
-     new-workbook creation, and future `WorkbookEditor` / `WorksheetEditor` for
+3. API surface unification - 基础.
+   - The public facade vocabulary is now frozen for current planning:
+     `WorkbookWriter` for Streaming, `Workbook` for small new-workbook
+     creation, and future `WorkbookEditor` / `WorksheetEditor` for
      existing-file editing.
    - Keep low-level `PackageReader`, `PackageEditor`, `EditPlan`,
      `PartIndex`, and `RelationshipGraph` internal unless a later task proves a
@@ -835,8 +835,8 @@ commit or short series with its own tests and docs update.
    - Define dependency analysis for sheet edits before public edit APIs land.
 
 3. API surface unification design.
-   - Freeze the public facade naming and shared value-type vocabulary before
-     widening Patch or In-memory APIs.
+   - Keep the frozen public facade naming and shared value-type vocabulary as
+     the gate before widening Patch or In-memory APIs.
    - Keep `PackageReader`, `PackageEditor`, `EditPlan`, `PartIndex`, and
      `RelationshipGraph` as internal Patch foundation unless a separate task
      proves a stable low-level public API is needed.
@@ -1036,7 +1036,7 @@ the authoritative execution order above for actual next-task selection.
 
 ### P4.1 - Patch MVP Use Case Freeze
 
-Status: planned documentation gate.
+Status: complete documentation gate.
 
 The first Patch MVP is frozen as an internal by-name worksheet `<sheetData>`
 patch. The future user story is `WorkbookEditor`-shaped: open an existing
@@ -1061,6 +1061,15 @@ Do not claim:
 - Existing-file editing is public API.
 - The caller can set arbitrary cells directly.
 - The helper migrates shared strings/styles or repairs object relationships.
+
+Current implementation evidence:
+- `PackageEditor::replace_worksheet_sheet_data_by_name()` is the internal MVP
+  entrypoint.
+- Package boundary hardening, no-calcChain relationship/content-type side
+  effects, calcChain remove/preserve/rebuild rejection behavior, and a
+  writer-source end-to-end fixture now have CTest coverage.
+- Remaining work should move into smaller P5 preservation fixtures and P6 sheet
+  dependency-policy slices instead of expanding this into a public editor.
 
 ### Historical P2 Detail - Production ZIP Dependency Discovery
 

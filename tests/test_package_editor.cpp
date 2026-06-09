@@ -31639,6 +31639,146 @@ void test_package_editor_save_as_copy_original_read_failure_preserves_state_and_
         "copy-original read failure should not overwrite an existing output file");
 }
 
+void test_package_editor_save_as_writer_failure_preserves_state_and_output()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-writer-failure-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-writer-failure-output.xlsx");
+    const std::string output_sentinel = "do not overwrite this writer failure output";
+    write_binary_file(output, output_sentinel);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const std::string replacement_core =
+        "<cp:coreProperties><dc:creator>Writer</dc:creator></cp:coreProperties>";
+    editor.replace_part(core_part, replacement_core,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t queued_worksheet_relationship_reference_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t queued_worksheet_payload_dependency_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t queued_workbook_payload_dependency_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+    const bool queued_full_calculation_on_load =
+        editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+    const fastxlsx::detail::PackageEditorOutputPlan queued_output_plan =
+        editor.planned_output();
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = static_cast<fastxlsx::detail::PackageWriterBackend>(999);
+
+    bool failed = false;
+    try {
+        editor.save_as(output, options);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "failed to write PackageEditor output package",
+            "writer failure should include PackageEditor write context");
+        check_contains(error.what(), "fastxlsx-package-editor-writer-failure-output.xlsx",
+            "writer failure should include the output package path");
+        check_contains(error.what(), "unsupported package writer backend",
+            "writer failure should preserve the backend failure reason");
+    }
+    check(failed,
+        "PackageEditor should reject save_as when the selected writer backend fails");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "writer failure should not change queued edit-plan entries");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "writer failure should not add edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "writer failure should not change package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "writer failure should not change removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "writer failure should not change removed package-entry audits");
+    check(editor.edit_plan().relationship_target_audits().size()
+            == queued_relationship_target_audit_count,
+        "writer failure should not change relationship target audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == queued_worksheet_relationship_reference_audit_count,
+        "writer failure should not change worksheet reference audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == queued_worksheet_payload_dependency_audit_count,
+        "writer failure should not change worksheet payload audits");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == queued_workbook_payload_dependency_audit_count,
+        "writer failure should not change workbook payload audits");
+    check(editor.edit_plan().full_calculation_on_load()
+            == queued_full_calculation_on_load,
+        "writer failure should not change fullCalcOnLoad intent");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "writer failure should not change calcChain policy");
+    check_manifest_write_mode(editor, core_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "writer failure should keep queued core replacement active");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "writer failure should keep opaque part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.entries.size() == queued_output_plan.entries.size(),
+        "writer failure should keep output-plan entry count stable");
+    check(output_plan.notes.size() == queued_output_plan.notes.size(),
+        "writer failure should keep output-plan notes stable");
+    check(output_plan.removed_parts.size() == queued_output_plan.removed_parts.size(),
+        "writer failure should keep output-plan removed parts stable");
+    check(output_plan.removed_package_entries.size()
+            == queued_output_plan.removed_package_entries.size(),
+        "writer failure should keep output-plan package-entry omissions stable");
+    check(output_plan.relationship_target_audits.size()
+            == queued_output_plan.relationship_target_audits.size(),
+        "writer failure should keep output-plan relationship audits stable");
+    check(output_plan.worksheet_relationship_reference_audits.size()
+            == queued_output_plan.worksheet_relationship_reference_audits.size(),
+        "writer failure should keep output-plan worksheet audits stable");
+    check(output_plan.worksheet_payload_dependency_audits.size()
+            == queued_output_plan.worksheet_payload_dependency_audits.size(),
+        "writer failure should keep output-plan worksheet payload audits stable");
+    check(output_plan.workbook_payload_dependency_audits.size()
+            == queued_output_plan.workbook_payload_dependency_audits.size(),
+        "writer failure should keep output-plan workbook payload audits stable");
+    check(output_plan.full_calculation_on_load
+            == queued_output_plan.full_calculation_on_load,
+        "writer failure should keep output-plan fullCalcOnLoad stable");
+    check(output_plan.calc_chain_action == queued_output_plan.calc_chain_action,
+        "writer failure should keep output-plan calcChain policy stable");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "writer failure should keep planned core rewrite");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "writer failure should keep planned opaque copy-original");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "writer failure should not overwrite an existing output file");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("docProps/core.xml") == replacement_core,
+        "later safe output should write queued core replacement after writer failure");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe output should preserve unknown bytes after writer failure");
+}
+
 void test_package_editor_rejects_invalid_replacements()
 {
     const SourcePackage source =
@@ -32321,6 +32461,7 @@ int main()
         test_package_editor_rejects_worksheet_rewrite_without_workbook_metadata();
         test_package_editor_rejects_saving_over_source_package();
         test_package_editor_save_as_copy_original_read_failure_preserves_state_and_output();
+        test_package_editor_save_as_writer_failure_preserves_state_and_output();
         test_package_editor_rejects_invalid_replacements();
         test_package_editor_rejects_metadata_entry_replacements_without_state_changes();
         test_package_editor_rejects_invalid_removals_without_state_changes();

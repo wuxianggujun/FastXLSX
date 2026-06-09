@@ -2776,7 +2776,12 @@ void PackageEditor::save_as(
                 reader_, replacements_, entry_replacements_, entry_plan));
     }
 
-    write_package(path, output_entries, options);
+    try {
+        write_package(path, output_entries, options);
+    } catch (const std::exception& error) {
+        throw FastXlsxError("failed to write PackageEditor output package '"
+            + path.generic_string() + "': " + error.what());
+    }
 }
 
 } // namespace fastxlsx::detail

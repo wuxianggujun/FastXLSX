@@ -58,6 +58,9 @@ __pycache__/
 /fastxlsx-bench-*.xlsx
 /fastxlsx-bench-*.json
 
+# Generated package reader/editor test workbooks
+/fastxlsx-package-*.xlsx
+
 # Environment and local secret files
 .env
 .env.*

@@ -124,6 +124,25 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
   不生成公式文本、totals row 单元格文本或样式。
   当前只拒绝同一 worksheet 内 table-vs-table range overlap；不支持 calculated columns、sort/filter criteria、custom styles、table resize、
   已有文件编辑或完整 Excel table UI。
+  当前内部 `PackageEditor` linked-object fixture 另有 ordinary table replacement
+  回归：只重写 `xl/tables/table1.xml` 时，worksheet `.rels`、table content type
+  override、workbook/worksheet/drawing/chart/media/unknown extension entries 保持
+  copy-original baseline。这只是 existing-package table part rewrite / relationship
+  preservation evidence，不是 table resize、calculated columns、totals generation、
+  existing-workbook table editing 或 full table support。
+  当前内部 `PackageEditor` linked-object fixture 另有 explicit table removal
+  回归：显式移除 `xl/tables/table1.xml` 时，输出省略 table entry，移除 table
+  content type override，保留 worksheet `.rels` inbound table relationship，
+  不凭空创建 table owner `.rels` omission。这只是 no-pruning / preservation
+  evidence，不是 relationship repair、object deletion、table resize、
+  existing-workbook table editing 或 full table support。
+  当前还覆盖 table ordinary replacement 后再显式移除的顺序：后续 removal
+  会清理 active table replacement、记录 removed-part audit 和 inbound worksheet
+  relationship metadata、输出省略 table part、移除 table content type override、保留
+  worksheet `.rels` inbound table relationship，且不凭空创建 table owner `.rels`。
+  这只是 ordering / preservation evidence，不是 table delete semantics、relationship
+  pruning/repair、content type repair、table resize、existing-workbook table editing
+  或 full table support。
 - Images/Pictures：保持计划；不要把它当成 data validations 那样的纯 worksheet XML
   切片。需要 `fastxlsx-image-media-features` 和 OPC graph/package 边界。
 
@@ -135,7 +154,8 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。
 - 不要把 two-/three-color color scale、basic data bar 或 basic 3Arrows icon set 写成完整 conditional formatting、styles registry 或
   `dxfs` 支持。
-- 不要在没有 PackageReader/PackageWriter 前宣称 existing XLSX editing 或 unknown part passthrough。
+- 不要因为已有内部 stored-entry `PackageReader` 基础就宣称 existing XLSX editing
+  或 unknown part passthrough；仍需要 production writer/copy pipeline 和 preservation fixtures。
 - 不要把 Excel、`openpyxl` 或 `XlsxWriter` 加为运行时依赖；它们只能用于测试和排障参考。
 
 ## 验证

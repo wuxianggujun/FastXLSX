@@ -46,6 +46,29 @@ worksheet DOM 作为大文件主路径。
 它比 `OpenXLSX` 更接近 FastXLSX 的方向，但普通 workbook API 仍然以完整内存
 模型为中心，所以 FastXLSX 只吸收它的分层思想，不照搬它的内存模型。
 
+FastXLSX 也会参考其他语言生态里的成熟 XLSX 库。原则不是“把所有库的功能堆进一个
+对象模型”，而是把它们的优点抽象成 FastXLSX 的三条能力路径：
+
+- In-memory 路径吸收 `openpyxl`、`ClosedXML`、`EPPlus`、`ExcelJS`、
+  `xlsx-populate` 这类库的小文件随机编辑体验。
+- Streaming 路径吸收 `libxlsxwriter`、`XlsxWriter`、`rust_xlsxwriter`、
+  `pyexcelerate`、`OpenSpout`、`EasyExcel` 这类库的顺序写入、批量写入和低内存经验。
+- Patch 路径吸收 `DocumentFormat.OpenXml SDK`、Apache POI OPC 层、`XLSX I/O`、
+  `OpenXLSX`、`xlnt` 等库对 OpenXML part、relationships、content types 和已有文件
+  编辑的经验，同时用 part-level rewrite 和 unknown part preservation 避免全量 DOM
+  重建风险。
+
+也就是说：
+
+```text
+FastXLSX = 易用编辑体验
+         + 高性能流式写入
+         + OPC/part-level Patch 编辑
+         + unknown part preservation
+```
+
+FastXLSX 可以吸收各语言库的优点，但不能吸收它们不适合本项目目标的架构缺点。
+
 更详细的对比见 [技术对比](TECHNICAL_COMPARISON.md)。
 
 ## 和 FastExcel 的关系
@@ -185,9 +208,10 @@ FastXLSX 的成功标准不是“API 看起来像 OpenXLSX”。
 
 真正的成功标准是：
 
-1. OpenXLSX 高频功能可覆盖。
-2. 大数据写入性能明显更好。
-3. 大型 worksheet 内存占用稳定。
-4. 小文件随机编辑体验可靠且边界清晰。
-5. 编辑已有 XLSX 时尽量保留未知结构。
-6. 架构上能长期扩展，而不是堆功能。
+1. 吸收 `OpenXLSX` / `openpyxl` / `ClosedXML` 等库的小文件编辑体验。
+2. 吸收 `libxlsxwriter` / `XlsxWriter` / `rust_xlsxwriter` 等库的写入质量和性能边界。
+3. 吸收 Apache POI / EasyExcel / OpenSpout 等库的大文件分层经验。
+4. 吸收 OpenXML SDK / Apache POI OPC 层等库的 package / relationship 严谨性。
+5. 大数据写入性能明显更好，且大型 worksheet 内存占用稳定。
+6. 编辑已有 XLSX 时尽量保留未知结构。
+7. 架构上能长期扩展，而不是把所有功能堆进一个巨型 workbook DOM。

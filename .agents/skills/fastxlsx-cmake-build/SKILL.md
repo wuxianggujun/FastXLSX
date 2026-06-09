@@ -21,8 +21,9 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 - 项目是 `FastXLSX`，版本 `0.1.0`，语言是 `CXX`。
 - C++ 标准是 C++20，强制启用，并关闭编译器扩展。
 - `fastxlsx` 当前是 compiled library，源码列表在顶层 `CMakeLists.txt`；当前已接入
-  `src/image.cpp`、`src/opc.cpp`、`src/package_writer.cpp`、`src/streaming_writer.cpp`、
-  `src/workbook.cpp`、`src/xml.cpp`、`src/zip_store_writer.cpp`。
+  `src/image.cpp`、`src/opc.cpp`、`src/package_editor.cpp`、`src/package_reader.cpp`、
+  `src/package_writer.cpp`、`src/streaming_writer.cpp`、`src/workbook.cpp`、
+  `src/xml.cpp`、`src/zip_store_writer.cpp`。
 - 别名目标是 `FastXLSX::fastxlsx`。
 - 选项：
   - `FASTXLSX_BUILD_TESTS` 默认 `ON`。
@@ -96,7 +97,9 @@ cmake --help
 - 当前 `vcpkg.json` 是基础入口：默认依赖包含 `stb`；planned features 包含
   `minizip-ng`、`zlib-ng`、`expat`、`pugixml`、`catch2` 和 `benchmark`。
 - 当前代码真正使用的第三方依赖是默认 `stb` 图片元数据 helper / streaming
-  图片插入结构，以及 opt-in `minizip-ng[core,zlib]` backend。
+  图片插入结构，以及 opt-in `minizip-ng[core,zlib]` backend。当前 minizip writer
+  会显式关闭 data descriptor，用于生成当前 `PackageReader` 可验证的 DEFLATE
+  fixture；这不代表 reader 已支持任意 data-descriptor ZIP input。
 - 未使用的依赖不要提前加 `find_package` 或 link。
 - 接入前必须验证真实 port 名、feature、imported target、triplet 行为和许可证。
 - 依赖接入遵守 `fastxlsx-dependency-policy`。

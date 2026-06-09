@@ -35,6 +35,20 @@ char to_ascii_lower(char ch) noexcept
     return ch;
 }
 
+int hex_digit_value(char ch) noexcept
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    return -1;
+}
+
 std::string normalize_extension(std::string_view extension)
 {
     while (!extension.empty() && extension.front() == '.') {
@@ -197,6 +211,477 @@ constexpr std::string_view relationship_type_shared_strings =
 constexpr std::string_view relationship_type_styles =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 
+void add_dependency_if_exists(DependencyAnalysis& analysis, const PackageManifest& manifest,
+    std::string_view part_name, std::string reason)
+{
+    PartName normalized(part_name);
+    if (manifest.find_part(normalized) == nullptr) {
+        return;
+    }
+
+    const auto existing = std::find_if(analysis.parts.begin(), analysis.parts.end(),
+        [&normalized](const PartDependency& dependency) {
+            return dependency.part_name == normalized;
+        });
+    if (existing == analysis.parts.end()) {
+        analysis.parts.push_back(PartDependency {std::move(normalized), std::move(reason)});
+    }
+}
+
+bool add_dependency(DependencyAnalysis& analysis, PartName part_name, std::string reason)
+{
+    const auto existing = std::find_if(analysis.parts.begin(), analysis.parts.end(),
+        [&part_name](const PartDependency& dependency) {
+            return dependency.part_name == part_name;
+        });
+    if (existing != analysis.parts.end()) {
+        return false;
+    }
+
+    analysis.parts.push_back(PartDependency {std::move(part_name), std::move(reason)});
+    return true;
+}
+
+std::string resolve_internal_relationship_target_path(
+    const PartName& source_part, const Relationship& relationship)
+{
+    if (relationship.target_mode == Relationship::TargetMode::External) {
+        return {};
+    }
+    if (!relationship.target.empty() && relationship.target.front() == '/') {
+        return relationship.target;
+    }
+
+    const std::string& source = source_part.value();
+    const std::size_t slash = source.find_last_of('/');
+    if (slash == std::string::npos || slash == 0) {
+        return "/" + relationship.target;
+    }
+    return source.substr(0, slash) + "/" + relationship.target;
+}
+
+std::string decode_percent_encoded_relationship_target(std::string_view target)
+{
+    std::string decoded;
+    decoded.reserve(target.size());
+
+    for (std::size_t index = 0; index < target.size(); ++index) {
+        const char ch = target[index];
+        if (ch != '%') {
+            decoded.push_back(ch);
+            continue;
+        }
+
+        if (index + 2 >= target.size()) {
+            throw FastXlsxError("relationship target percent escape is incomplete");
+        }
+
+        const int high = hex_digit_value(target[index + 1]);
+        const int low = hex_digit_value(target[index + 2]);
+        if (high < 0 || low < 0) {
+            throw FastXlsxError("relationship target percent escape is invalid");
+        }
+
+        const char decoded_char = static_cast<char>((high << 4) | low);
+        if (decoded_char == '\0') {
+            throw FastXlsxError("relationship target cannot contain null bytes");
+        }
+
+        decoded.push_back(decoded_char);
+        index += 2;
+    }
+
+    return decoded;
+}
+
+std::string relationship_dependency_reason(
+    const PartName& source_part, const Relationship& relationship, const PartName& target_part)
+{
+    if (source_part.value().find("/xl/worksheets/") == 0) {
+        return "worksheet relationship " + relationship.id
+            + " type " + relationship.type + " targets known internal part "
+            + target_part.value();
+    }
+
+    return "relationship from " + source_part.value() + " " + relationship.id
+        + " type " + relationship.type + " targets known internal part "
+        + target_part.value();
+}
+
+bool add_relationship_dependency(DependencyAnalysis& analysis, const PartName& source_part,
+    const Relationship& relationship, PartName target_part)
+{
+    const auto existing = std::find_if(analysis.parts.begin(), analysis.parts.end(),
+        [&target_part](const PartDependency& dependency) {
+            return dependency.part_name == target_part;
+        });
+    if (existing != analysis.parts.end()) {
+        return false;
+    }
+
+    analysis.parts.push_back(PartDependency {
+        target_part,
+        relationship_dependency_reason(source_part, relationship, target_part),
+        source_part.value(),
+        relationship.id,
+        relationship.type,
+        relationship.target,
+    });
+    return true;
+}
+
+std::string relationship_target_note_prefix(
+    std::string_view prefix, const PartName& source_part, const Relationship& relationship)
+{
+    return std::string(prefix) + " owner " + source_part.value() + " relationship "
+        + relationship.id + " type " + relationship.type + " target "
+        + relationship.target;
+}
+
+void record_relationship_target_audit(DependencyAnalysis& analysis,
+    std::string_view prefix, const PartName& source_part, const Relationship& relationship,
+    std::string note_suffix = {}, std::string normalized_target = {})
+{
+    std::string note = relationship_target_note_prefix(prefix, source_part, relationship);
+    if (!note_suffix.empty()) {
+        note += " " + note_suffix;
+    }
+    analysis.relationship_target_audits.push_back(RelationshipTargetAudit {
+        source_part,
+        relationship.id,
+        relationship.type,
+        relationship.target,
+        normalized_target,
+        note,
+    });
+    analysis.relationship_target_notes.push_back(std::move(note));
+}
+
+bool is_same_relationship_target_audit(
+    const RelationshipTargetAudit& left, const RelationshipTargetAudit& right) noexcept
+{
+    return left.owner_part == right.owner_part
+        && left.relationship_id == right.relationship_id
+        && left.relationship_type == right.relationship_type
+        && left.target == right.target
+        && left.normalized_target == right.normalized_target;
+}
+
+bool is_same_worksheet_relationship_reference_audit(
+    const WorksheetRelationshipReferenceAudit& left,
+    const WorksheetRelationshipReferenceAudit& right) noexcept
+{
+    return left.worksheet_part == right.worksheet_part
+        && left.kind == right.kind
+        && left.element == right.element
+        && left.relationship_id == right.relationship_id
+        && left.expected_relationship_type == right.expected_relationship_type
+        && left.actual_relationship_type == right.actual_relationship_type;
+}
+
+bool is_same_worksheet_payload_dependency_audit(
+    const WorksheetPayloadDependencyAudit& left,
+    const WorksheetPayloadDependencyAudit& right) noexcept
+{
+    return left.worksheet_part == right.worksheet_part
+        && left.kind == right.kind
+        && left.scope == right.scope
+        && left.element == right.element;
+}
+
+bool is_same_workbook_payload_dependency_audit(
+    const WorkbookPayloadDependencyAudit& left,
+    const WorkbookPayloadDependencyAudit& right) noexcept
+{
+    return left.workbook_part == right.workbook_part
+        && left.kind == right.kind
+        && left.scope == right.scope
+        && left.element == right.element;
+}
+
+std::string normalized_package_relationship_target(const Relationship& relationship)
+{
+    if (relationship.target_mode == Relationship::TargetMode::External) {
+        return {};
+    }
+
+    std::string target = relationship.target;
+    const std::size_t uri_qualifier = target.find_first_of("?#");
+    if (uri_qualifier != std::string::npos) {
+        target.erase(uri_qualifier);
+    }
+    target = decode_percent_encoded_relationship_target(target);
+    if (!target.empty() && target.front() == '/') {
+        return target;
+    }
+    return "/" + target;
+}
+
+std::string normalized_source_relationship_target(
+    const PartName& source_part, const Relationship& relationship)
+{
+    if (relationship.target_mode == Relationship::TargetMode::External) {
+        return {};
+    }
+
+    Relationship target_relationship = relationship;
+    const std::size_t uri_qualifier =
+        target_relationship.target.find_first_of("?#");
+    if (uri_qualifier != std::string::npos) {
+        target_relationship.target.erase(uri_qualifier);
+    }
+    target_relationship.target =
+        decode_percent_encoded_relationship_target(target_relationship.target);
+    return resolve_internal_relationship_target_path(source_part, target_relationship);
+}
+
+bool relationship_targets_removed_part(std::string target_path, const PartName& removed_part)
+{
+    if (target_path.empty()) {
+        return false;
+    }
+
+    try {
+        return PartName(target_path) == removed_part;
+    } catch (const FastXlsxError&) {
+        return false;
+    }
+}
+
+std::string relationship_entry_name_for_source_part(const PartName& source_part)
+{
+    const std::string source_path = source_part.zip_path();
+    const std::size_t slash = source_path.find_last_of('/');
+    if (slash == std::string::npos) {
+        return "_rels/" + source_path + ".rels";
+    }
+    return source_path.substr(0, slash) + "/_rels/" + source_path.substr(slash + 1)
+        + ".rels";
+}
+
+struct RemovedPartAuditPlan {
+    std::string reason;
+    std::vector<RemovedPartInboundRelationshipAudit> inbound_relationships;
+    std::vector<std::string> notes;
+};
+
+void append_inbound_relationship_audit(RemovedPartAuditPlan& plan,
+    std::string_view owner_reason, std::string owner_part, std::string owner_entry,
+    const Relationship& relationship, const PartName& removed_part)
+{
+    plan.reason += "; inbound relationship preserved after explicit part removal: owner ";
+    plan.reason += owner_reason;
+    plan.reason += " relationship ";
+    plan.reason += relationship.id;
+    plan.reason += " type ";
+    plan.reason += relationship.type;
+    plan.reason += " target ";
+    plan.reason += relationship.target;
+    plan.reason += " still resolves to removed part ";
+    plan.reason += removed_part.value();
+
+    plan.inbound_relationships.push_back(RemovedPartInboundRelationshipAudit {
+        std::move(owner_part),
+        std::move(owner_entry),
+        relationship.id,
+        relationship.type,
+        relationship.target,
+        removed_part,
+    });
+}
+
+void append_inbound_relationship_scan_note(RemovedPartAuditPlan& plan,
+    std::string_view owner_reason, const Relationship& relationship,
+    std::string_view error_message)
+{
+    std::string note =
+        "invalid relationship target skipped during removed-part inbound audit: owner ";
+    note += owner_reason;
+    note += " relationship ";
+    note += relationship.id;
+    note += " type ";
+    note += relationship.type;
+    note += " target ";
+    note += relationship.target;
+    note += " error ";
+    note += error_message;
+    plan.notes.push_back(std::move(note));
+}
+
+RemovedPartAuditPlan append_inbound_relationship_removal_audit(
+    const PackageManifest& manifest, const PartName& removed_part, std::string reason)
+{
+    RemovedPartAuditPlan plan {std::move(reason), {}, {}};
+
+    for (const Relationship& relationship : manifest.package_relationships().relationships()) {
+        std::string normalized_target;
+        try {
+            normalized_target = normalized_package_relationship_target(relationship);
+        } catch (const FastXlsxError& error) {
+            append_inbound_relationship_scan_note(
+                plan, "package _rels/.rels", relationship, error.what());
+            continue;
+        }
+        if (relationship_targets_removed_part(std::move(normalized_target), removed_part)) {
+            append_inbound_relationship_audit(plan, "package _rels/.rels", {}, "_rels/.rels",
+                relationship, removed_part);
+        }
+    }
+
+    for (const PackagePart& part : manifest.parts()) {
+        for (const Relationship& relationship : part.relationships.relationships()) {
+            std::string normalized_target;
+            try {
+                normalized_target = normalized_source_relationship_target(part.name, relationship);
+            } catch (const FastXlsxError& error) {
+                append_inbound_relationship_scan_note(
+                    plan, part.name.value(), relationship, error.what());
+                continue;
+            }
+            if (relationship_targets_removed_part(std::move(normalized_target), removed_part)) {
+                append_inbound_relationship_audit(plan, part.name.value(), part.name.value(),
+                    relationship_entry_name_for_source_part(part.name), relationship,
+                    removed_part);
+            }
+        }
+    }
+
+    return plan;
+}
+
+void add_known_relationship_target_dependencies(DependencyAnalysis& analysis,
+    const PackageManifest& manifest, const PartName& source_part,
+    const RelationshipSet& relationships)
+{
+    for (const Relationship& relationship : relationships.relationships()) {
+        if (relationship.target_mode == Relationship::TargetMode::External) {
+            analysis.has_external_relationship_targets = true;
+            record_relationship_target_audit(analysis,
+                "external relationship targets are preserved in owner .rels and are not package parts:",
+                source_part, relationship);
+            continue;
+        }
+
+        Relationship target_relationship = relationship;
+        const std::size_t uri_qualifier =
+            target_relationship.target.find_first_of("?#");
+        const bool uri_qualified = uri_qualifier != std::string::npos;
+        if (uri_qualified) {
+            analysis.has_uri_qualified_internal_relationship_targets = true;
+            target_relationship.target.erase(uri_qualifier);
+        }
+
+        try {
+            target_relationship.target =
+                decode_percent_encoded_relationship_target(target_relationship.target);
+            const std::string target_path =
+                resolve_internal_relationship_target_path(source_part, target_relationship);
+            if (target_path.empty()) {
+                continue;
+            }
+
+            PartName target_part(target_path);
+            if (uri_qualified) {
+                record_relationship_target_audit(analysis,
+                    "URI-qualified internal relationship targets require package structure review:",
+                    source_part, relationship, "has base part " + target_part.value(),
+                    target_part.value());
+            }
+            if (manifest.find_part(target_part) == nullptr) {
+                analysis.has_unresolved_internal_relationship_targets = true;
+                record_relationship_target_audit(analysis,
+                    "unresolved internal relationship targets require package structure review:",
+                    source_part, relationship,
+                    "resolves to unregistered part " + target_part.value(), target_part.value());
+                continue;
+            }
+
+            const bool inserted =
+                add_relationship_dependency(analysis, source_part, relationship, target_part);
+            if (!inserted) {
+                continue;
+            }
+
+            if (const RelationshipSet* target_relationships =
+                    manifest.relationships_for(target_part)) {
+                add_known_relationship_target_dependencies(
+                    analysis, manifest, target_part, *target_relationships);
+            }
+        } catch (const FastXlsxError&) {
+            analysis.has_invalid_internal_relationship_targets = true;
+            record_relationship_target_audit(analysis,
+                "invalid internal relationship targets require package structure review:",
+                source_part, relationship, "cannot be normalized as a package part");
+        }
+    }
+}
+
+void annotate_copy_original_dependencies(EditPlan& plan, const DependencyAnalysis& analysis,
+    const PartName& target_part)
+{
+    for (const PartDependency& dependency : analysis.parts) {
+        if (dependency.part_name == target_part) {
+            continue;
+        }
+        if (auto* entry = plan.find_part(dependency.part_name);
+            entry != nullptr && entry->write_mode == PartWriteMode::CopyOriginal) {
+            entry->reason = dependency.reason;
+            entry->relationship_owner_part = dependency.relationship_owner_part;
+            entry->relationship_id = dependency.relationship_id;
+            entry->relationship_type = dependency.relationship_type;
+            entry->relationship_target = dependency.relationship_target;
+        }
+    }
+}
+
+void validate_package_entry_audit_context(
+    std::string_view entry_name, PackageEntryAuditKind audit_kind, std::string_view owner_part)
+{
+    switch (audit_kind) {
+    case PackageEntryAuditKind::Generic:
+        if (!owner_part.empty()) {
+            throw FastXlsxError("generic package-entry audit cannot carry an owner part");
+        }
+        return;
+    case PackageEntryAuditKind::ContentTypes:
+        if (entry_name != "[Content_Types].xml") {
+            throw FastXlsxError("content-types package-entry audit must target [Content_Types].xml");
+        }
+        if (!owner_part.empty()) {
+            throw FastXlsxError("content-types package-entry audit cannot carry an owner part");
+        }
+        return;
+    case PackageEntryAuditKind::PackageRelationships:
+        if (entry_name != "_rels/.rels") {
+            throw FastXlsxError("package-relationships package-entry audit must target _rels/.rels");
+        }
+        if (!owner_part.empty()) {
+            throw FastXlsxError("package-relationships package-entry audit cannot carry an owner part");
+        }
+        return;
+    case PackageEntryAuditKind::SourceRelationships:
+        break;
+    }
+
+    if (owner_part.empty()) {
+        throw FastXlsxError("source relationship package-entry audit requires an owner part");
+    }
+
+    const PartName owner(owner_part);
+    const std::string source_path = owner.zip_path();
+    const std::size_t slash = source_path.find_last_of('/');
+    std::string expected_entry;
+    if (slash == std::string::npos) {
+        expected_entry = "_rels/" + source_path + ".rels";
+    } else {
+        expected_entry = source_path.substr(0, slash) + "/_rels/"
+            + source_path.substr(slash + 1) + ".rels";
+    }
+    if (entry_name != expected_entry) {
+        throw FastXlsxError("source relationship package-entry audit target does not match owner part");
+    }
+}
+
 } // namespace
 
 PartName::PartName(std::string_view value)
@@ -260,6 +745,17 @@ const Relationship* RelationshipSet::find_by_id(std::string_view id) const noexc
     return item == relationships_.end() ? nullptr : &*item;
 }
 
+std::size_t RelationshipSet::remove_by_type(std::string_view type) noexcept
+{
+    const std::size_t old_size = relationships_.size();
+    relationships_.erase(std::remove_if(relationships_.begin(), relationships_.end(),
+                             [type](const Relationship& relationship) {
+                                 return relationship.type == type;
+                             }),
+        relationships_.end());
+    return old_size - relationships_.size();
+}
+
 const std::vector<Relationship>& RelationshipSet::relationships() const noexcept
 {
     return relationships_;
@@ -310,6 +806,17 @@ const ContentTypeOverride& ContentTypesManifest::add_override(
 
     overrides_.push_back({std::move(part_name), std::move(content_type)});
     return overrides_.back();
+}
+
+bool ContentTypesManifest::remove_override(const PartName& part_name) noexcept
+{
+    const auto old_size = overrides_.size();
+    overrides_.erase(std::remove_if(overrides_.begin(), overrides_.end(),
+                         [&part_name](const ContentTypeOverride& value) {
+                             return value.part_name == part_name;
+                         }),
+        overrides_.end());
+    return old_size != overrides_.size();
 }
 
 const std::string* ContentTypesManifest::content_type_for(const PartName& part_name) const noexcept
@@ -442,6 +949,333 @@ void PackagePart::mark_dirty() noexcept
 void PackagePart::mark_generated() noexcept
 {
     set_write_mode(PartWriteMode::GenerateSmallXml);
+}
+
+EditPlanEntry& EditPlan::set_part(
+    PartName part_name, PartWriteMode write_mode, std::string reason)
+{
+    removed_parts_.erase(std::remove_if(removed_parts_.begin(), removed_parts_.end(),
+                             [&part_name](const EditPlanRemovedPart& entry) {
+                                 return entry.part_name == part_name;
+                             }),
+        removed_parts_.end());
+
+    if (auto* existing = find_part(part_name)) {
+        existing->write_mode = write_mode;
+        existing->reason = std::move(reason);
+        existing->relationship_owner_part.clear();
+        existing->relationship_id.clear();
+        existing->relationship_type.clear();
+        existing->relationship_target.clear();
+        return *existing;
+    }
+
+    entries_.push_back(EditPlanEntry {std::move(part_name), write_mode, std::move(reason)});
+    return entries_.back();
+}
+
+EditPlanEntry* EditPlan::find_part(const PartName& part_name) noexcept
+{
+    const auto item = std::find_if(entries_.begin(), entries_.end(),
+        [&part_name](const EditPlanEntry& entry) { return entry.part_name == part_name; });
+    return item == entries_.end() ? nullptr : &*item;
+}
+
+const EditPlanEntry* EditPlan::find_part(const PartName& part_name) const noexcept
+{
+    const auto item = std::find_if(entries_.begin(), entries_.end(),
+        [&part_name](const EditPlanEntry& entry) { return entry.part_name == part_name; });
+    return item == entries_.end() ? nullptr : &*item;
+}
+
+EditPlanRemovedPart& EditPlan::remove_part(PartName part_name, std::string reason)
+{
+    return remove_part(std::move(part_name), std::move(reason), {});
+}
+
+EditPlanRemovedPart& EditPlan::remove_part(PartName part_name, std::string reason,
+    std::vector<RemovedPartInboundRelationshipAudit> inbound_relationships)
+{
+    entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
+                       [&part_name](const EditPlanEntry& entry) {
+                           return entry.part_name == part_name;
+                       }),
+        entries_.end());
+
+    const auto item = std::find_if(removed_parts_.begin(), removed_parts_.end(),
+        [&part_name](const EditPlanRemovedPart& entry) { return entry.part_name == part_name; });
+    if (item != removed_parts_.end()) {
+        item->reason = std::move(reason);
+        item->inbound_relationships = std::move(inbound_relationships);
+        return *item;
+    }
+
+    removed_parts_.push_back(EditPlanRemovedPart {
+        std::move(part_name),
+        std::move(reason),
+        std::move(inbound_relationships),
+    });
+    return removed_parts_.back();
+}
+
+const EditPlanRemovedPart* EditPlan::find_removed_part(
+    const PartName& part_name) const noexcept
+{
+    const auto item = std::find_if(removed_parts_.begin(), removed_parts_.end(),
+        [&part_name](const EditPlanRemovedPart& entry) { return entry.part_name == part_name; });
+    return item == removed_parts_.end() ? nullptr : &*item;
+}
+
+EditPlanPackageEntry& EditPlan::set_package_entry(
+    std::string entry_name, PartWriteMode write_mode, std::string reason,
+    PackageEntryAuditKind audit_kind, std::string owner_part)
+{
+    if (entry_name.empty()) {
+        throw FastXlsxError("edit plan package entry name cannot be empty");
+    }
+    validate_package_entry_audit_context(entry_name, audit_kind, owner_part);
+
+    removed_package_entries_.erase(
+        std::remove_if(removed_package_entries_.begin(), removed_package_entries_.end(),
+            [&entry_name](const EditPlanRemovedPackageEntry& entry) {
+                return entry.entry_name == entry_name;
+            }),
+        removed_package_entries_.end());
+
+    if (auto* existing = find_package_entry(entry_name)) {
+        existing->write_mode = write_mode;
+        existing->reason = std::move(reason);
+        existing->audit_kind = audit_kind;
+        existing->owner_part = std::move(owner_part);
+        return *existing;
+    }
+
+    package_entries_.push_back(EditPlanPackageEntry {
+        std::move(entry_name),
+        write_mode,
+        std::move(reason),
+        audit_kind,
+        std::move(owner_part),
+    });
+    return package_entries_.back();
+}
+
+EditPlanPackageEntry* EditPlan::find_package_entry(std::string_view entry_name) noexcept
+{
+    const auto item = std::find_if(package_entries_.begin(), package_entries_.end(),
+        [entry_name](const EditPlanPackageEntry& entry) {
+            return entry.entry_name == entry_name;
+        });
+    return item == package_entries_.end() ? nullptr : &*item;
+}
+
+const EditPlanPackageEntry* EditPlan::find_package_entry(
+    std::string_view entry_name) const noexcept
+{
+    const auto item = std::find_if(package_entries_.begin(), package_entries_.end(),
+        [entry_name](const EditPlanPackageEntry& entry) {
+            return entry.entry_name == entry_name;
+        });
+    return item == package_entries_.end() ? nullptr : &*item;
+}
+
+EditPlanRemovedPackageEntry& EditPlan::remove_package_entry(
+    std::string entry_name, std::string reason, PackageEntryAuditKind audit_kind,
+    std::string owner_part)
+{
+    if (entry_name.empty()) {
+        throw FastXlsxError("removed edit plan package entry name cannot be empty");
+    }
+    validate_package_entry_audit_context(entry_name, audit_kind, owner_part);
+
+    package_entries_.erase(std::remove_if(package_entries_.begin(), package_entries_.end(),
+                               [&entry_name](const EditPlanPackageEntry& entry) {
+                                   return entry.entry_name == entry_name;
+                               }),
+        package_entries_.end());
+
+    const auto item = std::find_if(removed_package_entries_.begin(),
+        removed_package_entries_.end(),
+        [&entry_name](const EditPlanRemovedPackageEntry& entry) {
+            return entry.entry_name == entry_name;
+        });
+    if (item != removed_package_entries_.end()) {
+        item->reason = std::move(reason);
+        item->audit_kind = audit_kind;
+        item->owner_part = std::move(owner_part);
+        return *item;
+    }
+
+    removed_package_entries_.push_back(EditPlanRemovedPackageEntry {
+        std::move(entry_name),
+        std::move(reason),
+        audit_kind,
+        std::move(owner_part),
+    });
+    return removed_package_entries_.back();
+}
+
+const EditPlanRemovedPackageEntry* EditPlan::find_removed_package_entry(
+    std::string_view entry_name) const noexcept
+{
+    const auto item = std::find_if(removed_package_entries_.begin(),
+        removed_package_entries_.end(),
+        [entry_name](const EditPlanRemovedPackageEntry& entry) {
+            return entry.entry_name == entry_name;
+        });
+    return item == removed_package_entries_.end() ? nullptr : &*item;
+}
+
+const std::vector<EditPlanEntry>& EditPlan::entries() const noexcept
+{
+    return entries_;
+}
+
+const std::vector<EditPlanRemovedPart>& EditPlan::removed_parts() const noexcept
+{
+    return removed_parts_;
+}
+
+const std::vector<EditPlanPackageEntry>& EditPlan::package_entries() const noexcept
+{
+    return package_entries_;
+}
+
+const std::vector<EditPlanRemovedPackageEntry>& EditPlan::removed_package_entries()
+    const noexcept
+{
+    return removed_package_entries_;
+}
+
+bool EditPlan::empty() const noexcept
+{
+    return entries_.empty() && removed_parts_.empty() && package_entries_.empty()
+        && removed_package_entries_.empty();
+}
+
+std::size_t EditPlan::size() const noexcept
+{
+    return entries_.size();
+}
+
+void EditPlan::request_full_calculation(CalcChainAction calc_chain_action) noexcept
+{
+    full_calculation_on_load_ = true;
+    calc_chain_action_ = calc_chain_action;
+}
+
+bool EditPlan::full_calculation_on_load() const noexcept
+{
+    return full_calculation_on_load_;
+}
+
+CalcChainAction EditPlan::calc_chain_action() const noexcept
+{
+    return calc_chain_action_;
+}
+
+void EditPlan::add_note(std::string note)
+{
+    if (note.empty()) {
+        return;
+    }
+    if (std::find(notes_.begin(), notes_.end(), note) != notes_.end()) {
+        return;
+    }
+
+    notes_.push_back(std::move(note));
+}
+
+const std::vector<std::string>& EditPlan::notes() const noexcept
+{
+    return notes_;
+}
+
+void EditPlan::add_relationship_target_audit(RelationshipTargetAudit audit)
+{
+    const auto existing = std::find_if(relationship_target_audits_.begin(),
+        relationship_target_audits_.end(),
+        [&audit](const RelationshipTargetAudit& entry) {
+            return is_same_relationship_target_audit(entry, audit);
+        });
+    if (existing != relationship_target_audits_.end()) {
+        existing->note = std::move(audit.note);
+        return;
+    }
+
+    relationship_target_audits_.push_back(std::move(audit));
+}
+
+const std::vector<RelationshipTargetAudit>& EditPlan::relationship_target_audits()
+    const noexcept
+{
+    return relationship_target_audits_;
+}
+
+void EditPlan::add_worksheet_relationship_reference_audit(
+    WorksheetRelationshipReferenceAudit audit)
+{
+    const auto existing = std::find_if(worksheet_relationship_reference_audits_.begin(),
+        worksheet_relationship_reference_audits_.end(),
+        [&audit](const WorksheetRelationshipReferenceAudit& entry) {
+            return is_same_worksheet_relationship_reference_audit(entry, audit);
+        });
+    if (existing != worksheet_relationship_reference_audits_.end()) {
+        existing->note = std::move(audit.note);
+        return;
+    }
+
+    worksheet_relationship_reference_audits_.push_back(std::move(audit));
+}
+
+const std::vector<WorksheetRelationshipReferenceAudit>&
+EditPlan::worksheet_relationship_reference_audits() const noexcept
+{
+    return worksheet_relationship_reference_audits_;
+}
+
+void EditPlan::add_worksheet_payload_dependency_audit(
+    WorksheetPayloadDependencyAudit audit)
+{
+    const auto existing = std::find_if(worksheet_payload_dependency_audits_.begin(),
+        worksheet_payload_dependency_audits_.end(),
+        [&audit](const WorksheetPayloadDependencyAudit& entry) {
+            return is_same_worksheet_payload_dependency_audit(entry, audit);
+        });
+    if (existing != worksheet_payload_dependency_audits_.end()) {
+        existing->note = std::move(audit.note);
+        return;
+    }
+
+    worksheet_payload_dependency_audits_.push_back(std::move(audit));
+}
+
+const std::vector<WorksheetPayloadDependencyAudit>&
+EditPlan::worksheet_payload_dependency_audits() const noexcept
+{
+    return worksheet_payload_dependency_audits_;
+}
+
+void EditPlan::add_workbook_payload_dependency_audit(
+    WorkbookPayloadDependencyAudit audit)
+{
+    const auto existing = std::find_if(workbook_payload_dependency_audits_.begin(),
+        workbook_payload_dependency_audits_.end(),
+        [&audit](const WorkbookPayloadDependencyAudit& entry) {
+            return is_same_workbook_payload_dependency_audit(entry, audit);
+        });
+    if (existing != workbook_payload_dependency_audits_.end()) {
+        existing->note = std::move(audit.note);
+        return;
+    }
+
+    workbook_payload_dependency_audits_.push_back(std::move(audit));
+}
+
+const std::vector<WorkbookPayloadDependencyAudit>&
+EditPlan::workbook_payload_dependency_audits() const noexcept
+{
+    return workbook_payload_dependency_audits_;
 }
 
 PackagePart& PartIndex::add_part(PartName part_name, std::string content_type)
@@ -614,6 +1448,17 @@ PackagePart& PackageManifest::ensure_part(PartName part_name, std::string conten
     return parts_.back();
 }
 
+bool PackageManifest::remove_part(const PartName& part_name) noexcept
+{
+    const auto old_size = parts_.size();
+    parts_.erase(std::remove_if(parts_.begin(), parts_.end(),
+                     [&part_name](const PackagePart& part) { return part.name == part_name; }),
+        parts_.end());
+    const bool removed_part = old_size != parts_.size();
+    const bool removed_content_type = content_types_.remove_override(part_name);
+    return removed_part || removed_content_type;
+}
+
 PackagePart& PackageManifest::set_part_write_mode(const PartName& part_name, PartWriteMode mode)
 {
     auto* part = find_part(part_name);
@@ -725,6 +1570,174 @@ bool PackageManifest::empty() const noexcept
 std::size_t PackageManifest::size() const noexcept
 {
     return parts_.size();
+}
+
+DependencyAnalyzer::DependencyAnalyzer(const PackageManifest& manifest) noexcept
+    : manifest_(&manifest)
+{
+}
+
+DependencyAnalysis DependencyAnalyzer::analyze_worksheet_stream_rewrite(
+    const PartName& worksheet_part) const
+{
+    const auto* target = manifest_->find_part(worksheet_part);
+    if (target == nullptr) {
+        throw FastXlsxError("worksheet rewrite target is not registered in package manifest");
+    }
+
+    DependencyAnalysis analysis;
+    analysis.parts.push_back(
+        PartDependency {worksheet_part, "target worksheet part will be stream-rewritten"});
+
+    if (const auto* relationships = manifest_->relationships_for(worksheet_part)) {
+        analysis.has_worksheet_relationships = !relationships->empty();
+        add_known_relationship_target_dependencies(
+            analysis, *manifest_, worksheet_part, *relationships);
+    }
+
+    const PartName workbook_part("/xl/workbook.xml");
+    if (manifest_->find_part(workbook_part) != nullptr) {
+        add_dependency_if_exists(
+            analysis, *manifest_, workbook_part.value(),
+            "workbook metadata may need calcPr or definedNames review");
+        analysis.workbook_payload_dependency_audits.push_back(
+            WorkbookPayloadDependencyAudit {
+                workbook_part,
+                WorkbookPayloadDependencyAuditKind::CalcMetadata,
+                WorkbookPayloadDependencyAuditScope::WorksheetRewrite,
+                "calcPr",
+                "worksheet rewrite may require workbook calcPr fullCalcOnLoad review",
+            });
+        analysis.workbook_payload_dependency_audits.push_back(
+            WorkbookPayloadDependencyAudit {
+                workbook_part,
+                WorkbookPayloadDependencyAuditKind::DefinedNames,
+                WorkbookPayloadDependencyAuditScope::WorksheetRewrite,
+                "definedNames",
+                "worksheet rewrite may affect workbook definedNames and requires caller review",
+            });
+    }
+    add_dependency_if_exists(
+        analysis, *manifest_, "/xl/sharedStrings.xml", "worksheet cells may reference shared strings");
+    add_dependency_if_exists(
+        analysis, *manifest_, "/xl/styles.xml", "worksheet cells may reference style ids");
+    add_dependency_if_exists(
+        analysis, *manifest_, "/xl/calcChain.xml", "worksheet rewrite may stale calcChain.xml");
+    analysis.has_calc_chain =
+        manifest_->find_part(PartName("/xl/calcChain.xml")) != nullptr;
+
+    return analysis;
+}
+
+PartRewritePlanner::PartRewritePlanner(const PackageManifest& manifest) noexcept
+    : manifest_(&manifest)
+{
+}
+
+EditPlan PartRewritePlanner::plan_copy_original() const
+{
+    EditPlan plan;
+    for (const PackagePart& part : manifest_->parts()) {
+        plan.set_part(part.name, PartWriteMode::CopyOriginal, "preserve original package part");
+    }
+    return plan;
+}
+
+EditPlan PartRewritePlanner::plan_part_rewrite(
+    const PartName& part_name, PartWriteMode write_mode, std::string reason) const
+{
+    if (write_mode == PartWriteMode::CopyOriginal) {
+        throw FastXlsxError("part rewrite plan cannot use copy-original mode for the target");
+    }
+    if (manifest_->find_part(part_name) == nullptr) {
+        throw FastXlsxError("part rewrite target is not registered in package manifest");
+    }
+
+    EditPlan plan = plan_copy_original();
+    plan.set_part(part_name, write_mode, std::move(reason));
+    return plan;
+}
+
+EditPlan PartRewritePlanner::plan_part_removal(
+    const PartName& part_name, std::string reason) const
+{
+    if (manifest_->find_part(part_name) == nullptr) {
+        throw FastXlsxError("part removal target is not registered in package manifest");
+    }
+
+    EditPlan plan = plan_copy_original();
+    RemovedPartAuditPlan removal_audit =
+        append_inbound_relationship_removal_audit(*manifest_, part_name, std::move(reason));
+    plan.remove_part(part_name, std::move(removal_audit.reason),
+        std::move(removal_audit.inbound_relationships));
+    for (std::string& note : removal_audit.notes) {
+        plan.add_note(std::move(note));
+    }
+    return plan;
+}
+
+EditPlan PartRewritePlanner::plan_worksheet_stream_rewrite(
+    const PartName& worksheet_part, const ReferencePolicy& policy) const
+{
+    const DependencyAnalysis analysis =
+        DependencyAnalyzer(*manifest_).analyze_worksheet_stream_rewrite(worksheet_part);
+
+    if (analysis.has_worksheet_relationships
+        && policy.unsupported_linked_part_action == ReferencePolicyAction::Fail) {
+        throw FastXlsxError("worksheet rewrite has linked parts blocked by reference policy");
+    }
+
+    EditPlan plan = plan_part_rewrite(
+        worksheet_part, PartWriteMode::StreamRewrite, "target worksheet part stream rewrite");
+    annotate_copy_original_dependencies(plan, analysis, worksheet_part);
+
+    if (analysis.has_worksheet_relationships) {
+        plan.add_note(
+            "worksheet relationships are preserved; linked object references require policy review");
+        if (analysis.has_external_relationship_targets) {
+            plan.add_note(
+                "external relationship targets are preserved in owner .rels and are not package parts");
+        }
+        if (analysis.has_uri_qualified_internal_relationship_targets) {
+            plan.add_note(
+                "URI-qualified internal relationship targets require package structure review");
+        }
+        if (analysis.has_invalid_internal_relationship_targets) {
+            plan.add_note(
+                "invalid internal relationship targets require package structure review");
+        }
+        if (analysis.has_unresolved_internal_relationship_targets) {
+            plan.add_note(
+                "unresolved internal relationship targets require package structure review");
+        }
+        for (const std::string& note : analysis.relationship_target_notes) {
+            plan.add_note(note);
+        }
+        for (const RelationshipTargetAudit& audit : analysis.relationship_target_audits) {
+            plan.add_relationship_target_audit(audit);
+        }
+        if (policy.unsupported_linked_part_action
+            == ReferencePolicyAction::RequestRecalculation) {
+            plan.request_full_calculation(policy.calc_chain_action);
+        }
+    }
+
+    if (policy.request_full_calculation_on_sheet_rewrite) {
+        plan.request_full_calculation(policy.calc_chain_action);
+    }
+    if (analysis.has_calc_chain && policy.calc_chain_action == CalcChainAction::Remove) {
+        plan.remove_part(PartName("/xl/calcChain.xml"),
+            "calcChain.xml removed because worksheet rewrite can stale calculation order");
+    }
+    if (analysis.has_calc_chain && policy.calc_chain_action != CalcChainAction::Preserve) {
+        plan.add_note("calcChain.xml must follow the edit plan calc-chain action");
+    }
+    for (const WorkbookPayloadDependencyAudit& audit :
+        analysis.workbook_payload_dependency_audits) {
+        plan.add_workbook_payload_dependency_audit(audit);
+    }
+
+    return plan;
 }
 
 PackageManifest make_minimal_workbook_manifest(

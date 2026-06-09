@@ -2,7 +2,9 @@
 
 ## 目的
 
-这个文档用于固定 FastXLSX 与现有 XLSX C++ 库的技术边界。
+这个文档用于固定 FastXLSX 与现有 XLSX 库的技术边界。参考范围不限于 C++；
+Python、Java、.NET、Go、Rust、JavaScript、PHP、Ruby、R / Julia 生态里的成熟库
+都可以作为 API、性能、编辑模型和 OpenXML 兼容性参考。
 
 当前重点参考对象：
 
@@ -10,6 +12,19 @@
 - `xlnt`
 - 旧项目 `FastExcel`
 - 实验项目 `TinaXlsx`
+
+扩展参考对象：
+
+- C / C++：`libxlsxwriter`、`QXlsx`、`XLSX I/O`。
+- Python：`openpyxl`、`XlsxWriter`、`pyexcelerate`、`pylightxl`、`pandas` Excel IO。
+- Java：Apache POI `XSSF` / `SXSSF`、EasyExcel、Jxls、fastexcel。
+- .NET：`ClosedXML`、`EPPlus`、`NPOI`、`DocumentFormat.OpenXml SDK`、`MiniExcel`。
+- Go：`Excelize`、`tealeg/xlsx`。
+- Rust：`calamine`、`rust_xlsxwriter`、`umya-spreadsheet`。
+- JavaScript / TypeScript：`SheetJS`、`ExcelJS`、`xlsx-populate`。
+- PHP：`PhpSpreadsheet`、`OpenSpout`、`xlswriter` extension。
+- Ruby：`caxlsx`、`rubyXL`、`roo`、`write_xlsx`。
+- R / Julia：`openxlsx` / `openxlsx2`、`readxl`、`writexl`、`XLSX.jl`。
 
 FastXLSX 不以复刻其中任意一个库为目标，而是吸收可用经验后重新划分主路径。
 
@@ -54,6 +69,193 @@ FastXLSX 的选择：
 - 未修改 part 默认原样透传。
 - 小文件随机编辑走独立 In-memory 路径，不把该模型用于百万行级默认路径。
 - 已有文件编辑走 Patch / EditPlan / part-level rewrite，而不是 streaming writer 的补丁。
+
+## 跨语言参考矩阵
+
+这些库的价值应按能力拆开吸收，而不是直接复制它们的对象模型。
+
+### 小文件编辑体验
+
+参考对象：
+
+- `openpyxl`
+- `ClosedXML`
+- `EPPlus`
+- `ExcelJS`
+- `xlsx-populate`
+- `OpenXLSX`
+- `xlnt`
+- `rubyXL`
+- `PhpSpreadsheet`
+- `openxlsx` / `openxlsx2`
+
+FastXLSX 应吸收：
+
+- workbook / worksheet / cell 的直接访问体验。
+- `get_cell()` / `set_cell()` / `erase_cell()` 这类直观 API。
+- sheet add/delete/rename、row/column insert/delete、range move 的用户模型。
+- 样式、表格、超链接、数据验证等常用对象的高层入口。
+
+FastXLSX 不应照搬：
+
+- 把完整 workbook / worksheet DOM 当成大文件默认路径。
+- 在百万行 worksheet 上默认维护完整 cell map。
+- 静默忽略公式、defined names、tables、drawings 等联动风险。
+
+落点：
+
+```text
+FastXLSX In-memory editor
+```
+
+### 高性能写入体验
+
+参考对象：
+
+- `libxlsxwriter`
+- `XlsxWriter`
+- `rust_xlsxwriter`
+- `pyexcelerate`
+- `caxlsx`
+- `write_xlsx`
+
+FastXLSX 应吸收：
+
+- 清晰的 write-only / streaming writer 边界。
+- row-by-row、range/bulk write、样式注册、格式对象复用。
+- 图片、表格、条件格式等写入对象的 package side effects 组织方式。
+- 文档中明确“不支持读改已有文件”或“该 API 只写新文件”的边界写法。
+
+FastXLSX 不应照搬：
+
+- 把 write-only 能力误包装成已有文件编辑能力。
+- 为了写入速度丢掉 Patch / preservation 主线。
+
+落点：
+
+```text
+FastXLSX Streaming writer
+```
+
+### 大文件低内存读写
+
+参考对象：
+
+- Apache POI `SXSSF`
+- Apache POI event / SAX reader
+- EasyExcel
+- OpenSpout
+- Excelize streaming reader/writer
+- `calamine`
+
+FastXLSX 应吸收：
+
+- 大文件按 row / event 流处理的模式。
+- sliding-window 或 event-reader 的边界说明。
+- template fill、sheet replacement、row transformer 的任务形态。
+
+FastXLSX 不应照搬：
+
+- 让 streaming 模式假装支持历史行任意随机访问。
+- 用只读 event reader 替代完整 Patch 编辑语义。
+
+落点：
+
+```text
+FastXLSX WorksheetReader / WorksheetRewriter / template fill
+```
+
+### 已有文件编辑和 package 保真
+
+参考对象：
+
+- `DocumentFormat.OpenXml SDK`
+- Apache POI `OPCPackage`
+- `XLSX I/O`
+- `OpenXLSX`
+- `xlnt`
+- `ExcelJS`
+- `xlsx-populate`
+- `Excelize`
+- `umya-spreadsheet`
+
+FastXLSX 应吸收：
+
+- OpenXML part、relationships、content types 的显式建模。
+- 已有 workbook 的读取、修改、保存 API 体验。
+- 对图片、图表、VBA、unknown extensions 的保守处理意识。
+
+FastXLSX 应进一步强化：
+
+- part-level rewrite。
+- unknown / unmodified part byte preservation。
+- `EditPlan` / `DependencyAnalyzer` / `ReferencePolicy`。
+- sheet 局部编辑时对 sharedStrings、styles、tables、drawings、defined names、
+  calcChain 和 workbook calc metadata 的显式策略。
+
+落点：
+
+```text
+FastXLSX Patch editor
+```
+
+### 数据生态和导入导出
+
+参考对象：
+
+- `pandas` Excel IO
+- `readxl`
+- `writexl`
+- `openxlsx` / `openxlsx2`
+- `MiniExcel`
+- `SheetJS`
+- `XLSX.jl`
+
+FastXLSX 应吸收：
+
+- 表格数据导入导出场景。
+- header、row iterator、typed cell、bulk write 的易用入口。
+- 数据工具对 CSV / dataframe / record batch 的调用习惯。
+
+FastXLSX 不应照搬：
+
+- 为了适配数据表 API 而削弱底层 OpenXML part 边界。
+- 把数据框模型当作 workbook 编辑模型。
+
+落点：
+
+```text
+FastXLSX table/range/bulk APIs, optional adapters
+```
+
+## 吸收原则
+
+FastXLSX 可以吸收各语言库的优点，但必须遵守下面的映射：
+
+```text
+openpyxl / ClosedXML / EPPlus / ExcelJS
+-> In-memory 小文件编辑体验
+
+libxlsxwriter / XlsxWriter / rust_xlsxwriter
+-> Streaming 写入质量和性能边界
+
+Apache POI / EasyExcel / OpenSpout / Excelize
+-> 大文件低内存分层与 event/row 处理
+
+DocumentFormat.OpenXml SDK / Apache POI OPCPackage / XLSX I/O
+-> OPC package、relationship、content type 严谨性
+
+OpenXLSX / xlnt
+-> C++ API 预期、对象模型经验和需要规避的性能边界
+```
+
+禁止把这些参考合并成一个无边界的巨型 `Workbook` 模型。FastXLSX 的最终形态应是：
+
+```text
+小文件：In-memory editor，优先编辑体验
+大文件新建：Streaming writer，优先低内存和写入速度
+已有文件：Patch editor，优先 part-level rewrite 和保真保存
+```
 
 ## 和 xlnt 的区别
 

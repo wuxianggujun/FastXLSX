@@ -44,10 +44,31 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 
 - 以 part-level rewrite 为基本模型。
 - 未修改 part 原样复制。
+- 当前内部 `PackageReader` 读取 stored/no-compression entries；在
+  `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建下还能读取 DEFLATE entries，默认构建仍拒绝
+  compressed input。它依赖 ZIP header 中已有 size/CRC，读取时校验解压后 payload
+  CRC，并拒绝 local header CRC/method/name/size mismatch、encrypted flags、
+  data descriptor entries、Zip64、非法 ZIP entry name（绝对路径、尾部斜杠、
+  反斜杠、query/fragment components、空段、dot 段或 parent 段）、冲突 content type
+  default / override、同一 `.rels` owner 内重复 relationship id，以及
+  namespaced metadata attributes（namespace declarations 除外），
+  duplicate unqualified metadata attributes，
+  non-whitespace metadata text，
+  start/end tag QName mismatches，
+  `[Content_Types].xml` / `.rels` 第一个真实 XML 元素不是 `Types` / `Relationships`
+  的 decoy-root metadata；reader 只 ingest root 的 direct-child
+  `Default` / `Override` / `Relationship` 元素，metadata declaration 嵌套在
+  unsupported child 下也会失败；这些拒绝
+  只是 reader validation，不是 content-type 或 relationship repair。不要把
+  这写成完整 ZIP reader 或 public editing API。
 - 大型 worksheet 流式重写。
 - 小型 XML part 才允许局部 DOM。
 - 每个操作都应能映射到 EditPlan：哪些 part copy-original，哪些 part stream-rewrite，
-  哪些 part local-DOM-rewrite。
+  哪些 part local-DOM-rewrite，哪些已注册 part 显式进入 removed-part audit。
+- 对 `[Content_Types].xml`、package `_rels/.rels`、owner `.rels` 这类非 part
+  package entries，当前内部 `EditPlan` 可以记录 rewrite / omission / preserved
+  copy-original package-entry 审计项；这只是 relationship/content-type side effect
+  可见性，不是 public metadata editor。
 - 涉及单 sheet 编辑时，必须说明是否影响 sharedStrings、styles、worksheet `.rels`、
   tables、drawings、defined names、calcChain 和 workbook calc metadata。
 - 默认策略应保守：未知 part 和未修改 part 原样保留；不懂的图表、透视表、宏和扩展
@@ -64,6 +85,14 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 不得让用户误以为随机访问 API 适合百万行级导出。
 - 可以提供完整随机编辑体验，例如 `get_cell()`、`set_cell()`、`erase_cell()`、
   局部样式和对象修改，但必须限制为小文件路径。
+- `Cell` / `CellValue` 这类 public 类型应优先作为 API 输入、返回值或临时值；
+  不能直接作为百万级单元格的内部长期存储模型。
+- In-memory 内部存储应独立设计紧凑 `CellStore` / `CellRecord`：数值、布尔、
+  字符串 id、公式 id、style id 等分离存储，字符串和公式走池化/去重，避免每个
+  cell 都携带 owning `std::string`。
+- 必须设计 size / memory guardrails，例如 `max_cells`、`memory_budget_bytes`、
+  `cell_count()`、`estimated_memory_usage()` 或类似诊断入口；超限时应明确提示调用方
+  改用 Streaming 或 Patch。
 
 ## 文件职责边界
 
@@ -214,7 +243,943 @@ new-workbook 输出、是否只写 `docProps/core.xml` 和 `docProps/app.xml`、
 properties、existing-file editing 或未知 docProps part 保留。当前
 `DocumentProperties`、`Workbook::set_document_properties()` 和
 `WorkbookWriterOptions::document_properties` 只覆盖 core/app 小型 XML part；它们不进入
-worksheet row/cell 热路径，也不代表完整 document properties API。
+worksheet row/cell 热路径，也不代表完整 document properties API。内部
+`PackageEditor` 另有 existing-package core/app docProps generated-small-XML
+窄切片，可新增/替换 `docProps/core.xml` 和 `docProps/app.xml` 并同步 package
+relationships / content types；它会保留 source content type defaults/overrides
+形态，避免把默认类型媒体 part 无故提升为 override；docProps generated parts 会把
+write-mode / dirty / generated / preserve-original 状态同步到内部 manifest，供 Patch
+审计；当前内部回归还验证 core/app docProps helper 重写 package relationships /
+content types 时会保留已有 `docProps/custom.xml`、custom-properties package
+relationship、custom properties content type override 和 unknown bytes，但不编辑
+custom properties；worksheet replacement 也会把 workbook metadata rewrite 同步为 `LocalDomRewrite`
+供 Patch 审计；当前内部 `EditPlan` 还会记录 `[Content_Types].xml`、
+package `_rels/.rels`、workbook `.rels` rewrite、removed calcChain owner `.rels`
+omission，以及 preserved source-owned `.rels` 存在时的 copy-original package-entry 审计项
+（包括 ordinary owner-part replacement 的根级 `_rels/foo.xml.rels`、
+worksheet/drawing/sharedStrings 关系、preserved calcChain 关系，以及 workbook metadata
+rewrite 时被原样保留的 workbook `.rels`）；
+当前普通 `replace_part()` 会拒绝 `[Content_Types].xml`、package `_rels/.rels` 和
+source-owned `.rels` metadata entry 作为 ordinary part replacement target，避免绕过
+metadata-aware helper 和 package-entry audit；这不是完整 relationship/content-type mutator。
+重复 ordinary part replacement 回归只证明同一 part 再次替换时最终 bytes、write mode、
+edit-plan reason、manifest state 和 preserved source-owned `.rels` audit 以上一次替换为准。
+docProps generated-small-XML 被后续 ordinary replacement 覆盖的回归只证明最终
+part bytes、EditPlan 和 manifest 采用后续 ordinary replacement，content types /
+package relationships 仍由 metadata helper 路径维护和审计。反向顺序回归只证明
+后调用的 docProps metadata helper 会接管此前 ordinary replacement 或 explicit
+removal 的 core/app part，并清理 stale removal / omitted payload 状态；它只恢复
+helper 负责的 core/app payload、content types 和 package relationships，不恢复此前
+removal 省略的 docProps owner `.rels`；当前结构回归验证输出包继续省略该 owner
+`.rels`，并保留 removed package-entry audit。这不是事务式 undo。
+worksheet replacement 删除 calcChain 时会压过此前 ordinary calcChain replacement；
+worksheet replacement 也会接管此前 ordinary workbook replacement 以写入 helper-generated
+fullCalcOnLoad metadata；若 worksheet rewrite 已请求 fullCalcOnLoad / calcChain
+removal，后续 ordinary `replace_part("/xl/workbook.xml", ...)` 仍会保留该 calc policy，
+把 workbook XML 中的 `fullCalcOnLoad` 规范为 `1`，并避免把已重写的 workbook
+`.rels` package-entry audit 降级为 copy-original；
+这仍只是 internal PackageEditor state consistency。
+当前组合回归覆盖同一内部 edit 里 docProps 生成与 worksheet
+replacement 的 relationship/content-type 合并、calcChain removal、stale calcChain
+owner `.rels` omission、workbook metadata rewrite、unknown entry preservation、
+exact/path-equivalent source-overwrite rejection 和 empty-output / missing-parent / non-directory-parent / existing-directory output rejection；core/app package relationship target 冲突失败只覆盖
+不污染 edit plan entries / notes、manifest / package-entry audit / copied output。该路径
+还覆盖缺失 `xl/calcChain.xml` payload 时的 stale calcChain metadata cleanup：
+只移除残留 content type override 或 workbook calcChain relationship，不创建 payload，
+不伪造 removed-part audit，也不能写成完整 metadata repair。
+完整 worksheet replacement payload 现在还会对 shared string indexes、style id
+references、公式 cell、sheetPr、dimension、sheetViews、sheetFormatPr、cols、
+sheetProtection、protectedRanges、autoFilter、mergeCells、dataValidations、
+conditionalFormatting、ignoredErrors、printOptions、pageMargins、pageSetup、extLst 等 range/reference
+metadata，以及 hyperlinks、drawing、legacyDrawing、tableParts 等 relationship-bearing
+metadata 写 audit-only notes；这些 notes 会进入内部 `EditPlan` / planned output，
+只提示 caller 复核 sharedStrings、styles、calc metadata、range/reference metadata、
+worksheet `.rels` 和 linked parts，不能写成 sharedStrings/styles 迁移、range 修复、
+dimension 重算、sheetViews 修复、relationship repair、calcChain rebuild 或 public worksheet editor。
+当前还覆盖 internal `PackageEditor::replace_worksheet_sheet_data()` helper：它只替换
+已有 worksheet XML 的 `<sheetData>` 元素或 `<sheetData/>`，保留同一 worksheet
+part 的外围 XML metadata，并复用 worksheet replacement 的 calcChain /
+fullCalcOnLoad 与 preservation 副作用；成功后会用内部 `EditPlan` notes 审计保留的
+worksheet-local metadata ranges/references，当前覆盖 sheetPr、dimension、sheetViews、
+sheetFormatPr、cols、sheetProtection、protectedRanges、autoFilter、mergeCells、
+dataValidations、conditionalFormatting、hyperlinks、ignoredErrors、printOptions、
+pageMargins、pageSetup、drawing、legacyDrawing、tableParts 和 extLst。文档只能把它写成 Patch MVP /
+template-fill 小切片；当前结构测试还验证输出包中保留的 worksheet `.rels`
+legacyDrawing `rId7` 到 `../drawings/vmlDrawing1.vml#shape1` 可由
+`PackageReader` / `RelationshipGraph` 重读，这仍不是 VML/drawing 编辑。
+worksheet-owned background picture / header-footer VML same-path output-plan
+coverage 只能写成内部 `planned_output()` 暴露 background picture
+remove-then-replace 的 active picture `LocalDomRewrite`、content types metadata
+copy-original、sibling header/footer VML preservation、无 stale removals、
+无 relationship target audits、无 fullCalcOnLoad、`CalcChainAction::Preserve`
+和 no invented picture owner `.rels`；以及 header/footer VML replace-then-remove
+的 omitted VML part、removed-part inbound audit、content types metadata rewrite、
+sibling background-picture preservation、无 relationship target audits、无
+fullCalcOnLoad、`CalcChainAction::Preserve` 和 no invented VML owner `.rels`。
+不能写成 public output planner、图片/VML/header-footer public API、语义合并或删除、
+relationship repair/pruning、orphan cleanup、content type repair 或完整 object
+lifecycle 支持。
+当前组合回归还验证先排队 worksheet replacement 后再执行 sheetData patch 时，
+helper 基于当前 planned worksheet bytes 替换，覆盖 queued worksheet 中普通
+`<sheetData>` 和 self-closing `<sheetData/>` 两种形态，保留 queued wrapper
+metadata，不会把 source-only worksheet metadata 复活。
+当前还覆盖源 worksheet 使用 self-closing `<sheetData/>` 的成功替换回归：
+输出改为普通 `<sheetData>...</sheetData>`，保留 dimension / autoFilter，沿默认
+calcChain remove / fullCalcOnLoad 路径清理 stale 计算 metadata，并保留 unknown bytes。
+当前还覆盖 replacement payload 自身为 self-closing `<sheetData/>` 的成功替换回归：
+可清空旧 row/cell，输出保留 `<sheetData/>` 和外围 dimension / autoFilter，
+并继续沿默认 calcChain remove / fullCalcOnLoad 与 unknown bytes preservation 路径。
+当前还覆盖 source worksheet 和 replacement payload 使用 `<x:worksheet>` /
+`<x:sheetData>` 前缀形式时的成功替换回归：按 local-name 匹配，输出保留原
+wrapper / replacement 字面前缀，仍沿默认 calcChain cleanup 与 unknown bytes
+preservation 路径；不能写成通用 namespace repair。
+replacement `<sheetData>` 自身若使用 shared string indexes、
+style id references 或公式 cell，也只追加 audit notes，提示 caller 复核
+`xl/sharedStrings.xml`、`xl/styles.xml`、workbook calc metadata 和 calcChain policy；
+它不迁移 sharedStrings 索引、不合并 styles、不计算公式，也不重建 calcChain。不能写成 public API、随机 cell 编辑、dataValidations/conditionalFormatting/
+hyperlinks/table/drawing 语义同步、sharedStrings/styles 迁移、range 修复或大文件低内存 transformer。
+当前 by-name worksheet replacement 和 by-name `sheetData` helper 会通过当前 planned
+workbook sheet catalog 定位已有 worksheet part；如果同一 edit 中已有 ordinary
+`/xl/workbook.xml` replacement，或该 replacement 已被 `request_full_calculation()` /
+worksheet rewrite 的 fullCalcOnLoad helper 接管，旧 source sheet name 会在状态变更前
+失败，新 planned sheet name 可通过源 workbook `.rels` 定位既有 worksheet part。这仍只是
+窄 planned workbook catalog resolver；它要求 planned sheet id attribute 绑定到
+officeDocument relationships namespace，接受非 `r` 前缀，错误 namespace 的 `x:id`
+和普通 `id` 会被当作缺失且不污染状态；不是 sheet rename/delete、relationship repair
+或 public API。当前内部 `PackageEditor::rename_sheet_catalog_entry()` 只重写当前 planned
+`/xl/workbook.xml` 的直接 `<sheets><sheet name="...">` attribute，保留 worksheet
+parts、workbook `.rels`、content types、calcChain 和 unknown entries，并记录
+definedNames、公式、tables、drawings、charts、hyperlinks、relationship targets、
+sharedStrings、styles 和 calcChain 未同步的 audit note；它不能写成完整 sheet
+rename/add/delete 或 public API。planned workbook XML 路径的内部 `planned_output()`
+只能写成暴露最终 workbook `LocalDomRewrite`、preserved content types /
+workbook `.rels` / worksheet / calcChain / unknown entry，以及 structured sheet
+catalog / definedNames audit；不能写成 sheet rename API、definedNames 语义同步或
+public API。它当前会拒绝精确或 ASCII case-insensitive
+new-name duplicates，但这仍不是完整 Excel sheet-name 国际化规范。
+invalid/malformed replacement XML、source worksheet 缺失 `sheetData`，以及 source worksheet
+`<sheetData>` 起始标签存在但闭合标签损坏/缺失时，只能写成失败不污染
+EditPlan、manifest、package-entry audit、calc policy 或 copied output bytes；不能写成
+XML repair。
+no-op `PackageEditor::save_as()` roundtrip coverage 只能描述为 linked-object fixture
+中全部源 entries 的 entry order、stored entry method / CRC / uncompressed size 和
+bytes copy baseline，以及初始 copy-original plan 没有 metadata package-entry side
+effect；不能写成 broad unknown part preservation 或 public editing API readiness。
+ordinary single-part replacement coverage 只能描述为目标 entry 原位重写、其它源
+entries 保持 entry order、stored entry method / CRC / uncompressed size 和 bytes；
+不能写成 complete package rewrite 或 broad safe editing。
+linked-object fixture 上的 ordinary workbook replacement coverage 只能描述为只重写
+`xl/workbook.xml`、workbook `.rels` copy-original audit、以及其它 linked/unknown
+source entries 保持 copy-original baseline；不能写成 workbook metadata sync、
+defined-name policy 或 object editing。
+linked-object fixture 上的 ordinary drawing replacement coverage 只能描述为只重写
+`xl/drawings/drawing1.xml`、drawing `.rels` copy-original audit、以及 chart/media/
+unknown source entries 保持 copy-original baseline；不能写成 drawing mutation、
+image editing、chart editing 或 full object preservation。
+linked-object fixture 上的 ordinary unknown extension replacement coverage 只能描述为
+只重写 `custom/opaque-extension.bin`、其 owner `.rels` copy-original audit 和原样
+保留、以及 workbook/worksheet/drawing/chart/media source entries 保持 copy-original
+baseline；不能写成 unknown extension 语义编辑、custom relationship repair、
+metadata editor 或 public editing API。
+linked-object fixture 上同一 unknown extension 的 repeated ordinary replacement
+coverage 只能描述为最终 bytes、manifest write-mode、edit-plan reason 和 owner
+`.rels` audit upsert 到最后一次替换状态，owner `.rels` 继续 copy-original，且没有
+removed-part / removed package-entry audit；不能写成 transactional editing、
+unknown extension semantic merging 或 metadata repair。
+linked-object fixture 上的 unknown extension remove-then-ordinary-replace coverage
+只能描述为后续 replacement 恢复 active unknown extension part、清理 stale
+removed-part audit 和 stale removed owner `.rels` audit、恢复 owner `.rels`
+copy-original package-entry audit、保留 worksheet `.rels` 中的 inbound unknown
+relationship、保留其它 linked/source entries，且不重写 `[Content_Types].xml`；
+不能写成 unknown extension semantic merge、custom relationship repair、metadata
+repair、transactional undo 或 public editing API。
+linked-object fixture 上的 unknown extension ordinary-replace-then-remove coverage
+只能描述为后续 removal 清理 active replacement、记录 removed-part 和 removed owner
+`.rels` audit、输出省略 unknown extension part 及其 owner `.rels`、保留
+worksheet `.rels` 中指向缺失 part 的 inbound unknown relationship、保留其它
+linked/source entries 和默认 `bin` content type，且不重写 `[Content_Types].xml`；
+不能写成 unknown extension deletion semantics、custom relationship repair、metadata
+repair、relationship pruning/repair、content type repair、orphan cleanup、
+transactional undo 或 public editing API。
+unknown extension ordinary-replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露 omitted `custom/opaque-extension.bin` part、omitted source-owned
+`custom/_rels/opaque-extension.bin.rels` metadata、worksheet-owned inbound relationship
+metadata、preserved `[Content_Types].xml` 和 package `_rels/.rels` copy-original
+快照；不能写成 public output planner、unknown extension deletion semantics、
+custom relationship repair、metadata repair、relationship pruning/repair、content type
+repair、orphan cleanup、transactional undo 或 public editing API。
+内部 `PackageEditor::remove_part()` coverage 只能描述为显式 registered-part removal
+窄切片：只接受源 package 中已有的普通 part，输出省略目标 part 和存在时的
+source-owned owner `.rels`，记录 removed-part / removed package-entry audit，并在目标
+存在 content type override 时重写 `[Content_Types].xml`；不能写成 inbound relationship
+pruning、object deletion、通用删除 API、transactional editing 或 public editing API。
+removed-part audit 现在会同时保留结构化 inbound relationship metadata（owner
+entry、owner part、id、type、raw target、normalized target part）和可读 reason，
+记录仍指向被删除 part 的 inbound package/source relationship 上下文，只能写成
+Patch traceability，不是修复。
+若 removed-part inbound 扫描遇到 malformed percent relationship target，只能写成
+EditPlan audit note 和 byte-preserved `.rels` 证据；不能写成 target repair、
+relationship validation 或自动校正。
+workbook removal coverage 只能描述为显式移除 `xl/workbook.xml`：输出省略
+workbook part 和 source-owned workbook `.rels`、移除 workbook content type
+override、保留 package `_rels/.rels` inbound officeDocument relationship、且不修剪
+worksheet/drawing/table/sharedStrings/styles/VBA/calcChain 或 unknown extension 等
+downstream/source parts；不能写成 workbook deletion、sheet catalog sync、
+relationship repair、full workbook editing 或 public workbook editing API。
+PackageReader workbook sheet catalog resolver 只能描述为从 package root 解析
+package `_rels/.rels` 的 internal `officeDocument` target，当前窄实现只接受
+解析到 `/xl/workbook.xml` 的相对或绝对 package target，且不会把 package root
+建模成真实 `PartName`；不能写成任意 workbook part-location 支持、sheet catalog
+mutation 或 public workbook model。
+workbook replace-then-remove ordering coverage 只能描述为后续 explicit removal 清理
+active workbook replacement、记录 removed-part 和 workbook owner `.rels` omission audit、
+输出省略 workbook part 及 owner `.rels`、移除 workbook content type override、保留
+package `_rels/.rels` 中指向缺失 workbook 的 officeDocument relationship 以及
+worksheet/drawing/table/sharedStrings/styles/VBA/calcChain/unknown downstream parts；不能写成
+workbook deletion semantics、sheet catalog sync、relationship/content type repair、
+orphan cleanup、transactional undo 或 public API。
+worksheet removal coverage 只能描述为显式移除 `xl/worksheets/sheet1.xml`：
+输出省略 worksheet part 和 source-owned worksheet `.rels`、移除 worksheet content
+type override、保留 workbook `.rels` inbound worksheet relationship、且不修剪
+drawing/table/sharedStrings/styles/VBA/calcChain 或 unknown extension 等
+downstream/source parts；不能写成 sheet delete、workbook sheet catalog sync、
+relationship repair、full worksheet editing 或 public sheet editing API。
+worksheet replace-then-remove ordering coverage 只能写成后续 explicit removal 清理
+active worksheet replacement、记录 removed-part 和 worksheet owner `.rels`
+omission audit、输出省略 worksheet part 及其 owner `.rels`、移除 worksheet
+content type override、保留 workbook `.rels` 中指向缺失 worksheet 的 inbound
+worksheet relationship，以及 drawing/chart/media/table/sharedStrings/styles/VBA/
+calcChain/unknown downstream/source parts；不能写成 sheet delete、workbook sheet
+catalog sync、relationship/content type repair、orphan cleanup、transactional undo
+或 public API。
+drawing removal coverage 只能描述为显式移除 `xl/drawings/drawing1.xml`：
+输出省略 drawing part 和 source-owned drawing `.rels`、移除 drawing content type
+override、保留 worksheet `.rels` direct / URI-qualified inbound drawing
+relationships、且不修剪 chart/media 或其它 downstream parts；不能写成 drawing
+mutation、object deletion、relationship repair、full drawing support 或 public
+drawing editing API。
+drawing replace-then-remove ordering coverage 只能写成后续 explicit removal 清理
+active drawing replacement、记录 removed-part 和 drawing owner `.rels` omission
+audit、输出省略 drawing part 及其 owner `.rels`、移除 drawing content type
+override、保留 worksheet `.rels` 中 direct / URI-qualified inbound drawing
+relationships，以及 chart/media/table/VML/percent-decoded drawing/sharedStrings/
+styles/VBA/calcChain/unknown downstream/source parts；不能写成 drawing mutation、
+object deletion、relationship/content type repair、orphan cleanup、transactional
+undo 或 public API。
+drawing replace-then-remove output-plan coverage 只能写成内部 `planned_output()`
+暴露 omitted drawing part、omitted drawing owner `.rels`、content types rewrite 和
+preserved inbound worksheet relationship audit；不能写成 public output planner、
+relationship/content type mutator、relationship pruning/repair 或 drawing editing API。
+VML drawing replace-then-remove output-plan coverage 只能写成内部 `planned_output()`
+暴露 omitted `xl/drawings/vmlDrawing1.vml` part、removed_parts
+target/reason/inbound audit、URI-qualified worksheet inbound relationship
+metadata、content types rewrite、empty removed_package_entries，以及没有凭空创建
+`xl/drawings/_rels/vmlDrawing1.vml.rels`；不能写成 public output planner、
+VML shape editing、legacy drawing mutation、relationship repair、orphan cleanup
+或 complete VML/drawing support。
+VML drawing remove-then-replace output-plan coverage 只能写成内部 `planned_output()`
+暴露 active `xl/drawings/vmlDrawing1.vml` `LocalDomRewrite` entry、content types
+copy-original audit、preserved package/workbook/worksheet/drawing relationships、
+preserved linked/unknown entries、empty removed_parts / removed_package_entries，
+以及没有凭空创建
+`xl/drawings/_rels/vmlDrawing1.vml.rels`；不能写成 public output planner、
+VML shape editing、legacy drawing mutation、transactional undo、relationship repair、
+content type repair、full VML/drawing support 或 public drawing editing API。
+percent-decoded drawing replace-then-remove output-plan coverage 只能写成内部
+`planned_output()` 暴露 omitted `xl/drawings/drawing space.xml` part、removed_parts
+target/reason/inbound audit、encoded worksheet inbound relationship metadata、
+content types rewrite、empty removed_package_entries，以及没有凭空创建
+`xl/drawings/_rels/drawing space.xml.rels`；不能写成 public output planner、
+percent-encoded target rewrite、relationship repair、orphan cleanup 或 drawing
+editing API。
+percent-decoded drawing remove-then-replace output-plan coverage 只能写成内部
+`planned_output()` 暴露 active `xl/drawings/drawing space.xml` `LocalDomRewrite`
+entry、content types copy-original audit、preserved package/workbook/worksheet/
+drawing relationships、preserved linked/unknown entries，以及没有凭空创建
+`xl/drawings/_rels/drawing space.xml.rels`；不能写成 public output planner、
+percent-encoded target repair、relationship rewrite、relationship repair、content
+type repair、transactional undo、full drawing support 或 public drawing editing API。
+remove coverage 还只能描述为后调用的 `remove_part()` 压过此前 ordinary replacement、
+清理 stale replacement state，并以 removed-part audit / content type cleanup 为最终状态；
+invalid removal failure 只能描述为 edit-plan entries/notes、package-entry audit、
+removed audit、calc policy、manifest write modes 和 copied output bytes 不污染。
+反向顺序 coverage 只能描述为对源 package 中已有的普通 part，后调用的 ordinary
+`replace_part()` 可恢复此前 `remove_part()` 的目标为 active replacement，
+清理 stale removed-part / removed owner `.rels` audit 与 omitted entry 状态，
+并把存在的 source-owned `.rels` 重新记录为 copy-original audit；对带 content type
+override 的 part，只能写成恢复后 `[Content_Types].xml` 回到 source bytes /
+copy-original audit。
+`unknown extension` ordinary-replace-then-remove coverage 只能写成后续 removal
+清理 active replacement、记录 removed-part 和 removed owner `.rels` audit、
+输出省略 unknown extension part 及其 owner `.rels`、保留 worksheet `.rels`
+中指向缺失 part 的 inbound relationship、保留其它 linked/source entries 和默认
+`bin` content type，且不重写 `[Content_Types].xml`；不能写成 unknown extension
+deletion semantics、custom relationship repair、metadata repair、relationship
+pruning/repair、content type repair、orphan cleanup、transactional undo 或 public
+editing API。workbook-specific 反向顺序 coverage 只能写成显式移除
+`xl/workbook.xml` 后再 ordinary `replace_part()` 恢复 workbook active replacement、
+source-owned workbook `.rels` copy-original audit、package `_rels/.rels` inbound
+officeDocument relationship 保留，以及 `[Content_Types].xml` 回到 source bytes /
+copy-original audit；worksheet-specific 反向顺序 coverage 只能写成显式移除
+`xl/worksheets/sheet1.xml` 后再 ordinary `replace_part()` 恢复 worksheet active
+replacement、source-owned worksheet `.rels` copy-original audit、workbook `.rels`
+inbound worksheet relationship 保留，以及 `[Content_Types].xml` 回到 source bytes /
+copy-original audit；drawing-specific 反向顺序 coverage 只能写成显式移除
+`xl/drawings/drawing1.xml` 后再 ordinary `replace_part()` 恢复 drawing active
+replacement、source-owned drawing `.rels` copy-original audit、worksheet `.rels`
+direct / URI-qualified inbound drawing relationships 保留，以及 `[Content_Types].xml`
+回到 source bytes / copy-original audit。不能写成 drawing mutation、object deletion、
+transactional undo、relationship repair、
+content type repair、semantic merge 或 public editing API。sharedStrings-specific
+反向顺序 coverage 只能写成显式移除 `xl/sharedStrings.xml` 后再 ordinary
+`replace_part()` 恢复 sharedStrings active replacement、source-owned
+sharedStrings `.rels` copy-original audit、workbook `.rels` inbound sharedStrings
+relationship 保留，以及 `[Content_Types].xml` 回到 source bytes / copy-original
+audit；不能写成 sharedStrings index migration、string-table rebuild、worksheet
+cell-reference sync、transactional undo、relationship repair、content type repair、
+semantic merge 或 public editing API。styles-specific 反向顺序 coverage 只能写成
+显式移除 `xl/styles.xml` 后再 ordinary `replace_part()` 恢复 styles active
+replacement、workbook `.rels` inbound styles relationship 保留、不凭空创建
+styles owner `.rels`，以及 `[Content_Types].xml` 回到 source bytes /
+copy-original audit；不能写成 style id migration、style merge、cell `s`
+reference sync、transactional undo、relationship repair、content type repair、
+semantic merge、existing-file style preservation 或 public editing API。
+linked-object fixture 上的 ordinary media replacement coverage 只能描述为只重写
+`xl/media/image1.png`、drawing `.rels` 原样保留、PNG default content type 不提升为
+override、以及 workbook/worksheet/drawing/chart/unknown source entries 保持
+copy-original baseline；不能写成 image decoding、drawing mutation、
+existing-workbook image editing 或 full image preservation。
+linked-object fixture 上的 explicit media removal coverage 只能描述为显式移除
+default-typed `xl/media/image1.png`：输出省略 media entry、保留 PNG default
+content type 和 drawing `.rels` inbound image relationship、不凭空创建 media
+owner `.rels` omission；不能写成 relationship repair、object deletion、
+existing-workbook image editing 或 full image preservation。
+linked-object fixture 上的 media remove-then-ordinary-replace coverage 只能描述为
+后续 replacement 恢复 active media part、清理 stale removed-part audit、保留 PNG
+default content type 且不把 `xl/media/image1.png` 提升成 override、保留 inbound
+drawing `.rels`、不凭空创建 media owner `.rels`；不能写成 transactional undo、
+image semantic merge、relationship repair、content type repair 或 full image
+preservation。
+linked-object fixture 上的 media ordinary-replace-then-remove coverage 只能描述为
+后续 removal 清理 active media replacement、记录 removed-part audit 和 inbound
+drawing relationship metadata、输出省略 `xl/media/image1.png`、保留 PNG default
+content type 且不把 media 提升成 override、保留 inbound drawing `.rels`、不凭空创建
+media owner `.rels`；不能写成 transactional undo、image semantic merge、
+relationship pruning/repair、content type repair、existing-workbook image editing 或
+full image preservation。
+media ordinary-replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露 omitted default-typed media part、drawing-owned inbound
+relationship audit、removed_parts target/reason/inbound audit、content types /
+drawing `.rels` copy-original、empty removed_package_entries，以及没有 media
+owner `.rels` 条目；不能写成 public output planner、relationship/content type
+mutator、relationship pruning/repair 或 image editing API。
+linked-object fixture 上的 explicit table removal coverage 只能描述为显式移除
+`xl/tables/table1.xml`：输出省略 table entry、移除 table content type override、
+保留 worksheet `.rels` inbound table relationship、不凭空创建 table owner
+`.rels` omission；不能写成 relationship repair、object deletion、table resize、
+existing-workbook table editing 或 full table support。
+linked-object fixture 上的 explicit sharedStrings removal coverage 只能描述为显式移除
+`xl/sharedStrings.xml`：输出省略 sharedStrings part 和 sharedStrings owner `.rels`、
+移除 sharedStrings content type override、保留 workbook `.rels` inbound
+sharedStrings relationship；不能写成 sharedStrings index migration、string-table
+rebuild、worksheet cell-reference sync、relationship repair、existing-workbook
+sharedStrings semantic editing 或 public sharedStrings editing API。
+linked-object fixture 上的 explicit styles removal coverage 只能描述为显式移除
+`xl/styles.xml`：输出省略 styles part、移除 styles content type override、保留
+workbook `.rels` inbound styles relationship、不凭空创建 styles owner `.rels`
+omission；不能写成 style id migration、style merge、cell `s` reference sync、
+relationship repair、existing-file style preservation、full style editing 或 public
+styles editing API。
+linked-object fixture 上的 explicit VBA project removal coverage 只能描述为显式移除
+`xl/vbaProject.bin`：输出省略 VBA project part、移除 VBA content type override、
+保留 workbook `.rels` inbound VBA relationship、不凭空创建 VBA owner `.rels`
+omission；不能写成 macro generation、VBA semantic editing、signature preservation、
+relationship repair、complete macro support 或 public VBA editing API。
+linked-object fixture 上的 explicit VML drawing removal coverage 只能描述为显式移除
+`xl/drawings/vmlDrawing1.vml`：输出省略 VML drawing part、移除 VML content type
+override、保留 worksheet `.rels` URI-qualified inbound `vmlDrawing` relationship、
+不凭空创建 VML owner `.rels` omission；不能写成 VML shape editing、legacy
+drawing mutation、relationship repair、full VML/drawing support 或 public drawing
+editing API。
+linked-object fixture 上的 explicit percent-decoded drawing removal coverage 只能描述为
+显式移除 `xl/drawings/drawing space.xml`：输出省略目标 drawing part、移除 drawing
+content type override、保留 worksheet `.rels` 原始
+`../drawings/drawing%20space.xml` inbound relationship、不凭空创建
+`xl/drawings/_rels/drawing space.xml.rels`；不能写成 percent-encoded target repair、
+relationship rewrite、drawing mutation、full drawing support 或 public drawing
+editing API。
+linked-object fixture 上的 ordinary table replacement coverage 只能描述为只重写
+`xl/tables/table1.xml`、worksheet `.rels` 原样保留、table content type override
+仍可读、以及 workbook/worksheet/drawing/chart/media/unknown source entries 保持
+copy-original baseline；不能写成 table resize、calculated columns、totals generation、
+existing-workbook table editing 或 full table support。
+linked-object fixture 上的 table remove-then-ordinary-replace coverage 只能描述为
+后续 replacement 恢复 active table part、清理 stale removed-part audit、让
+`[Content_Types].xml` 回到 source/copy-original audit、保留 worksheet `.rels`
+inbound table relationship、不凭空创建 table owner `.rels`；不能写成 table resize、
+calculated columns、totals generation、transactional undo、relationship repair、
+content type repair、existing-workbook table editing 或 full table support。
+linked-object fixture 上的 table ordinary-replace-then-remove coverage 只能描述为
+后续 explicit removal 清理 active table replacement、记录 removed-part audit 和
+inbound worksheet relationship metadata、输出省略 table part、移除 table content
+type override、保留 worksheet `.rels` inbound table relationship、不凭空创建 table
+owner `.rels`；不能写成 table delete semantics、table resize、calculated columns、
+totals generation、transactional undo、relationship pruning/repair、content type
+repair、existing-workbook table editing 或 full table support。
+table ordinary-replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露 omitted table part、worksheet-owned inbound relationship
+audit、content types local-DOM rewrite，以及没有 table owner `.rels` 条目；不能写成
+public output planner、relationship/content type mutator、table delete semantics、
+relationship pruning/repair 或 table editing API。
+linked-object fixture 上的 ordinary sharedStrings replacement coverage 只能描述为只重写
+`xl/sharedStrings.xml`、workbook `.rels` 原样保留、sharedStrings owner `.rels`
+原样保留、sharedStrings content type override 仍可读、以及 styles/table/media/VBA/
+unknown source entries 保持 copy-original baseline；不能写成 sharedStrings index
+migration、string-table rebuild、worksheet cell-reference sync、existing-workbook
+sharedStrings semantic editing 或 public sharedStrings editing API。
+linked-object fixture 上的 sharedStrings ordinary-replace-then-remove coverage 只能描述为
+后续 removal 清理 active sharedStrings replacement、记录 removed-part audit、输出省略
+`xl/sharedStrings.xml` 及其 source-owned owner `.rels`、移除 sharedStrings content
+type override、保留 workbook `.rels` inbound sharedStrings relationship；不能写成
+sharedStrings index migration、string-table rebuild、worksheet cell-reference sync、
+transactional undo、relationship pruning/repair、content type repair、existing-workbook
+sharedStrings semantic editing 或 public sharedStrings editing API。
+sharedStrings ordinary-replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露 final omitted `xl/sharedStrings.xml` part、source-owned
+owner `.rels` omission、removed_parts target/reason/inbound audit、
+removed_package_entries owner-omission audit、workbook inbound relationship
+metadata 和 content types rewrite；不能写成 metadata repair、relationship pruning、transactional undo 或
+public sharedStrings editing API。
+sharedStrings remove-then-ordinary-replace output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active `xl/sharedStrings.xml` stream-rewrite、source-owned
+owner `.rels` copy-original audit、content types copy-original audit、preserved
+workbook relationships、empty removed_parts / removed_package_entries 和 untouched
+linked entries；不能写成 sharedStrings index
+migration、string-table rebuild、worksheet cell-reference sync、relationship repair、
+transactional undo 或 public sharedStrings editing API。
+linked-object fixture 上的 ordinary styles replacement coverage 只能描述为只重写
+`xl/styles.xml`、workbook `.rels` 原样保留、styles content type override 仍可读、
+不凭空创建 `xl/_rels/styles.xml.rels`、以及 sharedStrings/table/media/VBA/unknown
+source entries 保持 copy-original baseline；不能写成 style id migration、style
+merge、cell `s` reference sync、existing-file style preservation、full style
+editing 或 public style editing API。
+linked-object fixture 上的 styles ordinary-replace-then-remove coverage 只能描述为
+后续 removal 清理 active styles replacement、记录 removed-part audit、输出省略
+`xl/styles.xml`、移除 styles content type override、保留 workbook `.rels` inbound
+styles relationship，且不凭空创建 `xl/_rels/styles.xml.rels`；不能写成 style id
+migration、style merge、cell `s` reference sync、existing-file style preservation、
+transactional undo、relationship pruning/repair、content type repair、full style
+editing 或 public style editing API。
+styles replace-then-remove output-plan coverage 只能描述为内部 `planned_output()`
+暴露 omitted `xl/styles.xml` part、removed_parts target/reason/inbound audit、
+workbook-owned inbound relationship metadata、content types rewrite、empty
+removed_package_entries，以及没有凭空创建 `xl/_rels/styles.xml.rels`；不能写成
+public output planner、style id migration、style merge、cell `s` reference sync、
+relationship repair、existing-file style preservation 或 complete style editing
+support。
+styles remove-then-ordinary-replace output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active `xl/styles.xml` local-DOM rewrite、content types
+copy-original audit、preserved workbook relationships、empty removed_parts /
+removed_package_entries、untouched linked entries，
+且不凭空创建 `xl/_rels/styles.xml.rels`；不能写成 public output planner、style id
+migration、style merge、cell `s` reference sync、relationship repair、
+existing-file style preservation 或 complete style editing support。
+linked-object fixture 上的 chart remove-then-ordinary-replace coverage 只能描述为
+后续 replacement 恢复 active chart part、清理 stale removed-part audit、让
+`[Content_Types].xml` 回到 source/copy-original audit、保留 drawing `.rels` 里的
+direct / URI-qualified inbound chart relationships、保留其它 linked/unknown source
+entries，且不凭空创建 chart owner `.rels`；不能写成 chart semantic merge、
+chart reference repair、relationship repair、content type repair、transactional undo、
+existing-workbook chart editing 或 public chart editing API。
+chart remove-then-replace output-plan coverage 只能描述为内部 `planned_output()`
+暴露 active `xl/charts/chart1.xml` stream-rewrite、content types copy-original
+audit、preserved drawing relationships、preserved linked/unknown entries、empty
+removed_parts / removed_package_entries，以及没有凭空创建
+`xl/charts/_rels/chart1.xml.rels`；不能写成 public output planner、
+chart semantic merge、chart reference repair、relationship repair、transactional undo
+或 complete chart editing support。
+linked-object fixture 上的 ordinary chart replacement coverage 只能描述为只重写
+`xl/charts/chart1.xml`、drawing `.rels` 里的 chart 和 URI-qualified chart
+relationships 原样保留、chart content type override 仍可读、不凭空创建 chart
+owner `.rels`、以及 media/table/sharedStrings/styles/VBA/unknown source entries 保持
+copy-original baseline；不能写成 chart reference migration、series/cache update、
+drawing mutation、existing-workbook chart editing、full chart support 或 public chart
+editing API。
+linked-object fixture 上的 chart 先 ordinary replacement 再显式移除 coverage 只能描述为
+后续 removal 清理 active chart replacement、记录 removed-part audit 和 direct /
+URI-qualified inbound drawing relationship metadata、输出省略 `xl/charts/chart1.xml`、
+移除 chart content type override、保留 inbound drawing `.rels` 和其它 linked/unknown
+source entries，且不凭空创建 chart owner `.rels`；不能写成 chart delete semantics、
+chart reference repair、relationship pruning/repair、content type repair、transactional
+undo、semantic merge、existing-workbook chart editing 或 public chart editing API。
+chart replace-then-remove output-plan coverage 只能描述为内部 `planned_output()`
+暴露 omitted `xl/charts/chart1.xml` part、removed_parts target/reason/inbound audit、
+drawing-owned direct / URI-qualified inbound relationship metadata、content types
+rewrite、empty removed_package_entries，以及没有凭空创建
+`xl/charts/_rels/chart1.xml.rels`；不能写成 public output planner、chart delete
+semantics、chart reference repair、relationship repair、orphan cleanup 或 complete
+chart editing support。
+linked-object fixture 上的 ordinary VBA project replacement coverage 只能描述为只重写
+`xl/vbaProject.bin`、workbook `.rels` 原样保留、VBA content type override 仍可读、
+不凭空创建 `xl/_rels/vbaProject.bin.rels`、以及 worksheet/drawing/chart/media/table/
+sharedStrings/styles/calcChain/unknown source entries 保持 copy-original baseline；
+不能写成 macro generation、VBA semantic editing、signature preservation、
+workbook relationship repair、full macro support 或 public macro editing API。
+linked-object fixture 上的 VBA project remove-then-ordinary-replace coverage 只能描述为
+后续 replacement 恢复 active VBA project part、清理 stale removed-part audit、让
+`[Content_Types].xml` 回到 source/copy-original audit、保留 workbook `.rels` inbound
+VBA relationship、且不凭空创建 `xl/_rels/vbaProject.bin.rels`；不能写成 macro
+generation、VBA semantic editing、signature preservation、transactional undo、
+workbook relationship repair、content type repair、full macro support 或 public macro
+editing API。
+VBA project remove-then-replace output-plan coverage 只能描述为内部 `planned_output()`
+暴露 active `xl/vbaProject.bin` stream-rewrite、content types copy-original audit、
+preserved package/workbook relationships、preserved linked/unknown entries、empty
+removed_parts / removed_package_entries，以及没有凭空创建
+`xl/_rels/vbaProject.bin.rels`；不能写成 public output planner、
+macro generation、VBA semantic editing、signature preservation、transactional undo、
+workbook relationship repair、content type repair、full macro support 或 public macro
+editing API。
+linked-object fixture 上的 VBA project ordinary-replace-then-remove coverage 只能描述为
+后续 removal 清理 active VBA replacement、记录 removed-part audit、输出省略
+VBA project part、移除 VBA content type override、保留 workbook `.rels` inbound
+VBA relationship、且不凭空创建 `xl/_rels/vbaProject.bin.rels`；不能写成 macro
+generation、VBA semantic editing、signature preservation、transactional undo、
+workbook relationship repair、content type repair、full macro support 或 public macro
+editing API。
+VBA project replace-then-remove output-plan coverage 只能描述为内部 `planned_output()`
+暴露 omitted `xl/vbaProject.bin` part、removed_parts target/reason/inbound audit、
+workbook-owned inbound VBA relationship metadata、content types rewrite、empty
+removed_package_entries，以及没有凭空创建 `xl/_rels/vbaProject.bin.rels`；
+不能写成 public output planner、macro generation、VBA semantic editing、signature
+preservation、workbook relationship repair、content type repair、orphan cleanup、
+transactional undo、full macro support 或 public macro editing API。
+linked-object fixture 上的 ordinary VML drawing replacement coverage 只能描述为只重写
+`xl/drawings/vmlDrawing1.vml`、worksheet `.rels` 里的 URI-qualified `vmlDrawing`
+relationship 原样保留、VML content type override 仍可读、不凭空创建
+`xl/drawings/_rels/vmlDrawing1.vml.rels`、以及 workbook/worksheet/drawing/chart/
+media/table/sharedStrings/styles/VBA/calcChain/unknown source entries 保持
+copy-original baseline；不能写成 VML shape editing、legacy drawing mutation、
+relationship repair、full VML/drawing support 或 public drawing editing API。
+linked-object fixture 上的 VML drawing remove-then-ordinary-replace coverage 只能描述为
+后续 replacement 恢复 active VML drawing part、清理 stale removed-part audit、让
+`[Content_Types].xml` 回到 source/copy-original audit、保留 worksheet `.rels`
+URI-qualified inbound `vmlDrawing` relationship、不凭空创建 VML owner `.rels`；
+不能写成 VML shape editing、legacy drawing mutation、transactional undo、
+relationship repair、content type repair、full VML/drawing support 或 public drawing
+editing API。
+该 restore 状态的 output-plan coverage 也只能描述为内部 `planned_output()` 快照暴露
+active VML drawing `LocalDomRewrite` entry、content types copy-original audit、
+preserved package/workbook/worksheet/drawing relationships、preserved linked/unknown
+entries、empty removed_parts / removed_package_entries，以及 no invented owner
+`.rels`；不能写成 public output planner、relationship
+repair、content type repair、transactional undo 或 public drawing editing API。
+同一路径还覆盖 VML drawing 先 ordinary replacement 再显式移除的顺序：后续
+removal 会清理 active VML drawing replacement、记录 removed-part audit、输出省略
+VML drawing part、移除 VML content type override、保留 worksheet `.rels` 中的
+URI-qualified inbound `vmlDrawing` relationship，且不凭空创建 VML owner `.rels`；
+这不是 VML shape editing、legacy drawing mutation、事务式 undo、relationship
+pruning/repair、content type repair 或完整 VML/drawing 支持。
+该 final-removal 状态的 output-plan coverage 也只能描述为内部 `planned_output()`
+快照暴露 omitted VML drawing part、removed_parts target/reason/inbound audit、
+URI-qualified worksheet inbound relationship metadata、content types rewrite、empty
+removed_package_entries，以及 no invented VML owner `.rels`；不能写成 public output
+planner、drawing editing API、relationship repair、content type repair、transactional
+undo 或 public drawing editing API。
+linked-object fixture 上的 ordinary percent-decoded drawing replacement coverage 只能描述为只重写
+`xl/drawings/drawing space.xml`、worksheet `.rels` 里的原始
+`../drawings/drawing%20space.xml` relationship 原样保留、drawing content type override
+仍可读、不凭空创建 `xl/drawings/_rels/drawing space.xml.rels`、以及 workbook/
+worksheet/drawing/chart/media/table/VML/sharedStrings/styles/VBA/calcChain/unknown
+source entries 保持 copy-original baseline；不能写成 percent-encoded target repair、
+relationship rewrite、drawing mutation、full drawing support 或 public drawing editing API。
+linked-object fixture 上的 percent-decoded drawing remove-then-ordinary-replace
+coverage 只能描述为后续 replacement 恢复 active decoded drawing part、清理 stale
+removed-part audit、让 `[Content_Types].xml` 回到 source/copy-original audit、保留
+worksheet `.rels` 中原始 encoded inbound `../drawings/drawing%20space.xml`
+relationship、且不凭空创建 `xl/drawings/_rels/drawing space.xml.rels`；不能写成
+percent-encoded target repair、relationship rewrite、drawing mutation、
+transactional undo、relationship repair、content type repair、full drawing support
+或 public drawing editing API。
+该 restore 状态的 output-plan coverage 也只能描述为内部 `planned_output()` 快照暴露
+active decoded drawing `LocalDomRewrite` entry、content types copy-original audit、
+preserved package/workbook/worksheet/drawing relationships、preserved linked/unknown
+entries，以及 no invented owner `.rels`；不能写成 public output planner、
+percent-encoded target repair、relationship rewrite、relationship repair、content type
+repair、transactional undo 或 public drawing editing API。
+同一路径还覆盖 percent-decoded drawing 先 ordinary replacement 再显式移除的
+顺序：后续 removal 会清理 active decoded drawing replacement、记录 removed-part
+audit、输出省略 decoded drawing part、移除 drawing content type override、保留
+worksheet `.rels` 中原始 encoded inbound `../drawings/drawing%20space.xml`
+relationship，且不凭空创建 `xl/drawings/_rels/drawing space.xml.rels`；内部
+`planned_output()` 也覆盖该 final-removal 状态，暴露 omitted decoded drawing part、
+removed_parts target/reason/inbound audit、encoded inbound worksheet relationship
+metadata、content types rewrite、empty removed_package_entries 和 no invented owner
+`.rels`；这不是
+percent-encoded target repair、relationship rewrite、drawing mutation、事务式 undo、
+relationship pruning/repair、content type repair 或完整 drawing 支持。
+registered comments-part fixture coverage 只能描述为 worksheet rewrite 会把
+`xl/comments/comment1.xml` 和 source worksheet `.rels` 作为 copy-original
+preservation 处理、保留 comments content type override，并可由 `PackageReader` /
+`RelationshipGraph` 重读；不能写成 comments editing、threaded comments、notes UI、
+relationship repair、orphan cleanup 或 public API。
+threaded comments / persons fixture coverage 只能描述为 worksheet rewrite 会把
+`xl/threadedComments/threadedComment1.xml`、`xl/persons/person.xml`、source worksheet
+`.rels` 和 workbook `.rels` 作为 copy-original preservation 处理，并可由
+`PackageReader` / `RelationshipGraph` 重读；不能写成 comments / threaded comments
+editing、notes UI、relationship repair、orphan cleanup 或 public API。
+ordinary threaded comments replacement/removal coverage 只能描述为
+`replace_part("/xl/threadedComments/threadedComment1.xml", ...)` 只重写 threaded
+comments XML，并保留 legacy comments、persons、worksheet `.rels` 中的
+legacy/threaded inbound relationships、workbook `.rels` 中的 persons relationship、
+content type overrides 和 unknown entry；显式 removal 会省略 threaded comments part
+并移除其 content type override，但保留 worksheet `.rels` 中指向缺失 part 的 inbound
+relationship、persons part / workbook relationship、legacy comments 和 unknown entry。
+不能写成 threaded comments model mutation、persons/schema repair、relationship
+pruning/repair、orphan cleanup、notes UI 或 public API。
+ordinary threaded comments replacement output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active threaded comments part `LocalDomRewrite`、preserved
+content types / package relationships / workbook / workbook `.rels` / worksheet /
+worksheet `.rels` / legacy comments / persons part / unknown entry，且不凭空创建
+threaded comments owner `.rels`；不能写成 threaded comments model mutation、
+persons/schema repair、notes UI、relationship repair、orphan cleanup 或 public API。
+ordinary persons replacement/removal coverage 只能描述为
+`replace_part("/xl/persons/person.xml", ...)` 只重写 persons XML，并保留 workbook
+inbound persons relationship、threaded comments、legacy comments、worksheet `.rels`、
+content type overrides 和 unknown entry；显式 removal 会省略 persons part 并移除
+persons content type override，但保留 workbook `.rels` 中指向缺失 part 的 inbound
+relationship、threaded comments、legacy comments、worksheet 和 unknown entry。不能写成
+persons/schema repair、threaded comments model mutation、relationship pruning/repair、
+orphan cleanup、notes UI 或 public API。
+threaded comments / persons same-path ordering coverage 只能描述为两条路径都覆盖
+remove-then-replace 和 replace-then-remove：后续 replacement 会清理 stale
+removed-part audit，恢复 active threaded comments/persons part，让 source content
+types audit 回到 copy-original，并且不创建对应 owner `.rels`；threaded comments
+remove-then-replace output-plan coverage 只能描述为内部 `planned_output()` 暴露
+active threaded comments part local-DOM rewrite、content types copy-original audit、
+preserved package/workbook/worksheet `.rels`、legacy comments、persons part 和
+unknown entry，并清空 output-plan removed_parts / removed_package_entries，且不凭空创建 threaded comments owner `.rels`；不能写成 threaded
+comments undo、semantic merge、relationship repair、orphan cleanup 或 public API。
+threaded comments
+后续 removal 会记录 removed-part 和 worksheet inbound relationship audit，输出省略
+threaded comments part，移除 threaded comments content type override，并保留
+worksheet `.rels` 中指向缺失 part 的 inbound relationship、persons part / workbook
+relationship、legacy comments 和 unknown entry；persons 后续 removal 会记录
+removed-part 和 workbook inbound relationship audit，输出省略 persons part，移除
+persons content type override，并保留 workbook `.rels` 中指向缺失 part 的 inbound
+relationship、threaded comments、legacy comments、worksheet 和 unknown entry。不能写成
+transactional undo、threaded comments/persons semantic merge、persons/schema repair、
+relationship pruning/repair、content type repair、orphan cleanup、notes UI 或 public API。
+threaded comments replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露单个 omitted threaded comments part、removed_parts 中目标为
+threaded comments part 且 reason / inbound audit 保留的 removed-part audit、
+worksheet-owned inbound threadedComment relationship metadata、content types rewrite、
+preserved worksheet / workbook `.rels` 和 persons part copy-original audit，且
+removed_package_entries 为空、不凭空创建 threaded comments owner `.rels`。
+persons replace-then-remove output-plan coverage 只能描述为内部 `planned_output()`
+暴露单个 omitted persons part、removed_parts 中目标为 persons part 且 reason /
+inbound audit 保留的 removed-part audit、workbook-owned inbound persons relationship
+metadata、content types rewrite、preserved workbook/worksheet `.rels` 和 threaded
+comments part copy-original audit，且 removed_package_entries 为空、不凭空创建 persons owner `.rels`。
+persons remove-then-replace output-plan coverage 只能描述为内部 `planned_output()`
+暴露 active persons part local-DOM rewrite、content types copy-original audit、
+preserved package/workbook/worksheet `.rels`、threaded comments、legacy comments 和
+unknown entry，并清空 output-plan removed_parts / removed_package_entries，且不凭空创建 persons owner `.rels`；不能写成 persons/schema undo、
+semantic merge、relationship repair、orphan cleanup 或 public API。
+pivot table / pivot cache fixture coverage 只能描述为 worksheet rewrite 会把
+`xl/pivotTables/pivotTable1.xml`、`xl/pivotCache/pivotCacheDefinition1.xml`、
+`xl/pivotCache/pivotCacheRecords1.xml`、source worksheet `.rels`、pivot table owner
+`.rels`、pivot cache definition owner `.rels` 和 workbook `.rels` 作为 copy-original
+preservation 处理，并可由 `PackageReader` / `RelationshipGraph` 重读；不能写成
+pivot table editing、pivot cache rebuild、relationship repair、orphan cleanup 或 public API。
+该 worksheet rewrite 路径的 internal `planned_output()` coverage 只能描述为暴露
+fullCalcOnLoad / `CalcChainAction::Remove`、worksheet `StreamRewrite`、workbook
+`LocalDomRewrite`、package/workbook/worksheet `.rels` copy-original、pivot table /
+pivot cache definition / pivot cache records relationship context、content types 和
+unknown entry copy-original，且确认不凭空创建 records owner `.rels`；不能写成
+pivot cache rebuild、records refresh、relationship repair/pruning、orphan cleanup 或
+public API。
+ordinary pivot table replacement/removal coverage 只能描述为
+`replace_part("/xl/pivotTables/pivotTable1.xml", ...)` 只重写 pivot table XML，并保留
+worksheet `.rels` 中的 inbound pivotTable relationship、pivot table owner `.rels` /
+pivotCacheDefinition relationship、pivot cache definition / records parts、pivot cache
+definition owner `.rels`、workbook `<pivotCaches>`、workbook `.rels`
+pivotCacheDefinition relationship、content type overrides 和 unknown entry；显式 removal
+会省略 pivot table part 及其 owner `.rels`，移除 pivot table content type override，
+但保留 worksheet `.rels` 中指向缺失 part 的 inbound relationship、workbook pivot cache
+metadata、pivot cache definition / records 链和 unknown entry。不能写成 pivot table
+semantic editing、pivot cache rebuild、cache-record refresh、relationship pruning/repair、
+orphan cleanup、owner `.rels` repair 或 public API。
+pivot table same-path ordering coverage 只能描述为 remove-then-replace 清理
+stale removed-part / removed owner `.rels` audit，恢复 active pivot table、owner
+`.rels` copy-original audit 和 source content types audit；replace-then-remove 清理
+active replacement，记录 removed-part / removed owner `.rels` audit，输出省略 pivot
+table part 和 owner `.rels`，移除 pivot table content type override，并保留 worksheet
+`.rels` 中指向缺失 part 的 inbound relationship、workbook pivot cache metadata、
+pivot cache definition / records 链和 unknown entry。不能写成 transactional undo、
+pivot table semantic merge、pivot cache rebuild、relationship pruning/repair、
+content type repair、orphan cleanup 或 public API。
+pivot table remove-then-replace output-plan coverage 只能写成内部 `planned_output()`
+暴露 active pivot table `LocalDomRewrite` entry、owner `.rels` copy-original
+`SourceRelationships` audit、content types copy-original audit、preserved
+package/worksheet/workbook relationships、pivot cache definition / records 链和 unknown
+entry；不能写成 pivot table semantic editing、pivot cache rebuild、
+relationship pruning/repair、orphan cleanup 或 public API。
+pivot table replace-then-remove output-plan coverage 只能写成内部 `planned_output()`
+暴露 omitted pivot table part、omitted owner `.rels`、worksheet inbound pivotTable
+relationship audit、content types rewrite、preserved worksheet/workbook relationships、
+pivot cache definition / records 链和 unknown entry；不能写成 pivot table semantic
+editing、pivot cache rebuild、relationship pruning/repair、orphan cleanup 或 public API。
+ordinary pivot cache definition replacement/removal coverage 只能描述为
+`replace_part("/xl/pivotCache/pivotCacheDefinition1.xml", ...)` 只重写 pivot cache
+definition XML，并保留 workbook/pivot-table inbound relationships、pivot cache records、
+pivot cache definition owner `.rels`、content type overrides 和 unknown entry；显式
+removal 会省略 pivot cache definition part 及其 owner `.rels`，移除 cache definition
+content type override，但保留 workbook/pivot table inbound relationships、pivot table、
+pivot cache records、worksheet 和 unknown entry。不能写成 pivot cache rebuild、
+cache-record refresh、relationship pruning/repair、orphan cleanup、owner `.rels`
+repair 或 public API。
+pivot cache definition same-path ordering coverage 只能描述为 remove-then-replace
+清理 stale removed-part / removed owner `.rels` audit，恢复 active pivot cache
+definition、owner `.rels` copy-original audit 和 source content types audit；
+replace-then-remove 清理 active replacement，记录 removed-part / removed owner `.rels`
+audit，输出省略 cache definition part 和 owner `.rels`，并保留 workbook / pivot table
+inbound relationships、pivot table、cache records、worksheet 和 unknown entry。不能写成
+transactional undo、pivot cache semantic merge、relationship pruning/repair、content
+type repair、orphan cleanup 或 public API。
+pivot cache definition remove-then-replace output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active pivot cache definition `LocalDomRewrite` entry、owner
+`.rels` copy-original `SourceRelationships` audit、content types copy-original
+audit、preserved package/worksheet/workbook relationships、pivot table/cache records
+和 unknown entry；pivot cache definition replace-then-remove output-plan coverage
+只能描述为内部 `planned_output()` 暴露 omitted cache definition part、omitted owner
+`.rels`、workbook / pivot table inbound pivotCacheDefinition relationship audit、
+content types rewrite、preserved workbook/worksheet/pivot table/cache records/unknown
+entries；不能写成 pivot cache rebuild、cache-record refresh、
+relationship pruning/repair、content type repair、orphan cleanup 或 public API。
+ordinary pivot cache records replacement/removal coverage 只能描述为
+`replace_part("/xl/pivotCache/pivotCacheRecords1.xml", ...)` 只重写 pivot cache records
+XML，并保留 cache definition owner `.rels` 中的 inbound relationship、pivot cache
+definition、pivot table、workbook / worksheet relationships、content type overrides
+和 unknown entry；显式 removal 会省略 pivot cache records part，移除 records
+content type override，但保留 cache definition owner `.rels` 中指向缺失 records part
+的 inbound relationship、pivot cache definition、pivot table、workbook、worksheet 和
+unknown entry。不能写成 pivot cache records refresh、pivot cache rebuild、
+relationship pruning/repair、orphan cleanup 或 public API。
+pivot cache records same-path ordering coverage 只能描述为 remove-then-replace
+清理 stale removed-part audit，恢复 active pivot cache records，让 source content types
+audit 回到 copy-original，并且不创建 records owner `.rels`；replace-then-remove 清理
+active replacement，记录 removed-part 和 cache-definition inbound relationship audit，
+输出省略 records part，移除 records content type override，并保留 cache definition
+owner `.rels` 中指向缺失 records part 的 inbound relationship、pivot cache definition、
+pivot table、workbook、worksheet 和 unknown entry。不能写成 transactional undo、
+pivot cache records semantic merge、relationship pruning/repair、content type repair、
+orphan cleanup 或 public API。
+pivot cache records remove-then-replace output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active pivot cache records `StreamRewrite` entry、content
+types copy-original audit、preserved package/worksheet/workbook relationships、pivot
+table/cache definition 链、unknown entry，且 no invented records owner `.rels`；
+pivot cache records replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露 omitted records part、cache-definition inbound
+pivotCacheRecords relationship audit、content types rewrite、preserved cache definition
+owner `.rels`、no invented records owner `.rels` 和 preserved workbook/worksheet/pivot
+table/cache definition/unknown entries；不能写成 pivot cache records refresh、pivot
+cache rebuild、relationship pruning/repair、content type repair、orphan cleanup 或
+public API。
+workbook external links fixture coverage 只能描述为 worksheet rewrite 在重写
+`xl/workbook.xml` calc metadata 时，会保留 workbook `<externalReferences>`、workbook
+`.rels` 中的 externalLink relationship、`xl/externalLinks/externalLink1.xml`、
+externalLink owner `.rels`、external `externalLinkPath` target、content type override
+和 unknown entry，并可由 `PackageReader` / `RelationshipGraph` 重读；不能写成
+external links editing、external data refresh、path validation、relationship repair、
+orphan cleanup 或 public API。
+该 worksheet rewrite 路径的 internal `planned_output()` coverage 只能写成暴露
+fullCalcOnLoad、`CalcChainAction::Remove`、worksheet `StreamRewrite`、workbook
+`LocalDomRewrite`、workbook `.rels` copy-original、externalLink part 与 owner `.rels`
+copy-original、content types copy-original 和 unknown entry preservation，且不新增
+relationship target audit；不能写成 external links editing 或 relationship repair。
+ordinary external links replacement/removal coverage 只能描述为
+`replace_part("/xl/externalLinks/externalLink1.xml", ...)` 只重写 externalLink XML，
+并保留 workbook `.rels` 中的 inbound externalLink relationship、externalLink owner
+`.rels` 中的 external `externalLinkPath` target、content type override、worksheet 和
+unknown entry；显式 removal 会省略 externalLink part 及其 owner `.rels`，移除
+externalLink content type override，但保留 workbook `<externalReferences>`、workbook
+`.rels` 中指向缺失 part 的 inbound relationship、worksheet 和 unknown entry。不能写成
+external links semantic editing、external data refresh、path validation、relationship
+pruning/repair、orphan cleanup、owner `.rels` repair 或 public API。
+externalLink same-path ordering coverage 只能描述为 remove-then-replace 清理 stale
+removed-part / removed owner `.rels` audit，恢复 active externalLink part、owner `.rels`
+copy-original audit 和 source content types audit；replace-then-remove 清理 active
+replacement，记录 removed-part / removed owner `.rels` audit，输出省略 externalLink
+part 和 owner `.rels`，并保留 workbook inbound relationship、worksheet 和 unknown entry。
+不能写成 transactional undo、external links semantic merge、relationship pruning/repair、
+content type repair、orphan cleanup 或 public API。
+externalLink remove-then-replace output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active externalLink `LocalDomRewrite` entry、owner `.rels`
+copy-original `SourceRelationships` audit、content types copy-original audit，以及
+preserved package/workbook relationships、workbook、worksheet 和 unknown entry；
+externalLink replace-then-remove output-plan coverage 只能描述为内部
+`planned_output()` 暴露 omitted externalLink part、omitted owner `.rels`、workbook
+inbound relationship audit、content types rewrite、preserved package/workbook
+relationships、workbook、worksheet 和 unknown entry；不能写成 external links semantic
+editing、external data refresh、relationship pruning/repair、orphan cleanup 或 public API。
+custom XML fixture coverage 只能描述为 worksheet rewrite 会保留 package `_rels/.rels`
+中的 customXml relationship、`customXml/item1.xml`、custom XML item owner `.rels`、
+`customXml/itemProps1.xml`、custom XML properties content type override 和 unknown
+entry，并可由 `PackageReader` / `RelationshipGraph` 重读；不能写成 custom XML editing、
+schema/data binding、relationship repair、orphan cleanup 或 public API。
+该 worksheet rewrite 路径的 internal `planned_output()` coverage 只能写成暴露
+fullCalcOnLoad、`CalcChainAction::Remove`、worksheet `StreamRewrite`、workbook
+`LocalDomRewrite`、package relationships copy-original、custom XML item / item owner
+`.rels` / properties part copy-original、content types copy-original 和 unknown entry
+preservation，且不新增 relationship target audit、不凭空创建 properties owner `.rels`；
+不能写成 custom XML editing、schema/data binding 或 relationship repair。
+ordinary custom XML replacement coverage 只能描述为
+`replace_part("/customXml/item1.xml", ...)` 只重写 custom XML item，保留 package
+`_rels/.rels` customXml inbound relationship、custom XML item owner `.rels` /
+customXmlProps relationship、`customXml/itemProps1.xml`、custom XML properties content
+type override、默认 XML content type 和 unknown entry copy-original 基线，并可由
+`PackageReader` / `RelationshipGraph` 重读；不能写成 custom XML semantic editing、
+schema/data binding、relationship repair、content type repair、orphan cleanup 或
+public editing API。
+explicit custom XML removal coverage 只能描述为显式移除 `customXml/item1.xml`：
+输出省略 custom XML item 及其 source-owned owner `.rels`、保留 package
+`_rels/.rels` customXml inbound relationship、保留 `customXml/itemProps1.xml`、
+custom XML properties content type override、默认 XML content type 和 unknown entry，
+且不重写 `[Content_Types].xml`；不能写成 custom XML deletion semantics、
+schema/data binding、relationship pruning/repair、content type repair、orphan cleanup
+或 public editing API。
+custom XML set/remove ordering coverage 只能描述为同一路径先显式移除再 ordinary
+replace 会恢复 active custom XML item、清理 stale removed-part / removed owner
+`.rels` audit、恢复 owner `.rels` copy-original audit，且不重写
+`[Content_Types].xml`；先 ordinary replace 再显式移除会清理 active replacement、
+记录 removed-part / removed owner `.rels` audit、输出省略 custom XML item 和 owner
+`.rels`，并保留 package inbound relationship、properties part、默认 XML content
+type 和 unknown entry。Internal `planned_output()` coverage for this restore state
+exposes the active custom XML item `LocalDomRewrite` entry, owner `.rels`
+copy-original `SourceRelationships` audit, and preserved package relationships,
+content types, workbook, worksheet, properties part, and unknown entry。
+Internal `planned_output()` coverage for this final-removal state exposes
+the omitted custom XML item, omitted source-owned owner `.rels`,
+package inbound customXml relationship audit, and preserved package relationships,
+content types, workbook, worksheet, properties part, and unknown entry。不能写成 transactional undo、custom XML semantic merge、
+relationship pruning/repair、content type repair、orphan cleanup 或 public editing API。
+custom XML properties part replacement/removal coverage 只能描述为
+`customXml/itemProps1.xml` replacement 只重写 properties part，保留 custom XML
+item、item owner `.rels` / customXmlProps inbound relationship、package customXml
+relationship、properties content type override 和 unknown entry；explicit removal
+会输出省略 properties part、移除 properties content type override，但保留 custom XML
+item、item owner `.rels` 中指向缺失 properties part 的 inbound customXmlProps
+relationship、package customXml relationship、默认 XML content type 和 unknown
+entry。不能写成 custom XML properties editing、schema/data binding、
+relationship pruning/repair、content type repair、orphan cleanup 或 public editing API。
+内部 `planned_output()` 对 ordinary properties replacement 状态的覆盖只能描述为暴露
+active properties part `LocalDomRewrite`、preserved content types / package
+relationships、preserved custom XML item / item owner `.rels` / workbook /
+worksheet / unknown entry，且不凭空创建 properties owner `.rels`。不能写成 custom XML
+properties semantic editing、schema/data binding、transactional undo、
+relationship pruning/repair、content type repair、orphan cleanup 或 public editing API。
+custom XML properties part ordering coverage 只能描述为同一路径 properties part
+先显式移除再 ordinary replace 会清理 stale removed-part audit、恢复 active
+properties part、恢复 properties content type override/content-types copy-original
+audit，并继续保留 item owner `.rels`；先 ordinary replace 再显式移除会清理
+active replacement、记录 removed-part audit、输出省略 properties part、移除
+properties content type override，并继续保留 item owner `.rels` 中的 inbound
+customXmlProps relationship。不能写成 transactional undo、custom XML properties
+semantic merge、relationship pruning/repair、content type repair、orphan cleanup
+或 public editing API。
+内部 `planned_output()` 对该 properties final-removal 状态的覆盖只能描述为暴露 omitted
+properties part、item-owned inbound customXmlProps relationship audit、content types
+rewrite、preserved custom XML item / item owner `.rels` / package relationships /
+workbook / worksheet / unknown entry，且不凭空创建 properties owner `.rels`。不能写成
+custom XML properties deletion semantics、relationship
+pruning/repair、content type repair、orphan cleanup 或 public editing API。
+内部 `planned_output()` 对该 properties restore 状态的覆盖只能描述为暴露 active
+properties part `LocalDomRewrite`、restored content types copy-original audit、
+preserved custom XML item / item owner `.rels` / package relationships / workbook /
+worksheet / unknown entry，且不凭空创建 properties owner `.rels`。不能写成 custom XML
+properties semantic merge、transactional undo、relationship pruning/repair、
+content type repair、orphan cleanup 或 public editing API。
+custom XML item removal plus properties replacement coverage 只能描述为先显式移除
+custom XML item，再 ordinary replace `customXml/itemProps1.xml` properties part：
+后续 properties replacement 只重写 properties payload，保留 removed custom XML item /
+removed owner `.rels` audit，输出继续省略 custom XML item 和 item owner `.rels`，
+并保留 package customXml inbound relationship、properties content type override、
+默认 XML content type 和 unknown entry。不能写成 custom XML dependency repair、
+relationship pruning/repair、content type repair、orphan cleanup、transactional undo
+或 public editing API。
+内部 `planned_output()` 对该跨路径状态的覆盖只能描述为暴露 omitted custom XML item、
+omitted source-owned owner `.rels`、package inbound customXml relationship audit、
+active properties part local-DOM rewrite、preserved package relationships / content
+types / workbook / worksheet / unknown entry，且不凭空创建 properties owner `.rels`。
+不能写成 custom XML dependency repair、relationship pruning/repair、content type repair、
+orphan cleanup、transactional undo 或 public editing API。
+custom XML properties removal plus item replacement coverage 只能描述为先显式移除
+`customXml/itemProps1.xml` properties part，再 ordinary replace custom XML item：
+后续 item replacement 只重写 item payload，保留 removed properties part audit /
+content-types rewrite，输出继续省略 properties part 和 properties content type override，
+并保留 item owner `.rels` 中指向缺失 properties part 的 customXmlProps relationship、
+package customXml inbound relationship、默认 XML content type 和 unknown entry。不能写成
+custom XML dependency repair、relationship pruning/repair、content type repair、
+orphan cleanup、transactional undo 或 public editing API。
+内部 `planned_output()` 对该反向跨路径状态的覆盖只能描述为暴露 omitted
+properties part、item-owned inbound customXmlProps relationship audit、content types
+rewrite、active custom XML item local-DOM rewrite、preserved item owner `.rels` /
+package relationships / workbook / worksheet / unknown entry，且不凭空创建 properties
+owner `.rels`。不能写成 custom XML dependency repair、relationship pruning/repair、
+content type repair、orphan cleanup、transactional undo 或 public editing API。
+ordinary comments-part replacement coverage 只能描述为
+`replace_part("/xl/comments/comment1.xml", ...)` 只重写 comments XML、保留
+worksheet `.rels` inbound comments relationship、comments content type override、
+workbook XML / workbook `.rels`、worksheet 和 unknown entry copy-original 基线，且不凭空
+创建 comments owner `.rels`；不能写成 comments model mutation、threaded comments、
+notes UI、relationship repair、orphan cleanup 或 public API。
+ordinary comments replacement output-plan coverage 只能描述为内部
+`planned_output()` 暴露 active comments part local-DOM rewrite、preserved content
+types / package relationships / workbook / workbook `.rels` / worksheet /
+worksheet `.rels` / unknown entry，且不凭空创建 comments owner `.rels`；不能写成
+comments model mutation、notes UI、relationship repair、orphan cleanup 或 public API。
+explicit comments-part removal coverage 只能描述为输出省略 `xl/comments/comment1.xml`、
+移除 comments content type override、保留 worksheet `.rels` inbound comments
+relationship，且不凭空创建 comments owner `.rels` omission；不能写成 comments
+deletion semantics、threaded comments、notes UI、relationship pruning/repair、
+orphan cleanup 或 public API。
+remove-then-ordinary-replace comments coverage 只能描述为后续
+`replace_part("/xl/comments/comment1.xml", ...)` 恢复 active comments replacement、
+清理 stale removed-part audit、让 comments content type override 和
+`[Content_Types].xml` 回到 source/copy-original 状态、保留 inbound worksheet `.rels`，
+且仍不凭空创建 comments owner `.rels`；不能写成 comments undo、semantic merge、
+relationship repair、orphan cleanup 或 public API。
+remove-then-replace comments output-plan coverage 只能描述为内部 `planned_output()`
+暴露 active comments part local-DOM rewrite、content types copy-original audit、
+preserved package/workbook/worksheet `.rels` 和 unknown entry，并清空 output-plan
+removed_parts / removed_package_entries，且不凭空创建 comments owner `.rels`；不能写成 comments undo、semantic merge、relationship
+repair、orphan cleanup 或 public API。
+replace-then-remove comments coverage 只能描述为后续 explicit removal 清理 active
+comments replacement、记录 removed-part audit、输出省略 comments part、移除
+comments content type override、保留 inbound worksheet `.rels`，且仍不凭空创建
+comments owner `.rels`；不能写成 comments deletion semantics、transactional undo、
+relationship pruning/repair、orphan cleanup 或 public API。
+replace-then-remove comments output-plan coverage 只能描述为内部
+`planned_output()` 暴露单个 omitted comments part、removed_parts 中目标为
+comments part 且 reason / inbound audit 保留的 removed-part audit、worksheet-owned
+inbound comments relationship metadata、content types rewrite、preserved
+package/workbook/worksheet `.rels` copy-original audit，且 removed_package_entries
+为空、不凭空创建 comments owner `.rels`。
+exact/path-equivalent source-overwrite rejection 和 empty-output / missing-parent / non-directory-parent / existing-directory output
+rejection 只能描述为 reader-backed copy 输出安全护栏，不能写成 atomic in-place
+editing、filesystem repair 或 public editing API。
+当前只可补充说明该护栏会在 materialize output entries 前失败，且失败后 queued
+part replacement 状态不污染，后续
+安全 `save_as()` 仍可输出 queued rewrite；现在还可说明 queued worksheet
+replacement 的 `fullCalcOnLoad` / calcChain removal / package-entry audit /
+planned output 状态同样不污染，后续安全输出仍按计划省略 calcChain；不能写成
+transaction 或 atomic save。
+它不是 public document properties editing API。
+invalid replacement failure no-state-pollution 只能描述为 edit plan entries / notes、manifest
+write-mode 和 copied output bytes 的窄回归，不能写成完整 validator 或 public editor。
+metadata-entry replacement failure no-state-pollution 只能描述为 edit plan entries /
+notes、package-entry audit、calc policy、manifest write-mode 和 copied output bytes 的窄回归。
 
 图片对象 hyperlink 必须和 worksheet cell hyperlink 分开描述。当前
 `ImageOptions::external_hyperlink_url` 属于 drawing object metadata：它写 drawing XML
@@ -287,6 +1252,8 @@ unsupported header 的错误边界，以及它不是任意 stream/URL/base64 图
 
 - 不要为了让 API 像普通 workbook 编辑器一样方便，而默认保存完整 worksheet。
 - 不要让 `Workbook` 级 API 隐式把大数据路径转成 in-memory 模式。
+- 不要把当前 owning `Cell` 当作通用内部存储单元去堆百万级 cell；它适合便利 API，
+  不适合大规模 cell store。
 - 不要把 streaming API 做成普通 DOM API 的附属补丁。
 - 不要把 PackageEditor 做成 streaming writer 的事后补丁；已有文件编辑必须有独立
   Patch API、EditPlan 和 preservation 语义。
@@ -334,5 +1301,91 @@ unsupported header 的错误边界，以及它不是任意 stream/URL/base64 图
   `a:blip r:embed` 与 hyperlink `r:id` 分离。
 - document properties API 还需验证结构测试覆盖 `docProps/core.xml`、
   `docProps/app.xml`、relationships、content types、XML escape，并明确不生成
-  `docProps/custom.xml`。
+  `docProps/custom.xml`；若走内部 Patch 小切片，还需验证未修改 part 和 unknown
+  entry preservation。
+- Patch / PackageEditor 相关任务若验证了 worksheet `.rels`、linked object parts、
+  untouched `xl/sharedStrings.xml`、`xl/styles.xml` 或 workbook `definedNames`
+  保留，只能写成窄 preservation regression；即使 replacement XML 省略旧
+  `<drawing>` / `<tableParts>` 引用，也不能写成 relationship pruning、orphan
+  cleanup、sharedStrings/styles/defined-name 语义同步、索引迁移、重建或 public editing API。
+- Patch / PackageEditor 相关任务若验证 DEFLATE source 输入，只能写成未修改 part
+  的解压后 payload 语义保留；当前 minizip-enabled PackageEditor 回归覆盖 ordinary
+  workbook replacement、unknown extension target replacement、workbook calc metadata
+  helper，以及 worksheet replacement 下的 calcChain cleanup、linked
+  payload preservation 和 unknown extension owner `.rels` 可由输出 `PackageReader` /
+  `RelationshipGraph` 重读，不能写成保留源 ZIP compression method、timestamps、
+  extra fields 或压缩字节。
+- Patch / PackageEditor 相关任务若组合了 docProps generated-small-XML 和 worksheet
+  replacement，只能写成 relationship/content-type 状态合并、calcChain removal、
+  stale calcChain owner `.rels` omission、缺失 calcChain payload 时的 stale metadata
+  cleanup、workbook metadata rewrite 和 unknown-entry
+  preservation 的窄回归；metadata-only cleanup 只能写成 content type / workbook
+  relationship 残留清理，不能写成通用 metadata repair；如果提到 removed-part audit，只能写成
+  `PartRewritePlanner::plan_worksheet_stream_rewrite()` 在 `CalcChainAction::Remove`
+  下产出的内部审计元数据，不能写成完整 relationship pruning、完整
+  document properties editing 或完整 existing-file editing。
+- Patch / PackageEditor 相关任务若验证 malformed workbook XML 导致 workbook metadata
+  rewrite 预检失败，只能写成失败不污染 edit plan entries / notes、manifest / copied output 的窄回归；
+  不能写成完整 workbook metadata editor、repair engine 或 robust XML parser。
+- Patch / PackageEditor 相关任务若验证 `ReferencePolicyAction::Fail` 且此前已有
+  ordinary replacement 排队，只能写成后续 linked worksheet rewrite 失败不会丢失既有
+  replacement、manifest write-mode、source-owned `.rels` audit 或输出 bytes；不能写成
+  通用事务、atomic rollback 或 public editor。
+- Patch / PackageEditor 相关任务若验证 core/app docProps package relationship target
+  冲突，只能写成 generated-small-XML 路径失败不污染 edit plan entries / notes、manifest /
+  package-entry audit / copied output 的窄回归；不能写成完整关系修复器或完整
+  document properties editing。
+- Patch / PackageEditor 相关任务若验证 invalid replacement failure，只能写成
+  edit plan entries / notes、manifest write-mode / copied output bytes 不污染的窄回归；不能写成
+  完整 package validator、relationship repair 或 public editor。
+- Patch / PackageEditor 相关任务若验证了 `EditPlan` package-entry 审计，只能写成
+  `[Content_Types].xml` / package `.rels` / owner `.rels` rewrite、omission 或
+  preserved copy-original side effects 可见；若提到结构，只能写成内部
+  `PackageEntryAuditKind` 分类加可选 `owner_part`，且只有 source-owned `.rels`
+  携带 owner；kind 与 entry path 必须一一匹配，`ContentTypes` 只能指向
+  `[Content_Types].xml`，`PackageRelationships` 只能指向 package `_rels/.rels`，
+  `SourceRelationships` 必须匹配 owner part 推导出的 source-owned `.rels` entry；
+  不能写成完整 relationship/content-type mutator、relationship pruning 或 public editing API。
+- Patch planner / DependencyAnalyzer 相关任务若验证 external relationship target，
+  只能写成 external target 不作为 package part、但会留下携带 owner part、relationship
+  id 和原始 target 的审计 note；不能写成 existing-file hyperlink editing、target
+  validation 或完整 hyperlink support。
+- Patch planner / DependencyAnalyzer 相关任务若验证 drawing-owned `.rels` 中的
+  external、URI-qualified、invalid 或 unresolved relationship target，只能写成从 worksheet
+  rewrite 递归发现后的审计 traceability；不能写成 drawing/image/chart editing、
+  relationship repair、orphan cleanup 或完整 package validation。
+- Patch planner / DependencyAnalyzer 相关任务若验证 unresolved internal relationship
+  target，只能写成不虚构 package part、留下携带 owner part、relationship id、
+  relationship type、原始 target 和 normalized unresolved target 的 package structure review 审计 note；不能写成
+  relationship repair、target creation 或完整 package validation。
+- Patch planner / DependencyAnalyzer 相关任务若验证带 query/fragment 的 internal
+  relationship target，只能写成 URI-qualified target 本身不作为 package part、留下
+  package structure review 审计 note，且 base target 在已注册时可作为保守
+  copy-original 依赖；审计 note 可携带 owner part、relationship id、relationship type、原始 target 和
+  normalized base target；不能写成 relationship repair、target validation 或完整
+  package validation。
+- Patch planner / DependencyAnalyzer 相关任务若验证以 `/` 开头的 absolute internal
+  relationship target，只能写成按 package part path 做 normalization，已注册 target
+  可作为保守 copy-original 依赖；不能写成完整 URI validator 或 relationship repair。
+- Patch planner / DependencyAnalyzer 相关任务若验证 percent-encoded internal
+  relationship target，只能写成先解码 `%XX` 再做 part-name normalization，
+  registered decoded target 可作为保守 copy-original 依赖；malformed percent
+  escape 或解码后非法 target 只能写成 invalid-target 审计路径，不能写成
+  relationship repair、target validation 或完整 URI validator。
+- Patch / PackageEditor 相关任务若验证了写 exact/path-equivalent source package
+  路径、empty output path、missing or non-directory output parent path 或 existing directory output path 被拒绝，只能写成 reader-backed copy
+  安全护栏、exact/path-equivalent source-overwrite rejection 或 empty-output /
+  missing-parent / non-directory-parent / existing-directory output rejection；
+  不能写成 atomic in-place
+  editing、atomic save 或 public in-place editor。
+- Patch planner / PackageEditor 相关任务若只把 workbook calcPr / definedNames
+  review 写入 dependency reason 或 rewrite reason，只能写成审计上下文；不能写成
+  defined-name 引用更新、sheet rename/delete/move 支持或完整 workbook metadata editing。
+- Patch planner / DependencyAnalyzer 相关任务若验证 copy-original dependency reason
+  里的 relationship id、relationship type 和 normalized target part path，只能写成 Patch audit
+  可追溯性增强；不能写成 relationship repair、target validation 或 object editing。
+- Patch planner / DependencyAnalyzer 相关任务若验证 `RelationshipTargetAudit`、
+  relationship-derived `PartDependency`，或 relationship-derived copy-original
+  `EditPlanEntry` 的 owner/id/type/target 结构化字段，只能写成 internal Patch audit metadata；
+  不能写成 public relationship editor、relationship repair 或完整 object editing。
 - 性能敏感 API 有 benchmark 或明确的后续 benchmark 任务。

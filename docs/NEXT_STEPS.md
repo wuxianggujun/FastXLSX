@@ -2,9 +2,12 @@
 
 ## Purpose
 
-This document summarizes what should be pushed next after the current Phase 1
-through Phase 5 foundation work. It is intentionally scoped to project facts
-that exist in code, CMake, tests, docs, or local verification.
+This document summarizes what should be pushed next after the current
+new-workbook foundations. The current product direction is an editable
+high-performance XLSX/OpenXML engine: Streaming for large new workbooks and
+large rewrites, Patch for existing-file editing and preservation, and In-memory
+for small-file random editing. It is intentionally scoped to project facts that
+exist in code, CMake, tests, docs, or local verification.
 
 ## Current Verified Baseline
 
@@ -20,6 +23,9 @@ that exist in code, CMake, tests, docs, or local verification.
   - `fastxlsx.unit`
   - `fastxlsx.streaming`
   - `fastxlsx.opc`
+  - `fastxlsx.package_reader`
+  - `fastxlsx.package_editor`
+  - `fastxlsx.image`
 - Current public API:
   - `Workbook`
   - `Worksheet`
@@ -79,7 +85,7 @@ that exist in code, CMake, tests, docs, or local verification.
     styles are visible through `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
     `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
     `xl/styles.xml`, workbook styles relationship, and focused structure tests.
-    Treat this as the P9 foundation for custom number formats and narrow
+    Treat this as the styles foundation for custom number formats and narrow
     `wrapText` plus limited horizontal/vertical alignment,
     bold/italic/direct ARGB font metadata, and solid foreground fill, not as full font control,
     full fill/pattern control, border/full alignment, date cell type, dxf-backed conditional
@@ -101,6 +107,599 @@ that exist in code, CMake, tests, docs, or local verification.
     output. Default builds delegate to the stored/no-compression
     `src/zip_store_writer.*` bootstrap backend; opt-in minizip builds use
     `minizip-ng[core,zlib]` and DEFLATE.
+  - Internal `src/package_reader.*` now has the first `PackageReader` ZIP
+    entry reader slice. It indexes and reads stored/no-compression package
+    entries by name, including unknown entries. In
+    `FASTXLSX_ENABLE_MINIZIP_NG=ON` builds it can also read DEFLATE entries
+    through minizip-ng; default builds still reject compressed input. It
+    validates decompressed payload CRC, and rejects malformed, duplicate,
+    invalid ZIP entry names (absolute paths, trailing slash, backslash, query
+    or fragment components, empty segment, dot segment, or parent segment), local header
+    CRC/method/name/size mismatch, corrupt metadata/payload, encrypted, data
+    descriptor, multi-disk, Zip64, and source-owned `.rels` entries whose owner part is
+    absent, including root-level `_rels/foo.xml.rels` owner relationships. It also ingests
+    `[Content_Types].xml` and `.rels` small OPC metadata into internal
+    `PartIndex` / `RelationshipGraph` views, rejecting conflicting content type
+    defaults/overrides, duplicate relationship ids within one `.rels` owner,
+    namespaced metadata attributes except namespace declarations,
+    duplicate unqualified metadata attributes,
+    non-whitespace metadata text,
+    start/end tag QName mismatches,
+    nested decoy metadata roots where the first real XML element is not
+    `Types` / `Relationships`, and metadata declarations hidden under
+    unsupported non-root direct-child elements,
+    as reader validation rather than content-type or relationship repair. Current reader-only coverage also
+    verifies unknown extension owner `.rels` metadata ingestion and
+    `RelationshipGraph` attachment without relying on an editor roundtrip. It does not copy unchanged parts
+    or write edited packages.
+  - Internal `src/package_editor.*` now has the first existing-package
+    copy/replace slice. It opens a package through the current `PackageReader`
+    boundary, records a
+    replacement for an existing part in an `EditPlan`, writes a new package,
+    and copies untouched entry bytes including unknown entries. `save_as()`
+    rejects exact or path-equivalent writes over the source package because the
+    reader-backed copy path is not atomic in-place editing, and it now also
+    rejects empty, missing-parent, non-directory-parent, or existing directory output paths before materializing output entries.
+    Those guard rejections have no-state-pollution coverage showing queued part
+    replacements, structured audit snapshots, calc policy, and removal audits
+    remain active in `EditPlan`, manifest, and planned output. The same guard now
+    covers queued worksheet replacement with `fullCalcOnLoad` / calcChain
+    removal intent: exact/path-equivalent rejection keeps the worksheet rewrite,
+    workbook metadata rewrite, calcChain omission, package-entry audit, and
+    planned output snapshot active, and a later safe `save_as()` still writes
+    the queued rewrite while preserving untouched or unknown bytes. It also has a
+    narrow core/app document-properties generated-small-XML path that can add
+    missing `docProps/core.xml` / `docProps/app.xml` entries, including when both
+    core/app parts are absent, update package relationships and
+    `[Content_Types].xml`, and preserve untouched entries.
+    It also has a narrow worksheet replacement path that can replace an existing
+    `/xl/worksheets/sheetN.xml`, omit stale `xl/calcChain.xml`, remove the
+    calcChain content type override, remove the workbook calcChain
+    relationship, and set workbook `fullCalcOnLoad="1"` by default. It also
+    cleans stale calcChain metadata when the `xl/calcChain.xml` payload is
+    absent but a content type override or workbook relationship remains, without
+    inventing a removed-part audit or creating the payload. This is not general
+    relationship/content-type repair. The full-worksheet replacement payload
+    now has a pre-state-change root guard: the replacement XML must be one
+    `<worksheet>` root element, with local-name matching for prefixed forms, or
+    the helper fails without changing the EditPlan, manifest, package-entry
+    audit, calc policy, or output bytes. This is not XML schema validation,
+    namespace repair, or XML repair. Successful full-worksheet replacement now
+    also audit-scans the replacement payload for shared string indexes, style
+    id references, formula cells, range/reference worksheet metadata such as
+    sheetPr, sheetCalcPr, dimension, sheetViews, customSheetViews,
+    sheetFormatPr, cols, sheetProtection, protectedRanges, sortState,
+    autoFilter, mergeCells, scenarios, dataConsolidate, customProperties,
+    cellWatches, smartTags, webPublishItems, dataValidations, conditionalFormatting,
+    ignoredErrors, printOptions, pageMargins, pageSetup, headerFooter,
+    rowBreaks, colBreaks, phoneticPr, and extLst, and relationship-bearing
+    worksheet metadata such as hyperlinks, drawing, legacyDrawing, picture,
+    legacyDrawingHF, pageSetup `r:id` printerSettings references,
+    oleObjects, controls, and tableParts. Those notes and
+    structured `WorksheetPayloadDependencyAudit`
+    records are copied into `EditPlan` and planned output so callers can review
+    `xl/sharedStrings.xml`, `xl/styles.xml`, workbook calc
+    metadata, calcChain policy, range/reference metadata, worksheet `.rels`,
+    and linked parts; they do not migrate sharedStrings indexes, merge styles,
+    evaluate formulas, rebuild calcChain, recalculate dimensions, repair sheet
+    views/ranges, or repair relationships. The relationship-id audit also
+    compares namespace-qualified `*:id` references from known worksheet elements
+    with the preserved worksheet `.rels`, adding notes and structured
+    `WorksheetRelationshipReferenceAudit` records for missing worksheet `.rels`,
+    missing ids, stale unreferenced ids, and element/type mismatches while
+    leaving the preserved `.rels` bytes untouched. The structured audit is
+    propagated through internal `EditPlan` and `PackageEditorOutputPlan`; it is
+    not namespace validation, relationship pruning, relationship repair, or
+    linked-part regeneration. It now treats `*:id` as a worksheet relationship
+    reference only when the prefix is bound to the officeDocument relationships
+    namespace; alternate prefixes are accepted, while unqualified `id` and
+    wrong-namespace `x:id` are ignored. This is still a narrow Patch audit
+    scanner, not namespace validation, XML repair, relationship repair/pruning,
+    or public API. The current relationship-id audit also treats
+    `<pageSetup r:id="...">` as a printerSettings relationship reference,
+    records missing id and type-mismatch notes / structured audits, and does not
+    synthesize worksheet relationships or printerSettings parts. A regression
+    now covers a source package with no
+    worksheet `.rels`: a replacement `<drawing r:id="...">` records
+    `MissingRelationships`, does not synthesize worksheet relationships on
+    output, and still preserves unknown bytes. The source-catalog by-name Patch
+    regressions now also cover absolute and dot-segment package
+    `officeDocument` targets that resolve to the fixed `/xl/workbook.xml`
+    entrypoint plus workbook-owned absolute and dot-segment worksheet targets
+    resolving to existing worksheet parts; full worksheet by-name replacement
+    and by-name `sheetData` both preserve the worksheet target text and unknown
+    extension payload, while calcChain cleanup may still
+    rewrite workbook `.rels`. This is still target resolution for the internal
+    Patch helper, not arbitrary workbook location support, relationship repair,
+    pruning, or a public API.
+    The `ReferencePolicyAction::Fail` regression now
+    also feeds an audit-heavy full-worksheet replacement payload containing
+    shared string indexes, style id references, formula cells, range/reference
+    metadata including sheetPr/dimension/sheetViews/sheetFormatPr/cols/
+    scenarios/dataConsolidate/customProperties/cellWatches/smartTags/
+    webPublishItems/printOptions/pageMargins/pageSetup, hyperlinks, drawing,
+    and tableParts, and verifies those
+    audit-only payload notes / `WorksheetPayloadDependencyAudit` records do not
+    pollute `EditPlan`, relationship target audit state, manifest write modes,
+    calc policy, or copied output bytes.
+    Under `CalcChainAction::Preserve`,
+    worksheet replacement keeps a prior queued ordinary calcChain replacement as
+    the final `xl/calcChain.xml` payload while still rewriting workbook
+    `fullCalcOnLoad` metadata and copy-original auditing calcChain owner
+    relationships. This is not calcChain rebuild, formula evaluation, or
+    relationship repair. It also has an internal workbook-only
+    `PackageEditor::request_full_calculation()` helper that rewrites only the
+    small `/xl/workbook.xml` calc metadata to request `fullCalcOnLoad="1"` and
+    can remove or preserve calcChain payload/metadata via
+    `CalcChainAction::Remove` or `CalcChainAction::Preserve`. The remove branch
+    also cleans metadata-only stale calcChain state when the payload is absent
+    but the content type override or workbook relationship remains, without
+    creating a payload or removed-part audit. Rebuild is still
+    unimplemented and failure leaves edit-plan, manifest, package-entry audit,
+    and output state unchanged. This is not formula evaluation, worksheet
+    rewriting, public editing API, or general relationship/content-type repair.
+    Deflated-source coverage checks unrelated unknown owner `.rels` through
+    aggregate `planned_output()` copy-original visibility and output roundtrip
+    preservation, not as an edit-plan side-effect audit of the workbook calc
+    helper.
+    The helper now updates only a `calcPr` that is a direct child of the
+    workbook root, preserves nested `extLst` / custom-extension decoys, and
+    inserts a root-prefixed direct-child `calcPr` before the real workbook
+    closing tag when none exists; this is not XML schema validation,
+    namespace repair, or a workbook metadata DOM.
+    Narrow sequence regressions now also cover prior ordinary workbook and
+    calcChain replacements followed by `request_full_calculation()`: the helper
+    consumes queued workbook XML, preserves its non-calc workbook metadata,
+    normalizes `fullCalcOnLoad` to `1`, and removes calcChain
+    payload/content-type/workbook relationship state without reviving prior
+    calcChain replacement bytes or reverting to source workbook bytes.
+    Under `CalcChainAction::Preserve`, a prior queued calcChain replacement
+    remains the final `xl/calcChain.xml` payload while workbook
+    `fullCalcOnLoad` is updated and calcChain owner relationships are
+    copy-original audited; this is not calcChain rebuild or formula evaluation.
+    A combined
+    regression also covers generating core/app docProps and replacing a worksheet
+    in one edit, including relationship/content-type state merging, calcChain
+    removal, stale calcChain owner `.rels` omission, workbook metadata rewrite,
+    unknown-entry preservation, and package-entry edit-plan audit for
+    `[Content_Types].xml`, package `_rels/.rels`, workbook `.rels`, and removed
+    calcChain owner `.rels`, plus copy-original audit for present preserved source-owned
+    `.rels` entries such as ordinary owner-part replacement for root-level
+    `_rels/foo.xml.rels`, worksheet/drawing relationships, calcChain owner
+    relationships under `CalcChainAction::Preserve`, and workbook `.rels` when
+    workbook metadata is rewritten while relationships stay byte-preserved. It does
+    not add worksheets or semantically sync sharedStrings/styles/tables/drawings/
+    defined names, support Zip64/data descriptors, or expose a public editing API.
+    When the source is DEFLATE input, this path preserves unmodified part
+    payload semantics. Minizip-enabled PackageEditor regressions now cover
+    ordinary workbook replacement, unknown-extension target replacement, and the
+    workbook calc metadata helper from a DEFLATE source, plus worksheet
+    replacement with calcChain cleanup while
+    linked payloads and unknown extension owner `.rels` re-ingest through output
+    `PackageReader` / `RelationshipGraph`. It does not preserve source ZIP compression method,
+    timestamps, extra fields, or compressed bytes.
+    Current structure tests also cover byte preservation for worksheet `.rels`,
+    drawing XML, drawing `.rels`, media bytes, chart XML, table XML,
+    untouched `xl/sharedStrings.xml`, untouched `xl/styles.xml`, VBA bytes,
+    and a reachable unknown extension part plus its owner `.rels` under this
+    narrow worksheet replacement path, including when replacement worksheet XML omits source `<drawing>` /
+    `<tableParts>` references. A registered comments-part fixture now verifies
+    that worksheet rewrite preserves `xl/comments/comment1.xml` and the source
+    worksheet `.rels` as copy-original, keeps the comments content type override,
+    and roundtrips through `PackageReader` / `RelationshipGraph`. This is not
+    comments editing, threaded comments, notes UI, relationship repair, orphan
+    cleanup, or public API. A threaded comments / persons fixture now verifies
+    that worksheet rewrite preserves `xl/threadedComments/threadedComment1.xml`,
+    `xl/persons/person.xml`, the source worksheet `.rels`, and workbook `.rels`
+    as copy-original, and roundtrips those relationships through
+    `PackageReader` / `RelationshipGraph`. This is not comments / threaded
+    comments editing, notes UI, relationship repair, orphan cleanup, or public
+    API. The same threaded comments / persons fixture now covers ordinary
+    `replace_part("/xl/threadedComments/threadedComment1.xml", ...)` and
+    explicit removal: replacement rewrites only threaded comments XML while
+    preserving legacy comments, persons, worksheet-owned legacy/threaded inbound
+    relationships, the workbook-owned persons relationship, content type
+    overrides, and unknown entries; removal omits the threaded comments part and
+    its content type override while preserving the inbound worksheet
+    relationship pointing at the missing part, the persons part / workbook
+    relationship, legacy comments, and unknown entries. This is not threaded
+    comments model mutation, persons/schema repair, relationship pruning or
+    repair, orphan cleanup, notes UI, or public API. The same fixture now covers
+    ordinary `replace_part("/xl/persons/person.xml", ...)` and explicit
+    removal: replacement rewrites only persons XML while preserving the
+    workbook-owned inbound persons relationship, threaded comments, legacy
+    comments, worksheet relationships, content type overrides, and unknown
+    entries; removal omits the persons part and removes the persons content type
+    override while preserving the workbook relationship pointing at the missing
+    part, threaded comments, legacy comments, worksheet, and unknown entries.
+    This is not persons/schema repair, threaded comments model mutation,
+    relationship pruning or repair, orphan cleanup, notes UI, or public API. A
+    same-path ordering regression now covers both the threaded comments part
+    and the persons part: later ordinary replacement restores the active part,
+    clears stale removed-part audit, returns `[Content_Types].xml` to
+    source/copy-original audit, and does not invent the corresponding owner
+    `.rels`. The internal threaded-comments ordinary replacement
+    `planned_output()` snapshot now exposes the active threaded comments part
+    `LocalDomRewrite`, preserved content types / package relationships /
+    workbook / workbook `.rels` / worksheet / worksheet `.rels` / legacy
+    comments / persons part / unknown entry, and no invented threaded comments
+    owner `.rels`. This is Patch audit only, not threaded comments model
+    mutation, persons/schema repair, notes UI, relationship repair, orphan
+    cleanup, or public API; later threaded-comments remove-then-replace
+    `planned_output()` now exposes the active threaded comments part local-DOM
+    rewrite, content types copy-original audit, preserved package/workbook/worksheet
+    `.rels`, legacy comments, persons part, unknown entry, clears output-plan
+    removed_parts / removed_package_entries, and no invented threaded comments
+    owner `.rels`. This is Patch audit only, not threaded
+    comments undo, semantic merge, relationship repair, orphan cleanup, or public API; later
+    threaded-comments removal records removed-part and worksheet
+    inbound relationship audit, omits the threaded comments part, removes its
+    content type override, and preserves the worksheet inbound relationship,
+    persons part / workbook relationship, legacy comments, and unknown entries;
+    later persons removal records removed-part and workbook inbound relationship
+    audit, omits the persons part, removes the persons content type override,
+    and preserves the workbook inbound relationship, threaded comments, legacy
+    comments, worksheet, and unknown entries. This is not transactional undo,
+    threaded comments/persons semantic merging, persons/schema repair,
+    relationship pruning or repair, content type repair, orphan cleanup, notes
+    UI, or public API. The internal persons remove-then-replace `planned_output()`
+    now exposes the active persons part local-DOM rewrite, content types
+    copy-original audit, preserved package/workbook/worksheet `.rels`, threaded
+    comments, legacy comments, unknown entry, clears output-plan removed_parts /
+    removed_package_entries, and no invented persons owner `.rels`. This is Patch audit only, not persons/schema undo, semantic merge,
+    relationship repair, orphan cleanup, or public API. The internal
+    `planned_output()` snapshot now also exposes the single omitted threaded
+    comments part plus matching removed_parts target/reason/inbound audit,
+    worksheet-owned inbound threadedComment relationship metadata, content types
+    rewrite, preserved worksheet/workbook `.rels` plus persons part copy-original
+    audit, empty removed_package_entries, and no invented threaded comments owner
+    `.rels`. The internal output-plan snapshot also exposes the
+    single omitted persons part plus matching removed_parts target/reason/inbound
+    audit, workbook-owned inbound persons relationship metadata, content types
+    rewrite, preserved workbook/worksheet `.rels` plus threaded comments part
+    copy-original audit, empty removed_package_entries, and no invented persons owner `.rels`. A
+    pivot table / pivot cache fixture now verifies that worksheet rewrite
+    preserves `xl/pivotTables/pivotTable1.xml`,
+    `xl/pivotCache/pivotCacheDefinition1.xml`,
+    `xl/pivotCache/pivotCacheRecords1.xml`, the source worksheet `.rels`,
+    pivot table owner `.rels`, pivot cache definition owner `.rels`, and workbook
+    `.rels` as copy-original, and roundtrips those relationships through
+    `PackageReader` / `RelationshipGraph`. This is not pivot table editing,
+    pivot cache rebuild, relationship repair, orphan cleanup, or public API.
+    The same worksheet rewrite path now also has an internal `planned_output()`
+    snapshot for fullCalcOnLoad / `CalcChainAction::Remove`, worksheet
+    `StreamRewrite`, workbook `LocalDomRewrite`, package/workbook/worksheet
+    `.rels` copy-original decisions, pivot table / pivot cache definition /
+    pivot cache records relationship context, content types and unknown entry
+    copy-original preservation, and no invented records owner `.rels`. This is
+    Patch audit only, not pivot cache rebuild, records refresh, relationship
+    repair/pruning, orphan cleanup, or public API.
+    The same pivot table / pivot cache fixture now covers ordinary
+    `replace_part("/xl/pivotTables/pivotTable1.xml", ...)` and explicit removal:
+    replacement rewrites only pivot table XML while preserving the worksheet-owned
+    inbound pivotTable relationship, the pivot-table-owned cache-definition
+    relationship, pivot cache definition / records parts, the cache-definition
+    owner `.rels`, workbook `<pivotCaches>`, the workbook-owned pivot cache
+    relationship, content type overrides, and unknown entries; removal omits the
+    pivot table part and its owner `.rels`, removes the pivot table content type
+    override, and preserves the inbound worksheet relationship pointing at the
+    missing part, workbook pivot cache metadata, the pivot cache definition /
+    records chain, and unknown entries. This is not pivot table semantic editing,
+    pivot cache rebuild, cache-record refresh, relationship pruning or repair,
+    orphan cleanup, owner `.rels` repair, or public API.
+    The same path now covers pivot table same-path ordering too: a later
+    ordinary replacement restores the active pivot table part, clears stale
+    removed-part and removed owner `.rels` audit, restores owner `.rels`
+    copy-original audit, and returns `[Content_Types].xml` to source/copy-original
+    audit; a later explicit removal clears the active replacement, records
+    removed-part and removed owner `.rels` audit, omits the pivot table part and
+    owner `.rels`, removes the pivot table content type override, and preserves
+    the inbound worksheet relationship pointing at the missing part, workbook
+    pivot cache metadata, the pivot cache definition / records chain, and unknown
+    entries. This is not transactional undo, pivot table semantic merging,
+    pivot cache rebuild, relationship pruning or repair, content type repair,
+    orphan cleanup, or public API.
+    Internal `planned_output()` coverage for the remove-then-replace restore
+    state now exposes the active pivot table `LocalDomRewrite` entry, the pivot
+    table owner `.rels` copy-original `SourceRelationships` audit, the
+    source/copy-original content types audit, and preserved package/worksheet/
+    workbook relationships, the pivot cache definition / records chain, and
+    unknown entries. Coverage for the replace-then-remove final-removal state
+    still exposes the omitted pivot table part, omitted owner `.rels`, worksheet
+    inbound pivotTable relationship audit, content types rewrite, preserved
+    worksheet/workbook relationships, the pivot cache definition / records
+    chain, and unknown entries. This is Patch audit only, not pivot table
+    semantic editing, pivot cache rebuild, relationship pruning or repair,
+    orphan cleanup, or public API.
+    The same fixture now covers ordinary
+    `replace_part("/xl/pivotCache/pivotCacheDefinition1.xml", ...)` and explicit
+    removal: replacement rewrites only pivot cache definition XML while preserving
+    workbook/pivot-table inbound relationships, pivot cache records, the
+    cache-definition owner `.rels`, content type overrides, and unknown entries;
+    removal omits the pivot cache definition part and its owner `.rels`, removes
+    the cache definition content type override, and preserves workbook/pivot-table
+    inbound relationships, the pivot table, pivot cache records, the worksheet,
+    and unknown entries. This is not pivot cache rebuild, cache-record refresh,
+    relationship pruning or repair, orphan cleanup, owner `.rels` repair, or
+    public API.
+    The same path now covers pivot cache definition same-path ordering too:
+    a later ordinary replacement restores the active cache definition, clears
+    stale removed-part and removed owner `.rels` audit, restores owner `.rels`
+    copy-original audit, and returns `[Content_Types].xml` to source/copy-original
+    audit; a later explicit removal clears the active replacement, records
+    removed-part and removed owner `.rels` audit, omits the cache definition part
+    and owner `.rels`, and preserves workbook / pivot table inbound relationships
+    plus the pivot table, cache records, worksheet, and unknown entries. This is
+    not transactional undo, pivot cache semantic merging, relationship pruning
+    or repair, content type repair, orphan cleanup, or public API. Internal
+    `planned_output()` coverage for the remove-then-replace restore state now
+    exposes the active pivot cache definition `LocalDomRewrite` entry, the owner
+    `.rels` copy-original `SourceRelationships` audit, the source/copy-original
+    content types audit, and preserved package/worksheet/workbook relationships,
+    pivot table/cache records, and unknown entries. Coverage for the
+    replace-then-remove final-removal state still exposes the omitted cache
+    definition part, omitted owner `.rels`, workbook / pivot table inbound
+    pivotCacheDefinition relationship audit, content types rewrite, and preserved
+    workbook/worksheet/pivot table/cache records/unknown entries. This is Patch
+    audit only, not pivot cache rebuild, cache-record refresh, relationship
+    pruning or repair, content type repair, orphan cleanup, or public API.
+    The same fixture now covers ordinary
+    `replace_part("/xl/pivotCache/pivotCacheRecords1.xml", ...)` and explicit
+    removal: replacement rewrites only pivot cache records XML while preserving
+    the cache-definition-owned inbound relationship, pivot cache definition,
+    pivot table, workbook / worksheet relationships, content type overrides,
+    and unknown entries; removal omits the pivot cache records part, removes the
+    records content type override, and preserves the cache-definition-owned
+    inbound relationship pointing at the missing records part, pivot cache
+    definition, pivot table, workbook, worksheet, and unknown entries. This is
+    not pivot cache records refresh, pivot cache rebuild, relationship pruning
+    or repair, orphan cleanup, or public API.
+    The same path now covers pivot cache records same-path ordering too:
+    a later ordinary replacement restores the active pivot cache records part,
+    clears stale removed-part audit, returns `[Content_Types].xml` to
+    source/copy-original audit, and does not invent a records owner `.rels`;
+    a later explicit removal clears the active replacement, records removed-part
+    and cache-definition inbound relationship audit, omits the records part,
+    removes the records content type override, and preserves the
+    cache-definition owner `.rels` inbound relationship pointing at the missing
+    records part, pivot cache definition, pivot table, workbook, worksheet, and
+    unknown entries. This is not transactional undo, pivot cache records
+    semantic merging, relationship pruning or repair, content type repair,
+    orphan cleanup, or public API. Internal `planned_output()` coverage for the
+    remove-then-replace restore state now exposes the active pivot cache records
+    `StreamRewrite` entry, source/copy-original content types audit, preserved
+    package/worksheet/workbook relationships, pivot table/cache definition chain,
+    unknown entries, and no invented records owner `.rels`. Coverage for the
+    replace-then-remove final-removal state still exposes the omitted records
+    part, cache-definition inbound pivotCacheRecords relationship audit, content
+    types rewrite, preserved cache definition owner `.rels`, and no invented
+    records owner `.rels`. This is Patch audit only, not pivot cache records
+    refresh, pivot cache rebuild, relationship pruning or repair, content type
+    repair, orphan cleanup, or public API.
+    A workbook external links fixture now verifies that worksheet rewrite,
+    while rewriting `xl/workbook.xml` calc metadata, preserves workbook
+    `<externalReferences>`, the workbook `.rels` externalLink relationship,
+    `xl/externalLinks/externalLink1.xml`, the externalLink owner `.rels`, the
+    external `externalLinkPath` target, the content type override, and an
+    unknown entry, and roundtrips those relationships through `PackageReader` /
+    `RelationshipGraph`. This is not external links editing, external data
+    refresh, path validation, relationship repair, orphan cleanup, or public API.
+    The worksheet rewrite `planned_output()` snapshot now also exposes the
+    fullCalcOnLoad request, `CalcChainAction::Remove`, the worksheet
+    `StreamRewrite`, the workbook `LocalDomRewrite`, workbook `.rels`
+    copy-original preservation, the externalLink part plus owner `.rels`
+    copy-original preservation, content types copy-original preservation, and
+    unknown entry preservation, without adding relationship target audits. This
+    remains Patch audit only, not external links editing or relationship repair.
+    The same workbook external links fixture now covers ordinary
+    `replace_part("/xl/externalLinks/externalLink1.xml", ...)` and explicit
+    removal: replacement rewrites only externalLink XML while preserving the
+    workbook-owned inbound externalLink relationship, the externalLink-owned
+    external `externalLinkPath` target, the content type override, the
+    worksheet, and unknown entries; removal omits the externalLink part and its
+    owner `.rels`, removes the externalLink content type override, and preserves
+    workbook `<externalReferences>`, the inbound workbook relationship pointing
+    at the missing part, the worksheet, and unknown entries. This is not
+    external links semantic editing, external data refresh, path validation,
+    relationship pruning or repair, orphan cleanup, owner `.rels` repair, or
+    public API.
+    The same externalLink path now covers remove-then-ordinary-replace and
+    ordinary-replace-then-remove ordering. The restore path clears stale
+    removed-part / removed owner `.rels` audit, restores the active externalLink
+    part, restores the owner `.rels` copy-original audit, and returns content
+    types to source/copy-original audit. The final-removal path clears the active
+    replacement, records removed-part / removed owner `.rels` audit, omits the
+    externalLink part and owner `.rels`, and preserves the workbook inbound
+    relationship, worksheet, and unknown entries. This is not transactional undo,
+    external links semantic merge, relationship pruning or repair, content type
+    repair, orphan cleanup, or public API.
+    Internal `planned_output()` coverage for the remove-then-replace restore
+    state now exposes the active externalLink `LocalDomRewrite` entry, the
+    externalLink owner `.rels` copy-original `SourceRelationships` audit, the
+    source/copy-original content types audit, and preserved package/workbook
+    relationships, workbook, worksheet, and unknown entries. Coverage for the
+    replace-then-remove final-removal state still exposes the omitted
+    externalLink part, omitted owner `.rels`, workbook inbound externalLink
+    relationship audit, content types rewrite, and preserved package/workbook
+    relationships, workbook, worksheet, and unknown entries. This is Patch
+    audit only, not external links semantic editing, external data refresh,
+    relationship pruning or repair, orphan cleanup, or public API.
+    A custom XML fixture now verifies that worksheet rewrite preserves the
+    package `_rels/.rels` customXml relationship, `customXml/item1.xml`, the
+    custom XML item owner `.rels`, `customXml/itemProps1.xml`, the custom XML
+    properties content type override, and an unknown entry, and roundtrips those
+    relationships through `PackageReader` / `RelationshipGraph`. This is not
+    custom XML editing, schema/data binding, relationship repair, orphan cleanup,
+    or public API.
+    The worksheet rewrite `planned_output()` snapshot now also exposes the
+    fullCalcOnLoad request, `CalcChainAction::Remove`, the worksheet
+    `StreamRewrite`, the workbook `LocalDomRewrite`, package relationship
+    copy-original preservation, custom XML item / item-owner `.rels` /
+    properties part copy-original preservation, content types copy-original
+    preservation, and unknown entry preservation, without adding relationship
+    target audits or inventing properties owner `.rels`. This is Patch audit
+    only, not custom XML editing, schema/data binding, or relationship repair.
+    The same custom XML fixture now covers ordinary
+    `replace_part("/customXml/item1.xml", ...)`: only the custom XML item is
+    rewritten while the package `_rels/.rels` customXml inbound relationship,
+    the custom XML item owner `.rels` / customXmlProps relationship,
+    `customXml/itemProps1.xml`, the custom XML properties content type override,
+    the default XML content type, and the unknown entry stay on the copy-original
+    baseline and roundtrip through `PackageReader` / `RelationshipGraph`. This is
+    not custom XML semantic editing, schema/data binding, relationship repair,
+    content type repair, orphan cleanup, or public API.
+    The same custom XML fixture now covers explicit `customXml/item1.xml`
+    removal: output omits the custom XML item and its source-owned owner `.rels`,
+    preserves the package `_rels/.rels` customXml inbound relationship, preserves
+    `customXml/itemProps1.xml`, the custom XML properties content type override,
+    the default XML content type, and the unknown entry, and does not rewrite
+    `[Content_Types].xml`. This is not custom XML deletion semantics,
+    schema/data binding, relationship pruning or repair, content type repair,
+    orphan cleanup, or public API.
+    The same custom XML path now has ordering regressions for remove-then-
+    ordinary-replace and ordinary-replace-then-remove. The restore path clears
+    stale removed-part and removed owner `.rels` audit, restores the active
+    custom XML item and owner `.rels` copy-original audit, and still avoids
+    rewriting `[Content_Types].xml`. The final-removal path clears the active
+    replacement, records removed-part and removed owner `.rels` audit, omits the
+    custom XML item and owner `.rels`, and preserves the package inbound
+    relationship, properties part, default XML content type, and unknown entry.
+    Internal `planned_output()` coverage for this restore state now exposes the
+    active custom XML item `LocalDomRewrite` entry, owner `.rels` copy-original
+    `SourceRelationships` audit, and preserved package relationships, content
+    types, workbook, worksheet, properties part, and unknown entry. Internal
+    `planned_output()` coverage for this final-removal state still exposes the
+    omitted custom XML item, omitted source-owned owner `.rels`, package inbound
+    customXml relationship audit, and preserved package relationships, content
+    types, workbook, worksheet, properties part, and unknown entry.
+    This is not transactional undo, custom XML semantic merge, relationship
+    pruning or repair, content type repair, orphan cleanup, or public API.
+    The same custom XML fixture now covers ordinary replacement and explicit
+    removal of `customXml/itemProps1.xml`. Replacement only rewrites the
+    properties part and preserves the custom XML item, item-owned `.rels` /
+    customXmlProps inbound relationship, package customXml relationship,
+    properties content type override, and unknown entry. Removal omits the
+    properties part and removes the properties content type override, but keeps
+    the custom XML item, the item-owned `.rels` inbound customXmlProps
+    relationship pointing at the missing properties part, the package customXml
+    relationship, default XML content type, and unknown entry. This is not
+    custom XML properties editing, schema/data binding, relationship pruning or
+    repair, content type repair, orphan cleanup, or public API.
+    Internal `planned_output()` coverage for the ordinary replacement state now
+    exposes the active properties part `LocalDomRewrite`, preserved content
+    types / package relationships, preserved custom XML item / item owner
+    `.rels` / workbook / worksheet / unknown entry, and no invented properties
+    owner `.rels`. This is Patch audit only, not custom XML properties semantic
+    editing, schema/data binding, relationship pruning or repair, content type
+    repair, orphan cleanup, transactional undo, or public API.
+    The same properties-part path now has ordering regressions for
+    remove-then-ordinary-replace and ordinary-replace-then-remove. The restore
+    path clears stale removed-part audit, restores the active properties part,
+    restores the properties content type override/content-types copy-original
+    audit, and keeps the item-owned `.rels`. The final-removal path clears the
+    active replacement, records removed-part audit, omits the properties part,
+    removes the properties content type override, and keeps the inbound
+    customXmlProps relationship in the item-owned `.rels`. This is not
+    transactional undo, custom XML properties semantic merge, relationship
+    pruning or repair, content type repair, orphan cleanup, or public API.
+    Internal `planned_output()` coverage for this properties final-removal state
+    now exposes the omitted properties part, item-owned inbound customXmlProps
+    relationship audit, content types rewrite, preserved custom XML item / item
+    owner `.rels` / package relationships / workbook / worksheet / unknown entry,
+    and no invented properties owner `.rels`. This is Patch audit only, not
+    custom XML properties deletion semantics, relationship pruning or repair,
+    content type repair, orphan cleanup, or public API.
+    Internal `planned_output()` coverage for the restore state now exposes the
+    active properties part `LocalDomRewrite`, restored content types
+    copy-original audit, preserved custom XML item / item owner `.rels` /
+    package relationships / workbook / worksheet / unknown entry, and no
+    invented properties owner `.rels`. This is Patch audit only, not custom XML
+    properties semantic merge, relationship pruning or repair, content type
+    repair, orphan cleanup, transactional undo, or public API.
+    The same custom XML fixture now covers cross-path ordering where
+    `customXml/item1.xml` is removed before `customXml/itemProps1.xml` is
+    ordinary-replaced. The later properties replacement only rewrites the
+    properties payload, keeps the custom XML item and item-owned `.rels` removal
+    audits, continues to omit the item and owner `.rels` in output, and preserves
+    the package customXml inbound relationship, properties content type override,
+    default XML content type, and unknown entry. This is not custom XML
+    dependency repair, relationship pruning or repair, content type repair,
+    orphan cleanup, transactional undo, or public API.
+    Internal `planned_output()` coverage for this cross-path state now exposes
+    the omitted custom XML item, omitted source-owned owner `.rels`, package
+    inbound customXml relationship audit, active properties part local-DOM rewrite,
+    preserved package relationships / content types / workbook / worksheet /
+    unknown entry, and no invented properties owner `.rels`. This is Patch audit
+    only, not custom XML dependency repair, relationship pruning or repair,
+    content type repair, orphan cleanup, transactional undo, or public API.
+    The reverse cross-path ordering is now covered too: `customXml/itemProps1.xml`
+    is removed before `customXml/item1.xml` is ordinary-replaced. The later item
+    replacement only rewrites the item payload, keeps the removed properties-part
+    audit/content-types rewrite, continues to omit the properties part and its
+    content type override, and preserves the customXmlProps relationship in the
+    item-owned `.rels`, the package customXml inbound relationship, default XML
+    content type, and unknown entry. This is not custom XML dependency repair,
+    relationship pruning or repair, content type repair, orphan cleanup,
+    transactional undo, or public API.
+    Internal `planned_output()` coverage for this reverse cross-path state now
+    exposes the omitted properties part, item-owned inbound customXmlProps
+    relationship audit, content types rewrite, active custom XML item local-DOM
+    rewrite, preserved item owner `.rels` / package relationships / workbook /
+    worksheet / unknown entry, and no invented properties owner `.rels`. This is
+    Patch audit only, not custom XML dependency repair, relationship pruning or
+    repair, content type repair, orphan cleanup, transactional undo, or public API.
+    The same fixture now covers ordinary
+    `replace_part("/xl/comments/comment1.xml", ...)`: only comments XML is
+    rewritten while the inbound worksheet `.rels` comments relationship,
+    comments content type override, workbook XML / workbook `.rels`, worksheet, and
+    unknown entry stay on the copy-original baseline, without inventing comments
+    owner `.rels`. This is not comments model mutation, threaded comments, notes
+    UI, relationship repair, orphan cleanup, or public API. Internal
+    `planned_output()` coverage for this ordinary replacement state now exposes
+    the active comments part local-DOM rewrite, preserved content types /
+    package relationships / workbook / workbook `.rels` / worksheet / worksheet
+    `.rels` / unknown entry, and no invented comments owner `.rels`. This is
+    Patch audit only, not comments model mutation, notes UI, relationship
+    repair, orphan cleanup, or public API. The same fixture now covers explicit
+    `xl/comments/comment1.xml` removal: output omits the comments part, removes
+    the comments content type override, preserves the inbound worksheet `.rels`
+    comments relationship, and does not invent comments owner `.rels` omission.
+    This is not comments deletion semantics, threaded comments, notes UI,
+    relationship pruning/repair, orphan cleanup, or public API. The same fixture
+    also covers remove-then-ordinary-replace ordering: a later `replace_part()`
+    restores the active comments replacement, clears stale removed-part audit,
+    returns `[Content_Types].xml` to source/copy-original audit, preserves inbound
+    worksheet `.rels`, and still does not invent comments owner `.rels`. This is
+    not transactional undo, comments semantic merge, relationship repair, orphan
+    cleanup, or public API. Internal `planned_output()` coverage for this
+    remove-then-replace state now exposes the active comments part local-DOM
+    rewrite, content types copy-original audit, preserved
+    package/workbook/worksheet `.rels` and unknown entry, clears output-plan
+    removed_parts / removed_package_entries, and no invented comments owner
+    `.rels`. This is Patch audit only, not comments undo,
+    semantic merge, relationship repair, orphan cleanup, or public API. It now
+    also covers replace-then-remove ordering: a
+    later explicit removal clears the active comments replacement, records
+    removed-part audit, omits the comments part, removes the comments content
+    type override, preserves inbound worksheet `.rels`, and still does not
+    invent comments owner `.rels`. This is not comments deletion semantics,
+    transactional undo, relationship pruning/repair, orphan cleanup, or public
+    API. The internal `planned_output()` snapshot now also exposes the single
+    omitted comments part plus matching removed_parts target/reason/inbound
+    audit, worksheet-owned inbound comments relationship metadata, content types
+    rewrite, preserved package/workbook/worksheet `.rels` copy-original audit,
+    empty removed_package_entries, and no invented comments owner `.rels`.
+    They also cover workbook `definedNames`
+    preservation during workbook metadata rewrite and
+    narrow `ReferencePolicy` boundaries for linked-object failure,
+    calcChain preserve, rebuild rejection, malformed workbook metadata preflight failure,
+    missing `xl/workbook.xml` worksheet-rewrite precondition failure,
+    request-recalculation fullCalcOnLoad output, and core/app docProps package
+    relationship target conflicts failing without edit-plan entries/notes, manifest,
+    package-entry audit, or copied-output pollution. A queued core/app docProps
+    metadata edit is also preserved when a later linked worksheet rewrite fails
+    under `ReferencePolicyAction::Fail`.
+    This does not make image/chart/table/VBA passthrough complete.
   - Internal OPC `PartName`, `RelationshipSet`, `ContentTypesManifest`,
     `PackageManifest`, `PartWriteMode`, package-part edit state metadata,
     minimal workbook manifest builder, and content types / relationships
@@ -133,46 +732,40 @@ Status words in this section are intentionally limited to 计划, 进行中, and
 基础. They describe visible project state and next work only; they do not claim
 feature completion.
 
-1. sharedStrings - 进行中.
-   - Current files show the API option, internal table, package wiring, and
-     XML structure tests for `xl/sharedStrings.xml`.
-   - Keep `inlineStr` as the low-memory default.
-   - The current small benchmark snapshot shows repeated/shared smaller and
-     faster than repeated/inline, and unique/shared higher-memory and larger
-     than unique/inline. Treat this as a local `500000`-cell trend only.
-   - Current local QA also has `tools/verify_shared_strings_excel.ps1` for
-     Excel COM read-only validation and `tools/verify_shared_strings_reference.py`
-     for `openpyxl` reference semantics. System `py` currently also verifies an
-     XlsxWriter reference; Python environments without the module should record
-     that branch as skipped.
-   - Before treating sharedStrings as a production feature, expand scale,
-     backend coverage, reference compatibility, and size/memory data.
+1. Phase plan reset - 基础.
+   - The next queue should no longer say "P5 sharedStrings -> P6 benchmark ->
+     P7 hot path" as the default lane.
+   - Current priority is Phase 4 editing architecture and Patch MVP, while
+     writer/backend performance hardening continues as supporting work.
+   - Keep docs, AGENTS, and skills aligned with this positioning and keep
+     roadmap symbols separate from implemented code.
 
-2. vcpkg / CMakePresets / CI - 基础.
-   - Current root files include a conservative `vcpkg.json`,
-     `CMakePresets.json`, and Windows CI workflow.
-   - `minizip-ng` package discovery is no longer just exploratory:
-     `FASTXLSX_ENABLE_MINIZIP_NG=ON` uses
-     `find_package(minizip-ng CONFIG REQUIRED)` and `MINIZIP::minizip-ng`
-     through the `windows-nmake-release-minizip` preset.
-   - The default preset and default CI job now use the vcpkg toolchain because
-     `stb` is a default manifest dependency.
-   - CI now also has a separate opt-in vcpkg matrix for
-     `windows-nmake-release-minizip`; keep
-     remote runner cost and vcpkg availability as 基础 until the runs pass.
-   - CI should run structural tests through the CTest preset/test properties
-     that carry the 60s timeout; Excel visual verification remains a local
-     validation step, not a CI hard dependency.
-
-3. OPC edit plan - 基础.
+2. Editing architecture / Patch MVP - 计划 with internal groundwork 基础.
    - Current internal OPC metadata has part names, relationships, content types,
      package parts, write-mode planning states, internal `PartIndex`,
-     internal `RelationshipGraph`, and a content type registry helper.
-   - Existing-file editing still needs package reader/writer, production ZIP
-     backend, and preservation tests before any complete edit support is
-     claimed.
+     internal `RelationshipGraph`, a content type registry helper, and the first
+     internal `EditPlan` / `DependencyAnalyzer` / `ReferencePolicy` /
+     `PartRewritePlanner` planning slice.
+   - Next work should build on the internal stored-entry / metadata-ingestion
+     `PackageReader` slice and the internal `PackageEditor` copy/replace slice
+     by adding relationship/content type mutation and calc policy in a narrow
+     Patch MVP.
+   - Do not expose complete existing-file editing until preservation tests prove
+     unknown and unmodified parts survive.
 
-4. P9 styles number formats + limited alignment + bold/italic/direct-color fonts + solid fills - 基础.
+3. In-memory small-file editing - 计划.
+   - Add a separate random editing surface for small workbooks after the Patch
+     save contract is clear.
+   - It may use cell maps or local DOM where appropriate, but must document
+     memory growth and must not become the large-data default path.
+
+4. Writer/backend hardening - 进行中 / 基础.
+   - sharedStrings remains 进行中: keep `inlineStr` as the low-memory default,
+     and expand benchmark/reference evidence before widening support wording.
+   - vcpkg / CMakePresets / CI remains 基础: `stb` is default, minizip is opt-in,
+     Excel visual verification remains local, and benchmark jobs stay opt-in.
+
+5. Styles number formats + limited alignment + bold/italic/direct-color fonts + solid fills - 基础.
    - Current files show workbook-local `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
      `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
      `xl/styles.xml`, workbook styles relationship, and focused CTest coverage.
@@ -206,135 +799,115 @@ feature completion.
 Use this order for the next implementation pushes. Each item should be a small
 commit or short series with its own tests and docs update.
 
-1. Build/test documentation hygiene.
-   - Align `TASK_PLAN.md`, `NEXT_STEPS.md`, `TESTING_WORKFLOW.md`,
-     `DEVELOPMENT_ENVIRONMENT.md`, and build-related skills.
-   - Prefer preset paths over stale manual build directories.
-   - Record whether CI uses preset/test timeout rather than a command-line
-     `--timeout` flag.
-   - Verify skills after edits.
+1. Task docs, skills, and branch/worktree context.
+   - Align `TASK_PLAN.md`, `NEXT_STEPS.md`, `ROADMAP.md`, `AGENTS.md`, and
+     FastXLSX skills with the editable-engine positioning.
+   - Reconcile concurrent agent output before overlapping file edits.
+   - Keep `TECHNICAL_COMPARISON.md` as the cross-language XLSX reference
+     matrix. Feature tasks should name the reference libraries they borrow from
+     and the architecture limits they intentionally avoid.
+   - Keep generated artifacts, local build outputs, and private state out of
+     commits.
 
-2. CI runner and workflow maintenance.
-   - Recheck `windows-2025-vs2026` after the 2026-06-08 GitHub image migration
-     window starts.
-   - Keep `actions/checkout` on a Node.js 24-compatible major. Current workflow
-     uses `actions/checkout@v5`.
-   - Keep the default CI job on the vcpkg-backed NMake preset because the
-     default manifest now contains `stb`.
+2. Phase 4 editing architecture contract.
+   - Specify the current internal `PackageReader` stored-entry /
+     metadata-ingestion contract plus `PackageEditor`, `EditPlan`,
+     `DependencyAnalyzer`, `ReferencePolicy`, and `PartRewritePlanner` as the
+     Patch architecture targets.
+   - Define Patch write modes: copy original, generate small XML, stream
+     rewrite, and local DOM rewrite, plus removed-part audit for explicit removals.
+   - Define dependency analysis for sheet edits before public edit APIs land.
 
-3. Production ZIP backend hardening.
-   - Keep the opt-in minizip backend tested while deciding whether it becomes
-     the default.
-   - Add compression-level configuration and Zip64 policy only with focused
-     tests.
-   - Keep existing OpenXML structure tests independent of compression method.
+3. Patch MVP.
+   - Open an existing workbook, build a part index and relationship graph, copy
+     unchanged parts, and rewrite one targeted sheet or small metadata part.
+   - Sync relationships/content types, preserve unknown parts, and document
+     `calcChain.xml` plus `fullCalcOnLoad` behavior.
 
-4. Shared strings hardening.
-   - Keep `inlineStr` as default.
-   - Add memory/size measurements for repeated and unique strings.
-   - Compare package XML and Excel open behavior against inline strings.
+4. Preservation fixtures.
+   - Use template workbooks with drawings/images, charts, macros,
+     sharedStrings/styles, workbook definedNames, and unknown extension parts.
+   - Edit unrelated parts and compare input/output packages before claiming
+     safe existing-file editing.
 
-5. Streaming writer hot-path and benchmark groundwork.
-   - Use the opt-in `fastxlsx_bench_streaming_writer` manual benchmark target.
-   - Measure row-order write path before adding broad convenience APIs.
-   - Keep benchmark work out of default CTest.
+5. In-memory small-file editor.
+   - Add random cell/sheet editing for small workbooks after the Patch save
+     contract is clear.
+   - Document memory growth, size limits, and when callers should choose
+     Streaming or Patch instead.
 
-6. Phase 3 styles and metadata hardening.
-   - Current P9 number-format, limited alignment, bold/italic/direct-color font, and solid fill styles are 基础 for
-     streaming new workbooks: workbook-local style ids, generated
-     `xl/styles.xml`, workbook relationship, and cell `s="N"` references.
-   - Continue with full font control, full fill/pattern control, borders/full alignment only as separate registry
-     slices with structure tests and Excel visual verification.
-   - Decide formula cached-value and calc behavior boundaries separately from
-     styles.
-   - Keep configurable document properties limited to the current core/app
-     docProps API until custom properties or existing-file editing are separate
-     tasks.
+6. Sheet-local dependency handling.
+   - Add conservative policies for tables, hyperlinks, validations, merged
+     cells, auto filters, drawings/images, styles, sharedStrings, defined names,
+     formulas, workbook calc metadata, and `calcChain.xml`.
+   - Unsupported linked edits should preserve, request recalculation, or fail
+     explicitly.
 
-After the P4 opt-in minizip baseline, the default implementation lane is P5
-sharedStrings hardening, then P6 benchmark groundwork, then P7 streaming writer
-hot-path work. Return to P4 only when the task explicitly chooses the ZIP/backend
-lane: compression-level configuration, Zip64/large-entry policy, minizip CI/cache
-and release packaging, or the decision to make minizip the default backend.
+7. Writer/backend performance hardening.
+   - Continue opt-in minizip hardening, compression-level policy, Zip64 policy,
+     sharedStrings measurements, benchmark groundwork, and streaming hot-path
+     work as supporting lanes.
+   - Do not use these lanes to postpone the Patch MVP indefinitely.
 
-7. Internal OPC graph groundwork.
-   - Internal `PartIndex` / `RelationshipGraph` groundwork now exists.
-   - Relationship id allocation and content type registry helpers now exist.
-   - Do not expose existing-file edit APIs yet.
+8. Existing streaming-only feature slices.
+   - Keep data validations, hyperlinks, tables, conditional formatting, styles,
+     document properties, and images accurately documented as new-workbook-only
+     where that is still true.
+   - Add Patch behavior for these features only after preservation and
+     dependency analysis are proven.
 
-8. Existing package preservation.
-   - Add reader/writer after production ZIP and OPC graph foundations.
-   - Prove unknown and unmodified parts are preserved.
-   - Use template workbooks with images, charts, macros, or unknown parts.
+9. Complex object preservation before generation.
+   - Chart/VBA/image/drawing work starts with passthrough preservation for
+     existing workbooks.
+   - Native generation/editing is a later feature-specific task.
 
-9. Streaming-only data validations - 基础 + prompt/error/dropdown metadata.
-   - `WorksheetWriter::add_data_validation()` now writes worksheet-local
-     `<dataValidations>` for new workbooks only.
-   - The current slice stores lightweight metadata, copies formula and
-     prompt/error strings into writer state, writes prompt/error and dropdown
-     fields as worksheet `<dataValidation>` attributes, and does not add package
-     relationships, content types, or styles.
-   - Keep richer validation semantics, overlap checks, formula parsing, and
-     existing-file editing out of scope until separately designed.
-
-10. Streaming-only external and internal hyperlinks - 基础.
-    - `WorksheetWriter::add_external_hyperlink()` now writes worksheet
-      `<hyperlinks>` plus `xl/worksheets/_rels/sheetN.xml.rels` for new
-      workbooks only.
-    - `WorksheetWriter::add_internal_hyperlink()` now writes worksheet
-      `<hyperlink location="...">` for new workbooks only, without worksheet
-      `.rels`, workbook relationships, content type overrides, or `rId`
-      consumption.
-    - `HyperlinkOptions` now writes optional `display` / `tooltip` attributes
-      on external and internal worksheet `<hyperlink>` elements.
-    - Keep hyperlink styles, target existence validation, full Excel UI
-      behavior, and existing-file editing out of scope until separately
-      designed.
-
-11. Streaming-only tables - 基础.
-    - `WorksheetWriter::add_table()` and `TableOptions` now write
-      `xl/tables/tableN.xml`, worksheet `<tableParts>`, worksheet `.rels`, and
-      table content type overrides for new workbooks only.
-    - `TableOptions::show_totals_row` now supports only totals-row visibility
-      metadata for caller-supplied totals rows. `column_totals_functions` only
-      writes caller-supplied `totalsRowFunction` attributes, and
-      `column_totals_labels` only writes caller-supplied `totalsRowLabel`
-      attributes; it does not compute totals or generate formula text / cell text.
-    - Keep automatic header inference, generated totals formulas, calculated
-      columns, sort/filter criteria, custom styles,
-      `styles.xml`, table resize, full Excel table UI behavior, and
-      existing-file editing out of scope.
-
-12. Streaming-only conditional formatting basic slices - 基础.
-    - `WorksheetWriter::add_conditional_color_scale()` now writes worksheet-local
-      two-/three-color `<conditionalFormatting><cfRule type="colorScale">` XML for new
-      workbooks only. `WorksheetWriter::add_conditional_data_bar()` now writes
-      worksheet-local basic `<cfRule type="dataBar">` XML, including optional
-      `showValue="0"` when `DataBarRule::show_value=false`.
-      `WorksheetWriter::add_conditional_icon_set()` now writes worksheet-local
-      basic built-in `3Arrows` `<cfRule type="iconSet">` XML; current QA covers
-      percent, numeric, and percentile threshold serialization.
-    - `ArgbColor` values serialize as uppercase eight-digit ARGB; `priority`
-      is assigned by call order per worksheet; multi-range input writes one
-      space-separated `sqref`.
-    - The current slice does not generate `styles.xml`, `dxfs`, worksheet
-      `.rels`, content type overrides, workbook relationships, cell text, or
-      calculation metadata.
-    - Keep formula rules, cellIs, advanced/custom icon sets, advanced data bars, dxf-backed styling,
-      overlap/conflict handling, complete Excel UI behavior, and existing-file
-      editing out of scope until separately designed.
-
-13. Images and passthrough objects.
-    - Current `stb` image helpers cover PNG/JPEG metadata and owned pixel decode;
-      image insertion still needs separate media parts, drawings, drawing rels,
-      worksheet rels, anchors, and content types.
-    - Chart and VBA work starts as preservation, not native generation.
+10. Release packaging.
+    - Start only after the selected public surface has code, tests, docs, local
+      validation, and CI evidence.
 
 ## Push-by-Push Execution Queue
 
-Use this queue when deciding what to implement next. Pick the first item whose
-start condition is true. Do not treat later items as supported until their
-acceptance checks have passed and the docs have been updated.
+Use the authoritative order below when deciding what to implement next. The
+feature-specific sections after P1 keep detailed current facts and validation
+notes, but their old numeric labels are no longer the priority order. Pick the
+first item whose start condition is true. Do not treat later items as supported
+until their acceptance checks have passed and the docs have been updated.
+
+Authoritative execution order:
+1. P0 - task docs, AGENTS, skills, and concurrent-session context.
+2. P1 - CI and local build hygiene when workflow or preset paths drift.
+3. P2 - editing architecture contract: internal `EditPlan`,
+   `DependencyAnalyzer`, `ReferencePolicy`, `PartRewritePlanner`, and part
+   write modes plus package-entry audit metadata are now a planning foundation;
+   `PackageReader` has a stored ZIP
+   entry reader plus metadata-ingestion foundation, while internal
+   `PackageEditor` has a copy/replace foundation plus narrow docProps,
+   worksheet replacement, exact/path-equivalent source-overwrite rejection, and
+   empty-output / missing-parent / non-directory-parent / existing-directory output rejection
+   regressions, plus malformed workbook metadata/calc metadata and invalid
+   replacement no-state-pollution coverage for edit-plan entries/notes,
+   structured payload/removal/calc-policy snapshots, aggregate
+   `planned_output()` / legacy output-entry preview, manifest
+   write-mode, copied-output hygiene, and
+   queued docProps preservation across linked worksheet policy failure.
+4. P3 - package read/copy/write foundation: harden existing ZIP/package entry
+   reading plus `PartIndex` / `RelationshipGraph` ingestion and copy/replace
+   behavior.
+5. P4 - Patch MVP: targeted sheet or small-part rewrite, relationship/content
+   type sync, unknown part preservation, and calc policy.
+6. P5 - preservation fixture set for images/drawings, charts, sharedStrings/styles,
+   workbook definedNames, VBA, and unknown extensions.
+7. P6 - sheet dependency analyzer and conservative reference policies.
+8. P7 - In-memory small-file editor with documented size/memory limits.
+9. P8 - controlled large worksheet editing: replace sheet, range patch,
+   template fill, event reader -> transformer -> stream writer.
+10. P9 - production ZIP/backend and package writer hardening.
+11. P10 - sharedStrings hardening and memory/size evidence.
+12. P11 - benchmark groundwork.
+13. P12 - streaming writer hot-path work.
+14. P13 - Phase 3 metadata/styles hardening.
+15. P14+ - existing streaming-only object slices and later existing-file object
+   editing, gated by P3-P6 preservation and dependency analysis.
 
 ### P0 - Task Docs and Agent Context
 
@@ -386,7 +959,10 @@ Do not claim:
 - vcpkg dependency readiness or Excel visual validation from CI alone.
 - full image/minizip production readiness from opt-in CI alone.
 
-### P2 - Production ZIP Dependency Discovery
+The detailed sections below keep their historical labels for traceability. Use
+the authoritative execution order above for actual next-task selection.
+
+### Historical P2 Detail - Production ZIP Dependency Discovery
 
 Status: baseline complete for the minizip backend. `minizip-ng[core,zlib]` now
 has a verified CMake package and imported target:
@@ -413,7 +989,7 @@ Do not claim:
 - Compression, Zip64, or package streaming before code uses the verified
   backend.
 
-### P3 - Package Writer Boundary
+### Historical P3 Detail - Package Writer Boundary
 
 Status: baseline complete. New workbook output now goes through the internal
 `src/package_writer.*` boundary.
@@ -440,7 +1016,7 @@ Do not claim:
 - Public package editing, true package streaming, or Zip64 from this internal
   boundary alone.
 
-### P4 - Production ZIP Backend
+### Historical P4 Detail - Production ZIP Backend
 
 Status: minimal opt-in backend landed. Continue with hardening before making it
 the default.
@@ -462,7 +1038,7 @@ Do not claim:
 - Large-file performance until benchmarks record scale, time, memory, output
   size, compression setting, and office-suite open result.
 
-### P5 - Shared Strings Hardening
+### Historical P5 Detail - Shared Strings Hardening
 
 Start after current sharedStrings structure support exists; production tuning is
 best after P4, while small structure fixes can happen earlier.
@@ -500,7 +1076,7 @@ Accept when:
 Do not claim:
 - sharedStrings as the best default for large data.
 
-### P6 - Benchmark Groundwork
+### Historical P6 Detail - Benchmark Groundwork
 
 Start before making broad performance claims or adding convenience APIs that
 could affect the writer hot path.
@@ -535,7 +1111,7 @@ Do not claim:
   benchmark entry alone.
 - Full low-memory behavior from worksheet-body-only footprint results.
 
-### P7 - Streaming Writer Hot Path
+### Historical P7 Detail - Streaming Writer Hot Path
 
 Start after P3/P4 boundaries are clear enough that package output will not hide
 worksheet-writer memory problems.
@@ -576,7 +1152,7 @@ Do not claim:
 - `FASTXLSX_ENABLE_TEST_HOOKS` or `testing_set_worksheet_row_count()` as public
   API, benchmark coverage, or proof of million-row export performance.
 
-### P8 - Phase 3 Metadata Tests
+### Historical P8 Detail - Phase 3 Metadata Tests
 
 Status: basic focused structure and fixed local QA helpers exist for the
 current streaming metadata skeleton. Continue when this surface changes or when
@@ -611,7 +1187,7 @@ Accept when:
 Do not claim:
 - Formula calculation, cached formula correctness, or complete style support.
 
-### P9 - Style Registry Design and First Styles
+### Historical P9 Detail - Style Registry Design and First Styles
 
 Status: 基础 for streaming-only custom number format, wrap-text + limited horizontal/vertical alignment, bold/italic/direct-color font, and solid fill styles.
 
@@ -669,7 +1245,7 @@ Do not claim:
   parity from the number-format, limited alignment, bold/italic/direct-color font,
   and solid fill slices.
 
-### P10 - Configurable Document Properties API
+### Historical P10 Detail - Configurable Document Properties API
 
 Status: 基础 + fixed local QA helpers.
 
@@ -678,8 +1254,15 @@ Current foundation:
 - `Workbook::set_document_properties()` and
   `WorkbookWriterOptions::document_properties` feed `docProps/core.xml` and
   `docProps/app.xml`.
-- The current scope does not generate `docProps/custom.xml` and does not edit
-  existing XLSX files.
+- The public document-properties API remains new-workbook-only. The internal
+  `PackageEditor` now has a narrow existing-package core/app docProps
+  generated-small-XML path that can add or replace `docProps/core.xml` and
+  `docProps/app.xml` while syncing package relationships and content types.
+  This does not generate `docProps/custom.xml`; the internal Patch regression
+  now verifies that an existing `docProps/custom.xml`, its custom-properties
+  package relationship, its content type override, and unrelated unknown bytes
+  are preserved while core/app metadata is regenerated. It is not a public
+  document-property editing API or custom-properties editor.
 - Fixed local QA helpers now exist:
   `tools/verify_document_properties.py` checks ZIP/XML and `openpyxl`
   core-property semantics for the in-memory and streaming samples, and
@@ -702,10 +1285,12 @@ Accept when:
   changes.
 
 Do not claim:
-- `docProps/custom.xml`, existing-file editing, arbitrary timestamps, or full
-  document-property coverage unless every exposed property is tested.
+- `docProps/custom.xml` creation/editing, public existing-file document-property
+  editing, arbitrary timestamps, or full document-property coverage unless every
+  exposed property is tested. Current internal coverage is preservation-only for
+  an existing custom properties part.
 
-### P11 - Internal OPC Graph
+### Historical P11 Detail - Internal OPC Graph
 
 Status: 基础.
 
@@ -718,6 +1303,18 @@ Current foundation:
 - `tests/test_opc.cpp` covers part lookup, duplicate/conflict handling,
   relationship ownership, id uniqueness, external relationships, registry
   lookup, write-mode defaults, and error paths.
+- `tests/test_package_reader.cpp` covers stored ZIP entry reading plus
+  content-types/relationships ingestion into internal part and relationship
+  views. `tests/test_package_editor.cpp` covers the current internal
+  copy/replace foundation, core/app docProps generated-small-XML, worksheet
+  replacement calcChain/fullCalcOnLoad behavior, the combined docProps +
+  worksheet replacement path, helper/ordinary replacement ordering in both
+  directions for docProps, prior ordinary calcChain replacement overridden by
+  workbook-only and worksheet calcChain removal, prior ordinary calcChain
+  replacement preserved as final payload under workbook-only and worksheet
+  `CalcChainAction::Preserve`, prior ordinary workbook replacement overridden by
+  worksheet fullCalcOnLoad metadata rewrite, ReferencePolicy boundaries, and
+  unknown/linked part byte preservation for untouched entries.
 
 Do:
 - Keep this internal until package reader/writer and preservation tests exist.
@@ -732,9 +1329,11 @@ Do not claim:
 - Package editing, broader hyperlink support, or object preservation from
   internal graph helpers alone.
 
-### P12 - Existing Package Reader/Writer
+### Historical P12 Detail - Existing Package Reader/Writer
 
-Start after P4 and P11.
+Historical start condition: after the old production ZIP backend and internal
+OPC graph lanes. Under the updated authoritative order, use P3/P4 for package
+read/copy/write and Patch MVP work.
 
 Do:
 - Read package entries, `[Content_Types].xml`, package relationships, and part
@@ -752,9 +1351,10 @@ Do not claim:
 - Complete editing until preservation and compatibility samples cover the
   relevant feature class.
 
-### P13 - Preservation Fixture Set
+### Historical P13 Detail - Preservation Fixture Set
 
-Start after P12 has a working reader/writer path.
+Historical start condition: after the old existing package reader/writer path.
+Under the updated authoritative order, this is P5 preservation fixture work.
 
 Do:
 - Add template workbooks containing images, charts, macros, and unknown parts.
@@ -762,8 +1362,9 @@ Do:
 - Compare before/after packages.
 
 Accept when:
-- Untouched drawings, media, charts, macros, and unknown extensions remain in
-  the output package.
+- Untouched worksheet `.rels`, drawings, media, charts, macros, and unknown
+  extensions remain in the output package, even when a replacement worksheet no
+  longer references the original drawing/table objects.
 - Excel opens edited workbooks without repair.
 
 Do not claim:
@@ -933,7 +1534,8 @@ Do not claim:
 
 Dependency discovery, API design, and the first new-workbook-only insertion
 slice are now started. Existing-workbook image read/edit/preservation still
-starts only after P13 proves preservation behavior.
+starts only after package reader/writer and preservation fixtures prove
+preservation behavior.
 
 Stages:
 1. P17.0 - `stb` dependency discovery and image metadata/pixel helpers. Status:
@@ -1074,9 +1676,9 @@ Stages:
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.
 5. P17.4 - Existing-workbook image read/edit/preservation.
-   - Start only after P13 fixtures prove unmodified media/drawing/chart/VBA and
-     unknown parts remain present and relationships still resolve after
-     unrelated edits.
+   - Start only after preservation fixtures prove unmodified
+     media/drawing/chart/VBA and unknown parts remain present and relationships
+     still resolve after unrelated edits.
 
 Do:
 - Use `stb` as the image decoding, dimension-reading, channel, and pixel-access
@@ -1129,12 +1731,13 @@ Do not claim:
 - Cell hyperlink style, worksheet cell text, internal workbook picture links,
   target reachability checks, complete hyperlink UI parity, or existing-file
   hyperlink editing from `ImageOptions::external_hyperlink_url`.
-- Existing workbook image passthrough or preservation before P13 fixtures prove
-  unmodified media/drawing/chart/VBA parts survive edits.
+- Existing workbook image passthrough or preservation before preservation
+  fixtures prove unmodified media/drawing/chart/VBA parts survive edits.
 
 ### P18 - Chart and VBA Passthrough
 
-Start only after P12/P13 preservation is proven.
+Start only after the package reader/writer path and preservation fixtures are
+proven.
 
 Do:
 - Preserve existing chart and VBA parts while editing unrelated parts.
@@ -1184,7 +1787,7 @@ Do not claim:
    - Use `windows-nmake-release-minizip` after `VCPKG_ROOT` is configured when
      verifying the opt-in minizip backend.
    - Use `windows-nmake-release-vcpkg` only for generic vcpkg toolchain smoke;
-     it is not the canonical P4/minizip backend validation path.
+     it is not the canonical minizip backend validation path.
    - The current CI workflow runs the vcpkg-backed NMake preset first and runs
      minizip/image opt-in vcpkg presets in a separate matrix.
 
@@ -1195,84 +1798,1031 @@ Do not claim:
 
 ## Next Engineering Priorities
 
-### 1. Production ZIP Backend
-
-Status: 基础.
-
-Next tasks:
-- Keep verified config package names, imported target names, features, and
-  triplet behavior documented for `minizip-ng`, `zlib-ng`, `expat`, and
-  `pugixml`.
-- Keep `find_package(minizip-ng CONFIG REQUIRED)` behind
-  `FASTXLSX_ENABLE_MINIZIP_NG` until CI/cache/release packaging are verified.
-- Decide whether the minizip backend should become default after that evidence.
-- Add compression level configuration without changing the worksheet XML hot
-  path into a DOM path.
-- Add Zip64 and entry streaming requirements before large-file benchmarks.
-
-Validation:
-- Preserve existing OpenXML structure tests.
-- Add tests that do not assume stored/no-compression ZIP entries.
-- Re-run Excel visual verification for generated workbooks.
-
-### 2. Shared Strings Strategy
-
-Status: 进行中.
-
-Next tasks:
-- Keep the current `StringStrategy::SharedString` path moving through focused
-  validation instead of treating the visible foundation as complete support.
-- Keep `inlineStr` as the low-memory default.
-- Ensure shared string table growth is documented and tested.
-
-Validation:
-- Compare package structure with and without `xl/sharedStrings.xml`.
-- Check Excel open compatibility.
-- Add size and memory benchmarks before claiming performance benefits.
-
-### 3. Styles and Phase 3 Coverage
-
-Status: 基础.
-
-Current foundation:
-- Write skeletons exist for formula cells, row height, column width, frozen
-  panes, auto filters, and merged cells.
-- P9 style registry exists for streaming new workbooks:
-  workbook-local `StyleId`, `CellStyle::number_format`,
-  `CellStyle::alignment.wrap_text`, optional horizontal/vertical alignment,
-  `CellStyle::font` bold/italic flags plus optional direct ARGB font color,
-  `CellStyle::fill` solid foreground ARGB,
-  `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
-  `xl/styles.xml`, and workbook styles relationship.
-- Full Phase 3 remains 计划.
-
-Next tasks:
-- Harden style docs and reference QA when the sample shape changes.
-- Add full font control, full fill/pattern control, borders/full alignment only as separate registry-backed slices.
-- Add calc mode and cached formula behavior decisions before claiming formula
-  compatibility beyond write-only formulas.
-
-Validation:
-- Current style validation includes `xl/styles.xml`, style IDs, worksheet style
-  references, custom number format escaping, wrap-text + limited horizontal/vertical alignment metadata,
-  bold/italic/direct-color font metadata, solid fill metadata, sharedStrings coexistence, and Excel COM /
-  `openpyxl` checks through the fixed local helpers.
-- Use Excel visual verification for style samples.
-- Use reference `.xlsx` files and XML comparison when Excel repairs output.
-
-### 4. OPC Editing Pipeline
+### 1. OPC Editing Pipeline
 
 Status: 基础.
 
 Current foundation:
 - Internal manifest and serializers exist for new-workbook metadata.
 - Package part write-mode planning metadata is visible for copy-original,
-  generate-small-XML, stream-rewrite, and local-DOM-rewrite decisions.
-- Existing-file editing is still 计划; package read/copy/rewrite behavior
-  remains 计划 as an end-to-end editor.
+  generate-small-XML, stream-rewrite, local-DOM-rewrite, and explicit
+  registered-part removal decisions.
+- Internal `PackageReader` can index and read stored/no-compression package
+  entries by name, including unknown entries; minizip-enabled builds can read
+  DEFLATE entries. It rejects encrypted/data descriptor entries and local
+  header CRC/method/name/size mismatches, validate stored entry CRC before
+  returning bytes, reject conflicting content type defaults/overrides and
+  duplicate relationship ids within one `.rels` owner, reject namespaced
+  metadata attributes except namespace declarations, reject duplicate
+  unqualified metadata attributes, reject non-whitespace metadata text,
+  reject start/end tag QName mismatches, and ingest content types / relationships into internal
+  `PartIndex` / `RelationshipGraph` views. It can also resolve the internal
+  workbook sheet catalog by first validating package `_rels/.rels` contains
+  exactly one internal `officeDocument` relationship; the current narrow
+  resolver only accepts targets resolving to `/xl/workbook.xml`, and missing,
+  duplicate, external, URI-qualified, or non-fixed targets fail during lookup.
+  Relative, absolute, and dot-segment package targets such as
+  `xl/./workbook.xml` are resolved from the package root without modeling the
+  package root as a real `PartName`.
+  It then reads direct `<sheet>` children of workbook
+  `<sheets>`, following workbook-owned worksheet relationships, ignoring
+  `<sheet>` tags outside that catalog or nested under non-sheet catalog
+  children, decoding XML attribute values and percent-encoded relationship
+  targets, requiring `name` and `sheetId` to be unqualified workbook sheet
+  attributes, and requiring sheet relationship ids to use the
+  officeDocument relationships XML namespace (alternate prefixes are accepted,
+  unqualified or wrong-namespace `id` attributes are rejected), and mapping a
+  sheet name to an existing worksheet part;
+  missing namespace-valid `r:id`, sheet relationship ids absent from workbook
+  `.rels`, worksheet relationships resolving to unregistered parts, external
+  sheet targets, and non-worksheet targets are rejected during lookup before
+  by-name Patch state changes, and duplicate sheet-name lookups fail as ambiguous. This is
+  Patch target resolution, not sheet add/delete/rename
+  or a public workbook model, and it does not copy/write edited packages.
+- Internal `PackageEditor` can replace one existing part and copy untouched
+  entry bytes into a new stored package, including unknown entries. It can also
+  perform the current core/app document-properties generated-small-XML path
+  with package relationship/content type sync, and the current worksheet
+  replacement narrow path with calcChain removal, workbook fullCalcOnLoad,
+  workbook relationship, and content type sync. A combined-operation regression
+  covers the docProps path plus worksheet replacement in one edit, including
+  relationship/content-type merging, calcChain removal, stale calcChain owner
+  `.rels` omission, metadata-only stale calcChain cleanup when the payload is
+  absent, workbook metadata rewrite, unknown-entry preservation, and
+  exact/path-equivalent source-overwrite rejection, and empty-output /
+  missing-parent / non-directory-parent / existing-directory output rejection. The metadata-only cleanup is
+  limited to stale content type / workbook relationship state; it does not create
+  `xl/calcChain.xml` or imply general metadata repair.
+  The same internal path now has `replace_worksheet_sheet_data()`, which replaces
+  only the existing worksheet `<sheetData>` element while preserving surrounding
+  worksheet XML metadata and then reusing worksheet replacement for calcChain /
+  fullCalcOnLoad and preservation side effects. Its tests cover metadata
+  preservation for sheetPr, sheetCalcPr, dimension, sheetViews,
+  customSheetViews, sheetFormatPr, cols, sheetProtection, protectedRanges,
+  sortState, autoFilter, mergeCells, scenarios, dataConsolidate,
+  customProperties, cellWatches, smartTags, webPublishItems, dataValidations,
+  conditionalFormatting,
+  hyperlinks, ignoredErrors, printOptions, pageMargins, pageSetup,
+  headerFooter, rowBreaks, colBreaks, phoneticPr, drawing, legacyDrawing,
+  picture, legacyDrawingHF, oleObjects, controls, tableParts, and extLst; audit notes for
+  preserved worksheet-local ranges/references;
+  bounded local rewrite guardrails because the current helper materializes the
+  planned worksheet XML; source or queued worksheet XML, replacement
+  `<sheetData>` payloads, and rewritten worksheet XML above
+  `package_editor_sheet_data_local_rewrite_byte_limit` fail before state
+  changes, and the direct/by-name regression verifies `EditPlan`, manifest,
+  package-entry audit, calc policy, planned output, copied output bytes, and
+  unknown extension preservation remain unchanged; successful plans also expose
+  bounded-local-rewrite notes/reasons so this is not confused with the future
+  large-file streaming worksheet transformer;
+  `PackageReader` / `RelationshipGraph` roundtrip coverage for the preserved
+  worksheet `.rels` legacyDrawing `rId7` target
+  `../drawings/vmlDrawing1.vml#shape1`;
+  worksheet-owned background picture and header/footer VML drawing preservation
+  under the same `sheetData` Patch lane: the output keeps the `<picture>` /
+  `<legacyDrawingHF>` references, worksheet `.rels` `image` / `vmlDrawing`
+  relationships, `xl/media/background.png` bytes,
+  `xl/drawings/vmlDrawingHF1.vml` bytes, the PNG content type default, and the
+  VML content type override, and planned output exposes those parts as
+  relationship-derived copy-original audit metadata; this is not image, VML, or
+  header/footer semantic editing, relationship repair/pruning, orphan cleanup,
+  content type repair, public API, or complete object preservation;
+  worksheet-owned printerSettings opaque part preservation under the same
+  `sheetData` Patch lane: the output keeps the `<pageSetup r:id>` reference,
+  worksheet `.rels` `printerSettings` relationship,
+  `xl/printerSettings/printerSettings1.bin` bytes, and the printerSettings
+  content type override, and planned output exposes that part as
+  relationship-derived copy-original audit metadata; this is not printer
+  settings semantic editing, relationship repair/pruning, orphan cleanup,
+  content type repair, public API, or complete object lifecycle support;
+  explicit removal coverage for the same fixture now omits
+  `xl/media/background.png` while preserving the PNG default without promoting
+  the media part to an override, omits `xl/drawings/vmlDrawingHF1.vml` while
+  removing the VML content type override, preserves the worksheet `.rels`
+  inbound relationships that still point at the missing background picture or
+  header/footer VML part, and exposes structured removed-part inbound
+  relationship audit metadata in `EditPlan` / planned output; this is Patch
+  audit / no-pruning visibility, not image, VML, or header/footer deletion
+  semantics, relationship repair/pruning, orphan cleanup, content type repair,
+  public API, or complete object lifecycle support;
+  same-path ordering coverage for the same background/VML fixture:
+  remove-then-ordinary-replace for `xl/media/background.png` clears stale
+  removed-part audit, restores an active background picture replacement, keeps
+  the PNG default / content-types source-copy state without promoting the media
+  part to an override, and preserves the worksheet `.rels` inbound relationship;
+  ordinary replacement followed by explicit removal of
+  `xl/drawings/vmlDrawingHF1.vml` clears the active VML replacement, records
+  removed-part inbound audit, omits the VML part, removes the VML content type
+  override, and preserves the worksheet `.rels` inbound relationship plus the
+  sibling background picture part. The aggregate `planned_output()` snapshot now
+  also covers both final states: the background-picture remove-then-replace path
+  exposes the active picture `LocalDomRewrite`, content-types metadata
+  copy-original, sibling header/footer VML preservation, no stale
+  removals, no relationship target audits, no fullCalcOnLoad request,
+  `CalcChainAction::Preserve`, and no invented picture owner `.rels`; the
+  header/footer VML replace-then-remove path exposes the omitted VML part,
+  removed-part inbound audit, content-types metadata rewrite, sibling
+  background-picture preservation, no relationship target audits, no
+  fullCalcOnLoad request, `CalcChainAction::Preserve`, and no invented VML
+  owner `.rels`; this is Patch same-path state hygiene / audit
+  visibility, not transactional undo, image/VML/header-footer semantic merge or
+  deletion, relationship repair/pruning, orphan cleanup, content type repair,
+  public API, or complete object lifecycle support;
+  worksheet-owned registered OLE opaque part and control-property part
+  preservation under the same `sheetData` Patch lane: the output keeps the
+  `<oleObjects>` / `<controls>` references, worksheet `.rels` `oleObject` /
+  `control` relationships, `xl/embeddings/oleObject1.bin` bytes,
+  `xl/ctrlProps/control1.xml` bytes, and corresponding content type overrides,
+  and planned output exposes those parts as relationship-derived copy-original
+  audit metadata; this is not OLE / ActiveX / control semantic editing,
+  relationship repair/pruning, orphan cleanup, content type repair, public API,
+  or complete object preservation;
+  explicit removal coverage for the same OLE/control fixture: omits
+  `xl/embeddings/oleObject1.bin` while removing the OLE content type override,
+  omits `xl/ctrlProps/control1.xml` while removing the control-properties
+  content type override, preserves the worksheet `.rels` inbound relationships
+  that still point at the missing OLE object or control properties part, and
+  exposes structured removed-part inbound relationship audit metadata in
+  `EditPlan` / planned output; this is Patch audit / no-pruning visibility, not
+  OLE / ActiveX / control deletion semantics, relationship repair/pruning,
+  orphan cleanup, content type repair, public API, or complete object lifecycle
+  support;
+  same-path ordering coverage for the same worksheet-owned object fixture:
+  remove-then-ordinary-replace for `xl/embeddings/oleObject1.bin` clears stale
+  removed-part audit, restores an active OLE replacement, restores the OLE
+  content type override / `[Content_Types].xml` source-copy audit state, and
+  preserves the worksheet `.rels` inbound relationship; ordinary replacement
+  followed by explicit removal of `xl/ctrlProps/control1.xml` clears the active
+  control replacement, records removed-part inbound audit, omits the
+  control-properties part, removes the control-properties content type override,
+  and preserves the worksheet `.rels` inbound relationship plus sibling OLE
+  part. The aggregate `planned_output()` snapshot now also covers both final
+  states: the OLE remove-then-replace path exposes the active OLE
+  `LocalDomRewrite`, content-types metadata / `ContentTypes` audit role,
+  sibling control preservation, no stale removals, no relationship target
+  audits, no fullCalcOnLoad request, `CalcChainAction::Preserve`, and no
+  invented OLE owner `.rels`; the control replace-then-remove path exposes the
+  omitted control part, removed-part inbound audit, content-types metadata
+  rewrite, sibling OLE preservation, no relationship target audits, no
+  fullCalcOnLoad request, `CalcChainAction::Preserve`, and no invented control
+  owner `.rels`; this is Patch same-path state hygiene / audit visibility, not
+  transactional undo, OLE / ActiveX / control semantic merge or deletion,
+  relationship repair/pruning, orphan cleanup, content type repair, public API,
+  or complete object lifecycle support;
+  explicit removal with a malformed unrelated relationship target now verifies
+  notes-only EditPlan / planned-output audit, an omitted target part,
+  copy-original metadata entries, no structured relationship target / worksheet
+  reference audit, no package-entry rewrite/omission, and unchanged calc policy;
+  this is not relationship repair;
+  a source worksheet with self-closing `<sheetData/>`, which is replaced by
+  normal `<sheetData>...</sheetData>` while preserving dimension / autoFilter,
+  default calcChain removal, workbook fullCalcOnLoad, and unknown bytes;
+  a replacement payload that is itself self-closing `<sheetData/>`, which
+  clears the old rows/cells while preserving the worksheet wrapper, keeps the
+  self-closing `sheetData` in the output, and follows the same calcChain /
+  fullCalcOnLoad / unknown-bytes path;
+  prefixed source and replacement XML such as `<x:worksheet>` /
+  `<x:sheetData>`, where matching is by local name and output preserves the
+  literal prefixes without implying namespace repair;
+  the internal sheet-name convenience path, which resolves the target via the
+  reader workbook sheet catalog before delegating to the same part-level
+  `sheetData` replacement path and fails missing or ambiguous duplicate names
+  without state pollution;
+  a real FastXLSX writer roundtrip, where `WorkbookWriter` creates a two-sheet
+  source package, `PackageReader` resolves the writer sheet catalog,
+  `PackageEditor::replace_worksheet_sheet_data_by_name()` patches only the
+  target `<sheetData>`, and `PackageReader` reopens the saved package to verify
+  the untouched worksheet, `[Content_Types].xml`, package `_rels/.rels`,
+  workbook `.rels`, and core/app docProps bytes are preserved; it also verifies
+  writer-generated worksheet XML declaration/prolog byte preservation through the
+  sheetData patch, with the `<worksheet>` root kept immediately after that prolog.
+  The source now also
+  exercises writer-generated `xl/sharedStrings.xml` and `xl/styles.xml`,
+  verifying those parts, their content type overrides, and workbook
+  relationships are byte-preserved while replacement `t="s"` / `s` references
+  are exposed through structured `WorksheetPayloadDependencyAudit` entries.
+  Workbook XML requests `fullCalcOnLoad="1"`, and no `xl/calcChain.xml` is
+  created when the source writer package had none; this remains an audit and
+  preservation proof, not sharedStrings index migration or style id migration;
+  the same resolver now also backs internal
+  `replace_worksheet_part_by_name()`, which delegates to the existing worksheet
+  replacement path and keeps the same calcChain/fullCalcOnLoad and preservation
+  side effects; the source-catalog regression also covers dot-segment package
+  `officeDocument` and workbook-owned worksheet targets for this full-replacement
+  path; invalid package `officeDocument` entrypoints fail before
+  by-name Patch state changes and do not imply arbitrary workbook part-location
+  support;
+  if a planned `/xl/workbook.xml` exists in the same edit, either as an ordinary
+  workbook replacement or after that replacement is taken over by
+  `request_full_calculation()` / worksheet-rewrite fullCalcOnLoad metadata
+  helpers, both by-name helpers resolve against the current planned workbook
+  sheet catalog; old source sheet names fail before state changes, while new
+  planned sheet names can still target existing worksheet parts through source
+  workbook relationships; the planned-catalog regressions now cover both
+  ordinary planned workbook state and helper-managed planned workbook metadata
+  state, across by-name worksheet replacement and by-name `sheetData`, when
+  source workbook `.rels` uses a dot-segment worksheet target such as
+  `./worksheets/../worksheets/sheetN.xml`, preserving that target text on output
+  while calcChain cleanup may still rewrite workbook `.rels`; missing or
+  namespace-invalid planned sheet id attributes still fail without state
+  pollution: alternate prefixes bound to the officeDocument relationships
+  namespace are accepted, while wrong-namespace `x:id` and unqualified `id` are
+  treated as missing; namespace-valid planned sheet ids absent from workbook
+  `.rels`, and planned sheet relationships resolving to unregistered worksheet
+  parts, also fail before by-name Patch state changes across both by-name
+  helpers; a reader-only regression also directly covers the internal
+  `PackageReader::workbook_sheets_from_xml()` planned-workbook XML path with
+  the same direct-catalog and namespace rules, exposing only direct
+  `<sheets><sheet>` entries, ignoring decoy outer/nested sheet tags, accepting
+  alternate prefixes bound to the officeDocument relationships namespace, and
+  treating wrong-namespace or unqualified `id` attributes as missing, plus
+  rejecting planned sheet ids absent from workbook relationships and planned
+  worksheet relationships resolving to unregistered parts; this is
+  only a narrow planned workbook catalog resolver,
+  not sheet rename/delete, sheet catalog mutation, relationship repair, or a
+  public API;
+  if `/xl/workbook.xml` has been explicitly removed in the same planned edit,
+  both by-name helpers now fail before catalog resolution, preserve the existing
+  part-removal and owner `.rels` omission state, and do not fall back to the
+  source workbook catalog or resurrect workbook metadata;
+  internal `PackageEditor::rename_sheet_catalog_entry()` now covers only the
+  workbook sheet catalog `name` attribute rewrite: it resolves against the
+  current planned `/xl/workbook.xml`, rewrites that workbook part as
+  `LocalDomRewrite`, preserves worksheet parts, workbook `.rels`, content
+  types, calcChain, and unknown entries, and records an audit note that
+  definedNames, formulas, tables, drawings, charts, hyperlinks, relationship
+  targets, sharedStrings, styles, and calcChain are not synchronized. Current
+  regression coverage includes planned workbook XML, output-plan visibility for
+  the final workbook `LocalDomRewrite`, preserved content types / workbook
+  `.rels` / worksheet / calcChain / unknown entry, structured sheet catalog /
+  definedNames audit, output preservation, XML escaping, and failure without
+  state pollution for invalid planned workbook catalogs whose planned sheet
+  relationship id is absent from workbook `.rels` or resolves to an
+  unregistered worksheet part. Those failures keep the queued workbook
+  replacement, audits, manifest, calc policy, package-entry audit, and output
+  bytes unchanged. Existing failure coverage also includes missing old names,
+  exact or
+  ASCII case-insensitive duplicate new names, invalid names, direct
+  `definedNames` under `ReferencePolicyAction::Fail`, and prior
+  planned workbook removal. This is not full sheet rename/add/delete,
+  relationship repair, calc metadata rewrite, or a public API;
+  full-worksheet replacement-payload audit notes and structured
+  `WorksheetPayloadDependencyAudit` records for shared string indexes,
+  style id references, formula cells, range/reference worksheet metadata such as
+  sheetPr, sheetCalcPr, dimension, sheetViews, customSheetViews,
+  sheetFormatPr, cols, sheetProtection, protectedRanges, sortState,
+  autoFilter, mergeCells, scenarios, dataConsolidate, customProperties,
+  cellWatches, smartTags, webPublishItems, dataValidations, conditionalFormatting,
+  ignoredErrors, printOptions, pageMargins, pageSetup, headerFooter,
+  rowBreaks, colBreaks, phoneticPr, and extLst, and relationship-bearing
+  worksheet metadata such as hyperlinks, drawing, legacyDrawing, picture,
+  legacyDrawingHF, oleObjects, controls, and tableParts;
+  the existing `sheetData` helper also keeps its replacement-payload audit notes
+  and structured payload dependency records for shared string indexes, style id
+  references, and formula cells, plus
+  invalid/malformed replacement XML and missing `sheetData` no-state-pollution.
+  Current tests also cover malformed source `sheetData`
+  where the start tag exists but the closing tag is missing, and verify this
+  fails without changing EditPlan, manifest, package-entry audit, calc policy,
+  or copied output bytes; this is not XML repair. Current tests also cover
+  composition after a queued worksheet replacement, proving the helper patches
+  the current planned worksheet bytes for both normal `<sheetData>` and
+  self-closing `<sheetData/>`, and does not resurrect source-only worksheet metadata.
+  These notes only prompt caller review of
+  `xl/sharedStrings.xml`, `xl/styles.xml`, workbook calc metadata, calcChain
+  policy, worksheet `.rels`, and linked parts; they do not migrate sharedStrings
+  indexes, merge styles, evaluate formulas, rebuild calcChain, or repair
+  relationships. It is still
+  not a public API, random cell editor, range repair, dataValidations /
+  conditionalFormatting / hyperlinks / table / drawing semantic sync,
+  sharedStrings/styles migration, or large-worksheet streaming transformer.
+  Invalid replacement failures now also verify no state pollution in edit-plan
+  entries/notes, manifest write modes, and copied output bytes.
+  Ordinary `replace_part()` now rejects `[Content_Types].xml`, package
+  `_rels/.rels`, and source-owned `.rels` metadata entries as ordinary part
+  replacement targets, keeping those changes on the narrow metadata-aware
+  helper/package-entry audit path rather than the generic part path.
+  That rejection path now also checks edit-plan entries/notes, package-entry
+  audit, calc policy, manifest write modes, and copied output stay unchanged.
+  Internal `PartRewritePlanner` can now plan explicit removal of a registered
+  part as removed-part audit metadata, and `EditPlan` has part-level set/remove
+  mutual-exclusion coverage, so restoring a previously removed part clears the
+  removed-part audit entry instead of leaving conflicting plan state. Rewriting
+  an existing relationship-derived entry also clears stale relationship
+  metadata. Package-entry set/remove now has the same mutual-exclusion
+  regression for internal metadata-entry audit records. The
+  worksheet calcChain-removal path now consumes the removed-part audit produced
+  by `PartRewritePlanner::plan_worksheet_stream_rewrite()`
+  before applying the narrow content-type/workbook-relationship side effects.
+  The editor now preserves source content type defaults/overrides while building
+  its internal manifest. Direct part replacements, generated docProps parts,
+  and worksheet replacements now mirror write-mode / dirty / generated /
+  preserve-original state into the internal manifest for Patch auditing; worksheet
+  replacements also mirror workbook metadata rewrites as `LocalDomRewrite`. The
+  direct replacement path now also has repeated-replacement coverage proving the
+  final replacement bytes, write mode, edit-plan reason, manifest state, and
+  preserved source-owned `.rels` audit are upserted rather than duplicated.
+  Internal `PackageEditor::remove_part()` now has a narrow explicit registered-part
+  removal slice: it accepts only ordinary source package parts, omits the target
+  part and its source-owned owner `.rels` when present, records removed-part and
+  removed package-entry audit, and rewrites `[Content_Types].xml` only when a
+  target override existed. It deliberately does not prune inbound relationships
+  from other parts and is not object deletion or transactional editing. The
+  removed-part audit now keeps structured inbound package/source relationship
+  metadata (owner entry/part, id, type, raw target, normalized target part) plus
+  readable reasons when a relationship still points at the removed part, making
+  that narrow no-pruning behavior explicit in the Patch trace.
+  Malformed percent relationship targets encountered while scanning for inbound
+  removed-part references now become EditPlan / planned output audit notes; the
+  source `.rels` bytes are still preserved and unrelated explicit part removal
+  is not blocked. The planned output snapshot also exposes the removed target
+  omission and copy-original metadata entries without adding structured
+  relationship target audits.
+  A sibling workbook-removal regression covers `xl/workbook.xml`: the output
+  omits the workbook part and its source-owned workbook `.rels`, removes the
+  workbook content type override, preserves the inbound package
+  `officeDocument` relationship, and does not prune worksheet/drawing/table/
+  sharedStrings/styles/VBA/calcChain or unknown extension downstream/source
+  parts. This is no-pruning traceability, not workbook deletion, sheet catalog
+  sync, relationship repair, or complete workbook editing.
+  A sibling worksheet-removal regression covers `xl/worksheets/sheet1.xml`: the
+  output omits the worksheet part and its source-owned worksheet `.rels`, removes
+  the worksheet content type override, preserves the inbound workbook
+  relationship, and does not prune drawing/table/sharedStrings/styles/VBA/
+  calcChain or unknown extension downstream/source parts. This is no-pruning
+  traceability, not sheet delete, workbook sheet catalog sync, relationship
+  repair, or complete worksheet editing.
+  A sibling drawing-removal regression covers `xl/drawings/drawing1.xml`: the
+  output omits the drawing part and its source-owned drawing `.rels`, removes the
+  drawing content type override, preserves direct and URI-qualified inbound
+  worksheet relationships, and does not prune chart/media or other downstream
+  parts. This is no-pruning traceability, not drawing mutation, object deletion,
+  relationship repair, or complete drawing support.
+  A sibling media-removal regression covers the default-typed
+  `xl/media/image1.png` case: the output omits the media entry, preserves the
+  PNG default content type and inbound drawing relationship, and does not invent
+  a media owner `.rels` omission. This is no-pruning traceability, not image
+  editing or relationship repair.
+  A sibling table-removal regression covers `xl/tables/table1.xml`: the output
+  omits the table entry, removes the table content type override, preserves the
+  inbound worksheet relationship, and does not invent a table owner `.rels`
+  omission. This is no-pruning traceability, not table resize, table editing, or
+  relationship repair.
+  A sibling sharedStrings-removal regression covers `xl/sharedStrings.xml`: the
+  output omits the sharedStrings part and its owner `.rels`, removes the
+  sharedStrings content type override, and preserves the inbound workbook
+  relationship. This is no-pruning traceability, not sharedStrings index
+  migration, string-table rebuild, worksheet cell-reference sync, relationship
+  repair, or existing-file sharedStrings semantic editing.
+  A sibling styles-removal regression covers `xl/styles.xml`: the output omits
+  the styles part, removes the styles content type override, preserves the
+  inbound workbook relationship, and does not invent a styles owner `.rels`
+  omission. This is no-pruning traceability, not style id migration, style
+  merging, cell `s` reference sync, relationship repair, or existing-file style
+  preservation.
+  A sibling VBA-removal regression covers `xl/vbaProject.bin`: the output omits
+  the VBA project part, removes the VBA content type override, preserves the
+  inbound workbook relationship, and does not invent a VBA owner `.rels`
+  omission. This is no-pruning traceability, not macro generation, VBA semantic
+  editing, signature preservation, relationship repair, or complete macro
+  support.
+  A sibling VML-removal regression covers `xl/drawings/vmlDrawing1.vml`: the
+  output omits the VML drawing part, removes the VML content type override,
+  preserves the URI-qualified inbound worksheet relationship, and does not invent
+  a VML owner `.rels` omission. This is no-pruning traceability, not VML shape
+  editing, legacy drawing mutation, relationship repair, or complete VML/drawing
+  support.
+  A sibling percent-decoded drawing removal regression covers
+  `xl/drawings/drawing space.xml`: the output omits the target drawing part,
+  removes the drawing content type override, preserves the source worksheet
+  `.rels` target `../drawings/drawing%20space.xml`, and does not invent
+  `xl/drawings/_rels/drawing space.xml.rels`. This is no-pruning traceability,
+  not percent-encoded target repair, relationship rewrite, drawing mutation, or
+  complete drawing support.
+  The removal regression now also covers later `remove_part()` overriding a prior
+  ordinary replacement, clearing stale replacement state, and using removed-part
+  audit plus content type cleanup as the final state. Invalid removal attempts
+  now have no-state-pollution coverage for edit-plan entries/notes, package-entry
+  audit, removed audit, calc policy, manifest write modes, and copied output bytes.
+  The reverse ordering is now covered too: a later ordinary replacement can
+  restore a previously removed source package part as the active final state,
+  clear stale removed-part / removed owner `.rels` audit plus omitted entry state,
+  and preserve source-owned `.rels` as copy-original metadata. Override-bearing
+  restored parts now also cover `[Content_Types].xml` returning to source bytes /
+  copy-original audit. This is not transactional undo, relationship repair,
+  content type repair, semantic merge, or public editing API.
+  Another regression verifies docProps generated-small-XML parts can be
+  superseded by later ordinary part replacements while content-types and package
+  relationships audit remains helper-managed. A sibling regression verifies the
+  docProps helper can also take over a prior explicit core/app part removal,
+  clear stale removed/omitted payload state, and restore the generated part
+  entry in the output package.
+  A sibling regression verifies a later docProps generated-small-XML helper can
+  take ownership after explicit core properties removal by clearing stale
+  removed-part / omitted-payload state and restoring generated core/app payloads;
+  it also verifies the output still omits the source-owned docProps `.rels`
+  and keeps the removed package-entry audit. This does not imply transactional undo.
+  Another workbook-specific reverse-order regression verifies that ordinary
+  `replace_part("/xl/workbook.xml", ...)` after explicit workbook removal restores
+  the active workbook replacement, restores source-owned workbook `.rels` as
+  copy-original audit, preserves the inbound package `officeDocument`
+  relationship, and returns `[Content_Types].xml` to source bytes /
+  copy-original audit. This is not transactional undo or relationship repair.
+  The reverse workbook-specific ordering is now covered too: a later explicit
+  removal after ordinary `replace_part("/xl/workbook.xml", ...)` clears the
+  active workbook replacement, records removed-part and workbook owner `.rels`
+  omission audit, omits the workbook part and owner `.rels`, removes the
+  workbook content type override, preserves the package `_rels/.rels`
+  officeDocument relationship pointing at the missing workbook, and preserves
+  worksheet/drawing/table/sharedStrings/styles/VBA/calcChain/unknown downstream
+  parts. This is not workbook deletion semantics, sheet catalog sync,
+  relationship/content type repair, orphan cleanup, transactional undo, or
+  public API.
+  A worksheet-specific sibling regression verifies that ordinary
+  `replace_part("/xl/worksheets/sheet1.xml", ...)` after explicit worksheet
+  removal restores the active worksheet replacement, restores source-owned
+  worksheet `.rels` as copy-original audit, preserves the inbound workbook
+  worksheet relationship, and returns `[Content_Types].xml` to source bytes /
+  copy-original audit. This is not sheet delete, transactional undo, or
+  relationship repair.
+  The reverse worksheet-specific ordering is now covered too: a later explicit
+  removal after ordinary `replace_part("/xl/worksheets/sheet1.xml", ...)`
+  clears the active worksheet replacement, records removed-part and worksheet
+  owner `.rels` omission audit, omits the worksheet part and owner `.rels`,
+  removes the worksheet content type override, preserves the workbook inbound
+  worksheet relationship pointing at the missing worksheet, and preserves
+  drawing/chart/media/table/sharedStrings/styles/VBA/calcChain/unknown
+  downstream/source parts. This is not sheet delete, workbook sheet catalog
+  sync, relationship/content type repair, orphan cleanup, transactional undo,
+  or public API.
+  A drawing-specific sibling regression verifies that ordinary
+  `replace_part("/xl/drawings/drawing1.xml", ...)` after explicit drawing
+  removal restores the active drawing replacement, restores source-owned drawing
+  `.rels` as copy-original audit, preserves direct and URI-qualified inbound
+  worksheet drawing relationships, and returns `[Content_Types].xml` to source
+  bytes / copy-original audit. This is not drawing mutation, object deletion,
+  transactional undo, or relationship repair.
+  The reverse drawing-specific ordering is now covered too: a later explicit
+  removal after ordinary `replace_part("/xl/drawings/drawing1.xml", ...)`
+  clears the active drawing replacement, records removed-part and drawing owner
+  `.rels` omission audit, omits the drawing part and owner `.rels`, removes the
+  drawing content type override, preserves direct and URI-qualified inbound
+  worksheet drawing relationships, and preserves chart/media/table/VML/
+  percent-decoded drawing/sharedStrings/styles/VBA/calcChain/unknown
+  downstream/source parts. This is not drawing mutation, object deletion,
+  relationship/content type repair, orphan cleanup, transactional undo, or
+  public API.
+  A sharedStrings-specific sibling regression verifies that ordinary
+  `replace_part("/xl/sharedStrings.xml", ...)` after explicit sharedStrings
+  removal restores the active sharedStrings replacement, restores source-owned
+  sharedStrings `.rels` as copy-original audit, preserves the inbound workbook
+  sharedStrings relationship, and returns `[Content_Types].xml` to source bytes /
+  copy-original audit. This is not sharedStrings index migration, string-table
+  rebuild, worksheet cell-reference sync, transactional undo, relationship
+  repair, content type repair, semantic merge, or public editing API.
+  A styles-specific sibling regression verifies that ordinary
+  `replace_part("/xl/styles.xml", ...)` after explicit styles removal restores
+  the active styles replacement, preserves the inbound workbook styles
+  relationship, does not invent styles owner `.rels`, and returns
+  `[Content_Types].xml` to source bytes / copy-original audit. This is not style
+  id migration, style merge, cell `s` reference sync, transactional undo,
+  relationship repair, content type repair, semantic merge, existing-file style
+  preservation, or public editing API.
+  Another ordering regression verifies a later ordinary workbook replacement
+  after worksheet rewrite keeps the existing `fullCalcOnLoad` / calcChain policy
+  and does not downgrade already-rewritten workbook `.rels` audit metadata.
+  The
+  worksheet-replacement fixture confirms calcChain override removal does not
+  promote PNG media defaults to image overrides.
+  Internal `EditPlan` package-entry audit now records current content-types,
+  package-relationship, workbook-relationship, calcChain owner `.rels` omission,
+  and preserved source-owned `.rels` copy-original side effects when present, including ordinary
+  owner-part replacement for root-level `_rels/foo.xml.rels`, calcChain
+  owner `.rels` preservation under `CalcChainAction::Preserve` and workbook `.rels`
+  preservation during workbook metadata rewrite. The audit is now structured as
+  content-types, package-relationships, or source-owned relationships, and only
+  source-owned relationship entries carry `owner_part`; the internal plan entry
+  validates the matching entry path for each kind, without making those entries
+  public API. The root-level owner replacement fixture now also verifies those
+  preserved source-owned `.rels` bytes are re-ingested by `PackageReader` /
+  `RelationshipGraph` as owner relationships after roundtrip. Separate
+  reader-only coverage now verifies the same owner `.rels` ingestion shape for
+  an unknown extension part before copy/replace.
+  A no-op `PackageEditor::save_as()` roundtrip now separately verifies that all
+  source entries in the linked-object fixture preserve entry order, stored entry
+  method / CRC / uncompressed size, and bytes, with the initial edit plan staying
+  at copy-original part entries and no metadata package-entry side effects. This
+  is an unmodified-package copy baseline, not broad safe-editing preservation.
+  Internal `PackageEditor::planned_output()` now exposes the aggregate output
+  plan snapshot consumed by `save_as()`, including entry-level decision order,
+  global `full_calculation_on_load` / `calc_chain_action`, audit notes,
+  structured `removed_parts` / `removed_package_entries`, and structured
+  `relationship_target_audits` /
+  `worksheet_relationship_reference_audits`. The compatibility
+  `planned_output_entries()` wrapper still returns the same entry list. Entry
+  decisions include `source_entry` / `generated` flags, `package_part` /
+  `part_name` classification, write mode, copied-from-source / omitted flags,
+  package-entry audit kind, owner part, relationship-derived
+  owner/id/type/target fields, omitted removed-part inbound relationship audits,
+  and reason.
+  Current tests cover no-op copy-original,
+  docProps generated-small-XML additions, worksheet calcChain omission with
+  workbook metadata rewrites, sheetData Patch MVP output-plan snapshots for
+  worksheet stream-rewrite, workbook metadata rewrite, calcChain omission,
+  metadata-entry audit, preserved source-owned `.rels`, and
+  relationship-derived linked parts including printerSettings, ordinary unknown extension replacement
+  output snapshots for target part stream-rewrite, owner `.rels` copy-original
+  audit, and untouched linked parts, unknown extension replace-then-remove
+  final-removal output-plan audit for omitted unknown part, source-owned owner
+  `.rels` omission, inbound worksheet relationship metadata, and preserved
+  content types / package relationships, and explicit workbook removal owner `.rels`
+  omission, plus linked worksheet rewrite relationship-derived output audit,
+  request-recalculation preserve-policy output snapshots, drawing replace-then-
+  remove final-removal output-plan audit for omitted drawing part / owner
+  `.rels` and inbound worksheet relationships, VML drawing replace-then-remove
+  final-removal output-plan audit for omitted VML part, URI-qualified inbound
+  worksheet relationship metadata, removed_parts target/reason/inbound audit,
+  content types rewrite, empty removed_package_entries, and no invented owner
+  `.rels`, VML drawing remove-then-replace output-plan audit for active VML
+  drawing local-DOM rewrite, content types copy-original audit, preserved
+  package/workbook/worksheet/drawing relationships, preserved linked/unknown
+  entries, empty removed_parts and removed_package_entries, and no invented
+  owner `.rels`, percent-decoded drawing
+  replace-then-remove final-removal output-plan audit for omitted decoded drawing part,
+  removed_parts target/reason/inbound audit, encoded inbound worksheet relationship
+  metadata, content types rewrite, empty removed_package_entries, and no invented
+  owner `.rels`, percent-decoded drawing remove-then-replace
+  output-plan audit for active decoded drawing local-DOM rewrite, content types
+  copy-original audit, preserved package/workbook/worksheet/drawing relationships,
+  preserved linked/unknown entries, and no invented owner `.rels`, media replace-then-remove
+  final-removal output-plan audit for omitted default-typed media part,
+  removed_parts target/reason/inbound audit, drawing inbound relationship
+  metadata, preserved content types / drawing `.rels`, empty
+  removed_package_entries, and no invented media owner `.rels`, table replace-then-remove final-removal
+  output-plan audit for omitted table part, worksheet inbound relationship
+  metadata, content types rewrite, and no invented table owner `.rels`, pivot
+  worksheet rewrite output-plan audit for fullCalcOnLoad /
+  `CalcChainAction::Remove`, worksheet `StreamRewrite`, workbook
+  `LocalDomRewrite`, package/workbook/worksheet `.rels` copy-original,
+  pivot table/cache relationship context, content types and unknown entry
+  copy-original preservation, and no invented records owner `.rels`,
+  pivot table remove-then-replace output-plan audit for active pivot table
+  local-DOM rewrite, owner `.rels` copy-original audit, content types
+  copy-original audit, preserved package/worksheet/workbook relationships, and
+  preserved pivot cache definition / records chain, pivot table
+  replace-then-remove final-removal output-plan audit for omitted pivot table
+  part, owner `.rels`, worksheet inbound pivotTable relationship metadata,
+  content types rewrite, and preserved pivot cache definition / records chain,
+  pivot cache definition remove-then-replace output-plan audit for active cache
+  definition local-DOM rewrite, owner `.rels` copy-original audit, content types
+  copy-original audit, and preserved workbook/worksheet/pivot table/cache records/
+  unknown entries, pivot cache definition replace-then-remove final-removal
+  output-plan audit for omitted cache definition part, owner `.rels`, workbook /
+  pivot table inbound pivotCacheDefinition relationship metadata, content types
+  rewrite, and preserved workbook/worksheet/pivot table/cache records/unknown
+  entries, pivot cache records remove-then-replace output-plan audit for active
+  records stream-rewrite, content types copy-original audit, preserved pivot
+  table/cache definition chain, and no invented records owner `.rels`, pivot
+  cache records replace-then-remove final-removal output-plan audit for omitted
+  records part, cache-definition inbound pivotCacheRecords relationship metadata,
+  content types rewrite, preserved cache definition owner `.rels`, and no
+  invented records owner `.rels`,
+  comments ordinary replacement output-plan audit for active comments part
+  local-DOM rewrite, preserved content types / package relationships / workbook /
+  workbook `.rels` / worksheet / worksheet `.rels` / unknown entry, and no
+  invented comments owner `.rels`,
+  comments replace-then-remove final-removal output-plan audit for omitted
+  comments part, removed_parts target/reason/inbound audit, worksheet inbound
+  relationship metadata, content types rewrite, preserved package/workbook/worksheet
+  `.rels`, empty removed_package_entries, and no invented comments owner `.rels`,
+  comments remove-then-replace output-plan audit for active comments part
+  local-DOM rewrite, content types copy-original audit, preserved
+  package/workbook/worksheet `.rels` plus unknown entry, empty removed_parts /
+  removed_package_entries, and no invented comments owner `.rels`,
+  threaded comments ordinary replacement output-plan audit for active threaded
+  comments part local-DOM rewrite, preserved content types / package
+  relationships / workbook / workbook `.rels` / worksheet / worksheet `.rels` /
+  legacy comments / persons part / unknown entry, and no invented threaded
+  comments owner `.rels`,
+  threaded comments replace-then-remove final-removal output-plan audit for
+  omitted threaded comments part, removed_parts target/reason/inbound audit,
+  worksheet inbound threadedComment relationship metadata, content types rewrite,
+  preserved worksheet/workbook `.rels` plus persons part, empty
+  removed_package_entries, and no invented threaded comments owner `.rels`, threaded comments
+  remove-then-replace output-plan audit for active threaded comments part local-DOM
+  rewrite, content types copy-original audit, preserved package/workbook/worksheet
+  `.rels`, legacy comments, persons part, unknown entry, empty removed_parts /
+  removed_package_entries, and no invented threaded comments owner `.rels`,
+  persons replace-then-remove final-removal output-plan audit for omitted
+  persons part, removed_parts target/reason/inbound audit, workbook inbound
+  relationship metadata, content types rewrite, preserved workbook/worksheet
+  `.rels` plus threaded comments part, empty removed_package_entries, and no
+  invented persons owner `.rels`, persons remove-then-replace output-plan audit
+  for active persons part local-DOM rewrite, content types copy-original audit,
+  preserved package/workbook/worksheet `.rels`, threaded comments, legacy
+  comments, unknown entry, empty removed_parts / removed_package_entries, and
+  no invented persons owner `.rels`,
+  sharedStrings remove-then-replace output-plan audit for active sharedStrings
+  stream-rewrite, source-owned owner `.rels` copy-original audit, content types
+  copy-original audit, preserved workbook relationships, and empty
+  removed_parts / removed_package_entries, sharedStrings replace-then-remove
+  final-removal output-plan audit for omitted sharedStrings part, matching
+  removed_parts target/reason/inbound audit, source-owned owner `.rels`
+  omission, removed_package_entries owner-omission audit, workbook inbound
+  relationship metadata, and content types rewrite, styles remove-then-replace output-plan
+  audit for active styles local-DOM rewrite, content types copy-original audit,
+  preserved workbook relationships, empty removed_parts / removed_package_entries,
+  and no invented owner `.rels`, styles
+  replace-then-remove final-removal output-plan audit for omitted styles part,
+  matching removed_parts target/reason/inbound audit, workbook inbound
+  relationship metadata, content types rewrite, empty removed_package_entries,
+  and no invented owner `.rels`,
+  VBA project remove-then-replace output-plan audit for active VBA project
+  stream-rewrite, content types copy-original audit, preserved package/workbook
+  relationships, empty removed_parts / removed_package_entries, and no invented
+  owner `.rels`, VBA project replace-then-remove
+  final-removal output-plan audit for omitted VBA project part, matching
+  removed_parts target/reason/inbound audit, workbook inbound relationship
+  metadata, content types rewrite, empty removed_package_entries, and no invented
+  owner `.rels`,
+  chart remove-then-replace output-plan audit for active chart stream-rewrite,
+  content types copy-original audit, preserved drawing relationships, empty
+  removed_parts / removed_package_entries, and no invented owner `.rels`, chart
+  replace-then-remove final-removal output-plan audit for omitted chart part,
+  matching removed_parts target/reason/inbound audit, drawing-owned direct and
+  URI-qualified inbound relationship metadata, content types rewrite, empty
+  removed_package_entries, and no invented owner `.rels`,
+  custom XML item remove-then-replace output-plan audit for active custom XML
+  item local-DOM rewrite, owner `.rels` copy-original audit, and preserved
+  package relationships, content types, workbook, worksheet, properties part,
+  and unknown entry, custom XML item replace-then-remove final-removal
+  output-plan audit for omitted item and owner `.rels`, package inbound customXml
+  relationship metadata, and preserved package relationships, content types,
+  workbook, worksheet, properties part, and unknown entry, custom XML properties
+  ordinary replacement output-plan audit for active properties part local-DOM
+  rewrite, preserved content types / package relationships, preserved custom XML
+  item / item owner `.rels` / workbook / worksheet / unknown entry, and no
+  invented properties owner `.rels`, custom XML properties
+  remove-then-replace output-plan audit for active properties part local-DOM
+  rewrite, restored content types copy-original audit, preserved custom XML item /
+  item owner `.rels`, package relationships, workbook, worksheet, and unknown
+  entry, and no invented properties owner `.rels`, and explicit chart removal
+  inbound audit. This is
+  internal Patch audit visibility; metadata entries such as
+  `[Content_Types].xml`, package `_rels/.rels`, and source-owned `.rels` are not
+  exposed as package parts, and this is not a public editor API or general
+  relationship/content-type mutator.
+  The ordinary single-part replacement regression now also verifies that the
+  rewritten entry stays in the source entry order while untouched entries keep
+  their stored method / CRC / uncompressed size and bytes. This is narrow
+  part-level rewrite copy-original evidence.
+  An ordinary workbook replacement over the linked-object fixture now verifies
+  that rewriting only `xl/workbook.xml` records workbook `.rels` as
+  copy-original package-entry audit while worksheet, drawing, media,
+  sharedStrings, styles, VBA, calcChain, and unknown extension entries keep the
+  same copy-original baseline.
+  The same workbook path now also verifies ordinary-replace-then-remove
+  ordering: later explicit removal clears the active workbook replacement,
+  records removed-part and workbook owner `.rels` omission audit, omits
+  `xl/workbook.xml` and `xl/_rels/workbook.xml.rels`, removes the workbook
+  content type override, preserves the package officeDocument relationship, and
+  preserves downstream/source parts. This is not workbook deletion semantics,
+  sheet catalog sync, relationship/content type repair, orphan cleanup,
+  transactional undo, or public API.
+  An ordinary drawing replacement over the linked-object fixture now verifies
+  that rewriting only `xl/drawings/drawing1.xml` records drawing `.rels` as
+  copy-original package-entry audit while chart, media, and unknown extension
+  entries keep the same copy-original baseline. This is not drawing mutation,
+  image editing, or chart editing.
+  An ordinary unknown extension replacement over the same fixture now verifies
+  that rewriting only `custom/opaque-extension.bin` records its owner `.rels`
+  as copy-original package-entry audit while workbook, worksheet, drawing,
+  chart, and media entries keep the same copy-original baseline. This is not
+  semantic unknown extension editing, custom relationship repair, or public API.
+  A repeated ordinary replacement over that same unknown extension now verifies
+  final bytes, manifest write mode, edit-plan reason, and owner `.rels` audit are
+  upserted to the last replacement state, while the owner `.rels` remains
+  copy-original and no removed-part or removed package-entry audit is created.
+  This is not transactional editing or unknown extension semantic merging.
+  The same fixture now covers unknown extension remove-then-ordinary-replace
+  ordering: a later replacement restores the active unknown extension part,
+  clears stale removed-part and removed owner `.rels` audit, restores owner
+  `.rels` copy-original package-entry audit, preserves the inbound unknown
+  relationship in worksheet `.rels`, keeps other linked/source entries on the
+  copy-original baseline, and does not rewrite `[Content_Types].xml`. This is
+  not unknown extension semantic merge, custom relationship repair, metadata
+  repair, transactional undo, or public API.
+  The same path now also covers unknown extension ordinary-replace-then-remove
+  ordering: a later removal clears the active replacement, records removed-part
+  and removed owner `.rels` audit, omits the unknown extension part and owner
+  `.rels`, preserves the worksheet inbound relationship that still points at
+  the missing part, keeps other linked/source entries and the default `bin`
+  content type, and does not rewrite `[Content_Types].xml`. This is not unknown
+  extension deletion semantics, custom relationship repair, metadata repair,
+  relationship pruning/repair, content type repair, orphan cleanup,
+  transactional undo, or public API.
+  An ordinary media replacement over the same fixture now verifies that
+  rewriting only `xl/media/image1.png` preserves drawing `.rels`, keeps the PNG
+  default content type from being promoted to an override, and leaves workbook,
+  worksheet, drawing, chart, and unknown extension entries on the same
+  copy-original baseline. This is not image decoding, drawing mutation, or
+  existing-workbook image editing.
+  The same path now covers default-typed media remove-then-ordinary-replace
+  ordering: a later replacement restores the active media part, clears stale
+  removed-part audit, keeps the PNG default content type without promoting
+  `xl/media/image1.png` to an override, preserves inbound drawing `.rels`, and
+  does not invent media owner `.rels`. This is not transactional undo, image
+  semantic merging, relationship repair, content type repair, or full image
+  preservation.
+  The same path now also covers media ordinary-replace-then-remove ordering: a
+  later removal clears the active media replacement, records removed-part audit
+  and inbound drawing relationship metadata, omits `xl/media/image1.png`, keeps
+  the PNG default content type without promoting the media part to an override,
+  preserves inbound drawing `.rels`, and does not invent media owner `.rels`.
+  The internal output-plan snapshot also exposes the omitted media part,
+  matching removed_parts target/reason/inbound audit, drawing inbound audit,
+  content types / drawing `.rels` copy-original decisions, empty
+  removed_package_entries, and absence of any invented media owner `.rels`.
+  This is not transactional undo, image semantic merging, relationship pruning/repair, content type repair,
+  existing-workbook image editing, or full image preservation.
+  An ordinary table replacement over the same fixture now verifies that
+  rewriting only `xl/tables/table1.xml` preserves worksheet `.rels`, keeps the
+  table content type override readable, and leaves workbook, worksheet, drawing,
+  chart, media, and unknown extension entries on the same copy-original
+  baseline. This is not table resize, calculated columns, totals generation, or
+  existing-workbook table editing.
+  The same path now covers table remove-then-ordinary-replace ordering: a later
+  replacement restores the active table part, clears stale removed-part audit,
+  returns `[Content_Types].xml` to source/copy-original audit, preserves the
+  inbound worksheet `.rels` table relationship, and does not invent table owner
+  `.rels`. This is not table resize, calculated columns, totals generation,
+  transactional undo, relationship repair, content type repair, or
+  existing-workbook table editing.
+  The same path now covers table ordinary-replace-then-remove ordering: a later
+  explicit removal clears the active table replacement, records removed-part
+  audit and inbound worksheet relationship metadata, omits the table part from
+  output, removes the table content type override, preserves the inbound
+  worksheet `.rels` table relationship, and does not invent table owner `.rels`.
+  The internal output-plan snapshot also exposes the omitted table part,
+  worksheet inbound audit, content types local-DOM rewrite, and absence of any
+  invented table owner `.rels`. This is not table delete semantics, table
+  resize, calculated columns, totals generation, transactional undo,
+  relationship pruning/repair, content type repair, or existing-workbook table
+  editing.
+  An ordinary sharedStrings replacement over the same fixture now verifies that
+  rewriting only `xl/sharedStrings.xml` preserves workbook `.rels`,
+  sharedStrings owner `.rels`, and the sharedStrings content type override, and
+  leaves styles, table, media, VBA, and unknown extension entries on the same
+  copy-original baseline. This is not sharedStrings index migration,
+  string-table rebuild, worksheet cell-reference sync, or existing-workbook
+  sharedStrings semantic editing.
+  The same path now covers sharedStrings ordinary-replace-then-remove ordering:
+  a later removal clears the active sharedStrings replacement, records
+  removed-part audit, omits `xl/sharedStrings.xml` and its source-owned owner
+  `.rels` from output, removes the sharedStrings content type override, and
+  preserves the inbound workbook `.rels` sharedStrings relationship. It does not
+  prune worksheet `t="s"` references or rebuild the string table. This is not
+  sharedStrings index migration, string-table rebuild, worksheet cell-reference
+  sync, transactional undo, relationship pruning or repair, content type repair,
+  existing-file sharedStrings semantic editing, or public API.
+  The internal output-plan snapshot also exposes the final omitted
+  `xl/sharedStrings.xml` part, source-owned owner `.rels` omission, workbook
+  inbound relationship metadata, and content types rewrite for that final
+  removal; this is audit visibility only, not metadata repair or public API.
+  An ordinary styles replacement over the same fixture now verifies that
+  rewriting only `xl/styles.xml` preserves workbook `.rels`, keeps the styles
+  content type override readable, does not invent `xl/_rels/styles.xml.rels`,
+  and leaves sharedStrings, table, media, VBA, and unknown extension entries on
+  the same copy-original baseline. This is not style id migration, style merge,
+  cell `s` reference sync, existing-file style preservation, or full style editing.
+  The same path now covers styles ordinary-replace-then-remove ordering: a later
+  removal clears the active styles replacement, records removed-part audit, omits
+  `xl/styles.xml` from output, removes the styles content type override, preserves
+  the inbound workbook `.rels` styles relationship, and does not invent
+  `xl/_rels/styles.xml.rels`. It does not migrate style ids or rewrite cell `s`
+  references. This is not style merge, existing-file style preservation,
+  transactional undo, relationship pruning or repair, content type repair, full
+  style editing, or public API.
+  The same fixture now covers chart remove-then-ordinary-replace ordering: a
+  later replacement restores the active chart part, clears stale removed-part
+  audit, returns `[Content_Types].xml` to source/copy-original audit, preserves
+  direct and URI-qualified inbound chart relationships in drawing `.rels`,
+  keeps other linked/unknown source entries on the copy-original baseline, and
+  does not invent chart owner `.rels`. This is not chart semantic merge, chart
+  reference repair, relationship repair, content type repair, transactional
+  undo, existing-workbook chart editing, or public API.
+  Internal `planned_output()` coverage for this restore state now exposes the
+  active chart `StreamRewrite` entry, source/copy-original content types audit,
+  preserved inbound drawing `.rels`, preserved linked/unknown entries, empty
+  removed_parts and removed_package_entries, and no invented chart owner `.rels`.
+  This is Patch audit only, not a public output planner or chart editing API.
+  An ordinary chart replacement over the same fixture now verifies that
+  rewriting only `xl/charts/chart1.xml` preserves drawing `.rels` chart and
+  URI-qualified chart relationships, keeps the chart content type override
+  readable, does not invent chart owner `.rels`, and leaves media, table,
+  sharedStrings, styles, VBA, and unknown extension entries on the same
+  copy-original baseline. This is not chart reference migration, series/cache
+  update, drawing mutation, existing-workbook chart editing, or full chart support.
+  The same fixture now covers chart ordinary-replace-then-remove ordering:
+  later removal clears the active chart replacement, records removed-part audit
+  plus direct and URI-qualified inbound drawing relationship metadata, omits
+  `xl/charts/chart1.xml`, removes the chart content type override, preserves
+  inbound drawing `.rels` and other linked/unknown source entries, and does not
+  invent chart owner `.rels`. This is not chart delete semantics, chart
+  reference repair, relationship pruning or repair, content type repair,
+  transactional undo, semantic merge, existing-workbook chart editing, or
+  public API.
+  The internal output-plan snapshot also exposes the omitted
+  `xl/charts/chart1.xml` part, matching removed_parts target/reason/inbound
+  audit, drawing-owned direct and URI-qualified inbound relationship metadata,
+  content types rewrite, empty removed_package_entries, and no invented chart
+  owner `.rels`; this is audit visibility only, not chart editing, relationship
+  repair, metadata repair, or public API.
+  An ordinary VBA project replacement over the same fixture now verifies that
+  rewriting only `xl/vbaProject.bin` preserves workbook `.rels` and the VBA
+  content type override, does not invent `xl/_rels/vbaProject.bin.rels`, and
+  leaves worksheet, drawing, chart, media, table, sharedStrings, styles,
+  calcChain, and unknown extension entries on the same copy-original baseline.
+  This is not macro generation, VBA semantic editing, signature preservation,
+  workbook relationship repair, or full macro support.
+  The same path now covers VBA project remove-then-ordinary-replace ordering: a
+  later replacement restores the active VBA project part, clears stale
+  removed-part audit, returns `[Content_Types].xml` to source/copy-original
+  audit, preserves the inbound workbook `.rels` VBA relationship, and does not
+  invent `xl/_rels/vbaProject.bin.rels`. This is not macro generation, VBA
+  semantic editing, signature preservation, transactional undo, workbook
+  relationship repair, content type repair, or full macro support.
+  Internal `planned_output()` coverage for this restore state now exposes the
+  active VBA project `StreamRewrite` entry, source/copy-original content types
+  audit, preserved package/workbook relationships, preserved linked/unknown
+  entries, empty removed_parts and removed_package_entries, and no invented VBA
+  owner `.rels`. This is Patch audit only, not a public output planner or macro
+  editing API.
+  The same path now covers VBA project ordinary-replace-then-remove ordering: a
+  later removal clears the active VBA replacement, records removed-part audit,
+  omits the VBA project part from output, removes the VBA content type override,
+  preserves the inbound workbook `.rels` VBA relationship, and does not invent
+  `xl/_rels/vbaProject.bin.rels`. This is not macro generation, VBA semantic
+  editing, signature preservation, transactional undo, workbook relationship
+  repair, content type repair, or full macro support.
+  The internal output-plan snapshot also exposes the omitted `xl/vbaProject.bin`
+  part, matching removed_parts target/reason/inbound audit, workbook inbound VBA
+  relationship metadata, content types rewrite, empty removed_package_entries,
+  and no invented `xl/_rels/vbaProject.bin.rels`; this is audit visibility only,
+  not macro generation, signature preservation, metadata repair, or public API.
+  An ordinary VML drawing replacement over the same fixture now verifies that
+  rewriting only `xl/drawings/vmlDrawing1.vml` preserves worksheet `.rels`
+  URI-qualified `vmlDrawing` relationship and the VML content type override,
+  does not invent `xl/drawings/_rels/vmlDrawing1.vml.rels`, and leaves workbook,
+  worksheet, drawing, chart, media, table, sharedStrings, styles, VBA, calcChain,
+  and unknown extension entries on the same copy-original baseline. This is not
+  VML shape editing, legacy drawing mutation, relationship repair, or full
+  VML/drawing support.
+  The same path now covers VML drawing remove-then-ordinary-replace ordering: a
+  later replacement restores the active VML drawing part, clears stale
+  removed-part audit, returns `[Content_Types].xml` to source/copy-original
+  audit, preserves the URI-qualified inbound worksheet `.rels` vmlDrawing
+  relationship, and does not invent VML owner `.rels`. Internal
+  `planned_output()` now also snapshots this restore state as an active VML
+  drawing `LocalDomRewrite` entry with content types copy-original audit,
+  preserved package/workbook/worksheet/drawing relationships, preserved linked/
+  unknown entries, empty removed_parts and removed_package_entries, and no
+  invented owner `.rels`. This is not public output planning, VML shape editing,
+  legacy drawing mutation, transactional undo, relationship repair, content
+  type repair, or full VML/drawing support.
+  The same path now covers VML drawing ordinary-replace-then-remove ordering: a
+  later removal clears the active VML drawing replacement, records removed-part
+  audit, omits the VML drawing part from output, removes the VML content type
+  override, preserves the URI-qualified inbound worksheet `.rels` vmlDrawing
+  relationship, and does not invent VML owner `.rels`. This is not VML shape
+  editing, legacy drawing mutation, transactional undo, relationship pruning or
+  repair, content type repair, or full VML/drawing support.
+  The internal output-plan snapshot also exposes the omitted
+  `xl/drawings/vmlDrawing1.vml` part, matching removed_parts
+  target/reason/inbound audit, URI-qualified worksheet inbound relationship
+  metadata, content types rewrite, empty removed_package_entries, and no
+  invented VML owner `.rels`; this is audit visibility only, not VML editing,
+  relationship repair, metadata repair, or public API.
+  An ordinary percent-decoded drawing replacement over the same fixture now verifies
+  that rewriting only `xl/drawings/drawing space.xml` preserves the worksheet `.rels`
+  source target `../drawings/drawing%20space.xml` and drawing content type override,
+  does not invent `xl/drawings/_rels/drawing space.xml.rels`, and leaves workbook,
+  worksheet, drawing, chart, media, table, VML, sharedStrings, styles, VBA, calcChain,
+  and unknown extension entries on the same copy-original baseline. This is not
+  percent-encoded target repair, relationship rewrite, drawing mutation, or full
+  drawing support.
+  The same path now covers percent-decoded drawing remove-then-ordinary-replace
+  ordering: a later replacement restores the active decoded drawing part, clears
+  stale removed-part audit, returns `[Content_Types].xml` to source/copy-original
+  audit, preserves the original encoded inbound worksheet `.rels` target
+  `../drawings/drawing%20space.xml`, and does not invent
+  `xl/drawings/_rels/drawing space.xml.rels`. Internal `planned_output()` now
+  also snapshots this restore state as an active decoded drawing `LocalDomRewrite`
+  entry with content types copy-original audit, preserved package/workbook/
+  worksheet/drawing relationships, preserved linked/unknown entries, and no
+  invented owner `.rels`. This is not public output planning, percent-encoded
+  target repair, relationship rewrite, drawing mutation, transactional undo,
+  relationship repair, content type repair, or full drawing support.
+  The same path now covers percent-decoded drawing ordinary-replace-then-remove
+  ordering: a later removal clears the active decoded drawing replacement,
+  records removed-part audit, omits the decoded drawing part from output, removes
+  the drawing content type override, preserves the original encoded inbound
+  worksheet `.rels` target `../drawings/drawing%20space.xml`, and does not invent
+  `xl/drawings/_rels/drawing space.xml.rels`. This is not percent-encoded target
+  repair, relationship rewrite, drawing mutation, transactional undo, relationship
+  pruning or repair, content type repair, or full drawing support.
+  A first linked-object preservation fixture now covers worksheet `.rels`,
+  drawing, drawing `.rels`, media, chart, table, untouched `xl/sharedStrings.xml`,
+  sharedStrings owner `.rels`, untouched `xl/styles.xml`, VBA, and a reachable
+  unknown extension part plus its owner `.rels`, plus workbook `definedNames`
+  preservation during workbook metadata rewrite. It also confirms
+  worksheet-owned and drawing-owned external, URI-qualified, invalid, and
+  unresolved relationship target audit notes and structured `RelationshipTargetAudit`
+  fields propagate through the existing-file `PackageEditor` edit plan without
+  creating or repairing package parts.
+  Additional `ReferencePolicy` regressions cover no-state-pollution failure,
+  calcChain preserve output, rebuild rejection, malformed workbook metadata
+  preflight failure, missing `xl/workbook.xml` worksheet-rewrite precondition
+  failure, inbound-linked drawing removal failure, and request-recalculation
+  fullCalcOnLoad output intent.
+  These failure-path checks now include edit-plan notes and manifest write-mode
+  hygiene for the narrow Patch state surface, plus preservation of an already
+  queued ordinary workbook replacement when a later linked worksheet rewrite or
+  inbound-linked removal strict failure occurs; the inbound-linked removal
+  failure also snapshots worksheet/workbook payload audits, removal audits,
+  calc policy, aggregate `planned_output()`, and legacy source-copy output
+  preview. The base linked worksheet policy failure path now also snapshots
+  aggregate `planned_output()` as source copy-original before writing output.
+  The queued ordinary workbook replacement failure path now also
+  snapshots aggregate `planned_output()` for the workbook rewrite and preserved
+  source entries.
+  The docProps generated-small-XML path also rejects conflicting core/app
+  package relationship targets without state or copied-output pollution; queued
+  docProps followed by linked worksheet policy failure now also snapshots
+  aggregate `planned_output()` for generated docProps and preserved source
+  entries.
+- Internal `DependencyAnalyzer` can now conservatively traverse known internal
+  relationship targets reachable from worksheet relationships, for example
+  worksheet -> table and worksheet -> drawing -> image/chart, and include those parts in the dependency
+  summary. Current regressions also cover audit notes discovered through drawing-owned
+  `.rels`, while skipping external hyperlink targets as package parts and recording
+  an external-target audit note. It also flags URI-qualified, invalid, and
+  unresolved internal relationship targets for package structure review, includes
+  URI-qualified base targets when they resolve to registered package parts,
+  normalizes absolute internal targets as package part paths,
+  decodes percent-encoded internal targets before part-name normalization so
+  registered decoded targets become dependencies, and avoids inventing package
+  parts for invalid percent escapes or unresolved targets. Relationship
+  target audit notes include the owner part, relationship id, relationship type,
+  original target, and the normalized base target when one is available; this is audit
+  traceability, not target validation or relationship repair.
+  Unknown relationship types whose normalized internal targets resolve to
+  registered parts are conservatively included as dependency / copy-original
+  audit decisions without implying custom relationship semantics or editing.
+  `PartRewritePlanner` uses that analysis to annotate copy-original `EditPlan`
+  entries with concrete dependency reasons, including relationship ids,
+  relationship types, normalized target part paths, and workbook calcPr / definedNames review
+  context.
+  `DependencyAnalysis`, worksheet `EditPlan`, and the existing-file `PackageEditor`
+  edit plan also keep structured relationship audit fields:
+  `RelationshipTargetAudit` records owner part, relationship id/type, original
+  target, normalized target, and note text, while relationship-derived
+  `PartDependency` records owner part, relationship id/type, and original
+  target. Relationship-derived copy-original `EditPlanEntry` records now also
+  preserve those owner/id/type/target fields as internal Patch audit metadata;
+  static workbook/sharedStrings/styles dependencies still use reason text
+  without relationship metadata.
+  `EditPlan` now upserts repeated `RelationshipTargetAudit` records by
+  owner/id/type/raw target/normalized target, upserts repeated
+  `WorksheetRelationshipReferenceAudit` records by worksheet/kind/element/id/
+  expected type/actual type, and de-duplicates identical audit notes, so
+  repeated linked worksheet rewrites do not accumulate duplicate Patch audit
+  metadata. No-state-pollution regressions now also snapshot
+  `relationship_target_audits()` and `worksheet_relationship_reference_audits()`
+  for linked policy failure, calcChain rebuild rejection, missing sheet-name
+  worksheet/sheetData lookup, invalid worksheet XML / sheetData source,
+  malformed/missing workbook metadata, malformed workbook calc metadata,
+  invalid replacement, metadata-entry replacement, and invalid removal failure
+  paths; malformed workbook metadata/calc metadata, invalid/metadata replacement,
+  and invalid removal also check aggregate `planned_output()` and legacy
+  output-entry preview source-copy
+  snapshots; invalid/metadata replacement and invalid removal also snapshot
+  worksheet/workbook payload audits, removal audits, and calc policy. The
+  inbound-linked removal policy failure now carries the same planned-output and
+  payload/removal/calc-policy snapshots, including preservation of a queued
+  ordinary workbook replacement. This is audit traceability
+  hygiene, not relationship validation, repair, or pruning.
+  End-to-end editing with sharedStrings/styles/tables/drawings/defined-name
+  dependency sync, drawing/image/chart/table editing, and broad preservation remains 计划.
 
 Next tasks:
-- Add package reader and package writer on the production ZIP backend.
+- Build on the internal `EditPlan`, `DependencyAnalyzer`, `ReferencePolicy`,
+  and `PartRewritePlanner` planning foundation, including explicit registered-part
+  removal planning, without exposing it as complete
+  existing-file editing.
+- Extend the internal `PackageEditor` and package writer/copy pipeline beyond
+  the current calcChain/content-type/workbook-rels and sheetData-local-rewrite
+  slices toward broader dependency sync and preservation fixtures.
 - Use and harden the existing internal `PartIndex` / `RelationshipGraph`
   groundwork when adding reader/writer, preservation tests, and object
   features.
@@ -1281,12 +2831,77 @@ Next tasks:
   - generate small XML
   - stream rewrite
   - local DOM rewrite
+- Keep explicit part removals as removed-part audit metadata, not as an
+  automatic relationship-pruning promise.
 - Preserve unknown and unmodified parts byte-for-byte when possible.
+- Prove one narrow Patch MVP before exposing broad edit APIs.
 
 Validation:
 - Use template workbooks containing unknown parts, drawings, charts, or macros.
 - Modify a targeted worksheet part and compare package entries before and after.
 - Verify unmodified parts are preserved.
+
+### 2. In-memory Small-File Editing
+
+Status: 计划.
+
+Next tasks:
+- Define a small-workbook random editing API for sheet inspection,
+  `get_cell()`, `set_cell()`, `erase_cell()`, sheet rename/add/delete, and
+  save-as.
+- Document memory growth and size guardrails. This path may use a cell map or
+  local DOM, but it is not the large worksheet low-memory path.
+- Share serialization and package semantics with Streaming/Patch where
+  practical: styles, sharedStrings, relationships, document properties, and
+  calc metadata.
+
+Validation:
+- Small workbook edit/save tests cover cell edits, sheet edits, invalid ranges,
+  sharedStrings/styles side effects, and preservation when opening an existing
+  package.
+- Public API comments clearly state In-memory mode and when to choose
+  Streaming or Patch instead.
+
+### 3. Sheet Dependency and Phase 3/5 Linkage
+
+Status: 计划, with several new-workbook slices 基础.
+
+Next tasks:
+- Define sheet-edit dependency analysis for worksheet `.rels`, sharedStrings,
+  styles, tables, hyperlinks, validations, merged cells, autoFilter, drawings,
+  defined names, workbook calc metadata, and `calcChain.xml`.
+- Keep current Phase 3/5 streaming-only slices documented as new-workbook-only
+  until Patch behavior exists.
+- For each richer object feature, compare at least two relevant reference
+  ecosystems when useful: one API-experience reference and one OpenXML
+  structure/reference-output source.
+- Add full font/fill/border/alignment, richer conditional formatting, table
+  resize, hyperlink styles, and object edits only as separate feature slices.
+
+Validation:
+- Existing-file feature edits require before/after package comparison and Excel
+  open checks.
+- Streaming-only new-workbook slices keep their focused structure tests and
+  local QA helpers.
+
+### 4. Writer and Performance Hardening
+
+Status: 进行中 / 基础.
+
+Next tasks:
+- Keep opt-in minizip backend, compression-level policy, Zip64 policy,
+  sharedStrings measurements, benchmark groundwork, file-backed/chunked entries,
+  and streaming hot-path work moving as supporting lanes.
+- Keep `inlineStr` as the low-memory default until sharedStrings has broader
+  memory/size evidence.
+- Do not treat writer performance as a substitute for existing-file editing.
+
+Validation:
+- Preserve existing OpenXML structure tests.
+- Benchmarks record scale, backend, compression setting, string strategy, time,
+  peak memory, output size, and office-suite open result.
+- Re-run Excel visual verification for representative generated workbooks when
+  behavior changes.
 
 ### 5. Phase 5 Complex Objects
 
@@ -1295,30 +2910,33 @@ object support, existing-file editing, and preservation support in plan-only
 language.
 
 Safe order:
-1. Data validations as streaming-only worksheet metadata for new workbooks.
+1. Preserve existing chart/VBA/image/drawing/unknown parts when editing an
+   unrelated part.
+2. Data validations as streaming-only worksheet metadata for new workbooks.
    They should not force a worksheet DOM or existing-file editing.
-2. Use the existing internal `PartIndex` / `RelationshipGraph` groundwork for
+3. Use the existing internal `PartIndex` / `RelationshipGraph` groundwork for
    features that need worksheet `.rels` or cross-part id consistency, and add
    per-feature tests before claiming support.
-3. External URL and internal workbook-location hyperlinks now have
+4. External URL and internal workbook-location hyperlinks now have
    streaming-only new-workbook slices. External links keep worksheet XML and
    worksheet `.rels` in sync; internal links are location-only and do not
    consume `rId` values. Broader hyperlink support still needs separate design
    and tests.
-4. Tables now have a streaming-only new-workbook slice after table part
+5. Tables now have a streaming-only new-workbook slice after table part
    allocation, content type override, worksheet rels, and table XML were kept
    consistent. Broader table support still needs separate design and tests.
-5. Two-/three-color conditional color scales, basic data bars, and basic
+6. Two-/three-color conditional color scales, basic data bars, and basic
    3Arrows icon sets now have streaming-only new-workbook worksheet metadata
    slices. Icon set QA now includes a percentile-threshold sample in addition
    to the default percent, numeric-priority, and multi-range samples. Broader
    conditional formatting still needs separate design and tests for
    formula/cellIs rules, advanced/custom icon sets, advanced data bars,
    dxf-backed styles, conflict handling, and existing-file editing.
-6. Images after `stb` decode/dimension behavior, media part allocation,
+7. Images after `stb` decode/dimension behavior, media part allocation,
    drawing part generation, drawing rels, worksheet rels, anchors, and content
    types are in place.
-7. Chart and VBA passthrough only after existing-package read/copy is proven.
+8. Chart and VBA native generation/editing only after passthrough preservation
+   is proven.
 
 Validation:
 - For every new object type, compare against an Excel or `openpyxl` /

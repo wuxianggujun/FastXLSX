@@ -59,6 +59,13 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
 - solid fill 只写 `<fills>` 里的 solid `<patternFill>`、`fgColor rgb`、
   `bgColor indexed="64"`、`fillId` 和 `applyFill="1"`；不代表 gradient fill、
   任意 pattern fill、theme/tint/indexed palette fill 或 `dxfs`。
+- 当前内部 `PackageEditor` linked-object fixture 另有 ordinary styles replacement
+  回归：只重写 `xl/styles.xml` 时，workbook `.rels`、styles content type override、
+  sharedStrings、sharedStrings owner `.rels`、table、media、VBA 和 unknown
+  extension entries 保持 copy-original baseline，且不会凭空创建
+  `xl/_rels/styles.xml.rels`。这只是 existing-package styles part rewrite /
+  relationship preservation evidence，不是 style id 迁移、样式合并、cell `s`
+  引用同步、existing-file style preservation、public style editing API 或完整样式编辑。
 - 当前 two-/three-color conditional color scale、basic data bar 和 basic 3Arrows icon set
   不是 style registry 功能：它们写 worksheet-local
   `<conditionalFormatting>`，不生成 `styles.xml` 或 `dxfs`。不要把它当成 P9 styles

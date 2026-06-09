@@ -165,6 +165,11 @@ void write_minizip_package(const std::filesystem::path& path, const std::vector<
     const std::string output_path = path_to_utf8(path);
     check_minizip_result(mz_zip_writer_open_file(writer.get(), output_path.c_str(), 0, 0),
         "open XLSX package");
+    void* zip_handle = nullptr;
+    check_minizip_result(
+        mz_zip_writer_get_zip_handle(writer.get(), &zip_handle), "get ZIP writer handle");
+    check_minizip_result(
+        mz_zip_set_data_descriptor(zip_handle, 0), "disable ZIP data descriptors");
 
     try {
         for (const PackageEntry& entry : entries) {

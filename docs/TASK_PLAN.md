@@ -71,11 +71,16 @@ parallelism, acceptance checks, and explicit non-goals.
   instead of flattening them into one string. `replace_worksheet_part_chunks()`
   now reuses the existing materialized worksheet XML validation / audit /
   calc metadata path and then records the target worksheet payload as chunks.
+  The cell-replacement handoff now passes its dimension-refreshed worksheet
+  output through that staged chunk path, so the target worksheet plan is a
+  `StreamRewrite` while the current helper still materializes planned and
+  rewritten worksheet XML for bounded validation, audit, and dimension refresh.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
-  handoff, chunked package-entry source, and worksheet chunk handoff groundwork
+  handoff, chunked package-entry source, worksheet chunk handoff, and
+  cell-replacement staged output handoff groundwork
   only: no public API, full XML parser/schema validation, low-memory
-  validation/audit, relationship repair, cell-replacement low-memory staged
-  handoff, broad range metadata recalculation, dependency repair,
+  validation/audit, relationship repair, cell-replacement low-memory stream
+  transformer, broad range metadata recalculation, dependency repair,
   sharedStrings/style migration, or low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and

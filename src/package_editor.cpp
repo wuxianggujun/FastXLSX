@@ -2798,22 +2798,25 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
     require_cell_replacement_local_rewrite_size(
         "dimension-refreshed worksheet XML", rewritten_worksheet_xml.size());
 
-    replace_worksheet_part_impl(
-        std::move(worksheet_part), std::move(rewritten_worksheet_xml), policy, true);
+    std::vector<PackageEntryChunk> output_chunks;
+    output_chunks.push_back(PackageEntryChunk::memory(rewritten_worksheet_xml));
+    replace_worksheet_part_chunks(std::move(worksheet_part), std::move(rewritten_worksheet_xml),
+        std::move(output_chunks), policy);
     const std::string replacement_reason =
-        "target worksheet part local rewrite from bounded worksheet cell replacement "
-        "chunk emitter; current helper materializes planned worksheet XML";
+        "target worksheet part staged stream rewrite chunks from bounded worksheet cell "
+        "replacement; current helper materializes planned and rewritten worksheet XML";
     edit_plan_.set_part(
-        target_worksheet_part, PartWriteMode::LocalDomRewrite, replacement_reason);
-    manifest_.set_part_write_mode(target_worksheet_part, PartWriteMode::LocalDomRewrite);
+        target_worksheet_part, PartWriteMode::StreamRewrite, replacement_reason);
+    manifest_.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
     if (auto* replacement = find_replacement(replacements_, target_worksheet_part)) {
-        replacement->write_mode = PartWriteMode::LocalDomRewrite;
+        replacement->write_mode = PartWriteMode::StreamRewrite;
         replacement->reason = replacement_reason;
     }
     edit_plan_.add_note(
-        "worksheet cell replacement uses bounded local output chunks; current helper "
-        "materializes the planned worksheet XML and is not the package-entry staged "
-        "large-file streaming worksheet transformer");
+        "worksheet cell replacement hands dimension-refreshed output to staged "
+        "package-entry chunks; current helper materializes the planned and rewritten "
+        "worksheet XML and is not the low-memory large-file streaming worksheet "
+        "transformer");
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

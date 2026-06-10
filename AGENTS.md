@@ -126,10 +126,12 @@ In-memory 三条 API 路径；流式写入是大文件性能主线，编辑能�
   preservation；当前还覆盖 internal P8 bounded cell-replacement handoff：
   `PackageEditor::replace_worksheet_cells()` /
   `replace_worksheet_cells_by_name()` 会物化当前 planned worksheet XML，复用
-  `emit_cell_replacement_worksheet()` 输出 replacement chunks，再委托 existing
-  worksheet replacement 路径处理 fullCalcOnLoad / calcChain cleanup / audit，且当前会
-  在状态变更前按 emitted cell refs 刷新 top-level worksheet `<dimension>`，并复用
-  transformer replacement payload preflight，验证 missing selector 失败不污染状态；当前还覆盖
+  `emit_cell_replacement_worksheet()` 输出 replacement chunks，在状态变更前按 emitted
+  cell refs 刷新 top-level worksheet `<dimension>`，再通过
+  `replace_worksheet_part_chunks()` 把 target worksheet 记录为 `StreamRewrite` staged
+  chunks，并复用 existing worksheet replacement 路径处理 fullCalcOnLoad / calcChain
+  cleanup / audit；当前仍物化 planned 和 rewritten worksheet XML，并复用 transformer
+  replacement payload preflight，验证 missing selector 失败不污染状态；当前还覆盖
   internal package-entry chunked replacement source foundation：
   `PackageEditor::replace_part_chunks()` 会把 existing package part 记录为
   `PackageEntryChunk` memory/file chunks 支撑的 `StreamRewrite` replacement，

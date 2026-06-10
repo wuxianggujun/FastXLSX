@@ -2570,14 +2570,14 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transform
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
         "cell replacement handoff should keep worksheet in the edit plan");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "cell replacement handoff should expose bounded local rewrite mode");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "cell replacement handoff should expose staged stream rewrite mode");
     check(worksheet_plan->reason.find("bounded worksheet cell replacement")
             != std::string::npos,
-        "cell replacement handoff should describe bounded transformer output");
+        "cell replacement handoff should describe bounded staged transformer output");
     check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "cell replacement handoff manifest should mirror bounded local rewrite mode");
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "cell replacement handoff manifest should mirror staged stream rewrite mode");
     check(editor.edit_plan().full_calculation_on_load(),
         "cell replacement handoff should request full calculation on load");
     check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
@@ -2586,13 +2586,13 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transform
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(output_plan.full_calculation_on_load,
         "cell replacement output plan should expose full calculation request");
-    check(has_note_containing(output_plan.notes, {"bounded local output chunks"}),
-        "cell replacement output plan should expose bounded local handoff note");
+    check(has_note_containing(output_plan.notes, {"staged package-entry chunks"}),
+        "cell replacement output plan should expose staged chunk handoff note");
     check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
         "cell replacement output plan should expose dimension refresh note");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "cell replacement output plan should local-rewrite worksheet");
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "cell replacement output plan should stream-rewrite worksheet chunks");
     check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
         fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
         "cell replacement output plan should local-rewrite workbook metadata");

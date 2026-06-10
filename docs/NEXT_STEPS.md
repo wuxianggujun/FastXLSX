@@ -105,10 +105,11 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     handling to the existing worksheet replacement path. The bounded handoff now
     refreshes the top-level worksheet `<dimension>` from emitted cell refs,
     replacing stale dimension metadata or inserting a missing dimension before
-    commit. Treat this as a bounded handoff fixture only: no public API, no
-    package-entry staged stream writer, no broad range metadata recalculation, no
-    sharedStrings/style migration, no relationship repair, and no low-memory
-    large-file editing claim.
+    commit, and hands the dimension-refreshed output to the staged worksheet chunk
+    path so the target worksheet is planned as `StreamRewrite`. Treat this as a
+    bounded staged-output fixture only: no public API, no low-memory worksheet
+    transformer, no broad range metadata recalculation, no sharedStrings/style
+    migration, no relationship repair, and no low-memory large-file editing claim.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
@@ -125,7 +126,7 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     and calc metadata path, then records the target worksheet payload as
     `PackageEntryChunk` memory/file chunks for `save_as()`. Treat this as a
     worksheet staged payload bridge only: no public API, no low-memory
-    validation/audit, no cell-replacement staged output, no full worksheet
+    validation/audit, no cell-replacement low-memory stream writer, no full worksheet
     stream writer, and no dependency or relationship repair.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and

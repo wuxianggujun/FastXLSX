@@ -193,10 +193,10 @@ public:
     // Internal bounded handoff from the P8 worksheet transformer foundation.
     // Rewrites selected cells by running the current planned worksheet XML
     // through emit_cell_replacement_worksheet(), materializing the rewritten
-    // worksheet in memory, then delegating calcChain/fullCalcOnLoad and audit
-    // handling to replace_worksheet_part(). This is a bridge fixture for the
-    // future package-entry staged stream writer, not the final low-memory
-    // worksheet transformer.
+    // worksheet for dimension refresh, then delegating calcChain/fullCalcOnLoad
+    // and audit handling through the staged worksheet chunk handoff. This is a
+    // bridge fixture for the future package-entry stream writer, not the final
+    // low-memory worksheet transformer.
     void replace_worksheet_cells(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy = {});

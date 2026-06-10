@@ -1261,7 +1261,8 @@ ZIP32 limits and entry-name hygiene, rejecting empty entry lists, entry counts
 above `65535`, entry names beyond the 16-bit ZIP field, invalid entry names,
 duplicate entry names, missing or inaccessible file-backed chunks, and single entry
 uncompressed sizes above `UINT32_MAX`, and mixed legacy-data/chunked payload
-entries before opening the output path. Zip64,
+entries, invalid memory/file chunk-source combinations, and unknown chunk kinds
+before opening the output path. Zip64,
 data-descriptor input, package streaming, public package editing, public
 compression controls, and performance claims remain planned.
 

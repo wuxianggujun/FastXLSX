@@ -87,6 +87,26 @@ std::uint64_t entry_uncompressed_size(const PackageEntry& entry)
     return size;
 }
 
+void validate_entry_chunk_sources(const PackageEntry& entry)
+{
+    for (const PackageEntryChunk& chunk : entry.chunks) {
+        switch (chunk.kind) {
+        case PackageEntryChunk::Kind::Memory:
+            if (!chunk.path.empty()) {
+                throw FastXlsxError("ZIP entry chunk cannot mix memory and file sources");
+            }
+            break;
+        case PackageEntryChunk::Kind::File:
+            if (!chunk.data.empty()) {
+                throw FastXlsxError("ZIP entry chunk cannot mix memory and file sources");
+            }
+            break;
+        default:
+            throw FastXlsxError("unsupported ZIP entry chunk kind");
+        }
+    }
+}
+
 void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
 {
     if (entries.empty()) {
@@ -112,6 +132,7 @@ void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
         if (!entry.data.empty() && !entry.chunks.empty()) {
             throw FastXlsxError("ZIP entry cannot mix legacy data and chunked payload");
         }
+        validate_entry_chunk_sources(entry);
         if (entry_uncompressed_size(entry) > zip32_max_u32) {
             throw FastXlsxError("ZIP entry uncompressed size requires Zip64 support");
         }

@@ -2444,7 +2444,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P9 - Production ZIP/backend and package writer hardening
 
-状态：推进中；P9.1 / P9.2 / P9.3 / P9.4 / P9.5 已落地。
+状态：推进中；P9.1 / P9.2 / P9.3 / P9.4 / P9.5 / P9.6 已落地。
 
 目标：继续加固内部 `src/package_writer.*` boundary，保持新建 workbook
 输出、chunked package entries、stored bootstrap 和 opt-in minizip backend
@@ -2457,6 +2457,7 @@ true package streaming 或 Zip64 支持。
 - P9.3 internal package writer missing file-backed chunk preflight：基础完成。
 - P9.4 internal package writer empty-package preflight：基础完成。
 - P9.5 internal package writer mixed legacy-data/chunks preflight：基础完成。
+- P9.6 internal package writer invalid chunk-source preflight：基础完成。
 
 ### P9.1 internal package writer duplicate entry-name preflight
 
@@ -2754,6 +2755,69 @@ legacy `data` payload 和 chunked payload 的内部非法状态，避免 writer 
 - 不自动合并 legacy `data` 和 chunked payload。
 - 不静默选择其中一种 payload source。
 - 不声明 writer 支持 payload repair、Zip64、true package streaming 或 atomic output。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P9.6 internal package writer invalid chunk-source preflight
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public API / CMake dependency。
+
+目标：让 `write_package()` 在打开输出路径前拒绝 `PackageEntryChunk` 自身的非法
+source state，避免 memory chunk 静默忽略 file path、file chunk 静默忽略 memory
+data，或未知 chunk kind 被当作空 payload。
+
+输入：
+- 当前 `PackageEntryChunk::memory()` 和 `PackageEntryChunk::file()` 是 internal
+  helper，但 struct 字段仍可被测试或内部调用方直接修改。
+- 当前 writer 根据 `PackageEntryChunk::kind` 选择 memory 或 file source，另一组字段
+  不参与输出。
+- P9.5 已拒绝同一 `PackageEntry` 混用 legacy `data` payload 和 chunked payload。
+
+输出：
+- `validate_package_entries_zip32()` 增加 chunk-source preflight，拒绝 memory chunk
+  携带非空 file path、file chunk 携带非空 memory data，以及未知 chunk kind。
+- `fastxlsx.package_reader` 新增 writer 回归：三类非法 chunk state 都会在打开输出
+  前失败，且已有 sentinel output bytes 保持不变。
+- 文档同步 P9 writer guardrail 当前事实。
+
+触碰文件：
+- `src/package_writer.cpp`
+- `tests/test_package_reader.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/streaming_writer.cpp`
+- `src/package_editor.cpp`
+- CMake 配置
+
+可并行性：
+- 可与 P10 sharedStrings hardening、P11 benchmark groundwork 和 P12 hot-path
+  只读调研并行。
+- 与其他 package writer guardrail / backend 行为修改串行合并，避免同一
+  validation 函数和同一测试文件冲突。
+
+验收标准：
+- `fastxlsx.package_reader` 通过。
+- 默认完整 CTest 通过。
+- 文档明确当前只是 internal package writer preflight，不是 public package writer
+  API、chunk source repair、Zip64、package streaming 或 public existing-file editing。
+
+禁止项：
+- 不新增 public API。
+- 不自动合并 memory/file chunk sources。
+- 不静默选择其中一种 chunk source。
+- 不声明 writer 支持 chunk repair、Zip64、true package streaming 或 atomic output。
 
 验证命令：
 ```powershell

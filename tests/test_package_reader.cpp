@@ -747,6 +747,66 @@ void test_package_writer_rejects_mixed_legacy_data_and_chunks_before_output()
         "mixed data/chunks should fail before overwriting output");
 }
 
+void test_package_writer_rejects_invalid_chunk_sources_before_output()
+{
+    const std::filesystem::path file_chunk_path =
+        output_path("fastxlsx-package-writer-invalid-chunk-source.bin");
+    write_file(file_chunk_path, "file-backed chunk payload");
+
+    struct InvalidChunkCase {
+        std::string_view suffix;
+        fastxlsx::detail::PackageEntryChunk chunk;
+        std::string_view expected_message;
+    };
+
+    fastxlsx::detail::PackageEntryChunk memory_with_path =
+        fastxlsx::detail::PackageEntryChunk::memory("<memory/>");
+    memory_with_path.path = file_chunk_path;
+
+    fastxlsx::detail::PackageEntryChunk file_with_data =
+        fastxlsx::detail::PackageEntryChunk::file(file_chunk_path);
+    file_with_data.data = "<ignored-memory/>";
+
+    fastxlsx::detail::PackageEntryChunk unknown_kind =
+        fastxlsx::detail::PackageEntryChunk::memory("<unknown/>");
+    unknown_kind.kind = static_cast<fastxlsx::detail::PackageEntryChunk::Kind>(99);
+
+    const std::vector<InvalidChunkCase> cases = {
+        {"memory-with-path", memory_with_path, "memory and file sources"},
+        {"file-with-data", file_with_data, "memory and file sources"},
+        {"unknown-kind", unknown_kind, "unsupported ZIP entry chunk kind"},
+    };
+
+    for (const InvalidChunkCase& test_case : cases) {
+        const std::filesystem::path path = output_path(
+            "fastxlsx-package-writer-invalid-chunk-source-"
+            + std::string(test_case.suffix) + ".xlsx");
+        const std::string sentinel = "preserve existing invalid-chunk-source output";
+        write_file(path, sentinel);
+
+        bool failed = false;
+        try {
+            fastxlsx::detail::write_package(path,
+                {
+                    {"xl/chunk-source.xml",
+                        std::vector<fastxlsx::detail::PackageEntryChunk> {test_case.chunk}},
+                },
+                {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), test_case.expected_message,
+                "invalid chunk-source failure should explain the bad chunk state");
+        }
+
+        check(failed, "PackageWriter should reject invalid chunk source state");
+        check(fastxlsx::test::read_file(path) == sentinel,
+            "invalid chunk source should fail before overwriting output");
+    }
+
+    std::error_code remove_error;
+    std::filesystem::remove(file_chunk_path, remove_error);
+}
+
 void test_package_reader_reads_stored_entries_and_unknown_parts()
 {
     const std::filesystem::path path = output_path("fastxlsx-package-reader-stored.xlsx");
@@ -2381,6 +2441,7 @@ int main()
         test_package_writer_rejects_zip64_file_chunk_before_output();
         test_package_writer_rejects_missing_file_chunk_before_output();
         test_package_writer_rejects_mixed_legacy_data_and_chunks_before_output();
+        test_package_writer_rejects_invalid_chunk_sources_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();

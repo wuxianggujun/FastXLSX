@@ -120,7 +120,8 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
     to `PackageWriter` without flattening them into one string. The internal
     package writer now rejects entries that mix legacy `data` payload and
-    chunked payload before opening the output path, so staged chunks do not
+    chunked payload, invalid memory/file chunk-source combinations, and unknown
+    chunk kinds before opening the output path, so staged chunks do not
     silently discard a second payload source. Treat this as a
     staged package-entry payload foundation only: no public API, no payload
     merge/repair, no

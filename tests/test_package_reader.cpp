@@ -471,6 +471,28 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_read()
 
 #endif
 
+void test_package_writer_rejects_empty_package_before_output()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-writer-empty-package.xlsx");
+    const std::string sentinel = "preserve existing empty-package output";
+    write_file(path, sentinel);
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_package(path, {},
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "empty ZIP package",
+            "empty package failure should explain the missing entries");
+    }
+
+    check(failed, "PackageWriter should reject empty ZIP packages");
+    check(fastxlsx::test::read_file(path) == sentinel,
+        "empty package should fail before overwriting output");
+}
+
 void test_package_writer_rejects_invalid_compression_levels_before_output()
 {
     auto check_invalid_level = [](int compression_level, std::string_view output_name) {
@@ -2324,6 +2346,7 @@ void test_package_reader_rejects_corrupt_metadata_crc_on_open()
 int main()
 {
     try {
+        test_package_writer_rejects_empty_package_before_output();
         test_package_writer_rejects_invalid_compression_levels_before_output();
         test_package_writer_rejects_zip64_entry_count_before_output();
         test_package_writer_rejects_zip_entry_name_length_before_output();

@@ -2444,7 +2444,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P9 - Production ZIP/backend and package writer hardening
 
-状态：推进中；P9.1 / P9.2 / P9.3 已落地。
+状态：推进中；P9.1 / P9.2 / P9.3 / P9.4 已落地。
 
 目标：继续加固内部 `src/package_writer.*` boundary，保持新建 workbook
 输出、chunked package entries、stored bootstrap 和 opt-in minizip backend
@@ -2455,6 +2455,7 @@ true package streaming 或 Zip64 支持。
 - P9.1 internal package writer duplicate entry-name preflight：基础完成。
 - P9.2 internal package writer invalid entry-name preflight：基础完成。
 - P9.3 internal package writer missing file-backed chunk preflight：基础完成。
+- P9.4 internal package writer empty-package preflight：基础完成。
 
 ### P9.1 internal package writer duplicate entry-name preflight
 
@@ -2631,6 +2632,63 @@ output bytes 不被覆盖。
 - 不新增 public API。
 - 不自动创建缺失 chunk、回退空 payload 或忽略 caller 提供的 file-backed source。
 - 不声明 writer 支持 Zip64、true package streaming 或 atomic output。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P9.4 internal package writer empty-package preflight
+
+状态：基础完成。
+
+类型：internal tests + docs；不新增 public API / CMake dependency。
+
+目标：固定 `write_package()` 对空 entry 列表的 writer boundary 语义，证明该失败
+路径会在打开输出前拒绝空 ZIP package，并保持已有 output bytes 不被覆盖。
+
+输入：
+- 当前 `validate_package_entries_zip32()` 已在 backend 选择和实际 writer open 前拒绝
+  empty entry list。
+- P9.1-P9.3 已覆盖 duplicate / invalid entry name 和 missing file-backed chunk 的
+  sentinel output preservation 语义。
+
+输出：
+- `fastxlsx.package_reader` 新增 writer 回归：空 `std::vector<PackageEntry>` 会以
+  `empty ZIP package` 错误失败。
+- 失败后已有 sentinel output bytes 保持不变。
+- 文档同步 P9 writer guardrail 当前事实。
+
+触碰文件：
+- `tests/test_package_reader.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_writer.cpp`
+- `src/package_editor.cpp`
+- CMake 配置
+
+可并行性：
+- 可与 P10 sharedStrings hardening、P11 benchmark groundwork 的只读调研并行。
+- 与其他 package writer guardrail / backend 行为修改串行合并，避免同一测试文件冲突。
+
+验收标准：
+- `fastxlsx.package_reader` 通过。
+- 默认完整 CTest 通过。
+- 文档明确当前只是 internal package writer preflight，不是 empty-package repair、
+  public package writer API、Zip64、package streaming 或 public existing-file editing。
+
+禁止项：
+- 不新增 public API。
+- 不自动创建占位 entry、回退空 payload 或输出 technically-empty ZIP。
+- 不声明 writer 支持 public package creation controls、Zip64、true package streaming
+  或 atomic output。
 
 验证命令：
 ```powershell

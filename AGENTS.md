@@ -2292,9 +2292,9 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   opt-in backend 是 minizip-ng/DEFLATE；内部 `PackageWriterOptions::compression_level`
   可选择 `-1` backend default、`0` no-compression/stored output 或 `1..9`
   minizip DEFLATE level，stored bootstrap 仍是 stored/no-compression；内部 writer
-  会在打开输出路径前拒绝非法或重复 ZIP entry name、缺失或不可 stat 的
-  file-backed chunk、需要 Zip64 的 entry count 或单 entry 未压缩大小，以及超过
-  ZIP 16-bit 字段的 entry name；仍无 Zip64、true package streaming、
+  会在打开输出路径前拒绝空 entry list、非法或重复 ZIP entry name、缺失或不可
+  stat 的 file-backed chunk、需要 Zip64 的 entry count 或单 entry 未压缩大小，
+  以及超过 ZIP 16-bit 字段的 entry name；仍无 Zip64、true package streaming、
   public compression API 或 broad existing-file preservation。当前 package reader 只是 stored/no-compression
   ZIP entry 索引/读取，加上 opt-in minizip 构建下的 DEFLATE entry 读取、payload
   CRC 校验、local-header CRC/method/name/size mismatch、encrypted/data descriptor 拒绝、owner-missing source-owned `.rels` 拒绝

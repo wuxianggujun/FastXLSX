@@ -90,6 +90,17 @@ const WorksheetTransformAction& find_replace(
     throw TestFailure("expected replacement action not found");
 }
 
+bool collect_actions_fails(
+    const std::string& xml, std::span<const WorksheetCellReplacement> replacements)
+{
+    try {
+        (void)collect_actions(xml, replacements);
+    } catch (const std::exception&) {
+        return true;
+    }
+    return false;
+}
+
 void test_transformer_emits_replace_cell_action_and_skips_original_cell_payload()
 {
     const std::string xml =
@@ -184,6 +195,46 @@ void test_transformer_reports_missing_and_rejects_invalid_replacements()
     check(empty_payload_failed, "empty replacement payload should fail preflight");
 }
 
+void test_transformer_validates_replacement_cell_payload_root_and_reference()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+
+    const std::array non_cell_root {
+        WorksheetCellReplacement { "A1", R"(<row r="1"><c r="A1"><v>2</v></c></row>)" },
+    };
+    check(collect_actions_fails(xml, non_cell_root),
+        "replacement payload root should be a cell element");
+
+    const std::array missing_reference {
+        WorksheetCellReplacement { "A1", R"(<c><v>2</v></c>)" },
+    };
+    check(collect_actions_fails(xml, missing_reference),
+        "replacement payload should include an unqualified r attribute");
+
+    const std::array qualified_reference_only {
+        WorksheetCellReplacement { "A1", R"(<c xmlns:x="urn:test" x:r="A1"><v>2</v></c>)" },
+    };
+    check(collect_actions_fails(xml, qualified_reference_only),
+        "replacement payload should not accept qualified r attributes");
+
+    const std::array mismatched_reference {
+        WorksheetCellReplacement { "A1", R"(<c r="B1"><v>2</v></c>)" },
+    };
+    check(collect_actions_fails(xml, mismatched_reference),
+        "replacement payload r attribute should match the selector");
+
+    const std::array prefixed_cell {
+        WorksheetCellReplacement {
+            "A1", R"(<x:c xmlns:x="urn:test" r='A1'><x:v>2</x:v></x:c>)" },
+    };
+    const CapturedTransform captured = collect_actions(xml, prefixed_cell);
+    check(captured.summary.matched_replacement_count == 1,
+        "prefixed replacement cell element should be accepted by local-name");
+    check(find_replace(captured.actions, "A1").replacement_cell_xml == prefixed_cell[0].replacement_cell_xml,
+        "accepted prefixed payload should be forwarded unchanged");
+}
+
 void test_transformer_emits_rewritten_chunks_with_raw_text_preserved()
 {
     const std::string xml =
@@ -225,6 +276,7 @@ int main()
         test_transformer_emits_replace_cell_action_and_skips_original_cell_payload();
         test_transformer_orders_replacements_by_source_xml();
         test_transformer_reports_missing_and_rejects_invalid_replacements();
+        test_transformer_validates_replacement_cell_payload_root_and_reference();
         test_transformer_emits_rewritten_chunks_with_raw_text_preserved();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

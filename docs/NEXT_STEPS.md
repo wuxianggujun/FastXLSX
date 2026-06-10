@@ -91,9 +91,11 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     emits source-order `PassThrough` / `ReplaceCell` actions plus missing-target
     diagnostics. It now also has an internal
     `emit_cell_replacement_worksheet()` chunk emitter that forwards pass-through
-    source XML chunks and caller replacement cell XML through callback. Treat this
-    as action/output-chunk groundwork only: no public API, no package-entry staged
-    stream writer, no dimension recalculation, no dependency repair, and no
+    source XML chunks and caller replacement cell XML through callback, with a
+    narrow payload preflight that requires a `<c>` / `*:c` root and matching
+    unqualified `r` attribute before action emission. Treat this as
+    action/output-chunk groundwork only: no public API, no package-entry staged
+    stream writer, no full cell schema validation, no dependency repair, and no
     PackageEditor/EditPlan commit.
   - Internal bounded PackageEditor cell-replacement handoff in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by

@@ -33,6 +33,174 @@ bool has_non_whitespace(std::string_view value)
     return false;
 }
 
+std::size_t find_start_tag_end(std::string_view xml, std::size_t start)
+{
+    char quote = '\0';
+    for (std::size_t index = start + 1; index < xml.size(); ++index) {
+        const char ch = xml[index];
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+
+        if (ch == '>') {
+            return index;
+        }
+    }
+
+    return std::string_view::npos;
+}
+
+std::string_view xml_local_name(std::string_view qualified_name)
+{
+    const std::size_t colon = qualified_name.rfind(':');
+    if (colon == std::string_view::npos) {
+        return qualified_name;
+    }
+    return qualified_name.substr(colon + 1);
+}
+
+std::string_view parse_replacement_cell_reference(std::string_view replacement_cell_xml)
+{
+    std::size_t cursor = 0;
+    while (cursor < replacement_cell_xml.size() && is_space(replacement_cell_xml[cursor])) {
+        ++cursor;
+    }
+
+    if (cursor >= replacement_cell_xml.size() || replacement_cell_xml[cursor] != '<'
+        || cursor + 1 >= replacement_cell_xml.size()) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML must begin with a cell element");
+    }
+
+    const char first_tag_char = replacement_cell_xml[cursor + 1];
+    if (first_tag_char == '/' || first_tag_char == '?' || first_tag_char == '!') {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML must begin with a cell element");
+    }
+
+    const std::size_t tag_end = find_start_tag_end(replacement_cell_xml, cursor);
+    if (tag_end == std::string_view::npos) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML has an unterminated start tag");
+    }
+
+    std::size_t name_start = cursor + 1;
+    std::size_t name_end = name_start;
+    while (name_end < tag_end && !is_space(replacement_cell_xml[name_end])
+           && replacement_cell_xml[name_end] != '/') {
+        ++name_end;
+    }
+    if (name_end == name_start) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML must begin with a cell element");
+    }
+
+    const std::string_view qualified_name =
+        replacement_cell_xml.substr(name_start, name_end - name_start);
+    if (xml_local_name(qualified_name) != "c") {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML root must be a cell element");
+    }
+
+    bool saw_cell_reference = false;
+    std::string_view cell_reference;
+    cursor = name_end;
+    while (cursor < tag_end) {
+        while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+            ++cursor;
+        }
+        if (cursor >= tag_end) {
+            break;
+        }
+        if (replacement_cell_xml[cursor] == '/') {
+            ++cursor;
+            while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+                ++cursor;
+            }
+            if (cursor != tag_end) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML has malformed attributes");
+            }
+            break;
+        }
+
+        const std::size_t attribute_name_start = cursor;
+        while (cursor < tag_end && !is_space(replacement_cell_xml[cursor])
+               && replacement_cell_xml[cursor] != '=' && replacement_cell_xml[cursor] != '/') {
+            ++cursor;
+        }
+        if (cursor == attribute_name_start) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML has malformed attributes");
+        }
+        const std::string_view attribute_name =
+            replacement_cell_xml.substr(attribute_name_start, cursor - attribute_name_start);
+
+        while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+            ++cursor;
+        }
+        if (cursor >= tag_end || replacement_cell_xml[cursor] != '=') {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML has malformed attributes");
+        }
+        ++cursor;
+        while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+            ++cursor;
+        }
+        if (cursor >= tag_end
+            || (replacement_cell_xml[cursor] != '"' && replacement_cell_xml[cursor] != '\'')) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML attributes must be quoted");
+        }
+
+        const char quote = replacement_cell_xml[cursor];
+        const std::size_t attribute_value_start = ++cursor;
+        while (cursor < tag_end && replacement_cell_xml[cursor] != quote) {
+            ++cursor;
+        }
+        if (cursor >= tag_end) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML has an unterminated attribute");
+        }
+        const std::string_view attribute_value =
+            replacement_cell_xml.substr(attribute_value_start, cursor - attribute_value_start);
+        ++cursor;
+
+        if (attribute_name == "r") {
+            if (saw_cell_reference) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML has duplicate r attributes");
+            }
+            saw_cell_reference = true;
+            cell_reference = attribute_value;
+        }
+    }
+
+    if (!saw_cell_reference) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML must include an r attribute");
+    }
+    return cell_reference;
+}
+
+void validate_replacement_cell_payload(const WorksheetCellReplacement& replacement)
+{
+    const std::string_view replacement_cell_reference =
+        parse_replacement_cell_reference(replacement.replacement_cell_xml);
+    if (replacement_cell_reference != replacement.cell_reference) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML r attribute must match its selector");
+    }
+}
+
 std::map<std::string, std::string_view, std::less<>> build_replacement_index(
     std::span<const WorksheetCellReplacement> replacements)
 {
@@ -47,6 +215,7 @@ std::map<std::string, std::string_view, std::less<>> build_replacement_index(
             throw fastxlsx::FastXlsxError(
                 "worksheet transformer replacement cell XML cannot be empty");
         }
+        validate_replacement_cell_payload(replacement);
 
         auto [_, inserted] =
             index.emplace(std::string(replacement.cell_reference), replacement.replacement_cell_xml);

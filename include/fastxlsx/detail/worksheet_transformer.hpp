@@ -12,9 +12,10 @@ namespace fastxlsx::detail {
 /// Caller-provided replacement candidate for the first internal P8 transformer slice.
 ///
 /// Both views must remain alive for the duration of
-/// scan_cell_replacement_actions(). The replacement XML is treated as an opaque
-/// cell payload candidate; this slice does not validate the full cell schema,
-/// migrate sharedStrings/styles, repair relationships, or write worksheet XML.
+/// scan_cell_replacement_actions(). The replacement XML must expose a cell
+/// element root with an unqualified r attribute matching cell_reference. This
+/// narrow preflight still does not validate the full cell schema, migrate
+/// sharedStrings/styles, repair relationships, or write worksheet XML.
 struct WorksheetCellReplacement {
     std::string_view cell_reference;
     std::string_view replacement_cell_xml;

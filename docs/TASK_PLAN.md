@@ -55,8 +55,10 @@ parallelism, acceptance checks, and explicit non-goals.
   action-model coverage for bounded cell replacement selectors, source-order
   `PassThrough` / `ReplaceCell` actions, missing-target diagnostics, and internal
   `emit_cell_replacement_worksheet()` output chunk emission for pass-through
-  source XML chunks plus caller replacement cell XML. Internal `PackageEditor`
-  now also has bounded `replace_worksheet_cells()` /
+  source XML chunks plus caller replacement cell XML. The transformer now
+  preflights replacement payloads before action emission, requiring a `<c>` /
+  `*:c` root and an unqualified `r` attribute that matches the selector.
+  Internal `PackageEditor` now also has bounded `replace_worksheet_cells()` /
   `replace_worksheet_cells_by_name()` handoff helpers that materialize the
   current planned worksheet XML, feed it through that chunk emitter, and delegate
   calcChain/fullCalcOnLoad plus audit behavior to the existing worksheet

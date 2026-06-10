@@ -1367,10 +1367,11 @@ template-fill fixture。P8.6 已落地首个 internal worksheet event reader 实
 P8.7 已落地首个 internal transformer action model 切片；P8.8 已落地首个 internal
 worksheet replacement output chunk emitter 切片；P8.9 已落地首个 internal bounded
 `PackageEditor` cell-replacement handoff 切片；P8.10 已落地 bounded cell replacement
-handoff 的 top-level worksheet dimension refresh 切片。后续真正 package-entry staged
+handoff 的 top-level worksheet dimension refresh 切片；P8.11 已落地 replacement cell
+payload preflight 切片。后续真正 package-entry staged
 stream rewrite / `EditPlan` handoff 必须继续按任务模板拆分，不能把当前 reader、
-action scanner、chunk emitter、bounded PackageEditor handoff、dimension refresh 或
-bounded local fixture 写成完整低内存大文件路径。
+action scanner、chunk emitter、bounded PackageEditor handoff、dimension refresh、
+payload preflight 或 bounded local fixture 写成完整低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1386,6 +1387,7 @@ bounded local fixture 写成完整低内存大文件路径。
 - P8.8 internal worksheet replacement output chunk emitter first implementation slice：基础完成。
 - P8.9 internal bounded PackageEditor cell-replacement handoff first implementation slice：基础完成。
 - P8.10 internal bounded worksheet dimension refresh for cell replacement handoff：基础完成。
+- P8.11 internal replacement cell payload preflight：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -2087,6 +2089,75 @@ range-bearing metadata。
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.11 internal replacement cell payload preflight
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：收紧 P8.7/P8.8/P8.9 bounded cell replacement 的 replacement payload 边界：
+在 transformer 建立 replacement index 前预检 caller-supplied cell XML，要求首个元素是
+`<c>` 或带前缀的 `*:c` cell element，且存在未命名空间 `r` attribute，并且该 `r`
+必须与 `WorksheetCellReplacement::cell_reference` selector 完全一致。
+
+输入：
+- P8.6 internal worksheet event reader。
+- P8.7 internal transformer action model。
+- P8.8 internal worksheet replacement output chunk emitter。
+- P8.9/P8.10 internal bounded `PackageEditor` cell-replacement handoff。
+
+输出：
+- `scan_cell_replacement_actions()` / `emit_cell_replacement_worksheet()` 在 action emission
+  前拒绝非 cell root、缺失 unqualified `r`、qualified-only `x:r` 或 selector / payload
+  `r` 不一致的 replacement payload。
+- root local-name 检查接受 prefixed cell element，例如 `<x:c r="A1">`，但不做 namespace
+  declaration validation。
+- `fastxlsx.worksheet_transformer` 回归覆盖 invalid root、missing `r`、qualified-only
+  `x:r`、mismatched `r` 和 prefixed `<x:c>` 正向 payload。
+- internal header 注释说明 replacement XML 已有窄 root / reference preflight，但仍不做
+  full cell schema validation。
+
+触碰文件：
+- `include/fastxlsx/detail/worksheet_transformer.hpp`
+- `src/worksheet_transformer.cpp`
+- `tests/test_worksheet_transformer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_editor.cpp`
+- `src/streaming_writer.cpp`
+- CMake 配置
+
+可并行性：
+- 后续 dependency audit / sharedStrings-style policy 可并行只读调研。
+- replacement payload schema、formula/dependency audit、relationship repair、package-entry
+  staged stream writer 与 public API 必须拆成独立任务，不能混入本切片。
+
+验收标准：
+- `fastxlsx.worksheet_transformer` 覆盖 payload preflight 成功和失败路径。
+- `fastxlsx.package_editor` 继续通过，证明 handoff 复用 transformer preflight 不破坏现有路径。
+- 默认完整 CTest 通过。
+- 文档明确这只是 internal bounded replacement payload preflight，不是 full XML parser、
+  full cell schema validation、namespace repair、public API、dependency repair、
+  relationship repair、package-entry staged stream writer 或低内存大文件编辑完成。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不解析或验证完整 cell schema。
+- 不迁移 sharedStrings index、不合并 styles、不重写 formula dependencies。
+- 不修复 worksheet relationships、table/drawing metadata、range-bearing metadata 或 calcChain。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R "fastxlsx.worksheet_transformer|fastxlsx.package_editor" --output-on-failure --timeout 60
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

@@ -1083,6 +1083,10 @@ Current implementation evidence:
 - Package boundary hardening, no-calcChain relationship/content-type side
   effects, calcChain remove/preserve/rebuild rejection behavior, and a
   writer-source end-to-end fixture now have CTest coverage.
+- Fixed local QA entry `tools/verify_patch_mvp_excel.ps1` opens the
+  writer-roundtrip and template-fill Patch MVP outputs read-only through Excel
+  COM and verifies target-sheet replacement plus untouched-sheet preservation
+  smoke values.
 - Remaining work should move into smaller P5 preservation fixtures and P6 sheet
   dependency-policy slices instead of expanding this into a public editor.
 

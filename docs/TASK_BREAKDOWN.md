@@ -270,7 +270,7 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ### P4.5 MVP End-to-End Fixture
 
-状态：基础完成，Excel 可视化记录仍是后续 QA 缺口。
+状态：基础完成；固定本地 Excel QA helper 已补入并通过当前验证。
 
 类型：测试 + 文档。
 
@@ -288,10 +288,13 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   - 额外聚合回归会在 writer-source package 中注入 unknown entry，并验证 by-name
     `sheetData` Patch 后该 unknown bytes、默认 content type 和其它 source-owned
     metadata 仍按 copy-original 保留。
+  - 固定本地 QA 入口 `tools/verify_patch_mvp_excel.ps1` 会用 Excel COM 只读打开
+    writer-roundtrip 和 template-fill Patch MVP 输出，核对 target sheet replacement
+    与 untouched sheet preservation 的关键可见单元格。
 
 验收：
 - 拆包 XML 检查通过。
-- Excel 可视化验证若本机 Excel 可用则记录。
+- Excel 可视化验证若本机 Excel 可用则通过固定 helper 记录。
 - 文档仍标注为 internal Patch MVP，不是 public editor。
 
 ## P5 - Preservation Fixtures

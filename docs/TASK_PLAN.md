@@ -467,8 +467,12 @@ parallelism, acceptance checks, and explicit non-goals.
   `WorksheetPayloadDependencyAudit` entries when replacement `<sheetData>`
   carries shared string index and style id references. Workbook XML requests
   `fullCalcOnLoad="1"`, and `xl/calcChain.xml` is not invented when the source
-  writer package had no calcChain payload. This is still an internal Patch
-  MVP/template-fill proof, not a public existing-file editor, random cell API,
+  writer package had no calcChain payload. Fixed local QA entry
+  `tools/verify_patch_mvp_excel.ps1` opens the writer-roundtrip and
+  template-fill Patch MVP outputs read-only through Excel COM, verifying
+  target-sheet replacement plus untouched-sheet preservation smoke values. This
+  is still an internal Patch MVP/template-fill proof, not a public existing-file
+  editor, random cell API,
   sharedStrings index migration, style id migration, styles merge, table/drawing
   semantic sync, or large-file worksheet transformer.
   If a planned `/xl/workbook.xml` exists in the same edit, either as an ordinary
@@ -1483,7 +1487,9 @@ Tasks:
 Validation:
 - Input/output package comparison proves unmodified parts remain present.
 - Relationships still resolve after edit.
-- Excel opens edited workbooks without repair.
+- Current local Excel COM smoke entry `tools/verify_patch_mvp_excel.ps1` opens
+  the Patch MVP writer-roundtrip and template-fill outputs read-only and checks
+  replacement/preservation smoke values.
 
 ### M7.5 - In-memory Small Workbook Editor
 

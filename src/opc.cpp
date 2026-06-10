@@ -21,7 +21,7 @@ void append_optional_text_element(std::string& xml, std::string_view element_nam
     xml += "<";
     xml += element_name;
     xml += ">";
-    xml += escape_xml_text(value);
+    append_escaped_xml_text(xml, value);
     xml += "</";
     xml += element_name;
     xml += ">";
@@ -1858,17 +1858,17 @@ std::string serialize_content_types(const ContentTypesManifest& content_types)
 
     for (const ContentTypeDefault& item : content_types.defaults()) {
         xml += R"(<Default Extension=")";
-        xml += escape_xml_attribute(item.extension);
+        append_escaped_xml_attribute(xml, item.extension);
         xml += R"(" ContentType=")";
-        xml += escape_xml_attribute(item.content_type);
+        append_escaped_xml_attribute(xml, item.content_type);
         xml += R"("/>)";
     }
 
     for (const ContentTypeOverride& item : content_types.overrides()) {
         xml += R"(<Override PartName=")";
-        xml += escape_xml_attribute(item.part_name.value());
+        append_escaped_xml_attribute(xml, item.part_name.value());
         xml += R"(" ContentType=")";
-        xml += escape_xml_attribute(item.content_type);
+        append_escaped_xml_attribute(xml, item.content_type);
         xml += R"("/>)";
     }
 
@@ -1884,11 +1884,11 @@ std::string serialize_relationships(const RelationshipSet& relationships)
 
     for (const Relationship& relationship : relationships.relationships()) {
         xml += R"(<Relationship Id=")";
-        xml += escape_xml_attribute(relationship.id);
+        append_escaped_xml_attribute(xml, relationship.id);
         xml += R"(" Type=")";
-        xml += escape_xml_attribute(relationship.type);
+        append_escaped_xml_attribute(xml, relationship.type);
         xml += R"(" Target=")";
-        xml += escape_xml_attribute(relationship.target);
+        append_escaped_xml_attribute(xml, relationship.target);
         xml += R"(")";
         if (relationship.target_mode == Relationship::TargetMode::External) {
             xml += R"( TargetMode="External")";

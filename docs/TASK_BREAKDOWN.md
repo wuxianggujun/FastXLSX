@@ -1280,8 +1280,9 @@ save-as handoff 复用，而不是继续只停留在合同文档。
 - P7.3a internal `CellStore` / `CellRecord` implementation。
 - P7.4a internal `CellStoreOptions` guardrail implementation。
 - P7.5 save-as and Patch handoff contract。
-- 当前 `detail::cell_reference()` / `detail::append_cell_reference()`、XML escape
-  和 finite number output 规则。
+- 当前 `detail::cell_reference()` / `detail::append_cell_reference()`、
+  `detail::append_escaped_xml_text()` / `detail::append_escaped_xml_attribute()`、
+  XML escape string helpers 和 finite number output 规则。
 
 输出：
 - `detail::cell_store_to_sheet_data_xml(const CellStore&)` 生成完整
@@ -1297,6 +1298,11 @@ save-as handoff 复用，而不是继续只停留在合同文档。
   `detail::append_cell_reference(std::string&, row, column)` 作为内部公共坐标输出
   helpers，保持 Excel row/column 上限校验；append helper 供 in-memory、CellStore
   和 streaming XML buffer 直接追加 cell reference。
+- `detail::append_escaped_xml_text(std::string&, value)` 和
+  `detail::append_escaped_xml_attribute(std::string&, value)` 作为内部公共 XML
+  escape append helpers，供 in-memory、CellStore、streaming 和小型 OPC XML
+  serializer 直接追加转义内容；`escape_xml_text()` / `escape_xml_attribute()`
+  仍保留给需要 owned string 的 replacement 路径。
 - `fastxlsx.unit` 覆盖空 store、稀疏行分组、XML escape、空白保留、公式转义、
   explicit blank record 和默认 style omission。
 

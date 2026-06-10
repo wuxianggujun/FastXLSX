@@ -13,6 +13,8 @@ namespace detail {
 
 [[nodiscard]] std::string escape_xml_text(std::string_view value);
 [[nodiscard]] std::string escape_xml_attribute(std::string_view value);
+void append_escaped_xml_text(std::string& output, std::string_view value);
+void append_escaped_xml_attribute(std::string& output, std::string_view value);
 [[nodiscard]] std::string format_number(double value);
 void append_number(std::string& output, double value);
 void append_cell_reference(std::string& output, std::uint32_t row, std::uint32_t column);

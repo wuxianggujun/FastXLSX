@@ -105,7 +105,7 @@ void append_text_element(std::string& xml, std::string_view value)
     } else {
         xml += "<t>";
     }
-    xml += detail::escape_xml_text(value);
+    detail::append_escaped_xml_text(xml, value);
     xml += "</t>";
 }
 
@@ -1074,7 +1074,7 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         xml += "><f>";
-        xml += detail::escape_xml_text(cell.text_value());
+        detail::append_escaped_xml_text(xml, cell.text_value());
         xml += "</f></c>";
         break;
     }
@@ -1103,7 +1103,7 @@ std::string build_workbook(
     xml += "<sheets>";
     for (std::size_t index = 0; index < worksheets.size(); ++index) {
         xml += R"(<sheet name=")";
-        xml += detail::escape_xml_attribute(worksheets[index]->name);
+        detail::append_escaped_xml_attribute(xml, worksheets[index]->name);
         xml += R"(" sheetId=")";
         xml += std::to_string(index + 1);
         xml += R"(" r:id="rId)";
@@ -1263,7 +1263,7 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
             xml += R"(<numFmt numFmtId=")";
             xml += std::to_string(style->number_format_id);
             xml += R"(" formatCode=")";
-            xml += detail::escape_xml_attribute(style->style.number_format);
+            detail::append_escaped_xml_attribute(xml, style->style.number_format);
             xml += R"("/>)";
         }
         xml += "</numFmts>";
@@ -1590,22 +1590,22 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
         }
         if (!validation.rule.error_title.empty()) {
             xml += " errorTitle=\"";
-            xml += detail::escape_xml_attribute(validation.rule.error_title);
+            detail::append_escaped_xml_attribute(xml, validation.rule.error_title);
             xml += "\"";
         }
         if (!validation.rule.error.empty()) {
             xml += " error=\"";
-            xml += detail::escape_xml_attribute(validation.rule.error);
+            detail::append_escaped_xml_attribute(xml, validation.rule.error);
             xml += "\"";
         }
         if (!validation.rule.prompt_title.empty()) {
             xml += " promptTitle=\"";
-            xml += detail::escape_xml_attribute(validation.rule.prompt_title);
+            detail::append_escaped_xml_attribute(xml, validation.rule.prompt_title);
             xml += "\"";
         }
         if (!validation.rule.prompt.empty()) {
             xml += " prompt=\"";
-            xml += detail::escape_xml_attribute(validation.rule.prompt);
+            detail::append_escaped_xml_attribute(xml, validation.rule.prompt);
             xml += "\"";
         }
         if (validation.rule.operator_type.has_value()) {
@@ -1616,11 +1616,11 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
         xml += " sqref=\"";
         xml += detail::sqref(validation.ranges);
         xml += "\"><formula1>";
-        xml += detail::escape_xml_text(validation.rule.formula1);
+        detail::append_escaped_xml_text(xml, validation.rule.formula1);
         xml += "</formula1>";
         if (!validation.rule.formula2.empty()) {
             xml += "<formula2>";
-            xml += detail::escape_xml_text(validation.rule.formula2);
+            detail::append_escaped_xml_text(xml, validation.rule.formula2);
             xml += "</formula2>";
         }
         xml += "</dataValidation>";
@@ -1645,12 +1645,12 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
         xml += "\"";
         if (!hyperlink.options.display.empty()) {
             xml += " display=\"";
-            xml += detail::escape_xml_attribute(hyperlink.options.display);
+            detail::append_escaped_xml_attribute(xml, hyperlink.options.display);
             xml += "\"";
         }
         if (!hyperlink.options.tooltip.empty()) {
             xml += " tooltip=\"";
-            xml += detail::escape_xml_attribute(hyperlink.options.tooltip);
+            detail::append_escaped_xml_attribute(xml, hyperlink.options.tooltip);
             xml += "\"";
         }
         xml += "/>";
@@ -1659,16 +1659,16 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
         xml += "<hyperlink ref=\"";
         detail::append_cell_reference(xml, hyperlink.row, hyperlink.column);
         xml += "\" location=\"";
-        xml += detail::escape_xml_attribute(hyperlink.location);
+        detail::append_escaped_xml_attribute(xml, hyperlink.location);
         xml += "\"";
         if (!hyperlink.options.display.empty()) {
             xml += " display=\"";
-            xml += detail::escape_xml_attribute(hyperlink.options.display);
+            detail::append_escaped_xml_attribute(xml, hyperlink.options.display);
             xml += "\"";
         }
         if (!hyperlink.options.tooltip.empty()) {
             xml += " tooltip=\"";
-            xml += detail::escape_xml_attribute(hyperlink.options.tooltip);
+            detail::append_escaped_xml_attribute(xml, hyperlink.options.tooltip);
             xml += "\"";
         }
         xml += "/>";
@@ -1839,9 +1839,9 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
     xml += R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id=")";
     xml += std::to_string(table_index + 1);
     xml += R"(" name=")";
-    xml += detail::escape_xml_attribute(table.options.name);
+    detail::append_escaped_xml_attribute(xml, table.options.name);
     xml += R"(" displayName=")";
-    xml += detail::escape_xml_attribute(table.options.name);
+    detail::append_escaped_xml_attribute(xml, table.options.name);
     xml += R"(" ref=")";
     xml += detail::range_reference(table.range);
     if (table.options.show_totals_row) {
@@ -1863,11 +1863,11 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
         xml += R"(<tableColumn id=")";
         xml += std::to_string(index + 1);
         xml += R"(" name=")";
-        xml += detail::escape_xml_attribute(table.options.column_names[index]);
+        detail::append_escaped_xml_attribute(xml, table.options.column_names[index]);
         if (!table.options.column_totals_labels.empty()
             && !table.options.column_totals_labels[index].empty()) {
             xml += R"(" totalsRowLabel=")";
-            xml += detail::escape_xml_attribute(table.options.column_totals_labels[index]);
+            detail::append_escaped_xml_attribute(xml, table.options.column_totals_labels[index]);
         }
         if (!table.options.column_totals_functions.empty()
             && table.options.column_totals_functions[index].has_value()) {
@@ -1879,7 +1879,7 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
     xml += "</tableColumns>";
     if (!table.options.style_name.empty()) {
         xml += R"(<tableStyleInfo name=")";
-        xml += detail::escape_xml_attribute(table.options.style_name);
+        detail::append_escaped_xml_attribute(xml, table.options.style_name);
         xml += R"(" showFirstColumn=")";
         xml += table.options.show_first_column ? "1" : "0";
         xml += R"(" showLastColumn=")";
@@ -2019,12 +2019,12 @@ std::string build_drawing_xml(
             xml += "Picture ";
             xml += std::to_string(package_image_index + 1);
         } else {
-            xml += detail::escape_xml_attribute(image.options.name);
+            detail::append_escaped_xml_attribute(xml, image.options.name);
         }
         xml += "\"";
         if (!image.options.description.empty()) {
             xml += " descr=\"";
-            xml += detail::escape_xml_attribute(image.options.description);
+            detail::append_escaped_xml_attribute(xml, image.options.description);
             xml += "\"";
         }
         if (has_external_hyperlink(image)) {
@@ -2033,7 +2033,8 @@ std::string build_drawing_xml(
             xml += "\"";
             if (!image.options.external_hyperlink_tooltip.empty()) {
                 xml += R"( tooltip=")";
-                xml += detail::escape_xml_attribute(image.options.external_hyperlink_tooltip);
+                detail::append_escaped_xml_attribute(
+                    xml, image.options.external_hyperlink_tooltip);
                 xml += "\"";
             }
             xml += R"(/></xdr:cNvPr>)";

@@ -80,57 +80,65 @@ namespace fastxlsx::detail {
 std::string escape_xml_text(std::string_view value)
 {
     std::string escaped;
-    escaped.reserve(value.size());
-
-    for (const char ch : value) {
-        switch (ch) {
-        case '&':
-            escaped += "&amp;";
-            break;
-        case '<':
-            escaped += "&lt;";
-            break;
-        case '>':
-            escaped += "&gt;";
-            break;
-        default:
-            escaped.push_back(ch);
-            break;
-        }
-    }
-
+    append_escaped_xml_text(escaped, value);
     return escaped;
 }
 
 std::string escape_xml_attribute(std::string_view value)
 {
     std::string escaped;
-    escaped.reserve(value.size());
+    append_escaped_xml_attribute(escaped, value);
+    return escaped;
+}
+
+void append_escaped_xml_text(std::string& output, std::string_view value)
+{
+    output.reserve(output.size() + value.size());
 
     for (const char ch : value) {
         switch (ch) {
         case '&':
-            escaped += "&amp;";
+            output += "&amp;";
             break;
         case '<':
-            escaped += "&lt;";
+            output += "&lt;";
             break;
         case '>':
-            escaped += "&gt;";
-            break;
-        case '"':
-            escaped += "&quot;";
-            break;
-        case '\'':
-            escaped += "&apos;";
+            output += "&gt;";
             break;
         default:
-            escaped.push_back(ch);
+            output.push_back(ch);
             break;
         }
     }
+}
 
-    return escaped;
+void append_escaped_xml_attribute(std::string& output, std::string_view value)
+{
+    output.reserve(output.size() + value.size());
+
+    for (const char ch : value) {
+        switch (ch) {
+        case '&':
+            output += "&amp;";
+            break;
+        case '<':
+            output += "&lt;";
+            break;
+        case '>':
+            output += "&gt;";
+            break;
+        case '"':
+            output += "&quot;";
+            break;
+        case '\'':
+            output += "&apos;";
+            break;
+        default:
+            output.push_back(ch);
+            break;
+        }
+    }
 }
 
 std::string format_number(double value)

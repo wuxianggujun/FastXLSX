@@ -47,7 +47,7 @@ void append_text_element(std::string& xml, std::string_view value)
     } else {
         xml += "<t>";
     }
-    xml += escape_xml_text(value);
+    append_escaped_xml_text(xml, value);
     xml += "</t>";
 }
 
@@ -90,7 +90,7 @@ void append_cell_xml(std::string& xml, const CellPosition& position, const CellR
         break;
     case CellValueKind::Formula:
         xml += "><f>";
-        xml += escape_xml_text(record.text_value);
+        append_escaped_xml_text(xml, record.text_value);
         xml += "</f></c>";
         break;
     }

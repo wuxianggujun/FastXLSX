@@ -73,6 +73,14 @@ void test_xml_helpers()
         "xml text escaping failed");
     check(fastxlsx::detail::escape_xml_attribute("\"'&<>") == "&quot;&apos;&amp;&lt;&gt;",
         "xml attribute escaping failed");
+    std::string appended_text = "text=";
+    fastxlsx::detail::append_escaped_xml_text(appended_text, "a&b<c>d");
+    check(appended_text == "text=a&amp;b&lt;c&gt;d",
+        "append_escaped_xml_text should preserve existing text");
+    std::string appended_attribute = "attr=";
+    fastxlsx::detail::append_escaped_xml_attribute(appended_attribute, "\"'&<>");
+    check(appended_attribute == "attr=&quot;&apos;&amp;&lt;&gt;",
+        "append_escaped_xml_attribute should preserve existing text");
     check(fastxlsx::detail::cell_reference(1, 1) == "A1", "A1 reference failed");
     check(fastxlsx::detail::cell_reference(1, 26) == "Z1", "Z1 reference failed");
     check(fastxlsx::detail::cell_reference(1, 27) == "AA1", "AA1 reference failed");

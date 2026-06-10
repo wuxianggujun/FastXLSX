@@ -1260,7 +1260,12 @@ Do:
   while preserving finite-only `std::to_chars` output. Current cell reference
   XML output uses shared internal `detail::append_cell_reference()` /
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
-  temporary reference strings.
+  temporary reference strings. Current XML text and attribute escaping uses
+  shared internal `detail::append_escaped_xml_text()` /
+  `detail::append_escaped_xml_attribute()` helpers across in-memory, CellStore,
+  streaming row/formula/metadata XML, and small OPC serializers; the older
+  string-returning helpers remain available for replacement paths that require
+  owned strings.
   Current `append_row()` row limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to
   inject the internal row counter at `1048576` and verify one rejected append
   without a million-row default CTest loop; broader date and formatting edge

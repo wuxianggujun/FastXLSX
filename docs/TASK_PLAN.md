@@ -1295,7 +1295,11 @@ Tasks:
   Cell reference XML output also uses shared internal
   `detail::append_cell_reference()` / `detail::cell_reference()` helpers so
   row/cell append paths can write coordinates without per-cell temporary
-  reference strings.
+  reference strings. Text and attribute escaping now also expose
+  `detail::append_escaped_xml_text()` /
+  `detail::append_escaped_xml_attribute()` so in-memory, CellStore, streaming,
+  and small OPC serializers can append escaped XML directly while preserving
+  the string-returning helpers for replacement APIs that need owned strings.
 - Track worksheet dimensions incrementally.
 - Add row and column limit tests for Excel bounds.
 - Add opt-in benchmark target or documented benchmark command.
@@ -2223,7 +2227,12 @@ Tasks:
   string construction on append-oriented XML hot paths. Current cell reference
   XML output similarly uses shared internal `detail::append_cell_reference()` /
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
-  temporary reference strings. Broader date encoding remains planned.
+  temporary reference strings. Current XML text and attribute escaping similarly
+  has append-oriented `detail::append_escaped_xml_text()` /
+  `detail::append_escaped_xml_attribute()` helpers used by in-memory,
+  CellStore, streaming row/formula/metadata XML, and small OPC serializers;
+  string-returning escape helpers remain for non-append replacement paths.
+  Broader date encoding remains planned.
 - Track dimensions incrementally and test row/column Excel limits. Current
   empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
   streaming dimension XML without requiring DOM backtracking. Current in-memory

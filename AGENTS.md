@@ -2105,6 +2105,12 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   `detail::cell_reference()` helpers；in-memory、CellStore 和 streaming XML buffer
   都复用同一 Excel row/column 上限校验，其中 append helper 避免在 row/cell XML
   热路径中为每个单元格先构造临时 reference 字符串。
+- 当前 XML text / attribute escaping 共享内部
+  `detail::append_escaped_xml_text()` / `detail::append_escaped_xml_attribute()`
+  helpers；in-memory、CellStore、streaming row/formula/metadata XML 和小型 OPC
+  serializer 可直接向目标 buffer 追加转义内容，避免追加型路径先构造临时
+  `std::string`。`escape_xml_text()` / `escape_xml_attribute()` 仍保留给需要
+  owned string 的 replacement 路径。
 - 当前 `fastxlsx.streaming` 行上限测试使用测试构建内部 hook
   `FASTXLSX_ENABLE_TEST_HOOKS` / `fastxlsx::detail::testing_set_worksheet_row_count()`
   将 `WorksheetWriterState::row_count` 注入到 `1048576`，再验证下一次

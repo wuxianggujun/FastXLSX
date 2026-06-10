@@ -28,7 +28,7 @@ void append_text_element(std::string& xml, std::string_view value)
     } else {
         xml += "<t>";
     }
-    xml += detail::escape_xml_text(value);
+    detail::append_escaped_xml_text(xml, value);
     xml += "</t>";
 }
 
@@ -80,7 +80,7 @@ std::string build_workbook(const std::vector<Worksheet>& worksheets, bool full_c
     xml += "<sheets>";
     for (std::size_t index = 0; index < worksheets.size(); ++index) {
         xml += R"(<sheet name=")";
-        xml += detail::escape_xml_attribute(worksheets[index].name());
+        detail::append_escaped_xml_attribute(xml, worksheets[index].name());
         xml += R"(" sheetId=")";
         xml += std::to_string(index + 1);
         xml += R"(" r:id="rId)";
@@ -165,7 +165,7 @@ std::string build_worksheet(const std::vector<detail::WorksheetRowData>& rows)
                 break;
             case Cell::Type::Formula:
                 xml += "\"><f>";
-                xml += detail::escape_xml_text(cell.string_value());
+                detail::append_escaped_xml_text(xml, cell.string_value());
                 xml += "</f></c>";
                 break;
             }

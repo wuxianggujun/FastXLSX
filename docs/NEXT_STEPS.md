@@ -1280,6 +1280,10 @@ Accept when:
   worksheet body bytes, `6380102` output bytes. `openpyxl` read-only checks
   verified each generated workbook's `Sheet1` first/last cells; `office_open`
   remains the benchmark tool's `not_run` field.
+- Current `tools/run_benchmark_matrix.py --self-test` covers runner-only case
+  parsing, string distribution expectations, expected cell values, and matrix
+  report shape without invoking a benchmark executable or writing workbook
+  artifacts.
 
 Do not claim:
 - sharedStrings as the best default for large data.
@@ -1294,6 +1298,9 @@ Do:
 - Use `tools/run_benchmark_matrix.py` when a repeatable local small matrix is
   needed; pass one already-built benchmark exe at a time and keep stored/minizip
   results in separate output dirs.
+- Run `py tools/run_benchmark_matrix.py --self-test` as a quick runner guard
+  when changing benchmark matrix logic. It does not replace actual benchmark,
+  openpyxl, or Office validation.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
 - Record data scale, string strategy, compression setting, package entry source
   mode, string pattern, input string distribution counts, temporary worksheet

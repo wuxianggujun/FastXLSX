@@ -1313,6 +1313,10 @@ Tasks:
   repeated/unique × inline/shared snapshot through `tools/run_benchmark_matrix.py`
   with openpyxl read-only checks. It is evidence for current benchmark tooling,
   not a production-readiness claim.
+- `tools/run_benchmark_matrix.py --self-test` is available as a lightweight
+  runner guard for case parsing, expected string distributions, expected cell
+  values, and matrix report shape. It does not invoke the benchmark executable,
+  write workbook artifacts, or prove Office/openpyxl compatibility.
 
 Validation:
 - Structure tests for `xl/sharedStrings.xml`.
@@ -2315,6 +2319,9 @@ Tasks:
   `tools/verify_benchmark_matrix_excel.ps1`, which writes the sidecar
   `benchmark-matrix-office-report.json` and does not rewrite the matrix report
   or per-case JSON; `office_open` remains `not_run`.
+- The same runner now has `--self-test` for internal parser/distribution/report
+  assumptions. It runs without a benchmark executable and must not be counted as
+  benchmark coverage or Office/readability validation.
 - Current benchmark JSON schema version is `4`. It records `string_pattern`,
   `string_cells`, `unique_string_values`, `duplicate_string_cells`,
   `string_dedup_ratio`, `package_entry_source_mode="worksheet-file-backed-chunked"`,

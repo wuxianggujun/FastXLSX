@@ -191,6 +191,9 @@ FastXLSX public API 的 worksheet 数量承诺。
 它不改 C++ benchmark schema，不进入默认 CTest/CI，也不自动证明 Office 兼容性。
 默认小矩阵会覆盖 numeric、mixed、strings，inline/shared，以及 repeated/unique
 字符串分布；不同 ZIP backend 应分别传入对应 preset 构建出的 benchmark exe。
+如果只需要检查 runner 自身的 case 解析、期望字符串分布和 matrix report shape，可运行
+`py tools\run_benchmark_matrix.py --self-test`；该自检不调用 benchmark exe、不写
+`.xlsx` / JSON，也不代表 Office/openpyxl 兼容性或性能数据。
 
 默认 stored-bootstrap runner 示例：
 

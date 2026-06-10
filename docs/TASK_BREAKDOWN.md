@@ -2770,6 +2770,82 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_s
 py tools\run_benchmark_matrix.py --bench-exe build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_streaming_writer.exe --output-dir build\qa\benchmark-matrix-2026-06-10-sharedstrings --rows 10000 --cols 10 --sheets 1 --case strings:inline:repeated --case strings:shared:repeated --case strings:inline:unique --case strings:shared:unique --verify-openpyxl
 ```
 
+## P11 - Benchmark groundwork
+
+状态：推进中；P11.1 已落地。
+
+目标：继续把 benchmark 能力保持为显式 opt-in 的本地工具链，补强 runner
+自身的可验证性和文档边界；不要把 benchmark helper 写成默认 CTest / CI、
+Google Benchmark 集成、Office 兼容性自动证明或大文件低内存结论。
+
+子任务：
+- P11.1 benchmark matrix runner self-test：基础完成。
+
+### P11.1 benchmark matrix runner self-test
+
+状态：基础完成。
+
+类型：tooling + docs；不新增 public API / CMake dependency；不调用 benchmark exe。
+
+目标：为 `tools/run_benchmark_matrix.py` 增加轻量 `--self-test` 入口，验证
+benchmark matrix runner 的内部 case 解析、期望字符串分布、首尾单元格期望值和
+聚合 report schema，方便后续 P11/P12 修改 runner 时先做快速守护。
+
+输入：
+- 当前 `tools/run_benchmark_matrix.py` 只包装一个已构建的
+  `fastxlsx_bench_streaming_writer` exe，正常矩阵运行会写 `.xlsx`、schema-v4
+  per-case JSON 和 `benchmark-matrix-report.json`。
+- P10.1 已用该 runner 记录 schema-v4 sharedStrings 小矩阵。
+- 当前默认 CTest 仍应保持轻量，benchmark 运行必须显式 opt-in。
+
+输出：
+- `tools/run_benchmark_matrix.py --self-test` 在检查 benchmark exe 存在性之前执行，
+  不调用 benchmark exe、不创建输出目录、不写 `.xlsx` / JSON。
+- 自检覆盖合法 / 非法 case 解析、repeated / unique / numeric 的字符串分布、
+  numeric / repeated / unique / mixed 首尾期望值，以及 matrix report schema
+  和 `cells_per_case` 计算。
+- 文档同步该自检只是 runner 内部假设检查，不代表 benchmark 已运行、Office
+  已打开 workbook、Google Benchmark 已接入或大文件性能已验证。
+
+触碰文件：
+- `tools/run_benchmark_matrix.py`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TESTING_WORKFLOW.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与 P12 streaming hot-path 只读分析并行。
+- 与其他 benchmark runner 行为修改串行合并，避免同一 Python helper 的 CLI
+  和 report schema 冲突。
+
+验收标准：
+- `py tools\run_benchmark_matrix.py --self-test` 通过。
+- 默认 build 和完整 CTest 通过。
+- 文档明确 `--self-test` 不运行 benchmark exe、不写 build artifact、不证明
+  Office/openpyxl 兼容性、不改变 `office_open="not_run"` 语义。
+
+禁止项：
+- 不把 benchmark 或 runner self-test 接入默认 CTest / CI。
+- 不新增 Google Benchmark、openpyxl、XlsxWriter 或 Excel 运行时依赖。
+- 不改变 benchmark JSON schema-v4、matrix report schema-v1 或默认 case 矩阵语义。
+- 不根据 self-test 改变 sharedStrings / inlineStr 默认策略或 public API wording。
+
+验证命令：
+```powershell
+py tools\run_benchmark_matrix.py --self-test
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
 ## 并行拆分建议
 
 可以并行：

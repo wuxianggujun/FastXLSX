@@ -226,6 +226,26 @@ def verify_workbook_with_openpyxl(path: Path, case: MatrixCase, rows: int, cols:
         workbook.close()
 
 
+def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int, sheets: int,
+    mixed_string_ratio: float, reports: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "benchmark_matrix_schema_version": "1",
+        "benchmark_executable": str(bench_exe),
+        "output_dir": str(output_dir),
+        "rows": rows,
+        "cols": cols,
+        "sheets": sheets,
+        "cells_per_case": rows * cols * sheets,
+        "mixed_string_ratio": mixed_string_ratio,
+        "cases": reports,
+        "comparison_scope": (
+            "Manual opt-in benchmark matrix. Results compare generated schema-v4 JSON "
+            "fields and optional openpyxl workbook readability; Office validation is a "
+            "separate local step and benchmark office_open fields remain not_run."
+        ),
+    }
+
+
 def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, cols: int, sheets: int,
     mixed_string_ratio: float, verify_openpyxl: bool) -> dict[str, Any]:
     output_path = output_dir / f"fastxlsx-bench-{case.name}.xlsx"
@@ -284,8 +304,78 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
     }
 
 
+def expect_value_error(text: str) -> None:
+    try:
+        parse_case(text)
+    except ValueError:
+        return
+    raise AssertionError(f"expected parse_case({text!r}) to fail")
+
+
+def run_self_test() -> None:
+    numeric = parse_case("numeric:inline:mixed")
+    mixed = parse_case("mixed:shared:mixed")
+    repeated = parse_case("strings:shared:repeated")
+    unique = parse_case("strings:inline:unique")
+    require(numeric.name == "numeric-inline", "numeric case name mismatch")
+    require(mixed.name == "mixed-mixed-shared", "mixed case name mismatch")
+    require(repeated.name == "strings-repeated-shared", "repeated case name mismatch")
+    require(unique.name == "strings-unique-inline", "unique case name mismatch")
+
+    expect_value_error("numeric:shared:mixed")
+    expect_value_error("strings:inline")
+    expect_value_error("other:inline:mixed")
+    expect_value_error("strings:other:mixed")
+    expect_value_error("strings:inline:other")
+
+    repeated_distribution = expected_string_distribution(repeated, rows=2, cols=3, sheets=2,
+        mixed_string_ratio=0.25)
+    require(repeated_distribution["string_cells"] == 12, "repeated string cell count mismatch")
+    require(repeated_distribution["unique_string_values"] == 1,
+        "repeated unique string value count mismatch")
+    require(repeated_distribution["duplicate_string_cells"] == 11,
+        "repeated duplicate string count mismatch")
+    require(abs(float(repeated_distribution["string_dedup_ratio"]) - (11.0 / 12.0)) < 1e-9,
+        "repeated dedup ratio mismatch")
+
+    unique_distribution = expected_string_distribution(unique, rows=2, cols=3, sheets=2,
+        mixed_string_ratio=0.25)
+    require(unique_distribution["string_cells"] == 12, "unique string cell count mismatch")
+    require(unique_distribution["unique_string_values"] == 12,
+        "unique value count mismatch")
+    require(unique_distribution["duplicate_string_cells"] == 0,
+        "unique duplicate string count mismatch")
+    require(unique_distribution["string_dedup_ratio"] == 0.0, "unique dedup ratio mismatch")
+
+    numeric_distribution = expected_string_distribution(numeric, rows=5, cols=4, sheets=3,
+        mixed_string_ratio=1.0)
+    require(numeric_distribution["string_cells"] == 0, "numeric string cell count mismatch")
+    require(expected_cell_value(numeric, 0.25, 2, 3) == 1002003,
+        "numeric expected cell mismatch")
+    require(expected_cell_value(repeated, 0.25, 2, 3) == "repeat",
+        "repeated expected cell mismatch")
+    require(expected_cell_value(unique, 0.25, 2, 3) == "s1-r2-c3",
+        "unique expected cell mismatch")
+    require(expected_cell_value(parse_case("mixed:inline:mixed"), 1.0, 4, 1) == "repeat",
+        "mixed repeated expected cell mismatch")
+
+    report = build_matrix_report(Path("bench"), Path("out"), 2, 3, 2, 0.25, [{
+        "name": repeated.name,
+        "expected": {
+            "sheet1_first_cell": "repeat",
+            "sheet1_last_cell": "repeat",
+            "string_distribution": repeated_distribution,
+        },
+    }])
+    require(report["benchmark_matrix_schema_version"] == "1", "matrix schema mismatch")
+    require(report["cells_per_case"] == 12, "matrix cell count mismatch")
+    require(report["cases"][0]["name"] == "strings-repeated-shared", "matrix case mismatch")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--self-test", action="store_true",
+        help="Run lightweight internal checks without invoking the benchmark executable.")
     parser.add_argument("--bench-exe", type=Path, default=default_benchmark_exe(),
         help="Path to fastxlsx_bench_streaming_writer.")
     parser.add_argument("--output-dir", type=Path, default=Path("build/qa/benchmark-matrix"),
@@ -300,6 +390,11 @@ def main() -> int:
     parser.add_argument("--verify-openpyxl", action="store_true",
         help="Open generated workbooks with openpyxl and verify Sheet1 first/last cells.")
     args = parser.parse_args()
+
+    if args.self_test:
+        run_self_test()
+        print("OK: run_benchmark_matrix.py self-test passed")
+        return 0
 
     bench_exe = args.bench_exe.resolve()
     output_dir = args.output_dir.resolve()
@@ -318,22 +413,8 @@ def main() -> int:
             args.mixed_string_ratio, args.verify_openpyxl)
         for case in cases
     ]
-    report = {
-        "benchmark_matrix_schema_version": "1",
-        "benchmark_executable": str(bench_exe),
-        "output_dir": str(output_dir),
-        "rows": args.rows,
-        "cols": args.cols,
-        "sheets": args.sheets,
-        "cells_per_case": args.rows * args.cols * args.sheets,
-        "mixed_string_ratio": args.mixed_string_ratio,
-        "cases": reports,
-        "comparison_scope": (
-            "Manual opt-in benchmark matrix. Results compare generated schema-v4 JSON "
-            "fields and optional openpyxl workbook readability; Office validation is a "
-            "separate local step and benchmark office_open fields remain not_run."
-        ),
-    }
+    report = build_matrix_report(
+        bench_exe, output_dir, args.rows, args.cols, args.sheets, args.mixed_string_ratio, reports)
     report_path = output_dir / "benchmark-matrix-report.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))

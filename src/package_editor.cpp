@@ -1,12 +1,15 @@
 #include "package_editor.hpp"
 
+#include <fastxlsx/detail/worksheet_event_reader.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/workbook.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -1956,6 +1959,189 @@ std::string missing_cell_replacement_error(
     return message;
 }
 
+struct CellReferenceCoordinate {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+};
+
+struct WorksheetDimensionScan {
+    bool has_cells = false;
+    std::uint32_t first_row = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t first_column = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t last_row = 0;
+    std::uint32_t last_column = 0;
+};
+
+bool is_ascii_alpha(char ch)
+{
+    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+}
+
+bool is_ascii_digit(char ch)
+{
+    return ch >= '0' && ch <= '9';
+}
+
+std::uint32_t uppercase_column_value(char ch)
+{
+    const char upper =
+        static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    return static_cast<std::uint32_t>(upper - 'A' + 1);
+}
+
+CellReferenceCoordinate parse_cell_reference_coordinate(std::string_view reference)
+{
+    if (reference.empty()) {
+        throw FastXlsxError("worksheet dimension refresh requires cell references");
+    }
+
+    std::uint64_t column = 0;
+    std::size_t position = 0;
+    while (position < reference.size() && is_ascii_alpha(reference[position])) {
+        column = column * 26U + uppercase_column_value(reference[position]);
+        if (column > 16384U) {
+            throw FastXlsxError("worksheet dimension refresh cell column exceeds Excel limits");
+        }
+        ++position;
+    }
+    if (position == 0 || position >= reference.size()) {
+        throw FastXlsxError("worksheet dimension refresh found an invalid cell reference");
+    }
+
+    std::uint64_t row = 0;
+    while (position < reference.size() && is_ascii_digit(reference[position])) {
+        row = row * 10U + static_cast<std::uint32_t>(reference[position] - '0');
+        if (row > 1048576U) {
+            throw FastXlsxError("worksheet dimension refresh cell row exceeds Excel limits");
+        }
+        ++position;
+    }
+    if (position != reference.size() || row == 0 || column == 0) {
+        throw FastXlsxError("worksheet dimension refresh found an invalid cell reference");
+    }
+
+    return CellReferenceCoordinate {
+        static_cast<std::uint32_t>(row), static_cast<std::uint32_t>(column)};
+}
+
+void include_dimension_cell(
+    WorksheetDimensionScan& scan, const CellReferenceCoordinate& coordinate)
+{
+    scan.has_cells = true;
+    scan.first_row = std::min(scan.first_row, coordinate.row);
+    scan.first_column = std::min(scan.first_column, coordinate.column);
+    scan.last_row = std::max(scan.last_row, coordinate.row);
+    scan.last_column = std::max(scan.last_column, coordinate.column);
+}
+
+std::string worksheet_dimension_reference(const WorksheetDimensionScan& scan)
+{
+    if (!scan.has_cells) {
+        return "A1";
+    }
+    return range_reference(scan.first_row, scan.first_column, scan.last_row, scan.last_column);
+}
+
+bool is_closing_raw_tag(std::string_view raw_xml)
+{
+    return raw_xml.size() > 2 && raw_xml[0] == '<' && raw_xml[1] == '/';
+}
+
+std::string element_prefix(std::string_view raw_xml)
+{
+    if (raw_xml.empty() || raw_xml.front() != '<') {
+        return {};
+    }
+
+    std::size_t position = 1;
+    if (position < raw_xml.size() && raw_xml[position] == '/') {
+        ++position;
+    }
+    const std::size_t name_begin = position;
+    while (position < raw_xml.size() && !std::isspace(static_cast<unsigned char>(raw_xml[position]))
+        && raw_xml[position] != '/' && raw_xml[position] != '>' && raw_xml[position] != '?') {
+        ++position;
+    }
+    const std::string_view qualified_name = raw_xml.substr(name_begin, position - name_begin);
+    const std::size_t colon = qualified_name.find(':');
+    if (colon == std::string_view::npos) {
+        return {};
+    }
+    return std::string(qualified_name.substr(0, colon));
+}
+
+std::string dimension_tag(std::string_view prefix, std::string_view reference)
+{
+    std::string tag = "<";
+    if (!prefix.empty()) {
+        tag += prefix;
+        tag += ':';
+    }
+    tag += "dimension ref=\"";
+    tag += reference;
+    tag += "\"/>";
+    return tag;
+}
+
+std::string refresh_worksheet_dimension_for_cell_replacements(std::string worksheet_xml)
+{
+    std::string_view worksheet_view(worksheet_xml);
+    WorksheetDimensionScan dimension_scan;
+    std::size_t worksheet_start_end = std::string::npos;
+    std::string worksheet_prefix;
+    std::size_t dimension_begin = std::string::npos;
+    std::size_t dimension_end = std::string::npos;
+    std::string dimension_prefix;
+
+    scan_worksheet_events(worksheet_view, [&](const WorksheetEvent& event) {
+        const std::size_t event_offset =
+            static_cast<std::size_t>(event.raw_xml.data() - worksheet_view.data());
+        if (event.kind == WorksheetEventKind::WorksheetStart
+            && worksheet_start_end == std::string::npos) {
+            worksheet_start_end = event_offset + event.raw_xml.size();
+            worksheet_prefix = element_prefix(event.raw_xml);
+            return;
+        }
+        if (event.kind == WorksheetEventKind::Metadata && event.element_name == "dimension") {
+            if (dimension_begin == std::string::npos && !is_closing_raw_tag(event.raw_xml)) {
+                dimension_begin = event_offset;
+                dimension_prefix = element_prefix(event.raw_xml);
+                if (event.self_closing) {
+                    dimension_end = event_offset + event.raw_xml.size();
+                }
+                return;
+            }
+            if (dimension_begin != std::string::npos && dimension_end == std::string::npos
+                && is_closing_raw_tag(event.raw_xml)) {
+                dimension_end = event_offset + event.raw_xml.size();
+                return;
+            }
+        }
+        if (event.kind == WorksheetEventKind::CellStart && !event.cell_reference.empty()) {
+            include_dimension_cell(
+                dimension_scan, parse_cell_reference_coordinate(event.cell_reference));
+        }
+    });
+
+    if (worksheet_start_end == std::string::npos) {
+        throw FastXlsxError("worksheet dimension refresh requires a worksheet root");
+    }
+    if (dimension_begin != std::string::npos && dimension_end == std::string::npos) {
+        throw FastXlsxError("worksheet dimension refresh found an unclosed dimension element");
+    }
+
+    const std::string reference = worksheet_dimension_reference(dimension_scan);
+    if (dimension_begin != std::string::npos) {
+        worksheet_xml.replace(dimension_begin,
+            dimension_end - dimension_begin,
+            dimension_tag(dimension_prefix, reference));
+        return worksheet_xml;
+    }
+
+    worksheet_xml.insert(worksheet_start_end, dimension_tag(worksheet_prefix, reference));
+    return worksheet_xml;
+}
+
 bool contains_planned_output_entry(
     const std::vector<PackageEditorOutputEntryPlan>& entries, std::string_view entry_name)
 {
@@ -2539,6 +2725,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         throw FastXlsxError(
             missing_cell_replacement_error(summary.missing_cell_references));
     }
+    rewritten_worksheet_xml =
+        refresh_worksheet_dimension_for_cell_replacements(std::move(rewritten_worksheet_xml));
+    require_cell_replacement_local_rewrite_size(
+        "dimension-refreshed worksheet XML", rewritten_worksheet_xml.size());
 
     replace_worksheet_part_impl(
         std::move(worksheet_part), std::move(rewritten_worksheet_xml), policy, true);
@@ -2556,6 +2746,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         "worksheet cell replacement uses bounded local output chunks; current helper "
         "materializes the planned worksheet XML and is not the package-entry staged "
         "large-file streaming worksheet transformer");
+    edit_plan_.add_note(
+        "worksheet cell replacement refreshed worksheet dimension from emitted cell "
+        "references; range-bearing metadata such as autoFilter, tables, drawings, "
+        "definedNames, and formulas is not recalculated or repaired");
 }
 
 void PackageEditor::replace_worksheet_cells_by_name(std::string_view sheet_name,

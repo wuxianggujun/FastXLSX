@@ -60,11 +60,14 @@ parallelism, acceptance checks, and explicit non-goals.
   `replace_worksheet_cells_by_name()` handoff helpers that materialize the
   current planned worksheet XML, feed it through that chunk emitter, and delegate
   calcChain/fullCalcOnLoad plus audit behavior to the existing worksheet
-  replacement path. This is P8 reader/transformer/action/output-chunk and bounded
-  PackageEditor handoff groundwork only: no public API, full XML parser/schema
-  validation, relationship repair, package-entry staged stream writer, dimension
-  recalculation, dependency repair, sharedStrings/style migration, or low-memory
-  large-file editing claim.
+  replacement path. That bounded handoff now refreshes the top-level worksheet
+  `<dimension>` from emitted cell refs, replacing stale dimension metadata or
+  inserting a missing dimension before commit. This is P8 reader/transformer/
+  action/output-chunk and bounded PackageEditor handoff groundwork only: no
+  public API, full XML parser/schema validation, relationship repair,
+  package-entry staged stream writer, broad range metadata recalculation,
+  dependency repair, sharedStrings/style migration, or low-memory large-file
+  editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.

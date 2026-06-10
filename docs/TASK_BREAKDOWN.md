@@ -1366,10 +1366,11 @@ transformer contract、stream rewrite / `EditPlan` handoff，并补入首个 bou
 template-fill fixture。P8.6 已落地首个 internal worksheet event reader 实现切片；
 P8.7 已落地首个 internal transformer action model 切片；P8.8 已落地首个 internal
 worksheet replacement output chunk emitter 切片；P8.9 已落地首个 internal bounded
-`PackageEditor` cell-replacement handoff 切片。后续真正 package-entry staged stream
-rewrite / `EditPlan` handoff 必须继续按任务模板拆分，不能把当前 reader、action
-scanner、chunk emitter、bounded PackageEditor handoff 或 bounded local fixture 写成完整
-低内存大文件路径。
+`PackageEditor` cell-replacement handoff 切片；P8.10 已落地 bounded cell replacement
+handoff 的 top-level worksheet dimension refresh 切片。后续真正 package-entry staged
+stream rewrite / `EditPlan` handoff 必须继续按任务模板拆分，不能把当前 reader、
+action scanner、chunk emitter、bounded PackageEditor handoff、dimension refresh 或
+bounded local fixture 写成完整低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1384,6 +1385,7 @@ scanner、chunk emitter、bounded PackageEditor handoff 或 bounded local fixtur
 - P8.7 internal row/cell transformer action model first implementation slice：基础完成。
 - P8.8 internal worksheet replacement output chunk emitter first implementation slice：基础完成。
 - P8.9 internal bounded PackageEditor cell-replacement handoff first implementation slice：基础完成。
+- P8.10 internal bounded worksheet dimension refresh for cell replacement handoff：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -2011,6 +2013,75 @@ fixture，不是最终 package-entry staged stream writer。
 - 不实现 dimension update、sharedStrings/style migration、relationship repair、
   table resize、formula rewrite、calcChain rebuild、placeholder parser 或 range patch engine。
 - 不把 materialized worksheet XML handoff 写成低内存大文件路径。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.10 internal bounded worksheet dimension refresh for cell replacement handoff
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：补齐 P8.9 bounded cell-replacement handoff 的最小 dimension tracking：在
+replacement chunks 生成 rewritten worksheet XML 后，用 event reader 扫描 output cell refs，
+计算 top-level worksheet `<dimension ref="..."/>`，并替换已有 stale dimension 或在
+worksheet root 后插入新的 dimension。该切片只刷新 top-level dimension，不修复其他
+range-bearing metadata。
+
+输入：
+- P8.6 internal worksheet event reader。
+- P8.8 internal output chunk emitter。
+- P8.9 internal bounded `PackageEditor` cell-replacement handoff。
+- 当前 `detail::range_reference()` / Excel row-column limit 语义。
+
+输出：
+- `PackageEditor::replace_worksheet_cells()` 在状态变更前刷新 rewritten worksheet
+  的 top-level `<dimension>`。
+- dimension refresh 解析 emitted cell refs，支持 existing self-closing dimension、
+  non-self-closing dimension 的整体替换，以及无 dimension 时在 worksheet root 后插入。
+- 失败路径仍在 `replace_worksheet_part_impl()` 之前抛出，不污染 active `EditPlan`、
+  manifest、package-entry audit、calc policy 或输出 bytes。
+- `fastxlsx.package_editor` 回归覆盖 no-dimension input 插入 `<dimension ref="A1"/>`，
+  以及 stale `<dimension ref="A1"/>` 刷新为 `A1:C3`。
+
+触碰文件：
+- `src/package_editor.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/streaming_writer.cpp`
+- CMake 配置
+
+可并行性：
+- 后续 package-entry staged output source 和 true file-backed stream writer 必须串行。
+- table range、autoFilter、definedNames、formula reference、drawing anchor、mergeCells、
+  validations 和 conditional formatting 等 range metadata 需要单独按 dependency policy
+  拆分，不能混入本切片。
+
+验收标准：
+- `fastxlsx.package_editor` 覆盖 inserted/refreshed dimension 的 XML 输出。
+- 默认完整 CTest 通过。
+- 文档明确这只是 bounded top-level dimension refresh，不是 full dimension/range metadata
+  recalculation、public API、低内存 package-entry staged stream writer、dependency repair、
+  sharedStrings/style migration、relationship repair、table resize、formula rewrite 或
+  calcChain rebuild。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不创建真正 package-entry staged stream output source。
+- 不更新 autoFilter、tables、definedNames、formulas、drawings、mergeCells、validations、
+  conditional formatting 或其他 range-bearing metadata。
+- 不把 materialized worksheet XML dimension refresh 写成低内存大文件路径。
 
 验证命令：
 ```powershell

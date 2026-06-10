@@ -100,10 +100,13 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     `fastxlsx.package_editor`. `replace_worksheet_cells()` and
     `replace_worksheet_cells_by_name()` materialize the current planned worksheet
     XML, run the P8 chunk emitter, then delegate calcChain/fullCalcOnLoad and audit
-    handling to the existing worksheet replacement path. Treat this as a bounded
-    handoff fixture only: no public API, no package-entry staged stream writer, no
-    dimension recalculation, no sharedStrings/style migration, no relationship
-    repair, and no low-memory large-file editing claim.
+    handling to the existing worksheet replacement path. The bounded handoff now
+    refreshes the top-level worksheet `<dimension>` from emitted cell refs,
+    replacing stale dimension metadata or inserting a missing dimension before
+    commit. Treat this as a bounded handoff fixture only: no public API, no
+    package-entry staged stream writer, no broad range metadata recalculation, no
+    sharedStrings/style migration, no relationship repair, and no low-memory
+    large-file editing claim.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

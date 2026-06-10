@@ -2438,6 +2438,8 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transform
         "cell replacement output plan should expose full calculation request");
     check(has_note_containing(output_plan.notes, {"bounded local output chunks"}),
         "cell replacement output plan should expose bounded local handoff note");
+    check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
+        "cell replacement output plan should expose dimension refresh note");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
         "cell replacement output plan should local-rewrite worksheet");
@@ -2453,7 +2455,7 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transform
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
     const std::string expected_worksheet =
-        R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>patched</t></is></c></row></sheetData></worksheet>)";
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>patched</t></is></c></row></sheetData></worksheet>)";
     check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
         "cell replacement handoff should write transformed worksheet XML");
     check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
@@ -2470,6 +2472,54 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transform
         "output reader should ingest the rewritten worksheet as a normal source part");
     check(output_reader.part_index().find_part(workbook_part) != nullptr,
         "output reader should retain workbook part");
+}
+
+void test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cell-replacement-dimension-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-dimension-output.xlsx");
+    source.worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c></row>)"
+        R"(<row r="3"><c r="C3"><v>3</v></c></row>)"
+        R"(</sheetData></worksheet>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"xl/calcChain.xml", source.calc_chain},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1", R"(<c r="A1"><v>9</v></c>)" },
+    };
+
+    editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
+        "dimension refresh handoff should record a review note");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml = output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "cell replacement handoff should refresh stale worksheet dimension");
+    check_not_contains(worksheet_xml, R"(<dimension ref="A1"/>)",
+        "cell replacement handoff should replace stale worksheet dimension");
+    check_contains(worksheet_xml, R"(<c r="C3"><v>3</v></c>)",
+        "dimension refresh should preserve non-target cell XML");
 }
 
 void test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change()
@@ -33001,6 +33051,7 @@ int main()
         test_package_editor_document_properties_app_relationship_failure_preserves_state();
         test_package_editor_combines_document_properties_and_worksheet_rewrite();
         test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transformer_handoff();
+        test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
         test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
         test_package_editor_replaces_worksheet_and_removes_stale_calc_chain();
         test_package_editor_source_overwrite_rejection_preserves_worksheet_rewrite_plan();

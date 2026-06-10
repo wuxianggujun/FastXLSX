@@ -1289,6 +1289,54 @@ void test_streaming_writer_foreign_style_collision_is_rejected()
         "valid row after foreign style collision mismatch");
 }
 
+void test_streaming_writer_default_style_id_clears_cell_style()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-default-clear.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const auto number_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
+
+    auto sheet = workbook.add_worksheet("DefaultStyle");
+    sheet.append_row({
+        fastxlsx::CellView::text("Styled"),
+        fastxlsx::CellView::text("Cleared"),
+        fastxlsx::CellView::text("ExplicitDefault"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(12.5).with_style(number_style),
+        fastxlsx::CellView::number(42.5)
+            .with_style(number_style)
+            .with_style(fastxlsx::StyleId {}),
+        fastxlsx::CellView::text("plain").with_style(fastxlsx::StyleId {}),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "default style clear xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "registered style should still create styles.xml");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml,
+        R"(<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "default clear style cellXfs mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "registered number style xf mismatch");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A2" s="1"><v>12.5</v></c>)",
+        "registered style should write the style id");
+    check_contains(worksheet_xml, R"(<c r="B2"><v>42.5</v></c>)",
+        "StyleId{} should clear a previously styled number cell");
+    check_contains(worksheet_xml,
+        R"(<c r="C2" t="inlineStr"><is><t>plain</t></is></c>)",
+        "StyleId{} should keep explicit default text unstyled");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "default style clear should not serialize s=\"0\"");
+}
+
 void test_streaming_writer_invalid_style_registration()
 {
     const auto output_path =
@@ -5327,6 +5375,7 @@ int main()
         test_streaming_writer_styles_with_shared_strings();
         test_streaming_writer_invalid_style_preserves_state();
         test_streaming_writer_foreign_style_collision_is_rejected();
+        test_streaming_writer_default_style_id_clears_cell_style();
         test_streaming_writer_invalid_style_registration();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_conditional_formatting_two_color_scale();

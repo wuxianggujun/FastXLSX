@@ -1469,7 +1469,8 @@ Accept when:
   `applyAlignment` / `<alignment .../>`, bold/italic/direct-color font records,
   `<font><color rgb="..."/>`, `fontId` reuse, `applyFont="1"`, solid fill records, `fillId` reuse, `applyFill="1"`,
   sharedStrings + styles relationship ordering,
-  default `s="0"` omission, and invalid foreign `StyleId` state hygiene.
+  default `s="0"` omission, explicit `StyleId{}` clearing of a previously
+  styled cell back to default output, and invalid foreign `StyleId` state hygiene.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM

@@ -3071,6 +3071,66 @@ ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure -
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
+## P13 - Phase 3 metadata/styles hardening
+
+状态：推进中；P13.1 已落地。
+
+目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
+public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
+dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
+
+已落地子任务：
+- P13.1 default `StyleId{}` clears per-cell style：基础完成。
+
+### P13.1 default `StyleId{}` clears per-cell style
+
+状态：基础完成。
+
+类型：streaming styles structure test + docs；不新增 public API / CMake dependency。
+
+目标：锁定 `CellView::with_style(StyleId{})` 的 public contract：默认 style id `0`
+会把 cell view 恢复到 workbook default style，输出时不写 `s="0"`，也不会把
+cleared cell 当作 foreign style。
+
+输入事实：
+- `StyleId{}` 是 style `0`，header 注释说明它会清除 cell style。
+- 已有 styles 测试覆盖非默认 `s="N"`、默认 `s="0"` 省略、foreign style 拒绝
+  和 style registration guardrails。
+- 仍缺少一个直接覆盖“先应用非默认 style，再用 `StyleId{}` 清除”的结构回归。
+
+范围：
+- 在 `fastxlsx.streaming` 中新增一个 workbook-level style 回归。
+- 验证 registered style 仍生成 `xl/styles.xml`，styled cell 写 `s="1"`。
+- 验证 cleared number/text cells 回到默认样式，不写 `s` / `s="0"`。
+- 文档记录该测试只是锁住现有 narrow style contract。
+
+触碰文件：
+- `tests/test_streaming_writer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.streaming` 通过。
+- 全量默认 CTest 通过。
+- 文档明确这不是 full styles、style migration、existing-file style preservation、
+  hyperlink styles、dxfs 或完整 Phase 3。
+
+非目标：
+- 不新增 style property、public editor API、`styles.xml` 合并或 existing-file
+  style id migration。
+- 不改变 `StyleId` owner-token foreign style 拒绝语义。
+- 不改变 workbook-local style registry、number format / font / fill / alignment
+  现有 XML 语义。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
 ## 并行拆分建议
 
 可以并行：

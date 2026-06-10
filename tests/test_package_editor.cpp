@@ -18750,6 +18750,10 @@ void test_package_editor_external_link_replacement_restores_prior_removal()
         "externalLink replacement after removal output plan should keep calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "externalLink replacement after removal output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "externalLink replacement after removal output plan should clear stale removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "externalLink replacement after removal output plan should clear stale omitted entries");
     check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
         fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
         "externalLink replacement after removal output plan should rewrite externalLink part");
@@ -18928,6 +18932,26 @@ void test_package_editor_external_link_removal_overrides_prior_replacement()
         "externalLink removal after replacement output plan should keep calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "externalLink removal after replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.size() == 1,
+        "externalLink removal after replacement output plan should expose one removed part");
+    check(output_plan.removed_parts.front().part_name == external_link_part,
+        "externalLink removal after replacement output plan should expose removed externalLink");
+    check(output_plan.removed_parts.front().reason.find("after replacement")
+            != std::string::npos,
+        "externalLink removal after replacement output plan should keep removed-part reason");
+    check(output_plan.removed_parts.front().inbound_relationships.size() == 1,
+        "externalLink removal after replacement output plan should expose removed-part inbound audit");
+    check(output_plan.removed_package_entries.size() == 1,
+        "externalLink removal after replacement output plan should expose owner relationships omission");
+    check(output_plan.removed_package_entries.front().entry_name
+            == "xl/externalLinks/_rels/externalLink1.xml.rels",
+        "externalLink removal after replacement output plan should omit externalLink owner relationships");
+    check(output_plan.removed_package_entries.front().audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink removal after replacement output plan should classify omitted owner relationships");
+    check(output_plan.removed_package_entries.front().owner_part
+            == external_link_part.value(),
+        "externalLink removal after replacement output plan should keep omitted owner context");
     check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
         "externalLink removal after replacement output plan should omit externalLink part");

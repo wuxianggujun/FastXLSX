@@ -692,7 +692,11 @@ parallelism, acceptance checks, and explicit non-goals.
   and reason.
   Current regression coverage checks no-op
   copy-original baseline, docProps generated-small-XML append/rewrite
-  decisions, worksheet calcChain omission plus workbook metadata rewrites, and
+  decisions including the custom properties preservation case
+  (`docProps/custom.xml` and an unrelated unknown entry copy-original while
+  content types / package relationships are local-DOM rewrites and no removal
+  or relationship-target audit is introduced), worksheet calcChain omission plus
+  workbook metadata rewrites, and
   sheetData Patch MVP output-plan snapshots for worksheet stream-rewrite,
   workbook metadata rewrite, calcChain omission, metadata-entry audit, preserved
   source-owned `.rels`, and relationship-derived linked parts including
@@ -1454,7 +1458,10 @@ Tasks:
   core/app docProps Patch slice. The internal Patch regression now also proves
   this helper preserves an existing `docProps/custom.xml`, its custom-properties
   package relationship, its content type override, and unrelated unknown bytes
-  while core/app metadata is regenerated. Do not expand it to custom document
+  while core/app metadata is regenerated; the internal `planned_output()`
+  snapshot now exposes the generated core/app entries, preserved custom
+  properties / unknown entries, metadata rewrites, and absence of removal /
+  relationship-target audit pollution. Do not expand it to custom document
   properties editing or a public existing-file editing API without a separate
   task.
 - Add named ranges only with workbook XML, relationships, and formula/range
@@ -2700,7 +2707,10 @@ Current facts:
   workbook/worksheet/calcChain/unknown entries.
   The docProps generated-small-XML
   path also covers existing `docProps/custom.xml` preservation during package
-  relationship/content-type rewrites, plus core/app package relationship target
+  relationship/content-type rewrites, including aggregate `planned_output()`
+  visibility for generated core/app entries, preserved custom properties /
+  unknown entries, metadata rewrites, and empty removal / relationship-target
+  audits, plus core/app package relationship target
   conflicts as no-state-pollution failures, but there is no public/production
   `PackageWriter` or `PackageEditor`.
 - Broad existing XLSX editing, relationship pruning/orphan cleanup,

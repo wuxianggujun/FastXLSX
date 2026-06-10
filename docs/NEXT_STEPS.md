@@ -1126,7 +1126,10 @@ Current foundation:
   This does not generate `docProps/custom.xml`; the internal Patch regression
   now verifies that an existing `docProps/custom.xml`, its custom-properties
   package relationship, its content type override, and unrelated unknown bytes
-  are preserved while core/app metadata is regenerated. It is not a public
+  are preserved while core/app metadata is regenerated. The internal
+  `planned_output()` snapshot also exposes the generated core/app entries,
+  preserved custom properties / unknown entries, metadata rewrites, and absence
+  of removal / relationship-target audit pollution. It is not a public
   document-property editing API or custom-properties editor.
 - Fixed local QA helpers now exist:
   `tools/verify_document_properties.py` checks ZIP/XML and `openpyxl`
@@ -2217,7 +2220,8 @@ Current foundation:
   owner/id/type/target fields, omitted removed-part inbound relationship audits,
   and reason.
   Current tests cover no-op copy-original,
-  docProps generated-small-XML additions, worksheet calcChain omission with
+  docProps generated-small-XML additions including custom properties
+  preservation output-plan visibility, worksheet calcChain omission with
   workbook metadata rewrites, sheetData Patch MVP output-plan snapshots for
   worksheet stream-rewrite, workbook metadata rewrite, calcChain omission,
   metadata-entry audit, preserved source-owned `.rels`, and

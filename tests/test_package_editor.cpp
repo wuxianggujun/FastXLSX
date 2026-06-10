@@ -1882,6 +1882,62 @@ void test_package_editor_document_properties_preserves_custom_properties_part()
     check(editor.edit_plan().find_package_entry("_rels/.rels") != nullptr,
         "custom docprops rewrite should audit package relationships rewrite for missing app props");
 
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(editor.planned_output_entries().size() == output_plan.entries.size(),
+        "custom docprops output plan should match entry preview size");
+    check(output_plan.relationship_target_audits.empty(),
+        "custom docprops output plan should not invent relationship target audits");
+    check(output_plan.removed_parts.empty(),
+        "custom docprops output plan should not record removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "custom docprops output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "custom docprops output plan should rewrite content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "custom docprops output plan should keep content types as metadata entry");
+    const auto* output_content_types_plan =
+        find_output_entry_plan(output_plan.entries, "[Content_Types].xml");
+    check(output_content_types_plan != nullptr
+            && output_content_types_plan->audit_kind
+                == fastxlsx::detail::PackageEntryAuditKind::ContentTypes,
+        "custom docprops output plan should classify content types metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "custom docprops output plan should rewrite package relationships");
+    check_output_entry_part_context(output_plan.entries, "_rels/.rels", false, "",
+        "custom docprops output plan should keep package relationships as metadata entry");
+    const auto* output_package_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "_rels/.rels");
+    check(output_package_relationships_plan != nullptr
+            && output_package_relationships_plan->audit_kind
+                == fastxlsx::detail::PackageEntryAuditKind::PackageRelationships,
+        "custom docprops output plan should classify package relationships metadata");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::GenerateSmallXml, true, true, false, false,
+        "custom docprops output plan should regenerate core properties");
+    check_output_entry_part_context(output_plan.entries, "docProps/core.xml", true,
+        core_part.value(),
+        "custom docprops output plan should classify core properties as package part");
+    check_output_entry_plan(output_plan.entries, "docProps/app.xml",
+        fastxlsx::detail::PartWriteMode::GenerateSmallXml, false, true, false, false,
+        "custom docprops output plan should append generated app properties");
+    check_output_entry_part_context(output_plan.entries, "docProps/app.xml", true,
+        app_part.value(),
+        "custom docprops output plan should classify app properties as package part");
+    check_output_entry_plan(output_plan.entries, "docProps/custom.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom docprops output plan should preserve custom properties part");
+    check_output_entry_part_context(output_plan.entries, "docProps/custom.xml", true,
+        custom_part.value(),
+        "custom docprops output plan should classify custom properties as package part");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom docprops output plan should preserve unrelated unknown part");
+    check_output_entry_part_context(output_plan.entries, "custom/opaque.bin", true,
+        unknown_part.value(),
+        "custom docprops output plan should classify unknown entry as package part");
+
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =

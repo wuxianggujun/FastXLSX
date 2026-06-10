@@ -548,7 +548,10 @@ effect；这只是未修改包 copy baseline。
 ## 三、planned_output() 聚合快照逐 fixture 覆盖
 
 当前回归覆盖 no-op
-copy-original、docProps generated-small-XML 新增/重写、worksheet calcChain omission
+copy-original、docProps generated-small-XML 新增/重写（包括 custom properties
+preservation 场景下的 core/app generated entries、`docProps/custom.xml` 与
+unknown entry copy-original、content types / package relationships metadata
+rewrite、无 removed/audit 污染）、worksheet calcChain omission
 与 workbook metadata rewrite、sheetData Patch MVP 的 output-plan snapshot
 （worksheet stream-rewrite、workbook metadata rewrite、calcChain omission、
 metadata-entry audit、preserved source-owned `.rels` 和 relationship-derived

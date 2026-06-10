@@ -1499,6 +1499,20 @@ P8.3 transformer contract draft：
 - transformer 只报告 sharedStrings、styles、relationships、definedNames、tables、
   drawings 和 calc metadata 依赖，不执行迁移、repair 或公式求值。
 
+P8.4 stream rewrite / `EditPlan` contract draft：
+
+- stream rewrite 只消费 P8.3 ordered actions，生成 staged worksheet part output；成功完成
+  和 dependency policy 决策通过后，才进入 active `EditPlan`。
+- rewrite writer 只维护 bounded output buffer、current row state 和 incremental dimension
+  state；不持有完整 worksheet DOM、row map 或 cell matrix。
+- pass-through、replace、insert、delete candidate、emit raw、request recalculation 和 fail
+  action 都必须有明确 worksheet bytes、dimension/calc diagnostics 和 failure semantics。
+- preflight fail 或 streaming fail 不得污染 active `EditPlan`、manifest、package-entry
+  audit、calc policy 或输出 package；temporary artifacts 只是未提交实现细节。
+- planned output diagnostics 只作为 internal audit snapshot，暴露 stream rewrite entry、
+  copy-original linked parts、relationship/content-type side effects、calcChain action 和
+  dependency audits，不是 public output planner。
+
 适合：
 
 - 修改某些单元格

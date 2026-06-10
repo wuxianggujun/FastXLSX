@@ -575,6 +575,66 @@ failure contract：
 - 不把 transformer contract 写成 arbitrary range editor 已可用。
 - 不替代 P8.4 `EditPlan` / stream rewrite output contract。
 
+### P8.4 Future Stream Rewrite / EditPlan Output Contract Draft
+
+P8.4 只冻结 future internal stream rewrite output 和 `EditPlan` handoff，不新增
+`WorksheetRewriter` implementation、callback API 或 public Patch API。它定义 P8.3 ordered
+actions 如何变成 staged worksheet part source、diagnostics 和 package-level plan。
+
+rewrite pipeline contract：
+
+- 输入只来自 P8.2 tokens 与 P8.3 transformer actions；writer 不重新扫描完整 worksheet。
+- pass-through raw events 必须保持 source order；replace / insert / delete candidate
+  actions 必须按 deterministic row-major order 消费。
+- worksheet output 先作为 staged part source 存在；只有 rewrite 成功完成、最小 worksheet
+  root/order 检查和 dependency policy 决策通过后，才能进入 active `EditPlan`。
+- stream writer 只维护 bounded output buffer、current row state 和 incremental dimension
+  state；禁止 worksheet DOM、full cell matrix、unbounded raw XML cache 或回写历史 rows。
+
+action consumption 草案：
+
+- `PassThrough` / `EmitRaw`：转发 known token 或 bounded raw XML，并保留 well-formedness
+  和 ordering 责任边界。
+- `ReplaceCell`：复用 writer cell serialization 规则，更新 dimension candidate，并把
+  shared-string index、style id 和 formula/calc dependency 作为 audit 输入。
+- `ReplaceRow` / `InsertRowBefore` / `InsertRowAfter`：写 bounded row event sequence；
+  row number、dimension 和 downstream range/reference side effects 必须进入 diagnostics。
+- `DeleteCell` / `DeleteRow` candidate：除非 selector 和 dependency policy 能证明安全，
+  否则应降级为 unsupported/fail 或 audit-required；P8.4 不静默重写 metadata ranges。
+- `RequestRecalculation`：只请求 workbook `fullCalcOnLoad` / calcChain remove-or-preserve
+  policy；不求值、不写 cached values、不实现 `CalcChainAction::Rebuild`。
+- `FailUnsupported`：abort rewrite，并保留 selector、token context、row/cell ref 和 reason
+  diagnostics；不提交 package mutation。
+
+`EditPlan` handoff：
+
+- 成功 rewrite 应记录 worksheet part `StreamRewrite`、rewrite reason、target worksheet part、
+  selector context 和 source/staged-output boundary。
+- `EditPlan` / planned output diagnostics 应暴露 copy-original linked parts、content types /
+  package relationships / owner `.rels` side effects、removed calcChain audit、calc policy、
+  `WorksheetPayloadDependencyAudit` 和 `RelationshipTargetAudit`。
+- sharedStrings、styles、definedNames、tables、drawings、hyperlinks、OLE/control、
+  printerSettings、comments、charts 和 unknown relationship targets 只按 preserve / audit /
+  fail / explicit rewrite policy 处理；stream rewrite 不做迁移或 repair。
+- planned output snapshot 只是 internal diagnostic，不是 stable public output planner。
+
+failure contract：
+
+- preflight fail 不应改变 active `EditPlan`、manifest、package-entry audit、calc policy 或
+  planned output。
+- streaming fail 不应产生可保存 package mutation；temporary part files / buffers 只能是
+  未提交实现细节，cleanup 是实现责任而不是 public artifact contract。
+- failure diagnostics 必须足够定位 selector、worksheet part、row/cell ref、action kind 和
+  dependency policy reason。
+
+非目标：
+
+- 不实现 stream rewrite code。
+- 不声明 current bounded `replace_worksheet_sheet_data()` 是低内存 streaming rewrite。
+- 不提供 relationship repair、table resize、formula rewrite、sharedStrings/style migration
+  或 calcChain rebuild。
+- 不把 P8.4 写成 public `PackageEditor` / `WorkbookEditor` API 已可用。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

@@ -1501,6 +1501,22 @@ P8.3 row/cell transformer draft：
 - transformer 只报告 sharedStrings、styles、definedNames、table/drawing ranges、
   formula/calc metadata 和 relationship dependency audits，不做迁移、修复或公式求值。
 
+P8.4 stream rewrite / `EditPlan` draft：
+
+- stream rewrite 消费 P8.3 ordered actions，生成 staged worksheet part source；只有
+  rewrite 完成、最小 worksheet root/order 检查和 dependency policy 决策通过后，才能
+  把 worksheet part 作为 active `StreamRewrite` 纳入 `EditPlan`。
+- writer 只维护 current row、bounded output buffer 和 incremental dimension state；
+  禁止 worksheet DOM、full cell matrix、unbounded raw XML cache 或回写历史 rows。
+- pass-through / replace / insert / delete candidate / emit raw / request recalculation /
+  fail actions 必须映射到 worksheet bytes、dimension/calc diagnostics 和 failure
+  semantics；unsupported action 不能产生可保存 package mutation。
+- `EditPlan` / planned output diagnostics 应暴露 rewrite reason、target worksheet、
+  selector context、copy-original linked parts、content types / relationships side effects、
+  removed calcChain audit、`WorksheetPayloadDependencyAudit` 和 `RelationshipTargetAudit`。
+- stream rewrite 不迁移 shared string indexes、不合并 styles、不修复 relationships、
+  不 resize tables、不重写 chart ranges、不计算公式，也不实现 calcChain rebuild。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

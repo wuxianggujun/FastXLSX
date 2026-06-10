@@ -1081,8 +1081,8 @@ event reader / transformer / stream writer 实现切片。
 子任务：
 - P8.1 capability boundary and pipeline draft：基础完成。
 - P8.2 worksheet event reader token model：基础完成。
-- P8.3 row/cell transformer contract：当前最小可执行任务。
-- P8.4 stream rewrite output and `EditPlan` integration。
+- P8.3 row/cell transformer contract：基础完成。
+- P8.4 stream rewrite output and `EditPlan` integration：当前最小可执行任务。
 - P8.5 first controlled edit fixture：template fill or bounded range patch。
 
 验收：
@@ -1228,7 +1228,7 @@ ctest --preset windows-nmake-release
 
 ### P8.3 row/cell transformer contract
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：architecture / internal API 文档设计；不新增 header / implementation。
 
@@ -1288,6 +1288,85 @@ P8.4 stream rewrite / `EditPlan`。
 - 不承诺 arbitrary random cell edit、full-row lookback 或 full worksheet scan。
 - 不实现 sharedStrings/style migration、relationship repair、table resize 或 formula rewrite。
 - 不把 failed streaming rewrite 写成已提交 package mutation。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P8.4 stream rewrite output and `EditPlan` integration
+
+状态：当前最小可执行任务。
+
+类型：architecture / internal API 文档设计；不新增 header / implementation。
+
+目标：冻结 future stream rewrite 如何消费 P8.3 transformer actions、生成 worksheet part
+输出、接入 `EditPlan` / planned output diagnostics，并定义成功提交、失败回滚、calc policy
+和 dependency audit 边界。
+
+输入：
+- P8.1 controlled large worksheet editing boundary。
+- P8.2 worksheet event reader token model。
+- P8.3 row/cell transformer contract。
+- 当前 internal `PartRewritePlanner`、`EditPlan`、`PackageEditorOutputPlan`、
+  `DependencyAnalyzer` 和 calcChain / fullCalcOnLoad helper 语义。
+- P6 dependency policies：sharedStrings/styles、worksheet metadata、linked parts、
+  definedNames/formulas/calc metadata 和 unsupported edits matrix。
+- 当前 `WorksheetWriter` row/cell serialization、dimension tracking、formula
+  recalculation metadata 和 package-entry audit 边界。
+
+输出：
+- stream rewrite input contract：只接受 P8.3 ordered actions 和 pass-through raw events；
+  不重新扫描完整 worksheet，不要求 transformer 回写历史 row。
+- worksheet output contract：输出为 staged worksheet part source；只有 rewrite 完成、
+  最小 worksheet root/order 检查和 dependency policy 决策完成后，才能进入 active
+  `EditPlan`。
+- action consumption 边界：pass-through / replace cell / replace row / bounded insert /
+  delete candidate / emit raw / request recalculation / fail unsupported 各自如何影响
+  worksheet bytes、dimension tracking、calc policy 和 diagnostics。
+- `EditPlan` 集成边界：记录 worksheet part `StreamRewrite`、copy-original linked parts、
+  content types / relationships package-entry side effects、removed calcChain audit、
+  `WorksheetPayloadDependencyAudit` 和 `RelationshipTargetAudit`。
+- planned output diagnostics：暴露 active stream rewrite entry、rewrite reason、selector
+  / target worksheet context、copy-original / omitted entries、calcChain action 和
+  failure diagnostics；不把 diagnostic snapshot 写成 public output planner。
+- failure 边界：preflight fail 和 streaming fail 都不得污染 active `EditPlan`、manifest、
+  package-entry audit、calc policy 或输出 package；临时 artifact 只能作为未提交实现细节。
+- memory 边界：stream writer 只维护 bounded row/output buffers 和 incremental dimension
+  state；禁止 worksheet DOM、full cell matrix、unbounded raw XML cache。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- P8.5 first fixture 可以并行只读调研。
+- 修改 stream rewrite action semantics、`EditPlan` output diagnostics 或 failure state
+  时必须串行。
+
+验收标准：
+- 文档明确 P8.4 是 future internal stream rewrite / `EditPlan` contract，不是实现。
+- 文档明确 staged worksheet output 何时进入 active `EditPlan`，以及失败不污染状态。
+- 文档明确 action consumption、dimension/calc policy、dependency audit 和 planned output
+  diagnostics。
+- 文档明确不做 sharedStrings/style migration、relationship repair、table resize、formula
+  rewrite、calcChain rebuild 或 public output planner。
+
+禁止项：
+- 不新增 `WorksheetRewriter`、stream writer、callback 或 public Patch API。
+- 不把 current bounded `sheetData` local rewrite 写成低内存 streaming rewrite。
+- 不承诺 failed rewrite 会产生可保存 package mutation。
+- 不实现 `CalcChainAction::Rebuild`、sharedStrings/style migration、relationship repair、
+  table resize 或 formula rewrite。
 
 验证命令：
 ```powershell

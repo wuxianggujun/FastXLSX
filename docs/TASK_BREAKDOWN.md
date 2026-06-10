@@ -1079,8 +1079,8 @@ event reader / transformer / stream writer 实现切片。
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
 
 子任务：
-- P8.1 capability boundary and pipeline draft：当前最小可执行任务。
-- P8.2 worksheet event reader token model。
+- P8.1 capability boundary and pipeline draft：基础完成。
+- P8.2 worksheet event reader token model：当前最小可执行任务。
 - P8.3 row/cell transformer contract。
 - P8.4 stream rewrite output and `EditPlan` integration。
 - P8.5 first controlled edit fixture：template fill or bounded range patch。
@@ -1093,7 +1093,7 @@ event reader / transformer / stream writer 实现切片。
 
 ### P8.1 capability boundary and pipeline draft
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：architecture / API 文档设计；不新增 header / implementation。
 
@@ -1149,6 +1149,76 @@ P7 In-memory 随机编辑，也不同于当前 bounded `sheetData` local rewrite
 - 不宣称当前已有大文件 streaming worksheet transformer。
 - 不把 bounded local `sheetData` rewrite 写成低内存大文件路径。
 - 不承诺 sharedStrings/style migration、relationship repair、table resize 或 formula rewrite。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P8.2 worksheet event reader token model
+
+状态：当前最小可执行任务。
+
+类型：architecture / internal API 文档设计；不新增 header / implementation。
+
+目标：冻结 future worksheet event reader 的 token vocabulary、payload 边界、坐标校验和
+pass-through 语义，为 P8.3 transformer 和 P8.4 stream rewrite 接口提供稳定输入，同时
+避免把大型 worksheet 解析成 DOM 或 full cell matrix。
+
+输入：
+- P8.1 controlled large worksheet editing boundary。
+- 当前 streaming writer 的 row/cell value、formula、style id、sharedStrings 和 dimension
+  边界。
+- 当前 internal `PartRewritePlanner` / `EditPlan` 的 worksheet stream rewrite 审计语义。
+- `docs/EDITING_MODEL.md` 中 old sheet.xml event reader → row/cell transformer →
+  new sheet.xml stream writer 形态。
+
+输出：
+- token categories 草案：document/prolog、worksheet root start/end、metadata pass-through、
+  `sheetData` start/end、row start/end、cell value、cell raw fallback、relationship-bearing
+  metadata reference、error / unsupported token。
+- row token 草案：row number、raw row attributes、height/custom-height metadata、
+  source byte/span hint 或 raw attribute preservation 语义；不需要持有整张 worksheet。
+- cell token 草案：cell reference、row/column index、OpenXML cell type token、style id
+  raw token、formula text、numeric/string/boolean/error/raw payload、raw attribute slice 和
+  unsupported cell preservation/fail flag。
+- pass-through 边界：reader 可以把未理解的 metadata XML 作为 bounded raw event 交给
+  writer 原样输出或交给 `DependencyAnalyzer` audit；不能静默 repair namespace、relationship
+  ids、table ranges、drawing anchors 或 formulas。
+- payload/memory 边界：token 生命周期限定在当前 event / row / bounded lookahead；大型
+  inline string、rich text、extLst 或未知 child 超过 payload limit 时必须 preserve raw、
+  stream-through 或 fail，不得累计完整 worksheet。
+- validation 边界：可校验 row/cell reference、Excel row/column limit、start/end element
+  nesting 和 required local names；不做完整 worksheet schema validation。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- P8.3 transformer contract 可并行只读调研，但写入同一 token 字段时需串行。
+- P8.4 stream rewrite integration 必须等 token model 稳定后再写。
+
+验收标准：
+- 文档明确 event reader token model 是 future internal design，不是已实现 API。
+- 文档明确 token 不持有完整 worksheet、完整 row matrix 或跨 sheet state。
+- 文档明确 raw pass-through 与 unsupported/fail 边界。
+- 文档给 P8.3 transformer 和 P8.4 stream writer 提供字段级输入。
+
+禁止项：
+- 不新增 `WorksheetReader`、`EventReader`、`WorksheetRewriter` 代码。
+- 不把 token model 写成 public API。
+- 不承诺完整 worksheet schema validation、namespace repair 或 relationship repair。
+- 不为读取单元格方便而引入 full row/cell cache。
 
 验证命令：
 ```powershell

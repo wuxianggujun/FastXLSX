@@ -1473,6 +1473,22 @@ P8.1 controlled large worksheet editing draft：
 - P8 不自动做 shared string index migration、style id migration、relationship repair、
   table resize、chart range rewrite 或 formula rewrite。
 
+P8.2 worksheet event reader token draft：
+
+- event reader 输出 internal tokens，而不是 public callback API；当前没有已实现的
+  `WorksheetReader` / `EventReader`。
+- token categories 包括 document/prolog、worksheet start/end、metadata raw
+  pass-through、sheetData start/end、row start/end、known cell value、raw/unsupported
+  cell 和 malformed/error token。
+- row token 暴露 row number、raw attributes 和 source order；cell token 暴露 cell ref、
+  row/column index、OpenXML cell type、raw style id、formula text、scalar value 或 raw
+  fallback。
+- token lifetime 只覆盖当前 event / row / bounded lookahead；大型 inline string、
+  rich text、unknown metadata 或 `extLst` 必须 stream-through、bounded-buffer 或 fail，
+  不能触发完整 worksheet materialization。
+- reader 只做最小结构和坐标校验，不做 namespace repair、relationship repair、
+  sharedStrings/style migration、formula evaluation 或完整 worksheet schema validation。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

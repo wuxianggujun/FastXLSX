@@ -1477,6 +1477,17 @@ P8.1 boundary draft：
 - 当前 bounded `sheetData` local rewrite 会物化 worksheet XML，不能写成大文件低内存
   transformer。
 
+P8.2 token model draft：
+
+- event reader 输出 document、worksheet root、metadata raw、sheetData、row、cell、
+  raw/unsupported 和 malformed/error tokens。
+- row/cell token 必须暴露 normalized row / column index，并保留 raw attributes 供
+  pass-through；未知 worksheet metadata 先作为 bounded raw event 处理。
+- token 生命周期只覆盖当前 event / row 或声明的 bounded lookahead，不允许累积完整
+  worksheet、完整 row map 或完整 cell matrix。
+- reader 不做 sharedStrings/style migration、relationship repair、formula evaluation 或
+  完整 schema validation。
+
 适合：
 
 - 修改某些单元格

@@ -458,6 +458,65 @@ metadata / dependency 边界：
 - 不提供 random cell editor、relationship repair、table resize、sharedStrings migration
   或 style merge。
 
+### P8.2 Future Worksheet Event Reader Token Model Draft
+
+P8.2 只冻结 future internal worksheet event reader 的 token model，不新增
+`WorksheetReader`、`EventReader`、`WorksheetRewriter` 或 public API。Token model 是 P8.3
+transformer 和 P8.4 stream rewrite 的内部输入契约，不能要求 reader 持有完整 worksheet
+DOM、row map 或 cell matrix。
+
+token categories 草案：
+
+- `DocumentStart` / `DocumentEnd`：XML declaration、prolog comment / processing
+  instruction 的 pass-through 边界。
+- `WorksheetStart` / `WorksheetEnd`：worksheet root local-name、namespace declarations
+  和 root attributes 的 preservation 边界。
+- `MetadataRaw`：sheetData 外或未由 P8 transformer 理解的 metadata subtree，作为 bounded
+  raw XML event pass-through / audit 输入。
+- `SheetDataStart` / `SheetDataEnd`：worksheet row/cell streaming 区间。
+- `RowStart` / `RowEnd`：row number、raw row attributes、height/custom-height metadata
+  和 source-order information。
+- `CellValue`：known scalar cell payload，包含 cell reference、row/column index、
+  OpenXML cell type token、style id raw token、formula text 和 scalar value。
+- `CellRaw`：rich text、array formula、unknown child、oversized payload 或 unsupported
+  cell shape 的 raw-preserve / fail 候选。
+- `Unsupported` / `Malformed`：可结构化携带 reason、element local-name、cell/row ref
+  和 source context。
+
+row token 边界：
+
+- row number 必须按 Excel row limit 校验。
+- raw row attributes 需要能 preserve 未理解属性；reader 不负责规范化全部 row metadata。
+- row token 不能要求缓存完整 worksheet；如 transformer 需要 lookahead，必须在 P8.3
+  明确 bounded lookahead。
+
+cell token 边界：
+
+- cell reference 应解码为 row / column index，并验证 Excel column / row limit。
+- numeric、boolean、shared-string index、inline string、formula text 可作为 known scalar
+  payload；非有限数字、非法 shared string index 或 unsupported formula shape 应进入
+  error / raw / fail policy。
+- style id 作为 raw integer token 或 workbook-local handle candidate 暴露，不做 style
+  migration 或 foreign style repair。
+- formula token 只保留 formula text；不求值、不写 cached values、不维护 calcChain。
+- rich text inline string、array formula、data table formula、extLst 或未知 cell children
+  默认 `CellRaw` preserve / audit / fail，不静默重写。
+
+memory / pass-through 边界：
+
+- token lifetime 限定在当前 event、当前 row 或声明的 bounded lookahead。
+- 大型 inline string、rich text、unknown metadata subtree 或 extLst 不能导致整张
+  worksheet materialization；实现阶段必须选择 stream-through、bounded raw buffer 或 fail。
+- reader 不修复 namespace prefixes、relationship ids、table ranges、drawing anchors、
+  shared string indexes、style ids、definedNames 或 formulas。
+
+非目标：
+
+- 不实现 XML parser。
+- 不定义 public callback API。
+- 不承诺完整 worksheet schema validation。
+- 不把 current bounded `sheetData` local rewrite 升级描述为 event reader。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

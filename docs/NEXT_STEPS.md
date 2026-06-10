@@ -1477,7 +1477,9 @@ Accept when:
   default `s="0"` omission, explicit `StyleId{}` clearing of a previously
   styled cell back to default output, styles workbook relationships coexisting
   with worksheet-local hyperlink/table relationships without shifting worksheet
-  `rId` allocation, and invalid foreign `StyleId` state hygiene.
+  `rId` allocation, invalid foreign `StyleId` state hygiene, and invalid
+  `add_style()` registration failure no-state-pollution for the workbook
+  style registry.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM

@@ -3202,7 +3202,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P13 - Phase 3 metadata/styles hardening
 
-状态：推进中；P13.1、P13.2 已落地。
+状态：推进中；P13.1、P13.2、P13.3 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -3211,6 +3211,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 已落地子任务：
 - P13.1 default `StyleId{}` clears per-cell style：基础完成。
 - P13.2 styles coexist with relationship-backed worksheet metadata：基础完成。
+- P13.3 invalid style registration preserves registry state：基础完成。
 
 ### P13.1 default `StyleId{}` clears per-cell style
 
@@ -3306,6 +3307,60 @@ relationship id；同一 worksheet 中 external hyperlink 和 table 仍按 owner
   或 existing-file editing。
 - 不改变 workbook relationship id 顺序、worksheet relationship id 分配策略或
   现有 table / hyperlink XML 语义。
+- 不把 streaming-only style registry 扩展成完整 Excel formatting parity。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P13.3 invalid style registration preserves registry state
+
+状态：基础完成。
+
+类型：streaming styles guardrail structure test + docs；不新增 public API /
+CMake dependency。
+
+目标：锁定 `WorkbookWriter::add_style()` 的失败前置校验语义：空样式、
+无有效属性的 alignment / font metadata、未知 horizontal / vertical alignment enum
+都必须在写入 workbook style registry 前失败；随后注册的第一个合法 style 仍应获得
+`StyleId` 1、custom `numFmtId` 164，且 generated `styles.xml` 不包含失败尝试产生的
+alignment、font、fill 或 extra `cellXfs` 记录。
+
+输入事实：
+- `add_style()` 已有运行时 guardrail，现有测试只确认这些非法输入会抛错。
+- P13.1 / P13.2 已覆盖 `StyleId{}` 清除和 styles 与 worksheet relationships
+  的 scope 隔离。
+- 仍需要一个直接覆盖 style registration failure no-state-pollution 的结构回归，
+  防止后续扩展 full-font / full-fill / border / alignment slices 时把失败对象半注册。
+
+范围：
+- 扩展 `fastxlsx.streaming` 中的 invalid style registration 回归。
+- 在多次非法 `add_style()` 后注册一个合法 number-format style。
+- 验证合法 style 仍是 `StyleId` 1、`styles.xml` 只包含一个 custom number format
+  和一个 custom `xf`。
+- 验证失败 alignment / font metadata 不产生 `<alignment>`、`applyFont="1"`、
+  custom font、custom fill 或额外 `cellXfs`。
+- 验证 worksheet 中合法 styled cell 写 `s="1"`，普通 cell 仍不写 `s="0"`。
+
+触碰文件：
+- `tests/test_streaming_writer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.streaming` 通过。
+- 全量默认 CTest 通过。
+- 文档明确这只是 style registration guardrail 的状态卫生回归。
+
+非目标：
+- 不新增 style property、public editor API、style migration、relationship repair
+  或 existing-file editing。
+- 不改变现有 number format / font / fill / alignment XML 语义。
 - 不把 streaming-only style registry 扩展成完整 Excel formatting parity。
 
 验证命令：

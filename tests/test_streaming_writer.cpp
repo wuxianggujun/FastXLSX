@@ -1450,12 +1450,55 @@ void test_streaming_writer_invalid_style_registration()
         [&workbook, false_font_style] { static_cast<void>(workbook.add_style(false_font_style)); },
         "add_style should reject font metadata without a supported property");
 
-    workbook.add_worksheet("Registration").append_row({fastxlsx::CellView::text("done")});
+    const auto valid_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
+    check(valid_style.value() == 1,
+        "failed style registrations should not consume workbook style ids");
+
+    workbook.add_worksheet("Registration")
+        .append_row({
+            fastxlsx::CellView::number(12.5).with_style(valid_style),
+            fastxlsx::CellView::text("done"),
+        });
     workbook.close();
 
     check_fastxlsx_error(
         [&workbook] { static_cast<void>(workbook.add_style(fastxlsx::CellStyle {"0.0"})); },
         "add_style should reject mutation after close");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"),
+        "valid style after failed registrations should still create styles.xml");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="1">)",
+        "failed style registrations should not create custom number formats");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="0.0"/>)",
+        "valid style should receive the first custom number format id");
+    check_contains(styles_xml, R"(<fonts count="1">)",
+        "failed font registration should not create a custom font");
+    check_contains(styles_xml, R"(<fills count="2">)",
+        "failed style registrations should keep only default fills");
+    check_contains(styles_xml,
+        R"(<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "failed style registrations should not create extra cell formats");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "valid style after failed registrations should be the only custom cell format");
+    check(styles_xml.find("<alignment") == std::string::npos,
+        "failed alignment registrations should not create alignment XML");
+    check(styles_xml.find("applyFont=\"1\"") == std::string::npos,
+        "failed font registration should not apply a custom font");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B1"/>)",
+        "style registration failure test worksheet dimension mismatch");
+    check_contains(worksheet_xml, R"(<c r="A1" s="1"><v>12.5</v></c>)",
+        "valid style after failed registrations should serialize as s=\"1\"");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>done</t></is></c>)",
+        "plain cell after failed registrations should remain unstyled");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "failed style registration test should not serialize s=\"0\"");
 }
 
 void test_streaming_writer_file_backed_body_round_trip()

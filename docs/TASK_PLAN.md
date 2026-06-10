@@ -48,14 +48,18 @@ parallelism, acceptance checks, and explicit non-goals.
   `include/fastxlsx/detail/worksheet_event_reader.hpp` and
   `src/worksheet_event_reader.cpp` with first-slice `scan_worksheet_events()`
   coverage for source-order XML declaration / processing instruction / comment,
-  worksheet root, raw metadata, `sheetData`, row, cell, and value text token
+  worksheet root, raw metadata, `sheetData`, row, cell, raw text separators,
+  cell value wrapper markup, and value text token
   boundaries, plus `include/fastxlsx/detail/worksheet_transformer.hpp` and
   `src/worksheet_transformer.cpp` with first-slice `scan_cell_replacement_actions()`
   action-model coverage for bounded cell replacement selectors, source-order
-  `PassThrough` / `ReplaceCell` actions, and missing-target diagnostics. This is
-  P8 reader/transformer input groundwork only: no public API, full XML parser/schema
-  validation, relationship repair, rewritten worksheet output, PackageEditor
-  stream rewrite handoff, or low-memory large-file editing claim.
+  `PassThrough` / `ReplaceCell` actions, missing-target diagnostics, and internal
+  `emit_cell_replacement_worksheet()` output chunk emission for pass-through
+  source XML chunks plus caller replacement cell XML. This is P8 reader/transformer
+  action/output-chunk groundwork only: no public API, full XML parser/schema
+  validation, relationship repair, package-entry staged stream writer,
+  PackageEditor stream rewrite handoff, dimension recalculation, dependency repair,
+  or low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.

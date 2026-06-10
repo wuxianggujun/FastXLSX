@@ -31,6 +31,11 @@ struct CapturedTransform {
     std::vector<WorksheetTransformAction> actions;
 };
 
+struct EmittedWorksheet {
+    WorksheetTransformSummary summary;
+    std::string xml;
+};
+
 CapturedTransform collect_actions(
     const std::string& xml, std::span<const WorksheetCellReplacement> replacements)
 {
@@ -40,6 +45,15 @@ CapturedTransform collect_actions(
             captured.actions.push_back(action);
         });
     return captured;
+}
+
+EmittedWorksheet emit_worksheet(
+    const std::string& xml, std::span<const WorksheetCellReplacement> replacements)
+{
+    EmittedWorksheet emitted;
+    emitted.summary = fastxlsx::detail::emit_cell_replacement_worksheet(
+        xml, replacements, [&](std::string_view chunk) { emitted.xml += chunk; });
+    return emitted;
 }
 
 std::vector<std::string_view> replacement_order(const std::vector<WorksheetTransformAction>& actions)
@@ -170,6 +184,39 @@ void test_transformer_reports_missing_and_rejects_invalid_replacements()
     check(empty_payload_failed, "empty replacement payload should fail preflight");
 }
 
+void test_transformer_emits_rewritten_chunks_with_raw_text_preserved()
+{
+    const std::string xml =
+        "<?xml version=\"1.0\"?>\n"
+        "<worksheet>\n"
+        "  <sheetData>\n"
+        "    <row r=\"1\"><c r=\"A1\"><v>old-a</v></c><c r=\"B1\"><v>old-b</v></c></row>\n"
+        "  </sheetData>\n"
+        "</worksheet>";
+    const std::string replacement_xml =
+        R"(<c r="B1" t="inlineStr"><is><t>new-b</t></is></c>)";
+    const std::array replacements {
+        WorksheetCellReplacement { "B1", replacement_xml },
+    };
+
+    const EmittedWorksheet emitted = emit_worksheet(xml, replacements);
+    const std::string expected =
+        "<?xml version=\"1.0\"?>\n"
+        "<worksheet>\n"
+        "  <sheetData>\n"
+        "    <row r=\"1\"><c r=\"A1\"><v>old-a</v></c>"
+        "<c r=\"B1\" t=\"inlineStr\"><is><t>new-b</t></is></c></row>\n"
+        "  </sheetData>\n"
+        "</worksheet>";
+
+    check(emitted.xml == expected,
+        "output emitter should preserve pass-through raw text and replace target cell");
+    check(emitted.summary.matched_replacement_count == 1,
+        "output emitter should return transform summary");
+    check(emitted.summary.missing_cell_references.empty(),
+        "output emitter should not report matched target as missing");
+}
+
 } // namespace
 
 int main()
@@ -178,6 +225,7 @@ int main()
         test_transformer_emits_replace_cell_action_and_skips_original_cell_payload();
         test_transformer_orders_replacements_by_source_xml();
         test_transformer_reports_missing_and_rejects_invalid_replacements();
+        test_transformer_emits_rewritten_chunks_with_raw_text_preserved();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

@@ -90,6 +90,10 @@ void test_event_reader_scans_core_worksheet_tokens()
         "two cell starts should be emitted");
     check(count_kind(events, WorksheetEventKind::CellEnd) == 2,
         "two cell ends should be emitted");
+    check(count_kind(events, WorksheetEventKind::RawText) == 0,
+        "compact fixture should not emit raw text between adjacent tags");
+    check(count_kind(events, WorksheetEventKind::CellValueMarkup) == 4,
+        "two value elements should expose start and end wrapper markup");
     check(count_kind(events, WorksheetEventKind::CellValue) == 2,
         "two cell value events should be emitted");
     check(count_kind(events, WorksheetEventKind::Metadata) >= 4,
@@ -112,8 +116,11 @@ void test_event_reader_handles_prefixes_inline_text_and_comments()
 {
     const std::string xml =
         R"(<!--before root-->)"
+        "\n"
         R"(<?fastxlsx probe?>)"
+        "\n"
         R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        "\n"
         R"(<x:sheetData>)"
         R"(<x:row r="3">)"
         R"(<x:c r="C3" t="inlineStr"><x:is><x:t>hello &amp; raw</x:t></x:is></x:c>)"
@@ -127,6 +134,10 @@ void test_event_reader_handles_prefixes_inline_text_and_comments()
         "comments should be emitted as pass-through events");
     check(count_kind(events, WorksheetEventKind::ProcessingInstruction) == 1,
         "processing instruction should be emitted");
+    check(count_kind(events, WorksheetEventKind::RawText) >= 2,
+        "raw text separators should be emitted for pass-through reconstruction");
+    check(count_kind(events, WorksheetEventKind::CellValueMarkup) == 2,
+        "prefixed inline value wrapper should emit start and end markup");
 
     const WorksheetEvent& worksheet = find_first(events, WorksheetEventKind::WorksheetStart);
     check(worksheet.element_name == "worksheet", "qualified worksheet element should expose local name");

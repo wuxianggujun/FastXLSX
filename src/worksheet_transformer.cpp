@@ -13,6 +13,7 @@ namespace {
 using fastxlsx::detail::WorksheetCellReplacement;
 using fastxlsx::detail::WorksheetEvent;
 using fastxlsx::detail::WorksheetEventKind;
+using fastxlsx::detail::WorksheetOutputChunkCallback;
 using fastxlsx::detail::WorksheetTransformAction;
 using fastxlsx::detail::WorksheetTransformActionCallback;
 using fastxlsx::detail::WorksheetTransformActionKind;
@@ -67,6 +68,13 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback, const W
         {} });
 }
 
+void emit_chunk(const WorksheetOutputChunkCallback& callback, std::string_view chunk)
+{
+    if (!chunk.empty()) {
+        callback(chunk);
+    }
+}
+
 } // namespace
 
 namespace fastxlsx::detail {
@@ -118,6 +126,25 @@ WorksheetTransformSummary scan_cell_replacement_actions(
         }
     }
     return summary;
+}
+
+WorksheetTransformSummary emit_cell_replacement_worksheet(
+    std::string_view worksheet_xml,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetOutputChunkCallback& callback)
+{
+    if (!callback) {
+        throw FastXlsxError("worksheet transformer output emitter requires a callback");
+    }
+
+    return scan_cell_replacement_actions(
+        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+                emit_chunk(callback, action.replacement_cell_xml);
+                return;
+            }
+            emit_chunk(callback, action.raw_xml);
+        });
 }
 
 } // namespace fastxlsx::detail

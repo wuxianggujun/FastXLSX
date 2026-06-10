@@ -23,6 +23,8 @@ enum class WorksheetEventKind {
     RowEnd,
     CellStart,
     CellEnd,
+    RawText,
+    CellValueMarkup,
     CellValue,
     Unsupported,
 };
@@ -48,10 +50,11 @@ using WorksheetEventCallback = std::function<void(const WorksheetEvent&)>;
 ///
 /// The first implementation slice recognizes XML declaration / processing
 /// instructions, comments, the worksheet root, sheetData, row/cell boundaries,
-/// cell value text in value-like child elements, and raw worksheet metadata
-/// tags. It performs minimal structure checks needed for state hygiene and
-/// intentionally does not decode XML entities, repair namespaces, validate the
-/// worksheet schema, follow relationships, or cache a full worksheet.
+/// raw text segments, cell value wrapper markup, cell value text in value-like
+/// child elements, and raw worksheet metadata tags. It performs minimal
+/// structure checks needed for state hygiene and intentionally does not decode
+/// XML entities, repair namespaces, validate the worksheet schema, follow
+/// relationships, or cache a full worksheet.
 void scan_worksheet_events(
     std::string_view worksheet_xml, const WorksheetEventCallback& callback);
 

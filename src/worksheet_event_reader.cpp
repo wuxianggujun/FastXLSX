@@ -190,6 +190,28 @@ void emit(const WorksheetEventCallback& callback, WorksheetEvent event)
     callback(event);
 }
 
+void emit_text_segment(const WorksheetEventCallback& callback,
+    std::string_view text,
+    std::string_view current_row,
+    std::string_view current_cell,
+    bool in_cell_value)
+{
+    if (text.empty()) {
+        return;
+    }
+
+    const WorksheetEventKind kind =
+        in_cell_value ? WorksheetEventKind::CellValue : WorksheetEventKind::RawText;
+    emit(callback,
+        WorksheetEvent { kind,
+            text,
+            {},
+            current_row,
+            current_cell,
+            in_cell_value ? text : std::string_view {},
+            false });
+}
+
 } // namespace
 
 namespace fastxlsx::detail {
@@ -215,34 +237,20 @@ void scan_worksheet_events(
     while (position < worksheet_xml.size()) {
         const std::size_t open = worksheet_xml.find('<', position);
         if (open == std::string_view::npos) {
-            if (in_cell_value) {
-                const std::string_view text = worksheet_xml.substr(position);
-                if (has_non_whitespace(text)) {
-                    emit(callback,
-                        WorksheetEvent { WorksheetEventKind::CellValue,
-                            text,
-                            {},
-                            current_row,
-                            current_cell,
-                            text,
-                            false });
-                }
-            }
+            emit_text_segment(callback,
+                worksheet_xml.substr(position),
+                current_row,
+                current_cell,
+                in_cell_value);
             break;
         }
 
-        if (open > position && in_cell_value) {
-            const std::string_view text = worksheet_xml.substr(position, open - position);
-            if (has_non_whitespace(text)) {
-                emit(callback,
-                    WorksheetEvent { WorksheetEventKind::CellValue,
-                        text,
-                        {},
-                        current_row,
-                        current_cell,
-                        text,
-                        false });
-            }
+        if (open > position) {
+            emit_text_segment(callback,
+                worksheet_xml.substr(position, open - position),
+                current_row,
+                current_cell,
+                in_cell_value);
         }
 
         if (starts_with_at(worksheet_xml, open, "<!--")) {
@@ -295,6 +303,12 @@ void scan_worksheet_events(
 
         if (closing) {
             if (is_value_element(name) && in_cell) {
+                emit(callback,
+                    WorksheetEvent { WorksheetEventKind::CellValueMarkup,
+                        raw,
+                        name,
+                        current_row,
+                        current_cell });
                 in_cell_value = false;
             } else if (name == "c") {
                 if (!in_cell) {
@@ -443,6 +457,14 @@ void scan_worksheet_events(
                 current_cell = {};
             }
         } else if (is_value_element(name) && in_cell) {
+            emit(callback,
+                WorksheetEvent { WorksheetEventKind::CellValueMarkup,
+                    raw,
+                    name,
+                    current_row,
+                    current_cell,
+                    {},
+                    self_closing });
             in_cell_value = !self_closing;
         } else if (seen_worksheet_start && !seen_worksheet_end && !in_sheet_data) {
             emit(callback,

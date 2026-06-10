@@ -324,6 +324,12 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   repeated replacement、remove/replace ordering、output-plan omitted/active audit 和
   relationship target audit；仍不能写成 custom extension semantic editing、
   relationship repair 或 broad unknown-part preservation guarantee。
+- P5.6 custom XML fixture：基础完成。现有 fixture 覆盖 custom XML item /
+  properties part、item owner `.rels`、package customXml inbound relationship、
+  ordinary replacement、explicit removal、跨路径 ordering 和 `planned_output()`
+  audit 可见性，包括 item 基础 replacement/removal 的 active/omitted output-plan
+  快照；仍不能写成 custom XML 语义编辑、schema/data binding、relationship repair
+  或 content type repair。
 
 验收：
 - unrelated edit 后，未修改 part 仍存在且 bytes 尽量保留。

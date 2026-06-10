@@ -3105,6 +3105,13 @@ Tasks:
   baseline and roundtrip through `PackageReader` / `RelationshipGraph`. This is
   not custom XML semantic editing, schema/data binding, relationship repair,
   content type repair, orphan cleanup, or public API.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active custom XML item `LocalDomRewrite` entry, owner `.rels`
+  copy-original `SourceRelationships` audit, preserved package relationships,
+  content types, workbook, worksheet, properties part, and unknown entry, empty
+  output-plan removed_parts / removed_package_entries, and no invented
+  properties owner `.rels`. This is Patch audit visibility only, not custom XML
+  semantic editing or relationship/content-type repair.
   The same custom XML fixture now covers explicit `customXml/item1.xml` removal:
   output omits the custom XML item and its source-owned owner `.rels`, preserves
   the package `_rels/.rels` customXml inbound relationship, preserves
@@ -3113,6 +3120,14 @@ Tasks:
   `[Content_Types].xml`. This is not custom XML deletion semantics, schema/data
   binding, relationship pruning or repair, content type repair, orphan cleanup,
   or public API.
+  Internal `planned_output()` coverage for this explicit removal state now
+  exposes the omitted custom XML item, omitted source-owned owner `.rels`,
+  removed-part and removed owner `.rels` audits, package inbound customXml
+  relationship audit, preserved package relationships, content types, workbook,
+  worksheet, properties part, and unknown entry, and still does not invent
+  properties owner `.rels`. This is Patch audit visibility only, not custom XML
+  deletion semantics, relationship pruning or repair, content type repair,
+  orphan cleanup, or public API.
   The same custom XML path now has ordering regressions for remove-then-
   ordinary-replace and ordinary-replace-then-remove. The restore path clears
   stale removed-part and removed owner `.rels` audit, restores the active custom

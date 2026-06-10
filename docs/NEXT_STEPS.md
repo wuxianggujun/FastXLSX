@@ -2324,6 +2324,15 @@ Current foundation:
   output-plan audit for omitted item and owner `.rels`, package inbound customXml
   relationship metadata, and preserved package relationships, content types,
   workbook, worksheet, properties part, and unknown entry, custom XML properties
+  ordinary item replacement output-plan audit for active custom XML item
+  local-DOM rewrite, owner `.rels` copy-original audit, preserved package
+  relationships, content types, workbook, worksheet, properties part, unknown
+  entry, empty removed audit, and no invented properties owner `.rels`, custom
+  XML explicit item removal output-plan audit for omitted item and owner `.rels`,
+  removed-part / removed owner `.rels` audit, package inbound customXml
+  relationship metadata, preserved package relationships, content types,
+  workbook, worksheet, properties part, unknown entry, and no invented
+  properties owner `.rels`, custom XML properties
   ordinary replacement output-plan audit for active properties part local-DOM
   rewrite, preserved content types / package relationships, preserved custom XML
   item / item owner `.rels` / workbook / worksheet / unknown entry, and no

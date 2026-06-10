@@ -19343,6 +19343,67 @@ void test_package_editor_replaces_custom_xml_and_preserves_package_links()
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "custom XML replacement should keep unrelated unknown part copy-original");
 
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "custom XML replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "custom XML replacement output plan should keep calcChain preserve state");
+    check(output_plan.relationship_target_audits.empty(),
+        "custom XML replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "custom XML replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "custom XML replacement output plan should not expose removed package entries");
+    check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "custom XML replacement output plan should rewrite custom XML item");
+    check_output_entry_part_context(output_plan.entries, "customXml/item1.xml",
+        true, custom_xml_part.value(),
+        "custom XML replacement output plan should classify rewritten custom XML item");
+    const auto* output_custom_xml_plan =
+        find_output_entry_plan(output_plan.entries, "customXml/item1.xml");
+    check(output_custom_xml_plan->reason.find("custom XML") != std::string::npos,
+        "custom XML replacement output plan should keep replacement reason");
+    check_output_entry_plan(output_plan.entries, "customXml/_rels/item1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve owner relationships");
+    check_output_entry_part_context(output_plan.entries, "customXml/_rels/item1.xml.rels",
+        false, "",
+        "custom XML replacement output plan should classify owner relationships as metadata");
+    const auto* output_custom_xml_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "customXml/_rels/item1.xml.rels");
+    check(output_custom_xml_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "custom XML replacement output plan should classify owner relationships metadata");
+    check(output_custom_xml_relationships_plan->owner_part == custom_xml_part.value(),
+        "custom XML replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "custom XML replacement output plan should classify content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve properties part");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML replacement output plan should preserve unknown entry");
+    check(find_output_entry_plan(output_plan.entries, "customXml/_rels/itemProps1.xml.rels")
+            == nullptr,
+        "custom XML replacement output plan should not invent properties relationships");
+
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =
@@ -19489,6 +19550,88 @@ void test_package_editor_removes_custom_xml_and_preserves_package_links()
     check(editor.edit_plan().find_part(unknown_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "custom XML removal should keep unrelated unknown part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "custom XML removal output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "custom XML removal output plan should keep calcChain preserve state");
+    check(output_plan.relationship_target_audits.empty(),
+        "custom XML removal output plan should not invent dependency audits");
+    check(output_plan.removed_parts.size() == 1,
+        "custom XML removal output plan should expose one removed part");
+    check(output_plan.removed_parts.front().part_name == custom_xml_part,
+        "custom XML removal output plan should expose removed custom XML item");
+    check(output_plan.removed_parts.front().reason.find("custom XML") != std::string::npos,
+        "custom XML removal output plan should keep removed item reason");
+    check(output_plan.removed_parts.front().inbound_relationships.size() == 1,
+        "custom XML removal output plan should expose removed item inbound audit");
+    check(output_plan.removed_package_entries.size() == 1,
+        "custom XML removal output plan should expose owner relationships omission");
+    check(output_plan.removed_package_entries.front().entry_name
+            == "customXml/_rels/item1.xml.rels",
+        "custom XML removal output plan should omit item owner relationships");
+    check(output_plan.removed_package_entries.front().audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "custom XML removal output plan should classify omitted owner relationships");
+    check(output_plan.removed_package_entries.front().owner_part == custom_xml_part.value(),
+        "custom XML removal output plan should keep omitted owner context");
+    check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "custom XML removal output plan should omit custom XML item");
+    check_output_entry_part_context(output_plan.entries, "customXml/item1.xml",
+        true, custom_xml_part.value(),
+        "custom XML removal output plan should classify omitted custom XML item");
+    const auto* output_custom_xml_plan =
+        find_output_entry_plan(output_plan.entries, "customXml/item1.xml");
+    check(output_custom_xml_plan->reason.find("custom XML") != std::string::npos,
+        "custom XML removal output plan should keep item removal reason");
+    check(output_custom_xml_plan->inbound_relationships.size() == 1,
+        "custom XML removal output plan should expose package inbound audit");
+    check_output_entry_has_inbound_relationship(output_plan.entries,
+        "customXml/item1.xml", "", "_rels/.rels", "rIdCustomXml",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
+        "customXml/item1.xml", custom_xml_part,
+        "custom XML removal output plan should keep package inbound audit");
+    check_output_entry_plan(output_plan.entries, "customXml/_rels/item1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "custom XML removal output plan should omit owner relationships");
+    check_output_entry_part_context(output_plan.entries, "customXml/_rels/item1.xml.rels",
+        false, "",
+        "custom XML removal output plan should classify owner relationships as metadata");
+    const auto* output_custom_xml_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "customXml/_rels/item1.xml.rels");
+    check(output_custom_xml_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "custom XML removal output plan should classify owner relationships metadata");
+    check(output_custom_xml_relationships_plan->owner_part == custom_xml_part.value(),
+        "custom XML removal output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "custom XML removal output plan should classify content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve properties part");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "custom XML removal output plan should preserve unknown entry");
+    check(find_output_entry_plan(output_plan.entries, "customXml/_rels/itemProps1.xml.rels")
+            == nullptr,
+        "custom XML removal output plan should not invent properties relationships");
 
     editor.save_as(output);
 

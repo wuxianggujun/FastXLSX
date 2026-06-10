@@ -381,12 +381,25 @@ custom XML properties content type override、默认 XML content type 和 unknow
 copy-original 基线，并可由 `PackageReader` / `RelationshipGraph` 重读；这不是
 custom XML 语义编辑、schema/data binding、relationship repair、content type repair、
 orphan cleanup 或 public API。
+内部 `planned_output()` 快照现在也覆盖该 ordinary replacement 状态：暴露 active
+custom XML item `LocalDomRewrite` entry、owner `.rels` copy-original
+`SourceRelationships` audit、preserved package relationships、content types、
+workbook、worksheet、properties part 和 unknown entry，且 output-plan removed_parts /
+removed_package_entries 为空、不凭空创建 properties owner `.rels`。这仍只是
+Patch audit 可见性，不是 custom XML 语义编辑或 relationship/content-type repair。
 同一 custom XML 小 fixture 还覆盖显式移除 `customXml/item1.xml`：输出省略
 custom XML item 及其 source-owned owner `.rels`、保留 package `_rels/.rels`
 customXml inbound relationship、保留 `customXml/itemProps1.xml`、custom XML
 properties content type override、默认 XML content type 和 unknown entry，且不重写
 `[Content_Types].xml`；这不是 custom XML 删除语义、schema/data binding、
 relationship pruning/repair、content type repair、orphan cleanup 或 public API。
+内部 `planned_output()` 快照现在也覆盖该 explicit removal 状态：暴露 omitted
+custom XML item、omitted source-owned owner `.rels`、removed-part / removed owner
+`.rels` audit、package inbound customXml relationship audit，以及 preserved package
+relationships、content types、workbook、worksheet、properties part 和 unknown entry；
+仍不凭空创建 properties owner `.rels`。这只是 Patch audit 快照，不是 custom XML
+删除语义、relationship pruning/repair、content type repair、orphan cleanup 或
+public API。
 同一路径顺序回归还覆盖先显式移除再 ordinary replace，以及先 ordinary replace
 再显式移除：前者恢复 active custom XML item、清理 stale removed-part /
 removed owner `.rels` audit、恢复 owner `.rels` copy-original audit，且不重写

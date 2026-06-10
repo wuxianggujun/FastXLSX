@@ -1361,9 +1361,11 @@ Tasks:
   per-cell temporary string in the worksheet body path. SharedStrings duplicate
   lookup also uses transparent `std::string_view` lookup before allocating an
   owning key, so repeated strings no longer allocate a temporary key just to
-  discover an existing index. This is not benchmark evidence, broader date
-  encoding, or a sharedStrings production-readiness claim. Text and attribute
-  escaping now also expose
+  discover an existing index. The workbook-scope shared string index map stores
+  `std::string_view` keys into stable owned unique-string storage instead of a
+  second owning key copy. This is not benchmark evidence, broader date encoding,
+  complete low-memory sharedStrings storage, or a sharedStrings production-readiness
+  claim. Text and attribute escaping now also expose
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` so in-memory, CellStore, streaming,
   and small OPC serializers can append escaped XML directly while preserving
@@ -2304,7 +2306,9 @@ Tasks:
   benchmark result, sharedStrings strategy change, or date encoding completion.
   Current sharedStrings duplicate lookup also uses transparent `std::string_view`
   lookup in the workbook-scope index map, avoiding an owning temporary key for
-  repeated strings before preserving the existing index.
+  repeated strings before preserving the existing index. The index map now
+  stores `std::string_view` keys pointing into stable unique-string storage
+  rather than storing a second owning string key for each unique value.
   Current XML text and attribute escaping similarly has append-oriented
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers used by in-memory,

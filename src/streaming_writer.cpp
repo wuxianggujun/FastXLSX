@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <fstream>
 #include <functional>
 #include <limits>
@@ -675,32 +676,12 @@ struct SharedStringHash {
     {
         return std::hash<std::string_view> {}(value);
     }
-
-    std::size_t operator()(const std::string& value) const noexcept
-    {
-        return (*this)(std::string_view(value));
-    }
 };
 
 struct SharedStringEqual {
     using is_transparent = void;
 
     bool operator()(std::string_view left, std::string_view right) const noexcept
-    {
-        return left == right;
-    }
-
-    bool operator()(const std::string& left, std::string_view right) const noexcept
-    {
-        return std::string_view(left) == right;
-    }
-
-    bool operator()(std::string_view left, const std::string& right) const noexcept
-    {
-        return left == std::string_view(right);
-    }
-
-    bool operator()(const std::string& left, const std::string& right) const noexcept
     {
         return left == right;
     }
@@ -729,8 +710,8 @@ void add_benchmark_temporary_worksheet_part_bytes(std::uint64_t bytes) noexcept
 
 struct SharedStringTable {
     std::size_t count = 0;
-    std::vector<std::string> values;
-    std::unordered_map<std::string, std::size_t, SharedStringHash, SharedStringEqual>
+    std::deque<std::string> values;
+    std::unordered_map<std::string_view, std::size_t, SharedStringHash, SharedStringEqual>
         index_by_value;
 };
 
@@ -1063,9 +1044,8 @@ std::size_t shared_string_index(detail::WorkbookWriterState& workbook, std::stri
     }
 
     const std::size_t index = table.values.size();
-    std::string key(value);
-    table.values.push_back(key);
-    table.index_by_value.emplace(std::move(key), index);
+    table.values.emplace_back(value);
+    table.index_by_value.emplace(std::string_view(table.values.back()), index);
     return index;
 }
 

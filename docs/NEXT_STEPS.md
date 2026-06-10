@@ -1352,7 +1352,9 @@ Do:
   benchmark evidence, sharedStrings strategy change, or broader date encoding.
   Current sharedStrings duplicate lookup uses transparent `std::string_view`
   lookup in the workbook-scope index map, so repeated strings avoid an owning
-  temporary key before reusing the existing index.
+  temporary key before reusing the existing index. The index map stores
+  `std::string_view` keys into stable unique-string storage instead of a second
+  owning key copy for each unique shared string.
   Current XML text and attribute escaping uses shared internal
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers across in-memory, CellStore,

@@ -2180,6 +2180,10 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   复用已有 index，只有新 unique string 才创建 owning key。这仍不是 sharedStrings
   生产就绪、峰值内存证明、benchmark 结果或 existing-file sharedStrings index
   migration。
+- 当前 shared string index map 使用 `std::string_view` key 指向稳定的 unique-string
+  storage，不再为每个 unique shared string 在 map key 中保存第二份 owning
+  `std::string`。它仍保留全部 unique strings，不是完整低内存 sharedStrings
+  存储、benchmark 结果或生产策略完成。
 - 当前 XML text / attribute escaping 共享内部
   `detail::append_escaped_xml_text()` / `detail::append_escaped_xml_attribute()`
   helpers；in-memory、CellStore、streaming row/formula/metadata XML 和小型 OPC

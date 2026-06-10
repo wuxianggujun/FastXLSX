@@ -2848,7 +2848,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -2858,6 +2858,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.1 unsigned decimal append helper：基础完成。
 - P12.2 shared string index append path：基础完成。
 - P12.3 shared string duplicate lookup without temporary key：基础完成。
+- P12.4 shared string index stores string_view keys：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -3012,6 +3013,56 @@ owning `std::string` key；只有首次遇到新字符串时才分配并存入 s
 - 不改变 `SharedStringTable` 仍持有 unique string state 的事实。
 - 不重建 shared string table，不迁移 existing-file sharedStrings indexes。
 - 不改变 `StringStrategy::InlineString` 默认策略、benchmark schema 或 Office QA 记录。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.4 shared string index stores string_view keys
+
+状态：基础完成。
+
+类型：internal sharedStrings memory/hot-path storage + existing structure tests + docs；
+不新增 public API / CMake dependency。
+
+目标：让 shared string index map 不再持有第二份 owning string key。unique strings
+由稳定 owned storage 持有，index map 只保存指向该 storage 的 `std::string_view`
+和 index，减少 unique shared string 的重复 key storage。
+
+输入事实：
+- P12.3 已让 duplicate lookup 在分配前使用 caller `std::string_view` 查找。
+- 旧结构同时在 `values` 和 `index_by_value` 的 owning `std::string` key 中保存
+  unique string。
+- shared string XML 输出仍需要按 index 顺序遍历 unique string values。
+
+范围：
+- `SharedStringTable::values` 改为 stable storage，保证 map key view 指向的字符串
+  在追加 unique strings 后仍有效。
+- `SharedStringTable::index_by_value` 改为 `std::string_view` key。
+- `shared_string_index()` miss 时先 emplace owned value，再把 view/index 写入 map。
+- 文档记录该优化只减少 shared string index map 的重复 owning key。
+
+触碰文件：
+- `src/streaming_writer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.streaming` 继续通过，证明 worksheet indexes、unique order、
+  `count` / `uniqueCount` 和 package wiring 语义不变。
+- 全量默认 CTest 通过。
+- 文档明确这不是 sharedStrings 生产就绪、完整低内存证明、benchmark 结果或
+  existing-file sharedStrings migration。
+
+非目标：
+- 不改变 shared string table 仍保留全部 unique strings 的事实。
+- 不改变 `StringStrategy::InlineString` 默认策略。
+- 不改变 benchmark schema、Office QA 记录、ZIP backend 或 sharedStrings XML 语义。
 
 验证命令：
 ```powershell

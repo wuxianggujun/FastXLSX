@@ -1255,8 +1255,8 @@ now accepts `-1` for the backend default, `0` for minizip no-compression/stored
 output, or `1..9` for minizip DEFLATE level selection; the stored bootstrap
 remains stored/no-compression. The internal package writer also preflights
 ZIP32 limits and rejects entry counts above `65535`, entry names beyond the
-16-bit ZIP field, and single entry uncompressed sizes above `UINT32_MAX`
-before opening the output path. Zip64, data-descriptor input, package
+16-bit ZIP field, duplicate entry names, and single entry uncompressed sizes
+above `UINT32_MAX` before opening the output path. Zip64, data-descriptor input, package
 streaming, public package editing, public compression controls, and performance
 claims remain planned.
 

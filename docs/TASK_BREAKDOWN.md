@@ -2376,6 +2376,78 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-fail
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
+## P9 - Production ZIP/backend and package writer hardening
+
+状态：推进中；P9.1 已落地。
+
+目标：继续加固内部 `src/package_writer.*` boundary，保持新建 workbook
+输出、chunked package entries、stored bootstrap 和 opt-in minizip backend
+的行为可验证；不要把内部 writer boundary 写成 public package editing、
+true package streaming 或 Zip64 支持。
+
+子任务：
+- P9.1 internal package writer duplicate entry-name preflight：基础完成。
+
+### P9.1 internal package writer duplicate entry-name preflight
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public API / CMake dependency。
+
+目标：在 `write_package()` 打开输出路径前拒绝重复 ZIP entry name，避免 writer
+生成 reader 会拒绝的 ambiguous package，并保持失败路径不覆盖已有输出文件。
+
+输入：
+- 当前 `src/package_writer.cpp` 已有 compression-level、entry-count、entry-name
+  length 和 single-entry uncompressed-size 的 writer preflight。
+- 当前 `tests/test_package_reader.cpp` 已覆盖 writer guardrail 的 sentinel output
+  preservation 语义。
+- 当前 `PackageReader` 已拒绝重复 ZIP entry name。
+
+输出：
+- `validate_package_entries_zip32()` 记录已见 entry name，并在重复时抛出
+  `duplicate ZIP entry name` 错误。
+- `fastxlsx.package_reader` 新增 writer 回归：重复 `xl/workbook.xml` entry
+  在打开输出前失败，已有 sentinel output bytes 保持不变。
+- 文档同步 P9 writer guardrail 当前事实。
+
+触碰文件：
+- `src/package_writer.cpp`
+- `tests/test_package_reader.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/streaming_writer.cpp`
+- `src/package_editor.cpp`
+- CMake 配置
+
+可并行性：
+- 可与 P10 sharedStrings hardening、P11 benchmark groundwork 的只读调研并行。
+- 与其他 package writer guardrail / backend 行为修改串行合并，避免同一
+  validation 函数和同一测试文件冲突。
+
+验收标准：
+- `fastxlsx.package_reader` 通过。
+- 默认完整 CTest 通过。
+- 文档明确当前只是 internal package writer preflight，不是 Zip64、
+  package streaming、public compression controls 或 public existing-file editing。
+
+禁止项：
+- 不新增 public `PackageWriter` / `PackageEditor` API。
+- 不改变 ZIP backend 选择、compression-level 语义或 minizip data-descriptor 策略。
+- 不声明 reader/writer 已支持 Zip64、duplicate-entry repair 或 package streaming。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
 ## 并行拆分建议
 
 可以并行：

@@ -563,6 +563,32 @@ void test_package_writer_rejects_zip_entry_name_length_before_output()
         "entry-name overflow should fail before overwriting output");
 }
 
+void test_package_writer_rejects_duplicate_entry_names_before_output()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-writer-duplicate-entry-name.xlsx");
+    const std::string sentinel = "preserve existing duplicate-entry-name output";
+    write_file(path, sentinel);
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_package(path,
+            {
+                {"xl/workbook.xml", "<workbook/>"},
+                {"xl/workbook.xml", "<duplicate/>"},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "duplicate ZIP entry name",
+            "duplicate entry-name failure should explain the conflicting ZIP entry");
+    }
+
+    check(failed, "PackageWriter should reject duplicate ZIP entry names");
+    check(fastxlsx::test::read_file(path) == sentinel,
+        "duplicate entry-name failure should fail before overwriting output");
+}
+
 void test_package_writer_rejects_zip64_file_chunk_before_output()
 {
     const std::filesystem::path chunk_path =
@@ -1490,13 +1516,27 @@ void test_package_reader_ingests_unknown_extension_relationships_as_metadata()
 
 void test_package_reader_rejects_duplicate_entries()
 {
-    const std::filesystem::path path = output_path("fastxlsx-package-reader-duplicate.xlsx");
-    fastxlsx::detail::write_package(path,
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-duplicate-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
         {
-            {"xl/workbook.xml", "<workbook/>"},
-            {"xl/workbook.xml", "<duplicate/>"},
+            {"xl/sheet1.xml", "one"},
+            {"xl/sheet2.xml", "two"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    const std::string duplicate_name = "xl/sheet1.xml";
+    const std::string original_name = "xl/sheet2.xml";
+    check(duplicate_name.size() == original_name.size(),
+        "duplicate-entry fixture names should have matching lengths");
+
+    const ZipEntryLocation second_entry = find_zip_entry_location(data, original_name);
+    data.replace(second_entry.central_offset + 46u, original_name.size(), duplicate_name);
+    data.replace(second_entry.local_offset + 30u, original_name.size(), duplicate_name);
+
+    const std::filesystem::path path = output_path("fastxlsx-package-reader-duplicate.xlsx");
+    write_file(path, data);
 
     expect_open_failure(path, "PackageReader should reject duplicate ZIP entry names");
 }
@@ -2212,6 +2252,7 @@ int main()
         test_package_writer_rejects_invalid_compression_levels_before_output();
         test_package_writer_rejects_zip64_entry_count_before_output();
         test_package_writer_rejects_zip_entry_name_length_before_output();
+        test_package_writer_rejects_duplicate_entry_names_before_output();
         test_package_writer_rejects_zip64_file_chunk_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_ingests_content_types_and_relationships();

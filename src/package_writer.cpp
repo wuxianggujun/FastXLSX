@@ -17,6 +17,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string_view>
 
 namespace fastxlsx::detail {
@@ -95,12 +96,16 @@ void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
         throw FastXlsxError("ZIP entry count requires Zip64 support");
     }
 
+    std::set<std::string_view> seen_entry_names;
     for (const PackageEntry& entry : entries) {
         if (entry.name.empty()) {
             throw FastXlsxError("ZIP entry name cannot be empty");
         }
         if (entry.name.size() > zip32_max_u16) {
             throw FastXlsxError("ZIP entry name length exceeds 16-bit ZIP field limit");
+        }
+        if (!seen_entry_names.emplace(entry.name).second) {
+            throw FastXlsxError(std::string("duplicate ZIP entry name: ") + entry.name);
         }
         if (entry_uncompressed_size(entry) > zip32_max_u32) {
             throw FastXlsxError("ZIP entry uncompressed size requires Zip64 support");

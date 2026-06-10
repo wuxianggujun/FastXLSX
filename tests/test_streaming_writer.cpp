@@ -1337,6 +1337,105 @@ void test_streaming_writer_default_style_id_clears_cell_style()
         "default style clear should not serialize s=\"0\"");
 }
 
+void test_streaming_writer_all_default_style_metadata_is_ignored()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-style-default-metadata.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+
+    fastxlsx::CellStyle number_style_definition {"0.0"};
+    const auto number_style = workbook.add_style(number_style_definition);
+
+    fastxlsx::CellStyle number_with_default_metadata {"0.0"};
+    number_with_default_metadata.alignment = fastxlsx::CellAlignment {};
+    number_with_default_metadata.font = fastxlsx::CellFont {};
+    const auto duplicate_number_style = workbook.add_style(number_with_default_metadata);
+
+    fastxlsx::CellFont bold_font;
+    bold_font.bold = true;
+    fastxlsx::CellStyle bold_style_definition;
+    bold_style_definition.font = bold_font;
+    const auto bold_style = workbook.add_style(bold_style_definition);
+
+    fastxlsx::CellStyle bold_with_default_alignment;
+    bold_with_default_alignment.font = bold_font;
+    bold_with_default_alignment.alignment = fastxlsx::CellAlignment {};
+    const auto duplicate_bold_style = workbook.add_style(bold_with_default_alignment);
+
+    check(number_style.value() == 1, "number style should be first custom style id");
+    check(duplicate_number_style.value() == 1,
+        "all-default alignment/font metadata should not create a distinct number style");
+    check(bold_style.value() == 2, "bold style should be second custom style id");
+    check(duplicate_bold_style.value() == 2,
+        "all-default alignment metadata should not create a distinct bold style");
+
+    auto sheet = workbook.add_worksheet("DefaultMetadata");
+    sheet.append_row({
+        fastxlsx::CellView::text("Number"),
+        fastxlsx::CellView::text("NumberDefaults"),
+        fastxlsx::CellView::text("Bold"),
+        fastxlsx::CellView::text("BoldDefaults"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(12.5).with_style(number_style),
+        fastxlsx::CellView::number(42.5).with_style(duplicate_number_style),
+        fastxlsx::CellView::text("bold").with_style(bold_style),
+        fastxlsx::CellView::text("bold defaults").with_style(duplicate_bold_style),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "default style metadata xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"),
+        "valid styles with default metadata should create styles.xml");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "default style metadata should not create worksheet relationships");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="1">)",
+        "default metadata style should create one custom number format");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="0.0"/>)",
+        "default metadata style custom number format mismatch");
+    check_contains(styles_xml, R"(<fonts count="2">)",
+        "all-default font metadata should not create a custom font");
+    check_contains(styles_xml,
+        R"(<font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font>)",
+        "bold font XML mismatch with default metadata");
+    check_contains(styles_xml, R"(<fills count="2">)",
+        "default metadata style should keep default fills only");
+    check_contains(styles_xml,
+        R"(<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "default metadata style should not create extra cell formats");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "number style with default metadata should reuse the number format xf");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>)",
+        "bold style with default metadata should reuse the bold font xf");
+    check(styles_xml.find("applyAlignment=\"1\"") == std::string::npos,
+        "all-default alignment metadata should not apply alignment");
+    check(styles_xml.find("<alignment") == std::string::npos,
+        "all-default alignment metadata should not create alignment XML");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "default metadata worksheet dimension mismatch");
+    check_contains(worksheet_xml, R"(<c r="A2" s="1"><v>12.5</v></c>)",
+        "number style cell mismatch");
+    check_contains(worksheet_xml, R"(<c r="B2" s="1"><v>42.5</v></c>)",
+        "number style with all-default metadata should reuse s=\"1\"");
+    check_contains(worksheet_xml,
+        R"(<c r="C2" s="2" t="inlineStr"><is><t>bold</t></is></c>)",
+        "bold style cell mismatch");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" s="2" t="inlineStr"><is><t>bold defaults</t></is></c>)",
+        "bold style with all-default alignment should reuse s=\"2\"");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "default metadata style test should not serialize s=\"0\"");
+}
+
 void test_streaming_writer_styles_with_relationship_metadata()
 {
     const auto output_path =
@@ -5488,6 +5587,7 @@ int main()
         test_streaming_writer_invalid_style_preserves_state();
         test_streaming_writer_foreign_style_collision_is_rejected();
         test_streaming_writer_default_style_id_clears_cell_style();
+        test_streaming_writer_all_default_style_metadata_is_ignored();
         test_streaming_writer_styles_with_relationship_metadata();
         test_streaming_writer_invalid_style_registration();
         test_streaming_writer_file_backed_body_round_trip();

@@ -1479,7 +1479,8 @@ Accept when:
   with worksheet-local hyperlink/table relationships without shifting worksheet
   `rId` allocation, invalid foreign `StyleId` state hygiene, and invalid
   `add_style()` registration failure no-state-pollution for the workbook
-  style registry.
+  style registry, plus all-default optional alignment/font metadata ignored
+  when combined with another effective style property.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM

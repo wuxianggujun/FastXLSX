@@ -3202,7 +3202,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P13 - Phase 3 metadata/styles hardening
 
-状态：推进中；P13.1、P13.2、P13.3 已落地。
+状态：推进中；P13.1、P13.2、P13.3、P13.4 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -3212,6 +3212,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.1 default `StyleId{}` clears per-cell style：基础完成。
 - P13.2 styles coexist with relationship-backed worksheet metadata：基础完成。
 - P13.3 invalid style registration preserves registry state：基础完成。
+- P13.4 all-default optional style metadata is ignored：基础完成。
 
 ### P13.1 default `StyleId{}` clears per-cell style
 
@@ -3362,6 +3363,62 @@ alignment、font、fill 或 extra `cellXfs` 记录。
   或 existing-file editing。
 - 不改变现有 number format / font / fill / alignment XML 语义。
 - 不把 streaming-only style registry 扩展成完整 Excel formatting parity。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P13.4 all-default optional style metadata is ignored
+
+状态：基础完成。
+
+类型：streaming styles structure test + docs；不新增 public API / CMake
+dependency。
+
+目标：锁定 `CellStyle` public 注释中的 all-default optional metadata 语义：
+当 style 已经有合法有效属性时，附带全默认 `CellAlignment{}` 或 `CellFont{}`
+不应贡献新的 style property，不应生成额外 style id、`<alignment>`、custom font、
+`applyAlignment` 或额外 `cellXfs`。
+
+输入事实：
+- `CellStyle::alignment` 和 `CellStyle::font` 注释都说明 empty optional 或
+  all-default metadata 不贡献 style property。
+- P13.3 已覆盖非法空 style / all-default-only alignment / all-default-only font
+  会被拒绝，且失败不污染 registry。
+- 仍需要覆盖“all-default optional metadata 与其他有效 style 属性组合”时应被忽略，
+  防止后续扩展 full-font / full-alignment 时把默认占位对象当作真实格式差异。
+
+范围：
+- 在 `fastxlsx.streaming` 中新增一个 workbook-level style 回归。
+- 注册 number-format style，然后注册 number-format + all-default alignment/font，
+  验证复用同一个 `StyleId`。
+- 注册 bold font style，然后注册 bold font + all-default alignment，验证复用同一个
+  `StyleId`。
+- 验证 `styles.xml` 只包含一个 custom number format、一个 custom bold font、
+  两个 custom `xf`，且无 `<alignment>` / `applyAlignment`。
+- 验证 worksheet cell 使用复用后的 `s="1"` / `s="2"`，默认 style 仍不写
+  `s="0"`。
+
+触碰文件：
+- `tests/test_streaming_writer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.streaming` 通过。
+- 全量默认 CTest 通过。
+- 文档明确这只是 all-default optional style metadata 的 narrow contract 回归。
+
+非目标：
+- 不新增 style property、full font control、full alignment、border、rich text、
+  `dxfs`、public editor API 或 existing-file style preservation。
+- 不改变 all-default-only style 仍被 `add_style()` 拒绝的 guardrail。
+- 不改变 number format / font / fill / alignment 现有 XML 语义。
 
 验证命令：
 ```powershell

@@ -1434,7 +1434,9 @@ Validation:
   styles workbook relationships coexisting with worksheet-local hyperlink/table
   relationships without shifting worksheet `rId` allocation, invalid foreign
   style id state hygiene, and invalid `add_style()` registration failure
-  no-state-pollution for the workbook style registry. Future structure tests still need full font control,
+  no-state-pollution for the workbook style registry, plus all-default optional
+  alignment/font metadata ignored when combined with another effective style
+  property. Future structure tests still need full font control,
   full fill/pattern control, borders/full alignment,
   custom document properties, named ranges, and worksheet references when those
   features are implemented.

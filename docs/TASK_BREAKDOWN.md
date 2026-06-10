@@ -306,8 +306,9 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 子任务：
 - P5.1 images/drawings fixture：基础完成。现有 linked-object fixture 覆盖 worksheet
   `.rels`、drawing XML、drawing `.rels`、PNG media bytes、VML drawing、percent-encoded
-  drawing target、ordinary replace/remove ordering 和 `planned_output()` audit
-  可见性；仍不能写成 existing-workbook image/drawing 语义编辑。
+  drawing target、ordinary replace/remove ordering，以及 active drawing replacement
+  等 `planned_output()` audit 可见性；仍不能写成 existing-workbook image/drawing
+  语义编辑。
 - P5.2 charts fixture：基础完成。现有 fixture 覆盖 chart part、drawing-owned direct
   / URI-qualified chart relationships、ordinary replace/remove ordering 和 content type
   audit；仍不能写成 chart reference migration、series/cache update 或 chart editing。

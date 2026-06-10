@@ -861,6 +861,16 @@ parallelism, acceptance checks, and explicit non-goals.
   only `xl/drawings/drawing1.xml` is rewritten, drawing `.rels` is audited as
   copy-original, and chart/media/unknown extension entries keep the same
   copy-original baseline; it is not drawing/image/chart editing.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/drawings/drawing1.xml` `LocalDomRewrite` entry,
+  source-owned drawing `.rels` copy-original audit, preserved content types /
+  package relationships / workbook relationships / workbook / worksheet /
+  worksheet `.rels` / chart / media / table / VML / percent-decoded drawing /
+  sharedStrings / sharedStrings owner `.rels` / styles / VBA / calcChain /
+  unknown extension entries, and empty `removed_parts` /
+  `removed_package_entries`. This is Patch audit visibility only, not a public
+  output planner, drawing mutation, image editing, chart editing, or relationship
+  repair.
   An ordinary unknown extension replacement over the same fixture verifies that
   only `custom/opaque-extension.bin` is stream-rewritten, its owner `.rels` is
   audited and preserved as copy-original, and workbook/worksheet/drawing/chart/

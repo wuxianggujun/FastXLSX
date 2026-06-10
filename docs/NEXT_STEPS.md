@@ -2398,6 +2398,16 @@ Current foundation:
   copy-original package-entry audit while chart, media, and unknown extension
   entries keep the same copy-original baseline. This is not drawing mutation,
   image editing, or chart editing.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/drawings/drawing1.xml` `LocalDomRewrite` entry,
+  source-owned drawing `.rels` copy-original audit, preserved content types /
+  package relationships / workbook relationships / workbook / worksheet /
+  worksheet `.rels` / chart / media / table / VML / percent-decoded drawing /
+  sharedStrings / sharedStrings owner `.rels` / styles / VBA / calcChain /
+  unknown extension entries, and empty `removed_parts` /
+  `removed_package_entries`. This is Patch audit visibility only, not a public
+  output planner, drawing mutation, image editing, chart editing, or relationship
+  repair.
   An ordinary unknown extension replacement over the same fixture now verifies
   that rewriting only `custom/opaque-extension.bin` records its owner `.rels`
   as copy-original package-entry audit while workbook, worksheet, drawing,

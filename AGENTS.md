@@ -1534,6 +1534,15 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   `xl/drawings/drawing1.xml` 时，drawing `.rels` 被记录为 copy-original package-entry
   audit，chart、media 和 unknown extension 等其它 source entries 仍按上述
   copy-original 基线保留；这不是 drawing mutation、图片编辑或图表编辑。
+  内部 `planned_output()` 快照还验证该 ordinary replacement 状态：暴露 active
+  `xl/drawings/drawing1.xml` `LocalDomRewrite` entry、source-owned drawing `.rels`
+  copy-original audit、content types / package relationships / workbook relationships /
+  workbook / worksheet / worksheet `.rels` / chart / media / table / VML /
+  percent-decoded drawing / sharedStrings / sharedStrings owner `.rels` / styles /
+  VBA / calcChain / unknown extension entries 的 copy-original 决策，
+  `removed_parts` 与 `removed_package_entries` 为空；这只是 Patch audit 可见性，
+  不是 public output planner、drawing mutation、image editing、chart editing 或
+  relationship repair。
   linked-object fixture 上的 ordinary unknown extension replacement 回归还验证只重写
   `custom/opaque-extension.bin` 时，其 owner `.rels` 被记录为 copy-original
   package-entry audit 并原样保留，workbook、worksheet、drawing、chart 和 media

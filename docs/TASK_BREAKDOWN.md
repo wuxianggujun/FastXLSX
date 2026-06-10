@@ -705,8 +705,9 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 状态：设计基线基础完成；`CellValue` 首个 public value 切片和 internal
 `CellStore` / `CellRecord` 首个稀疏存储切片和 internal `CellStoreOptions` guardrail
 enforcement 首片已实现；internal `CellStore` 到 standalone `<sheetData>` payload
-emission 首片也已实现。public editor、random cell editing、workbook-level
-guardrails 和完整 save-as / Patch handoff 仍未 ready。
+emission 首片也已实现，并已有首个 internal `CellStore` 到 by-name
+`PackageEditor` `sheetData` Patch handoff 回归。public editor、random cell editing、
+workbook-level guardrails 和完整 save-as / Patch handoff 仍未 ready。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
@@ -721,6 +722,7 @@ guardrails 和完整 save-as / Patch handoff 仍未 ready。
 - P7.4a internal `CellStoreOptions` guardrail implementation：基础完成。
 - P7.5 save-as and Patch handoff contract：基础完成。
 - P7.5a internal `CellStore` sheetData emission implementation：基础完成。
+- P7.5b internal `CellStore` to PackageEditor sheetData handoff regression：基础完成。
 
 验收：
 - API 注释明确 In-memory mode、随机访问语义和内存增长。
@@ -1296,6 +1298,43 @@ save-as handoff 复用，而不是继续只停留在合同文档。
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release -R fastxlsx.unit
+```
+
+### P7.5b internal `CellStore` to PackageEditor sheetData handoff regression
+
+状态：基础完成。
+
+类型：internal integration regression + 文档同步；不新增 public editor API。
+
+目标：把 P7.5a 的 `CellStore` standalone `<sheetData>` emitter 接到当前 internal
+by-name `PackageEditor` `sheetData` Patch helper 的回归里，证明该 payload 可以作为
+未来 In-memory / Patch handoff 的内部输入，而不是只停留在 unit-level XML 片段。
+
+输入：
+- P7.5a internal `cell_store_to_sheet_data_xml(const CellStore&)`。
+- 当前 internal `PackageEditor::replace_worksheet_sheet_data_by_name()`。
+- 当前 `PackageEditor` calcChain cleanup、workbook `fullCalcOnLoad` 和 output-plan audit。
+
+输出：
+- `fastxlsx.package_editor` 构造 worksheet-local `CellStore`，写入 number、inline text、
+  formula、boolean 和 explicit blank records。
+- 测试使用 `cell_store_to_sheet_data_xml()` 生成完整 `<sheetData>` payload，并传给
+  `replace_worksheet_sheet_data_by_name("Sheet1", ...)`。
+- 回归验证 worksheet `LocalDomRewrite`、bounded local rewrite note、formula payload
+  dependency audit、workbook full calculation request、默认 stale calcChain removal、
+  unknown entry bytes preservation 和输出 package 可由 `PackageReader` 重读。
+
+边界：
+- 这仍是 internal handoff regression，不是 `WorkbookEditor::save_as()`。
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不迁移 sharedStrings index、不合并 styles、不验证 foreign style id、不修复
+  relationships、definedNames、table ranges 或 drawing metadata。
+- 不把当前 bounded local `sheetData` helper 写成大文件低内存 streaming transformer。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor
 ```
 
 ## P8 - Large Worksheet Controlled Editing

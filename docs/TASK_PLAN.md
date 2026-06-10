@@ -40,8 +40,10 @@ parallelism, acceptance checks, and explicit non-goals.
   `CellPosition`, `CellRecord`, worksheet-local sparse `CellStore`, and internal
   `CellStoreOptions` for first-slice `max_cells` / `memory_budget_bytes`
   enforcement, plus a first internal helper that serializes `CellStore` records
-  to a standalone `<sheetData>` payload; this is not a public editor API and
-  does not implement workbook-level guardrails or full save-as / Patch handoff.
+  to a standalone `<sheetData>` payload, plus an internal package-editor
+  regression that feeds that payload through the by-name `sheetData` Patch
+  helper; this is not a public editor API and does not implement workbook-level
+  guardrails or full save-as / Patch handoff.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.
@@ -1465,8 +1467,9 @@ Validation:
 ### M7.5 - In-memory Small Workbook Editor
 
 Status: planned; first internal `CellStore` / `CellRecord` sparse-store
-foundation, `CellStoreOptions` guardrail slice, and internal `CellStore` to
-standalone `<sheetData>` emission slice exist, but public editor,
+foundation, `CellStoreOptions` guardrail slice, internal `CellStore` to
+standalone `<sheetData>` emission slice, and an internal by-name
+`PackageEditor` handoff regression exist, but public editor,
 workbook-level guardrails, load/save-as preflight, and full save-as handoff are
 not ready.
 
@@ -1490,6 +1493,9 @@ Tasks:
   building block only. It emits values as standalone `<sheetData>` XML with
   inline strings, but it does not generate full worksheet XML, migrate
   sharedStrings, merge styles, update calc metadata, or repair relationships.
+  The current package-editor regression only proves that this payload can feed
+  the internal by-name `sheetData` Patch helper while preserving unknown bytes
+  and exposing calc/audit diagnostics; it is not `WorkbookEditor::save_as()`.
 - Add guardrail APIs or options such as `max_cells`, `memory_budget_bytes`,
   `cell_count()`, and `estimated_memory_usage()` before calling the In-memory
   editor ready. The current internal `CellStoreOptions` is only a worksheet-local

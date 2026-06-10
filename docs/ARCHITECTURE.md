@@ -1460,6 +1460,10 @@ P7.5 save-as / Patch handoff draft：
 - `CellStore` 只输出 cell value / style references；row/column metadata、tables、
   hyperlinks、drawings、comments、OLE/control parts 和其他 relationship-bearing metadata
   需要独立模型、Patch preservation 或 audit，不能由 cell rewrite 静默修复。
+- 当前已有 internal 回归把 `CellStore` 输出的 standalone `<sheetData>` payload 交给
+  by-name `PackageEditor` `sheetData` Patch helper，验证 bounded local worksheet rewrite、
+  calc metadata request、默认 calcChain cleanup 和 unknown entry preservation；它仍不是
+  public save-as handoff。
 - blank / erase / tombstone 在 save-as 阶段必须有明确 contract：删除 `<c>`、写 blank
   styled cell、保留 style/metadata 或 fail；P7.5 不宣称 existing-file cell clearing 已实现。
 - sharedStrings、styles 和 calc metadata 复用 P6 policy：默认 preserve / audit / fail，

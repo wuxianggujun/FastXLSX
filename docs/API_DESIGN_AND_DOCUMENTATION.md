@@ -393,6 +393,10 @@ EditPlan 交接：
 - `CellStore` mutations 应投影成 worksheet part rewrite 或 bounded local rewrite plan；
   plan 必须说明 worksheet、workbook metadata、content types、relationships 和 package
   entries 的 side effects。
+- 当前 internal 回归只验证 `CellStore` 生成的 standalone `<sheetData>` payload 可以
+  交给 by-name `PackageEditor` `sheetData` Patch helper，并在 output plan 中暴露
+  bounded local rewrite、calc policy 和 unknown entry preservation；这不是 public
+  `WorkbookEditor::save_as()`。
 - `planned_output()` / equivalent diagnostic snapshot 应能展示 active rewrites、
   copy-original entries、omitted entries、removed-part inbound audit 和 calc policy。
 - 显式 removal / omission audit 不等于 relationship pruning；P7.5 不自动删除 inbound

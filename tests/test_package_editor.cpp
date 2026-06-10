@@ -2,6 +2,7 @@
 #include "../src/package_writer.hpp"
 #include "zip_test_utils.hpp"
 
+#include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/streaming_writer.hpp>
 
 #include <algorithm>
@@ -23336,6 +23337,123 @@ void test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_dat
         "template-fill output should preserve styles content type override");
 }
 
+void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cellstore-sheetdata-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cellstore-sheetdata-output.xlsx");
+
+    fastxlsx::detail::CellStore store;
+    store.set_cell(1, 1, fastxlsx::CellValue::number(42.25));
+    store.set_cell(1, 2, fastxlsx::CellValue::text(" <cell & value> "));
+    store.set_cell(2, 1, fastxlsx::CellValue::formula("SUM(A1:A1)&\"<done>\""));
+    store.set_cell(3, 3, fastxlsx::CellValue::boolean(false));
+    store.set_cell(4, 1, fastxlsx::CellValue::blank());
+    const std::string replacement_sheet_data =
+        fastxlsx::detail::cell_store_to_sheet_data_xml(store);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+
+    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
+    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "CellStore sheetData handoff should resolve the target worksheet part");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "CellStore sheetData handoff should use bounded local worksheet rewrite");
+    check(worksheet_plan->reason.find("bounded local sheetData replacement")
+            != std::string::npos,
+        "CellStore sheetData handoff should disclose bounded local rewrite reason");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "CellStore sheetData handoff should mirror worksheet rewrite in the manifest");
+
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr,
+        "CellStore sheetData handoff should plan workbook calc metadata rewrite");
+    check(workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "CellStore sheetData handoff should rewrite workbook calc metadata");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "CellStore sheetData handoff should remove stale calcChain by default");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "CellStore sheetData handoff should request full calculation");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"bounded local worksheet XML rewrite", "not the large-file streaming"}),
+        "CellStore sheetData handoff should retain bounded local rewrite audit note");
+    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
+              worksheet_part, PayloadAuditKind::Formula,
+              PayloadAuditScope::SheetDataReplacement, "f",
+              {"formulas", "calcChain policy"}),
+        "CellStore sheetData handoff should audit formula payload dependencies");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.full_calculation_on_load,
+        "CellStore sheetData output plan should expose full calculation request");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "CellStore sheetData output plan should expose workbook metadata rewrite");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "CellStore sheetData output plan should expose worksheet local-DOM rewrite");
+    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "CellStore sheetData output plan should omit stale calcChain");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "CellStore sheetData output plan should preserve unknown bytes");
+    check(has_payload_audit(output_plan.worksheet_payload_dependency_audits,
+              worksheet_part, PayloadAuditKind::Formula,
+              PayloadAuditScope::SheetDataReplacement, "f",
+              {"formulas", "calcChain policy"}),
+        "CellStore sheetData output plan should keep formula dependency audit");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "CellStore sheetData output should omit stale calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
+        "CellStore sheetData output should keep sheet lookup readable");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, replacement_sheet_data,
+        "CellStore sheetData output should write generated sheetData payload");
+    check_contains(worksheet_xml,
+        R"(<t xml:space="preserve"> &lt;cell &amp; value&gt; </t>)",
+        "CellStore sheetData output should preserve and escape inline text");
+    check_contains(worksheet_xml, R"(<f>SUM(A1:A1)&amp;"&lt;done&gt;"</f>)",
+        "CellStore sheetData output should escape formula text");
+    check_contains(worksheet_xml, R"(<c r="C3" t="b"><v>0</v></c>)",
+        "CellStore sheetData output should write boolean records");
+    check_contains(worksheet_xml, R"(<c r="A4"/>)",
+        "CellStore sheetData output should write explicit blank records");
+    check_not_contains(worksheet_xml, "SUM(B1:C1)",
+        "CellStore sheetData output should remove old source formula rows");
+
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "CellStore sheetData output should request workbook recalculation");
+    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
+        "CellStore sheetData output should remove calcChain content type");
+    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/calcChain",
+        "CellStore sheetData output should remove calcChain relationship");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "CellStore sheetData output should preserve unknown bytes");
+}
+
 void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
 {
     const std::filesystem::path writer_source_path =
@@ -32901,6 +33019,7 @@ int main()
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_segment_targets();
         test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();
         test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch();
+        test_package_editor_patches_cell_store_sheet_data_by_sheet_name();
         test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry();
         test_package_editor_replaces_worksheet_by_sheet_name();
         test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name();

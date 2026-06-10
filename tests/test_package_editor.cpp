@@ -17900,6 +17900,10 @@ void test_package_editor_pivot_cache_records_replacement_restores_prior_removal(
         "pivot cache records replacement after removal output plan should keep calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "pivot cache records replacement after removal output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "pivot cache records replacement after removal output plan should clear stale removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "pivot cache records replacement after removal output plan should clear stale omitted entries");
     check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheRecords1.xml",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "pivot cache records replacement after removal output plan should rewrite cache records");
@@ -18092,6 +18096,17 @@ void test_package_editor_pivot_cache_records_removal_overrides_prior_replacement
         "pivot cache records removal after replacement output plan should keep calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "pivot cache records removal after replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.size() == 1,
+        "pivot cache records removal after replacement output plan should expose one removed part");
+    check(output_plan.removed_parts.front().part_name == pivot_cache_records_part,
+        "pivot cache records removal after replacement output plan should expose removed records");
+    check(output_plan.removed_parts.front().reason.find("after replacement")
+            != std::string::npos,
+        "pivot cache records removal after replacement output plan should keep removed-part reason");
+    check(output_plan.removed_parts.front().inbound_relationships.size() == 1,
+        "pivot cache records removal after replacement output plan should expose removed-part inbound audit");
+    check(output_plan.removed_package_entries.empty(),
+        "pivot cache records removal after replacement output plan should not invent owner relationships omission");
     check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheRecords1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
         "pivot cache records removal after replacement output plan should omit cache records");

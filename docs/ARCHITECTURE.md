@@ -1458,6 +1458,21 @@ P7.5 save-as / Patch handoff draft：
   不做 shared string index migration、style id migration、formula evaluation 或
   calcChain rebuild。
 
+P8.1 controlled large worksheet editing draft：
+
+- 大型 worksheet 编辑必须走 source worksheet event reader → row/cell transformer →
+  streaming worksheet writer → package `EditPlan` 的形态，不使用完整 worksheet DOM 或
+  full cell matrix。
+- 初始能力边界是 sheet replacement、bounded range patch、template fill 和受控 row/cell
+  streaming transformation；任意随机 cell editor 仍属于 P7 In-memory 小文件路径。
+- 当前 bounded `replace_worksheet_sheet_data()` 会物化当前 planned worksheet XML，不能
+  写成大文件低内存 transformer；P8 需要新的 event-reader / stream-rewrite 边界。
+- P8 rewrite 仍必须通过 DependencyAnalyzer / EditPlan 暴露 sharedStrings、styles、
+  worksheet `.rels`、tables、drawings、definedNames、calcChain 和 workbook calc metadata
+  的 preserve / audit / fail / request-recalc 策略。
+- P8 不自动做 shared string index migration、style id migration、relationship repair、
+  table resize、chart range rewrite 或 formula rewrite。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

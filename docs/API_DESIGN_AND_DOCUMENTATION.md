@@ -405,6 +405,59 @@ sharedStrings / styles / calc policy：
 - 不宣称 broad existing-file preservation；只能要求 unknown/unmodified entries default
   copy-original，并把不理解的 linked semantics 暴露为 audit / fail。
 
+### P8.1 Future Controlled Large Worksheet Editing Boundary Draft
+
+P8.1 只冻结 large worksheet controlled editing 的 future boundary，不新增
+`WorksheetReader`、`WorksheetRewriter`、`TemplateEditor` 或 public Patch API。它服务
+sheet replacement、bounded range patch、template fill 和 row/cell streaming
+transformation，不是 P7 In-memory random editing，也不是当前 bounded `sheetData`
+local rewrite helper 的低内存承诺。
+
+处理管线草案：
+
+```text
+source worksheet event reader
+→ row/cell transformer
+→ streaming worksheet writer
+→ package EditPlan / output-plan diagnostics
+```
+
+API 模式：
+
+- 属于 Patch / controlled large worksheet editing。
+- 输入应按 row / event / token 顺序处理，不暴露完整 worksheet DOM。
+- 输出应是 worksheet part stream rewrite 或 full sheet replacement plan。
+- `EditPlan` 必须显示 worksheet rewrite、workbook calc metadata、content type /
+  relationships package-entry side effects，以及 copy-original unknown/unmodified entries。
+
+能力边界：
+
+- sheet replacement：caller 提供完整 replacement worksheet payload 或 streaming source；
+  仍需 worksheet root validation 和 dependency audit。
+- bounded range patch：只允许能用 event transformer 定位和替换的明确范围；不承诺
+  任意 O(1) random cell edits。
+- template fill：按 event stream 替换占位符或受控区域，不把整张 worksheet materialize
+  成 cell matrix。
+- row/cell transformation：可作为 future transformer callback 形态，但必须说明
+  ordering、lookahead 和 memory budget。
+
+metadata / dependency 边界：
+
+- worksheet metadata，例如 sheetPr、dimension、sheetViews、cols、mergeCells、autoFilter、
+  dataValidations、conditionalFormatting、hyperlinks、tableParts、drawings、comments、
+  OLE/control 和 printerSettings，默认 preserve / audit / fail；不静默 repair。
+- sharedStrings indexes、style ids、definedNames、table ranges、drawing anchors、chart
+  ranges 和 formulas 不能被 P8.1 写成自动迁移或重写。
+- formula/value edits 最多请求 full recalculation 或按 calcChain remove/preserve 策略处理；
+  不求值、不写 cached values、不实现 calcChain rebuild。
+
+非目标：
+
+- 不实现 XML event reader、transformer 或 stream rewrite code。
+- 不声明当前 internal `replace_worksheet_sheet_data()` 是低内存大文件 transformer。
+- 不提供 random cell editor、relationship repair、table resize、sharedStrings migration
+  或 style merge。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

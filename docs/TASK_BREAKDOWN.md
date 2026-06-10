@@ -703,8 +703,7 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ## P7 - In-memory Small-File Editor
 
-状态：进行中；P4.0 文档基线已完成，本阶段先做 public facade / value /
-storage / guardrail / handoff 设计，再决定是否进入代码实现。
+状态：设计基线基础完成；public editor / `CellValue` / `CellStore` 实现未开始。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
@@ -714,7 +713,7 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 - P7.3 internal `CellStore` / `CellRecord` memory model：基础完成。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
   `estimated_memory_usage()`：基础完成。
-- P7.5 save-as and Patch handoff contract：当前最小可执行任务。
+- P7.5 save-as and Patch handoff contract：基础完成。
 
 验收：
 - API 注释明确 In-memory mode、随机访问语义和内存增长。
@@ -992,7 +991,7 @@ ctest --preset windows-nmake-release
 
 ### P7.5 save-as and Patch handoff contract
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：public API / internal architecture 文档设计；不新增 header / implementation。
 
@@ -1064,6 +1063,92 @@ blank / erase / tombstone 和输出路径 guard 的边界。
 - 不把 internal `PackageEditor` 直接暴露为 public API。
 - 不宣称 random cell editing、sharedStrings migration、style id migration、relationship
   repair、calcChain rebuild 或 broad existing-file preservation 已完成。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+## P8 - Large Worksheet Controlled Editing
+
+状态：进行中；先冻结大 worksheet 受控编辑边界和 streaming transformer 形态，再进入
+event reader / transformer / stream writer 实现切片。
+
+目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
+同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
+
+子任务：
+- P8.1 capability boundary and pipeline draft：当前最小可执行任务。
+- P8.2 worksheet event reader token model。
+- P8.3 row/cell transformer contract。
+- P8.4 stream rewrite output and `EditPlan` integration。
+- P8.5 first controlled edit fixture：template fill or bounded range patch。
+
+验收：
+- 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
+- 不承诺任意随机 cell editing 或百万行 worksheet DOM。
+- 说明 sharedStrings、styles、relationships、tables、drawings、definedNames、
+  calc metadata 和 unknown parts 的 preserve / audit / fail 边界。
+
+### P8.1 capability boundary and pipeline draft
+
+状态：当前最小可执行任务。
+
+类型：architecture / API 文档设计；不新增 header / implementation。
+
+目标：冻结 P8 受控大 worksheet 编辑的能力边界、非目标和处理管线，明确它不同于
+P7 In-memory 随机编辑，也不同于当前 bounded `sheetData` local rewrite helper。
+
+输入：
+- `docs/PERFORMANCE_TARGETS.md` 对大文件受控编辑和禁止完整 cell matrix 的要求。
+- `docs/EDITING_MODEL.md` 中“大型 worksheet 编辑”的 event reader → transformer →
+  stream writer 形态。
+- 当前 internal Patch `EditPlan`、`DependencyAnalyzer`、worksheet rewrite 和
+  `replace_worksheet_sheet_data()` 的边界。
+- P6 dependency policies 和 P7 save-as / Patch handoff contract。
+
+输出：
+- P8 能力边界：sheet replacement、bounded range patch、template fill 和 row/cell
+  streaming transformation；不支持任意 O(1) random cell editing。
+- pipeline 草案：source worksheet event reader → row/cell transformer →
+  streaming worksheet writer → package `EditPlan` / output plan。
+- metadata 边界：保留或审计 sheetPr、dimension、sheetViews、cols、mergeCells、
+  autoFilter、dataValidations、conditionalFormatting、hyperlinks、tableParts、drawings、
+  comments、OLE/control、printerSettings 等 worksheet metadata；不静默修复或迁移。
+- dependency 边界：sharedStrings indexes、style ids、definedNames、tables、drawings、
+  calcChain 和 workbook calc metadata 只按 preserve / audit / fail / request-recalc
+  策略处理。
+- implementation sequencing：P8.2 先定义 event reader token model，P8.3 定义 transformer，
+  P8.4 接入 stream rewrite / `EditPlan`，P8.5 才选择首个 fixture。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- P8.2 event reader token 调研可与 P8.3 transformer API 调研并行。
+- 写入同一 public boundary 文档或实现 streaming rewrite 时必须串行。
+
+验收标准：
+- 文档能回答 P8 与 P7 In-memory、P4/P6 Patch helpers 的差异。
+- 文档明确大 worksheet 编辑不使用 DOM 或 full cell matrix。
+- 文档明确哪些 metadata 和 linked parts 只 preserve / audit / fail。
+- 文档给 P8.2-P8.5 提供清晰顺序。
+
+禁止项：
+- 不新增 `WorksheetReader`、`WorksheetRewriter`、`TemplateEditor` 或 public Patch API。
+- 不宣称当前已有大文件 streaming worksheet transformer。
+- 不把 bounded local `sheetData` rewrite 写成低内存大文件路径。
+- 不承诺 sharedStrings/style migration、relationship repair、table resize 或 formula rewrite。
 
 验证命令：
 ```powershell

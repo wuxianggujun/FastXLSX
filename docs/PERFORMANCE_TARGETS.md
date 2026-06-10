@@ -241,7 +241,24 @@ ZIP backend 为 `stored-bootstrap` / `store`，package entry source mode 为
 `office_open` 字段仍保持工具写出的 `not_run`；这次 Excel COM 结果是文档记录的
 独立本机检查，不是 benchmark 工具自动写回的字段。
 
-这组记录只能用于小规模 sharedStrings 趋势观察：高重复字符串下 sharedStrings 输出更小，
+2026-06-10 本机 VS2026 / NMake release benchmark preset 下，使用
+`tools/run_benchmark_matrix.py` 和 schema-v4 `fastxlsx_bench_streaming_writer`
+对 `strings` 场景做了 4 组小规模矩阵。输入规模均为 `rows=10000`、`cols=10`、
+`sheets=1`、`cells=100000`、`string_ratio=1`；ZIP backend 为
+`stored-bootstrap` / `store`，package entry source mode 为
+`worksheet-file-backed-chunked`，临时 worksheet footprint 指标为
+`worksheet-body-file-bytes`。runner 还用 `openpyxl` 只读打开并验证了每个输出
+workbook 的 `Sheet1` 首尾值；benchmark JSON 中的 `office_open` 字段仍保持
+工具写出的 `not_run`。
+
+| string_pattern | string_strategy | elapsed_ms | peak_memory_mb | worksheet_body_bytes | output_bytes |
+| --- | --- | ---: | ---: | ---: | ---: |
+| repeated | inline | 84 | 5.04297 | 5487834 | 5491711 |
+| repeated | shared | 61 | 5.0625 | 3287834 | 3292289 |
+| unique | inline | 111 | 5.03125 | 5986774 | 5990651 |
+| unique | shared | 325 | 18.2383 | 3676724 | 6380102 |
+
+这些记录只能用于小规模 sharedStrings 趋势观察：高重复字符串下 sharedStrings 输出更小，
 高唯一字符串下 sharedStrings 的峰值内存和输出体积明显上升。不要据此宣称
 sharedStrings 生产就绪、sharedStrings 是默认最佳策略、完整低内存写出已验证、
 10,000,000-cell 级别性能已记录、Google Benchmark 已接入、Zip64 / true package

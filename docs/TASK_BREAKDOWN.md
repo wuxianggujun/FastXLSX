@@ -2573,6 +2573,79 @@ ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-fail
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
+## P10 - SharedStrings hardening and memory/size evidence
+
+状态：推进中；P10.1 已落地。
+
+目标：继续把 `StringStrategy::SharedString` 保持为显式 size/performance
+tradeoff 选项，补充结构测试和本地 benchmark 证据；不要把 sharedStrings 写成
+默认最佳策略、完整低内存路径或生产级大文件性能结论。
+
+子任务：
+- P10.1 schema-v4 sharedStrings benchmark matrix evidence：基础完成。
+
+### P10.1 schema-v4 sharedStrings benchmark matrix evidence
+
+状态：基础完成。
+
+类型：manual benchmark + docs；不新增 public API / CMake dependency。
+
+目标：用当前 schema-v4 benchmark runner 记录一组小规模 repeated / unique
+字符串场景，补齐历史 schema-v3 快照之外的当前工具链证据。
+
+输入：
+- 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`。
+- 当前 `tools/run_benchmark_matrix.py` 可聚合一个已构建 benchmark exe 的 per-case
+  schema-v4 JSON，并可选用 `openpyxl` 做本地只读 workbook 检查。
+- 历史 2026-06-07 记录是 `500000` cells、schema-v3 小规模快照。
+
+输出：
+- 2026-06-10 本机 VS2026 / NMake benchmark preset 下构建
+  `fastxlsx_bench_streaming_writer`。
+- 运行 `strings` 场景的 repeated/unique × inline/shared 四组矩阵，
+  `10000 x 10 x 1 = 100000` cells per case，stored-bootstrap / store backend。
+- `openpyxl` 只读打开并验证每个输出 workbook 的 `Sheet1` 首尾值。
+- `docs/PERFORMANCE_TARGETS.md` 记录 schema-v4 结果，并继续保留
+  `office_open="not_run"` 与小规模趋势边界。
+
+触碰文件：
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与 P11 benchmark runner 设计调研和 P12 streaming hot-path 只读分析并行。
+- 与 benchmark result 文档更新串行合并，避免同一性能表和状态摘要冲突。
+
+验收标准：
+- benchmark preset target 构建成功。
+- `tools/run_benchmark_matrix.py` 四组 sharedStrings 相关 case 运行成功。
+- `docs/PERFORMANCE_TARGETS.md` 明确数据规模、ZIP backend、string pattern、
+  string strategy、time、peak memory、output size、worksheet-body footprint 和
+  openpyxl 检查范围。
+- 文档明确这不是 10,000,000-cell、大文件低内存、Google Benchmark、
+  Zip64、true package streaming 或生产级 sharedStrings 结论。
+
+禁止项：
+- 不把 benchmark 接入默认 CTest / CI。
+- 不提交 `build/` 下生成的 `.xlsx`、JSON 或 report。
+- 不根据小规模数据改变默认 string strategy 或 public API wording。
+
+验证命令：
+```powershell
+cmake --preset windows-nmake-release-benchmark
+cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_streaming_writer
+py tools\run_benchmark_matrix.py --bench-exe build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_streaming_writer.exe --output-dir build\qa\benchmark-matrix-2026-06-10-sharedstrings --rows 10000 --cols 10 --sheets 1 --case strings:inline:repeated --case strings:shared:repeated --case strings:inline:unique --case strings:shared:unique --verify-openpyxl
+```
+
 ## 并行拆分建议
 
 可以并行：

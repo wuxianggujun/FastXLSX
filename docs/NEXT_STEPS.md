@@ -783,6 +783,10 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     `strings`, `50000 x 10 x 1 = 500000` cells, repeated/unique string patterns,
     inline/shared string strategies, stored-bootstrap ZIP, plus separate local
     Excel COM read-only open checks for all four generated files.
+  - A 2026-06-10 schema-v4 local benchmark matrix also exists for sharedStrings:
+    `strings`, `10000 x 10 x 1 = 100000` cells per case, repeated/unique
+    string patterns, inline/shared strategies, stored-bootstrap ZIP, and
+    `openpyxl` read-only checks for all four generated files.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -1264,6 +1268,15 @@ Accept when:
   `658 ms`, `4.97266 MB`, `30866774` worksheet body bytes, `30870651`
   output bytes; unique/shared `1045 ms`, `70.1055 MB`, `19316724`
   worksheet body bytes, `33260102` output bytes.
+- Current `100000`-cell schema-v4 matrix snapshot is recorded in
+  `docs/PERFORMANCE_TARGETS.md`: repeated/inline `84 ms`, `5.04297 MB`,
+  `5487834` worksheet body bytes, `5491711` output bytes; repeated/shared
+  `61 ms`, `5.0625 MB`, `3287834` worksheet body bytes, `3292289` output
+  bytes; unique/inline `111 ms`, `5.03125 MB`, `5986774` worksheet body bytes,
+  `5990651` output bytes; unique/shared `325 ms`, `18.2383 MB`, `3676724`
+  worksheet body bytes, `6380102` output bytes. `openpyxl` read-only checks
+  verified each generated workbook's `Sheet1` first/last cells; `office_open`
+  remains the benchmark tool's `not_run` field.
 
 Do not claim:
 - sharedStrings as the best default for large data.

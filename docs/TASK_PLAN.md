@@ -1306,6 +1306,10 @@ Tasks:
 - Keep the current 2026-06-07 `500000`-cell manual benchmark snapshot as a
   small baseline only; expand scale, backends, and reference compatibility
   checks before changing support wording.
+- Current 2026-06-10 schema-v4 local matrix adds a smaller `100000`-cell
+  repeated/unique × inline/shared snapshot through `tools/run_benchmark_matrix.py`
+  with openpyxl read-only checks. It is evidence for current benchmark tooling,
+  not a production-readiness claim.
 
 Validation:
 - Structure tests for `xl/sharedStrings.xml`.
@@ -1317,6 +1321,10 @@ Validation:
   `500000`-cell stored-bootstrap run produced before schema v4, with
   repeated/inline, repeated/shared, unique/inline, and unique/shared rows; do
   not duplicate stale numbers here.
+- Current schema-v4 local matrix results are also recorded in
+  `docs/PERFORMANCE_TARGETS.md`: 2026-06-10 `100000` cells per case,
+  repeated/unique × inline/shared, stored-bootstrap ZIP, and openpyxl read-only
+  workbook checks. Treat this as small-scale trend evidence only.
 
 ### M4 - Streaming Writer Hot Path
 

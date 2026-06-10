@@ -32,6 +32,16 @@ bool append_number_with_to_chars(std::string& output, double value)
     return true;
 }
 
+void append_unsigned_decimal_unchecked(std::string& output, std::uint32_t value)
+{
+    std::array<char, 10> buffer {};
+    const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+    if (error != std::errc()) {
+        throw fastxlsx::FastXlsxError("failed to format unsigned integer");
+    }
+    output.append(buffer.data(), ptr);
+}
+
 std::string fallback_format_number(double value)
 {
     std::ostringstream stream;
@@ -70,7 +80,7 @@ void append_cell_reference_unchecked(
     std::string& output, std::uint32_t row, std::uint32_t column)
 {
     append_column_reference(output, column);
-    output += std::to_string(row);
+    append_unsigned_decimal_unchecked(output, row);
 }
 
 } // namespace
@@ -161,6 +171,11 @@ void append_number(std::string& output, double value)
     }
 
     output += fallback_format_number(value);
+}
+
+void append_unsigned_decimal(std::string& output, std::uint32_t value)
+{
+    append_unsigned_decimal_unchecked(output, value);
 }
 
 void append_cell_reference(std::string& output, std::uint32_t row, std::uint32_t column)

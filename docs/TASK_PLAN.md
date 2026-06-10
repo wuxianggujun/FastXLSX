@@ -1353,7 +1353,11 @@ Tasks:
   Cell reference XML output also uses shared internal
   `detail::append_cell_reference()` / `detail::cell_reference()` helpers so
   row/cell append paths can write coordinates without per-cell temporary
-  reference strings. Text and attribute escaping now also expose
+  reference strings. Unsigned integer XML fragments now also have internal
+  `detail::append_unsigned_decimal()` for append buffers; cell reference row
+  suffixes, streaming `<row r>`, and in-memory/streaming style `s` attributes
+  use it instead of `std::to_string()`. This is not benchmark evidence or
+  broader date encoding. Text and attribute escaping now also expose
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` so in-memory, CellStore, streaming,
   and small OPC serializers can append escaped XML directly while preserving
@@ -2287,8 +2291,12 @@ Tasks:
   string construction on append-oriented XML hot paths. Current cell reference
   XML output similarly uses shared internal `detail::append_cell_reference()` /
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
-  temporary reference strings. Current XML text and attribute escaping similarly
-  has append-oriented `detail::append_escaped_xml_text()` /
+  temporary reference strings. Current unsigned integer XML append uses
+  internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
+  streaming row numbers, and in-memory/streaming style id attributes; it is a
+  local hot-path helper, not a benchmark result or date encoding completion.
+  Current XML text and attribute escaping similarly has append-oriented
+  `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers used by in-memory,
   CellStore, streaming row/formula/metadata XML, and small OPC serializers;
   string-returning escape helpers remain for non-append replacement paths.

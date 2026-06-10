@@ -1033,7 +1033,7 @@ void append_style_attribute(std::string& xml, StyleId style_id)
     }
 
     xml += " s=\"";
-    xml += std::to_string(style_id.value());
+    detail::append_unsigned_decimal(xml, style_id.value());
     xml += "\"";
 }
 
@@ -2338,7 +2338,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     }
 
     row_xml += "<row r=\"";
-    row_xml += std::to_string(state_->row_count);
+    detail::append_unsigned_decimal(row_xml, state_->row_count);
     if (options.height.has_value()) {
         row_xml += "\" ht=\"";
         detail::append_number(row_xml, *options.height);

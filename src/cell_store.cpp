@@ -58,7 +58,7 @@ void append_style_attribute(std::string& xml, const CellRecord& record)
     }
 
     xml += " s=\"";
-    xml += std::to_string(record.style_id->value());
+    append_unsigned_decimal(xml, record.style_id->value());
     xml += "\"";
 }
 

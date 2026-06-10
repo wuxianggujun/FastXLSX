@@ -5,6 +5,7 @@
 #include "zip_test_utils.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -93,6 +94,15 @@ void test_xml_helpers()
     std::string appended_number = "value=";
     fastxlsx::detail::append_number(appended_number, 123.5);
     check(appended_number == "value=123.5", "append_number should preserve existing text");
+    std::string appended_unsigned_zero = "uint=";
+    fastxlsx::detail::append_unsigned_decimal(appended_unsigned_zero, 0);
+    check(appended_unsigned_zero == "uint=0",
+        "append_unsigned_decimal should append zero and preserve existing text");
+    std::string appended_unsigned_max = "uint=";
+    fastxlsx::detail::append_unsigned_decimal(
+        appended_unsigned_max, std::numeric_limits<std::uint32_t>::max());
+    check(appended_unsigned_max == "uint=4294967295",
+        "append_unsigned_decimal should append uint32 max");
     const std::string formatted_scientific = fastxlsx::detail::format_number(1.25e-10);
     std::string appended_scientific;
     fastxlsx::detail::append_number(appended_scientific, 1.25e-10);

@@ -2846,6 +2846,73 @@ cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
+## P12 - Streaming writer hot-path work
+
+状态：推进中；P12.1 已落地。
+
+目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
+worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
+date encoding 完成、benchmark 结论或生产级大文件承诺。
+
+子任务：
+- P12.1 unsigned decimal append helper：基础完成。
+
+### P12.1 unsigned decimal append helper
+
+状态：基础完成。
+
+类型：internal helper + tests + docs；不新增 public API / CMake dependency。
+
+目标：为追加型 XML 路径提供 `detail::append_unsigned_decimal()`，用
+`std::to_chars` 直接把 `std::uint32_t` 写入既有 buffer，减少 row/cell 热路径
+中为了无符号十进制整数产生的临时 `std::string`。
+
+输入事实：
+- `detail::append_number()` 已覆盖 finite-only double append fast path。
+- `detail::append_cell_reference()` 已让 row/cell 路径避免构造完整 cell
+  reference 临时字符串，但内部 row suffix 仍通过 `std::to_string()` 追加。
+- `WorksheetWriter::append_row()` 的 `<row r="...">` 和 in-memory /
+  streaming style `s="N"` attribute 都属于已有 XML append buffer 路径。
+
+范围：
+- 新增内部 `detail::append_unsigned_decimal(std::string&, std::uint32_t)`。
+- `detail::append_cell_reference()` 的 row suffix 改走该 helper。
+- `WorksheetWriter::append_row()` 的 row 编号改走该 helper。
+- `CellStore` 和 `WorksheetWriter` 的 style id XML attribute 改走该 helper。
+- `test_xml_helpers()` 覆盖 prefix 保留、`0` 和 `uint32_t` 最大值。
+- 文档记录该 helper 的边界和非性能结论。
+
+触碰文件：
+- `include/fastxlsx/detail/xml.hpp`
+- `src/xml.cpp`
+- `src/cell_store.cpp`
+- `src/streaming_writer.cpp`
+- `tests/test_minimal_xlsx.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.unit` 覆盖 `append_unsigned_decimal()` 基础输出。
+- `fastxlsx.streaming` 保持既有 row/cell XML 结构行为。
+- 全量默认 CTest 通过。
+- 文档明确它不是 benchmark、date encoding、完整 hot-path 优化或大文件性能证明。
+
+非目标：
+- 不替换 metadata/package 路径中的所有 `std::to_string()`。
+- 不改变 sharedStrings 索引策略、ZIP backend、worksheet body file-backed
+  chunking 或 benchmark schema。
+- 不新增 public API，不增加外部依赖。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.unit --output-on-failure --timeout 60
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
 ## 并行拆分建议
 
 可以并行：

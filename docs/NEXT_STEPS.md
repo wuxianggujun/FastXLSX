@@ -1345,8 +1345,12 @@ Do:
   while preserving finite-only `std::to_chars` output. Current cell reference
   XML output uses shared internal `detail::append_cell_reference()` /
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
-  temporary reference strings. Current XML text and attribute escaping uses
-  shared internal `detail::append_escaped_xml_text()` /
+  temporary reference strings. Current unsigned integer XML append uses
+  internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
+  streaming row numbers, and in-memory/streaming style id attributes; this is a
+  local append helper, not benchmark evidence or broader date encoding.
+  Current XML text and attribute escaping uses shared internal
+  `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers across in-memory, CellStore,
   streaming row/formula/metadata XML, and small OPC serializers; the older
   string-returning helpers remain available for replacement paths that require

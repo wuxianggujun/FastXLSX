@@ -28,7 +28,7 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint32_t kBenchmarkSheetLimit = 1024;
-constexpr std::string_view kBenchmarkSchemaVersion = "3";
+constexpr std::string_view kBenchmarkSchemaVersion = "4";
 constexpr std::string_view kPackageEntrySourceMode = "worksheet-file-backed-chunked";
 constexpr std::string_view kTemporaryWorksheetPartFootprint = "worksheet-body-file-bytes";
 
@@ -217,17 +217,57 @@ bool should_write_string(const Options& options, std::uint32_t row, std::uint32_
     return ((row + col) % bucket) == 0;
 }
 
+struct StringDistributionStats {
+    std::uint64_t string_cell_count = 0;
+    std::uint64_t repeated_string_cell_count = 0;
+    std::uint64_t non_repeated_unique_string_cell_count = 0;
+
+    [[nodiscard]] std::uint64_t unique_string_value_count() const noexcept
+    {
+        return non_repeated_unique_string_cell_count + (repeated_string_cell_count > 0 ? 1 : 0);
+    }
+
+    [[nodiscard]] std::uint64_t duplicate_string_cell_count() const noexcept
+    {
+        return string_cell_count - unique_string_value_count();
+    }
+
+    [[nodiscard]] double dedup_ratio() const noexcept
+    {
+        if (string_cell_count == 0) {
+            return 0.0;
+        }
+        return static_cast<double>(duplicate_string_cell_count())
+            / static_cast<double>(string_cell_count);
+    }
+};
+
+bool string_value_is_repeated(std::string_view pattern, std::uint32_t row, std::uint32_t col)
+{
+    if (pattern == "repeated") {
+        return true;
+    }
+    if (pattern == "unique") {
+        return false;
+    }
+    return ((row + col) % 5) == 0;
+}
+
+void observe_string_cell(
+    StringDistributionStats& stats, std::string_view pattern, std::uint32_t row, std::uint32_t col)
+{
+    ++stats.string_cell_count;
+    if (string_value_is_repeated(pattern, row, col)) {
+        ++stats.repeated_string_cell_count;
+    } else {
+        ++stats.non_repeated_unique_string_cell_count;
+    }
+}
+
 std::string make_string_value(
     std::string_view pattern, std::uint32_t sheet, std::uint32_t row, std::uint32_t col)
 {
-    if (pattern == "repeated") {
-        return "repeat";
-    }
-    if (pattern == "unique") {
-        return "s" + std::to_string(sheet) + "-r" + std::to_string(row) + "-c"
-            + std::to_string(col);
-    }
-    if ((row + col) % 5 == 0) {
+    if (string_value_is_repeated(pattern, row, col)) {
         return "repeat";
     }
     return "s" + std::to_string(sheet) + "-r" + std::to_string(row) + "-c" + std::to_string(col);
@@ -287,7 +327,8 @@ void ensure_parent_directory(const std::filesystem::path& path)
 }
 
 void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::uint64_t peak_bytes,
-    std::uint64_t output_bytes, std::uint64_t temporary_worksheet_part_footprint_bytes)
+    std::uint64_t output_bytes, std::uint64_t temporary_worksheet_part_footprint_bytes,
+    const StringDistributionStats& string_distribution)
 {
     ensure_parent_directory(options.result);
     std::ofstream out(options.result, std::ios::binary);
@@ -305,6 +346,10 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
     out << "  \"cells\": " << cells << ",\n";
     out << "  \"string_ratio\": " << options.string_ratio << ",\n";
     out << "  \"string_pattern\": \"" << json_escape(options.string_pattern) << "\",\n";
+    out << "  \"string_cells\": " << string_distribution.string_cell_count << ",\n";
+    out << "  \"unique_string_values\": " << string_distribution.unique_string_value_count() << ",\n";
+    out << "  \"duplicate_string_cells\": " << string_distribution.duplicate_string_cell_count() << ",\n";
+    out << "  \"string_dedup_ratio\": " << string_distribution.dedup_ratio() << ",\n";
     out << "  \"string_strategy\": \"" << json_escape(options.string_strategy) << "\",\n";
 #ifdef FASTXLSX_BENCH_HAS_MINIZIP_NG
     out << "  \"zip_backend\": \"minizip-ng\",\n";
@@ -338,6 +383,7 @@ void run_benchmark(const Options& options)
 
     const auto started = std::chrono::steady_clock::now();
     auto workbook = fastxlsx::WorkbookWriter::create(options.output, writer_options);
+    StringDistributionStats string_distribution;
 
     for (std::uint32_t sheet_index = 1; sheet_index <= options.sheets; ++sheet_index) {
         auto sheet = workbook.add_worksheet("Sheet" + std::to_string(sheet_index));
@@ -352,6 +398,7 @@ void run_benchmark(const Options& options)
 
             for (std::uint32_t col = 1; col <= options.cols; ++col) {
                 if (should_write_string(options, row, col)) {
+                    observe_string_cell(string_distribution, options.string_pattern, row, col);
                     string_values.push_back(
                         make_string_value(options.string_pattern, sheet_index, row, col));
                     cells.push_back(fastxlsx::CellView::text(string_values.back()));
@@ -376,7 +423,8 @@ void run_benchmark(const Options& options)
     const std::uint64_t temporary_worksheet_part_footprint_bytes = 0;
 #endif
     write_result_json(
-        options, elapsed_ms, peak_bytes, output_bytes, temporary_worksheet_part_footprint_bytes);
+        options, elapsed_ms, peak_bytes, output_bytes, temporary_worksheet_part_footprint_bytes,
+        string_distribution);
 }
 
 } // namespace

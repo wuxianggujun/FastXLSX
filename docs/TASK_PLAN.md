@@ -112,9 +112,10 @@ parallelism, acceptance checks, and explicit non-goals.
   `docs/PERFORMANCE_TARGETS.md`: 2026-06-07 local VS2026/NMake benchmark preset,
   `strings` scenario, `50000 x 10 x 1 = 500000` cells, repeated/unique string
   patterns, inline/shared strategies, stored bootstrap ZIP backend,
-  benchmark schema v3 worksheet-body byte counts, and separate local Excel COM
-  read-only open checks. Treat it as a small trend snapshot, not production
-  readiness, large-file performance, or full low-memory proof.
+  historical schema-v3 worksheet-body byte counts, and separate local Excel COM
+  read-only open checks. Current benchmark tooling writes schema v4 with input
+  string distribution fields. Treat the record as a small trend snapshot, not
+  production readiness, large-file performance, or full low-memory proof.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -1269,9 +1270,10 @@ Validation:
 - Reference XML comparison when compatibility problems appear.
 - Size and memory benchmark before calling it production-ready.
 - Small local benchmark snapshot: use `docs/PERFORMANCE_TARGETS.md` as the
-  canonical schema-v3 record. Current canonical numbers are the 2026-06-07
-  `500000`-cell stored-bootstrap run with repeated/inline, repeated/shared,
-  unique/inline, and unique/shared rows; do not duplicate stale numbers here.
+  canonical historical record. Current canonical numbers are the 2026-06-07
+  `500000`-cell stored-bootstrap run produced before schema v4, with
+  repeated/inline, repeated/shared, unique/inline, and unique/shared rows; do
+  not duplicate stale numbers here.
 
 ### M4 - Streaming Writer Hot Path
 
@@ -2184,7 +2186,7 @@ Current facts:
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.
 - The 2026-06-07 repeated/unique sharedStrings benchmark snapshot is only
-  `500000` cells with stored-bootstrap ZIP and benchmark schema v3
+  `500000` cells with stored-bootstrap ZIP and historical benchmark schema v3
   `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`.
   The byte count is only the temporary worksheet body row XML footprint and does
   not include sharedStrings XML, package assembly buffers, ZIP/backend memory,
@@ -2228,18 +2230,20 @@ Tasks:
   is recorded by a separate helper instead of mutating benchmark JSON.
 - Current matrix helper is `tools/run_benchmark_matrix.py`. It wraps one already
   built `fastxlsx_bench_streaming_writer` executable at a time, writes per-case
-  `.xlsx` / schema-v3 `.json`, and produces `benchmark-matrix-report.json`.
+  `.xlsx` / schema-v4 `.json`, and produces `benchmark-matrix-report.json`.
   It can optionally use `openpyxl` for workbook readability and first/last cell
   checks. Excel verification remains a separate local step through
   `tools/verify_benchmark_matrix_excel.ps1`, which writes the sidecar
   `benchmark-matrix-office-report.json` and does not rewrite the matrix report
   or per-case JSON; `office_open` remains `not_run`.
-- Current benchmark JSON schema version is `3`. It records `string_pattern`,
-  `package_entry_source_mode="worksheet-file-backed-chunked"`,
+- Current benchmark JSON schema version is `4`. It records `string_pattern`,
+  `string_cells`, `unique_string_values`, `duplicate_string_cells`,
+  `string_dedup_ratio`, `package_entry_source_mode="worksheet-file-backed-chunked"`,
   `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`, and a
-  numeric `temporary_worksheet_part_footprint_bytes` value. The footprint value
-  comes from benchmark-only instrumentation and only counts worksheet body row
-  XML bytes, not the whole package or process footprint.
+  numeric `temporary_worksheet_part_footprint_bytes` value. The string fields
+  describe the benchmark input distribution for both inline/shared strategies;
+  the footprint value comes from benchmark-only instrumentation and only counts
+  worksheet body row XML bytes, not the whole package or process footprint.
 
 API documentation requirements:
 - Public comments must state Streaming mode, ordered input, string-view

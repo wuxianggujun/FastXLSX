@@ -1194,7 +1194,7 @@ Accept when:
 - Reference XML comparison is recorded when structure compatibility is in
   question.
 - Memory/size data is recorded before any production-ready wording.
-- Current `500000`-cell manual snapshot uses benchmark schema v3 and
+- Current `500000`-cell manual snapshot uses historical benchmark schema v3 and
   `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`:
   repeated/inline `493 ms`, `4.97266 MB`, `27927834` worksheet body bytes,
   `27931711` output bytes; repeated/shared `392 ms`, `4.98828 MB`,
@@ -1218,8 +1218,9 @@ Do:
   results in separate output dirs.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
 - Record data scale, string strategy, compression setting, package entry source
-  mode, string pattern, temporary worksheet part footprint availability, time,
-  peak memory, output size, and Excel/WPS/LibreOffice open result.
+  mode, string pattern, input string distribution counts, temporary worksheet
+  part footprint availability, time, peak memory, output size, and
+  Excel/WPS/LibreOffice open result.
 - Treat `temporary_worksheet_part_footprint="worksheet-body-file-bytes"` as a
   benchmark-only worksheet body row XML byte count. It does not include
   sharedStrings XML, worksheet header/footer, package assembly buffers,
@@ -1230,7 +1231,7 @@ Do:
 Accept when:
 - Default CTest remains lightweight and under the 60s boundary.
 - Benchmark results are reproducible enough to compare future regressions.
-- Matrix reports keep raw schema-v3 per-case JSON and `office_open="not_run"`.
+- Matrix reports keep raw schema-v4 per-case JSON and `office_open="not_run"`.
   The separate Office validation helper writes the sidecar
   `benchmark-matrix-office-report.json` and does not rewrite the matrix report
   or per-case JSON.

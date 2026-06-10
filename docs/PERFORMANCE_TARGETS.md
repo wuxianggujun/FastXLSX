@@ -145,13 +145,17 @@ minizip no-compression/stored output，而不是 DEFLATE 压缩结果。
 未压缩大小，因此 file-backed/chunked worksheet entry 仍不能被写成大文件或
 Zip64 benchmark 证据。
 
-当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `3`，记录字符串分布和
+当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`，记录字符串分布和
 package 元数据：
 
 ```json
 {
-  "benchmark_schema_version": "3",
+  "benchmark_schema_version": "4",
   "string_pattern": "mixed",
+  "string_cells": 2500,
+  "unique_string_values": 2001,
+  "duplicate_string_cells": 499,
+  "string_dedup_ratio": 0.1996,
   "package_entry_source_mode": "worksheet-file-backed-chunked",
   "temporary_worksheet_part_footprint": "worksheet-body-file-bytes",
   "temporary_worksheet_part_footprint_bytes": 317823
@@ -162,6 +166,12 @@ package 元数据：
 字符串生成方式；`repeated` / `unique` 用于对比 sharedStrings 在高重复和高唯一
 字符串场景下的文件体积、耗时和峰值内存。该字段只是 benchmark 输入描述，不代表
 sharedStrings 已生产就绪。
+
+`string_cells`、`unique_string_values`、`duplicate_string_cells` 和
+`string_dedup_ratio` 描述输入字符串分布；`string_dedup_ratio` 是
+`duplicate_string_cells / string_cells`，没有字符串时为 `0`。这些字段对
+inline/shared 两种策略都有效，用于解释 benchmark 输入，不代表实际
+`xl/sharedStrings.xml` 内存占用已经受控，也不替代峰值内存测量。
 
 `package_entry_source_mode` 记录当前 worksheet entry finalization 经过
 file-backed/chunked source；`temporary_worksheet_part_footprint_bytes` 由
@@ -202,7 +212,7 @@ py tools\run_benchmark_matrix.py `
   --verify-openpyxl
 ```
 
-runner 会保留每个 case 的 `.xlsx` 和原始 schema-v3 `.json`，并写
+runner 会保留每个 case 的 `.xlsx` 和原始 schema-v4 `.json`，并写
 `benchmark-matrix-report.json` 聚合命令、输入规模、结果字段和可选 `openpyxl`
 读取结果。`office_open` 字段仍保持 benchmark 工具原始值 `not_run`；本机 Excel
 验证是独立步骤，可用 `tools/verify_benchmark_matrix_excel.ps1` 只读打开 report 中的

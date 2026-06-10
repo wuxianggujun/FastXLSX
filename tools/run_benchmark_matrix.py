@@ -2,7 +2,7 @@
 """Run an opt-in FastXLSX streaming writer benchmark matrix.
 
 This helper is intentionally outside CTest and CI. It wraps the existing
-fastxlsx_bench_streaming_writer executable, collects its schema-v3 JSON results,
+fastxlsx_bench_streaming_writer executable, collects its schema-v4 JSON results,
 and optionally verifies generated workbooks with openpyxl as local QA only.
 """
 
@@ -28,6 +28,8 @@ DEFAULT_CASES = [
     "strings:inline:unique",
     "strings:shared:unique",
 ]
+
+BENCHMARK_SCHEMA_VERSION = "4"
 
 
 def default_benchmark_exe() -> Path:
@@ -91,13 +93,17 @@ def should_write_string(case: MatrixCase, mixed_string_ratio: float, row: int, c
 
 
 def make_string_value(case: MatrixCase, sheet: int, row: int, col: int) -> str:
-    if case.string_pattern == "repeated":
-        return "repeat"
-    if case.string_pattern == "unique":
-        return f"s{sheet}-r{row}-c{col}"
-    if (row + col) % 5 == 0:
+    if string_value_is_repeated(case, row, col):
         return "repeat"
     return f"s{sheet}-r{row}-c{col}"
+
+
+def string_value_is_repeated(case: MatrixCase, row: int, col: int) -> bool:
+    if case.string_pattern == "repeated":
+        return True
+    if case.string_pattern == "unique":
+        return False
+    return (row + col) % 5 == 0
 
 
 def make_number_value(sheet: int, row: int, col: int) -> float:
@@ -115,10 +121,42 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def expected_string_distribution(
+    case: MatrixCase, rows: int, cols: int, sheets: int, mixed_string_ratio: float
+) -> dict[str, float | int]:
+    per_sheet_string_cells = 0
+    per_sheet_repeated_string_cells = 0
+    per_sheet_non_repeated_unique_string_cells = 0
+    for row in range(1, rows + 1):
+        for col in range(1, cols + 1):
+            if not should_write_string(case, mixed_string_ratio, row, col):
+                continue
+            per_sheet_string_cells += 1
+            if string_value_is_repeated(case, row, col):
+                per_sheet_repeated_string_cells += 1
+            else:
+                per_sheet_non_repeated_unique_string_cells += 1
+
+    string_cells = per_sheet_string_cells * sheets
+    repeated_string_cells = per_sheet_repeated_string_cells * sheets
+    unique_string_values = per_sheet_non_repeated_unique_string_cells * sheets
+    if repeated_string_cells > 0:
+        unique_string_values += 1
+    duplicate_string_cells = string_cells - unique_string_values
+    string_dedup_ratio = duplicate_string_cells / string_cells if string_cells else 0.0
+    return {
+        "string_cells": string_cells,
+        "unique_string_values": unique_string_values,
+        "duplicate_string_cells": duplicate_string_cells,
+        "string_dedup_ratio": string_dedup_ratio,
+    }
+
+
 def verify_result_json(path: Path, case: MatrixCase, rows: int, cols: int, sheets: int,
     mixed_string_ratio: float, output_path: Path) -> dict[str, Any]:
     data = load_json(path)
-    require(data.get("benchmark_schema_version") == "3", "benchmark schema version mismatch")
+    require(data.get("benchmark_schema_version") == BENCHMARK_SCHEMA_VERSION,
+        "benchmark schema version mismatch")
     require(data.get("scenario") == case.scenario, f"{case.name} scenario mismatch")
     require(data.get("rows") == rows, f"{case.name} rows mismatch")
     require(data.get("cols") == cols, f"{case.name} cols mismatch")
@@ -129,6 +167,17 @@ def verify_result_json(path: Path, case: MatrixCase, rows: int, cols: int, sheet
     require(
         abs(float(data.get("string_ratio")) - expected_string_ratio(case, mixed_string_ratio)) < 1e-9,
         f"{case.name} string ratio mismatch",
+    )
+    expected_strings = expected_string_distribution(case, rows, cols, sheets, mixed_string_ratio)
+    require(int(data.get("string_cells")) == expected_strings["string_cells"],
+        f"{case.name} string cell count mismatch")
+    require(int(data.get("unique_string_values")) == expected_strings["unique_string_values"],
+        f"{case.name} unique string value count mismatch")
+    require(int(data.get("duplicate_string_cells")) == expected_strings["duplicate_string_cells"],
+        f"{case.name} duplicate string cell count mismatch")
+    require(
+        abs(float(data.get("string_dedup_ratio")) - float(expected_strings["string_dedup_ratio"])) < 1e-6,
+        f"{case.name} string dedup ratio mismatch",
     )
     require(data.get("package_entry_source_mode") == "worksheet-file-backed-chunked",
         f"{case.name} package entry source mode mismatch")
@@ -227,6 +276,8 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
         "expected": {
             "sheet1_first_cell": expected_cell_value(case, mixed_string_ratio, 1, 1),
             "sheet1_last_cell": expected_cell_value(case, mixed_string_ratio, rows, cols),
+            "string_distribution": expected_string_distribution(
+                case, rows, cols, sheets, mixed_string_ratio),
         },
         "result": result_json,
         "openpyxl": openpyxl_report,
@@ -278,7 +329,7 @@ def main() -> int:
         "mixed_string_ratio": args.mixed_string_ratio,
         "cases": reports,
         "comparison_scope": (
-            "Manual opt-in benchmark matrix. Results compare generated schema-v3 JSON "
+            "Manual opt-in benchmark matrix. Results compare generated schema-v4 JSON "
             "fields and optional openpyxl workbook readability; Office validation is a "
             "separate local step and benchmark office_open fields remain not_run."
         ),

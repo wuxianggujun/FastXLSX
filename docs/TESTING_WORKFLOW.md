@@ -284,7 +284,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_benchmark_matri
 ```
 
 `run_benchmark_matrix.py` 只调用已构建的 `fastxlsx_bench_streaming_writer`，检查
-schema-v3 JSON 字段并可选用 `openpyxl` 读取输出 workbook。Excel helper 只读打开
+schema-v4 JSON 字段并可选用 `openpyxl` 读取输出 workbook。Excel helper 只读打开
 report 中的前几个 workbook，核对 `Sheet1` 的 used range 和首尾值，并写独立
 `benchmark-matrix-office-report.json` sidecar；它不回写 benchmark case JSON，也不改写
 `benchmark-matrix-report.json`。不同 ZIP backend

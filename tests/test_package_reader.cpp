@@ -721,6 +721,32 @@ void test_package_writer_rejects_missing_file_chunk_before_output()
         "missing file-backed chunk should fail before overwriting output");
 }
 
+void test_package_writer_rejects_mixed_legacy_data_and_chunks_before_output()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-writer-mixed-data-and-chunks.xlsx");
+    const std::string sentinel = "preserve existing mixed-data-and-chunks output";
+    write_file(path, sentinel);
+
+    fastxlsx::detail::PackageEntry entry("xl/mixed.xml", "<legacy/>");
+    entry.chunks.push_back(
+        fastxlsx::detail::PackageEntryChunk::memory("<chunked/>"));
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_package(path, {entry},
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "chunked payload",
+            "mixed payload failure should explain the conflicting entry sources");
+    }
+
+    check(failed, "PackageWriter should reject entries that mix data and chunks");
+    check(fastxlsx::test::read_file(path) == sentinel,
+        "mixed data/chunks should fail before overwriting output");
+}
+
 void test_package_reader_reads_stored_entries_and_unknown_parts()
 {
     const std::filesystem::path path = output_path("fastxlsx-package-reader-stored.xlsx");
@@ -2354,6 +2380,7 @@ int main()
         test_package_writer_rejects_duplicate_entry_names_before_output();
         test_package_writer_rejects_zip64_file_chunk_before_output();
         test_package_writer_rejects_missing_file_chunk_before_output();
+        test_package_writer_rejects_mixed_legacy_data_and_chunks_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();

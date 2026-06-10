@@ -118,8 +118,12 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
     existing package part as a `StreamRewrite` replacement backed by
     `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
-    to `PackageWriter` without flattening them into one string. Treat this as a
-    staged package-entry payload foundation only: no public API, no
+    to `PackageWriter` without flattening them into one string. The internal
+    package writer now rejects entries that mix legacy `data` payload and
+    chunked payload before opening the output path, so staged chunks do not
+    silently discard a second payload source. Treat this as a
+    staged package-entry payload foundation only: no public API, no payload
+    merge/repair, no
     cell-replacement low-memory handoff, no full worksheet stream writer, no
     dependency repair, and no relationship/range metadata repair.
   - Internal worksheet replacement chunk handoff in `src/package_editor.hpp` and

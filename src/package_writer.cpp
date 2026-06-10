@@ -109,6 +109,9 @@ void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
         if (!seen_entry_names.emplace(entry.name).second) {
             throw FastXlsxError(std::string("duplicate ZIP entry name: ") + entry.name);
         }
+        if (!entry.data.empty() && !entry.chunks.empty()) {
+            throw FastXlsxError("ZIP entry cannot mix legacy data and chunked payload");
+        }
         if (entry_uncompressed_size(entry) > zip32_max_u32) {
             throw FastXlsxError("ZIP entry uncompressed size requires Zip64 support");
         }

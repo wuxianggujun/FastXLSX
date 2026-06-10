@@ -1363,8 +1363,9 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 状态：基础完成；P8.1-P8.5 已冻结大 worksheet 受控编辑边界、event reader token、
 transformer contract、stream rewrite / `EditPlan` handoff，并补入首个 bounded local
-template-fill fixture。后续真正 event reader / transformer / stream rewrite implementation
-必须重新按任务模板拆分，不能把当前 bounded local fixture 写成低内存大文件路径。
+template-fill fixture。P8.6 已落地首个 internal worksheet event reader 实现切片；
+后续真正 transformer / stream rewrite implementation 必须继续按任务模板拆分，不能把当前
+reader 或 bounded local fixture 写成完整低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1375,6 +1376,7 @@ template-fill fixture。后续真正 event reader / transformer / stream rewrite
 - P8.3 row/cell transformer contract：基础完成。
 - P8.4 stream rewrite output and `EditPlan` integration：基础完成。
 - P8.5 first controlled edit fixture：template fill or bounded range patch：基础完成。
+- P8.6 internal worksheet event reader first implementation slice：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -1722,6 +1724,71 @@ rewrite，不是 P8 future low-memory stream transformer。
 - 不实现 placeholder parser、range patch engine 或 event reader。
 - 不把 current `replace_worksheet_sheet_data_by_name()` 写成低内存大文件路径。
 - 不迁移 shared string indexes、不合并 styles、不修复 relationships、不重写 formulas。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P8.6 internal worksheet event reader first implementation slice
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：落地 P8.2 token model 的首个内部事件读取器，让 worksheet XML 可按源顺序发出
+prolog / worksheet root / metadata / `sheetData` / row / cell / value token，为后续
+transformer 提供真实输入形态，同时继续避免 worksheet DOM、full cell matrix 和
+PackageEditor 语义接入。
+
+输入：
+- P8.2 worksheet event reader token model。
+- P8.3 transformer contract 对 source-order token、bounded lifetime 和 raw pass-through 的要求。
+- 当前 XML helper 和 `FastXlsxError` 失败路径。
+
+输出：
+- 新增 internal `include/fastxlsx/detail/worksheet_event_reader.hpp` 和
+  `src/worksheet_event_reader.cpp`。
+- `scan_worksheet_events()` 以 callback 方式发出非 owning token view；string_view
+  生命周期绑定到 source worksheet XML buffer。
+- 覆盖 XML declaration / processing instruction / comment、qualified worksheet /
+  row / cell local-name、raw metadata pass-through、inline string / value text 和
+  malformed boundary 拒绝。
+- 新增 `fastxlsx.worksheet_event_reader` CTest 目标。
+
+触碰文件：
+- `include/fastxlsx/detail/worksheet_event_reader.hpp`
+- `src/worksheet_event_reader.cpp`
+- `tests/test_worksheet_event_reader.cpp`
+- `CMakeLists.txt`
+- `tests/CMakeLists.txt`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_editor.*`
+- `tests/test_package_editor.cpp`
+
+可并行性：
+- 后续 transformer contract implementation 可只读调研并行。
+- 修改 token vocabulary、callback lifetime 或 stream rewrite handoff 时必须串行。
+
+验收标准：
+- `fastxlsx.worksheet_event_reader` 覆盖核心 token 顺序、prefix/local-name、raw value
+  text 和失败边界。
+- 默认完整 CTest 通过。
+- 文档明确这只是 internal first reader slice，不是 public API、full XML parser、
+  schema validation、relationship repair、transformer 或 low-memory package rewrite。
+
+禁止项：
+- 不新增 public `WorksheetReader` / `WorksheetRewriter` / `TemplateEditor`。
+- 不接入 `PackageEditor` active `EditPlan`。
+- 不实现 row/cell transformer、placeholder parser、range patch engine 或 stream writer。
+- 不解码 XML entity、不验证完整 worksheet schema、不修复 namespaces / relationships。
 
 验证命令：
 ```powershell

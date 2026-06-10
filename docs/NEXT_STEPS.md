@@ -27,6 +27,7 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `fastxlsx.unit`
   - `fastxlsx.streaming`
   - `fastxlsx.opc`
+  - `fastxlsx.worksheet_event_reader`
   - `fastxlsx.package_reader`
   - `fastxlsx.package_editor`
   - `fastxlsx.image`
@@ -72,6 +73,15 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
   - Minimal workbook writer and streaming writer.
+  - Internal worksheet event reader first slice in
+    `include/fastxlsx/detail/worksheet_event_reader.hpp` and
+    `src/worksheet_event_reader.cpp`, covered by `fastxlsx.worksheet_event_reader`.
+    It emits source-order non-owning token views for XML declaration /
+    processing instruction / comment, worksheet root, raw metadata,
+    `sheetData`, row, cell, and value text boundaries. Treat this as P8
+    reader input groundwork only: no public API, no full XML parser/schema
+    validation, no relationship repair, no transformer, and no PackageEditor
+    stream rewrite handoff.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

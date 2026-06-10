@@ -44,6 +44,14 @@ parallelism, acceptance checks, and explicit non-goals.
   regression that feeds that payload through the by-name `sheetData` Patch
   helper; this is not a public editor API and does not implement workbook-level
   guardrails or full save-as / Patch handoff.
+- Current internal large-worksheet foundation includes
+  `include/fastxlsx/detail/worksheet_event_reader.hpp` and
+  `src/worksheet_event_reader.cpp` with first-slice `scan_worksheet_events()`
+  coverage for source-order XML declaration / processing instruction / comment,
+  worksheet root, raw metadata, `sheetData`, row, cell, and value text token
+  boundaries. This is P8 reader input groundwork only: no public API, full XML
+  parser/schema validation, relationship repair, transformer, PackageEditor
+  stream rewrite handoff, or low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.
@@ -1161,8 +1169,8 @@ Status: 基础.
 Already visible:
 - Compiled `fastxlsx` target and `FastXLSX::fastxlsx` alias.
 - Lightweight CTest suite with `fastxlsx.unit`, `fastxlsx.streaming`,
-  `fastxlsx.opc`, `fastxlsx.package_reader`, `fastxlsx.package_editor`, and
-  `fastxlsx.image`.
+  `fastxlsx.opc`, `fastxlsx.worksheet_event_reader`,
+  `fastxlsx.package_reader`, `fastxlsx.package_editor`, and `fastxlsx.image`.
 - Minimal new-workbook package with workbook, worksheet, relationships,
   content types, `docProps/core.xml`, and `docProps/app.xml`.
 - Streaming writer skeleton with row-order writes and worksheet metadata for

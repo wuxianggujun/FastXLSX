@@ -114,11 +114,17 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     cell payloads and audit-heavy replacement payload policy failures have
     PackageEditor-layer no-state-pollution coverage; the file-backed handoff also
     has coverage for `PackageReader` re-open, dimension refresh, old-target audit
-    skip, and temporary file cleanup after the editor is destroyed. Treat this as
+    skip, linked-object fixture preservation/audit visibility, and temporary file
+    cleanup after the editor is destroyed. The linked-object regression covers
+    worksheet `.rels`, drawing/media/chart/table/VML/percent-decoded drawing,
+    sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
+    bytes plus owner `.rels`, workbook definedNames, PNG default content type,
+    calcChain cleanup, and output re-read through `PackageReader`. Treat this as
     output-side file-backed stream handoff only: no public API, no PackageReader
     input streaming, no complete low-memory worksheet transformer, no broad range
     metadata recalculation, no sharedStrings/style migration, no relationship
-    repair, and no low-memory large-file editing claim.
+    repair/pruning, no object semantic editing, and no low-memory large-file
+    editing claim.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
@@ -2595,6 +2601,14 @@ Current foundation:
   sharedStrings owner `.rels`, untouched `xl/styles.xml`, VBA, and a reachable
   unknown extension part plus its owner `.rels`, plus workbook `definedNames`
   preservation during workbook metadata rewrite. It also confirms
+  by-name cell replacement file-backed handoff preserves the same linked-object
+  fixture at the internal Patch audit/preservation layer while refreshing
+  dimension, cleaning calcChain metadata, re-opening output through
+  `PackageReader`, and removing temporary XML files after editor destruction.
+  This remains audit / preservation visibility, not relationship repair/pruning,
+  object semantic editing, public API, PackageReader input streaming, or complete
+  low-memory large-file editing.
+  It also confirms
   worksheet-owned and drawing-owned external, URI-qualified, invalid, and
   unresolved relationship target audit notes and structured `RelationshipTargetAudit`
   fields propagate through the existing-file `PackageEditor` edit plan without

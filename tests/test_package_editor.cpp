@@ -2675,6 +2675,294 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
         "output reader should retain workbook part");
 }
 
+void test_package_editor_worksheet_cell_replacement_preserves_linked_object_parts()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package(
+            "fastxlsx-package-editor-cell-replacement-linked-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-linked-output.xlsx");
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const fastxlsx::detail::PartName drawing_part("/xl/drawings/drawing1.xml");
+    const fastxlsx::detail::PartName chart_part("/xl/charts/chart1.xml");
+    const fastxlsx::detail::PartName image_part("/xl/media/image1.png");
+    const fastxlsx::detail::PartName table_part("/xl/tables/table1.xml");
+    const fastxlsx::detail::PartName vml_drawing_part("/xl/drawings/vmlDrawing1.vml");
+    const fastxlsx::detail::PartName percent_encoded_drawing_part(
+        "/xl/drawings/drawing space.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName vba_part("/xl/vbaProject.bin");
+    const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
+
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1", R"(<c r="A1" t="inlineStr"><is><t>linked patch</t></is></c>)" },
+    };
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+
+        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+
+        const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+        check(worksheet_plan != nullptr,
+            "cell replacement linked fixture should keep worksheet in edit plan");
+        check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "cell replacement linked fixture should stream-rewrite worksheet");
+        check(worksheet_plan->reason.find("file-backed stream rewrite")
+                != std::string::npos,
+            "cell replacement linked fixture should use file-backed staged output");
+        check(editor.edit_plan().full_calculation_on_load(),
+            "cell replacement linked fixture should request full calculation");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+            "cell replacement linked fixture should remove stale calcChain");
+
+        const auto check_copy_original_part =
+            [&](const fastxlsx::detail::PartName& part, const char* message) {
+                const auto* part_plan = editor.edit_plan().find_part(part);
+                check(part_plan != nullptr, message);
+                check(part_plan->write_mode
+                        == fastxlsx::detail::PartWriteMode::CopyOriginal,
+                    message);
+            };
+        check_copy_original_part(drawing_part,
+            "cell replacement should preserve linked drawing part");
+        check_copy_original_part(chart_part,
+            "cell replacement should preserve linked chart part");
+        check_copy_original_part(image_part,
+            "cell replacement should preserve linked image part");
+        check_copy_original_part(table_part,
+            "cell replacement should preserve linked table part");
+        check_copy_original_part(vml_drawing_part,
+            "cell replacement should preserve URI-qualified VML target");
+        check_copy_original_part(percent_encoded_drawing_part,
+            "cell replacement should preserve percent-decoded drawing target");
+        check_copy_original_part(shared_strings_part,
+            "cell replacement should preserve sharedStrings part");
+        check_copy_original_part(styles_part,
+            "cell replacement should preserve styles part");
+        check_copy_original_part(vba_part,
+            "cell replacement should preserve VBA part");
+        check_copy_original_part(opaque_extension_part,
+            "cell replacement should preserve reachable unknown extension part");
+
+        const auto* worksheet_relationships_plan =
+            editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels");
+        check(worksheet_relationships_plan != nullptr
+                && worksheet_relationships_plan->write_mode
+                    == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "cell replacement should audit preserved worksheet relationships");
+        const auto* drawing_relationships_plan =
+            editor.edit_plan().find_package_entry("xl/drawings/_rels/drawing1.xml.rels");
+        check(drawing_relationships_plan != nullptr
+                && drawing_relationships_plan->write_mode
+                    == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "cell replacement should audit preserved drawing relationships");
+        const auto* shared_strings_relationships_plan =
+            editor.edit_plan().find_package_entry("xl/_rels/sharedStrings.xml.rels");
+        check(shared_strings_relationships_plan != nullptr
+                && shared_strings_relationships_plan->write_mode
+                    == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "cell replacement should audit preserved sharedStrings relationships");
+        const auto* opaque_extension_relationships_plan =
+            editor.edit_plan().find_package_entry("custom/_rels/opaque-extension.bin.rels");
+        check(opaque_extension_relationships_plan != nullptr
+                && opaque_extension_relationships_plan->write_mode
+                    == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "cell replacement should audit preserved unknown extension relationships");
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check(output_plan.full_calculation_on_load,
+            "cell replacement linked output plan should expose recalculation request");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+            "cell replacement linked output plan should expose calcChain removal");
+        check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
+            "cell replacement linked output plan should expose file-backed chunk note");
+        check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
+            "cell replacement linked output plan should expose dimension refresh note");
+        check(has_note_containing(output_plan.notes,
+                  {"worksheet relationships are preserved", "policy review"}),
+            "cell replacement linked output plan should expose relationship preservation note");
+        check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+            "cell replacement linked output plan should stream-rewrite worksheet");
+        check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "cell replacement linked output plan should local-rewrite workbook metadata");
+        check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "cell replacement linked output plan should rewrite workbook relationships");
+        check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "cell replacement linked output plan should rewrite content types");
+        check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+            "cell replacement linked output plan should omit stale calcChain");
+        check_output_entry_relationship_context(output_plan.entries,
+            "xl/drawings/drawing1.xml", worksheet_part.value(), "rId1",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
+            "../drawings/drawing1.xml",
+            "cell replacement linked output plan should keep drawing relationship audit");
+        check_output_entry_relationship_context(output_plan.entries, "xl/charts/chart1.xml",
+            drawing_part.value(), "rId2",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart",
+            "../charts/chart1.xml",
+            "cell replacement linked output plan should keep chart relationship audit");
+        check_output_entry_relationship_context(output_plan.entries, "xl/media/image1.png",
+            drawing_part.value(), "rId1",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+            "../media/image1.png",
+            "cell replacement linked output plan should keep image relationship audit");
+        check_output_entry_relationship_context(output_plan.entries, "xl/tables/table1.xml",
+            worksheet_part.value(), "rId3",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table",
+            "../tables/table1.xml",
+            "cell replacement linked output plan should keep table relationship audit");
+        check_output_entry_relationship_context(output_plan.entries,
+            "custom/opaque-extension.bin", worksheet_part.value(), "rId9",
+            "https://fastxlsx.invalid/relationships/opaque-extension",
+            "../../custom/opaque-extension.bin",
+            "cell replacement linked output plan should keep unknown extension audit");
+        check_output_entry_relationship_context(output_plan.entries,
+            "xl/sharedStrings.xml", "", "", "", "",
+            "cell replacement sharedStrings output plan should not invent relationship audit");
+        check_output_entry_relationship_context(output_plan.entries, "xl/styles.xml",
+            "", "", "", "",
+            "cell replacement styles output plan should not invent relationship audit");
+
+        editor.save_as(output);
+    }
+
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "cell replacement linked fixture should clean temporary XML files");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1"/>)",
+        "cell replacement linked output should refresh worksheet dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>linked patch</t></is></c>)",
+        "cell replacement linked output should contain replacement cell");
+    check_not_contains(worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "cell replacement linked output should omit old target cell");
+    check_contains(worksheet_xml, R"(<drawing r:id="rId1"/>)",
+        "cell replacement linked output should preserve drawing reference");
+    check_contains(worksheet_xml,
+        R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)",
+        "cell replacement linked output should preserve tableParts reference");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "cell replacement linked output should omit stale calcChain payload");
+
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "cell replacement linked output should byte-preserve worksheet relationships");
+    check(output_reader.read_entry("xl/drawings/drawing1.xml") == source.drawing,
+        "cell replacement linked output should byte-preserve drawing XML");
+    check(output_reader.read_entry("xl/drawings/_rels/drawing1.xml.rels")
+            == source.drawing_relationships,
+        "cell replacement linked output should byte-preserve drawing relationships");
+    check(output_reader.read_entry("xl/charts/chart1.xml") == source.chart,
+        "cell replacement linked output should byte-preserve chart XML");
+    check(output_reader.read_entry("xl/media/image1.png") == source.media,
+        "cell replacement linked output should byte-preserve media bytes");
+    check(output_reader.read_entry("xl/tables/table1.xml") == source.table,
+        "cell replacement linked output should byte-preserve table XML");
+    check(output_reader.read_entry("xl/drawings/vmlDrawing1.vml")
+            == source.vml_drawing,
+        "cell replacement linked output should byte-preserve VML drawing");
+    check(output_reader.read_entry("xl/drawings/drawing space.xml")
+            == source.percent_encoded_drawing,
+        "cell replacement linked output should byte-preserve percent-decoded drawing");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == source.shared_strings,
+        "cell replacement linked output should byte-preserve sharedStrings XML");
+    check(output_reader.read_entry("xl/_rels/sharedStrings.xml.rels")
+            == source.shared_strings_relationships,
+        "cell replacement linked output should byte-preserve sharedStrings relationships");
+    check(output_reader.read_entry("xl/styles.xml") == source.styles,
+        "cell replacement linked output should byte-preserve styles XML");
+    check(output_reader.read_entry("xl/vbaProject.bin") == source.vba_project,
+        "cell replacement linked output should byte-preserve VBA bytes");
+    check(output_reader.read_entry("custom/opaque-extension.bin")
+            == source.opaque_extension,
+        "cell replacement linked output should byte-preserve unknown extension bytes");
+    check(output_reader.read_entry("custom/_rels/opaque-extension.bin.rels")
+            == source.opaque_extension_relationships,
+        "cell replacement linked output should byte-preserve unknown extension relationships");
+
+    const auto* sheet_relationships = output_reader.relationships_for(worksheet_part);
+    check(sheet_relationships != nullptr,
+        "cell replacement linked output should keep worksheet relationships readable");
+    check(sheet_relationships->find_by_id("rId1") != nullptr,
+        "cell replacement linked output should keep drawing relationship readable");
+    check(sheet_relationships->find_by_id("rId3") != nullptr,
+        "cell replacement linked output should keep table relationship readable");
+    check(sheet_relationships->find_by_id("rId8") != nullptr,
+        "cell replacement linked output should keep percent-encoded relationship readable");
+    check(sheet_relationships->find_by_id("rId9") != nullptr,
+        "cell replacement linked output should keep unknown extension relationship readable");
+    const auto* drawing_relationships = output_reader.relationships_for(drawing_part);
+    check(drawing_relationships != nullptr,
+        "cell replacement linked output should keep drawing relationships readable");
+    check(drawing_relationships->find_by_id("rId1") != nullptr,
+        "cell replacement linked output should keep image relationship readable");
+    check(drawing_relationships->find_by_id("rId2") != nullptr,
+        "cell replacement linked output should keep chart relationship readable");
+    const auto* shared_strings_relationships =
+        output_reader.relationships_for(shared_strings_part);
+    check(shared_strings_relationships != nullptr,
+        "cell replacement linked output should keep sharedStrings relationships readable");
+    check(shared_strings_relationships->find_by_id("rIdSharedExternal") != nullptr,
+        "cell replacement linked output should keep sharedStrings external relationship");
+    const auto* opaque_extension_relationships =
+        output_reader.relationships_for(opaque_extension_part);
+    check(opaque_extension_relationships != nullptr,
+        "cell replacement linked output should keep unknown extension relationships readable");
+    check(opaque_extension_relationships->find_by_id("rIdOpaqueExternal") != nullptr,
+        "cell replacement linked output should keep unknown extension external relationship");
+
+    const std::string workbook_relationships =
+        output_reader.read_entry("xl/_rels/workbook.xml.rels");
+    check_contains(workbook_relationships, "relationships/sharedStrings",
+        "cell replacement linked output should preserve sharedStrings workbook relationship");
+    check_contains(workbook_relationships, "relationships/styles",
+        "cell replacement linked output should preserve styles workbook relationship");
+    check_contains(workbook_relationships, "relationships/vbaProject",
+        "cell replacement linked output should preserve VBA workbook relationship");
+    check_not_contains(workbook_relationships, "relationships/calcChain",
+        "cell replacement linked output should remove calcChain workbook relationship");
+
+    check(output_reader.content_types().override_for(calc_chain_part) == nullptr,
+        "cell replacement linked output should remove calcChain content type");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "cell replacement linked output should preserve sharedStrings content type");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "cell replacement linked output should preserve styles content type");
+    check(output_reader.content_types().override_for(vba_part) != nullptr,
+        "cell replacement linked output should preserve VBA content type");
+    check(output_reader.content_types().override_for(table_part) != nullptr,
+        "cell replacement linked output should preserve table content type");
+    check(output_reader.content_types().default_for("png") != nullptr,
+        "cell replacement linked output should preserve PNG default content type");
+    check(output_reader.content_types().override_for(image_part) == nullptr,
+        "cell replacement linked output should not promote PNG media to override");
+
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, "ReportRange",
+        "cell replacement linked output should preserve workbook definedNames");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "cell replacement linked output should request full calculation");
+}
+
 void test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payload_audit()
 {
     CalcSourcePackage source =
@@ -33540,6 +33828,7 @@ int main()
         test_package_editor_document_properties_app_relationship_failure_preserves_state();
         test_package_editor_combines_document_properties_and_worksheet_rewrite();
         test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff();
+        test_package_editor_worksheet_cell_replacement_preserves_linked_object_parts();
         test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payload_audit();
         test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
         test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();

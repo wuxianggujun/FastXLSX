@@ -72,6 +72,12 @@ parallelism, acceptance checks, and explicit non-goals.
   directly to a `PackageEditor`-owned temporary file-backed `PackageEntryChunk`;
   `save_as()` forwards that chunk to `PackageWriter`, and `PackageEditor`
   removes its temporary files on destruction or move-assignment cleanup.
+  A linked-object fixture now also covers the by-name cell replacement path,
+  proving internal Patch preservation / audit visibility for worksheet `.rels`,
+  drawing/media/chart/table/VML/percent-decoded drawing, sharedStrings plus its
+  owner `.rels`, styles, VBA, a reachable unknown extension plus its owner
+  `.rels`, workbook definedNames, PNG default content type, calcChain cleanup,
+  `PackageReader` re-read, and temporary XML file cleanup after `save_as()`.
   `PackageEditor` also has an internal `replace_part_chunks()` foundation that
   records an existing package part as a `StreamRewrite` replacement backed by
   `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
@@ -89,9 +95,9 @@ parallelism, acceptance checks, and explicit non-goals.
   handoff, chunked package-entry source, worksheet chunk handoff, and
   cell-replacement output-side file-backed stream handoff groundwork only: no
   public API, full XML parser/schema validation, PackageReader input streaming,
-  relationship repair, broad range metadata recalculation, dependency repair,
-  sharedStrings/style migration, or complete low-memory large-file editing
-  claim.
+  relationship repair/pruning, object semantic editing, broad range metadata
+  recalculation, dependency repair, sharedStrings/style migration, or complete
+  low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.

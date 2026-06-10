@@ -2480,6 +2480,12 @@ PackageReader 边界输入，但不再物化完整 rewritten worksheet XML。
   planned output、`save_as()` 后 `PackageReader` 可重读、dimension refresh、
   old target cell audit skip、replacement payload audit / ReferencePolicy fail
   no-state-pollution，以及 PackageEditor 析构后临时文件不残留。
+- `fastxlsx.package_editor` linked-object fixture 回归覆盖 by-name cell replacement
+  file-backed handoff 下的 internal Patch preservation / audit 可见性：worksheet
+  `.rels`、drawing/media/chart/table/VML/percent-decoded drawing、sharedStrings /
+  owner `.rels`、styles、VBA、reachable unknown extension / owner `.rels`、
+  workbook definedNames、PNG default content type、calcChain cleanup 和
+  `PackageReader` 重读均保持可验证。
 
 触碰文件：
 - `src/package_editor.hpp`
@@ -2506,11 +2512,13 @@ PackageReader 边界输入，但不再物化完整 rewritten worksheet XML。
 
 验收标准：
 - `fastxlsx.package_editor` 覆盖 file-backed cell replacement handoff、dimension
-  refresh、old target cell audit skip、replacement payload policy failure 和临时文件清理。
+  refresh、old target cell audit skip、replacement payload policy failure、linked-object
+  preservation fixture 和临时文件清理。
 - 默认完整 CTest 通过。
 - 文档明确这是 output-side streaming/file-backed handoff；当前仍物化 planned
   worksheet XML，不是 PackageReader input streaming、完整 low-memory large-file
-  editing、relationship repair、sharedStrings/style migration 或 range metadata repair。
+  editing、relationship repair/pruning、object semantic editing、sharedStrings/style
+  migration 或 range metadata repair。
 
 禁止项：
 - 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。

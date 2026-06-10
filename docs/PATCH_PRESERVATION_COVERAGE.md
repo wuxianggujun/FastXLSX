@@ -127,6 +127,22 @@ public API 或完整 object lifecycle 支持；
 
 ## 二、worksheet rewrite 下的 linked-part 保留与 part-level 编辑
 
+### cell replacement file-backed handoff 下的 linked-object 保留
+
+linked-object fixture 现在还覆盖 by-name `replace_worksheet_cells()` 路径：
+cell replacement 输出侧使用 temporary file-backed `PackageEntryChunk` 记录
+worksheet `StreamRewrite`，`save_as()` 后输出可由 `PackageReader` 重读，并验证
+dimension refresh、calcChain cleanup、workbook `fullCalcOnLoad`、old target cell
+payload 跳过审计和临时 XML 文件析构清理。该回归同时证明 worksheet `.rels`、
+drawing / drawing `.rels`、media、chart、table、VML、percent-decoded drawing、
+untouched `xl/sharedStrings.xml` / owner `.rels`、untouched `xl/styles.xml`、VBA、
+reachable unknown extension bytes / owner `.rels`、workbook definedNames、PNG
+default content type 和 workbook sharedStrings/styles/VBA relationships 在 cell
+replacement handoff 下保持 internal Patch preservation / audit 可见性。
+这不是 relationship repair/pruning、object 语义编辑、public API、sharedStrings /
+styles migration、table/drawing sync、PackageReader 输入侧 streaming，或完整
+low-memory large-file editing。
+
 ### comments part
 
 另有 registered comments part 小 fixture 证明 worksheet rewrite 会把

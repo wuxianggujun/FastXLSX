@@ -2623,6 +2623,15 @@ Current foundation:
   and unknown extension entries on the same copy-original baseline. This is not
   VML shape editing, legacy drawing mutation, relationship repair, or full
   VML/drawing support.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/drawings/vmlDrawing1.vml` `LocalDomRewrite` entry,
+  preserved content types / package relationships / workbook relationships /
+  workbook / worksheet / worksheet `.rels` / drawing / drawing `.rels` / chart /
+  media / table / percent-decoded drawing / sharedStrings / sharedStrings owner
+  `.rels` / styles / VBA / calcChain / unknown extension entries, empty
+  `removed_parts` / `removed_package_entries`, and no invented VML owner
+  `.rels`. This is Patch audit visibility only, not a public output planner,
+  VML shape editing, legacy drawing mutation, or relationship repair.
   The same path now covers VML drawing remove-then-ordinary-replace ordering: a
   later replacement restores the active VML drawing part, clears stale
   removed-part audit, returns `[Content_Types].xml` to source/copy-original

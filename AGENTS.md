@@ -1724,6 +1724,15 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   extension entries 仍按上述 copy-original 基线保留，且不会凭空创建
   `xl/drawings/_rels/vmlDrawing1.vml.rels`；这不是 VML shape editing、legacy drawing
   mutation、relationship repair 或完整 VML/drawing 支持。
+  内部 `planned_output()` 快照还验证该 ordinary replacement 状态：暴露 active
+  `xl/drawings/vmlDrawing1.vml` `LocalDomRewrite` entry、content types / package
+  relationships / workbook relationships / workbook / worksheet / worksheet `.rels` /
+  drawing / drawing `.rels` / chart / media / table / percent-decoded drawing /
+  sharedStrings / sharedStrings owner `.rels` / styles / VBA / calcChain /
+  unknown extension entries 的 copy-original 决策，且不发明 VML owner `.rels`，
+  `removed_parts` 与 `removed_package_entries` 为空；这只是 Patch audit 可见性，
+  不是 public output planner、VML shape editing、legacy drawing mutation 或
+  relationship repair。
   同一路径还覆盖 VML drawing 先显式移除再 ordinary replacement 的反向顺序：后续
   replacement 会恢复 active VML drawing part、清理 stale removed-part audit、让
   `[Content_Types].xml` 回到 source/copy-original audit、保留 worksheet `.rels`

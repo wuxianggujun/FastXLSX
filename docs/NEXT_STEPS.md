@@ -2550,6 +2550,15 @@ Current foundation:
   sharedStrings, styles, VBA, and unknown extension entries on the same
   copy-original baseline. This is not chart reference migration, series/cache
   update, drawing mutation, existing-workbook chart editing, or full chart support.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/charts/chart1.xml` `LocalDomRewrite` entry, preserved
+  content types / package relationships / workbook relationships / workbook /
+  worksheet / worksheet `.rels` / drawing / drawing `.rels` / media / table /
+  sharedStrings / sharedStrings owner `.rels` / styles / VBA / calcChain /
+  unknown extension entries, empty `removed_parts` / `removed_package_entries`,
+  and no invented chart owner `.rels`. This is Patch audit visibility only, not
+  a public output planner, chart reference repair, chart semantic merge, or
+  metadata repair.
   The same fixture now covers chart ordinary-replace-then-remove ordering:
   later removal clears the active chart replacement, records removed-part audit
   plus direct and URI-qualified inbound drawing relationship metadata, omits

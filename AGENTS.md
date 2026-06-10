@@ -1657,6 +1657,14 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   styles、VBA 和 unknown extension entries 仍按上述 copy-original 基线保留，
   且不会凭空创建 chart owner `.rels`；这不是 chart reference migration、
   series/cache update、drawing mutation、existing-workbook chart editing 或完整图表支持。
+  内部 `planned_output()` 快照还验证该 ordinary replacement 状态：暴露 active
+  `xl/charts/chart1.xml` `LocalDomRewrite` entry、content types / package relationships /
+  workbook relationships / workbook / worksheet / worksheet `.rels` / drawing /
+  drawing `.rels` / media / table / sharedStrings / sharedStrings owner `.rels` /
+  styles / VBA / calcChain / unknown extension entries 的 copy-original 决策，
+  且不发明 chart owner `.rels`，`removed_parts` 与 `removed_package_entries` 为空；
+  这只是 Patch audit 可见性，不是 public output planner、chart reference repair、
+  chart semantic merge 或 metadata repair。
   同一路径还覆盖 chart 先 ordinary replacement 再显式移除的顺序：后续 removal
   会清理 active chart replacement、记录 removed-part audit 和 direct / URI-qualified
   inbound drawing relationship metadata、输出省略 `xl/charts/chart1.xml`、移除 chart

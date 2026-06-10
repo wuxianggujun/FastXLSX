@@ -6,10 +6,23 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <winioctl.h>
+#endif
 
 namespace {
 
@@ -21,6 +34,13 @@ public:
 void check(bool condition, const char* message)
 {
     if (!condition) {
+        throw TestFailure(message);
+    }
+}
+
+void check_contains(std::string_view haystack, std::string_view needle, const char* message)
+{
+    if (haystack.find(needle) == std::string_view::npos) {
         throw TestFailure(message);
     }
 }
@@ -39,6 +59,55 @@ void write_file(const std::filesystem::path& path, std::string_view data)
     stream.write(data.data(), static_cast<std::streamsize>(data.size()));
     if (!stream) {
         throw TestFailure("failed to write test package");
+    }
+}
+
+void create_sparse_file_with_size(const std::filesystem::path& path, std::uint64_t size)
+{
+#ifdef _WIN32
+    const auto native_path = path.native();
+    HANDLE file = CreateFileW(native_path.c_str(), GENERIC_WRITE, 0, nullptr,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        throw TestFailure("failed to create sparse test file");
+    }
+
+    DWORD bytes_returned = 0;
+    if (!DeviceIoControl(
+            file, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0, &bytes_returned, nullptr)) {
+        CloseHandle(file);
+        throw TestFailure("failed to mark sparse test file");
+    }
+
+    LARGE_INTEGER end_position {};
+    end_position.QuadPart = static_cast<LONGLONG>(size);
+    if (!SetFilePointerEx(file, end_position, nullptr, FILE_BEGIN)
+        || !SetEndOfFile(file)) {
+        CloseHandle(file);
+        throw TestFailure("failed to size sparse test file");
+    }
+
+    if (!CloseHandle(file)) {
+        throw TestFailure("failed to close sparse test file");
+    }
+#else
+    std::ofstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw TestFailure("failed to create sparse test file");
+    }
+    stream.close();
+
+    std::error_code error;
+    std::filesystem::resize_file(path, size, error);
+    if (error) {
+        throw TestFailure("failed to size sparse test file");
+    }
+#endif
+
+    std::error_code error;
+    const std::uint64_t actual_size = std::filesystem::file_size(path, error);
+    if (error || actual_size != size) {
+        throw TestFailure("sparse test file size mismatch");
     }
 }
 
@@ -421,8 +490,7 @@ void test_package_writer_rejects_invalid_compression_levels_before_output()
                 options);
         } catch (const std::exception& error) {
             failed = true;
-            const std::string message = error.what();
-            check(message.find("ZIP compression level") != std::string::npos,
+            check_contains(error.what(), "ZIP compression level",
                 "invalid compression level failure should explain the bad option");
         }
 
@@ -435,6 +503,99 @@ void test_package_writer_rejects_invalid_compression_levels_before_output()
         "fastxlsx-package-writer-invalid-compression-low.xlsx");
     check_invalid_level(fastxlsx::detail::package_writer_max_compression_level + 1,
         "fastxlsx-package-writer-invalid-compression-high.xlsx");
+}
+
+void test_package_writer_rejects_zip64_entry_count_before_output()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-writer-zip64-entry-count.xlsx");
+    const std::string sentinel = "preserve existing zip64-entry-count output";
+    write_file(path, sentinel);
+
+    std::vector<fastxlsx::detail::PackageEntry> entries;
+    entries.reserve(static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()) + 1u);
+    for (std::uint32_t index = 0;
+         index <= static_cast<std::uint32_t>(std::numeric_limits<std::uint16_t>::max());
+         ++index) {
+        entries.emplace_back("xl/entry" + std::to_string(index) + ".xml", "");
+    }
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_package(path, entries,
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "Zip64",
+            "entry-count failure should explain Zip64 requirement");
+    }
+
+    check(failed, "PackageWriter should reject ZIP32 entry count overflow");
+    check(fastxlsx::test::read_file(path) == sentinel,
+        "entry-count overflow should fail before overwriting output");
+}
+
+void test_package_writer_rejects_zip_entry_name_length_before_output()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-writer-entry-name-length.xlsx");
+    const std::string sentinel = "preserve existing entry-name-length output";
+    write_file(path, sentinel);
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_package(path,
+            {
+                {std::string(static_cast<std::size_t>(
+                     std::numeric_limits<std::uint16_t>::max()) + 1u,
+                     'a'),
+                    ""},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "entry name length",
+            "entry-name failure should explain the ZIP field limit");
+    }
+
+    check(failed, "PackageWriter should reject entry names beyond ZIP field size");
+    check(fastxlsx::test::read_file(path) == sentinel,
+        "entry-name overflow should fail before overwriting output");
+}
+
+void test_package_writer_rejects_zip64_file_chunk_before_output()
+{
+    const std::filesystem::path chunk_path =
+        output_path("fastxlsx-package-writer-zip64-large-chunk.bin");
+    create_sparse_file_with_size(
+        chunk_path, static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max()) + 1u);
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-writer-zip64-large-chunk.xlsx");
+    const std::string sentinel = "preserve existing zip64-large-chunk output";
+    write_file(path, sentinel);
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_package(path,
+            {
+                {"xl/large.bin",
+                    std::vector<fastxlsx::detail::PackageEntryChunk> {
+                        fastxlsx::detail::PackageEntryChunk::file(chunk_path)}},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "Zip64",
+            "large file-backed chunk failure should explain Zip64 requirement");
+    }
+
+    std::error_code remove_error;
+    std::filesystem::remove(chunk_path, remove_error);
+
+    check(failed, "PackageWriter should reject file-backed chunks requiring Zip64");
+    check(fastxlsx::test::read_file(path) == sentinel,
+        "Zip64-sized file chunk should fail before overwriting output");
 }
 
 void test_package_reader_reads_stored_entries_and_unknown_parts()
@@ -2049,6 +2210,9 @@ int main()
 {
     try {
         test_package_writer_rejects_invalid_compression_levels_before_output();
+        test_package_writer_rejects_zip64_entry_count_before_output();
+        test_package_writer_rejects_zip_entry_name_length_before_output();
+        test_package_writer_rejects_zip64_file_chunk_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();

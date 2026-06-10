@@ -210,6 +210,9 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
     minizip no-compression/stored output 和 `1..9` minizip DEFLATE 等级；非法等级
     在写输出前失败，显式 minizip 等级回归覆盖 level 0 / level 9 可读输出、
     central directory method 和重复 payload 下的压缩体积差异。
+  - internal package writer 写前 ZIP32 guardrail：超过 `65535` 个 entries、
+    entry name 超过 ZIP 16-bit 字段、单 entry 未压缩大小超过 `UINT32_MAX`
+    都会在打开输出路径前失败；file-backed >4GiB chunk 用 sparse file 测试覆盖。
 
 主要文件：
 - `src/package_reader.*`

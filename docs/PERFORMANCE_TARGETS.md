@@ -141,6 +141,9 @@ benchmark 结果还应记录 package-entry source mode（`in-memory` / `file-bac
 路径仍使用 backend default；benchmark CLI 若未来暴露该选项，结果必须明确记录
 实际传入的 `-1`、`0` 或 `1..9`，不能只写“minizip enabled”；`0` 应记录为
 minizip no-compression/stored output，而不是 DEFLATE 压缩结果。
+当前 internal package writer 会拒绝需要 Zip64 的 entry count 或单 entry
+未压缩大小，因此 file-backed/chunked worksheet entry 仍不能被写成大文件或
+Zip64 benchmark 证据。
 
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `3`，记录字符串分布和
 package 元数据：

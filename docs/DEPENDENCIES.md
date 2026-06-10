@@ -434,7 +434,9 @@ GitHub Actions workflow 现在默认 job 和 opt-in minizip job 都需要 vcpkg 
 compressed input，data descriptor / Zip64 / encrypted input 仍不支持。内部
 `PackageWriterOptions::compression_level` 现在可在 minizip backend 上选择
 `-1` 默认、`0` no-compression/stored output 或 `1..9` DEFLATE 等级；stored
-bootstrap 仍是 stored/no-compression，这不是 public compression API。
+bootstrap 仍是 stored/no-compression。内部 package writer 会在写输出前拒绝需要
+Zip64 的 entry count 或单 entry 未压缩大小，以及超过 ZIP 16-bit 字段的 entry
+name；这只是 guardrail，不是 Zip64 支持或 public compression API。
 public/production `PackageReader`、已有文件编辑、broad unknown part preservation
 和 public `PackageWriter` 仍是计划，
 不能从自研范围列表推导为已有文件编辑已实现。

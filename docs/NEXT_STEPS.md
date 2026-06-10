@@ -1152,7 +1152,10 @@ Do:
   boundary: `-1` means backend default, `0` requests minizip
   no-compression/stored output, `1..9` selects zlib-compatible minizip DEFLATE
   levels, and stored bootstrap output remains stored/no-compression.
-- Define Zip64 and large-entry behavior before large-file promises.
+- Keep the current no-Zip64 guardrails: reject package entry counts above
+  `65535`, entry names beyond the 16-bit ZIP field, and single entry
+  uncompressed sizes above `UINT32_MAX` before opening the output path.
+- Define real Zip64 and large-entry behavior before large-file promises.
 
 Accept when:
 - Tests pass for package entries without assuming stored/no-compression ZIP.

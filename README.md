@@ -180,7 +180,8 @@ FastXLSX
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
   internal `PackageWriterOptions::compression_level` 可选择 `-1` backend default、
   `0` no-compression/stored output 或 `1..9` minizip DEFLATE level；
-  stored bootstrap 仍不压缩。
+  stored bootstrap 仍不压缩。内部 writer 会在写输出前拒绝需要 Zip64 的
+  entry count 或单 entry 未压缩大小，以及超过 ZIP 16-bit 字段的 entry name。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
   基础单元格编码。
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。
@@ -206,8 +207,8 @@ FastXLSX
 `stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；
 opt-in minizip 构建会写出 DEFLATE-compressed ZIP entries，并且内部 writer option
 可选择 backend default、`0` no-compression/stored output 或 `1..9` DEFLATE
-压缩等级。它仍不是 public package editing API，不要据此宣称 Zip64、真正
-package streaming、已有文件编辑或大文件性能。
+压缩等级。内部 writer 现在有 no-Zip64 写前 guardrail，但它仍不是 public package
+editing API，不要据此宣称 Zip64、真正 package streaming、已有文件编辑或大文件性能。
 
 ## 许可证
 

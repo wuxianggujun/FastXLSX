@@ -23,6 +23,8 @@ namespace fastxlsx::detail {
 namespace {
 
 constexpr std::size_t io_buffer_size = 64 * 1024;
+constexpr std::uint64_t zip32_max_u16 = std::numeric_limits<std::uint16_t>::max();
+constexpr std::uint64_t zip32_max_u32 = std::numeric_limits<std::uint32_t>::max();
 
 PackageWriterBackend resolve_backend(PackageWriterBackend backend)
 {
@@ -46,6 +48,63 @@ void validate_options(PackageWriterOptions options)
     if (options.compression_level < package_writer_min_compression_level
         || options.compression_level > package_writer_max_compression_level) {
         throw FastXlsxError("ZIP compression level must be -1 or between 0 and 9");
+    }
+}
+
+void add_entry_uncompressed_size(std::uint64_t& size, std::uint64_t chunk_size)
+{
+    if (chunk_size > std::numeric_limits<std::uint64_t>::max() - size) {
+        throw FastXlsxError("ZIP entry uncompressed size overflow");
+    }
+    size += chunk_size;
+}
+
+std::uint64_t entry_uncompressed_size(const PackageEntry& entry)
+{
+    if (entry.chunks.empty()) {
+        return entry.data.size();
+    }
+
+    std::uint64_t size = 0;
+    for (const PackageEntryChunk& chunk : entry.chunks) {
+        switch (chunk.kind) {
+        case PackageEntryChunk::Kind::Memory:
+            add_entry_uncompressed_size(size, chunk.data.size());
+            break;
+        case PackageEntryChunk::Kind::File: {
+            std::error_code error;
+            const auto file_size = std::filesystem::file_size(chunk.path, error);
+            if (error) {
+                throw FastXlsxError("failed to stat file-backed ZIP entry chunk");
+            }
+            add_entry_uncompressed_size(size, static_cast<std::uint64_t>(file_size));
+            break;
+        }
+        }
+    }
+    return size;
+}
+
+void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
+{
+    if (entries.empty()) {
+        throw FastXlsxError("cannot write an empty ZIP package");
+    }
+
+    if (entries.size() > zip32_max_u16) {
+        throw FastXlsxError("ZIP entry count requires Zip64 support");
+    }
+
+    for (const PackageEntry& entry : entries) {
+        if (entry.name.empty()) {
+            throw FastXlsxError("ZIP entry name cannot be empty");
+        }
+        if (entry.name.size() > zip32_max_u16) {
+            throw FastXlsxError("ZIP entry name length exceeds 16-bit ZIP field limit");
+        }
+        if (entry_uncompressed_size(entry) > zip32_max_u32) {
+            throw FastXlsxError("ZIP entry uncompressed size requires Zip64 support");
+        }
     }
 }
 
@@ -73,32 +132,6 @@ struct MinizipWriterDeleter {
         }
     }
 };
-
-std::uint64_t entry_uncompressed_size(const PackageEntry& entry)
-{
-    if (entry.chunks.empty()) {
-        return entry.data.size();
-    }
-
-    std::uint64_t size = 0;
-    for (const PackageEntryChunk& chunk : entry.chunks) {
-        switch (chunk.kind) {
-        case PackageEntryChunk::Kind::Memory:
-            size += chunk.data.size();
-            break;
-        case PackageEntryChunk::Kind::File: {
-            std::error_code error;
-            const auto file_size = std::filesystem::file_size(chunk.path, error);
-            if (error) {
-                throw FastXlsxError("failed to stat file-backed ZIP entry chunk");
-            }
-            size += static_cast<std::uint64_t>(file_size);
-            break;
-        }
-        }
-    }
-    return size;
-}
 
 void write_minizip_memory_chunk(void* writer, std::string_view data)
 {
@@ -226,6 +259,7 @@ void write_package(const std::filesystem::path& path, const std::vector<PackageE
     PackageWriterOptions options)
 {
     validate_options(options);
+    validate_package_entries_zip32(entries);
 
     switch (resolve_backend(options.backend)) {
     case PackageWriterBackend::StoredZipBootstrap:

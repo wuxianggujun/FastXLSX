@@ -709,8 +709,8 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
 子任务：
-- P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft：当前最小可执行任务。
-- P7.2 `CellValue` public value draft。
+- P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft：基础完成。
+- P7.2 `CellValue` public value draft：当前最小可执行任务。
 - P7.3 internal `CellStore` / `CellRecord` memory model。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
   `estimated_memory_usage()`。
@@ -723,7 +723,7 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 
 ### P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：public API 文档设计；不新增 header / implementation。
 
@@ -775,6 +775,76 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 禁止项：
 - 不新增 public `WorkbookEditor` / `WorksheetEditor` / `CellValue` 代码。
 - 不把 internal `PackageEditor` 或 OPC part concepts 暴露给普通 public API。
+- 不在 P7.4 guardrails 前宣称 In-memory editor ready。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P7.2 `CellValue` public value draft
+
+状态：当前最小可执行任务。
+
+类型：public API 文档设计；不新增 header / implementation。
+
+目标：冻结 future `CellValue` 的语义值边界、所有权、value kind、style reference
+和与现有 `Cell` / `CellView` 的转换关系，避免把 public value 类型误用为
+内部长期 cell store，也避免让小文件随机编辑污染 Streaming 热路径。
+
+输入：
+- P4.0 facade matrix 和 cell value boundary 文档基线。
+- P7.1 future `WorkbookEditor` / `WorksheetEditor` facade draft。
+- 当前 public API：`Cell`、`CellView`、`StyleId`、`CellStyle` 和
+  `WorkbookWriter::add_style()`。
+- 当前 `Cell` / `CellView` 的 finite numeric、write-only formula、date-as-serial
+  和 string ownership / view lifetime 边界。
+
+输出：
+- future `CellValueKind` 草案：blank、number、text、boolean、formula。
+- optional style reference 草案：future `CellValue` 可携带 workbook-local
+  `StyleId`；非默认 id 必须来自同一 workbook/editor style registry，foreign /
+  invalid id 的拒绝时机由后续实现定义。
+- ownership 边界：`CellValue` owns text / formula payload，可跨 editor API 调用
+  copy / move；不同于 streaming-only non-owning `CellView`。
+- 与 `Cell` / `CellView` 的关系：`Cell` 继续是小文件新建路径 owning convenience
+  value，未来可转换到 `CellValue`；`CellView` 继续只用于 `WorksheetWriter`
+  append-row 热路径，不进入 editor / in-memory 长期状态。
+- missing cell vs blank 边界：`try_cell()` 返回空表示 cell 不存在；
+  `CellValue::blank()` 表示显式 blank / clear 候选，最终 erase semantics 留给
+  P7.3 / P7.5 定义。
+- formula 边界：只保存 formula text，不解析、不求值、不写 cached value、
+  不重建 `calcChain.xml`。
+- numeric 边界：延续 `Cell` / `CellView` 的 finite-only 要求，不把 `NaN` /
+  `Inf` 转为字符串、空 cell 或 OpenXML 数字文本。
+- 非目标：P7.2 不定义 date cell、rich text、error cell、array formula、
+  formula evaluator、sharedStrings/style merge 策略或百万行 cell storage model。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与 P7.3 internal storage 的只读调研并行。
+- 若同一文档段落也在修改，写入必须串行合并。
+
+验收标准：
+- 文档能回答 `CellValue`、`Cell` 和 `CellView` 的所有权和模式差异。
+- 文档明确 `CellValue` 是 future editor / in-memory API boundary，不是已实现符号。
+- 文档明确 style id 是 workbook-local handle，P7.2 不做 style registry merge。
+- 文档明确 blank 与 missing cell 不等价，公式不求值，数字必须 finite。
+
+禁止项：
+- 不新增 public `CellValue`、`CellValueKind` 或 editor 代码。
+- 不把 `CellValue` 写成内部 `CellStore` / `CellRecord` 的长期存储布局。
+- 不新增 date / rich text / error cell 承诺。
 - 不在 P7.4 guardrails 前宣称 In-memory editor ready。
 
 验证命令：

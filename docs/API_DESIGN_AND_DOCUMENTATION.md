@@ -155,6 +155,66 @@ content type override 隐藏在内部 Patch / In-memory 底座之后。
 - P7.5 定义 In-memory save-as 与 internal Patch handoff，尤其是 unknown part
   preservation、sharedStrings / styles / calc metadata 和 document properties 的边界。
 
+### P7.2 Future CellValue Public Value Draft
+
+P7.2 只冻结 future `CellValue` 的 public value 语义，不新增 `include/fastxlsx`
+符号，也不表示 editor / in-memory cell store 已经实现。`CellValue` 应作为
+future `WorkbookEditor` / `WorksheetEditor` 的 API boundary value，而不是内部长期
+cell storage layout。
+
+`CellValueKind` 的初始草案：
+
+- `Blank`：显式 blank / clear 候选值。
+- `Number`：有限 `double` numeric payload。
+- `Text`：owned string payload。
+- `Boolean`：boolean payload。
+- `Formula`：owned write-only formula text。
+
+候选 factory 命名草案：
+
+- `CellValue::blank()`
+- `CellValue::number(double)`
+- `CellValue::text(std::string)`
+- `CellValue::boolean(bool)`
+- `CellValue::formula(std::string)`
+- `CellValue::with_style(StyleId)` 或等价 style-bearing 构造方式
+
+所有权和现有类型关系：
+
+- `CellValue` owns text / formula payload，可复制或移动跨过 editor API 调用边界。
+- `CellView` 继续是 Streaming-only non-owning view；它的 `string_view` payload 只需在
+  `WorksheetWriter::append_row()` 调用期间有效，不能存入 editor / in-memory 长期状态。
+- `Cell` 继续是当前 `Workbook` 小文件新建路径的 owning convenience value；未来可提供
+  `Cell` 到 `CellValue` 的转换，但 P7.2 不要求实现。
+- `CellValue` 可携带 optional `StyleId`。该 id 是 workbook-local handle；非默认 id
+  必须来自同一 workbook/editor style registry，foreign / invalid id 的拒绝时机由后续
+  实现定义。P7.2 不定义 style registry merge、existing-file style preservation 或
+  style id migration。
+
+读取和 blank 语义：
+
+- `try_cell(ref)` 返回空表示 cell 不存在。
+- `CellValue::blank()` 表示 caller 明确传入 blank / clear 候选值。
+- `erase_cell(ref)`、blank 是否保留 style / metadata，以及 save-as 时如何表达 clear
+  semantics，由 P7.3 cell store 和 P7.5 Patch handoff 决定。
+
+数值和公式边界：
+
+- `number(double)` 延续 `Cell` / `CellView` 的 finite-only 规则；不把 `NaN`、`+Inf`
+  或 `-Inf` 转成字符串、空 cell 或 OpenXML 数字文本。
+- date/time 仍由 caller 以 Excel serial number 写入 numeric value；date-specific cell
+  type 和 date style generation 不属于 P7.2。
+- `formula(std::string)` 只保存公式文本。FastXLSX 不解析公式、不求值、不写 cached
+  result、不重建 `calcChain.xml`；save-as / calc metadata 策略由后续 handoff 任务定义。
+
+非目标：
+
+- 不新增 public `CellValue` / `CellValueKind` header、implementation 或 tests。
+- 不定义 rich text、error cells、array formulas、formula evaluator 或 cached formula values。
+- 不把 `CellValue` 当作 `CellStore` / `CellRecord` 的 compact internal storage。
+- 不承诺百万行 worksheet 随机访问、sharedStrings 索引迁移、styles 合并或 relationship
+  repair。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

@@ -635,6 +635,36 @@ failure contract：
   或 calcChain rebuild。
 - 不把 P8.4 写成 public `PackageEditor` / `WorkbookEditor` API 已可用。
 
+### P8.5 First Controlled Template-Fill Fixture
+
+P8.5 固定第一个 controlled edit fixture，而不是新增 public template API。当前 fixture
+使用 internal `PackageEditor::replace_worksheet_sheet_data_by_name()` 对 FastXLSX writer
+生成的 source workbook 执行 template-fill 风格的 by-name `<sheetData>` replacement。
+
+fixture contract：
+
+- source workbook 由 `WorkbookWriter` 生成，包含 placeholder-like shared strings、
+  styles 和 untouched worksheet。
+- edit 使用 caller-supplied replacement `<sheetData>`，不解析 placeholder、不做 range
+  patch engine，也不暴露 callback API。
+- replacement 可使用 inline string 规避 shared string index migration；若 replacement
+  引用 style id，只记录 styles dependency audit。
+- output 必须保留 untouched worksheet、content types、package relationships、workbook
+  relationships、`xl/sharedStrings.xml` 和 `xl/styles.xml` bytes。
+- workbook calc metadata 可请求 `fullCalcOnLoad`；source 没有 calcChain 时不得凭空创建
+  `xl/calcChain.xml`。
+
+边界：
+
+- 当前 helper 仍是 bounded local worksheet XML rewrite，会物化 planned worksheet XML；
+  它只是 P8 future stream rewrite 的 baseline fixture。
+- 保留旧 placeholder sharedStrings 是 preserve 证据，不是 pruning、sharedStrings migration
+  或 garbage collection。
+- `planned_output()` 只能写成 internal diagnostic snapshot，暴露 target worksheet
+  `LocalDomRewrite`、copy-original entries、calc policy 和 dependency audits。
+- 这不代表 `TemplateEditor`、large-file low-memory transformer、public Patch API、table
+  resize、relationship repair、style merge 或 formula rewrite。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

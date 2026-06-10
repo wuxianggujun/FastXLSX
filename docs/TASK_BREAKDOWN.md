@@ -1082,8 +1082,8 @@ event reader / transformer / stream writer 实现切片。
 - P8.1 capability boundary and pipeline draft：基础完成。
 - P8.2 worksheet event reader token model：基础完成。
 - P8.3 row/cell transformer contract：基础完成。
-- P8.4 stream rewrite output and `EditPlan` integration：当前最小可执行任务。
-- P8.5 first controlled edit fixture：template fill or bounded range patch。
+- P8.4 stream rewrite output and `EditPlan` integration：基础完成。
+- P8.5 first controlled edit fixture：template fill or bounded range patch：当前最小可执行任务。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -1297,7 +1297,7 @@ ctest --preset windows-nmake-release
 
 ### P8.4 stream rewrite output and `EditPlan` integration
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：architecture / internal API 文档设计；不新增 header / implementation。
 
@@ -1367,6 +1367,70 @@ ctest --preset windows-nmake-release
 - 不承诺 failed rewrite 会产生可保存 package mutation。
 - 不实现 `CalcChainAction::Rebuild`、sharedStrings/style migration、relationship repair、
   table resize 或 formula rewrite。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P8.5 first controlled edit fixture：template fill or bounded range patch
+
+状态：当前最小可执行任务。
+
+类型：internal fixture / test + docs；不新增 public header / implementation。
+
+目标：用当前 internal by-name `sheetData` Patch helper 固定首个受控编辑 fixture：
+template-fill 风格地替换目标 worksheet 的 `<sheetData>`，同时证明该路径仍是 bounded local
+rewrite，不是 P8 future low-memory stream transformer。
+
+输入：
+- P8.1-P8.4 的 controlled large worksheet editing / token / transformer / stream rewrite
+  合同。
+- 当前 internal `PackageEditor::replace_worksheet_sheet_data_by_name()`。
+- 当前 `WorkbookWriter` 可生成含 sharedStrings / styles 的 source workbook。
+- P6 dependency policies：sharedStrings/styles preserve / audit、不迁移、不修复。
+
+输出：
+- 新增 `fastxlsx.package_editor` fixture：
+  `test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch()`。
+- fixture 使用 FastXLSX writer 生成带占位符的 source workbook，通过 by-name
+  `sheetData` patch 写入 caller-supplied filled row。
+- 测试验证 target worksheet `LocalDomRewrite`、workbook calc metadata rewrite、
+  fullCalcOnLoad、无 calcChain 创建、untouched worksheet / content types / relationships /
+  sharedStrings / styles byte-preserved。
+- 测试验证 replacement 使用 inline string 时不声称 sharedStrings index migration，
+  且旧 placeholder sharedStrings 被保留而不是 pruning / repair。
+- 文档明确这是 current bounded local fixture，只给 P8 future streaming rewrite 提供
+  baseline，不代表 low-memory transformer、placeholder parser 或 public API。
+
+触碰文件：
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- CMake 配置
+
+可并行性：
+- 后续真正 event-reader / stream-rewrite implementation 需要单独串行拆分。
+- 与 P9/new-workbook writer feature 写入同一测试文件时需串行。
+
+验收标准：
+- 默认 `fastxlsx.package_editor` 覆盖 template-fill fixture 并通过。
+- fixture 清楚暴露当前 helper 的 bounded local rewrite 限制。
+- fixture 证明 sharedStrings/styles preserve/audit，不做迁移、合并、pruning 或 repair。
+- 文档不把该 fixture 写成 P8 streaming transformer 已实现。
+
+禁止项：
+- 不新增 public `TemplateEditor` / `WorksheetRewriter` / Patch API。
+- 不实现 placeholder parser、range patch engine 或 event reader。
+- 不把 current `replace_worksheet_sheet_data_by_name()` 写成低内存大文件路径。
+- 不迁移 shared string indexes、不合并 styles、不修复 relationships、不重写 formulas。
 
 验证命令：
 ```powershell

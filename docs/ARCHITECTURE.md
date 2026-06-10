@@ -1517,6 +1517,19 @@ P8.4 stream rewrite / `EditPlan` draft：
 - stream rewrite 不迁移 shared string indexes、不合并 styles、不修复 relationships、
   不 resize tables、不重写 chart ranges、不计算公式，也不实现 calcChain rebuild。
 
+P8.5 first controlled fixture：
+
+- 首个 fixture 使用当前 internal by-name `sheetData` patch 做 template-fill 风格受控编辑：
+  FastXLSX writer source workbook 中的 target worksheet 被 caller-supplied `<sheetData>`
+  替换，untouched worksheet、content types、relationships、sharedStrings 和 styles
+  byte-preserved。
+- fixture 明确当前路径仍是 `LocalDomRewrite` / bounded local worksheet XML rewrite，
+  不是 P8 future low-memory stream transformer。
+- replacement 使用 inline string 时不触发 shared string index migration；旧 placeholder
+  sharedStrings 保留只是 preservation baseline，不是 pruning 或 repair。
+- output plan 只作为 internal diagnostic 暴露 worksheet rewrite、copy-original entries、
+  calc policy 和 dependency audits；不代表 public template editor 或 output planner。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

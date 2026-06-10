@@ -1513,6 +1513,17 @@ P8.4 stream rewrite / `EditPlan` contract draft：
   copy-original linked parts、relationship/content-type side effects、calcChain action 和
   dependency audits，不是 public output planner。
 
+P8.5 controlled template-fill fixture：
+
+- 当前首个 fixture 使用 internal by-name `sheetData` patch，把 writer-generated template
+  worksheet 的 `<sheetData>` 替换为 caller-supplied filled row。
+- fixture 证明 untouched worksheet、content types、relationships、sharedStrings 和 styles
+  保留，workbook calc metadata 请求 full recalculation，且没有凭空创建 calcChain。
+- replacement 可使用 inline string，旧 placeholder sharedStrings 仍会保留；这证明 preserve
+  baseline，不是 sharedStrings pruning / migration。
+- 该 fixture 仍是 bounded local rewrite baseline，不是 large-file streaming transformer、
+  placeholder parser、range patch engine 或 public editor API。
+
 适合：
 
 - 修改某些单元格

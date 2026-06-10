@@ -23179,6 +23179,163 @@ void test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip()
     check_entry_bytes(output_reader, "docProps/app.xml", app_properties_before);
 }
 
+void test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-template-fill-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-template-fill-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        const auto text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+        auto template_sheet = workbook.add_worksheet("Template Fill");
+        auto untouched = workbook.add_worksheet("Untouched");
+
+        template_sheet.append_row({
+            fastxlsx::CellView::text("{{customer}}").with_style(text_style),
+            fastxlsx::CellView::text("{{total}}").with_style(text_style),
+        });
+        template_sheet.append_row({
+            fastxlsx::CellView::text("{{notes}}").with_style(text_style),
+        });
+        untouched.append_row({
+            fastxlsx::CellView::text("keep me").with_style(text_style),
+        });
+
+        workbook.close();
+    }
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName untouched_part("/xl/worksheets/sheet2.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+
+    check(source_reader.worksheet_part_by_sheet_name("Template Fill") == worksheet_part,
+        "template-fill fixture should locate the editable sheet by name");
+    check(source_reader.worksheet_part_by_sheet_name("Untouched") == untouched_part,
+        "template-fill fixture should locate the untouched sheet by name");
+    check(source_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "template-fill source should not contain calcChain");
+
+    const std::string untouched_sheet_before =
+        source_reader.read_entry("xl/worksheets/sheet2.xml");
+    const std::string content_types_before =
+        source_reader.read_entry("[Content_Types].xml");
+    const std::string package_relationships_before =
+        source_reader.read_entry("_rels/.rels");
+    const std::string workbook_relationships_before =
+        source_reader.read_entry("xl/_rels/workbook.xml.rels");
+    const std::string shared_strings_before =
+        source_reader.read_entry("xl/sharedStrings.xml");
+    const std::string styles_before =
+        source_reader.read_entry("xl/styles.xml");
+
+    check_contains(shared_strings_before, "{{customer}}",
+        "template-fill source should keep placeholder text in sharedStrings");
+    check_contains(shared_strings_before, "{{notes}}",
+        "template-fill source should keep all placeholders in sharedStrings");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    const std::string replacement_sheet_data =
+        R"(<sheetData><row r="1"><c r="A1" s="1" t="inlineStr"><is><t>Acme Corp</t></is></c><c r="B1"><v>1234</v></c></row></sheetData>)";
+    editor.replace_worksheet_sheet_data_by_name("Template Fill", replacement_sheet_data);
+
+    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
+    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "template-fill patch should resolve the target worksheet part");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "template-fill patch should use the current bounded local helper");
+    check(worksheet_plan->reason.find("bounded local sheetData replacement")
+            != std::string::npos,
+        "template-fill patch should disclose the bounded local rewrite reason");
+
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr,
+        "template-fill patch should plan workbook calc metadata rewrite");
+    check(workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "template-fill patch should rewrite workbook calc metadata as small XML");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "template-fill patch should not invent a removed calcChain payload");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "template-fill patch should request full calculation");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"bounded local worksheet XML rewrite", "not the large-file streaming"}),
+        "template-fill patch should audit that it is not the future streaming transformer");
+    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
+              worksheet_part, PayloadAuditKind::Styles,
+              PayloadAuditScope::SheetDataReplacement, "c",
+              {"style id references", "xl/styles.xml"}),
+        "template-fill patch should audit style references in replacement cells");
+    check(!has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
+              worksheet_part, PayloadAuditKind::SharedStrings,
+              PayloadAuditScope::SheetDataReplacement, "c",
+              {"shared string indexes", "xl/sharedStrings.xml"}),
+        "inline-string template fill should not claim shared string index migration");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.full_calculation_on_load,
+        "template-fill output plan should request full calculation");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "template-fill output plan should local-DOM-rewrite the target worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet2.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "template-fill output plan should preserve the untouched worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "template-fill output plan should preserve sharedStrings bytes");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "template-fill output plan should preserve styles bytes");
+
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "template-fill output should not create calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Template Fill") == worksheet_part,
+        "template-fill output should keep editable sheet lookup readable");
+    check(output_reader.worksheet_part_by_sheet_name("Untouched") == untouched_part,
+        "template-fill output should keep untouched sheet lookup readable");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, replacement_sheet_data,
+        "template-fill output should write caller-supplied replacement sheetData");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "template-fill output should remove old placeholder rows from the target sheet");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "template-fill output should request workbook recalculation");
+
+    check_entry_bytes(output_reader, "xl/worksheets/sheet2.xml", untouched_sheet_before);
+    check_entry_bytes(output_reader, "[Content_Types].xml", content_types_before);
+    check_entry_bytes(output_reader, "_rels/.rels", package_relationships_before);
+    check_entry_bytes(
+        output_reader, "xl/_rels/workbook.xml.rels", workbook_relationships_before);
+    check_entry_bytes(output_reader, "xl/sharedStrings.xml", shared_strings_before);
+    check_entry_bytes(output_reader, "xl/styles.xml", styles_before);
+    check_contains(output_reader.read_entry("xl/sharedStrings.xml"), "{{customer}}",
+        "template-fill output should preserve old placeholder sharedStrings instead of pruning");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "template-fill output should preserve sharedStrings content type override");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "template-fill output should preserve styles content type override");
+}
+
 void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
 {
     const std::filesystem::path writer_source_path =
@@ -32743,6 +32900,7 @@ int main()
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_segment_targets();
         test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();
+        test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch();
         test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry();
         test_package_editor_replaces_worksheet_by_sheet_name();
         test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name();

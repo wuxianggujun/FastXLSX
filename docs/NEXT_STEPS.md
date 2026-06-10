@@ -106,8 +106,11 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     refreshes the top-level worksheet `<dimension>` from emitted cell refs,
     replacing stale dimension metadata or inserting a missing dimension before
     commit, and hands the dimension-refreshed output to the staged worksheet chunk
-    path so the target worksheet is planned as `StreamRewrite`. Treat this as a
-    bounded staged-output fixture only: no public API, no low-memory worksheet
+    path so the target worksheet is planned as `StreamRewrite`. Invalid
+    replacement cell payloads now have PackageEditor-layer no-state-pollution
+    coverage for non-cell roots, missing or qualified-only `r` attributes, and
+    selector / `r` mismatches. Treat this as a bounded staged-output fixture and
+    preflight failure hygiene only: no public API, no low-memory worksheet
     transformer, no broad range metadata recalculation, no sharedStrings/style
     migration, no relationship repair, and no low-memory large-file editing claim.
   - Internal package-entry chunked replacement source foundation in

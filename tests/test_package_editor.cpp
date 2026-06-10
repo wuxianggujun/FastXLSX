@@ -2703,6 +2703,148 @@ void test_package_editor_worksheet_cell_replacement_missing_target_fails_before_
         editor, output_plan, "missing cell replacement should not dirty output plan");
 }
 
+void test_package_editor_rejects_invalid_cell_replacement_payload_without_state_changes()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cell-replacement-invalid-payload-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-invalid-payload-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t initial_worksheet_relationship_reference_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t initial_worksheet_payload_dependency_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_workbook_payload_dependency_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    const auto check_no_state_change = [&]() {
+        check(editor.edit_plan().size() == initial_plan_size,
+            "invalid cell replacement payload should not change edit plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "invalid cell replacement payload should not add audit notes");
+        check(editor.edit_plan().relationship_target_audits().size()
+                == initial_relationship_target_audit_count,
+            "invalid cell replacement payload should not add relationship target audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_worksheet_relationship_reference_audit_count,
+            "invalid cell replacement payload should not add worksheet reference audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_worksheet_payload_dependency_audit_count,
+            "invalid cell replacement payload should not add worksheet payload audits");
+        check(editor.edit_plan().workbook_payload_dependency_audits().size()
+                == initial_workbook_payload_dependency_audit_count,
+            "invalid cell replacement payload should not add workbook payload audits");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "invalid cell replacement payload should not add package-entry audit");
+        check(editor.edit_plan().removed_parts().empty(),
+            "invalid cell replacement payload should not record removed parts");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "invalid cell replacement payload should not record removed package entries");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "invalid cell replacement payload should not request recalculation");
+        check(editor.edit_plan().calc_chain_action()
+                == fastxlsx::detail::CalcChainAction::Preserve,
+            "invalid cell replacement payload should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "invalid cell replacement payload should keep worksheet copy-original");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "invalid cell replacement payload should keep workbook copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "invalid cell replacement payload should keep calcChain copy-original");
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check(!output_plan.full_calculation_on_load,
+            "invalid cell replacement payload output plan should not request recalculation");
+        check(output_plan.notes.empty(),
+            "invalid cell replacement payload output plan should not add notes");
+        check(output_plan.relationship_target_audits.empty(),
+            "invalid cell replacement payload output plan should not expose relationship audits");
+        check(output_plan.worksheet_relationship_reference_audits.empty(),
+            "invalid cell replacement payload output plan should not expose worksheet audits");
+        check(output_plan.worksheet_payload_dependency_audits.size()
+                == initial_worksheet_payload_dependency_audit_count,
+            "invalid cell replacement payload output plan should not add worksheet payload audits");
+        check(output_plan.workbook_payload_dependency_audits.size()
+                == initial_workbook_payload_dependency_audit_count,
+            "invalid cell replacement payload output plan should not add workbook payload audits");
+        check_output_plan_preserves_source_copy_original(editor, output_plan,
+            "invalid cell replacement payload should leave planned output copy-original");
+    };
+
+    struct InvalidPayloadCase {
+        std::string_view replacement_cell_xml;
+        std::string_view expected_error;
+    };
+    const std::array invalid_cases {
+        InvalidPayloadCase {
+            R"(<row r="1"><c r="A1"><v>2</v></c></row>)",
+            "root must be a cell element",
+        },
+        InvalidPayloadCase {
+            R"(<c><v>2</v></c>)",
+            "must include an r attribute",
+        },
+        InvalidPayloadCase {
+            R"(<c xmlns:x="urn:test" x:r="A1"><v>2</v></c>)",
+            "must include an r attribute",
+        },
+        InvalidPayloadCase {
+            R"(<c r="B1"><v>2</v></c>)",
+            "must match its selector",
+        },
+    };
+
+    for (const InvalidPayloadCase& invalid_case : invalid_cases) {
+        bool failed = false;
+        try {
+            const std::array replacements {
+                fastxlsx::detail::WorksheetCellReplacement {
+                    "A1", invalid_case.replacement_cell_xml },
+            };
+            editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "replacement cell XML",
+                "invalid cell replacement payload error should name replacement XML");
+            check_contains(error.what(), invalid_case.expected_error,
+                "invalid cell replacement payload error should explain the preflight failure");
+        }
+        check(failed, "invalid cell replacement payload should fail before Patch state changes");
+        check_no_state_change();
+    }
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader);
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "invalid cell replacement payload output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "invalid cell replacement payload output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "invalid cell replacement payload output should preserve unknown bytes");
+}
+
 void test_package_editor_replaces_worksheet_and_removes_stale_calc_chain()
 {
     const CalcSourcePackage source =
@@ -33205,6 +33347,7 @@ int main()
         test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transformer_handoff();
         test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
         test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
+        test_package_editor_rejects_invalid_cell_replacement_payload_without_state_changes();
         test_package_editor_replaces_worksheet_and_removes_stale_calc_chain();
         test_package_editor_source_overwrite_rejection_preserves_worksheet_rewrite_plan();
         test_package_editor_cleans_stale_calc_chain_metadata_without_payload();

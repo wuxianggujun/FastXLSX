@@ -1370,11 +1370,13 @@ worksheet replacement output chunk emitter 切片；P8.9 已落地首个 interna
 handoff 的 top-level worksheet dimension refresh 切片；P8.11 已落地 replacement cell
 payload preflight 切片；P8.12 已落地 internal package-entry chunked replacement source
 foundation；P8.13 已落地 internal worksheet replacement chunk handoff；P8.14 已落地
-internal cell replacement staged chunk handoff。后续真正 package-entry staged
+internal cell replacement staged chunk handoff；P8.15 已落地 invalid replacement
+cell payload no-state-pollution 回归。后续真正 package-entry staged
 stream rewrite / `EditPlan` hardening 必须继续按任务模板拆分，不能把当前 reader、
 action scanner、chunk emitter、bounded PackageEditor handoff、dimension refresh、
 payload preflight、chunked replacement source foundation、worksheet chunk handoff、
-cell replacement staged output handoff 或 bounded local fixture 写成完整低内存大文件路径。
+cell replacement staged output handoff、invalid payload state hygiene 或 bounded
+local fixture 写成完整低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1394,6 +1396,7 @@ cell replacement staged output handoff 或 bounded local fixture 写成完整低
 - P8.12 internal package-entry chunked replacement source foundation：基础完成。
 - P8.13 internal worksheet replacement chunk handoff：基础完成。
 - P8.14 internal cell replacement staged chunk handoff：基础完成。
+- P8.15 internal cell replacement invalid payload no-state-pollution：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -2368,6 +2371,69 @@ dimension-refreshed worksheet output 作为 `PackageEntryChunk` 交给
 - 不把 `replace_worksheet_cells()` 写成 true low-memory staged stream writer。
 - 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、formulas、
   calcChain rebuild 或其他 range-bearing metadata。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.15 internal cell replacement invalid payload no-state-pollution
+
+状态：基础完成。
+
+类型：internal integration regression + docs；不新增 public header / Patch API。
+
+目标：把 P8.11 replacement cell payload preflight 在 `PackageEditor` handoff
+层的失败状态卫生补齐，证明非法 replacement cell XML 会在 Patch 状态变更前失败，
+不会污染 `EditPlan`、manifest、package-entry audit、payload audits、calc policy
+或 planned output。
+
+输入：
+- P8.11 `emit_cell_replacement_worksheet()` replacement payload preflight。
+- P8.14 `replace_worksheet_cells()` staged chunk handoff。
+- 当前 no-state-pollution 检查模式和 `planned_output()` 聚合快照。
+
+输出：
+- `fastxlsx.package_editor` 新增 by-name cell replacement 回归，覆盖非 cell root、
+  缺失 unqualified `r`、qualified-only `x:r` 和 `r` attribute 与 selector 不匹配。
+- 每个失败路径验证不新增 notes、relationship audits、worksheet/workbook payload
+  audits、package-entry audit、removed parts、calcChain policy 或 manifest write-mode
+  变化。
+- 失败后 `save_as()` 仍输出 source copy-original package，保留 worksheet、
+  `xl/calcChain.xml` 和 unknown bytes。
+
+触碰文件：
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_editor.cpp`
+- `src/worksheet_transformer.cpp`
+- CMake 配置
+
+可并行性：
+- true file-backed worksheet transformer、low-memory validation/audit 和 dependency
+  repair 必须后续串行推进。
+- P9/P10/P11 的只读调研可并行，但同一测试文件写入需串行合并。
+
+验收标准：
+- `fastxlsx.package_editor` 覆盖 invalid cell replacement payload 的状态卫生。
+- 默认完整 CTest 通过。
+- 文档明确这只是 internal preflight failure hygiene，不是 public API、XML schema
+  validation、low-memory worksheet stream transformer、relationship repair、
+  sharedStrings/style migration 或 range metadata recalculation。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不把 replacement cell payload preflight 写成完整 cell schema validation。
+- 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、
+  formulas、calcChain rebuild 或其他 range-bearing metadata。
 
 验证命令：
 ```powershell

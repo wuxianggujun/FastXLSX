@@ -75,9 +75,12 @@ parallelism, acceptance checks, and explicit non-goals.
   output through that staged chunk path, so the target worksheet plan is a
   `StreamRewrite` while the current helper still materializes planned and
   rewritten worksheet XML for bounded validation, audit, and dimension refresh.
+  Invalid replacement cell payloads at this PackageEditor handoff layer now
+  have no-state-pollution regression coverage for non-cell roots, missing or
+  qualified-only `r` attributes, and selector / `r` mismatches.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
   handoff, chunked package-entry source, worksheet chunk handoff, and
-  cell-replacement staged output handoff groundwork
+  cell-replacement staged output handoff / invalid-payload state hygiene groundwork
   only: no public API, full XML parser/schema validation, low-memory
   validation/audit, relationship repair, cell-replacement low-memory stream
   transformer, broad range metadata recalculation, dependency repair,

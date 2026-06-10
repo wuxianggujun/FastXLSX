@@ -1530,6 +1530,11 @@ P8.5 first controlled fixture：
 - output plan 只作为 internal diagnostic 暴露 worksheet rewrite、copy-original entries、
   calc policy 和 dependency audits；不代表 public template editor 或 output planner。
 
+P8.1-P8.5 完成的是 controlled large worksheet editing baseline，不是 event reader /
+transformer / low-memory stream rewrite implementation。后续实现必须继续按最小任务拆分，
+并保留当前 sharedStrings、styles、relationships、tables、drawings 和 calc metadata
+preserve / audit / fail 边界。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

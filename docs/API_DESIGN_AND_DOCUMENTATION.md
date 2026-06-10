@@ -665,6 +665,10 @@ fixture contract：
 - 这不代表 `TemplateEditor`、large-file low-memory transformer、public Patch API、table
   resize、relationship repair、style merge 或 formula rewrite。
 
+P8.1-P8.5 到此只是 controlled large worksheet editing baseline：边界、token / action /
+handoff contract 和首个 bounded local fixture 已固定。它不表示 future event reader、
+row/cell transformer 或 low-memory stream rewrite implementation 已存在。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

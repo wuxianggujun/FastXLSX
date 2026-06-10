@@ -1072,8 +1072,10 @@ ctest --preset windows-nmake-release
 
 ## P8 - Large Worksheet Controlled Editing
 
-状态：进行中；先冻结大 worksheet 受控编辑边界和 streaming transformer 形态，再进入
-event reader / transformer / stream writer 实现切片。
+状态：基础完成；P8.1-P8.5 已冻结大 worksheet 受控编辑边界、event reader token、
+transformer contract、stream rewrite / `EditPlan` handoff，并补入首个 bounded local
+template-fill fixture。后续真正 event reader / transformer / stream rewrite implementation
+必须重新按任务模板拆分，不能把当前 bounded local fixture 写成低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1083,7 +1085,7 @@ event reader / transformer / stream writer 实现切片。
 - P8.2 worksheet event reader token model：基础完成。
 - P8.3 row/cell transformer contract：基础完成。
 - P8.4 stream rewrite output and `EditPlan` integration：基础完成。
-- P8.5 first controlled edit fixture：template fill or bounded range patch：当前最小可执行任务。
+- P8.5 first controlled edit fixture：template fill or bounded range patch：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -1376,7 +1378,7 @@ ctest --preset windows-nmake-release
 
 ### P8.5 first controlled edit fixture：template fill or bounded range patch
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：internal fixture / test + docs；不新增 public header / implementation。
 

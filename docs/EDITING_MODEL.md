@@ -1524,6 +1524,10 @@ P8.5 controlled template-fill fixture：
 - 该 fixture 仍是 bounded local rewrite baseline，不是 large-file streaming transformer、
   placeholder parser、range patch engine 或 public editor API。
 
+P8.1-P8.5 完成后，编辑模型已有 controlled large worksheet editing 的 baseline 和首个
+bounded local fixture；真正低内存 event reader / transformer / stream rewrite 仍是后续
+implementation work，不能从该 fixture 推导出任意大 worksheet 随机编辑能力。
+
 适合：
 
 - 修改某些单元格

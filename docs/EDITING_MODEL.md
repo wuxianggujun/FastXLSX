@@ -181,6 +181,40 @@ preservation-first 策略：
   dependencies 转为失败边界；失败必须发生在状态变更前，并保持 `EditPlan`、manifest、
   package-entry audit、relationship audits、calc policy、planned output 和输出 bytes 不污染。
 
+### P6.4 definedNames / formulas / calc metadata policy
+
+当前 sheet-local Patch 对 workbook `definedNames`、worksheet formulas 和 calc metadata
+继续采用 conservative rewrite + audit-first 策略：
+
+- Defined names：workbook `definedNames` 默认随 `xl/workbook.xml` 保留。sheet catalog
+  rename 只改直接 `<sheets><sheet name="...">` attribute，并把 direct workbook
+  `definedNames` 作为 structured audit / caller-review 风险；当前不更新 named ranges、
+  print areas、sheet-scoped names、formula references、table references 或 external
+  names，也不做 name collision repair。
+- Formulas：worksheet formula cells 会触发 payload dependency audit 和 caller review。
+  当前 Patch 不解析公式 AST、不求值公式、不写 cached result、不改写 cell / range /
+  sheet references、不构建 dependency graph，也不把 streaming writer 的 formula 输出能力
+  提升为 existing-file formula editor。
+- Calc metadata：数据或公式相关 worksheet rewrite 默认请求 workbook recalculation：
+  `xl/workbook.xml` 会设置 `fullCalcOnLoad="1"`，并按 `CalcChainAction::Remove`
+  清理 stale `xl/calcChain.xml` payload、content type override、workbook relationship
+  和 calcChain owner `.rels` audit；源包只有 stale calcChain metadata 而没有 payload
+  时，只清理 metadata，不创建 payload 或 removed-part audit。
+- CalcChain preserve / rebuild：显式 `CalcChainAction::Preserve` 可保留 source 或
+  queued calcChain payload / metadata，并把 calcChain owner `.rels` 作为 copy-original
+  package-entry audit；`CalcChainAction::Rebuild` 仍未实现，必须在状态变更前失败，
+  不污染 `EditPlan`、manifest、package-entry audit、calc policy、planned output 或输出
+  bytes。这不代表 calcChain rebuild、公式求值或 relationship repair。
+- Workbook calc helper：`request_full_calculation()` 只重写 workbook 根元素的 direct-child
+  `calcPr`，保留 `extLst` 或 custom extension 中的 nested decoy；缺少 direct-child
+  `calcPr` 时只在真实 workbook closing tag 前插入对应前缀的 `calcPr`。这不是 XML
+  schema validation、namespace repair、workbook DOM、public editing API 或通用
+  relationship/content-type repair。
+- `ReferencePolicyAction::Fail` 可把 caller 不接受的 definedNames、formula cells 或
+  calc metadata dependency 转为失败边界；失败必须发生在状态变更前，并保持
+  `EditPlan`、manifest、package-entry audit、relationship audits、calc policy、
+  planned output 和输出 bytes 不污染。
+
 当前另有 internal `PackageEditor::replace_worksheet_sheet_data()` helper，只替换
 已有 worksheet XML 的 `<sheetData>` 元素或 `<sheetData/>`，保留同一 worksheet
 part 中的外围 XML metadata，并复用 worksheet replacement 的 calcChain /

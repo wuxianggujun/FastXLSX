@@ -336,8 +336,8 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 子任务：
 - P6.1 sharedStrings / styles dependency policy：基础完成。
 - P6.2 tables / hyperlinks / validations / conditionalFormatting policy：基础完成。
-- P6.3 drawings / images / charts linked-part policy：当前最小可执行任务。
-- P6.4 definedNames / formulas / calc metadata policy。
+- P6.3 drawings / images / charts linked-part policy：基础完成。
+- P6.4 definedNames / formulas / calc metadata policy：当前最小可执行任务。
 - P6.5 unsupported edits preserve / request recalc / fail matrix。
 
 验收：
@@ -483,7 +483,7 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ### P6.3 drawings / images / charts linked-part policy
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
 
@@ -545,6 +545,79 @@ drawing mutation、image editing、chart reference repair 或 relationship pruni
 - 不把 linked-part audit 写成 repair。
 - 不自动 prune worksheet/drawing relationships、media/chart parts、drawing owner `.rels`
   或 content type overrides。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor
+```
+
+### P6.4 definedNames / formulas / calc metadata policy
+
+状态：当前最小可执行任务。
+
+类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
+
+目标：把 sheet-local edit 遇到 workbook `definedNames`、worksheet formulas、
+workbook calc metadata 和 `calcChain.xml` 时的保守策略写清楚，避免把当前
+audit-only / request-recalc 行为误写成 named range repair、公式求值、dependency
+graph 或 calcChain rebuild。
+
+输入：
+- 当前完整 worksheet replacement / `sheetData` patch 对 formula cells、
+  workbook calc metadata、calcChain policy 和 range/reference metadata 的 audit。
+- 当前 `rename_sheet_catalog_entry()` 对 direct workbook `definedNames`、
+  `ReferencePolicyAction::Fail` 和 planned workbook catalog 的状态不污染回归。
+- 当前 `request_full_calculation()`、`CalcChainAction::Remove` /
+  `CalcChainAction::Preserve` / `CalcChainAction::Rebuild` rejection、direct-child
+  `calcPr` rewrite、stale calcChain metadata cleanup 和 planned output audit。
+- 当前 `WorksheetPayloadDependencyAudit`、`ReferencePolicy`、`EditPlan`、
+  package-entry audit 和 `planned_output()`。
+
+输出：
+- definedNames policy：默认保留 workbook `definedNames`；sheet rename / catalog rename
+  只记录 audit，不同步 named ranges、print areas、formula references 或 sheet-scoped
+  names。
+- formulas policy：worksheet formula cells 只进入 audit-only caller review；不求值公式、
+  不写 cached result、不改写 references、不构建 dependency graph。
+- calc metadata policy：数据或公式相关 worksheet rewrite 默认 request full calculation，
+  可按策略 remove stale calcChain 或 preserve existing calcChain；`CalcChainAction::Rebuild`
+  明确未实现并在状态变更前失败。
+- workbook `calcPr` helper 边界：只改 workbook 根的 direct-child `calcPr`，不做 schema
+  validation、namespace repair、relationship/content-type 通用修复或 public editing API。
+- `ReferencePolicyAction::Fail` 下的失败边界：caller 不接受 definedNames / formulas /
+  calc metadata dependency 时，必须在状态变更前失败，且不污染 `EditPlan`、manifest、
+  package-entry audit、relationship audits、calc policy、planned output 或输出 bytes。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/TASK_PLAN.md`、
+  `docs/NEXT_STEPS.md`
+- 若发现测试缺口，再触碰 `tests/test_package_editor.cpp`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- streaming writer API / tests
+- package reader ZIP 边界
+- CMake 配置
+
+可并行性：
+- 可与 P6.5 的只读调研并行。
+- 若需要新增 `tests/test_package_editor.cpp` 用例，写入该文件的变更必须串行合并。
+
+验收标准：
+- 文档能回答 definedNames、formulas、workbook calc metadata 和 calcChain 分别是
+  preserve、rewrite、audit-only 还是 fail。
+- 文档明确现有行为不做 named range repair、公式求值、cached result 写入、
+  formula reference rewrite、calcChain rebuild、dependency graph 或 public editing API。
+- 若新增测试，默认 preset 下 `fastxlsx.package_editor` 通过，并保持 60s CTest 边界。
+
+禁止项：
+- 不新增 public formula / named range / calc engine API。
+- 不把 request full calculation 写成公式计算。
+- 不自动 rewrite definedNames、formula references、calcChain payload、workbook
+  relationships 或 content type metadata，除非已有 helper 明确管理该窄路径。
 
 验证命令：
 ```powershell

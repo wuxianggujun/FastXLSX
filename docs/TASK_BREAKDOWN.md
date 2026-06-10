@@ -329,7 +329,7 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ## P6 - Sheet Dependency Policies
 
-状态：进行中。
+状态：基础完成；后续缺口按具体 feature / 测试任务继续推进。
 
 目标：给 sheet-local edits 建立保守依赖策略。
 
@@ -338,7 +338,7 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 - P6.2 tables / hyperlinks / validations / conditionalFormatting policy：基础完成。
 - P6.3 drawings / images / charts linked-part policy：基础完成。
 - P6.4 definedNames / formulas / calc metadata policy：基础完成。
-- P6.5 unsupported edits preserve / request recalc / fail matrix：当前最小可执行任务。
+- P6.5 unsupported edits preserve / request recalc / fail matrix：基础完成。
 
 验收：
 - 每类 dependency 都有 preserve、rewrite、audit-only 或 fail 的明确策略。
@@ -627,7 +627,7 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ### P6.5 unsupported edits preserve / request recalc / fail matrix
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
 
@@ -703,12 +703,13 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ## P7 - In-memory Small-File Editor
 
-状态：计划，必须在 P4.0 后继续设计。
+状态：进行中；P4.0 文档基线已完成，本阶段先做 public facade / value /
+storage / guardrail / handoff 设计，再决定是否进入代码实现。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
 子任务：
-- P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft。
+- P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft：当前最小可执行任务。
 - P7.2 `CellValue` public value draft。
 - P7.3 internal `CellStore` / `CellRecord` memory model。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
@@ -719,6 +720,68 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 - API 注释明确 In-memory mode、随机访问语义和内存增长。
 - 超限时给出明确错误并建议 Streaming 或 Patch。
 - 不承诺百万行 worksheet 低内存随机读写。
+
+### P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft
+
+状态：当前最小可执行任务。
+
+类型：public API 文档设计；不新增 header / implementation。
+
+目标：在进入 `CellValue`、cell store 和 guardrails 之前，先冻结 future editor facade
+的命名、职责、入口和非目标，确保 In-memory 小文件随机编辑不会污染 Streaming 热路径，
+也不会把 internal `PackageEditor` 直接暴露为 public API。
+
+输入：
+- P4.0 facade matrix 和 cell value boundary 文档基线。
+- 当前 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/ARCHITECTURE.md` 和
+  `docs/EDITING_MODEL.md` 中的 future `WorkbookEditor` / `WorksheetEditor` /
+  `CellValue` 表述。
+- 当前 public API：`WorkbookWriter` / `WorksheetWriter` / `CellView`、
+  `Workbook` / `Worksheet` / `Cell`。
+- 当前 internal Patch 底座：`PackageReader`、`PackageEditor`、`EditPlan` 和
+  `planned_output()`。
+
+输出：
+- future `WorkbookEditor` facade draft：`open(...)`、`worksheet(...)`、
+  `try_worksheet(...)`、sheet listing、`save_as(...)` 和 no in-place overwrite 边界。
+- future `WorksheetEditor` facade draft：`name()`、`get_cell()` / `try_cell()`、
+  `set_cell()`、`erase_cell()`、append/insert/delete row 的阶段边界。
+- 模式说明：这是 In-memory / future editor 小文件随机编辑路径，不是大文件低内存路径，
+  也不是 public `PackageEditor`。
+- 后续依赖：P7.2 负责 `CellValue` 语义，P7.3 负责 `CellStore` / `CellRecord`，
+  P7.4 负责 size / memory guardrails，P7.5 负责 save-as / Patch handoff。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- 必要时同步 `docs/ARCHITECTURE.md`、`docs/TASK_PLAN.md`、`docs/NEXT_STEPS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与 P7.2 / P7.3 的只读调研并行。
+- 若同一文档段落也在修改，写入必须串行合并。
+
+验收标准：
+- 文档能回答 `WorkbookEditor`、`WorksheetEditor`、`Workbook`、`WorkbookWriter` 的职责差异。
+- 文档明确 P7.1 只是 future facade draft，不是已实现 API。
+- 文档明确该 facade 不承诺百万行 worksheet 随机访问、原地覆盖、公式求值、
+  relationship repair 或 public package editing。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `CellValue` 代码。
+- 不把 internal `PackageEditor` 或 OPC part concepts 暴露给普通 public API。
+- 不在 P7.4 guardrails 前宣称 In-memory editor ready。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
 
 ## 并行拆分建议
 

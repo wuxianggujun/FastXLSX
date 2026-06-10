@@ -109,6 +109,52 @@ sheet 入口      add_worksheet           add_worksheet            worksheet / t
 `WorkbookEditor`、`WorksheetEditor`、`CellValue`、`get_cell()`、`set_cell()` 前，
 都必须标明它们是未来 public design target，直到对应 public header、实现和测试存在。
 
+### P7.1 Future Editor Facade Draft
+
+P7.1 只冻结 future editor 的 public facade 草案，不新增 `include/fastxlsx`
+符号，也不把 internal `PackageEditor` 变成 public API。该 facade 面向小文件随机编辑
+和未来 existing-file editing 用户故事；它必须继续把 OPC part、relationship owner 和
+content type override 隐藏在内部 Patch / In-memory 底座之后。
+
+`WorkbookEditor` 的初始命名草案：
+
+- `WorkbookEditor::open(input_path, options)`：打开已有 workbook。`options` 的具体字段
+  由 P7.4 guardrails 决定；P7.1 只保留这个扩展点。
+- `worksheet(name)`：按名称取得可编辑 worksheet；缺失时抛出 `FastXlsxError`。
+- `try_worksheet(name)`：按名称查找 worksheet；缺失时返回空 handle / optional。
+- `worksheet_names()` 或等价只读列表：用于 sheet inspection，不暴露 workbook
+  relationships 或 package parts。
+- `save_as(output_path)`：输出到新路径；不承诺原地 atomic overwrite，也不绕过现有
+  Patch save-as guard。
+
+`WorksheetEditor` 的初始命名草案：
+
+- `name()`：返回当前 worksheet 名称。
+- `get_cell(ref)` / `try_cell(ref)`：读取单元格语义值，返回 future `CellValue`。
+- `set_cell(ref, CellValue)`：随机写入小文件单元格。
+- `erase_cell(ref)`：删除单元格值，是否保留 style / metadata 由后续 `CellValue` 和
+  cell store 任务定义。
+- `append_row(...)`、`insert_rows(...)`、`delete_rows(...)`：只作为后续小文件能力候选；
+  在 P7.3 / P7.4 证明存储和 guardrails 前，不写成 ready API。
+
+该 facade 的边界：
+
+- 它属于 In-memory / future editor 路径，不是 `WorkbookWriter` 的随机写补丁，也不是
+  当前 `Workbook` 小文件新建 API 的无界扩展。
+- 它不承诺百万行 worksheet 的低内存随机访问；P7.4 之前不能宣称 ready。
+- 它不计算公式、不重建 `calcChain.xml`、不自动修复 relationships / content types、
+  不迁移 shared string indexes 或 style ids。
+- 已有文件保存仍使用 `save_as(...)` 语义，避免暗示当前支持安全原地覆盖。
+
+后续拆分：
+
+- P7.2 定义 `CellValue` public value 的语义和与现有 `Cell` / `CellView` 的转换边界。
+- P7.3 定义内部 `CellStore` / `CellRecord`，避免把 owning `Cell` 用作长期 cell store。
+- P7.4 定义 `max_cells`、`memory_budget_bytes`、`cell_count()` 和
+  `estimated_memory_usage()` 等 guardrails。
+- P7.5 定义 In-memory save-as 与 internal Patch handoff，尤其是 unknown part
+  preservation、sharedStrings / styles / calc metadata 和 document properties 的边界。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

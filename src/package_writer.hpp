@@ -60,13 +60,22 @@ enum class PackageWriterBackend {
     MinizipNg,
 };
 
+inline constexpr int package_writer_default_compression_level = -1;
+inline constexpr int package_writer_min_compression_level = 0;
+inline constexpr int package_writer_max_compression_level = 9;
+
 struct PackageWriterOptions {
     PackageWriterBackend backend = PackageWriterBackend::Auto;
+    int compression_level = package_writer_default_compression_level;
 };
 
 // Internal package writer boundary. Auto selects the production minizip-ng
 // backend when the dependency is enabled; otherwise it keeps the Phase 1
-// stored/no-compression ZIP bootstrap for dependency-free builds.
+// stored/no-compression ZIP bootstrap for dependency-free builds. The
+// compression level is an internal minizip-ng option: -1 keeps the backend
+// default, 0 requests minizip no-compression/stored output, and 1..9 select
+// zlib-compatible DEFLATE levels. The stored bootstrap remains
+// stored/no-compression.
 void write_package(const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
     PackageWriterOptions options = {});
 

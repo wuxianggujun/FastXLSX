@@ -37,6 +37,18 @@ PackageWriterBackend resolve_backend(PackageWriterBackend backend)
 #endif
 }
 
+void validate_options(PackageWriterOptions options)
+{
+    if (options.compression_level == package_writer_default_compression_level) {
+        return;
+    }
+
+    if (options.compression_level < package_writer_min_compression_level
+        || options.compression_level > package_writer_max_compression_level) {
+        throw FastXlsxError("ZIP compression level must be -1 or between 0 and 9");
+    }
+}
+
 #ifdef FASTXLSX_HAS_MINIZIP_NG
 
 std::string path_to_utf8(const std::filesystem::path& path)
@@ -148,7 +160,9 @@ void write_minizip_entry_chunks(void* writer, const PackageEntry& entry)
     }
 }
 
-void write_minizip_package(const std::filesystem::path& path, const std::vector<PackageEntry>& entries)
+void write_minizip_package(
+    const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
+    int compression_level)
 {
     if (entries.empty()) {
         throw FastXlsxError("cannot write an empty ZIP package");
@@ -159,8 +173,13 @@ void write_minizip_package(const std::filesystem::path& path, const std::vector<
         throw FastXlsxError("failed to create minizip-ng writer");
     }
 
+    const int minizip_compression_level =
+        compression_level == package_writer_default_compression_level
+        ? MZ_COMPRESS_LEVEL_DEFAULT
+        : compression_level;
+
     mz_zip_writer_set_compress_method(writer.get(), MZ_COMPRESS_METHOD_DEFLATE);
-    mz_zip_writer_set_compress_level(writer.get(), MZ_COMPRESS_LEVEL_DEFAULT);
+    mz_zip_writer_set_compress_level(writer.get(), minizip_compression_level);
 
     const std::string output_path = path_to_utf8(path);
     check_minizip_result(mz_zip_writer_open_file(writer.get(), output_path.c_str(), 0, 0),
@@ -206,13 +225,15 @@ void write_minizip_package(const std::filesystem::path& path, const std::vector<
 void write_package(const std::filesystem::path& path, const std::vector<PackageEntry>& entries,
     PackageWriterOptions options)
 {
+    validate_options(options);
+
     switch (resolve_backend(options.backend)) {
     case PackageWriterBackend::StoredZipBootstrap:
         write_stored_zip(path, entries);
         return;
     case PackageWriterBackend::MinizipNg:
 #ifdef FASTXLSX_HAS_MINIZIP_NG
-        write_minizip_package(path, entries);
+        write_minizip_package(path, entries, options.compression_level);
         return;
 #else
         throw FastXlsxError("minizip-ng package writer backend is not enabled");

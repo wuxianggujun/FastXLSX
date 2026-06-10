@@ -286,6 +286,71 @@ void test_package_reader_reads_deflated_entries_with_minizip()
         "DEFLATE PackageReader relationship graph should attach unknown owner relationships");
 }
 
+void test_package_writer_applies_explicit_minizip_compression_levels()
+{
+    const std::filesystem::path fastest_path =
+        output_path("fastxlsx-package-writer-compression-level-0.xlsx");
+    const std::filesystem::path smallest_path =
+        output_path("fastxlsx-package-writer-compression-level-9.xlsx");
+
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(</Types>)";
+    std::string workbook = "<workbook><payload>";
+    workbook.append(32768, 'A');
+    workbook += "</payload></workbook>";
+
+    fastxlsx::detail::PackageWriterOptions fastest;
+    fastest.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    fastest.compression_level = fastxlsx::detail::package_writer_min_compression_level;
+    fastxlsx::detail::write_package(fastest_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", workbook},
+        },
+        fastest);
+
+    fastxlsx::detail::PackageWriterOptions smallest;
+    smallest.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    smallest.compression_level = fastxlsx::detail::package_writer_max_compression_level;
+    fastxlsx::detail::write_package(smallest_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", workbook},
+        },
+        smallest);
+
+    const fastxlsx::detail::PackageReader fastest_reader =
+        fastxlsx::detail::PackageReader::open(fastest_path);
+    const fastxlsx::detail::PackageReader smallest_reader =
+        fastxlsx::detail::PackageReader::open(smallest_path);
+    check(fastest_reader.read_entry("xl/workbook.xml") == workbook,
+        "compression level 0 output should preserve workbook bytes");
+    check(smallest_reader.read_entry("xl/workbook.xml") == workbook,
+        "compression level 9 output should preserve workbook bytes");
+
+    const std::string fastest_data = fastxlsx::test::read_file(fastest_path);
+    const std::string smallest_data = fastxlsx::test::read_file(smallest_path);
+    const ZipEntryLocation fastest_entry =
+        find_zip_entry_location(fastest_data, "xl/workbook.xml");
+    const ZipEntryLocation smallest_entry =
+        find_zip_entry_location(smallest_data, "xl/workbook.xml");
+    check(fastest_entry.compression_method == 0,
+        "compression level 0 minizip output should use stored/no-compression");
+    check(smallest_entry.compression_method == 8,
+        "compression level 9 minizip output should use DEFLATE");
+    check(fastest_entry.uncompressed_size == workbook.size(),
+        "compression level 0 central directory should record uncompressed size");
+    check(smallest_entry.uncompressed_size == workbook.size(),
+        "compression level 9 central directory should record uncompressed size");
+    check(fastest_entry.compressed_size == fastest_entry.uncompressed_size,
+        "compression level 0 central directory should record stored size");
+    check(fastest_entry.compressed_size > smallest_entry.compressed_size,
+        "higher compression level should shrink a repetitive workbook payload");
+}
+
 void test_package_reader_rejects_corrupt_deflated_entry_crc_on_read()
 {
     const std::filesystem::path source_path =
@@ -335,6 +400,42 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_read()
 }
 
 #endif
+
+void test_package_writer_rejects_invalid_compression_levels_before_output()
+{
+    auto check_invalid_level = [](int compression_level, std::string_view output_name) {
+        const std::filesystem::path path = output_path(output_name);
+        const std::string sentinel = "preserve existing invalid-compression output";
+        write_file(path, sentinel);
+
+        fastxlsx::detail::PackageWriterOptions options;
+        options.backend = fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap;
+        options.compression_level = compression_level;
+
+        bool failed = false;
+        try {
+            fastxlsx::detail::write_package(path,
+                {
+                    {"xl/workbook.xml", "<workbook/>"},
+                },
+                options);
+        } catch (const std::exception& error) {
+            failed = true;
+            const std::string message = error.what();
+            check(message.find("ZIP compression level") != std::string::npos,
+                "invalid compression level failure should explain the bad option");
+        }
+
+        check(failed, "PackageWriter should reject invalid compression levels");
+        check(fastxlsx::test::read_file(path) == sentinel,
+            "invalid compression level should fail before overwriting output");
+    };
+
+    check_invalid_level(fastxlsx::detail::package_writer_default_compression_level - 1,
+        "fastxlsx-package-writer-invalid-compression-low.xlsx");
+    check_invalid_level(fastxlsx::detail::package_writer_max_compression_level + 1,
+        "fastxlsx-package-writer-invalid-compression-high.xlsx");
+}
 
 void test_package_reader_reads_stored_entries_and_unknown_parts()
 {
@@ -1947,6 +2048,7 @@ void test_package_reader_rejects_corrupt_metadata_crc_on_open()
 int main()
 {
     try {
+        test_package_writer_rejects_invalid_compression_levels_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();
@@ -1959,6 +2061,7 @@ int main()
         test_package_reader_rejects_central_directory_trailing_data_before_eocd();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
         test_package_reader_reads_deflated_entries_with_minizip();
+        test_package_writer_applies_explicit_minizip_compression_levels();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();
 #else
         test_package_reader_rejects_compressed_entries_without_minizip();

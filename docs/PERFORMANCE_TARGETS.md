@@ -137,6 +137,10 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_s
 benchmark 结果还应记录 package-entry source mode（`in-memory` / `file-backed` /
 `chunked`）、ZIP backend、压缩等级、峰值内存和临时 worksheet part footprint。没有这些
 数据时，不要声称完整低内存写出。
+当前压缩等级配置只存在于 internal `PackageWriterOptions`，默认新建 workbook
+路径仍使用 backend default；benchmark CLI 若未来暴露该选项，结果必须明确记录
+实际传入的 `-1`、`0` 或 `1..9`，不能只写“minizip enabled”；`0` 应记录为
+minizip no-compression/stored output，而不是 DEFLATE 压缩结果。
 
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `3`，记录字符串分布和
 package 元数据：

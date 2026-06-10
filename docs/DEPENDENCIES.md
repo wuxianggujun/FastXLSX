@@ -431,8 +431,12 @@ GitHub Actions workflow 现在默认 job 和 opt-in minizip job 都需要 vcpkg 
 新建 workbook 输出已有 opt-in minizip package writer backend；内部 `PackageReader`
 已有 stored/no-compression entry 索引/读取、minizip-enabled DEFLATE entry 读取、
 解压后 payload CRC 校验和小型 OPC metadata ingestion 基础；默认构建仍拒绝
-compressed input，data descriptor / Zip64 / encrypted input 仍不支持。public/production `PackageReader`、已有文件编辑、broad unknown part
-preservation 和 public `PackageWriter` 仍是计划，
+compressed input，data descriptor / Zip64 / encrypted input 仍不支持。内部
+`PackageWriterOptions::compression_level` 现在可在 minizip backend 上选择
+`-1` 默认、`0` no-compression/stored output 或 `1..9` DEFLATE 等级；stored
+bootstrap 仍是 stored/no-compression，这不是 public compression API。
+public/production `PackageReader`、已有文件编辑、broad unknown part preservation
+和 public `PackageWriter` 仍是计划，
 不能从自研范围列表推导为已有文件编辑已实现。
 
 其中 `FastXmlWriter`、`CellEncoder`、`RowStreamWriter` 是最重要的性能热路径。

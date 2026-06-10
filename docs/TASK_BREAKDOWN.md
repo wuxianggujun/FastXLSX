@@ -206,6 +206,10 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   - `PackageEditor::save_as()` copy-original source entry 读取失败时带 entry 上下文，
     且不污染状态、不覆盖既有输出。
   - writer backend failure 时带输出路径上下文，且不污染状态、不覆盖既有输出。
+  - internal `PackageWriterOptions::compression_level` 接受 `-1` 默认、`0`
+    minizip no-compression/stored output 和 `1..9` minizip DEFLATE 等级；非法等级
+    在写输出前失败，显式 minizip 等级回归覆盖 level 0 / level 9 可读输出、
+    central directory method 和重复 payload 下的压缩体积差异。
 
 主要文件：
 - `src/package_reader.*`

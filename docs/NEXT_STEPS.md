@@ -1142,13 +1142,16 @@ Do not claim:
 
 ### Historical P4 Detail - Production ZIP Backend
 
-Status: minimal opt-in backend landed. Continue with hardening before making it
-the default.
+Status: minimal opt-in backend and internal compression-level configuration
+landed. Continue with hardening before making it the default.
 
 Do:
 - Keep the verified ZIP/DEFLATE backend wired through
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` and `MINIZIP::minizip-ng`.
-- Add compression-level configuration as an explicit performance choice.
+- Keep `PackageWriterOptions::compression_level` internal to the package writer
+  boundary: `-1` means backend default, `0` requests minizip
+  no-compression/stored output, `1..9` selects zlib-compatible minizip DEFLATE
+  levels, and stored bootstrap output remains stored/no-compression.
 - Define Zip64 and large-entry behavior before large-file promises.
 
 Accept when:

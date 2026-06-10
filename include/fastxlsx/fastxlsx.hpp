@@ -10,10 +10,13 @@
 ///
 /// - `fastxlsx/workbook.hpp` for Workbook, Worksheet, Cell, RowOptions, and
 ///   FastXlsxError.
+/// - `fastxlsx/cell_value.hpp` for CellValue, the owning semantic value used by
+///   future in-memory/editor APIs.
 /// - `fastxlsx/streaming_writer.hpp` for WorkbookWriter, WorksheetWriter,
 ///   CellView, and StringStrategy.
 /// - `fastxlsx/image.hpp` for stb-backed PNG/JPEG metadata probing.
 
+#include <fastxlsx/cell_value.hpp>
 #include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/image.hpp>
 #include <fastxlsx/streaming_writer.hpp>

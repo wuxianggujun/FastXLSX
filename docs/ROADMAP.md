@@ -1335,7 +1335,7 @@ sharedStrings/styles/tables/drawings/defined-name 语义联动、drawing/image/c
 
 当前优先级提示：Phase 4 是下一轮架构主线，但不应再把它作为一个笼统大任务直接执行。
 当前执行顺序是先完成 `P4.0 API surface unification`，统一 public facade、命名、
-`CellView` / `Cell` / future `CellValue` 边界和 internal/public 分界，再进入窄
+`CellView` / `Cell` / `CellValue` 边界和 internal/public 分界，再进入窄
 Patch MVP。具体子任务拆分以 [任务拆分设计](TASK_BREAKDOWN.md) 为准。
 
 功能：

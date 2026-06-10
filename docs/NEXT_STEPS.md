@@ -34,6 +34,8 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `Workbook`
   - `Worksheet`
   - `Cell`
+  - `CellValue`
+  - `CellValueKind`
   - `WorkbookWriter`
   - `WorksheetWriter`
   - `CellView`
@@ -766,7 +768,7 @@ feature completion.
    - Keep low-level `PackageReader`, `PackageEditor`, `EditPlan`,
      `PartIndex`, and `RelationshipGraph` internal unless a later task proves a
      stable low-level public API is needed.
-   - Define the `CellView` / `Cell` / future `CellValue` split before adding
+   - Define the `CellView` / `Cell` / `CellValue` split before adding
      random cell APIs.
 
 4. In-memory small-file editing - 计划.
@@ -840,7 +842,7 @@ commit or short series with its own tests and docs update.
    - Keep `PackageReader`, `PackageEditor`, `EditPlan`, `PartIndex`, and
      `RelationshipGraph` as internal Patch foundation unless a separate task
      proves a stable low-level public API is needed.
-   - Define `CellView` / `Cell` / future `CellValue` boundaries and consistent
+   - Define `CellView` / `Cell` / `CellValue` boundaries and consistent
      method names such as `add_worksheet`, `worksheet`, `append_row`,
      `set_cell`, `save`, and `save_as`.
 
@@ -1004,11 +1006,11 @@ Do:
   proves a stable low-level public API is needed.
 - Define shared public value types and reuse rules for `CellRange`, `StyleId`,
   `CellStyle`, `DocumentProperties`, `HyperlinkOptions`, `ImageOptions`, and
-  future `CellValue`.
-- Define the `Cell` / `CellView` / future `CellValue` split:
+  `CellValue`.
+- Define the `Cell` / `CellView` / `CellValue` split:
   `CellView` is streaming-only and non-owning; `Cell` is an owning convenience
-  value for small new workbooks; `CellValue` is the future semantic value shared
-  by editor and in-memory APIs.
+  value for small new workbooks; `CellValue` is the owning semantic value shared
+  by future editor and in-memory APIs.
 - Add an API matrix that maps common concepts across Streaming, simple
   new-workbook creation, Patch, and In-memory paths: add worksheet, get
   worksheet, append row, set cell, save, save-as, style, range, and error
@@ -1027,8 +1029,9 @@ Accept when:
   names are only future public design targets.
 
 Do not claim:
-- A new implemented `WorkbookEditor`, `CellValue`, random cell editing API, or
-  public `PackageEditor` from this design task alone.
+- A new implemented `WorkbookEditor`, random cell editing API, or public
+  `PackageEditor` from this design task alone. `CellValue` exists only as a
+  standalone value type, not as editor readiness.
 - That one unified facade can hide Streaming/Patch/In-memory performance costs.
 
 The detailed sections below keep their historical labels for traceability. Use

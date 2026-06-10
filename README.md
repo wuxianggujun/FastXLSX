@@ -160,8 +160,8 @@ FastXLSX
 
 - compiled `fastxlsx` CMake target 和 `FastXLSX::fastxlsx` alias。
 - 保守 `vcpkg.json`、`CMakePresets.json` 和 Windows VS2026/NMake CI workflow 基础。
-- 最小 public API：`fastxlsx::Workbook`、`fastxlsx::Worksheet`、`fastxlsx::Cell`
-  和 `fastxlsx::FastXlsxError`。
+- 最小 public API：`fastxlsx::Workbook`、`fastxlsx::Worksheet`、`fastxlsx::Cell`、
+  `fastxlsx::CellValue`、`fastxlsx::CellValueKind` 和 `fastxlsx::FastXlsxError`。
 - 流式 writer 写入骨架：`WorkbookWriter`、`WorksheetWriter`、`CellView`。
 - 最小 OpenXML package 输出：
   `[Content_Types].xml`、`_rels/.rels`、`xl/workbook.xml`、
@@ -193,8 +193,8 @@ FastXLSX
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
 - 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
-- `P4.0 API surface unification` 仍是下一轮 public API 设计门槛；在它完成前，
-  不应扩大 public `WorkbookEditor` / `CellValue` / existing-file editing API。
+- `CellValue` 首个 owning value 切片已落地，但 `WorkbookEditor` /
+  `WorksheetEditor`、random cell editing 和 existing-file public editing API 仍未完成。
 
 `src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取
 `stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；

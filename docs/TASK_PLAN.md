@@ -31,8 +31,9 @@ parallelism, acceptance checks, and explicit non-goals.
   problems appear.
 - `docs/API_DESIGN_AND_DOCUMENTATION.md` requires public API documentation and
   forbids API convenience from sacrificing the streaming/performance path.
-- Current public API includes `Workbook`, `Worksheet`, `Cell`, `WorkbookWriter`,
-  `WorksheetWriter`, `CellView`, `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
+- Current public API includes `Workbook`, `Worksheet`, `Cell`, `CellValue`,
+  `CellValueKind`, `WorkbookWriter`, `WorksheetWriter`, `CellView`, `StyleId`,
+  `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
@@ -1086,7 +1087,7 @@ hardening lane.
    - Keep low-level `PackageReader`, `PackageEditor`, `EditPlan`,
      `PartIndex`, and `RelationshipGraph` internal unless a later task proves
      a stable low-level public API is needed.
-   - Define the `CellView` / `Cell` / future `CellValue` split before adding
+   - Define the `CellView` / `Cell` / `CellValue` split before adding
      random cell editing APIs.
 
 4. In-memory small-file editing - 计划.
@@ -1387,11 +1388,11 @@ Tasks:
   needed.
 - Define shared public value types before adding new APIs: `CellRange`,
   `StyleId`, `CellStyle`, `DocumentProperties`, `HyperlinkOptions`,
-  `ImageOptions`, and future `CellValue`.
+  `ImageOptions`, and `CellValue`.
 - Define the cell value split:
   `CellView` remains streaming-only and non-owning; `Cell` remains an owning
-  convenience value for small workbook creation; future `CellValue` is the
-  semantic value used by editor and In-memory APIs; future `CellRecord` /
+  convenience value for small workbook creation; `CellValue` is the owning
+  semantic value used by future editor and In-memory APIs; future `CellRecord` /
   `CellStore` are internal storage, not the default public model.
 - Standardize method names across modes: `add_worksheet`, `worksheet` /
   `try_worksheet`, `append_row`, `set_cell`, `save`, and `save_as`.
@@ -1404,8 +1405,9 @@ Validation:
   types, and internal/public boundaries.
 - Future Patch and In-memory tasks can state which facade they extend before
   implementation starts.
-- Docs explicitly mark `WorkbookEditor`, `WorksheetEditor`, and `CellValue` as
-  future design targets until code exists.
+- Docs explicitly mark `WorkbookEditor` and `WorksheetEditor` as future design
+  targets until code exists, and mark `CellValue` as a value type rather than
+  editor readiness.
 
 Do not claim:
 - Implemented `WorkbookEditor`, random cell editing, public `PackageEditor`, or
@@ -1820,8 +1822,8 @@ Use this map to decide when a task can start:
 - M6 is now the primary next architecture lane. It must define the Patch mode
   contract before public existing-file edit APIs are exposed.
 - M6.5 must run before public Patch or In-memory APIs widen. It fixes the
-  facade names, shared value types, and `CellView` / `Cell` / future
-  `CellValue` boundary.
+  facade names, shared value types, and `CellView` / `Cell` / `CellValue`
+  boundary.
 - M7 can start once M6 has enough edit-plan and package-copy semantics to prove
   an end-to-end Patch MVP and M6.5 has fixed the public vocabulary. It does not
   need to wait for every Phase 2 performance task or every Phase 5

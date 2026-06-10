@@ -13,7 +13,9 @@ OpenXML / OPC 底座上的三条路径：Streaming、Patch、In-memory。
 
 执行层任务必须按 [任务拆分设计](TASK_BREAKDOWN.md) 选择最小子任务。当前顺序是
 先完成 `P4.0 API surface unification`，再推进窄 Patch MVP；不要把完整 existing-file
-editing、public `WorkbookEditor`、public `PackageEditor` 或 `CellValue` 当作已经实现。
+editing、public `WorkbookEditor`、public `PackageEditor` 或 `WorkbookEditor` 风格的
+random editing 当作已经实现。`CellValue` 作为 public value type 已实现，但它不是
+editor / store ready。
 
 ## 编辑策略
 

@@ -7,8 +7,10 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -107,6 +109,77 @@ void test_xml_helpers()
     };
     check_fastxlsx_error([&invalid_ranges] { (void)fastxlsx::detail::sqref(invalid_ranges); },
         "invalid sqref range should fail");
+}
+
+void test_cell_value_public_boundary()
+{
+    const fastxlsx::CellValue blank = fastxlsx::CellValue::blank();
+    check(blank.kind() == fastxlsx::CellValueKind::Blank, "blank CellValue kind mismatch");
+    check(!blank.has_style(), "blank CellValue should not carry an explicit style");
+
+    const fastxlsx::CellValue number = fastxlsx::CellValue::number(42.5);
+    check(number.kind() == fastxlsx::CellValueKind::Number, "number CellValue kind mismatch");
+    check(number.number_value() == 42.5, "number CellValue payload mismatch");
+
+    std::string text_payload = "owned text";
+    const fastxlsx::CellValue text = fastxlsx::CellValue::text(text_payload);
+    text_payload = "mutated caller text";
+    check(text.kind() == fastxlsx::CellValueKind::Text, "text CellValue kind mismatch");
+    check(text.text_value() == "owned text", "text CellValue should own caller payload");
+
+    const fastxlsx::CellValue boolean = fastxlsx::CellValue::boolean(true);
+    check(boolean.kind() == fastxlsx::CellValueKind::Boolean, "boolean CellValue kind mismatch");
+    check(boolean.boolean_value(), "boolean CellValue payload mismatch");
+
+    std::string formula_payload = "SUM(A1:B1)";
+    const fastxlsx::CellValue formula = fastxlsx::CellValue::formula(std::move(formula_payload));
+    check(formula.kind() == fastxlsx::CellValueKind::Formula, "formula CellValue kind mismatch");
+    check(formula.text_value() == "SUM(A1:B1)", "formula CellValue payload mismatch");
+
+    const fastxlsx::Cell source_number = fastxlsx::Cell::number(7.5);
+    const fastxlsx::CellValue converted_number = fastxlsx::CellValue::from_cell(source_number);
+    check(converted_number.kind() == fastxlsx::CellValueKind::Number,
+        "Cell-to-CellValue number conversion mismatch");
+    check(converted_number.number_value() == 7.5,
+        "Cell-to-CellValue number payload mismatch");
+
+    const fastxlsx::Cell source_formula = fastxlsx::Cell::formula("A1+1");
+    const fastxlsx::CellValue converted_formula = fastxlsx::CellValue::from_cell(source_formula);
+    check(converted_formula.kind() == fastxlsx::CellValueKind::Formula,
+        "Cell-to-CellValue formula conversion mismatch");
+    check(converted_formula.text_value() == "A1+1",
+        "Cell-to-CellValue formula payload mismatch");
+
+    const std::optional<fastxlsx::Cell> converted_back_number = converted_number.to_cell();
+    check(converted_back_number.has_value(), "CellValue number should convert back to Cell");
+    check(converted_back_number->type() == fastxlsx::Cell::Type::Number,
+        "CellValue-to-Cell number conversion kind mismatch");
+    check(converted_back_number->number_value() == 7.5,
+        "CellValue-to-Cell number conversion payload mismatch");
+
+    const std::optional<fastxlsx::Cell> converted_back_blank =
+        fastxlsx::CellValue::blank().to_cell();
+    check(!converted_back_blank.has_value(),
+        "blank CellValue should not have a Cell representation");
+
+    const fastxlsx::CellValue styled = text.with_style(fastxlsx::StyleId {});
+    check(styled.has_style(), "styled CellValue should carry an explicit style");
+    check(styled.style_id().value() == 0, "styled CellValue default style id mismatch");
+    check(!text.has_style(), "with_style should not mutate the original CellValue");
+
+    const fastxlsx::CellValue unstyled = styled.without_style();
+    check(!unstyled.has_style(), "without_style should clear explicit style");
+    check(unstyled.text_value() == "owned text", "without_style should preserve payload");
+
+    check_fastxlsx_error(
+        [] { (void)fastxlsx::CellValue::number(std::numeric_limits<double>::quiet_NaN()); },
+        "CellValue should reject NaN numeric payloads");
+    check_fastxlsx_error(
+        [] { (void)fastxlsx::CellValue::number(std::numeric_limits<double>::infinity()); },
+        "CellValue should reject infinite numeric payloads");
+    check_fastxlsx_error(
+        [] { (void)fastxlsx::CellValue::number(-std::numeric_limits<double>::infinity()); },
+        "CellValue should reject negative infinite numeric payloads");
 }
 
 void test_minimal_xlsx_package()
@@ -440,6 +513,7 @@ int main()
 {
     try {
         test_xml_helpers();
+        test_cell_value_public_boundary();
         test_minimal_xlsx_package();
         test_workbook_document_properties();
         test_workbook_formula_and_row_height_metadata();

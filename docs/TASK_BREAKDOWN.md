@@ -50,7 +50,7 @@ internal/public 边界。
 
 输入：
 - 当前 public API：`WorkbookWriter`、`WorksheetWriter`、`CellView`、`Workbook`、
-  `Worksheet`、`Cell`。
+  `Worksheet`、`Cell`、`CellValue`。
 - 当前 internal Patch 底座：`PackageReader`、`PackageEditor`、`EditPlan`、
   `PartIndex`、`RelationshipGraph`。
 
@@ -91,7 +91,7 @@ internal/public 边界。
 - 未来 editor / In-memory 所需随机读写单元格值。
 
 输出：
-- `CellView` / `Cell` / future `CellValue` / future `CellStore` 边界说明。
+- `CellView` / `Cell` / `CellValue` / future `CellStore` 边界说明。
 - `CellValue` 的候选语义范围：blank、number、text、boolean、formula、style reference。
 - 明确 `Cell` 不作为百万级 worksheet 的长期内部存储模型。
 
@@ -105,8 +105,7 @@ internal/public 边界。
 - `docs/TASK_PLAN.md`
 
 验收：
-- 文档能回答：什么时候用 `CellView`，什么时候用 `Cell`，什么时候需要 future
-  `CellValue`。
+- 文档能回答：什么时候用 `CellView`，什么时候用 `Cell`，什么时候需要 `CellValue`。
 - In-memory 任务能继承该边界，不再重新发明 cell 类型。
 
 禁止：
@@ -398,8 +397,8 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 - 若新增测试，默认 preset 下 `fastxlsx.package_editor` 通过，并保持 60s CTest 边界。
 
 禁止项：
-- 不新增 public `CellValue`、`WorkbookEditor`、`WorksheetEditor` 或 public
-  `PackageEditor`。
+- 不新增 public `WorkbookEditor`、`WorksheetEditor` 或 public `PackageEditor`；
+  不把 `CellValue` 扩展成 editor / store。
 - 不把 audit-only note 写成 repair。
 - 不自动 prune workbook relationships、owner `.rels` 或 content type overrides。
 
@@ -703,13 +702,15 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ## P7 - In-memory Small-File Editor
 
-状态：设计基线基础完成；public editor / `CellValue` / `CellStore` 实现未开始。
+状态：设计基线基础完成；`CellValue` 首个 public value 切片已实现，public editor /
+`CellStore` 实现未开始。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
 子任务：
 - P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft：基础完成。
 - P7.2 `CellValue` public value draft：基础完成。
+- P7.2a `CellValue` public value implementation：基础完成。
 - P7.3 internal `CellStore` / `CellRecord` memory model：基础完成。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
   `estimated_memory_usage()`：基础完成。
@@ -784,11 +785,11 @@ ctest --preset windows-nmake-release
 
 ### P7.2 `CellValue` public value draft
 
-状态：基础完成。
+状态：基础完成；首个 public value implementation slice 已在 P7.2a 落地。
 
 类型：public API 文档设计；不新增 header / implementation。
 
-目标：冻结 future `CellValue` 的语义值边界、所有权、value kind、style reference
+目标：冻结 `CellValue` 的语义值边界、所有权、value kind、style reference
 和与现有 `Cell` / `CellView` 的转换关系，避免把 public value 类型误用为
 内部长期 cell store，也避免让小文件随机编辑污染 Streaming 热路径。
 
@@ -801,8 +802,8 @@ ctest --preset windows-nmake-release
   和 string ownership / view lifetime 边界。
 
 输出：
-- future `CellValueKind` 草案：blank、number、text、boolean、formula。
-- optional style reference 草案：future `CellValue` 可携带 workbook-local
+- `CellValueKind`：blank、number、text、boolean、formula。
+- optional style reference：`CellValue` 可携带 workbook-local
   `StyleId`；非默认 id 必须来自同一 workbook/editor style registry，foreign /
   invalid id 的拒绝时机由后续实现定义。
 - ownership 边界：`CellValue` owns text / formula payload，可跨 editor API 调用
@@ -836,12 +837,12 @@ ctest --preset windows-nmake-release
 
 验收标准：
 - 文档能回答 `CellValue`、`Cell` 和 `CellView` 的所有权和模式差异。
-- 文档明确 `CellValue` 是 future editor / in-memory API boundary，不是已实现符号。
+- 文档明确 `CellValue` 是已实现 public value type，但不是 editor / store ready。
 - 文档明确 style id 是 workbook-local handle，P7.2 不做 style registry merge。
 - 文档明确 blank 与 missing cell 不等价，公式不求值，数字必须 finite。
 
 禁止项：
-- 不新增 public `CellValue`、`CellValueKind` 或 editor 代码。
+- 不把 `CellValue` value type 写成 public editor、worksheet storage 或 save-as 实现。
 - 不把 `CellValue` 写成内部 `CellStore` / `CellRecord` 的长期存储布局。
 - 不新增 date / rich text / error cell 承诺。
 - 不在 P7.4 guardrails 前宣称 In-memory editor ready。
@@ -850,6 +851,44 @@ ctest --preset windows-nmake-release
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
+```
+
+### P7.2a `CellValue` public value implementation
+
+状态：基础完成。
+
+类型：public API + 实现 + 测试；不新增 editor / store。
+
+目标：落地 P7.2 的最小 owning semantic value，让后续 `WorkbookEditor` /
+`WorksheetEditor` 和 In-memory store 可以复用统一 cell 边界，而不是继续只停留在
+future 文档名。
+
+输入：
+- P7.2 `CellValue` public value draft。
+- 当前 `Cell` / `CellView` 的 finite numeric、owning / non-owning 字符串和 formula
+  边界。
+- 当前 `StyleId` workbook-local handle 边界。
+
+输出：
+- `include/fastxlsx/cell_value.hpp` 暴露 `CellValueKind` 和 `CellValue`。
+- `CellValue` 支持 blank、finite number、owned text、boolean、owned formula。
+- `CellValue::from_cell(const Cell&)` / `to_cell()` 提供当前 small-workbook
+  `Cell` 与 owning semantic value 之间的轻量转换 helper。
+- `CellValue::with_style(StyleId)` / `without_style()` 只携带或清除 opaque
+  workbook-local style handle；不校验 foreign / invalid non-default style id。
+- `fastxlsx.unit` 覆盖 kind、payload ownership、style handle 和 non-finite number
+  rejection。
+
+边界：
+- 不新增 `WorkbookEditor` / `WorksheetEditor`。
+- 不新增 `CellStore` / `CellRecord` 实现。
+- 不实现 random cell editing、save-as handoff、sharedStrings migration、style merge、
+  relationship repair 或 calcChain rebuild。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.unit
 ```
 
 ### P7.3 internal `CellStore` / `CellRecord` memory model
@@ -864,7 +903,7 @@ ctest --preset windows-nmake-release
 
 输入：
 - P7.1 future `WorkbookEditor` / `WorksheetEditor` facade draft。
-- P7.2 future `CellValue` public value draft。
+- P7.2 `CellValue` public value boundary。
 - 当前 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/ARCHITECTURE.md` 和
   `docs/EDITING_MODEL.md` 的 In-memory boundary。
 - 当前 public `Cell` / `CellView` / `StyleId` / styles / sharedStrings 文档边界。
@@ -935,7 +974,7 @@ ctest --preset windows-nmake-release
 
 输入：
 - P7.1 future editor facade draft。
-- P7.2 future `CellValue` public value draft。
+- P7.2 `CellValue` public value boundary。
 - P7.3 internal `CellStore` / `CellRecord` memory model。
 - 当前 In-memory API 文档要求：超限时提示 caller 改用 Streaming 或 Patch。
 
@@ -1002,7 +1041,7 @@ blank / erase / tombstone 和输出路径 guard 的边界。
 
 输入：
 - P7.1 future editor facade draft。
-- P7.2 future `CellValue` public value draft。
+- P7.2 `CellValue` public value boundary。
 - P7.3 internal `CellStore` / `CellRecord` memory model。
 - P7.4 guardrails draft。
 - P6 dependency policies：sharedStrings/styles、worksheet metadata、linked parts、
@@ -1448,7 +1487,8 @@ ctest --preset windows-nmake-release
 - P6 dependency policy 的不同 feature 分析。
 
 必须串行：
-- P4.0 合并前，不实现 public `WorkbookEditor` / `CellValue`。
+- P4.0 合并前，不实现 public `WorkbookEditor`；`CellValue` value type 已在 P7.2a
+  作为后续独立切片落地。
 - P4.1 MVP 用例冻结前，不扩大 P4.2 / P4.3 的实现范围。
 - P5 preservation 未覆盖前，不宣称 broad existing-file editing。
 - P7 guardrails 未设计前，不把 In-memory 作为默认 workbook 编辑路径。

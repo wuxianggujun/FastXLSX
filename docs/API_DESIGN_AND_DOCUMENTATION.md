@@ -73,9 +73,9 @@ editor.save_as(output_path);
   操作都应复用的 public range 值。
 - `StyleId`、`CellStyle`、`DocumentProperties`、`HyperlinkOptions`、
   `ImageOptions` 等应保持 workbook / worksheet 语义，不要泄漏底层 part 名。
-- `CellValue` 应作为未来统一的单元格语义值：number、text、boolean、formula、
+- `CellValue` 是当前已落地的 owning 单元格语义值：number、text、boolean、formula、
   blank 以及可选 style reference。它可以被 `Cell`、未来 `WorkbookEditor::set_cell()`
-  和 In-memory editor 共同使用。
+  和 In-memory editor 共同使用，但不表示 editor / cell store 已经实现。
 - `Cell` 可以继续作为小文件新建路径的 owning convenience value 或 `CellValue` 的
   轻量包装，但不要把它定义成所有模式的内部存储单元。
 - `CellView` 必须保持 Streaming-only 的非 owning view：它可以引用调用方短生命周期
@@ -86,7 +86,7 @@ editor.save_as(output_path);
 ```text
 CellView  -> Streaming 输入视图，非 owning，热路径轻量
 Cell      -> 小文件创建便利值，owning，不代表大型 worksheet 内部存储
-CellValue -> 未来统一语义值，适合作为 editor / in-memory / API 边界
+CellValue -> 已落地 owning 语义值，适合作为 editor / in-memory / API 边界
 CellRecord / CellStore -> 未来内部紧凑存储，不作为 public API 默认暴露
 ```
 
@@ -105,9 +105,10 @@ sheet 入口      add_worksheet           add_worksheet            worksheet / t
 错误            FastXlsxError           FastXlsxError            FastXlsxError
 ```
 
-该矩阵是命名和职责约束，不代表 future editor 已经实现。任何文档或示例在使用
-`WorkbookEditor`、`WorksheetEditor`、`CellValue`、`get_cell()`、`set_cell()` 前，
-都必须标明它们是未来 public design target，直到对应 public header、实现和测试存在。
+该矩阵是命名和职责约束，不代表 future editor 已经实现。`CellValue` 已有独立 public
+value header、实现和测试；`WorkbookEditor`、`WorksheetEditor`、`get_cell()`、
+`set_cell()` 仍必须标明为未来 public design target，直到对应 public header、实现和
+测试存在。
 
 ### P7.1 Future Editor Facade Draft
 
@@ -130,7 +131,7 @@ content type override 隐藏在内部 Patch / In-memory 底座之后。
 `WorksheetEditor` 的初始命名草案：
 
 - `name()`：返回当前 worksheet 名称。
-- `get_cell(ref)` / `try_cell(ref)`：读取单元格语义值，返回 future `CellValue`。
+- `get_cell(ref)` / `try_cell(ref)`：读取单元格语义值，返回 `CellValue`。
 - `set_cell(ref, CellValue)`：随机写入小文件单元格。
 - `erase_cell(ref)`：删除单元格值，是否保留 style / metadata 由后续 `CellValue` 和
   cell store 任务定义。
@@ -155,12 +156,13 @@ content type override 隐藏在内部 Patch / In-memory 底座之后。
 - P7.5 定义 In-memory save-as 与 internal Patch handoff，尤其是 unknown part
   preservation、sharedStrings / styles / calc metadata 和 document properties 的边界。
 
-### P7.2 Future CellValue Public Value Draft
+### P7.2 CellValue Public Value Boundary
 
-P7.2 只冻结 future `CellValue` 的 public value 语义，不新增 `include/fastxlsx`
-符号，也不表示 editor / in-memory cell store 已经实现。`CellValue` 应作为
-future `WorkbookEditor` / `WorksheetEditor` 的 API boundary value，而不是内部长期
-cell storage layout。
+P7.2 冻结 `CellValue` 的 public value 语义；当前首个 implementation slice 已新增
+`include/fastxlsx/cell_value.hpp`、`src/cell_value.cpp` 和 focused unit tests。这只表示
+owning semantic value 已经落地，不表示 `WorkbookEditor` / `WorksheetEditor`、random
+cell editing 或 in-memory `CellStore` 已经实现。`CellValue` 是未来 editor facade 的 API
+boundary value，而不是内部长期 cell storage layout。
 
 `CellValueKind` 的初始草案：
 
@@ -170,22 +172,23 @@ cell storage layout。
 - `Boolean`：boolean payload。
 - `Formula`：owned write-only formula text。
 
-候选 factory 命名草案：
+当前 factory：
 
 - `CellValue::blank()`
 - `CellValue::number(double)`
 - `CellValue::text(std::string)`
 - `CellValue::boolean(bool)`
 - `CellValue::formula(std::string)`
-- `CellValue::with_style(StyleId)` 或等价 style-bearing 构造方式
+- `CellValue::with_style(StyleId)` / `CellValue::without_style()`
 
 所有权和现有类型关系：
 
 - `CellValue` owns text / formula payload，可复制或移动跨过 editor API 调用边界。
 - `CellView` 继续是 Streaming-only non-owning view；它的 `string_view` payload 只需在
   `WorksheetWriter::append_row()` 调用期间有效，不能存入 editor / in-memory 长期状态。
-- `Cell` 继续是当前 `Workbook` 小文件新建路径的 owning convenience value；未来可提供
-  `Cell` 到 `CellValue` 的转换，但 P7.2 不要求实现。
+- `Cell` 继续是当前 `Workbook` 小文件新建路径的 owning convenience value；当前已提供
+  `CellValue::from_cell(const Cell&)` / `CellValue::to_cell()` 这组 helper，用于在小文件
+  便利值和 owning semantic value 之间转换，其中 blank 没有 `Cell` 表示。
 - `CellValue` 可携带 optional `StyleId`。该 id 是 workbook-local handle；非默认 id
   必须来自同一 workbook/editor style registry，foreign / invalid id 的拒绝时机由后续
   实现定义。P7.2 不定义 style registry merge、existing-file style preservation 或
@@ -209,7 +212,7 @@ cell storage layout。
 
 非目标：
 
-- 不新增 public `CellValue` / `CellValueKind` header、implementation 或 tests。
+- 不把 public `CellValue` 写成 editor、random cell editing 或 save-as handoff 已实现。
 - 不定义 rich text、error cells、array formulas、formula evaluator 或 cached formula values。
 - 不把 `CellValue` 当作 `CellStore` / `CellRecord` 的 compact internal storage。
 - 不承诺百万行 worksheet 随机访问、sharedStrings 索引迁移、styles 合并或 relationship

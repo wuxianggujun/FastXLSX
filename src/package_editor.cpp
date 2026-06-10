@@ -2498,6 +2498,37 @@ void PackageEditor::replace_worksheet_part(
         std::move(worksheet_part), std::move(worksheet_xml), policy, true);
 }
 
+void PackageEditor::replace_worksheet_part_chunks(PartName worksheet_part,
+    std::string worksheet_xml, std::vector<PackageEntryChunk> chunks,
+    const ReferencePolicy& policy)
+{
+    if (chunks.empty()) {
+        throw FastXlsxError("staged worksheet replacement requires at least one chunk");
+    }
+
+    const PartName target_worksheet_part = worksheet_part;
+    replace_worksheet_part_impl(
+        std::move(worksheet_part), std::move(worksheet_xml), policy, true);
+
+    PackagePartReplacement* replacement = find_replacement(replacements_, target_worksheet_part);
+    if (replacement == nullptr) {
+        throw FastXlsxError("staged worksheet replacement was not recorded");
+    }
+
+    const std::string replacement_reason =
+        "target worksheet part staged stream rewrite chunks; current helper uses materialized XML for validation and audit";
+    replacement->data.clear();
+    replacement->chunks = std::move(chunks);
+    replacement->write_mode = PartWriteMode::StreamRewrite;
+    replacement->reason = replacement_reason;
+    manifest_.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
+    edit_plan_.set_part(target_worksheet_part, PartWriteMode::StreamRewrite, replacement_reason);
+    edit_plan_.add_note(
+        "worksheet staged chunk replacement uses materialized worksheet XML for "
+        "validation, dependency audit, and calc metadata; it is not the final "
+        "low-memory package-entry staged worksheet transformer");
+}
+
 void PackageEditor::replace_worksheet_part_impl(PartName worksheet_part,
     std::string worksheet_xml, const ReferencePolicy& policy, bool enforce_payload_policy)
 {

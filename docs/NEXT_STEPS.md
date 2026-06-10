@@ -118,6 +118,15 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     staged package-entry payload foundation only: no public API, no
     cell-replacement low-memory handoff, no full worksheet stream writer, no
     dependency repair, and no relationship/range metadata repair.
+  - Internal worksheet replacement chunk handoff in `src/package_editor.hpp` and
+    `src/package_editor.cpp`, covered by `fastxlsx.package_editor`.
+    `PackageEditor::replace_worksheet_part_chunks()` reuses the current
+    materialized worksheet XML validation, dependency audit, relationship audit,
+    and calc metadata path, then records the target worksheet payload as
+    `PackageEntryChunk` memory/file chunks for `save_as()`. Treat this as a
+    worksheet staged payload bridge only: no public API, no low-memory
+    validation/audit, no cell-replacement staged output, no full worksheet
+    stream writer, and no dependency or relationship repair.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

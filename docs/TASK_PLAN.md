@@ -68,12 +68,15 @@ parallelism, acceptance checks, and explicit non-goals.
   internal `replace_part_chunks()` foundation that records an existing package
   part as a `StreamRewrite` replacement backed by `PackageEntryChunk`
   memory/file chunks, and `save_as()` forwards those chunks to `PackageWriter`
-  instead of flattening them into one string. This is P8 reader/transformer/
-  action/output-chunk, bounded PackageEditor handoff, and chunked package-entry
-  source groundwork only: no public API, full XML parser/schema validation,
-  relationship repair, cell-replacement low-memory staged handoff, broad range
-  metadata recalculation, dependency repair, sharedStrings/style migration, or
-  low-memory large-file editing claim.
+  instead of flattening them into one string. `replace_worksheet_part_chunks()`
+  now reuses the existing materialized worksheet XML validation / audit /
+  calc metadata path and then records the target worksheet payload as chunks.
+  This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
+  handoff, chunked package-entry source, and worksheet chunk handoff groundwork
+  only: no public API, full XML parser/schema validation, low-memory
+  validation/audit, relationship repair, cell-replacement low-memory staged
+  handoff, broad range metadata recalculation, dependency repair,
+  sharedStrings/style migration, or low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.

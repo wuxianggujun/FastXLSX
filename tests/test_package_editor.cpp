@@ -1334,6 +1334,86 @@ void test_package_editor_staged_chunk_part_replacement_writes_chunks()
     check_entry_bytes(final_output_reader, worksheet_part.zip_path(), final_worksheet);
 }
 
+void test_package_editor_replaces_worksheet_with_staged_chunks()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-worksheet-staged-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-worksheet-staged-chunks-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-worksheet-staged-chunks-body.xml");
+    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_body =
+        R"(<row r="2"><c r="A2"><f>A1+1</f></c></row>)";
+    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string replacement_worksheet =
+        worksheet_prefix + worksheet_body + worksheet_suffix;
+    write_binary_file(body_path, worksheet_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part, replacement_worksheet,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    check(editor.edit_plan().full_calculation_on_load(),
+        "staged worksheet chunks should keep worksheet replacement calc policy");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"staged chunk replacement", "materialized worksheet XML"}),
+        "staged worksheet chunks should report current materialized-audit boundary");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "staged worksheet chunks should record worksheet edit-plan entry");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged worksheet chunks should keep worksheet stream rewrite mode");
+    check(worksheet_plan->reason.find("staged stream rewrite chunks") != std::string::npos,
+        "staged worksheet chunks should expose staged rewrite reason");
+    const auto output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "staged worksheet chunks should appear as worksheet stream rewrite");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "staged worksheet chunks should still rewrite workbook calc metadata");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), "fullCalcOnLoad=\"1\"",
+        "staged worksheet chunks should request full workbook recalculation");
+    check_entry_bytes(output_reader, "custom/opaque.bin", source.unknown);
+    check_entry_bytes(output_reader, "[Content_Types].xml", source.content_types);
+    check_entry_bytes(output_reader, "_rels/.rels", source.package_relationships);
+    check_entry_bytes(output_reader, "xl/_rels/workbook.xml.rels", source.workbook_relationships);
+
+    fastxlsx::detail::PackageEditor failed_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    bool failed = false;
+    try {
+        failed_editor.replace_worksheet_part_chunks(
+            worksheet_part, replacement_worksheet, {});
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    check(failed, "empty staged worksheet chunks should fail");
+    check(!failed_editor.edit_plan().full_calculation_on_load(),
+        "empty staged worksheet chunks should not request recalculation");
+    check(failed_editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "empty staged worksheet chunks should not change worksheet edit-plan state");
+    check_manifest_write_mode(failed_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "empty staged worksheet chunks should not change manifest state");
+}
+
 void test_package_editor_repeated_part_replacement_updates_final_state()
 {
     const SourcePackage source =
@@ -33110,6 +33190,7 @@ int main()
         test_package_editor_noop_save_preserves_all_source_entries();
         test_package_editor_replaces_one_part_and_preserves_unknown_parts();
         test_package_editor_staged_chunk_part_replacement_writes_chunks();
+        test_package_editor_replaces_worksheet_with_staged_chunks();
         test_package_editor_repeated_part_replacement_updates_final_state();
         test_package_editor_replacement_audits_preserved_root_relationships();
         test_package_editor_sets_document_properties_and_adds_missing_metadata_parts();

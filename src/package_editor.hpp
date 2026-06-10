@@ -144,6 +144,13 @@ public:
         const ReferencePolicy& policy = {});
     void replace_worksheet_part(PartName worksheet_part, std::string worksheet_xml,
         const ReferencePolicy& policy = {});
+    // Internal staged-output variant for worksheet replacement. It uses the
+    // materialized worksheet_xml for current validation, dependency audit, and
+    // calc metadata handling, then records the final worksheet part payload as
+    // PackageEntry chunks for save_as(). This is a bridge toward package-entry
+    // staged stream output, not a low-memory worksheet transformer.
+    void replace_worksheet_part_chunks(PartName worksheet_part, std::string worksheet_xml,
+        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy = {});
     // Internal Patch convenience for workbook-targeted worksheet replacement.
     // Resolves the sheet name through the source workbook sheet catalog, or
     // through the currently planned `/xl/workbook.xml` bytes when an ordinary

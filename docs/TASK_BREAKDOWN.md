@@ -1289,8 +1289,9 @@ save-as handoff 复用，而不是继续只停留在合同文档。
 - number / boolean / formula / text / blank records 分别写成 OpenXML cell XML；
   text 使用 `inlineStr`，公式只写 `<f>` text，blank 写空 `<c/>`。
 - optional `StyleId` 只输出非默认 `s="N"`；默认 style id 仍省略。
-- `detail::format_number(double)` 作为内部公共数字输出 helper，保持 finite-only
-  OpenXML number text 边界。
+- `detail::format_number(double)` 和 `detail::append_number(std::string&, double)`
+  作为内部公共数字输出 helpers，保持 finite-only OpenXML number text 边界；append
+  helper 供 in-memory、CellStore 和 streaming XML buffer 直接追加数字文本。
 - `fastxlsx.unit` 覆盖空 store、稀疏行分组、XML escape、空白保留、公式转义、
   explicit blank record 和默认 style omission。
 

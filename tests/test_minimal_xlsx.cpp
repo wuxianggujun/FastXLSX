@@ -78,6 +78,14 @@ void test_xml_helpers()
     check(fastxlsx::detail::cell_reference(1, 27) == "AA1", "AA1 reference failed");
     check(fastxlsx::detail::cell_reference(1048576, 16384) == "XFD1048576",
         "last Excel cell reference failed");
+    std::string appended_number = "value=";
+    fastxlsx::detail::append_number(appended_number, 123.5);
+    check(appended_number == "value=123.5", "append_number should preserve existing text");
+    const std::string formatted_scientific = fastxlsx::detail::format_number(1.25e-10);
+    std::string appended_scientific;
+    fastxlsx::detail::append_number(appended_scientific, 1.25e-10);
+    check(appended_scientific == formatted_scientific,
+        "append_number should match format_number output");
     check(fastxlsx::detail::range_reference(1, 1, 1, 1) == "A1",
         "single-cell range reference failed");
     check(fastxlsx::detail::range_reference(1, 1, 2, 2) == "A1:B2",
@@ -99,6 +107,12 @@ void test_xml_helpers()
         "row beyond Excel limit should fail");
     check_fastxlsx_error([] { (void)fastxlsx::detail::cell_reference(1, 16385); },
         "column beyond Excel limit should fail");
+    check_fastxlsx_error(
+        [] {
+            std::string output;
+            fastxlsx::detail::append_number(output, std::numeric_limits<double>::infinity());
+        },
+        "append_number should reject infinite values");
     check_fastxlsx_error([] { (void)fastxlsx::detail::range_reference(2, 1, 1, 1); },
         "reversed row range should fail");
     check_fastxlsx_error([] { (void)fastxlsx::detail::range_reference(1, 2, 1, 1); },

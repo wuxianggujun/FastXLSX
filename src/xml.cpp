@@ -15,6 +15,32 @@ namespace {
 constexpr std::uint32_t max_excel_rows = 1048576;
 constexpr std::uint32_t max_excel_columns = 16384;
 
+void validate_finite_number(double value)
+{
+    if (!std::isfinite(value)) {
+        throw fastxlsx::FastXlsxError("numeric values must be finite");
+    }
+}
+
+bool append_number_with_to_chars(std::string& output, double value)
+{
+    std::array<char, 64> buffer {};
+    const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+    if (error != std::errc()) {
+        return false;
+    }
+    output.append(buffer.data(), ptr);
+    return true;
+}
+
+std::string fallback_format_number(double value)
+{
+    std::ostringstream stream;
+    stream.imbue(std::locale::classic());
+    stream << std::setprecision(15) << value;
+    return stream.str();
+}
+
 void validate_cell_coordinate(std::uint32_t row, std::uint32_t column)
 {
     if (row == 0 || column == 0) {
@@ -87,20 +113,24 @@ std::string escape_xml_attribute(std::string_view value)
 
 std::string format_number(double value)
 {
-    if (!std::isfinite(value)) {
-        throw FastXlsxError("numeric values must be finite");
+    validate_finite_number(value);
+
+    std::string formatted;
+    if (append_number_with_to_chars(formatted, value)) {
+        return formatted;
     }
 
-    std::array<char, 64> buffer {};
-    const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-    if (error == std::errc()) {
-        return {buffer.data(), ptr};
+    return fallback_format_number(value);
+}
+
+void append_number(std::string& output, double value)
+{
+    validate_finite_number(value);
+    if (append_number_with_to_chars(output, value)) {
+        return;
     }
 
-    std::ostringstream stream;
-    stream.imbue(std::locale::classic());
-    stream << std::setprecision(15) << value;
-    return stream.str();
+    output += fallback_format_number(value);
 }
 
 std::string cell_reference(std::uint32_t row, std::uint32_t column)

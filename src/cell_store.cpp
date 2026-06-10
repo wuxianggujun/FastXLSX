@@ -75,7 +75,7 @@ void append_cell_xml(std::string& xml, const CellPosition& position, const CellR
         break;
     case CellValueKind::Number:
         xml += "><v>";
-        xml += format_number(record.number_value);
+        append_number(xml, record.number_value);
         xml += "</v></c>";
         break;
     case CellValueKind::Text:

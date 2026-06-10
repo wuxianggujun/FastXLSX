@@ -1254,6 +1254,10 @@ Do:
   in-memory and streaming row heights that are zero, negative, or non-finite,
   rejects in-memory rows beyond Excel's 16384-column limit during save(), and
   rejects streaming column widths that are non-positive or non-finite.
+  Current numeric XML output uses shared internal `detail::append_number()` /
+  `detail::format_number()` helpers across in-memory, CellStore, and streaming
+  paths; append-oriented paths avoid per-cell temporary string construction
+  while preserving finite-only `std::to_chars` output.
   Current `append_row()` row limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to
   inject the internal row counter at `1048576` and verify one rejected append
   without a million-row default CTest loop; broader date and formatting edge

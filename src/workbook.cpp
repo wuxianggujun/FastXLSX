@@ -6,35 +6,12 @@
 #include "package_writer.hpp"
 
 #include <algorithm>
-#include <array>
-#include <charconv>
 #include <cmath>
-#include <iomanip>
-#include <locale>
 #include <set>
-#include <sstream>
 #include <utility>
 
 namespace fastxlsx {
 namespace {
-
-std::string format_number(double value)
-{
-    if (!std::isfinite(value)) {
-        throw FastXlsxError("numeric values must be finite");
-    }
-
-    std::array<char, 64> buffer {};
-    const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-    if (error == std::errc()) {
-        return {buffer.data(), ptr};
-    }
-
-    std::ostringstream stream;
-    stream.imbue(std::locale::classic());
-    stream << std::setprecision(15) << value;
-    return stream.str();
-}
 
 bool needs_space_preserve(std::string_view value)
 {
@@ -157,7 +134,7 @@ std::string build_worksheet(const std::vector<detail::WorksheetRowData>& rows)
                 throw FastXlsxError("row height must be positive and finite");
             }
             xml += "\" ht=\"";
-            xml += format_number(*row_data.options.height);
+            detail::append_number(xml, *row_data.options.height);
             xml += "\" customHeight=\"1";
         }
         xml += "\">";
@@ -172,7 +149,7 @@ std::string build_worksheet(const std::vector<detail::WorksheetRowData>& rows)
                 xml += "<c r=\"";
                 xml += reference;
                 xml += "\"><v>";
-                xml += format_number(cell.number_value());
+                detail::append_number(xml, cell.number_value());
                 xml += "</v></c>";
                 break;
             case Cell::Type::String:

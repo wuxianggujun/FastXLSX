@@ -2096,6 +2096,11 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   dimension，不写入被拒绝的 text 或 formula，不创建无用 `xl/sharedStrings.xml`，
   也不污染 workbook `<calcPr>`。本机 `openpyxl` 和 Excel COM 已只读打开验证
   `FailedAppend!A1:A2`；这是 `append_row()` 校验先于状态变更的回归测试。
+- 当前 numeric XML 输出共享内部 `detail::append_number()` /
+  `detail::format_number()` helpers；in-memory、CellStore 和 streaming XML buffer
+  都走 finite-only `std::to_chars` fast path，其中 append helper 避免在追加型 XML
+  热路径中为每个数字单元格先构造临时 `std::string`。这不是 date cell type、格式化
+  语义或完整数值性能 benchmark。
 - 当前 `fastxlsx.streaming` 行上限测试使用测试构建内部 hook
   `FASTXLSX_ENABLE_TEST_HOOKS` / `fastxlsx::detail::testing_set_worksheet_row_count()`
   将 `WorksheetWriterState::row_count` 注入到 `1048576`，再验证下一次

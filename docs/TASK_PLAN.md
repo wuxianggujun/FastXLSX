@@ -1288,7 +1288,10 @@ Tasks:
   rejects `NaN` / `+Inf` / `-Inf` for numeric cells, rejects streaming row
   heights that are zero, negative, or non-finite, and rejects streaming column
   widths that are non-positive or non-finite; broader date and formatting edge
-  cases remain planned.
+  cases remain planned. Current numeric XML output uses shared internal
+  `detail::append_number()` / `detail::format_number()` helpers so in-memory,
+  CellStore, and streaming paths share the same finite-only `std::to_chars`
+  fast path without per-cell temporary string construction on XML append.
 - Track worksheet dimensions incrementally.
 - Add row and column limit tests for Excel bounds.
 - Add opt-in benchmark target or documented benchmark command.
@@ -2209,7 +2212,12 @@ Tasks:
   serializer.
 - Continue the `sharedStrings` strategy as an explicit performance/size choice,
   while keeping `inlineStr` as the low-memory path.
-- Add fast numeric and date encoding tasks with tests for edge cases.
+- Add fast numeric and date encoding tasks with tests for edge cases. Current
+  numeric XML output uses shared internal `detail::append_number()` /
+  `detail::format_number()` helpers across in-memory, CellStore, and streaming
+  paths; this preserves finite-only behavior and avoids per-cell temporary
+  string construction on append-oriented XML hot paths. Broader date encoding
+  remains planned.
 - Track dimensions incrementally and test row/column Excel limits. Current
   empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
   streaming dimension XML without requiring DOM backtracking. Current in-memory

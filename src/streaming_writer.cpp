@@ -7,19 +7,14 @@
 #include "package_writer.hpp"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
-#include <charconv>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <fstream>
-#include <iomanip>
 #include <limits>
-#include <locale>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -94,24 +89,6 @@ struct RegisteredStyle {
     std::uint32_t font_id = 0;
     std::uint32_t fill_id = 0;
 };
-
-std::string format_number(double value)
-{
-    if (!std::isfinite(value)) {
-        throw FastXlsxError("numeric values must be finite");
-    }
-
-    std::array<char, 64> buffer {};
-    const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
-    if (error == std::errc()) {
-        return {buffer.data(), ptr};
-    }
-
-    std::ostringstream stream;
-    stream.imbue(std::locale::classic());
-    stream << std::setprecision(15) << value;
-    return stream.str();
-}
 
 bool needs_space_preserve(std::string_view value)
 {
@@ -1071,7 +1048,7 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         xml += "><v>";
-        xml += format_number(cell.number_value());
+        detail::append_number(xml, cell.number_value());
         xml += "</v></c>";
         break;
     case CellView::Type::String:
@@ -1410,7 +1387,7 @@ std::string build_columns(const detail::WorksheetWriterState& worksheet)
         xml += "\" max=\"";
         xml += std::to_string(width.last_column);
         xml += "\" width=\"";
-        xml += format_number(width.width);
+        detail::append_number(xml, width.width);
         xml += "\" customWidth=\"1\"/>";
     }
     xml += "</cols>";
@@ -1441,7 +1418,7 @@ void append_color_scale_point_xml(std::string& xml, const ColorScalePoint& point
     xml += color_scale_value_type_name(point.type);
     if (color_scale_value_type_requires_value(point.type)) {
         xml += "\" val=\"";
-        xml += format_number(point.value);
+        detail::append_number(xml, point.value);
     }
     xml += "\"/>";
 }
@@ -1459,7 +1436,7 @@ void append_data_bar_endpoint_xml(std::string& xml, const DataBarEndpoint& endpo
     xml += data_bar_value_type_name(endpoint.type);
     if (data_bar_value_type_requires_value(endpoint.type)) {
         xml += "\" val=\"";
-        xml += format_number(endpoint.value);
+        detail::append_number(xml, endpoint.value);
     }
     xml += "\"/>";
 }
@@ -1508,7 +1485,7 @@ void append_icon_set_threshold_xml(
     xml += "<cfvo type=\"";
     xml += icon_set_value_type_name(value_type);
     xml += "\" val=\"";
-    xml += format_number(threshold);
+    detail::append_number(xml, threshold);
     xml += "\"/>";
 }
 
@@ -2368,7 +2345,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     row_xml += std::to_string(state_->row_count);
     if (options.height.has_value()) {
         row_xml += "\" ht=\"";
-        row_xml += format_number(*options.height);
+        detail::append_number(row_xml, *options.height);
         row_xml += "\" customHeight=\"1";
     }
     row_xml += "\">";

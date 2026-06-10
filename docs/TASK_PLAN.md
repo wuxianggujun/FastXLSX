@@ -881,11 +881,16 @@ parallelism, acceptance checks, and explicit non-goals.
   `removed_package_entries`. This is Patch audit visibility only, not a public
   output planner, drawing mutation, image editing, chart editing, or relationship
   repair.
-  An ordinary unknown extension replacement over the same fixture verifies that
-  only `custom/opaque-extension.bin` is stream-rewritten, its owner `.rels` is
-  audited and preserved as copy-original, and workbook/worksheet/drawing/chart/
-  media entries keep the same copy-original baseline; it is not semantic
-  unknown extension editing, custom relationship repair, or public API.
+  Internal `planned_output()` coverage for ordinary unknown extension
+  replacement over the same fixture now exposes the active
+  `custom/opaque-extension.bin` `StreamRewrite` entry, source-owned unknown
+  owner `.rels` copy-original audit, preserved content types / package
+  relationships / workbook / workbook `.rels` / worksheet / worksheet `.rels` /
+  drawing / drawing `.rels` / chart / media / table / VML / percent-decoded
+  drawing / sharedStrings / sharedStrings owner `.rels` / styles / VBA /
+  calcChain entries, and empty `removed_parts` / `removed_package_entries`.
+  This is Patch audit visibility only, not a public output planner, unknown
+  extension semantic editing, custom relationship repair, or public API.
   A repeated ordinary replacement over that same unknown extension verifies that
   final bytes, manifest write mode, edit-plan reason, and owner `.rels` audit are
   upserted to the last replacement state; the owner `.rels` stays copy-original

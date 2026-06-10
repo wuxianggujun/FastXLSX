@@ -1554,9 +1554,15 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   relationship repair。
   linked-object fixture 上的 ordinary unknown extension replacement 回归还验证只重写
   `custom/opaque-extension.bin` 时，其 owner `.rels` 被记录为 copy-original
-  package-entry audit 并原样保留，workbook、worksheet、drawing、chart 和 media
-  entries 仍按上述 copy-original 基线保留；这不是 unknown extension 语义编辑、
-  custom relationship repair 或 public API。
+  package-entry audit 并原样保留；内部 `planned_output()` 快照还暴露 active
+  `custom/opaque-extension.bin` `StreamRewrite` entry、source-owned unknown owner
+  `.rels` copy-original audit、content types / package relationships / workbook /
+  workbook `.rels` / worksheet / worksheet `.rels` / drawing / drawing `.rels` /
+  chart / media / table / VML / percent-decoded drawing / sharedStrings /
+  sharedStrings owner `.rels` / styles / VBA / calcChain entries 的 copy-original
+  决策，且 `removed_parts` 与 `removed_package_entries` 为空；这不是 unknown
+  extension 语义编辑、custom relationship repair、public output planner 或
+  public API。
   对同一 unknown extension 的 repeated ordinary replacement 回归还验证最终 bytes、
   manifest write-mode、edit-plan reason 和 owner `.rels` audit 会 upsert 到最后一次
   替换状态，owner `.rels` 仍按 copy-original 保留，且不会产生 removed-part 或

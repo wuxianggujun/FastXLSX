@@ -324,9 +324,12 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   migration、style id migration、style merge 或 cell reference sync。
 - P5.5 unknown extension fixture：基础完成。现有 fixture 覆盖 reachable unknown
   extension part、source-owned owner `.rels`、metadata ingestion、ordinary replacement、
-  repeated replacement、remove/replace ordering、output-plan omitted/active audit 和
-  relationship target audit；仍不能写成 custom extension semantic editing、
-  relationship repair 或 broad unknown-part preservation guarantee。
+  repeated replacement、remove/replace ordering、output-plan omitted/active audit、
+  ordinary replacement 下 content types / package relationships / workbook /
+  worksheet / drawing / chart / media / table / VML / percent-decoded drawing /
+  sharedStrings / styles / VBA / calcChain copy-original 决策和 relationship target
+  audit；仍不能写成 custom extension semantic editing、relationship repair 或
+  broad unknown-part preservation guarantee。
 - P5.6 custom XML fixture：基础完成。现有 fixture 覆盖 custom XML item /
   properties part、item owner `.rels`、package customXml inbound relationship、
   ordinary replacement、explicit removal、跨路径 ordering 和 `planned_output()`

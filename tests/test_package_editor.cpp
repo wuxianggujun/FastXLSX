@@ -6289,6 +6289,10 @@ void test_package_editor_replaces_unknown_extension_and_preserves_owner_relation
         "linked opaque output plan should keep default calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "linked opaque output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "linked opaque output plan should not remove parts");
+    check(output_plan.removed_package_entries.empty(),
+        "linked opaque output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked opaque output plan should stream-rewrite unknown extension");
@@ -6325,21 +6329,54 @@ void test_package_editor_replaces_unknown_extension_and_preserves_owner_relation
         "linked opaque output plan should preserve package relationships");
     check_output_entry_part_context(output_plan.entries, "_rels/.rels", false, "",
         "linked opaque output plan should not classify package relationships as package part");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve workbook relationships");
     check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked opaque output plan should preserve workbook");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked opaque output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve worksheet relationships");
     check_output_entry_plan(output_plan.entries, "xl/drawings/drawing1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked opaque output plan should preserve drawing");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/_rels/drawing1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve drawing relationships");
     check_output_entry_plan(output_plan.entries, "xl/charts/chart1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked opaque output plan should preserve chart");
     check_output_entry_plan(output_plan.entries, "xl/media/image1.png",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked opaque output plan should preserve media");
+    check_output_entry_plan(output_plan.entries, "xl/tables/table1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve table");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve VML drawing");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/drawing space.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve percent-decoded drawing");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve sharedStrings");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve sharedStrings relationships");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve styles");
+    check_output_entry_plan(output_plan.entries, "xl/vbaProject.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve VBA");
+    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked opaque output plan should preserve calcChain");
 
     editor.save_as(output);
 

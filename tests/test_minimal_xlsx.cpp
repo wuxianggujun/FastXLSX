@@ -324,6 +324,33 @@ void test_internal_cell_store_guardrails()
         "CellStore memory budget insert failure should leave the store empty");
 }
 
+void test_internal_cell_store_sheet_data_serialization()
+{
+    fastxlsx::detail::CellStore store;
+    check(fastxlsx::detail::cell_store_to_sheet_data_xml(store) == "<sheetData></sheetData>",
+        "empty CellStore sheetData serialization mismatch");
+
+    store.set_cell(2, 2, fastxlsx::CellValue::text(" text & <tag> "));
+    store.set_cell(1, 1, fastxlsx::CellValue::number(12.5));
+    store.set_cell(1, 3, fastxlsx::CellValue::boolean(true));
+    store.set_cell(3, 1, fastxlsx::CellValue::formula("SUM(A1:C1)&\"<ok>\""));
+    store.set_cell(3, 2, fastxlsx::CellValue::blank().with_style(fastxlsx::StyleId {}));
+
+    const std::string xml = fastxlsx::detail::cell_store_to_sheet_data_xml(store);
+    check(xml
+            == "<sheetData><row r=\"1\"><c r=\"A1\"><v>12.5</v></c>"
+               "<c r=\"C1\" t=\"b\"><v>1</v></c></row><row r=\"2\">"
+               "<c r=\"B2\" t=\"inlineStr\"><is><t xml:space=\"preserve\">"
+               " text &amp; &lt;tag&gt; </t></is></c></row><row r=\"3\">"
+               "<c r=\"A3\"><f>SUM(A1:C1)&amp;\"&lt;ok&gt;\"</f></c>"
+               "<c r=\"B3\"/></row></sheetData>",
+        "CellStore sheetData serialization should group sparse rows and escape payloads");
+    check(xml.find("s=\"0\"") == std::string::npos,
+        "CellStore sheetData should omit explicit default style attributes");
+    check(xml.find("sharedStrings") == std::string::npos,
+        "CellStore sheetData serialization should not imply sharedStrings migration");
+}
+
 void test_minimal_xlsx_package()
 {
     auto workbook = fastxlsx::Workbook::create();
@@ -658,6 +685,7 @@ int main()
         test_cell_value_public_boundary();
         test_internal_cell_store_sparse_boundary();
         test_internal_cell_store_guardrails();
+        test_internal_cell_store_sheet_data_serialization();
         test_minimal_xlsx_package();
         test_workbook_document_properties();
         test_workbook_formula_and_row_height_metadata();

@@ -10,6 +10,8 @@
 
 namespace fastxlsx::detail {
 
+class CellStore;
+
 /// Worksheet-local sparse coordinate for the internal in-memory editor store.
 struct CellPosition {
     std::uint32_t row = 1;
@@ -33,6 +35,14 @@ struct CellRecord {
     [[nodiscard]] static CellRecord from_value(const CellValue& value);
     [[nodiscard]] CellValue to_value() const;
 };
+
+/// Serializes the internal sparse store into a standalone `<sheetData>` payload.
+///
+/// This is a P7 internal handoff helper for future save-as / Patch integration.
+/// It emits only cell values/styles already present in the store, uses inline
+/// strings for text payloads, and does not migrate sharedStrings, merge styles,
+/// update calcChain, repair relationships, or generate a full worksheet part.
+[[nodiscard]] std::string cell_store_to_sheet_data_xml(const CellStore& store);
 
 /// Internal size and memory guardrails for the first CellStore slice.
 ///

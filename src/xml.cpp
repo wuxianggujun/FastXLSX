@@ -1,6 +1,12 @@
 #include <fastxlsx/detail/xml.hpp>
 
 #include <algorithm>
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 
 #include <fastxlsx/workbook.hpp>
 
@@ -77,6 +83,24 @@ std::string escape_xml_attribute(std::string_view value)
     }
 
     return escaped;
+}
+
+std::string format_number(double value)
+{
+    if (!std::isfinite(value)) {
+        throw FastXlsxError("numeric values must be finite");
+    }
+
+    std::array<char, 64> buffer {};
+    const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+    if (error == std::errc()) {
+        return {buffer.data(), ptr};
+    }
+
+    std::ostringstream stream;
+    stream.imbue(std::locale::classic());
+    stream << std::setprecision(15) << value;
+    return stream.str();
 }
 
 std::string cell_reference(std::uint32_t row, std::uint32_t column)

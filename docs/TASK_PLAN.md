@@ -39,8 +39,9 @@ parallelism, acceptance checks, and explicit non-goals.
   `include/fastxlsx/detail/cell_store.hpp` and `src/cell_store.cpp` with
   `CellPosition`, `CellRecord`, worksheet-local sparse `CellStore`, and internal
   `CellStoreOptions` for first-slice `max_cells` / `memory_budget_bytes`
-  enforcement; this is not a public editor API and does not implement
-  workbook-level guardrails or save-as / Patch handoff.
+  enforcement, plus a first internal helper that serializes `CellStore` records
+  to a standalone `<sheetData>` payload; this is not a public editor API and
+  does not implement workbook-level guardrails or full save-as / Patch handoff.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.
@@ -1464,9 +1465,10 @@ Validation:
 ### M7.5 - In-memory Small Workbook Editor
 
 Status: planned; first internal `CellStore` / `CellRecord` sparse-store
-foundation and `CellStoreOptions` guardrail slices exist, but public editor,
-workbook-level guardrails, load/save-as preflight, and save-as handoff are not
-ready.
+foundation, `CellStoreOptions` guardrail slice, and internal `CellStore` to
+standalone `<sheetData>` emission slice exist, but public editor,
+workbook-level guardrails, load/save-as preflight, and full save-as handoff are
+not ready.
 
 Use this lane for the editing experience users expect from a workbook library:
 random cell access, small sheet edits, and convenient workbook manipulation.
@@ -1484,6 +1486,10 @@ Tasks:
   records and style id references in a sparse map; future work still needs
   string / formula pools while keeping public `Cell` / `CellValue` as API
   boundary values.
+- Keep the current `CellStore` sheetData emitter as an internal handoff
+  building block only. It emits values as standalone `<sheetData>` XML with
+  inline strings, but it does not generate full worksheet XML, migrate
+  sharedStrings, merge styles, update calc metadata, or repair relationships.
 - Add guardrail APIs or options such as `max_cells`, `memory_budget_bytes`,
   `cell_count()`, and `estimated_memory_usage()` before calling the In-memory
   editor ready. The current internal `CellStoreOptions` is only a worksheet-local

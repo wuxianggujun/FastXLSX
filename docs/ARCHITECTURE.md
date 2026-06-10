@@ -1338,7 +1338,8 @@ FastXLSX
 - `WorkbookWriter` / `WorksheetWriter` / `CellView`：大文件新建导出。
 - `Workbook` / `Worksheet` / `Cell`：小文件新建和简单生成。
 - 未来 `WorkbookEditor` / `WorksheetEditor`：已有文件编辑和小文件随机编辑；
-  当前 `CellValue` 和 internal `CellStore` 首个切片已实现，但 public editor 尚未 ready。
+  当前 `CellValue`、internal `CellStore` 首个切片、guardrail 首片和 standalone
+  `<sheetData>` emission 首片已实现，但 public editor 尚未 ready。
 
 当前内部 `PackageReader`、`PackageEditor`、`EditPlan`、`PartIndex` 和
 `RelationshipGraph` 是 Patch 底座，不等于稳定 public API。只有当后续任务证明需要
@@ -1390,7 +1391,9 @@ future WorkbookEditor / WorksheetEditor
 In-memory 的内部模型不应直接复用当前 owning `Cell` 作为长期 cell store。当前已有
 首个 internal sparse `CellStore` / `CellRecord` 切片，保存 row/column key、value kind、
 optional style handle 和最小 payload；后续仍需要 string / formula pool、guardrails 和
-save-as / Patch handoff。public API 可以继续返回或接受便利 `Cell` / `CellValue`，
+save-as / Patch handoff。当前已有 internal helper 可把 `CellStore` 投影为 standalone
+`<sheetData>` payload，但不生成完整 worksheet、不迁移 sharedStrings/styles，也不修复
+relationships。public API 可以继续返回或接受便利 `Cell` / `CellValue`，
 但它们不应决定内部存储布局。
 
 统一命名约束：

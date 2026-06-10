@@ -76,7 +76,8 @@ editor.save_as(output_path);
 - `CellValue` 是当前已落地的 owning 单元格语义值：number、text、boolean、formula、
   blank 以及可选 style reference。它可以被 `Cell`、未来 `WorkbookEditor::set_cell()`
   和 In-memory editor 共同使用。当前已有 internal `CellStore` 首个稀疏存储切片，
-  但这仍不表示 public editor、random cell editing 或 save-as handoff 已经实现。
+  internal guardrail 首片和 standalone `<sheetData>` emission 首片，但这仍不表示
+  public editor、random cell editing 或完整 save-as handoff 已经实现。
 - `Cell` 可以继续作为小文件新建路径的 owning convenience value 或 `CellValue` 的
   轻量包装，但不要把它定义成所有模式的内部存储单元。
 - `CellView` 必须保持 Streaming-only 的非 owning view：它可以引用调用方短生命周期
@@ -88,7 +89,7 @@ editor.save_as(output_path);
 CellView  -> Streaming 输入视图，非 owning，热路径轻量
 Cell      -> 小文件创建便利值，owning，不代表大型 worksheet 内部存储
 CellValue -> 已落地 owning 语义值，适合作为 editor / in-memory / API 边界
-CellRecord / CellStore -> 已有首个 internal sparse-store 切片，不作为 public API 暴露
+CellRecord / CellStore -> 已有 internal sparse-store / sheetData emission 首片，不作为 public API 暴露
 ```
 
 Public API 概念矩阵：
@@ -107,9 +108,10 @@ sheet 入口      add_worksheet           add_worksheet            worksheet / t
 ```
 
 该矩阵是命名和职责约束，不代表 future editor 已经实现。`CellValue` 已有独立 public
-value header、实现和测试；`CellStore` / `CellRecord` 已有 internal detail 首片；
-`WorkbookEditor`、`WorksheetEditor`、`get_cell()`、`set_cell()` 仍必须标明为未来
-public design target，直到对应 public header、实现和测试存在。
+value header、实现和测试；`CellStore` / `CellRecord` 已有 internal detail 首片，
+且已有 internal `<sheetData>` payload emission helper；`WorkbookEditor`、
+`WorksheetEditor`、`get_cell()`、`set_cell()` 仍必须标明为未来 public design
+target，直到对应 public header、实现和测试存在。
 
 ### P7.1 Future Editor Facade Draft
 
@@ -226,6 +228,9 @@ P7.3 冻结 future In-memory editor 的内部 storage model；P7.3a 已新增首
 internal implementation slice：`include/fastxlsx/detail/cell_store.hpp` 和
 `src/cell_store.cpp`。`CellStore` / `CellRecord` 仍是 implementation detail；普通用户仍
 通过 future `WorkbookEditor` / `WorksheetEditor` 和 `CellValue` 边界交互。
+当前另有 internal `cell_store_to_sheet_data_xml()` 首片，用于把 sparse records
+投影为 standalone `<sheetData>` payload；它不是完整 worksheet writer，也不是
+public save-as handoff。
 
 核心原则：
 

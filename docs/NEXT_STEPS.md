@@ -75,9 +75,11 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice
-    `max_cells` / `memory_budget_bytes` enforcement. Treat this as a P7
-    foundation slice only: no public `WorkbookEditor`, no random cell editing
-    API, no workbook-level guardrails, and no save-as / Patch handoff.
+    `max_cells` / `memory_budget_bytes` enforcement, plus an internal
+    `cell_store_to_sheet_data_xml()` helper for standalone `<sheetData>`
+    payload emission. Treat this as a P7 foundation slice only: no public
+    `WorkbookEditor`, no random cell editing API, no workbook-level guardrails,
+    and no full save-as / Patch handoff.
   - `StringStrategy::SharedString`, internal shared string table wiring,
     `xl/sharedStrings.xml` package entry generation, and focused structure
     tests are visible in the current files. Treat this as sharedStrings

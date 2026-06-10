@@ -704,8 +704,9 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 状态：设计基线基础完成；`CellValue` 首个 public value 切片和 internal
 `CellStore` / `CellRecord` 首个稀疏存储切片和 internal `CellStoreOptions` guardrail
-enforcement 首片已实现，public editor、random cell editing 和 save-as / Patch handoff
-仍未开始。
+enforcement 首片已实现；internal `CellStore` 到 standalone `<sheetData>` payload
+emission 首片也已实现。public editor、random cell editing、workbook-level
+guardrails 和完整 save-as / Patch handoff 仍未 ready。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
@@ -719,6 +720,7 @@ enforcement 首片已实现，public editor、random cell editing 和 save-as / 
   `estimated_memory_usage()`：基础完成。
 - P7.4a internal `CellStoreOptions` guardrail implementation：基础完成。
 - P7.5 save-as and Patch handoff contract：基础完成。
+- P7.5a internal `CellStore` sheetData emission implementation：基础完成。
 
 验收：
 - API 注释明确 In-memory mode、随机访问语义和内存增长。
@@ -1253,6 +1255,47 @@ blank / erase / tombstone 和输出路径 guard 的边界。
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
+```
+
+### P7.5a internal `CellStore` sheetData emission implementation
+
+状态：基础完成。
+
+类型：internal detail helper + focused unit tests；不新增 public editor API。
+
+目标：给 P7.5 handoff contract 落地首个可测内部输出：把 worksheet-local sparse
+`CellStore` 序列化成 standalone `<sheetData>` payload，供未来 internal Patch /
+save-as handoff 复用，而不是继续只停留在合同文档。
+
+输入：
+- P7.3a internal `CellStore` / `CellRecord` implementation。
+- P7.4a internal `CellStoreOptions` guardrail implementation。
+- P7.5 save-as and Patch handoff contract。
+- 当前 `detail::cell_reference()`、XML escape 和 finite number output 规则。
+
+输出：
+- `detail::cell_store_to_sheet_data_xml(const CellStore&)` 生成完整
+  `<sheetData>...</sheetData>` 片段；空 store 输出空 `sheetData`。
+- 输出按 `CellStore::records()` 的 row-major 顺序分组 `<row r="...">`。
+- number / boolean / formula / text / blank records 分别写成 OpenXML cell XML；
+  text 使用 `inlineStr`，公式只写 `<f>` text，blank 写空 `<c/>`。
+- optional `StyleId` 只输出非默认 `s="N"`；默认 style id 仍省略。
+- `detail::format_number(double)` 作为内部公共数字输出 helper，保持 finite-only
+  OpenXML number text 边界。
+- `fastxlsx.unit` 覆盖空 store、稀疏行分组、XML escape、空白保留、公式转义、
+  explicit blank record 和默认 style omission。
+
+边界：
+- 这不是完整 worksheet XML writer，也不生成 `<worksheet>` root、dimension、
+  relationships、content types、sharedStrings、styles 或 calc metadata。
+- 不迁移 sharedStrings index、不合并 styles、不验证 foreign style id、不修复
+  relationships、不实现 existing-file clear semantics。
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.unit
 ```
 
 ## P8 - Large Worksheet Controlled Editing

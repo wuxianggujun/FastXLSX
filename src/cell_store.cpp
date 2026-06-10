@@ -2,6 +2,7 @@
 
 #include <fastxlsx/detail/xml.hpp>
 
+#include <string_view>
 #include <utility>
 
 namespace fastxlsx::detail {
@@ -29,6 +30,70 @@ std::size_t record_memory_usage(const CellRecord& record) noexcept
 std::size_t entry_memory_usage(const CellPosition& position, const CellRecord& record) noexcept
 {
     return sizeof(position) + record_memory_usage(record) + (sizeof(void*) * 3);
+}
+
+bool needs_space_preserve(std::string_view value)
+{
+    return !value.empty()
+        && (value.front() == ' ' || value.front() == '\t' || value.front() == '\n'
+            || value.front() == '\r' || value.back() == ' ' || value.back() == '\t'
+            || value.back() == '\n' || value.back() == '\r');
+}
+
+void append_text_element(std::string& xml, std::string_view value)
+{
+    if (needs_space_preserve(value)) {
+        xml += "<t xml:space=\"preserve\">";
+    } else {
+        xml += "<t>";
+    }
+    xml += escape_xml_text(value);
+    xml += "</t>";
+}
+
+void append_style_attribute(std::string& xml, const CellRecord& record)
+{
+    if (!record.style_id.has_value() || record.style_id->value() == 0) {
+        return;
+    }
+
+    xml += " s=\"";
+    xml += std::to_string(record.style_id->value());
+    xml += "\"";
+}
+
+void append_cell_xml(std::string& xml, const CellPosition& position, const CellRecord& record)
+{
+    xml += "<c r=\"";
+    xml += cell_reference(position.row, position.column);
+    xml += "\"";
+    append_style_attribute(xml, record);
+
+    switch (record.kind) {
+    case CellValueKind::Blank:
+        xml += "/>";
+        break;
+    case CellValueKind::Number:
+        xml += "><v>";
+        xml += format_number(record.number_value);
+        xml += "</v></c>";
+        break;
+    case CellValueKind::Text:
+        xml += " t=\"inlineStr\"><is>";
+        append_text_element(xml, record.text_value);
+        xml += "</is></c>";
+        break;
+    case CellValueKind::Boolean:
+        xml += " t=\"b\"><v>";
+        xml += record.boolean_value ? "1" : "0";
+        xml += "</v></c>";
+        break;
+    case CellValueKind::Formula:
+        xml += "><f>";
+        xml += escape_xml_text(record.text_value);
+        xml += "</f></c>";
+        break;
+    }
 }
 
 } // namespace
@@ -71,6 +136,35 @@ CellValue CellRecord::to_value() const
         value = value.with_style(*style_id);
     }
     return value;
+}
+
+std::string cell_store_to_sheet_data_xml(const CellStore& store)
+{
+    std::string xml;
+    xml += "<sheetData>";
+
+    std::uint32_t current_row = 0;
+    bool row_open = false;
+    for (const auto& [position, record] : store.records()) {
+        if (!row_open || position.row != current_row) {
+            if (row_open) {
+                xml += "</row>";
+            }
+            current_row = position.row;
+            xml += "<row r=\"";
+            xml += std::to_string(current_row);
+            xml += "\">";
+            row_open = true;
+        }
+
+        append_cell_xml(xml, position, record);
+    }
+
+    if (row_open) {
+        xml += "</row>";
+    }
+    xml += "</sheetData>";
+    return xml;
 }
 
 CellStore::CellStore(CellStoreOptions options)

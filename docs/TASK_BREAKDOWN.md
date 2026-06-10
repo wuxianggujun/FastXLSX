@@ -335,8 +335,8 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 子任务：
 - P6.1 sharedStrings / styles dependency policy：基础完成。
-- P6.2 tables / hyperlinks / validations / conditionalFormatting policy：当前最小可执行任务。
-- P6.3 drawings / images / charts linked-part policy。
+- P6.2 tables / hyperlinks / validations / conditionalFormatting policy：基础完成。
+- P6.3 drawings / images / charts linked-part policy：当前最小可执行任务。
 - P6.4 definedNames / formulas / calc metadata policy。
 - P6.5 unsupported edits preserve / request recalc / fail matrix。
 
@@ -411,7 +411,7 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ### P6.2 tables / hyperlinks / validations / conditionalFormatting policy
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
 
@@ -474,6 +474,77 @@ hyperlink repair、validation recalculation 或 conditional formatting semantic 
 - 不把 audit-only note 写成 repair。
 - 不自动 prune worksheet relationships、table parts、hyperlink relationships、
   content type overrides 或 worksheet-local metadata。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor
+```
+
+### P6.3 drawings / images / charts linked-part policy
+
+状态：当前最小可执行任务。
+
+类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
+
+目标：把 sheet-local edit 遇到 drawing、image/media、chart 和 legacy drawing linked
+parts 时的保守策略写清楚，避免把 linked-part preservation / audit-only 行为误写成
+drawing mutation、image editing、chart reference repair 或 relationship pruning。
+
+输入：
+- 当前 linked-object fixture 对 worksheet `<drawing>` / `<legacyDrawing>` /
+  `<picture>` / `<legacyDrawingHF>`、worksheet `.rels`、drawing XML、drawing `.rels`、
+  PNG media、chart XML、VML drawing、percent-decoded drawing target、URI-qualified
+  relationship target、external / invalid / unresolved target audit 的覆盖。
+- 当前 ordinary replace/remove 和 remove-then-replace / replace-then-remove ordering
+  对 drawing、media、chart、VML drawing、percent-decoded drawing 的 output-plan audit。
+- 当前 `RelationshipTargetAudit`、removed-part inbound audit、`ReferencePolicy`、
+  `EditPlan` 和 `planned_output()`。
+
+输出：
+- drawing policy：保留 source drawing part、worksheet inbound relationship、drawing
+  owner `.rels` 和 drawing content type override；worksheet payload 中的 drawing
+  references 只做 relationship audit，不重写 drawing XML、不合成 owner `.rels`。
+- image/media policy：保留 drawing-owned image relationships 和 media bytes；default
+  typed media 保持 default content type，不提升为 override；不解码、不裁剪、不压缩、
+  不转换图片格式，也不编辑 existing drawing anchor。
+- chart policy：保留 drawing-owned chart relationships、URI-qualified base target
+  audit 和 chart part bytes；不修复 chart series/cache、drawing frame、chart reference
+  或 content type metadata。
+- malformed / external / URI-qualified / unresolved linked targets 只进入结构化 audit；
+  不虚构 package part，不做 target repair，也不 prune source relationships。
+- `ReferencePolicyAction::Fail` 下的失败边界：caller 不接受 linked drawing/image/chart
+  dependencies 时，必须在状态变更前失败，且不污染 `EditPlan`、manifest、
+  package-entry audit、relationship audits、calc policy、planned output 或输出 bytes。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/TASK_PLAN.md`、
+  `docs/NEXT_STEPS.md`
+- 若发现测试缺口，再触碰 `tests/test_package_editor.cpp`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- streaming writer API / tests
+- package reader ZIP 边界
+- CMake 配置
+
+可并行性：
+- 可与 P6.4 的只读调研并行。
+- 若需要新增 `tests/test_package_editor.cpp` 用例，写入该文件的变更必须串行合并。
+
+验收标准：
+- 文档能回答 drawings、images/media、charts 是 preserve、rewrite、audit-only 还是 fail。
+- 文档明确现有行为不做 drawing mutation、image editing、chart reference repair、
+  relationship target repair、relationship pruning/orphan cleanup 或 public editing API。
+- 若新增测试，默认 preset 下 `fastxlsx.package_editor` 通过，并保持 60s CTest 边界。
+
+禁止项：
+- 不新增 public drawing/image/chart editing API。
+- 不把 linked-part audit 写成 repair。
+- 不自动 prune worksheet/drawing relationships、media/chart parts、drawing owner `.rels`
+  或 content type overrides。
 
 验证命令：
 ```powershell

@@ -154,6 +154,33 @@ formatting 也采用 preservation-first 策略：
   dependency 转为失败边界；失败必须发生在状态变更前，并保持 `EditPlan`、manifest、
   package-entry audit、relationship audits、calc policy、planned output 和输出 bytes 不污染。
 
+### P6.3 drawings / images / charts linked-part policy
+
+当前 sheet-local Patch 对 drawing / media / chart linked parts 继续采用
+preservation-first 策略：
+
+- Drawings：worksheet `<drawing>`、`<legacyDrawing>`、`<picture>` 和
+  `<legacyDrawingHF>` 引用会触发 relationship / linked-part audit。source drawing
+  part、drawing owner `.rels`、worksheet inbound relationship 和 drawing content type
+  override 默认 copy-original；replacement worksheet 省略 drawing 引用时，当前也不自动
+  删除 drawing part 或 prune worksheet relationship。Ordinary drawing / VML drawing /
+  percent-decoded drawing replacement 或 removal 只表达 part-level rewrite / omission
+  audit，不 mutate drawing XML、不合成 owner `.rels`、不修复 percent-encoded target。
+- Images / media：drawing-owned image relationships 和 media bytes 默认保留。
+  default-typed PNG/JPEG media 继续依赖 content type default，不为了 removal / restore
+  无故提升为 part override。当前 Patch 不解码、不重采样、不压缩、不裁剪、不旋转、
+  不转换图片格式，也不编辑 existing drawing anchors 或 image metadata。
+- Charts：drawing-owned chart relationships 和 chart part bytes 默认保留；对
+  URI-qualified chart targets 只审计 normalized base target。当前 Patch 不更新 chart
+  series/cache、不修复 chart references、不改 drawing frame，也不创建 chart owner `.rels`。
+- External、URI-qualified、percent-encoded、invalid 或 unresolved linked targets 只进入
+  `RelationshipTargetAudit` / removed-part inbound audit；命中已注册 package part 的
+  normalized target 可作为保守 dependency 纳入 copy-original 决策，但不会虚构缺失 part、
+  repair target 或 prune source relationship。
+- `ReferencePolicyAction::Fail` 可把 caller 不接受的 drawing/image/chart linked
+  dependencies 转为失败边界；失败必须发生在状态变更前，并保持 `EditPlan`、manifest、
+  package-entry audit、relationship audits、calc policy、planned output 和输出 bytes 不污染。
+
 当前另有 internal `PackageEditor::replace_worksheet_sheet_data()` helper，只替换
 已有 worksheet XML 的 `<sheetData>` 元素或 `<sheetData/>`，保留同一 worksheet
 part 中的外围 XML metadata，并复用 worksheet replacement 的 calcChain /

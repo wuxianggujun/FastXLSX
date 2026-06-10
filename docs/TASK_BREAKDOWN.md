@@ -711,9 +711,9 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 子任务：
 - P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft：基础完成。
 - P7.2 `CellValue` public value draft：基础完成。
-- P7.3 internal `CellStore` / `CellRecord` memory model：当前最小可执行任务。
+- P7.3 internal `CellStore` / `CellRecord` memory model：基础完成。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
-  `estimated_memory_usage()`。
+  `estimated_memory_usage()`：当前最小可执行任务。
 - P7.5 save-as and Patch handoff contract。
 
 验收：
@@ -855,7 +855,7 @@ ctest --preset windows-nmake-release
 
 ### P7.3 internal `CellStore` / `CellRecord` memory model
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：internal architecture / API 文档设计；不新增 header / implementation。
 
@@ -916,6 +916,73 @@ ctest --preset windows-nmake-release
 - 不把 future `CellStore` 写成已实现能力。
 - 不承诺百万行 worksheet 低内存随机访问。
 - 不在 P7.5 前宣称 sharedStrings、styles、calcChain 或 relationship handoff 已完成。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P7.4 guardrails：`max_cells` / `memory_budget_bytes`
+
+状态：当前最小可执行任务。
+
+类型：public API / internal architecture 文档设计；不新增 header / implementation。
+
+目标：冻结 future In-memory editor 的 size / memory guardrail 草案，明确
+`max_cells`、`memory_budget_bytes`、`cell_count()`、`estimated_memory_usage()` 的
+候选语义、计量口径、拒绝时机和错误提示，确保小文件随机编辑不会被误写成大文件
+低内存路径。
+
+输入：
+- P7.1 future editor facade draft。
+- P7.2 future `CellValue` public value draft。
+- P7.3 internal `CellStore` / `CellRecord` memory model。
+- 当前 In-memory API 文档要求：超限时提示 caller 改用 Streaming 或 Patch。
+
+输出：
+- future `WorkbookEditorOptions` / equivalent guardrail options 草案：
+  `max_cells`、`memory_budget_bytes`、可选 diagnostic / strict mode 扩展点。
+- future diagnostic APIs 草案：`cell_count()`、`estimated_memory_usage()`，作用域需明确
+  是 workbook-level、worksheet-level 还是两者都提供。
+- 计数口径：active value records、blank / tombstone records、row/column metadata、
+  string/formula pool bytes、sparse index overhead、style handles 和 save-time assembly
+  memory 的估算边界。
+- enforcement 时机：open/load materialization、`set_cell()` / `erase_cell()`、row/column
+  edits、pool growth、before save-as snapshot；拒绝必须发生在状态污染前或记录为明确
+  failed mutation。
+- 错误边界：超限走 `FastXlsxError` 或 future 明确错误码；错误消息应说明触发的 limit
+  和建议路径（Streaming 用于大导出，Patch 用于已有文件局部替换）。
+- 非 ready 边界：P7.4 只定义 guardrail 设计；没有 P7.5 save-as / Patch handoff 前，
+  不宣称 In-memory editor ready。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与 P7.5 save-as handoff 的只读调研并行。
+- 若 P7.5 要写 blank / erase / tombstone save semantics，同一段落需串行合并。
+
+验收标准：
+- 文档明确 guardrails 是 future design，不是已实现 public API。
+- 文档明确 limit options、diagnostic APIs、计量维度和 enforcement 时机。
+- 文档明确超限错误需要建议 Streaming 或 Patch。
+- 文档明确没有 guardrails 和 P7.5 handoff 前不能宣称 In-memory ready。
+
+禁止项：
+- 不新增 `WorkbookEditorOptions`、`cell_count()`、`estimated_memory_usage()` 等代码。
+- 不定义默认 limit 数值为稳定承诺。
+- 不把 `estimated_memory_usage()` 写成精确内存 profiler。
+- 不承诺百万行 worksheet 低内存随机访问。
 
 验证命令：
 ```powershell

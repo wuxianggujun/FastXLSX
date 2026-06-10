@@ -278,6 +278,67 @@ P7.4 guardrail 输入：
   styles merge、relationship repair 或 content type repair。
 - 不把 in-memory cell model 用作 Streaming / Patch 的默认内部表示。
 
+### P7.4 Future In-memory Guardrails Draft
+
+P7.4 只冻结 future In-memory editor 的 size / memory guardrail 语义，不新增
+`WorkbookEditorOptions`、`cell_count()`、`estimated_memory_usage()` 或任何 public header
+符号。guardrails 是 small-file editor ready 的前置条件之一；没有 guardrails 和 P7.5
+save-as / Patch handoff 前，不能宣称 In-memory editor ready。
+
+候选 options：
+
+- `max_cells`：限制 materialized / edited cell records 的数量。具体默认值留给实现阶段，
+  文档不得把任意数字写成稳定承诺。
+- `memory_budget_bytes`：限制 editor 估算的 in-memory 工作集。该值是预算 guardrail，
+  不是精确进程 RSS 控制。
+- diagnostic / strict mode 扩展点：允许 future implementation 决定是尽早拒绝、
+  输出诊断，还是在某些 load 场景下先审计再拒绝；P7.4 只保留扩展点。
+
+候选 diagnostic APIs：
+
+- `WorkbookEditor::cell_count()`：workbook-level active record count。
+- `WorksheetEditor::cell_count()`：worksheet-level active record count。
+- `WorkbookEditor::estimated_memory_usage()`：workbook-level estimate。
+- `WorksheetEditor::estimated_memory_usage()`：worksheet-level estimate。
+
+计数口径：
+
+- active value records 计入 `cell_count()`。
+- blank / tombstone / cleared records 是否计入 `cell_count()` 必须由实现阶段固定；
+  若计入，文档要说明这是为了反映 pending edit / save-as 成本。
+- row / column metadata、merged ranges、hyperlinks、tables、drawings 和 relationships
+  metadata 不应混入 cell count；它们可进入 memory estimate 的非 cell 部分。
+- `estimated_memory_usage()` 至少拆分或内部计入 record bytes、sparse index overhead、
+  string / formula pool bytes、style handle overhead、metadata model overhead，以及
+  save-time XML/package assembly memory。
+- 估算值是 capacity planning 和 limit enforcement 依据，不是精确 allocator profiler。
+
+enforcement 时机：
+
+- `open(...)` / load materialization：源 workbook 超出 limits 时应拒绝或进入明确的
+  audit / diagnostic path，不能静默降级为半加载 workbook。
+- `set_cell(...)`、`erase_cell(...)`、append/insert/delete row、sheet-level mutations：
+  如果会超过 `max_cells` 或 `memory_budget_bytes`，应在污染 editor state 前拒绝。
+- string / formula pool growth：新增 text / formula payload 的 pool bytes 必须纳入预算。
+- `save_as(...)` 前：需要复核 save-time XML/package assembly memory 估算，避免把
+  runtime store 低估当作保存阶段内存保证。
+
+错误语义：
+
+- 超限使用 `FastXlsxError` 或 future 明确错误码。
+- 错误消息应包含触发的 limit kind、当前估算值和建议路径：大规模顺序导出使用
+  Streaming，已有文件局部替换或模板填充使用 Patch。
+- 失败 mutation 不能部分应用；如果实现阶段无法保证原子性，必须在 API 注释中明确
+  state-after-failure 语义并提供 recovery guidance。
+
+非目标：
+
+- 不实现 guardrail APIs。
+- 不承诺默认 limit 数字、精确 RSS 统计或 allocator-level tracking。
+- 不把 guardrails 解释为百万行 worksheet 随机编辑可低内存运行。
+- 不替代 P7.5 save-as / Patch handoff 中的 sharedStrings、styles、calc metadata 和
+  unknown part preservation 策略。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

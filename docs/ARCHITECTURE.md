@@ -1424,6 +1424,21 @@ P7.3 internal storage draft：
 - row/column metadata、merged ranges、hyperlinks、tables、drawings 和 relationship
   bearing worksheet metadata 不塞进 `CellRecord`，需要独立模型或 Patch preservation。
 
+P7.4 guardrail draft：
+
+- future editor options 可包含 `max_cells` 和 `memory_budget_bytes`，但默认值不在
+  P7.4 固化为稳定承诺。
+- `cell_count()` 可提供 workbook-level 和 worksheet-level 诊断；计数口径必须说明
+  active records 以及 blank / tombstone records 是否计入。
+- `estimated_memory_usage()` 是预算估算，不是精确进程 RSS；估算维度至少覆盖 record
+  bytes、sparse index overhead、string / formula pools、style handles、metadata models
+  和 save-time XML/package assembly memory。
+- guardrail enforcement 应覆盖 open/load materialization、cell mutation、pool growth
+  和 save-as preflight；超限失败应避免污染 editor state，或在无法原子化时记录明确
+  state-after-failure 语义。
+- 超限错误应引导 caller 改用 Streaming 进行大规模顺序导出，或改用 Patch 进行已有
+  文件局部替换 / 模板填充。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

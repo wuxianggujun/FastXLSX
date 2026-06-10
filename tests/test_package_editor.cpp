@@ -14740,6 +14740,71 @@ void test_package_editor_replaces_shared_strings_and_preserves_workbook_links()
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "linked fixture unknown extension should remain copy-original after sharedStrings replacement");
 
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "linked fixture sharedStrings replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "linked fixture sharedStrings replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "linked fixture sharedStrings replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "linked fixture sharedStrings replacement output plan should not remove parts");
+    check(output_plan.removed_package_entries.empty(),
+        "linked fixture sharedStrings replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "linked fixture sharedStrings replacement output plan should rewrite sharedStrings");
+    check_output_entry_part_context(output_plan.entries, "xl/sharedStrings.xml",
+        true, shared_strings_part.value(),
+        "linked fixture sharedStrings replacement output plan should classify sharedStrings");
+    const auto* output_shared_strings_plan =
+        find_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml");
+    check(output_shared_strings_plan->reason.find("stream rewrite") != std::string::npos,
+        "linked fixture sharedStrings replacement output plan should keep replacement reason");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve owner relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        false, "",
+        "linked fixture sharedStrings replacement output plan should classify owner relationships as metadata");
+    const auto* output_shared_strings_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels");
+    check(output_shared_strings_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "linked fixture sharedStrings replacement output plan should keep owner relationship audit role");
+    check(output_shared_strings_relationships_plan->owner_part
+            == shared_strings_part.value(),
+        "linked fixture sharedStrings replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "linked fixture sharedStrings replacement output plan should classify content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve styles");
+    check_output_entry_plan(output_plan.entries, "xl/tables/table1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve table");
+    check_output_entry_plan(output_plan.entries, "xl/media/image1.png",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve media");
+    check_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture sharedStrings replacement output plan should preserve unknown extension");
+
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =
@@ -14879,6 +14944,72 @@ void test_package_editor_replaces_styles_and_preserves_workbook_links()
     check(editor.edit_plan().find_part(opaque_extension_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "linked fixture unknown extension should remain copy-original after styles replacement");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "linked fixture styles replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "linked fixture styles replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "linked fixture styles replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "linked fixture styles replacement output plan should not remove parts");
+    check(output_plan.removed_package_entries.empty(),
+        "linked fixture styles replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "linked fixture styles replacement output plan should rewrite styles");
+    check_output_entry_part_context(output_plan.entries, "xl/styles.xml",
+        true, styles_part.value(),
+        "linked fixture styles replacement output plan should classify styles");
+    const auto* output_styles_plan =
+        find_output_entry_plan(output_plan.entries, "xl/styles.xml");
+    check(output_styles_plan->reason.find("local-DOM rewrite") != std::string::npos,
+        "linked fixture styles replacement output plan should keep replacement reason");
+    check(find_output_entry_plan(output_plan.entries, "xl/_rels/styles.xml.rels")
+            == nullptr,
+        "linked fixture styles replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "linked fixture styles replacement output plan should classify content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve sharedStrings");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve sharedStrings relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        false, "",
+        "linked fixture styles replacement output plan should classify sharedStrings relationships as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/tables/table1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve table");
+    check_output_entry_plan(output_plan.entries, "xl/media/image1.png",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve media");
+    check_output_entry_plan(output_plan.entries, "xl/vbaProject.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve VBA");
+    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve calcChain");
+    check_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture styles replacement output plan should preserve unknown extension");
 
     editor.save_as(output);
 

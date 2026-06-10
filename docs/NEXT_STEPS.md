@@ -2488,6 +2488,13 @@ Current foundation:
   copy-original baseline. This is not sharedStrings index migration,
   string-table rebuild, worksheet cell-reference sync, or existing-workbook
   sharedStrings semantic editing.
+  The internal `planned_output()` snapshot now also covers that ordinary
+  replacement state: the active `xl/sharedStrings.xml` `StreamRewrite` entry,
+  source-owned sharedStrings owner `.rels` copy-original audit, preserved
+  content types / package relationships / workbook relationships / workbook /
+  worksheet / styles / table / media / unknown extension entries, and empty
+  `removed_parts` / `removed_package_entries`. This is audit visibility only,
+  not a public output planner, sharedStrings migration, or metadata repair.
   The same path now covers sharedStrings ordinary-replace-then-remove ordering:
   a later removal clears the active sharedStrings replacement, records
   removed-part audit, omits `xl/sharedStrings.xml` and its source-owned owner
@@ -2507,6 +2514,14 @@ Current foundation:
   and leaves sharedStrings, table, media, VBA, and unknown extension entries on
   the same copy-original baseline. This is not style id migration, style merge,
   cell `s` reference sync, existing-file style preservation, or full style editing.
+  The internal `planned_output()` snapshot now also covers that ordinary
+  replacement state: the active `xl/styles.xml` `LocalDomRewrite` entry,
+  preserved content types / package relationships / workbook relationships /
+  workbook / worksheet / sharedStrings / sharedStrings owner `.rels` / table /
+  media / VBA / calcChain / unknown extension entries, absence of invented
+  `xl/_rels/styles.xml.rels`, and empty `removed_parts` /
+  `removed_package_entries`. This is audit visibility only, not a public output
+  planner, style id migration, style merge, or metadata repair.
   The same path now covers styles ordinary-replace-then-remove ordering: a later
   removal clears the active styles replacement, records removed-part audit, omits
   `xl/styles.xml` from output, removes the styles content type override, preserves

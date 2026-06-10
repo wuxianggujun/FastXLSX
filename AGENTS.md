@@ -1606,6 +1606,12 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   extension entries 仍按上述 copy-original 基线保留；这不是 sharedStrings
   索引迁移、字符串表重建、worksheet cell 引用同步或 existing-file sharedStrings
   语义编辑。
+  内部 `planned_output()` 快照还验证该普通 replacement 状态：暴露 active
+  `xl/sharedStrings.xml` `StreamRewrite` entry、source-owned sharedStrings owner
+  `.rels` copy-original audit、content types / package relationships / workbook
+  relationships / workbook / worksheet / styles / table / media / unknown extension
+  copy-original entries，且 `removed_parts` 与 `removed_package_entries` 为空；这只是
+  Patch audit 可见性，不是 public output planner、sharedStrings 迁移或 metadata repair。
   同一路径还覆盖 sharedStrings 先 ordinary replacement 再显式移除的顺序：后续
   removal 会清理 active sharedStrings replacement、记录 removed-part audit、输出省略
   `xl/sharedStrings.xml` 及其 source-owned owner `.rels`、移除 sharedStrings
@@ -1619,6 +1625,13 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   extension entries 仍按上述 copy-original 基线保留，且不会凭空创建
   `xl/_rels/styles.xml.rels`；这不是 style id 迁移、样式合并、cell `s`
   引用同步、existing-file style preservation 或完整样式编辑。
+  内部 `planned_output()` 快照还验证该普通 replacement 状态：暴露 active
+  `xl/styles.xml` `LocalDomRewrite` entry、content types / package relationships /
+  workbook relationships / workbook / worksheet / sharedStrings / sharedStrings owner
+  `.rels` / table / media / VBA / calcChain / unknown extension copy-original entries，
+  且不发明 `xl/_rels/styles.xml.rels`，`removed_parts` 与
+  `removed_package_entries` 为空；这只是 Patch audit 可见性，不是 public output
+  planner、style id 迁移、样式合并或 metadata repair。
   同一路径还覆盖 styles 先 ordinary replacement 再显式移除的顺序：后续 removal
   会清理 active styles replacement、记录 removed-part audit、输出省略 `xl/styles.xml`、
   移除 styles content type override、保留 workbook `.rels` 中的 inbound styles

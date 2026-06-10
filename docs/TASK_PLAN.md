@@ -37,8 +37,10 @@ parallelism, acceptance checks, and explicit non-goals.
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
 - Current internal In-memory foundation includes
   `include/fastxlsx/detail/cell_store.hpp` and `src/cell_store.cpp` with
-  `CellPosition`, `CellRecord`, and worksheet-local sparse `CellStore`; this is
-  not a public editor API and does not implement save-as / Patch handoff.
+  `CellPosition`, `CellRecord`, worksheet-local sparse `CellStore`, and internal
+  `CellStoreOptions` for first-slice `max_cells` / `memory_budget_bytes`
+  enforcement; this is not a public editor API and does not implement
+  workbook-level guardrails or save-as / Patch handoff.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.
@@ -1462,8 +1464,9 @@ Validation:
 ### M7.5 - In-memory Small Workbook Editor
 
 Status: planned; first internal `CellStore` / `CellRecord` sparse-store
-foundation slice exists, but public editor, guardrails, and save-as handoff are
-not ready.
+foundation and `CellStoreOptions` guardrail slices exist, but public editor,
+workbook-level guardrails, load/save-as preflight, and save-as handoff are not
+ready.
 
 Use this lane for the editing experience users expect from a workbook library:
 random cell access, small sheet edits, and convenient workbook manipulation.
@@ -1483,7 +1486,8 @@ Tasks:
   boundary values.
 - Add guardrail APIs or options such as `max_cells`, `memory_budget_bytes`,
   `cell_count()`, and `estimated_memory_usage()` before calling the In-memory
-  editor ready.
+  editor ready. The current internal `CellStoreOptions` is only a worksheet-local
+  foundation slice, not the public editor options contract.
 - Reuse common encoders and registries where possible: cell references,
   XML escaping, sharedStrings, styles, relationships, document properties, and
   formula recalculation metadata.

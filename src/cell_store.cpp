@@ -2,6 +2,8 @@
 
 #include <fastxlsx/detail/xml.hpp>
 
+#include <utility>
+
 namespace fastxlsx::detail {
 
 bool operator<(const CellPosition& left, const CellPosition& right) noexcept
@@ -22,6 +24,11 @@ void validate_position(std::uint32_t row, std::uint32_t column)
 std::size_t record_memory_usage(const CellRecord& record) noexcept
 {
     return sizeof(CellRecord) + record.text_value.capacity();
+}
+
+std::size_t entry_memory_usage(const CellPosition& position, const CellRecord& record) noexcept
+{
+    return sizeof(position) + record_memory_usage(record) + (sizeof(void*) * 3);
 }
 
 } // namespace
@@ -66,10 +73,36 @@ CellValue CellRecord::to_value() const
     return value;
 }
 
+CellStore::CellStore(CellStoreOptions options)
+    : options_(std::move(options))
+{
+}
+
 void CellStore::set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
 {
     validate_position(row, column);
-    cells_[CellPosition {row, column}] = CellRecord::from_value(value);
+    const CellPosition position {row, column};
+    CellRecord record = CellRecord::from_value(value);
+    const auto existing = cells_.find(position);
+    const bool inserting_new_record = existing == cells_.end();
+    const std::size_t next_cell_count = cells_.size() + (inserting_new_record ? 1U : 0U);
+
+    if (options_.max_cells.has_value() && next_cell_count > *options_.max_cells) {
+        throw FastXlsxError("CellStore max_cells guardrail exceeded");
+    }
+
+    if (options_.memory_budget_bytes.has_value()) {
+        std::size_t next_memory_usage = estimated_memory_usage();
+        if (!inserting_new_record) {
+            next_memory_usage -= entry_memory_usage(existing->first, existing->second);
+        }
+        next_memory_usage += entry_memory_usage(position, record);
+        if (next_memory_usage > *options_.memory_budget_bytes) {
+            throw FastXlsxError("CellStore memory_budget_bytes guardrail exceeded");
+        }
+    }
+
+    cells_[position] = std::move(record);
 }
 
 void CellStore::erase_cell(std::uint32_t row, std::uint32_t column)
@@ -102,9 +135,14 @@ std::size_t CellStore::estimated_memory_usage() const noexcept
 {
     std::size_t total = sizeof(CellStore);
     for (const auto& [position, record] : cells_) {
-        total += sizeof(position) + record_memory_usage(record) + (sizeof(void*) * 3);
+        total += entry_memory_usage(position, record);
     }
     return total;
+}
+
+const CellStoreOptions& CellStore::options() const noexcept
+{
+    return options_;
 }
 
 const std::map<CellPosition, CellRecord>& CellStore::records() const noexcept

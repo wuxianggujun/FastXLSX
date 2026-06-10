@@ -1430,7 +1430,8 @@ P7.3 internal storage draft：
 P7.4 guardrail draft：
 
 - future editor options 可包含 `max_cells` 和 `memory_budget_bytes`，但默认值不在
-  P7.4 固化为稳定承诺。
+  P7.4 固化为稳定承诺。当前 internal `CellStoreOptions` 首片只约束单个 sparse
+  `CellStore`。
 - `cell_count()` 可提供 workbook-level 和 worksheet-level 诊断；计数口径必须说明
   active records 以及 blank / tombstone records 是否计入。
 - `estimated_memory_usage()` 是预算估算，不是精确进程 RSS；估算维度至少覆盖 record
@@ -1438,7 +1439,8 @@ P7.4 guardrail draft：
   和 save-time XML/package assembly memory。
 - guardrail enforcement 应覆盖 open/load materialization、cell mutation、pool growth
   和 save-as preflight；超限失败应避免污染 editor state，或在无法原子化时记录明确
-  state-after-failure 语义。
+  state-after-failure 语义。当前已覆盖 internal `CellStore::set_cell()` 的插入/覆盖
+  超限失败不污染 records。
 - 超限错误应引导 caller 改用 Streaming 进行大规模顺序导出，或改用 Patch 进行已有
   文件局部替换 / 模板填充。
 

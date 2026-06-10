@@ -282,25 +282,30 @@ P7.4 guardrail 输入：
 
 非目标：
 
-- 不实现 public editor APIs、string pool、formula pool、guardrail enforcement 或
-  save-as / Patch handoff。
+- 不实现 public editor APIs、string pool、formula pool、workbook-level guardrails 或
+  save-as / Patch handoff。P7.4a 只有 internal `CellStore` guardrail first slice。
 - 不承诺公式计算、cached formula values、calcChain rebuild、sharedStrings migration、
   styles merge、relationship repair 或 content type repair。
 - 不把 in-memory cell model 用作 Streaming / Patch 的默认内部表示。
 
-### P7.4 Future In-memory Guardrails Draft
+### P7.4 In-memory Guardrails
 
-P7.4 只冻结 future In-memory editor 的 size / memory guardrail 语义，不新增
-`WorkbookEditorOptions`、`cell_count()`、`estimated_memory_usage()` 或任何 public header
-符号。guardrails 是 small-file editor ready 的前置条件之一；没有 guardrails 和 P7.5
-save-as / Patch handoff 前，不能宣称 In-memory editor ready。
+P7.4 冻结 future In-memory editor 的 size / memory guardrail 语义。P7.4a 已新增
+internal `CellStoreOptions` first slice，覆盖 worksheet-local sparse store 的
+`max_cells` / `memory_budget_bytes` enforcement；它不新增 public
+`WorkbookEditorOptions`、public `cell_count()` / `estimated_memory_usage()` 或 public
+editor header。guardrails 是 small-file editor ready 的前置条件之一；没有 workbook-level
+public options、load materialization limits、string/formula pool budget 和 P7.5 save-as /
+Patch handoff 前，不能宣称 In-memory editor ready。
 
 候选 options：
 
 - `max_cells`：限制 materialized / edited cell records 的数量。具体默认值留给实现阶段，
-  文档不得把任意数字写成稳定承诺。
+  文档不得把任意数字写成稳定承诺。当前 internal `CellStoreOptions::max_cells`
+  只限制单个 `CellStore` 的 sparse records。
 - `memory_budget_bytes`：限制 editor 估算的 in-memory 工作集。该值是预算 guardrail，
-  不是精确进程 RSS 控制。
+  不是精确进程 RSS 控制。当前 internal `CellStoreOptions::memory_budget_bytes`
+  只使用 `CellStore::estimated_memory_usage()` 的预算估算。
 - diagnostic / strict mode 扩展点：允许 future implementation 决定是尽早拒绝、
   输出诊断，还是在某些 load 场景下先审计再拒绝；P7.4 只保留扩展点。
 
@@ -329,6 +334,7 @@ enforcement 时机：
   audit / diagnostic path，不能静默降级为半加载 workbook。
 - `set_cell(...)`、`erase_cell(...)`、append/insert/delete row、sheet-level mutations：
   如果会超过 `max_cells` 或 `memory_budget_bytes`，应在污染 editor state 前拒绝。
+  当前 P7.4a 已覆盖 internal `CellStore::set_cell()` 的 no-state-pollution 插入/覆盖拒绝。
 - string / formula pool growth：新增 text / formula payload 的 pool bytes 必须纳入预算。
 - `save_as(...)` 前：需要复核 save-time XML/package assembly memory 估算，避免把
   runtime store 低估当作保存阶段内存保证。
@@ -343,7 +349,8 @@ enforcement 时机：
 
 非目标：
 
-- 不实现 guardrail APIs。
+- 不实现 public guardrail APIs。
+- 不把 internal `CellStoreOptions` 写成 public `WorkbookEditorOptions`。
 - 不承诺默认 limit 数字、精确 RSS 统计或 allocator-level tracking。
 - 不把 guardrails 解释为百万行 worksheet 随机编辑可低内存运行。
 - 不替代 P7.5 save-as / Patch handoff 中的 sharedStrings、styles、calc metadata 和

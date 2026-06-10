@@ -266,6 +266,64 @@ void test_internal_cell_store_sparse_boundary()
         "CellStore should reject rows beyond Excel's limit");
 }
 
+void test_internal_cell_store_guardrails()
+{
+    fastxlsx::detail::CellStoreOptions max_cell_options;
+    max_cell_options.max_cells = 1;
+    fastxlsx::detail::CellStore max_cell_store(max_cell_options);
+
+    max_cell_store.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+    check(max_cell_store.cell_count() == 1,
+        "CellStore max_cells setup should insert the first record");
+    check_fastxlsx_error(
+        [&max_cell_store] { max_cell_store.set_cell(1, 2, fastxlsx::CellValue::text("blocked")); },
+        "CellStore should reject inserts beyond max_cells");
+    check(max_cell_store.cell_count() == 1,
+        "CellStore max_cells failure should not grow the sparse index");
+    check(max_cell_store.find_cell(1, 2) == nullptr,
+        "CellStore max_cells failure should not leave a rejected record");
+
+    max_cell_store.set_cell(1, 1, fastxlsx::CellValue::boolean(true));
+    const fastxlsx::detail::CellRecord* overwritten = max_cell_store.find_cell(1, 1);
+    check(overwritten != nullptr, "CellStore max_cells overwrite should keep the record");
+    check(overwritten->kind == fastxlsx::CellValueKind::Boolean,
+        "CellStore max_cells should allow overwriting an existing record");
+    check(overwritten->boolean_value, "CellStore max_cells overwrite payload mismatch");
+
+    fastxlsx::detail::CellStore sizing_store;
+    sizing_store.set_cell(1, 1, fastxlsx::CellValue::text("a"));
+    fastxlsx::detail::CellStoreOptions memory_options;
+    memory_options.memory_budget_bytes = sizing_store.estimated_memory_usage();
+    fastxlsx::detail::CellStore memory_store(memory_options);
+
+    memory_store.set_cell(1, 1, fastxlsx::CellValue::text("a"));
+    check(memory_store.cell_count() == 1,
+        "CellStore memory budget setup should insert the first record");
+    check_fastxlsx_error(
+        [&memory_store] {
+            memory_store.set_cell(1, 1, fastxlsx::CellValue::text(std::string(1024, 'x')));
+        },
+        "CellStore should reject overwrites beyond memory_budget_bytes");
+    const fastxlsx::detail::CellRecord* preserved = memory_store.find_cell(1, 1);
+    check(preserved != nullptr,
+        "CellStore memory budget failure should preserve the existing record");
+    check(preserved->kind == fastxlsx::CellValueKind::Text,
+        "CellStore memory budget failure should preserve the existing kind");
+    check(preserved->text_value == "a",
+        "CellStore memory budget failure should preserve the existing payload");
+
+    fastxlsx::detail::CellStoreOptions empty_budget_options;
+    empty_budget_options.memory_budget_bytes = sizeof(fastxlsx::detail::CellStore);
+    fastxlsx::detail::CellStore empty_budget_store(empty_budget_options);
+    check_fastxlsx_error(
+        [&empty_budget_store] {
+            empty_budget_store.set_cell(1, 1, fastxlsx::CellValue::text("blocked"));
+        },
+        "CellStore should reject inserts beyond an empty memory budget");
+    check(empty_budget_store.empty(),
+        "CellStore memory budget insert failure should leave the store empty");
+}
+
 void test_minimal_xlsx_package()
 {
     auto workbook = fastxlsx::Workbook::create();
@@ -599,6 +657,7 @@ int main()
         test_xml_helpers();
         test_cell_value_public_boundary();
         test_internal_cell_store_sparse_boundary();
+        test_internal_cell_store_guardrails();
         test_minimal_xlsx_package();
         test_workbook_document_properties();
         test_workbook_formula_and_row_height_metadata();

@@ -34,6 +34,16 @@ struct CellRecord {
     [[nodiscard]] CellValue to_value() const;
 };
 
+/// Internal size and memory guardrails for the first CellStore slice.
+///
+/// These limits are intentionally internal. They are budget checks for future
+/// in-memory editor materialization, not exact process RSS controls and not a
+/// public WorkbookEditor options contract.
+struct CellStoreOptions {
+    std::optional<std::size_t> max_cells;
+    std::optional<std::size_t> memory_budget_bytes;
+};
+
 /// Internal sparse worksheet cell store for future small-file editing.
 ///
 /// API mode: internal P7 foundation. The store records only cells explicitly
@@ -42,6 +52,8 @@ struct CellRecord {
 /// repair relationships, or serialize worksheet XML.
 class CellStore {
 public:
+    explicit CellStore(CellStoreOptions options = {});
+
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
     void erase_cell(std::uint32_t row, std::uint32_t column);
 
@@ -52,9 +64,11 @@ public:
     [[nodiscard]] std::size_t cell_count() const noexcept;
     [[nodiscard]] std::size_t estimated_memory_usage() const noexcept;
 
+    [[nodiscard]] const CellStoreOptions& options() const noexcept;
     [[nodiscard]] const std::map<CellPosition, CellRecord>& records() const noexcept;
 
 private:
+    CellStoreOptions options_;
     std::map<CellPosition, CellRecord> cells_;
 };
 

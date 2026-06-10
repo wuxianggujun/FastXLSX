@@ -703,8 +703,9 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 ## P7 - In-memory Small-File Editor
 
 状态：设计基线基础完成；`CellValue` 首个 public value 切片和 internal
-`CellStore` / `CellRecord` 首个稀疏存储切片已实现，public editor、random cell
-editing 和 save-as / Patch handoff 仍未开始。
+`CellStore` / `CellRecord` 首个稀疏存储切片和 internal `CellStoreOptions` guardrail
+enforcement 首片已实现，public editor、random cell editing 和 save-as / Patch handoff
+仍未开始。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
@@ -716,6 +717,7 @@ editing 和 save-as / Patch handoff 仍未开始。
 - P7.3a internal `CellStore` / `CellRecord` implementation：基础完成。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
   `estimated_memory_usage()`：基础完成。
+- P7.4a internal `CellStoreOptions` guardrail implementation：基础完成。
 - P7.5 save-as and Patch handoff contract：基础完成。
 
 验收：
@@ -777,7 +779,7 @@ editing 和 save-as / Patch handoff 仍未开始。
 禁止项：
 - 不新增 public `WorkbookEditor` / `WorksheetEditor` / `CellValue` 代码。
 - 不把 internal `PackageEditor` 或 OPC part concepts 暴露给普通 public API。
-- 不在 P7.4 guardrails 前宣称 In-memory editor ready。
+- 不因 internal guardrail first slice 就宣称 In-memory editor ready；仍需 P7.5 handoff。
 
 验证命令：
 ```powershell
@@ -848,7 +850,7 @@ ctest --preset windows-nmake-release
 - 不把 `CellValue` value type 写成 public editor、worksheet storage 或 save-as 实现。
 - 不把 `CellValue` 写成内部 `CellStore` / `CellRecord` 的长期存储布局。
 - 不新增 date / rich text / error cell 承诺。
-- 不在 P7.4 guardrails 前宣称 In-memory editor ready。
+- 不因 internal guardrail first slice 就宣称 In-memory editor ready；仍需 P7.5 handoff。
 
 验证命令：
 ```powershell
@@ -1023,8 +1025,9 @@ ctest --preset windows-nmake-release
 - `fastxlsx.unit` 验证 internal store 的当前合同。
 - 文档明确该切片是 internal foundation，不是 public `WorkbookEditor`、
   `WorksheetEditor`、random cell editing、existing-file editing 或 save-as handoff。
-- 文档明确当前尚未实现 string / formula pool、guardrail enforcement、
-  sharedStrings migration、styles merge、calcChain rebuild 或 relationship repair。
+- 文档明确当前尚未实现 string / formula pool、public/workbook-level guardrails、
+  load/save-as preflight、sharedStrings migration、styles merge、calcChain rebuild 或
+  relationship repair。
 
 禁止项：
 - 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
@@ -1040,9 +1043,10 @@ ctest --preset windows-nmake-release -R fastxlsx.unit
 
 ### P7.4 guardrails：`max_cells` / `memory_budget_bytes`
 
-状态：基础完成。
+状态：基础完成；P7.4a 已落地 internal `CellStore` guardrail first slice。
 
-类型：public API / internal architecture 文档设计；不新增 header / implementation。
+类型：public API / internal architecture 文档设计；本节本身不新增 public header /
+implementation。
 
 目标：冻结 future In-memory editor 的 size / memory guardrail 草案，明确
 `max_cells`、`memory_budget_bytes`、`cell_count()`、`estimated_memory_usage()` 的
@@ -1088,13 +1092,14 @@ ctest --preset windows-nmake-release -R fastxlsx.unit
 - 若 P7.5 要写 blank / erase / tombstone save semantics，同一段落需串行合并。
 
 验收标准：
-- 文档明确 guardrails 是 future design，不是已实现 public API。
+- 文档明确 guardrails 的 public editor API 仍是 future design；当前只实现 internal
+  `CellStore` first slice。
 - 文档明确 limit options、diagnostic APIs、计量维度和 enforcement 时机。
 - 文档明确超限错误需要建议 Streaming 或 Patch。
 - 文档明确没有 guardrails 和 P7.5 handoff 前不能宣称 In-memory ready。
 
 禁止项：
-- 不新增 `WorkbookEditorOptions`、`cell_count()`、`estimated_memory_usage()` 等代码。
+- 不新增 public `WorkbookEditorOptions` 或 public editor diagnostic APIs。
 - 不定义默认 limit 数值为稳定承诺。
 - 不把 `estimated_memory_usage()` 写成精确内存 profiler。
 - 不承诺百万行 worksheet 低内存随机访问。
@@ -1103,6 +1108,70 @@ ctest --preset windows-nmake-release -R fastxlsx.unit
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
+```
+
+### P7.4a internal `CellStoreOptions` guardrail implementation
+
+状态：基础完成。
+
+类型：internal detail header + implementation + focused unit tests；不新增 public API。
+
+目标：给 P7.3a internal `CellStore` 加上最小 `max_cells` 和
+`memory_budget_bytes` enforcement，验证超限 mutation 在状态变更前失败，为后续
+public editor guardrails 提供可测基础。
+
+输入：
+- P7.3a internal `CellStore` / `CellRecord` implementation。
+- P7.4 guardrail design。
+- 当前 `CellStore::cell_count()` 和 `CellStore::estimated_memory_usage()`。
+
+输出：
+- `CellStoreOptions` internal struct，包含 optional `max_cells` 和
+  `memory_budget_bytes`。
+- `CellStore(CellStoreOptions)` 构造入口和 `options()` 只读视图。
+- `CellStore::set_cell()` 在插入或覆盖前检查 cell count 和 estimated memory；
+  超限抛出 `FastXlsxError`，并保持既有 sparse records 不变。
+- `erase_cell()` 仍只做坐标校验和 record removal，不做 tombstone / save-as semantics。
+- `fastxlsx.unit` 覆盖 max_cells 插入拒绝、overwrite 允许、memory budget 插入/覆盖
+  拒绝，以及失败不污染 store。
+
+触碰文件：
+- `include/fastxlsx/detail/cell_store.hpp`
+- `src/cell_store.cpp`
+- `tests/test_minimal_xlsx.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/TASK_PLAN.md`、`docs/NEXT_STEPS.md`、`README.md`、`AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_editor.*`
+- `src/streaming_writer.*`
+
+可并行性：
+- 可与 P7.5 save-as handoff 的只读设计并行。
+- 与任何 public `WorkbookEditorOptions` 或 save-as preflight 实现必须串行。
+
+验收标准：
+- 默认 `fastxlsx.unit` 覆盖 internal guardrails 并通过。
+- 文档明确这只是 internal `CellStore` budget enforcement，不是 public
+  `WorkbookEditorOptions`、workbook-level guardrails、save-as preflight 或 precise RSS
+  profiler。
+- 超限失败不污染 `CellStore` 当前记录。
+
+禁止项：
+- 不新增 public editor API。
+- 不定义默认 limit 数字。
+- 不实现 open/load materialization limits、string/formula pool budget 或 save-as
+  assembly preflight。
+- 不宣称 In-memory editor ready。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.unit
 ```
 
 ### P7.5 save-as and Patch handoff contract

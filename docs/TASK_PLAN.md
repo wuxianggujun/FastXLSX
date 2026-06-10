@@ -1428,8 +1428,10 @@ Validation:
   `fontId` reuse and `applyFont="1"`, solid fill records, `fillId` reuse and
   `applyFill="1"`, worksheet style references,
   default `s="0"` omission, explicit `StyleId{}` clearing of a previously
-  styled cell back to default output, sharedStrings + styles coexistence, and
-  invalid foreign style id state hygiene. Future structure tests still need full font control,
+  styled cell back to default output, sharedStrings + styles coexistence,
+  styles workbook relationships coexisting with worksheet-local hyperlink/table
+  relationships without shifting worksheet `rId` allocation, and invalid
+  foreign style id state hygiene. Future structure tests still need full font control,
   full fill/pattern control, borders/full alignment,
   custom document properties, named ranges, and worksheet references when those
   features are implemented.

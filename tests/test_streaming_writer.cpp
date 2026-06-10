@@ -1337,6 +1337,75 @@ void test_streaming_writer_default_style_id_clears_cell_style()
         "default style clear should not serialize s=\"0\"");
 }
 
+void test_streaming_writer_styles_with_relationship_metadata()
+{
+    const auto output_path =
+        std::filesystem::current_path() / "fastxlsx-streaming-styles-relationship-metadata.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const auto number_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
+    auto sheet = workbook.add_worksheet("StyledObjects");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Name"),
+        fastxlsx::CellView::text("Qty"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("Widget"),
+        fastxlsx::CellView::number(7.0).with_style(number_style),
+    });
+    sheet.add_external_hyperlink(2, 1, "https://example.com/styled-widget");
+
+    fastxlsx::TableOptions table;
+    table.name = "StyledObjectTable";
+    table.column_names = {"Name", "Qty"};
+    sheet.add_table({1, 1, 2, 2}, table);
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "styles with relationship metadata xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "registered style should create styles.xml");
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "hyperlink and table should create worksheet relationships");
+    check(entries.contains("xl/tables/table1.xml"), "table part should still be generated");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 2,
+        "styles sample workbook relationship count mismatch");
+    check_contains(workbook_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>)",
+        "styles relationship should remain workbook-local");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "relationship-backed metadata should declare the worksheet relationship namespace");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "styled relationship metadata worksheet dimension mismatch");
+    check_contains(worksheet_xml, R"(<c r="B2" s="1"><v>7</v></c>)",
+        "styled number cell should keep its style id next to metadata");
+    check_contains(worksheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId2\"/></tableParts></worksheet>",
+        "worksheet relationship metadata should keep owner-local rId order");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "styles with relationship metadata should not serialize s=\"0\"");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 2,
+        "worksheet relationship count should only include hyperlink and table");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/styled-widget" TargetMode="External"/>)",
+        "external hyperlink should keep the first worksheet rId");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table should keep the second worksheet rId");
+    check(worksheet_rels.find("styles") == std::string::npos,
+        "styles relationship must not be written to worksheet relationships");
+}
+
 void test_streaming_writer_invalid_style_registration()
 {
     const auto output_path =
@@ -5376,6 +5445,7 @@ int main()
         test_streaming_writer_invalid_style_preserves_state();
         test_streaming_writer_foreign_style_collision_is_rejected();
         test_streaming_writer_default_style_id_clears_cell_style();
+        test_streaming_writer_styles_with_relationship_metadata();
         test_streaming_writer_invalid_style_registration();
         test_streaming_writer_file_backed_body_round_trip();
         test_streaming_writer_conditional_formatting_two_color_scale();

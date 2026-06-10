@@ -3073,7 +3073,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P13 - Phase 3 metadata/styles hardening
 
-状态：推进中；P13.1 已落地。
+状态：推进中；P13.1、P13.2 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -3081,6 +3081,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 
 已落地子任务：
 - P13.1 default `StyleId{}` clears per-cell style：基础完成。
+- P13.2 styles coexist with relationship-backed worksheet metadata：基础完成。
 
 ### P13.1 default `StyleId{}` clears per-cell style
 
@@ -3123,6 +3124,60 @@ cleared cell 当作 foreign style。
 - 不改变 `StyleId` owner-token foreign style 拒绝语义。
 - 不改变 workbook-local style registry、number format / font / fill / alignment
   现有 XML 语义。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P13.2 styles coexist with relationship-backed worksheet metadata
+
+状态：基础完成。
+
+类型：streaming styles / worksheet metadata integration structure test + docs；
+不新增 public API / CMake dependency。
+
+目标：锁定 streaming-only styles 的 workbook-local 作用域：registered style 会生成
+`xl/styles.xml` 和 workbook styles relationship，但不会占用 worksheet-local
+relationship id；同一 worksheet 中 external hyperlink 和 table 仍按 owner-local
+`rId1` / `rId2` 写入 worksheet XML 和 worksheet `.rels`。
+
+输入事实：
+- styles registry 是 workbook scope；`xl/styles.xml` 是 workbook-level 小型 XML part。
+- external hyperlink 和 table 是 worksheet-local relationship-backed metadata。
+- 已有测试分别覆盖 styles 不创建 worksheet `.rels`、table/hyperlink 共存时的
+  worksheet-local relationship id，但缺少“样式 + relationship-backed metadata”
+  同 worksheet 的结构回归。
+
+范围：
+- 在 `fastxlsx.streaming` 中新增一个 workbook：一个 styled number cell、一个
+  external hyperlink 和一个 table 共存。
+- 验证 styles relationship 留在 `xl/_rels/workbook.xml.rels`。
+- 验证 worksheet `.rels` 只包含 hyperlink 和 table，且 table 仍使用下一枚
+  worksheet-local `rId`。
+- 验证 styled cell 仍写 `s="1"`，默认 style 仍不写 `s="0"`。
+
+触碰文件：
+- `tests/test_streaming_writer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.streaming` 通过。
+- 全量默认 CTest 通过。
+- 文档明确该测试只是 styles workbook scope 与 worksheet relationship scope 的
+  结构隔离回归。
+
+非目标：
+- 不新增 hyperlink styles、table styles、`dxfs`、style migration、relationship repair
+  或 existing-file editing。
+- 不改变 workbook relationship id 顺序、worksheet relationship id 分配策略或
+  现有 table / hyperlink XML 语义。
+- 不把 streaming-only style registry 扩展成完整 Excel formatting parity。
 
 验证命令：
 ```powershell

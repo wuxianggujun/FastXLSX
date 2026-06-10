@@ -1256,10 +1256,10 @@ output, or `1..9` for minizip DEFLATE level selection; the stored bootstrap
 remains stored/no-compression. The internal package writer also preflights
 ZIP32 limits and entry-name hygiene, rejecting entry counts above `65535`,
 entry names beyond the 16-bit ZIP field, invalid entry names, duplicate
-entry names, and single entry uncompressed sizes above `UINT32_MAX` before
-opening the output path. Zip64, data-descriptor input, package
-streaming, public package editing, public compression controls, and performance
-claims remain planned.
+entry names, missing or inaccessible file-backed chunks, and single entry
+uncompressed sizes above `UINT32_MAX` before opening the output path. Zip64,
+data-descriptor input, package streaming, public package editing, public
+compression controls, and performance claims remain planned.
 
 Do this before claiming large-file write performance, real compression,
 Zip64, package streaming, or existing-file edit support.
@@ -1274,9 +1274,9 @@ Tasks:
   output, but this is not the planned public `PackageWriter`.
 - Keep internal compression level configuration bounded to `src/package_writer.*`
   without changing worksheet XML generation into a DOM or full-workbook path.
-- Keep no-Zip64 guardrails in the internal package writer, and design real
-  Zip64 / large-entry behavior before large workbook tests; file-backed/chunked
-  entries alone do not prove large-entry support.
+- Keep no-Zip64 and file-backed chunk guardrails in the internal package writer,
+  and design real Zip64 / large-entry behavior before large workbook tests;
+  file-backed/chunked entries alone do not prove large-entry support.
 - Update tests so they validate OpenXML package semantics without assuming
   stored/no-compression entries.
 - Keep `src/package_writer.*` disabling minizip data descriptors for current

@@ -1559,7 +1559,10 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   linked-object fixture 上的 ordinary media replacement 回归还验证只重写
   `xl/media/image1.png` 时，drawing `.rels`、PNG default content type、workbook、
   worksheet、drawing、chart 和 unknown extension entries 仍按上述 copy-original
-  基线保留；这不是图片解码、drawing mutation 或 existing-workbook image editing。
+  基线保留；内部 output-plan 快照现在也暴露 active media `StreamRewrite`、
+  content types / drawing `.rels` copy-original、preserved drawing/chart/unknown
+  entries、无 removed/audit 污染，以及不凭空创建 media owner `.rels`；这不是图片解码、
+  drawing mutation 或 existing-workbook image editing。
   同一路径还覆盖 default-typed media 先显式移除再 ordinary replacement 的反向顺序：
   后续 replacement 会恢复 active media part、清理 stale removed-part audit、保留
   PNG default content type 且不把 `xl/media/image1.png` 提升成 override、保留
@@ -1577,7 +1580,10 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   linked-object fixture 上的 ordinary table replacement 回归还验证只重写
   `xl/tables/table1.xml` 时，worksheet `.rels`、table content type override、
   workbook、worksheet、drawing、chart、media 和 unknown extension entries 仍按上述
-  copy-original 基线保留；这不是 table resize、calculated columns、totals generation
+  copy-original 基线保留；内部 output-plan 快照现在也暴露 active table
+  `LocalDomRewrite`、content types / worksheet `.rels` copy-original、preserved
+  worksheet/drawing/media/unknown entries、无 removed/audit 污染，以及不凭空创建
+  table owner `.rels`；这不是 table resize、calculated columns、totals generation
   或 existing-workbook table editing。
   同一路径还覆盖 table 先显式移除再 ordinary replacement 的反向顺序：后续
   replacement 会恢复 active table part、清理 stale removed-part audit、让

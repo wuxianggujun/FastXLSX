@@ -14438,6 +14438,48 @@ void test_package_editor_replaces_media_and_preserves_drawing_links()
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "linked fixture unknown extension should remain copy-original after media replacement");
 
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "linked fixture media output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "linked fixture media output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "linked fixture media output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "linked fixture media output plan should not record removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "linked fixture media output plan should not omit metadata entries");
+    check_output_entry_plan(output_plan.entries, "xl/media/image1.png",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "linked fixture media output plan should stream-rewrite media");
+    check_output_entry_part_context(output_plan.entries, "xl/media/image1.png",
+        true, image_part.value(),
+        "linked fixture media output plan should classify media as package part");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml",
+        false, "",
+        "linked fixture media output plan should keep content types as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/_rels/drawing1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve drawing relationships");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/drawings/_rels/drawing1.xml.rels", false, "",
+        "linked fixture media output plan should classify drawing relationships as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/drawing1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve drawing part");
+    check_output_entry_plan(output_plan.entries, "xl/charts/chart1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve chart part");
+    check_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve unknown extension");
+    check(find_output_entry_plan(output_plan.entries, "xl/media/_rels/image1.png.rels")
+            == nullptr,
+        "linked fixture media output plan should not invent media owner relationships");
+
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =
@@ -14537,6 +14579,51 @@ void test_package_editor_replaces_table_and_preserves_worksheet_links()
     check(editor.edit_plan().find_part(opaque_extension_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "linked fixture unknown extension should remain copy-original after table replacement");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "linked fixture table output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "linked fixture table output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "linked fixture table output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "linked fixture table output plan should not record removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "linked fixture table output plan should not omit metadata entries");
+    check_output_entry_plan(output_plan.entries, "xl/tables/table1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "linked fixture table output plan should local-DOM-rewrite table");
+    check_output_entry_part_context(output_plan.entries, "xl/tables/table1.xml",
+        true, table_part.value(),
+        "linked fixture table output plan should classify table as package part");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture table output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml",
+        false, "",
+        "linked fixture table output plan should keep content types as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture table output plan should preserve worksheet relationships");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/worksheets/_rels/sheet1.xml.rels", false, "",
+        "linked fixture table output plan should classify worksheet relationships as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture table output plan should preserve worksheet part");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/drawing1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture table output plan should preserve drawing part");
+    check_output_entry_plan(output_plan.entries, "xl/media/image1.png",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture table output plan should preserve media part");
+    check_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture table output plan should preserve unknown extension");
+    check(find_output_entry_plan(output_plan.entries, "xl/tables/_rels/table1.xml.rels")
+            == nullptr,
+        "linked fixture table output plan should not invent table owner relationships");
 
     editor.save_as(output);
 

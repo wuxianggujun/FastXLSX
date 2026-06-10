@@ -891,8 +891,12 @@ parallelism, acceptance checks, and explicit non-goals.
   An ordinary media replacement over the same fixture verifies that only
   `xl/media/image1.png` is stream-rewritten, drawing `.rels` and PNG default
   content type stay byte-preserved/readable, and workbook/worksheet/drawing/
-  chart/unknown extension entries keep the same copy-original baseline; it is
-  not image decoding, drawing mutation, or existing-workbook image editing.
+  chart/unknown extension entries keep the same copy-original baseline. The
+  internal output-plan snapshot now also exposes the active media
+  `StreamRewrite`, content types / drawing `.rels` copy-original decisions,
+  preserved drawing/chart/unknown entries, empty removal / relationship-target
+  audits, and no invented media owner `.rels`; it is not image decoding,
+  drawing mutation, or existing-workbook image editing.
   The same path now covers default-typed media remove-then-ordinary-replace
   ordering: a later replacement restores the active media part, clears stale
   removed-part audit, keeps the PNG default content type without promoting
@@ -915,8 +919,12 @@ parallelism, acceptance checks, and explicit non-goals.
   `xl/tables/table1.xml` is local-DOM-rewritten, worksheet `.rels` and the table
   content type override stay byte-preserved/readable, and workbook/worksheet/
   drawing/chart/media/unknown extension entries keep the same copy-original
-  baseline; it is not table resize, calculated columns, totals generation, or
-  existing-workbook table editing.
+  baseline. The internal output-plan snapshot now also exposes the active table
+  `LocalDomRewrite`, content types / worksheet `.rels` copy-original decisions,
+  preserved worksheet/drawing/media/unknown entries, empty removal /
+  relationship-target audits, and no invented table owner `.rels`; it is not
+  table resize, calculated columns, totals generation, or existing-workbook table
+  editing.
   The same path now covers table remove-then-ordinary-replace ordering: a later
   replacement restores the active table part, clears stale removed-part audit,
   returns `[Content_Types].xml` to source/copy-original audit, preserves the

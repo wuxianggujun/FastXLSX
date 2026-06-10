@@ -2429,8 +2429,12 @@ Current foundation:
   rewriting only `xl/media/image1.png` preserves drawing `.rels`, keeps the PNG
   default content type from being promoted to an override, and leaves workbook,
   worksheet, drawing, chart, and unknown extension entries on the same
-  copy-original baseline. This is not image decoding, drawing mutation, or
-  existing-workbook image editing.
+  copy-original baseline. The internal output-plan snapshot now also exposes
+  the active media `StreamRewrite`, content types / drawing `.rels`
+  copy-original decisions, preserved drawing/chart/unknown entries, empty
+  removal / relationship-target audits, and no invented media owner `.rels`.
+  This is not image decoding, drawing mutation, or existing-workbook image
+  editing.
   The same path now covers default-typed media remove-then-ordinary-replace
   ordering: a later replacement restores the active media part, clears stale
   removed-part audit, keeps the PNG default content type without promoting
@@ -2453,8 +2457,12 @@ Current foundation:
   rewriting only `xl/tables/table1.xml` preserves worksheet `.rels`, keeps the
   table content type override readable, and leaves workbook, worksheet, drawing,
   chart, media, and unknown extension entries on the same copy-original
-  baseline. This is not table resize, calculated columns, totals generation, or
-  existing-workbook table editing.
+  baseline. The internal output-plan snapshot now also exposes the active table
+  `LocalDomRewrite`, content types / worksheet `.rels` copy-original decisions,
+  preserved worksheet/drawing/media/unknown entries, empty removal /
+  relationship-target audits, and no invented table owner `.rels`. This is not
+  table resize, calculated columns, totals generation, or existing-workbook table
+  editing.
   The same path now covers table remove-then-ordinary-replace ordering: a later
   replacement restores the active table part, clears stale removed-part audit,
   returns `[Content_Types].xml` to source/copy-original audit, preserves the

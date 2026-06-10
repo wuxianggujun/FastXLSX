@@ -1684,6 +1684,15 @@ relationships、workbook、worksheet 与 unknown entry / no invented properties 
   drawing、chart、media、table、sharedStrings、styles、calcChain 和 unknown extension
   entries 也保持 copy-original。它不是 macro generation、VBA 语义编辑、
   signature preservation、workbook relationship repair 或完整宏支持。
+  内部 `planned_output()` 快照还验证该 ordinary replacement 状态：暴露 active
+  `xl/vbaProject.bin` `StreamRewrite` entry、content types / package relationships /
+  workbook relationships / workbook / worksheet / worksheet `.rels` / drawing /
+  drawing `.rels` / chart / media / table / sharedStrings / sharedStrings owner
+  `.rels` / styles / calcChain / unknown extension entries 的 copy-original 决策，
+  且不发明 `xl/_rels/vbaProject.bin.rels`，`removed_parts` 与
+  `removed_package_entries` 为空；这只是 Patch audit 可见性，不是 public output
+  planner、macro editing API、relationship repair、content type repair 或 signature
+  preservation。
   同一路径还覆盖 VBA project 先显式移除再 ordinary replacement 的反向顺序：
   后续 replacement 会恢复 active VBA project part、清理 stale removed-part audit、
   让 `[Content_Types].xml` 回到 source/copy-original audit、保留 workbook `.rels`

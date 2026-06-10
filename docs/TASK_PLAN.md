@@ -1043,6 +1043,15 @@ parallelism, acceptance checks, and explicit non-goals.
   table/sharedStrings/styles/calcChain/unknown extension entries keep the same
   copy-original baseline; it is not macro generation, VBA semantic editing,
   signature preservation, workbook relationship repair, or full macro support.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/vbaProject.bin` `StreamRewrite` entry, preserved
+  content types / package relationships / workbook relationships / workbook /
+  worksheet / worksheet `.rels` / drawing / drawing `.rels` / chart / media /
+  table / sharedStrings / sharedStrings owner `.rels` / styles / calcChain /
+  unknown extension entries, empty `removed_parts` / `removed_package_entries`,
+  and no invented `xl/_rels/vbaProject.bin.rels`. This is Patch audit
+  visibility only, not a public output planner, macro editing API, relationship
+  repair, content type repair, or signature preservation.
   The same path now covers VBA project remove-then-ordinary-replace ordering: a
   later replacement restores the active VBA project part, clears stale
   removed-part audit, returns `[Content_Types].xml` to source/copy-original

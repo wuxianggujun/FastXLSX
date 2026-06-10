@@ -23125,6 +23125,7 @@ void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
     const fastxlsx::detail::PartName drawing_part("/xl/drawings/drawing1.xml");
     const fastxlsx::detail::PartName image_part("/xl/media/image1.png");
     const fastxlsx::detail::PartName table_part("/xl/tables/table1.xml");
+    const fastxlsx::detail::PartName vml_drawing_part("/xl/drawings/vmlDrawing1.vml");
     const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
     const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
     const fastxlsx::detail::PartName vba_part("/xl/vbaProject.bin");
@@ -23454,6 +23455,10 @@ void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
               {"sheetData replacement", "header/footer metadata", "caller review"}),
         "sheetData output plan should snapshot preserved header/footer metadata notes");
     check(has_note_containing(output_plan.notes,
+              {"sheetData replacement", "legacy drawing reference metadata",
+                  "caller review"}),
+        "sheetData output plan should snapshot preserved legacy drawing metadata notes");
+    check(has_note_containing(output_plan.notes,
               {"sheetData replacement", "background picture reference metadata",
                   "caller review"}),
         "sheetData output plan should snapshot preserved picture metadata notes");
@@ -23536,6 +23541,17 @@ void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
         "../drawings/drawing1.xml",
         "sheetData output plan should keep drawing relationship audit");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "sheetData output plan should preserve legacy drawing VML");
+    check_output_entry_part_context(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
+        true, vml_drawing_part.value(),
+        "sheetData output plan should classify legacy drawing VML as package part");
+    check_output_entry_relationship_context(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
+        worksheet_part.value(), "rId7",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+        "../drawings/vmlDrawing1.vml#shape1",
+        "sheetData output plan should keep legacy drawing relationship audit");
     check_output_entry_plan(output_plan.entries, "xl/media/image1.png",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "sheetData output plan should preserve image media");

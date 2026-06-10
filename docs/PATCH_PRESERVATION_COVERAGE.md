@@ -23,8 +23,11 @@ helper 行为和 bounded local rewrite 边界仍以 [编辑模型](EDITING_MODEL
 
 当前结构测试还验证输出包中保留的 worksheet `.rels` legacyDrawing
 `rId7` 到 `../drawings/vmlDrawing1.vml#shape1` 可由 `PackageReader` /
-`RelationshipGraph` 重读；当前还覆盖 worksheet-owned background picture part
-与 header/footer VML drawing part preservation：`sheetData` 局部替换保留
+`RelationshipGraph` 重读；内部 `planned_output()` 快照现在还覆盖对应
+`xl/drawings/vmlDrawing1.vml` copy-original entry、URI-qualified legacyDrawing
+relationship metadata 和 preserved legacy drawing caller-review note。当前还覆盖
+worksheet-owned background picture part 与 header/footer VML drawing part
+preservation：`sheetData` 局部替换保留
 `<picture>` / `<legacyDrawingHF>` 引用、worksheet `.rels` 中的 `image` /
 `vmlDrawing` relationships、`xl/media/background.png` bytes、
 `xl/drawings/vmlDrawingHF1.vml` bytes、PNG content type default 和 VML content

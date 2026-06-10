@@ -391,7 +391,9 @@ part reason 中暴露 bounded local rewrite 边界，不能写成大文件低内
 worksheet transformer。
 当前结构测试还验证 sheetData patch 输出后，worksheet `.rels` 中的
 legacyDrawing `rId7` / `../drawings/vmlDrawing1.vml#shape1` 仍可由
-`PackageReader` / `RelationshipGraph` 重读。
+`PackageReader` / `RelationshipGraph` 重读；内部 `planned_output()` 快照还会
+暴露对应 `xl/drawings/vmlDrawing1.vml` copy-original entry、URI-qualified
+legacyDrawing relationship metadata 和 preserved legacy drawing caller-review note。
 当前还覆盖 worksheet-owned background picture part 与 header/footer VML drawing
 part preservation：`sheetData` 局部替换会保留 `<picture>` / `<legacyDrawingHF>`
 引用、worksheet `.rels` 中的 `image` / `vmlDrawing` relationships、

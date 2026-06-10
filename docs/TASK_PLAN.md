@@ -366,6 +366,13 @@ parallelism, acceptance checks, and explicit non-goals.
   and extLst, then
   reuses the worksheet replacement path for
   calcChain/fullCalcOnLoad and preservation side effects.
+  The preserved worksheet `.rels` legacyDrawing `rId7` target
+  `../drawings/vmlDrawing1.vml#shape1` is still covered by
+  `PackageReader` / `RelationshipGraph` roundtrip checks, and the internal
+  `planned_output()` snapshot now also exposes the corresponding
+  `xl/drawings/vmlDrawing1.vml` copy-original entry, URI-qualified
+  legacyDrawing relationship metadata, and preserved legacy drawing
+  caller-review note.
   The same Patch lane now has worksheet-owned background picture and
   header/footer VML drawing preservation regressions: `sheetData` replacement
   preserves the `<picture>` / `<legacyDrawingHF>` references, the worksheet

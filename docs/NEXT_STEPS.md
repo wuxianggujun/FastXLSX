@@ -1742,7 +1742,10 @@ Current foundation:
   large-file streaming worksheet transformer;
   `PackageReader` / `RelationshipGraph` roundtrip coverage for the preserved
   worksheet `.rels` legacyDrawing `rId7` target
-  `../drawings/vmlDrawing1.vml#shape1`;
+  `../drawings/vmlDrawing1.vml#shape1`, plus internal `planned_output()`
+  visibility for the corresponding `xl/drawings/vmlDrawing1.vml`
+  copy-original entry, URI-qualified legacyDrawing relationship metadata, and
+  preserved legacy drawing caller-review note;
   worksheet-owned background picture and header/footer VML drawing preservation
   under the same `sheetData` Patch lane: the output keeps the `<picture>` /
   `<legacyDrawingHF>` references, worksheet `.rels` `image` / `vmlDrawing`

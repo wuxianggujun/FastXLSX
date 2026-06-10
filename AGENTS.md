@@ -405,9 +405,15 @@ relationship repair/pruning、orphan cleanup、content type repair、public API 
 局部替换会保留 `<pageSetup r:id>` 引用、worksheet `.rels` 中的
 `printerSettings` relationship、`xl/printerSettings/printerSettings1.bin` bytes 和
 content type override，并把该 part 作为 relationship-derived copy-original entry
-暴露到 `EditPlan` / planned output；这仍只是 Patch preservation / audit 可见性，
-不是打印设置语义编辑、relationship repair/pruning、orphan cleanup、content type
-repair、public API 或完整 object lifecycle 支持。
+暴露到 `EditPlan` / planned output。内部 `planned_output()` 快照现在还覆盖该
+状态的边界：fullCalcOnLoad / `CalcChainAction::Remove`、worksheet / workbook
+`LocalDomRewrite`、content types / package relationships / workbook relationships /
+worksheet relationships copy-original、printerSettings part copy-original
+relationship metadata、preserved pageSetup caller-review note、无 relationship
+target audit、无 removed parts / removed package entries，且不凭空创建
+`xl/calcChain.xml`；这仍只是 Patch preservation / audit 可见性，不是打印设置
+语义编辑、calcChain rebuild、relationship repair/pruning、orphan cleanup、
+content type repair、public API 或完整 object lifecycle 支持。
 当前还覆盖同一 fixture 的显式 removal audit：移除 `xl/media/background.png`
 会输出省略目标 media part、保留 PNG default 且不提升为 override，并保留
 worksheet `.rels` 中指向缺失 background picture 的 inbound relationship；移除

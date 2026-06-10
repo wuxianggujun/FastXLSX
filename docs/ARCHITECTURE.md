@@ -1489,6 +1489,18 @@ P8.2 worksheet event reader token draft：
 - reader 只做最小结构和坐标校验，不做 namespace repair、relationship repair、
   sharedStrings/style migration、formula evaluation 或完整 worksheet schema validation。
 
+P8.3 row/cell transformer draft：
+
+- transformer 消费 P8.2 tokens，输出 ordered actions：pass-through、replace cell /
+  row、bounded insert row、delete candidate、emit raw、request recalculation 或 fail。
+- selector 必须在 rewrite 开始前声明目标 range、row set、placeholder pattern 或
+  predicate；不能先扫描完整 worksheet 再回头修改已输出 rows。
+- 输出必须保持 deterministic row-major order；row 交给 stream writer 后不得再修改。
+- 允许 bounded row buffer、bounded lookahead 和小型 selector index；禁止 full cell
+  matrix、unbounded row cache 或 worksheet DOM。
+- transformer 只报告 sharedStrings、styles、definedNames、table/drawing ranges、
+  formula/calc metadata 和 relationship dependency audits，不做迁移、修复或公式求值。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

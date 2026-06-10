@@ -1488,6 +1488,17 @@ P8.2 token model draft：
 - reader 不做 sharedStrings/style migration、relationship repair、formula evaluation 或
   完整 schema validation。
 
+P8.3 transformer contract draft：
+
+- transformer 在 rewrite 开始前声明 selector，例如目标 range、row set、placeholder
+  pattern 或 predicate。
+- transformer 输出 pass-through、replace cell/row、bounded insert/delete candidate、
+  emit raw、request recalculation 或 fail actions，并保持 row-major order。
+- transformer 不能在 row 已输出后回头修改该 row；需要 lookahead 时必须声明 bounded
+  row buffer。
+- transformer 只报告 sharedStrings、styles、relationships、definedNames、tables、
+  drawings 和 calc metadata 依赖，不执行迁移、repair 或公式求值。
+
 适合：
 
 - 修改某些单元格

@@ -517,6 +517,64 @@ memory / pass-through 边界：
 - 不承诺完整 worksheet schema validation。
 - 不把 current bounded `sheetData` local rewrite 升级描述为 event reader。
 
+### P8.3 Future Row/Cell Transformer Contract Draft
+
+P8.3 只冻结 future internal row/cell transformer contract，不新增 public callback API
+或 implementation。Transformer 消费 P8.2 worksheet event tokens，产生 P8.4 stream writer
+可消费的 ordered actions 和 diagnostics；它不是 P7 In-memory random editor。
+
+input contract：
+
+- 按 source worksheet order 消费 document、metadata、sheetData、row 和 cell tokens。
+- token payload 只在当前 callback、当前 row 或声明的 bounded lookahead 内有效。
+- transformer configuration 必须在 rewrite 开始前声明 selector：目标 range、row set、
+  placeholder pattern、template binding 或 predicate。
+- selector 可以持有小型索引或目标表，但不能要求 full worksheet pre-scan 后回写已输出 rows。
+
+output actions 草案：
+
+- `PassThrough`：原样转发 source token / raw XML。
+- `ReplaceCell`：替换当前 cell 的 scalar value / formula / style reference candidate。
+- `ReplaceRow`：替换当前 row 的完整 row event sequence。
+- `InsertRowBefore` / `InsertRowAfter`：在当前 row 边界附近插入 bounded row sequence。
+- `DeleteCell` / `DeleteRow` candidate：只作为 future action；具体 dimension、metadata
+  和 dependency side effects 由 P8.4 / P8.5 固化。
+- `EmitRaw`：输出 bounded raw worksheet XML，必须保留 well-formedness 责任边界。
+- `RequestRecalculation`：报告 value/formula 变更需要 workbook calc metadata update。
+- `FailUnsupported`：结构化失败，携带 selector、token context 和 unsupported reason。
+
+ordering / memory 边界：
+
+- 输出必须保持 deterministic row-major order。
+- transformer 不得在 row 已交给 stream writer 后再修改该 row。
+- 允许 bounded row buffer、bounded lookahead 和 selector index；禁止 full cell matrix、
+  unbounded row cache 或 worksheet DOM。
+- 插入 / 删除 row 这类会影响后续 references 的 action 必须显式声明是否需要 range /
+  relationship / formula audit；默认不能静默重写外部 references。
+
+dependency / audit 边界：
+
+- transformer 可报告 sharedStrings indexes、style ids、definedNames、formula refs、
+  table ranges、merged ranges、drawing anchors、hyperlinks 和 worksheet relationships 的
+  review notes。
+- transformer 不迁移 shared string indexes、不合并 styles、不修复 relationships、
+  不 resize tables、不重写 chart ranges、不计算公式。
+- formula/value edits 最多请求 full recalculation 或 calcChain remove/preserve policy。
+
+failure contract：
+
+- preflight 应拒绝明显 unsupported selector，例如需要 unbounded lookbehind 的 edit。
+- streaming 阶段遇到 unsupported token 或 malformed source 时，应 abort rewrite，并把
+  state-after-failure / output artifact 语义留给 P8.4。
+- failure diagnostics 必须足够定位 selector、row/cell ref 和 token kind。
+
+非目标：
+
+- 不实现 transformer callbacks。
+- 不定义 stable public action enum。
+- 不把 transformer contract 写成 arbitrary range editor 已可用。
+- 不替代 P8.4 `EditPlan` / stream rewrite output contract。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

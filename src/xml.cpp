@@ -32,9 +32,9 @@ bool append_number_with_to_chars(std::string& output, double value)
     return true;
 }
 
-void append_unsigned_decimal_unchecked(std::string& output, std::uint32_t value)
+void append_unsigned_decimal_unchecked(std::string& output, std::uint64_t value)
 {
-    std::array<char, 10> buffer {};
+    std::array<char, 20> buffer {};
     const auto [ptr, error] = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
     if (error != std::errc()) {
         throw fastxlsx::FastXlsxError("failed to format unsigned integer");
@@ -173,7 +173,7 @@ void append_number(std::string& output, double value)
     output += fallback_format_number(value);
 }
 
-void append_unsigned_decimal(std::string& output, std::uint32_t value)
+void append_unsigned_decimal(std::string& output, std::uint64_t value)
 {
     append_unsigned_decimal_unchecked(output, value);
 }

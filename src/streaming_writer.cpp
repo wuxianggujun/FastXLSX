@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <limits>
 #include <optional>
@@ -1054,8 +1055,9 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         if (worksheet.workbook != nullptr && uses_shared_strings(*worksheet.workbook)) {
+            const std::size_t index = shared_string_index(*worksheet.workbook, cell.text_value());
             xml += " t=\"s\"><v>";
-            xml += std::to_string(shared_string_index(*worksheet.workbook, cell.text_value()));
+            detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(index));
             xml += "</v></c>";
         } else {
             xml += " t=\"inlineStr\"><is>";

@@ -2848,7 +2848,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 已落地。
+状态：推进中；P12.1 / P12.2 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -2856,6 +2856,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 
 子任务：
 - P12.1 unsigned decimal append helper：基础完成。
+- P12.2 shared string index append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -2864,7 +2865,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 类型：internal helper + tests + docs；不新增 public API / CMake dependency。
 
 目标：为追加型 XML 路径提供 `detail::append_unsigned_decimal()`，用
-`std::to_chars` 直接把 `std::uint32_t` 写入既有 buffer，减少 row/cell 热路径
+`std::to_chars` 直接把 unsigned decimal 写入既有 buffer，减少 row/cell 热路径
 中为了无符号十进制整数产生的临时 `std::string`。
 
 输入事实：
@@ -2875,11 +2876,12 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
   streaming style `s="N"` attribute 都属于已有 XML append buffer 路径。
 
 范围：
-- 新增内部 `detail::append_unsigned_decimal(std::string&, std::uint32_t)`。
+- 新增内部 `detail::append_unsigned_decimal(std::string&, std::uint64_t)`。
 - `detail::append_cell_reference()` 的 row suffix 改走该 helper。
 - `WorksheetWriter::append_row()` 的 row 编号改走该 helper。
 - `CellStore` 和 `WorksheetWriter` 的 style id XML attribute 改走该 helper。
-- `test_xml_helpers()` 覆盖 prefix 保留、`0` 和 `uint32_t` 最大值。
+- `test_xml_helpers()` 覆盖 prefix 保留、`0`、`uint32_t` 最大值和
+  `uint64_t` 最大值。
 - 文档记录该 helper 的边界和非性能结论。
 
 触碰文件：
@@ -2904,6 +2906,61 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - 不改变 sharedStrings 索引策略、ZIP backend、worksheet body file-backed
   chunking 或 benchmark schema。
 - 不新增 public API，不增加外部依赖。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.unit --output-on-failure --timeout 60
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.2 shared string index append path
+
+状态：基础完成。
+
+类型：internal hot-path helper usage + tests + docs；不新增 public API / CMake dependency。
+
+目标：让 `StringStrategy::SharedString` 下字符串 cell 的 worksheet `<v>` shared
+string index 直接写入 row XML buffer，避免每个 shared string cell 先通过
+`std::to_string()` 构造临时字符串。
+
+输入事实：
+- `shared_string_index()` 处在 `WorksheetWriter::append_row()` 的 string cell 写入路径。
+- 现有 sharedStrings 结构测试已锁定 worksheet `t="s"` indexes、重复值去重、
+  跨 worksheet workbook-scope indexes、`count` / `uniqueCount` 和无字符串 cell 的空表边界。
+- P12.1 的 unsigned append helper 已覆盖 row number、cell reference row suffix 和
+  style id 局部路径。
+
+范围：
+- `detail::append_unsigned_decimal()` 保持单一 `uint64_t` 入口，覆盖 `std::size_t`
+  shared string index 输出。
+- `write_cell()` 中 sharedStrings `<v>` index 改走该 helper。
+- `test_xml_helpers()` 增加 `uint64_t` 最大值输出覆盖。
+- 文档记录这只是 shared string cell XML append 路径优化。
+
+触碰文件：
+- `include/fastxlsx/detail/xml.hpp`
+- `src/xml.cpp`
+- `src/streaming_writer.cpp`
+- `tests/test_minimal_xlsx.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.unit` 覆盖 `append_unsigned_decimal()` 的 `uint64_t` 输出。
+- `fastxlsx.streaming` 继续覆盖 sharedStrings worksheet indexes、去重和 package wiring。
+- 全量默认 CTest 通过。
+- 文档明确不改变 sharedStrings 策略、索引语义、benchmark schema 或生产性能结论。
+
+非目标：
+- 不重建 shared string table，不迁移 existing-file sharedStrings indexes。
+- 不替换 `sharedStrings.xml` close-time `count` / `uniqueCount` metadata 的
+  `std::to_string()`。
+- 不改变 `StringStrategy::InlineString` 默认策略、ZIP backend、benchmark runner 或
+  Office compatibility evidence。
 
 验证命令：
 ```powershell

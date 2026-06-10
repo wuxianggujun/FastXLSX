@@ -1347,8 +1347,9 @@ Do:
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
   temporary reference strings. Current unsigned integer XML append uses
   internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
-  streaming row numbers, and in-memory/streaming style id attributes; this is a
-  local append helper, not benchmark evidence or broader date encoding.
+  streaming row numbers, in-memory/streaming style id attributes, and
+  sharedStrings string-cell indexes; this is a local append helper, not
+  benchmark evidence, sharedStrings strategy change, or broader date encoding.
   Current XML text and attribute escaping uses shared internal
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers across in-memory, CellStore,

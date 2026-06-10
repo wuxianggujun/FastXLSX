@@ -2171,9 +2171,10 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   热路径中为每个单元格先构造临时 reference 字符串。
 - 当前 unsigned integer XML append 共享内部 `detail::append_unsigned_decimal()`
   helper；cell reference row suffix、streaming `<row r>`、CellStore / streaming
-  style `s` attribute 会直接向既有 XML buffer 追加十进制 `std::uint32_t`，
-  避免这些局部路径通过 `std::to_string()` 构造临时字符串。这不是 benchmark
-  证据、date encoding 完成或完整 hot-path 优化结论。
+  style `s` attribute 和 sharedStrings string-cell `<v>` index 会直接向既有 XML
+  buffer 追加十进制 unsigned integer，避免这些局部路径通过 `std::to_string()`
+  构造临时字符串。这不是 benchmark 证据、sharedStrings 策略变更、date encoding
+  完成或完整 hot-path 优化结论。
 - 当前 XML text / attribute escaping 共享内部
   `detail::append_escaped_xml_text()` / `detail::append_escaped_xml_attribute()`
   helpers；in-memory、CellStore、streaming row/formula/metadata XML 和小型 OPC

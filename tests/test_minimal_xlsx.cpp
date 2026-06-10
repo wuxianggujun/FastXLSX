@@ -95,7 +95,7 @@ void test_xml_helpers()
     fastxlsx::detail::append_number(appended_number, 123.5);
     check(appended_number == "value=123.5", "append_number should preserve existing text");
     std::string appended_unsigned_zero = "uint=";
-    fastxlsx::detail::append_unsigned_decimal(appended_unsigned_zero, 0);
+    fastxlsx::detail::append_unsigned_decimal(appended_unsigned_zero, std::uint64_t {0});
     check(appended_unsigned_zero == "uint=0",
         "append_unsigned_decimal should append zero and preserve existing text");
     std::string appended_unsigned_max = "uint=";
@@ -103,6 +103,11 @@ void test_xml_helpers()
         appended_unsigned_max, std::numeric_limits<std::uint32_t>::max());
     check(appended_unsigned_max == "uint=4294967295",
         "append_unsigned_decimal should append uint32 max");
+    std::string appended_unsigned_64_max = "uint64=";
+    fastxlsx::detail::append_unsigned_decimal(
+        appended_unsigned_64_max, std::numeric_limits<std::uint64_t>::max());
+    check(appended_unsigned_64_max == "uint64=18446744073709551615",
+        "append_unsigned_decimal should append uint64 max");
     const std::string formatted_scientific = fastxlsx::detail::format_number(1.25e-10);
     std::string appended_scientific;
     fastxlsx::detail::append_number(appended_scientific, 1.25e-10);

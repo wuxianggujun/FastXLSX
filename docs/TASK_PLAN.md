@@ -1356,8 +1356,11 @@ Tasks:
   reference strings. Unsigned integer XML fragments now also have internal
   `detail::append_unsigned_decimal()` for append buffers; cell reference row
   suffixes, streaming `<row r>`, and in-memory/streaming style `s` attributes
-  use it instead of `std::to_string()`. This is not benchmark evidence or
-  broader date encoding. Text and attribute escaping now also expose
+  use it instead of `std::to_string()`. SharedStrings string-cell `<v>` indexes
+  also use the same append helper, so string-dense row output avoids that
+  per-cell temporary string in the worksheet body path. This is not benchmark
+  evidence, broader date encoding, or a sharedStrings production-readiness
+  claim. Text and attribute escaping now also expose
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` so in-memory, CellStore, streaming,
   and small OPC serializers can append escaped XML directly while preserving
@@ -2293,8 +2296,9 @@ Tasks:
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
   temporary reference strings. Current unsigned integer XML append uses
   internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
-  streaming row numbers, and in-memory/streaming style id attributes; it is a
-  local hot-path helper, not a benchmark result or date encoding completion.
+  streaming row numbers, in-memory/streaming style id attributes, and
+  sharedStrings string-cell indexes; it is a local hot-path helper, not a
+  benchmark result, sharedStrings strategy change, or date encoding completion.
   Current XML text and attribute escaping similarly has append-oriented
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers used by in-memory,

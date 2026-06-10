@@ -20611,6 +20611,25 @@ void test_package_editor_custom_xml_item_removal_then_properties_replacement_kee
         "properties replacement after item removal output plan should keep calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "properties replacement after item removal output plan should not invent dependency audits");
+    check(output_plan.removed_parts.size() == 1,
+        "properties replacement after item removal output plan should expose one removed part");
+    check(output_plan.removed_parts.front().part_name == custom_xml_part,
+        "properties replacement after item removal output plan should expose removed custom XML item");
+    check(output_plan.removed_parts.front().reason.find("before properties rewrite")
+            != std::string::npos,
+        "properties replacement after item removal output plan should keep removed item reason");
+    check(output_plan.removed_parts.front().inbound_relationships.size() == 1,
+        "properties replacement after item removal output plan should expose removed item inbound audit");
+    check(output_plan.removed_package_entries.size() == 1,
+        "properties replacement after item removal output plan should expose owner relationships omission");
+    check(output_plan.removed_package_entries.front().entry_name
+            == "customXml/_rels/item1.xml.rels",
+        "properties replacement after item removal output plan should omit item owner relationships");
+    check(output_plan.removed_package_entries.front().audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "properties replacement after item removal output plan should classify omitted owner relationships");
+    check(output_plan.removed_package_entries.front().owner_part == custom_xml_part.value(),
+        "properties replacement after item removal output plan should keep omitted owner context");
     check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
         "properties replacement after item removal output plan should omit custom XML item");
@@ -20808,6 +20827,17 @@ void test_package_editor_custom_xml_properties_removal_then_item_replacement_kee
         "item replacement after properties removal output plan should keep calcChain preserve state");
     check(output_plan.relationship_target_audits.empty(),
         "item replacement after properties removal output plan should not invent dependency audits");
+    check(output_plan.removed_parts.size() == 1,
+        "item replacement after properties removal output plan should expose one removed part");
+    check(output_plan.removed_parts.front().part_name == custom_xml_props_part,
+        "item replacement after properties removal output plan should expose removed properties part");
+    check(output_plan.removed_parts.front().reason.find("before item rewrite")
+            != std::string::npos,
+        "item replacement after properties removal output plan should keep removed properties reason");
+    check(output_plan.removed_parts.front().inbound_relationships.size() == 1,
+        "item replacement after properties removal output plan should expose removed properties inbound audit");
+    check(output_plan.removed_package_entries.empty(),
+        "item replacement after properties removal output plan should not omit owner relationships");
     check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
         "item replacement after properties removal output plan should omit properties part");

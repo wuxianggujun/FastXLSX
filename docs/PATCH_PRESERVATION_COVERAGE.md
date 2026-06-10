@@ -683,6 +683,15 @@ linked-object fixture 上的 ordinary workbook replacement 回归还覆盖只重
 `xl/workbook.xml` 时，workbook `.rels` 被记录为 copy-original package-entry audit，
 worksheet、drawing、media、sharedStrings、styles、VBA、calcChain 和 unknown extension
 entries 仍保持同一 copy-original 基线。
+内部 `planned_output()` 快照还覆盖该 ordinary replacement 状态：暴露 active
+`xl/workbook.xml` `LocalDomRewrite` entry、source-owned workbook `.rels`
+copy-original audit、content types / package relationships / worksheet /
+worksheet `.rels` / drawing / drawing `.rels` / chart / media / table / VML /
+percent-decoded drawing / sharedStrings / sharedStrings owner `.rels` / styles /
+VBA / calcChain / unknown extension entries 的 copy-original 决策，
+`removed_parts` 与 `removed_package_entries` 为空；这只是 Patch audit 可见性，
+不是 public output planner、workbook deletion semantics、sheet catalog sync、
+relationship/content type repair 或 public API。
 同一路径现在还覆盖 ordinary workbook replace-then-remove：后续 removal 清理 active
 workbook replacement、记录 removed-part 和 workbook owner `.rels` omission audit，
 输出省略 workbook part 及其 owner `.rels`、移除 workbook content type override，

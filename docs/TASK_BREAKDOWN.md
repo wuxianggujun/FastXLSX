@@ -197,6 +197,8 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 输入：
 - 当前 `PackageReader` stored/no-compression + opt-in DEFLATE reader。
 - 当前 internal `PackageEditor` copy/replace、worksheet replacement、sheetData helper。
+- 当前 linked-object fixture 已覆盖 ordinary workbook replacement 的 active
+  `planned_output()` audit 可见性和 source-owned workbook `.rels` copy-original 决策。
 
 输出：
 - 更清晰的 package read/copy/write failure behavior。

@@ -848,6 +848,16 @@ parallelism, acceptance checks, and explicit non-goals.
   only `xl/workbook.xml` is rewritten, workbook `.rels` is audited as
   copy-original, and worksheet/drawing/media/sharedStrings/styles/VBA/calcChain/
   unknown extension entries keep the same copy-original baseline.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/workbook.xml` `LocalDomRewrite` entry, source-owned
+  workbook `.rels` copy-original audit, preserved content types / package
+  relationships / worksheet / worksheet `.rels` / drawing / drawing `.rels` /
+  chart / media / table / VML / percent-decoded drawing / sharedStrings /
+  sharedStrings owner `.rels` / styles / VBA / calcChain / unknown extension
+  entries, and empty `removed_parts` / `removed_package_entries`. This is Patch
+  audit visibility only, not a public output planner, workbook deletion
+  semantics, sheet catalog sync, relationship/content type repair, or public
+  API.
   The same workbook path now also covers ordinary-replace-then-remove ordering:
   a later removal clears the active workbook replacement, records removed-part
   and workbook owner `.rels` omission audit, omits the workbook part and owner

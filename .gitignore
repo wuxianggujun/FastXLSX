@@ -52,14 +52,17 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Generated example workbooks
-/fastxlsx-minimal-example.xlsx
-/fastxlsx-streaming-example.xlsx
-/fastxlsx-bench-*.xlsx
+# Generated example/benchmark workbooks
 /fastxlsx-bench-*.json
 
-# Generated package reader/editor test workbooks
-/fastxlsx-package-*.xlsx
+# Stray test artifacts (tests normally write to the system temp dir; this
+# guards against accidental root output when an executable is run directly).
+/fastxlsx-*.xlsx
+/fastxlsx-*.png
+/fastxlsx-*.jpg
+/fastxlsx-*.gif
+/fastxlsx-*.bin
+/invalid-*.xlsx
 
 # Environment and local secret files
 .env

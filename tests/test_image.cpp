@@ -2,6 +2,7 @@
 #include <fastxlsx/workbook.hpp>
 
 #include "image_test_bytes.hpp"
+#include "zip_test_utils.hpp"
 
 #include <array>
 #include <cstddef>
@@ -169,9 +170,9 @@ void test_image_info_memory()
 
 void test_image_info_file()
 {
-    const auto png_path = std::filesystem::current_path() / "fastxlsx-image-info.png";
+    const auto png_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-info.png";
     write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
-    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-image-info.jpg";
+    const auto jpeg_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-info.jpg";
     write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
 
     const fastxlsx::ImageInfo png_info = fastxlsx::read_image_info(png_path);
@@ -189,18 +190,18 @@ void test_image_info_file()
     check_fastxlsx_error(
         [] {
             (void)fastxlsx::read_image_info(
-                std::filesystem::current_path() / "fastxlsx-missing-image.png");
+                fastxlsx::test::artifact_dir() / "fastxlsx-missing-image.png");
         },
         "missing image file should fail");
 
     const std::array<unsigned char, 6> gif_header {'G', 'I', 'F', '8', '9', 'a'};
-    const auto gif_path = std::filesystem::current_path() / "fastxlsx-image-info.gif";
+    const auto gif_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-info.gif";
     write_bytes(gif_path, std::as_bytes(std::span<const unsigned char>(gif_header.data(), gif_header.size())));
     check_fastxlsx_error(
         [&gif_path] { (void)fastxlsx::read_image_info(gif_path); },
         "unsupported image file format should fail");
 
-    const auto empty_path = std::filesystem::current_path() / "fastxlsx-image-info-empty.png";
+    const auto empty_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-info-empty.png";
     write_bytes(empty_path, std::span<const std::byte> {});
     check_fastxlsx_error(
         [&empty_path] { (void)fastxlsx::read_image_info(empty_path); },
@@ -230,9 +231,9 @@ void test_image_pixels_memory()
 
 void test_image_pixels_file()
 {
-    const auto png_path = std::filesystem::current_path() / "fastxlsx-image-pixels.png";
+    const auto png_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-pixels.png";
     write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
-    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-image-pixels.jpg";
+    const auto jpeg_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-pixels.jpg";
     write_bytes(jpeg_path, std::as_bytes(tiny_decodable_jpeg_bytes()));
 
     const fastxlsx::ImagePixels png_pixels = fastxlsx::read_image_pixels(png_path);
@@ -246,18 +247,18 @@ void test_image_pixels_file()
     check_fastxlsx_error(
         [] {
             (void)fastxlsx::read_image_pixels(
-                std::filesystem::current_path() / "fastxlsx-missing-image-pixels.png");
+                fastxlsx::test::artifact_dir() / "fastxlsx-missing-image-pixels.png");
         },
         "missing image pixel file should fail");
 
     const std::array<unsigned char, 6> gif_header {'G', 'I', 'F', '8', '9', 'a'};
-    const auto gif_path = std::filesystem::current_path() / "fastxlsx-image-pixels.gif";
+    const auto gif_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-pixels.gif";
     write_bytes(gif_path, std::as_bytes(std::span<const unsigned char>(gif_header.data(), gif_header.size())));
     check_fastxlsx_error(
         [&gif_path] { (void)fastxlsx::read_image_pixels(gif_path); },
         "unsupported image pixel file format should fail");
 
-    const auto empty_path = std::filesystem::current_path() / "fastxlsx-image-pixels-empty.png";
+    const auto empty_path = fastxlsx::test::artifact_dir() / "fastxlsx-image-pixels-empty.png";
     write_bytes(empty_path, std::span<const std::byte> {});
     check_fastxlsx_error(
         [&empty_path] { (void)fastxlsx::read_image_pixels(empty_path); },

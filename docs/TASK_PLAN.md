@@ -1436,7 +1436,9 @@ Validation:
   style id state hygiene, and invalid `add_style()` registration failure
   no-state-pollution for the workbook style registry, plus all-default optional
   alignment/font metadata ignored when combined with another effective style
-  property. Future structure tests still need full font control,
+  property, and styled formula cells preserving `s="N"` while still requesting
+  workbook full recalculation without creating `xl/calcChain.xml`. Future
+  structure tests still need full font control,
   full fill/pattern control, borders/full alignment,
   custom document properties, named ranges, and worksheet references when those
   features are implemented.

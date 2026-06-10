@@ -48,7 +48,7 @@ void check_contains(std::string_view haystack, std::string_view needle, const ch
 
 std::filesystem::path output_path(std::string_view name)
 {
-    return std::filesystem::current_path() / std::string(name);
+    return fastxlsx::test::artifact_path(name);
 }
 
 void write_file(const std::filesystem::path& path, std::string_view data)

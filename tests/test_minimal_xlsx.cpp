@@ -49,7 +49,7 @@ void expect_invalid_in_memory_number(double value, const char* sheet_name, const
     sheet.append_row({fastxlsx::Cell::number(value)});
     check_fastxlsx_error(
         [&workbook, file_name] {
-            workbook.save(std::filesystem::current_path() / file_name);
+            workbook.save(fastxlsx::test::artifact_dir() / file_name);
         },
         message);
 }
@@ -63,7 +63,7 @@ void expect_invalid_in_memory_row_height(double height, const char* sheet_name,
     sheet.append_row(row, fastxlsx::RowOptions {height});
     check_fastxlsx_error(
         [&workbook, file_name] {
-            workbook.save(std::filesystem::current_path() / file_name);
+            workbook.save(fastxlsx::test::artifact_dir() / file_name);
         },
         message);
 }
@@ -412,7 +412,7 @@ void test_minimal_xlsx_package()
         fastxlsx::Cell::boolean(false),
     });
 
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-phase1-minimal.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-phase1-minimal.xlsx";
     workbook.save(output_path);
     check(std::filesystem::exists(output_path), "xlsx file was not generated");
 
@@ -525,7 +525,7 @@ void test_workbook_document_properties()
     sheet.append_row({fastxlsx::Cell::text("doc props")});
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-document-properties.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-document-properties.xlsx";
     workbook.save(output_path);
     check(std::filesystem::exists(output_path), "document properties xlsx file was not generated");
 
@@ -587,7 +587,7 @@ void test_workbook_formula_and_row_height_metadata()
     sheet.append_row(row, fastxlsx::RowOptions {18.5});
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-formula-row-height.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-formula-row-height.xlsx";
     workbook.save(output_path);
     check(std::filesystem::exists(output_path), "formula and row height xlsx was not generated");
 
@@ -619,7 +619,7 @@ void test_workbook_dimension_and_column_boundaries()
         workbook.add_worksheet("Empty");
 
         const auto output_path =
-            std::filesystem::current_path() / "fastxlsx-empty-worksheet.xlsx";
+            fastxlsx::test::artifact_dir() / "fastxlsx-empty-worksheet.xlsx";
         workbook.save(output_path);
 
         const auto entries = fastxlsx::test::read_zip_entries(output_path);
@@ -636,7 +636,7 @@ void test_workbook_dimension_and_column_boundaries()
         sheet.append_row({});
 
         const auto output_path =
-            std::filesystem::current_path() / "fastxlsx-empty-row-worksheet.xlsx";
+            fastxlsx::test::artifact_dir() / "fastxlsx-empty-row-worksheet.xlsx";
         workbook.save(output_path);
 
         const auto entries = fastxlsx::test::read_zip_entries(output_path);
@@ -654,7 +654,7 @@ void test_workbook_dimension_and_column_boundaries()
         sheet.append_row(max_columns);
 
         const auto output_path =
-            std::filesystem::current_path() / "fastxlsx-max-columns.xlsx";
+            fastxlsx::test::artifact_dir() / "fastxlsx-max-columns.xlsx";
         workbook.save(output_path);
 
         const auto entries = fastxlsx::test::read_zip_entries(output_path);
@@ -679,7 +679,7 @@ void test_validation_errors()
 
     bool empty_workbook_failed = false;
     try {
-        workbook.save(std::filesystem::current_path() / "invalid-empty.xlsx");
+        workbook.save(fastxlsx::test::artifact_dir() / "invalid-empty.xlsx");
     } catch (const fastxlsx::FastXlsxError&) {
         empty_workbook_failed = true;
     }
@@ -717,7 +717,7 @@ void test_validation_errors()
         check_fastxlsx_error(
             [&too_wide_workbook] {
                 too_wide_workbook.save(
-                    std::filesystem::current_path() / "invalid-too-wide-row.xlsx");
+                    fastxlsx::test::artifact_dir() / "invalid-too-wide-row.xlsx");
             },
             "workbook save should reject rows beyond Excel's column limit");
     }

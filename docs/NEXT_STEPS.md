@@ -1480,7 +1480,9 @@ Accept when:
   `rId` allocation, invalid foreign `StyleId` state hygiene, and invalid
   `add_style()` registration failure no-state-pollution for the workbook
   style registry, plus all-default optional alignment/font metadata ignored
-  when combined with another effective style property.
+  when combined with another effective style property, and styled formula cells
+  preserving `s="N"` while still requesting workbook full recalculation without
+  creating `xl/calcChain.xml`.
 - Local QA runs:
   `tools/verify_styles_number_formats.py` for package XML / `openpyxl` /
   optional `XlsxWriter`, and `tools/verify_styles_excel.ps1` for Excel COM

@@ -8,6 +8,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
@@ -18,6 +20,31 @@
 #endif
 
 namespace fastxlsx::test {
+
+// Directory for all test-generated artifacts (xlsx, png, bin, ...).
+// Routed to a dedicated subdirectory under the system temp path so that
+// running test executables directly (current_path() == repo root) does not
+// litter the project tree. Created on first use.
+inline const std::filesystem::path& artifact_dir()
+{
+    static const std::filesystem::path dir = [] {
+        std::error_code ec;
+        std::filesystem::path base = std::filesystem::temp_directory_path(ec);
+        if (ec) {
+            base = std::filesystem::current_path();
+        }
+        std::filesystem::path path = base / "fastxlsx-test-artifacts";
+        std::filesystem::create_directories(path, ec);
+        return path;
+    }();
+    return dir;
+}
+
+// Resolve a test artifact path by file name inside artifact_dir().
+inline std::filesystem::path artifact_path(std::string_view name)
+{
+    return artifact_dir() / std::filesystem::path(name);
+}
 
 inline void insert_zip_entry(
     std::map<std::string, std::string>& entries, std::string name, std::string body)

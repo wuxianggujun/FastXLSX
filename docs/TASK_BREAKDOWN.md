@@ -3202,7 +3202,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P13 - Phase 3 metadata/styles hardening
 
-状态：推进中；P13.1、P13.2、P13.3、P13.4 已落地。
+状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -3213,6 +3213,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.2 styles coexist with relationship-backed worksheet metadata：基础完成。
 - P13.3 invalid style registration preserves registry state：基础完成。
 - P13.4 all-default optional style metadata is ignored：基础完成。
+- P13.5 styles with formula recalculation metadata：基础完成。
 
 ### P13.1 default `StyleId{}` clears per-cell style
 
@@ -3419,6 +3420,57 @@ dependency。
   `dxfs`、public editor API 或 existing-file style preservation。
 - 不改变 all-default-only style 仍被 `add_style()` 拒绝的 guardrail。
 - 不改变 number format / font / fill / alignment 现有 XML 语义。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P13.5 styles with formula recalculation metadata
+
+状态：基础完成。
+
+类型：streaming styles / formula metadata integration structure test + docs；不新增
+public API / CMake dependency。
+
+目标：锁定带样式公式 cell 的组合语义：`CellView::formula(...).with_style(style)`
+既要在 worksheet cell XML 中保留 `s="N"`，也要触发 workbook
+`<calcPr fullCalcOnLoad="1"/>` 重算请求，并且仍不生成 `xl/calcChain.xml`。
+
+输入事实：
+- P13.4 前已有 number-format style 测试覆盖 styled formula cell 输出
+  `<c ... s="N"><f>...</f></c>`。
+- Phase 3 metadata 测试已覆盖普通公式会写 workbook `calcPr` 并且不创建
+  `calcChain.xml`。
+- 仍需要一个 styles + formula 组合回归，防止后续 style registry 或 formula
+  metadata 改动只保留其中一侧行为。
+
+范围：
+- 扩展 `fastxlsx.streaming` 既有 number-format style 结构测试。
+- 验证 styled formula cell 继续写 `s="1"` 和 `<f>A2*2</f>`。
+- 验证同一个 workbook 写出 `<calcPr calcId="124519" fullCalcOnLoad="1"/>`。
+- 验证生成包仍不包含 `xl/calcChain.xml`，且 styles workbook relationship /
+  content type 语义不变。
+
+触碰文件：
+- `tests/test_streaming_writer.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+验收条件：
+- `fastxlsx.streaming` 通过。
+- 全量默认 CTest 通过。
+- 文档明确这只是 styled formula + style registry + calc metadata 的组合回归。
+
+非目标：
+- 不计算公式、不写 cached values、不创建或重建 `calcChain.xml`。
+- 不新增 formula parser、dependency graph、full Phase 3 或 existing-file style
+  preservation。
+- 不改变现有 number format / styles relationship / content type 输出语义。
 
 验证命令：
 ```powershell

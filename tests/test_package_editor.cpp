@@ -286,7 +286,7 @@ void check_output_entry_has_inbound_relationship(
 
 std::filesystem::path output_path(std::string_view name)
 {
-    return std::filesystem::current_path() / std::string(name);
+    return fastxlsx::test::artifact_path(name);
 }
 
 void write_binary_file(const std::filesystem::path& path, std::string_view data)

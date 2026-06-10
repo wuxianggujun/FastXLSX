@@ -123,7 +123,7 @@ fastxlsx::IconSetRule make_icon_set()
 
 void test_streaming_writer_smoke_package()
 {
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-smoke.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-smoke.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Streaming");
@@ -249,7 +249,7 @@ void test_streaming_writer_smoke_package()
 void test_streaming_writer_document_properties()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-document-properties.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-document-properties.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.document_properties.creator = "Stream & Author";
@@ -326,7 +326,7 @@ void test_streaming_writer_document_properties()
 void test_streaming_writer_empty_rows_dimension()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-empty-row-dimensions.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-empty-row-dimensions.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto no_rows = workbook.add_worksheet("NoRows");
@@ -388,7 +388,7 @@ void test_streaming_writer_empty_rows_dimension()
 void test_streaming_writer_max_column_boundary()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-max-column-boundary.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-max-column-boundary.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("MaxColumn");
@@ -414,7 +414,7 @@ void test_streaming_writer_max_column_boundary()
 void test_streaming_writer_max_row_boundary_with_test_hook()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-max-row-boundary.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-max-row-boundary.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("MaxRow");
@@ -452,7 +452,7 @@ void test_streaming_writer_max_row_boundary_with_test_hook()
 void test_streaming_writer_failed_append_preserves_state()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-failed-append-state.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-failed-append-state.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -510,7 +510,7 @@ void test_streaming_writer_failed_append_preserves_state()
 void test_streaming_writer_phase3_metadata_structure()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-phase3-metadata.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-phase3-metadata.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Metadata");
@@ -617,7 +617,7 @@ void test_streaming_writer_phase3_metadata_structure()
 void test_streaming_writer_number_format_styles()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-styles-number-formats.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-number-formats.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     const auto currency_style = workbook.add_style(fastxlsx::CellStyle {"$#,##0.00"});
@@ -657,11 +657,17 @@ void test_streaming_writer_number_format_styles()
         "styles should not create worksheet relationships");
     check(!entries.contains("xl/sharedStrings.xml"),
         "styles-only inline package should not include shared strings");
+    check(!entries.contains("xl/calcChain.xml"),
+        "styled formula should not create calcChain");
 
     const auto& content_types = entries.at("[Content_Types].xml");
     check_contains(content_types,
         R"(<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>)",
         "missing styles content type override");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(<calcPr calcId="124519" fullCalcOnLoad="1"/>)",
+        "styled formula should request full recalculation");
 
     const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
     check(count_occurrences(workbook_rels, "<Relationship ") == 2,
@@ -714,7 +720,7 @@ void test_streaming_writer_number_format_styles()
 void test_streaming_writer_alignment_styles()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-styles-alignment.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-alignment.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
 
@@ -902,7 +908,7 @@ void test_streaming_writer_alignment_styles()
 void test_streaming_writer_font_styles()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-styles-fonts.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-fonts.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
 
@@ -1067,7 +1073,7 @@ void test_streaming_writer_font_styles()
 void test_streaming_writer_fill_styles()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-styles-fills.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-fills.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
 
@@ -1183,7 +1189,7 @@ void test_streaming_writer_fill_styles()
 void test_streaming_writer_styles_with_shared_strings()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-styles-shared-strings.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-shared-strings.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1223,12 +1229,12 @@ void test_streaming_writer_styles_with_shared_strings()
 void test_streaming_writer_invalid_style_preserves_state()
 {
     const auto source_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-source-unused.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-source-unused.xlsx";
     auto source_workbook = fastxlsx::WorkbookWriter::create(source_path);
     const auto foreign_style = source_workbook.add_style(fastxlsx::CellStyle {"0.0000"});
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-invalid-state.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-invalid-state.xlsx";
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("StyleState");
 
@@ -1257,13 +1263,13 @@ void test_streaming_writer_invalid_style_preserves_state()
 void test_streaming_writer_foreign_style_collision_is_rejected()
 {
     const auto source_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-collision-source.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-collision-source.xlsx";
     auto source_workbook = fastxlsx::WorkbookWriter::create(source_path);
     const auto foreign_style = source_workbook.add_style(fastxlsx::CellStyle {"0.0000"});
     check(foreign_style.value() == 1, "foreign style id setup mismatch");
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-collision-target.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-collision-target.xlsx";
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     const auto own_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
     check(own_style.value() == 1, "target style id setup mismatch");
@@ -1292,7 +1298,7 @@ void test_streaming_writer_foreign_style_collision_is_rejected()
 void test_streaming_writer_default_style_id_clears_cell_style()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-default-clear.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-default-clear.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     const auto number_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
@@ -1340,7 +1346,7 @@ void test_streaming_writer_default_style_id_clears_cell_style()
 void test_streaming_writer_all_default_style_metadata_is_ignored()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-default-metadata.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-default-metadata.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
 
@@ -1439,7 +1445,7 @@ void test_streaming_writer_all_default_style_metadata_is_ignored()
 void test_streaming_writer_styles_with_relationship_metadata()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-styles-relationship-metadata.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-relationship-metadata.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     const auto number_style = workbook.add_style(fastxlsx::CellStyle {"0.0"});
@@ -1508,7 +1514,7 @@ void test_streaming_writer_styles_with_relationship_metadata()
 void test_streaming_writer_invalid_style_registration()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-style-registration-errors.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-style-registration-errors.xlsx";
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
 
     check_fastxlsx_error(
@@ -1603,7 +1609,7 @@ void test_streaming_writer_invalid_style_registration()
 void test_streaming_writer_file_backed_body_round_trip()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-file-backed-body.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-file-backed-body.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("FileBody");
@@ -1657,7 +1663,7 @@ void test_streaming_writer_file_backed_body_round_trip()
 void test_streaming_writer_conditional_formatting_two_color_scale()
 {
     const auto output_path =
-        std::filesystem::current_path()
+        fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -1727,7 +1733,7 @@ void test_streaming_writer_conditional_formatting_two_color_scale()
 void test_streaming_writer_conditional_formatting_three_color_scale()
 {
     const auto output_path =
-        std::filesystem::current_path()
+        fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -1794,7 +1800,7 @@ void test_streaming_writer_conditional_formatting_three_color_scale()
 void test_streaming_writer_conditional_formatting_metadata_order()
 {
     const auto output_path =
-        std::filesystem::current_path()
+        fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-metadata-order.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -1874,7 +1880,7 @@ void test_streaming_writer_conditional_formatting_metadata_order()
 void test_streaming_writer_conditional_formatting_multi_range_sqref()
 {
     const auto output_path =
-        std::filesystem::current_path()
+        fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-multi-range.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -1934,7 +1940,7 @@ void test_streaming_writer_conditional_formatting_multi_range_sqref()
 void test_streaming_writer_conditional_formatting_priorities()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-priorities.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-conditional-formatting-priorities.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto first = workbook.add_worksheet("First");
@@ -2005,7 +2011,7 @@ void test_streaming_writer_conditional_formatting_priorities()
 
 void test_streaming_writer_conditional_formatting_failed_call_preserves_priority()
 {
-    const auto output_path = std::filesystem::current_path()
+    const auto output_path = fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-failed-call-priority.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2099,7 +2105,7 @@ void test_streaming_writer_conditional_formatting_failed_call_preserves_priority
 void test_streaming_writer_conditional_formatting_data_bar()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-data-bar.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-conditional-formatting-data-bar.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("DataBar");
@@ -2155,7 +2161,7 @@ void test_streaming_writer_conditional_formatting_data_bar()
 
 void test_streaming_writer_conditional_formatting_data_bar_metadata_order()
 {
-    const auto output_path = std::filesystem::current_path()
+    const auto output_path = fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-data-bar-metadata-order.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2220,7 +2226,7 @@ void test_streaming_writer_conditional_formatting_data_bar_metadata_order()
 
 void test_streaming_writer_conditional_formatting_data_bar_multi_range_sqref()
 {
-    const auto output_path = std::filesystem::current_path()
+    const auto output_path = fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2275,7 +2281,7 @@ void test_streaming_writer_conditional_formatting_data_bar_multi_range_sqref()
 void test_streaming_writer_conditional_formatting_data_bar_priorities()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-data-bar-priorities.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-conditional-formatting-data-bar-priorities.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto first = workbook.add_worksheet("First");
@@ -2326,7 +2332,7 @@ void test_streaming_writer_conditional_formatting_data_bar_priorities()
 void test_streaming_writer_conditional_formatting_icon_set()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-icon-set.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-conditional-formatting-icon-set.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("IconSet");
@@ -2385,7 +2391,7 @@ void test_streaming_writer_conditional_formatting_icon_set()
 
 void test_streaming_writer_conditional_formatting_icon_set_metadata_order()
 {
-    const auto output_path = std::filesystem::current_path()
+    const auto output_path = fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2452,7 +2458,7 @@ void test_streaming_writer_conditional_formatting_icon_set_metadata_order()
 
 void test_streaming_writer_conditional_formatting_icon_set_percentile_thresholds()
 {
-    const auto output_path = std::filesystem::current_path()
+    const auto output_path = fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2517,7 +2523,7 @@ void test_streaming_writer_conditional_formatting_icon_set_percentile_thresholds
 
 void test_streaming_writer_conditional_formatting_icon_set_multi_range_sqref()
 {
-    const auto output_path = std::filesystem::current_path()
+    const auto output_path = fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2572,7 +2578,7 @@ void test_streaming_writer_conditional_formatting_icon_set_multi_range_sqref()
 void test_streaming_writer_conditional_formatting_icon_set_priorities()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto first = workbook.add_worksheet("First");
@@ -2625,7 +2631,7 @@ void test_streaming_writer_conditional_formatting_icon_set_priorities()
 void test_streaming_writer_invalid_conditional_formatting()
 {
     const auto output_path =
-        std::filesystem::current_path()
+        fastxlsx::test::artifact_dir()
         / "fastxlsx-streaming-invalid-conditional-formatting.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
@@ -2854,7 +2860,7 @@ void test_streaming_writer_invalid_conditional_formatting()
 void test_streaming_writer_data_validations()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-data-validations.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validations.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Validation");
@@ -2982,7 +2988,7 @@ void test_streaming_writer_data_validations()
 void test_streaming_writer_data_validation_multi_range_sqref()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-data-validation-multi-range.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validation-multi-range.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("ValidationRanges");
@@ -3053,7 +3059,7 @@ void test_streaming_writer_data_validation_multi_range_sqref()
 void test_streaming_writer_data_validations_with_relationship_metadata()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-validation-relationship-metadata.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-validation-relationship-metadata.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("ValidationRels");
@@ -3138,7 +3144,7 @@ void test_streaming_writer_data_validations_with_relationship_metadata()
 void test_streaming_writer_data_validation_formula2_escape_and_namespace()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-data-validation-formula2-escape.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validation-formula2-escape.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Formula2Escape");
@@ -3180,7 +3186,7 @@ void test_streaming_writer_data_validation_formula2_escape_and_namespace()
 void test_streaming_writer_data_validation_prompt_error_metadata()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-data-validation-prompts.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validation-prompts.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("ValidationPrompt");
@@ -3315,7 +3321,7 @@ void test_streaming_writer_data_validation_prompt_error_metadata()
 void test_streaming_writer_external_hyperlinks()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-external-hyperlinks.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-external-hyperlinks.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto links = workbook.add_worksheet("Links");
@@ -3413,7 +3419,7 @@ void test_streaming_writer_external_hyperlinks()
 void test_streaming_writer_internal_hyperlinks()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-internal-hyperlinks.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-internal-hyperlinks.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto internal_only = workbook.add_worksheet("Internal");
@@ -3517,7 +3523,7 @@ void test_streaming_writer_internal_hyperlinks()
 void test_streaming_writer_internal_hyperlink_with_table_relationship_id()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-internal-hyperlink-table-rels.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-internal-hyperlink-table-rels.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Objects");
@@ -3569,7 +3575,7 @@ void test_streaming_writer_internal_hyperlink_with_table_relationship_id()
 void test_streaming_writer_hyperlink_display_tooltips()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-hyperlink-display-tooltips.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-hyperlink-display-tooltips.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto external = workbook.add_worksheet("ExternalAttrs");
@@ -3678,7 +3684,7 @@ void test_streaming_writer_hyperlink_display_tooltips()
 
 void test_streaming_writer_tables()
 {
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-tables.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-tables.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto inventory = workbook.add_worksheet("Inventory");
@@ -3829,7 +3835,7 @@ void test_streaming_writer_tables()
 void test_streaming_writer_table_style_flags()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-table-style-flags.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-table-style-flags.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("StyleFlags");
@@ -3864,7 +3870,7 @@ void test_streaming_writer_table_style_flags()
 void test_streaming_writer_table_column_attribute_escaping()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-table-column-escape.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-table-column-escape.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("TableEscapes");
@@ -3922,7 +3928,7 @@ void test_streaming_writer_table_column_attribute_escaping()
 void test_streaming_writer_table_range_overlap()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-table-range-overlap.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-table-range-overlap.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Tables");
@@ -3985,10 +3991,10 @@ void test_streaming_writer_table_range_overlap()
 
 void test_streaming_writer_images()
 {
-    const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.png";
+    const auto image_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-images.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-images.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto images = workbook.add_worksheet("Images");
@@ -4113,11 +4119,11 @@ void test_streaming_writer_images()
 void test_streaming_writer_image_metadata()
 {
     const auto image_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-image-metadata-source.png";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-metadata-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-image-metadata.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-metadata.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("ImageMetadata");
@@ -4209,9 +4215,9 @@ void test_streaming_writer_image_metadata()
 
 void test_streaming_writer_jpeg_images()
 {
-    const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-image-source.jpg";
+    const auto image_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-source.jpg";
     write_bytes(image_path, fastxlsx::test::tiny_jpeg_bytes());
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-jpeg-images.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-jpeg-images.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("JpegImage");
@@ -4247,12 +4253,12 @@ void test_streaming_writer_jpeg_images()
 
 void test_streaming_writer_mixed_image_formats()
 {
-    const auto png_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-image-source.png";
-    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-image-source.jpg";
+    const auto png_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-mixed-image-source.png";
+    const auto jpeg_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-mixed-image-source.jpg";
     write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
     write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
 
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-mixed-images.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-mixed-images.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("MixedImages");
@@ -4314,7 +4320,7 @@ void test_streaming_writer_mixed_image_formats()
 
 void test_streaming_writer_memory_images()
 {
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-memory-images.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-memory-images.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("MemoryImages");
@@ -4413,11 +4419,11 @@ void test_streaming_writer_memory_images()
 void test_streaming_writer_image_hyperlinks()
 {
     const auto image_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlinks-source.png";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-hyperlinks-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlinks.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-hyperlinks.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("ImageLinks");
@@ -4501,11 +4507,11 @@ void test_streaming_writer_image_hyperlinks()
 void test_streaming_writer_image_hyperlinks_mixed_objects()
 {
     const auto image_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlink-mixed-source.png";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-hyperlink-mixed-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("MixedImageLinks");
@@ -4579,10 +4585,10 @@ void test_streaming_writer_image_hyperlinks_mixed_objects()
 
 void test_streaming_writer_image_anchor_markers()
 {
-    const auto image_path = std::filesystem::current_path() / "fastxlsx-streaming-anchor-image-source.png";
+    const auto image_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-anchor-image-source.png";
     write_bytes(image_path, fastxlsx::test::tiny_png_bytes());
 
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-image-anchors.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-image-anchors.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Anchors");
@@ -4610,13 +4616,13 @@ void test_streaming_writer_image_anchor_markers()
 
 void test_streaming_writer_mixed_object_relationship_ids()
 {
-    const auto png_path = std::filesystem::current_path() / "fastxlsx-streaming-object-rels-source.png";
-    const auto jpeg_path = std::filesystem::current_path() / "fastxlsx-streaming-object-rels-source.jpg";
+    const auto png_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-object-rels-source.png";
+    const auto jpeg_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-object-rels-source.jpg";
     write_bytes(png_path, fastxlsx::test::tiny_png_bytes());
     write_bytes(jpeg_path, fastxlsx::test::tiny_jpeg_bytes());
 
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-mixed-object-rels.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-mixed-object-rels.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto first = workbook.add_worksheet("Objects");
@@ -4733,7 +4739,7 @@ void test_streaming_writer_mixed_object_relationship_ids()
 void test_streaming_writer_shared_string_package()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-shared-strings.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-shared-strings.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -4839,7 +4845,7 @@ void test_streaming_writer_shared_string_package()
 void test_streaming_writer_shared_strings_workbook_scope_and_crlf()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-shared-strings-workbook-scope.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-shared-strings-workbook-scope.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -4890,7 +4896,7 @@ void test_streaming_writer_shared_strings_workbook_scope_and_crlf()
 void test_streaming_writer_shared_string_option_without_string_cells()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-shared-strings-empty-table.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-shared-strings-empty-table.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -4944,7 +4950,7 @@ void test_streaming_writer_shared_string_option_without_string_cells()
 void test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-file-backed-multi-sheet.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-file-backed-multi-sheet.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto first = workbook.add_worksheet("One");
@@ -4985,7 +4991,7 @@ void test_streaming_writer_file_backed_multi_sheet_bodies_do_not_alias()
 void test_streaming_writer_rejects_mutation_after_close()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-after-close.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-after-close.xlsx";
 
     fastxlsx::WorkbookWriterOptions options;
     options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -5062,7 +5068,7 @@ void test_streaming_writer_rejects_mutation_after_close()
         "add_table should reject mutation after workbook close");
     check_fastxlsx_error(
         [&sheet] {
-            sheet.add_image(std::filesystem::current_path() / "fastxlsx-unused-image.png",
+            sheet.add_image(fastxlsx::test::artifact_dir() / "fastxlsx-unused-image.png",
                 {1, 1, 1, 1});
         },
         "add_image should reject mutation after workbook close");
@@ -5080,7 +5086,7 @@ void test_streaming_writer_rejects_mutation_after_close()
 
 void test_streaming_writer_invalid_ranges()
 {
-    const auto output_path = std::filesystem::current_path() / "fastxlsx-streaming-invalid-ranges.xlsx";
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-invalid-ranges.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Ranges");
@@ -5209,7 +5215,7 @@ void test_streaming_writer_invalid_ranges()
         [&sheet, &table] { sheet.add_table({1, 1, 2, 16385}, table); },
         "tables should reject a column beyond Excel's limit");
 
-    const auto image_path = std::filesystem::current_path() / "fastxlsx-unused-image.png";
+    const auto image_path = fastxlsx::test::artifact_dir() / "fastxlsx-unused-image.png";
     check_fastxlsx_error(
         [&sheet, &image_path] { sheet.add_image(image_path, {0, 1, 1, 1}); },
         "images should reject a zero anchor row");
@@ -5245,7 +5251,7 @@ void test_streaming_writer_invalid_ranges()
         "memory images should reject unsupported headers");
 
     const auto valid_image_path =
-        std::filesystem::current_path() / "fastxlsx-invalid-offset-image-source.png";
+        fastxlsx::test::artifact_dir() / "fastxlsx-invalid-offset-image-source.png";
     write_bytes(valid_image_path, fastxlsx::test::tiny_png_bytes());
     fastxlsx::ImageOptions negative_offset;
     negative_offset.from_offset = {-1, 0};
@@ -5274,7 +5280,7 @@ void test_streaming_writer_invalid_ranges()
 void test_streaming_writer_invalid_table_options()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-invalid-tables.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-invalid-tables.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("InvalidTables");
@@ -5395,7 +5401,7 @@ void test_streaming_writer_invalid_table_options()
 void test_streaming_writer_invalid_data_validation_rules()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-invalid-validations.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-invalid-validations.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Validation");
@@ -5459,7 +5465,7 @@ void test_streaming_writer_invalid_data_validation_rules()
 void test_streaming_writer_invalid_metadata_and_rows()
 {
     const auto output_path =
-        std::filesystem::current_path() / "fastxlsx-streaming-invalid-metadata.xlsx";
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-invalid-metadata.xlsx";
 
     auto workbook = fastxlsx::WorkbookWriter::create(output_path);
     auto sheet = workbook.add_worksheet("Metadata");

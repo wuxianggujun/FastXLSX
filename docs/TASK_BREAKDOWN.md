@@ -329,13 +329,13 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ## P6 - Sheet Dependency Policies
 
-状态：计划。
+状态：进行中。
 
 目标：给 sheet-local edits 建立保守依赖策略。
 
 子任务：
-- P6.1 sharedStrings / styles dependency policy。
-- P6.2 tables / hyperlinks / validations / conditionalFormatting policy。
+- P6.1 sharedStrings / styles dependency policy：基础完成。
+- P6.2 tables / hyperlinks / validations / conditionalFormatting policy：当前最小可执行任务。
 - P6.3 drawings / images / charts linked-part policy。
 - P6.4 definedNames / formulas / calc metadata policy。
 - P6.5 unsupported edits preserve / request recalc / fail matrix。
@@ -346,7 +346,7 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ### P6.1 sharedStrings / styles dependency policy
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
 
@@ -402,6 +402,78 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   `PackageEditor`。
 - 不把 audit-only note 写成 repair。
 - 不自动 prune workbook relationships、owner `.rels` 或 content type overrides。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor
+```
+
+### P6.2 tables / hyperlinks / validations / conditionalFormatting policy
+
+状态：当前最小可执行任务。
+
+类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
+
+目标：把 sheet-local edit 遇到 worksheet-local metadata 和 table-linked metadata
+时的保守策略写清楚，避免把 preservation / audit-only 行为误写成 table resize、
+hyperlink repair、validation recalculation 或 conditional formatting semantic sync。
+
+输入：
+- 当前完整 worksheet replacement / `sheetData` patch 对 dataValidations、
+  conditionalFormatting、hyperlinks 和 tableParts 的 payload audit。
+- 当前 linked-object fixture 对 `xl/tables/table1.xml`、worksheet `.rels` table
+  relationship、worksheet `<hyperlinks>` / relationship ids 和 source worksheet metadata
+  preservation 的 copy-original / replace/remove ordering 覆盖。
+- 当前 `WorksheetRelationshipReferenceAudit`、`WorksheetPayloadDependencyAudit`、
+  `RelationshipTargetAudit`、`ReferencePolicy`、`EditPlan` 和 `planned_output()`。
+
+输出：
+- tables policy：保留 source table part、worksheet `.rels` inbound relationship 和
+  table content type override；worksheet payload 中的 `<tableParts>` 只做 caller
+  review / relationship audit，不 resize table、不迁移 table range、不重写 table XML。
+- hyperlinks policy：保留 worksheet `<hyperlinks>` 和 worksheet `.rels`；只审计
+  missing/stale/type-mismatch relationship ids，不修复 target、不创建 hyperlink style、
+  不校验 external URL 或 internal location 可达性。
+- data validations policy：保留或审计 worksheet-local `<dataValidations>` metadata；
+  不重算 ranges、不校验公式或单元格值、不与 table / merged range / autoFilter 做语义同步。
+- conditionalFormatting policy：保留或审计 worksheet-local
+  `<conditionalFormatting>` metadata；不重排 priority、不计算公式、不生成 dxfs、不做
+  style / range / table 联动修复。
+- `ReferencePolicyAction::Fail` 下的失败边界：caller 不接受这些 payload /
+  relationship dependencies 时，必须在状态变更前失败，且不污染 `EditPlan`、manifest、
+  package-entry audit、relationship audits、calc policy、planned output 或输出 bytes。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/TASK_PLAN.md`、
+  `docs/NEXT_STEPS.md`
+- 若发现测试缺口，再触碰 `tests/test_package_editor.cpp`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- streaming writer API / tests
+- package reader ZIP 边界
+- CMake 配置
+
+可并行性：
+- 可与 P6.3 / P6.4 的只读调研并行。
+- 若需要新增 `tests/test_package_editor.cpp` 用例，写入该文件的变更必须串行合并。
+
+验收标准：
+- 文档能回答 tables、hyperlinks、data validations、conditionalFormatting 分别是
+  preserve、rewrite、audit-only 还是 fail。
+- 文档明确现有行为不做 table resize、hyperlink repair、validation formula/value
+  validation、conditional formatting priority/dxf/style/range sync、relationship
+  pruning/repair 或 public editing API。
+- 若新增测试，默认 preset 下 `fastxlsx.package_editor` 通过，并保持 60s CTest 边界。
+
+禁止项：
+- 不新增 public editing API。
+- 不把 audit-only note 写成 repair。
+- 不自动 prune worksheet relationships、table parts、hyperlink relationships、
+  content type overrides 或 worksheet-local metadata。
 
 验证命令：
 ```powershell

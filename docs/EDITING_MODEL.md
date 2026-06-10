@@ -128,6 +128,32 @@ sharedStrings/styles/defined-name 联动管理仍是 Patch 目标。
   同步当前 content type audit，不做 worksheet cell reference sync、relationship
   pruning、metadata repair 或 public editing API。
 
+### P6.2 tables / hyperlinks / validations / conditionalFormatting policy
+
+当前 sheet-local Patch 对 tables、hyperlinks、data validations 和 conditional
+formatting 也采用 preservation-first 策略：
+
+- Tables：`xl/tables/tableN.xml`、worksheet `.rels` 中的 table relationship 和 table
+  content type override 默认 copy-original。worksheet payload 中的 `<tableParts>` 只
+  触发 caller review / relationship audit；即使 replacement worksheet 省略
+  `<tableParts>`，当前也不自动删除 table part 或 prune worksheet relationship。
+  Ordinary table replacement / removal 只是 part-level rewrite / omission audit，
+  不 resize table、不迁移 range、不更新 table columns / totals / formulas。
+- Hyperlinks：worksheet `<hyperlinks>` 与 worksheet `.rels` 默认保留。Patch audit
+  只检查已知 hyperlink relationship id 的 missing / stale / type-mismatch 情况；
+  不修复 target、不重写 display / tooltip、不创建 hyperlink style、不校验 external
+  URL 或 internal workbook location。
+- Data validations：worksheet-local `<dataValidations>` 在 `sheetData` patch 中随外围
+  worksheet XML 保留；完整 worksheet replacement 只把新 payload 中的 validation
+  metadata 记录为 audit-only caller review。不重算 ranges、不解析公式、不校验
+  单元格值，也不与 table、merged ranges 或 autoFilter 做语义同步。
+- Conditional formatting：worksheet-local `<conditionalFormatting>` 同样保留或审计。
+  不重排 priority、不计算公式、不生成 `dxfs` / styles、不调整 ranges，也不把当前
+  streaming-only color scale / data bar / icon set 能力提升为 existing-file editing。
+- `ReferencePolicyAction::Fail` 可把这些 payload-only 或 relationship-bearing
+  dependency 转为失败边界；失败必须发生在状态变更前，并保持 `EditPlan`、manifest、
+  package-entry audit、relationship audits、calc policy、planned output 和输出 bytes 不污染。
+
 当前另有 internal `PackageEditor::replace_worksheet_sheet_data()` helper，只替换
 已有 worksheet XML 的 `<sheetData>` 元素或 `<sheetData/>`，保留同一 worksheet
 part 中的外围 XML metadata，并复用 worksheet replacement 的 calcChain /

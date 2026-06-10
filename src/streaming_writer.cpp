@@ -1040,11 +1040,10 @@ void append_style_attribute(std::string& xml, StyleId style_id)
 void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const CellView& cell,
     detail::WorksheetWriterState& worksheet)
 {
-    const std::string reference = detail::cell_reference(row, column);
+    xml += "<c r=\"";
+    detail::append_cell_reference(xml, row, column);
     switch (cell.type()) {
     case CellView::Type::Number:
-        xml += "<c r=\"";
-        xml += reference;
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         xml += "><v>";
@@ -1052,8 +1051,6 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
         xml += "</v></c>";
         break;
     case CellView::Type::String:
-        xml += "<c r=\"";
-        xml += reference;
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         if (worksheet.workbook != nullptr && uses_shared_strings(*worksheet.workbook)) {
@@ -1067,8 +1064,6 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
         }
         break;
     case CellView::Type::Boolean:
-        xml += "<c r=\"";
-        xml += reference;
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         xml += " t=\"b\"><v>";
@@ -1076,8 +1071,6 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
         xml += "</v></c>";
         break;
     case CellView::Type::Formula:
-        xml += "<c r=\"";
-        xml += reference;
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
         xml += "><f>";
@@ -1092,7 +1085,9 @@ std::string worksheet_dimension(const detail::WorksheetWriterState& worksheet)
     if (worksheet.row_count == 0 || worksheet.max_column == 0) {
         return "A1";
     }
-    return "A1:" + detail::cell_reference(worksheet.row_count, worksheet.max_column);
+    std::string dimension = "A1:";
+    detail::append_cell_reference(dimension, worksheet.row_count, worksheet.max_column);
+    return dimension;
 }
 
 constexpr std::string_view recalculation_calc_id = "124519";
@@ -1369,7 +1364,7 @@ std::string build_sheet_views(const detail::WorksheetWriterState& worksheet)
         xml += "\"";
     }
     xml += " topLeftCell=\"";
-    xml += detail::cell_reference(row_split + 1, column_split + 1);
+    detail::append_cell_reference(xml, row_split + 1, column_split + 1);
     xml += "\" activePane=\"bottomRight\" state=\"frozen\"/></sheetView></sheetViews>";
     return xml;
 }
@@ -1644,7 +1639,7 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
     for (std::size_t index = 0; index < worksheet.external_hyperlinks.size(); ++index) {
         const ExternalHyperlink& hyperlink = worksheet.external_hyperlinks[index];
         xml += "<hyperlink ref=\"";
-        xml += detail::cell_reference(hyperlink.row, hyperlink.column);
+        detail::append_cell_reference(xml, hyperlink.row, hyperlink.column);
         xml += "\" r:id=\"";
         xml += worksheet_relationship_id(index);
         xml += "\"";
@@ -1662,7 +1657,7 @@ std::string build_hyperlinks(const detail::WorksheetWriterState& worksheet)
     }
     for (const InternalHyperlink& hyperlink : worksheet.internal_hyperlinks) {
         xml += "<hyperlink ref=\"";
-        xml += detail::cell_reference(hyperlink.row, hyperlink.column);
+        detail::append_cell_reference(xml, hyperlink.row, hyperlink.column);
         xml += "\" location=\"";
         xml += detail::escape_xml_attribute(hyperlink.location);
         xml += "\"";

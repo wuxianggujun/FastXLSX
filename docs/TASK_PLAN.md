@@ -1292,6 +1292,10 @@ Tasks:
   `detail::append_number()` / `detail::format_number()` helpers so in-memory,
   CellStore, and streaming paths share the same finite-only `std::to_chars`
   fast path without per-cell temporary string construction on XML append.
+  Cell reference XML output also uses shared internal
+  `detail::append_cell_reference()` / `detail::cell_reference()` helpers so
+  row/cell append paths can write coordinates without per-cell temporary
+  reference strings.
 - Track worksheet dimensions incrementally.
 - Add row and column limit tests for Excel bounds.
 - Add opt-in benchmark target or documented benchmark command.
@@ -2216,8 +2220,10 @@ Tasks:
   numeric XML output uses shared internal `detail::append_number()` /
   `detail::format_number()` helpers across in-memory, CellStore, and streaming
   paths; this preserves finite-only behavior and avoids per-cell temporary
-  string construction on append-oriented XML hot paths. Broader date encoding
-  remains planned.
+  string construction on append-oriented XML hot paths. Current cell reference
+  XML output similarly uses shared internal `detail::append_cell_reference()` /
+  `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
+  temporary reference strings. Broader date encoding remains planned.
 - Track dimensions incrementally and test row/column Excel limits. Current
   empty-row coverage locks no-row, only-empty-row, and leading/trailing-empty-row
   streaming dimension XML without requiring DOM backtracking. Current in-memory

@@ -65,7 +65,7 @@ void append_style_attribute(std::string& xml, const CellRecord& record)
 void append_cell_xml(std::string& xml, const CellPosition& position, const CellRecord& record)
 {
     xml += "<c r=\"";
-    xml += cell_reference(position.row, position.column);
+    append_cell_reference(xml, position.row, position.column);
     xml += "\"";
     append_style_attribute(xml, record);
 

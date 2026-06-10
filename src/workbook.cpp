@@ -109,7 +109,9 @@ std::string worksheet_dimension(const std::vector<detail::WorksheetRowData>& row
     }
 
     const std::uint32_t max_row = static_cast<std::uint32_t>(rows.size());
-    return "A1:" + detail::cell_reference(max_row, max_column);
+    std::string dimension = "A1:";
+    detail::append_cell_reference(dimension, max_row, max_column);
+    return dimension;
 }
 
 std::string build_worksheet(const std::vector<detail::WorksheetRowData>& rows)
@@ -142,33 +144,26 @@ std::string build_worksheet(const std::vector<detail::WorksheetRowData>& rows)
         for (std::uint32_t column_index = 0; column_index < row.size(); ++column_index) {
             const std::uint32_t column_number = column_index + 1;
             const Cell& cell = row[column_index];
-            const std::string reference = detail::cell_reference(row_number, column_number);
+            xml += "<c r=\"";
+            detail::append_cell_reference(xml, row_number, column_number);
 
             switch (cell.type()) {
             case Cell::Type::Number:
-                xml += "<c r=\"";
-                xml += reference;
                 xml += "\"><v>";
                 detail::append_number(xml, cell.number_value());
                 xml += "</v></c>";
                 break;
             case Cell::Type::String:
-                xml += "<c r=\"";
-                xml += reference;
                 xml += "\" t=\"inlineStr\"><is>";
                 append_text_element(xml, cell.string_value());
                 xml += "</is></c>";
                 break;
             case Cell::Type::Boolean:
-                xml += "<c r=\"";
-                xml += reference;
                 xml += "\" t=\"b\"><v>";
                 xml += cell.boolean_value() ? "1" : "0";
                 xml += "</v></c>";
                 break;
             case Cell::Type::Formula:
-                xml += "<c r=\"";
-                xml += reference;
                 xml += "\"><f>";
                 xml += detail::escape_xml_text(cell.string_value());
                 xml += "</f></c>";

@@ -1257,7 +1257,10 @@ Do:
   Current numeric XML output uses shared internal `detail::append_number()` /
   `detail::format_number()` helpers across in-memory, CellStore, and streaming
   paths; append-oriented paths avoid per-cell temporary string construction
-  while preserving finite-only `std::to_chars` output.
+  while preserving finite-only `std::to_chars` output. Current cell reference
+  XML output uses shared internal `detail::append_cell_reference()` /
+  `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
+  temporary reference strings.
   Current `append_row()` row limit coverage uses `FASTXLSX_ENABLE_TEST_HOOKS` to
   inject the internal row counter at `1048576` and verify one rejected append
   without a million-row default CTest loop; broader date and formatting edge

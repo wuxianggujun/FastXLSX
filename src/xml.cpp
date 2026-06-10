@@ -1,6 +1,5 @@
 #include <fastxlsx/detail/xml.hpp>
 
-#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -49,6 +48,29 @@ void validate_cell_coordinate(std::uint32_t row, std::uint32_t column)
     if (row > max_excel_rows || column > max_excel_columns) {
         throw fastxlsx::FastXlsxError("cell reference exceeds Excel worksheet limits");
     }
+}
+
+void append_column_reference(std::string& output, std::uint32_t column)
+{
+    std::array<char, 8> letters {};
+    std::size_t count = 0;
+    while (column > 0) {
+        --column;
+        letters[count] = static_cast<char>('A' + (column % 26));
+        ++count;
+        column /= 26;
+    }
+    while (count > 0) {
+        --count;
+        output.push_back(letters[count]);
+    }
+}
+
+void append_cell_reference_unchecked(
+    std::string& output, std::uint32_t row, std::uint32_t column)
+{
+    append_column_reference(output, column);
+    output += std::to_string(row);
 }
 
 } // namespace
@@ -133,19 +155,18 @@ void append_number(std::string& output, double value)
     output += fallback_format_number(value);
 }
 
-std::string cell_reference(std::uint32_t row, std::uint32_t column)
+void append_cell_reference(std::string& output, std::uint32_t row, std::uint32_t column)
 {
     validate_cell_coordinate(row, column);
+    append_cell_reference_unchecked(output, row, column);
+}
 
-    std::string letters;
-    while (column > 0) {
-        --column;
-        letters.push_back(static_cast<char>('A' + (column % 26)));
-        column /= 26;
-    }
-
-    std::reverse(letters.begin(), letters.end());
-    return letters + std::to_string(row);
+std::string cell_reference(std::uint32_t row, std::uint32_t column)
+{
+    std::string reference;
+    reference.reserve(8);
+    append_cell_reference(reference, row, column);
+    return reference;
 }
 
 std::string range_reference(std::uint32_t first_row,
@@ -153,14 +174,20 @@ std::string range_reference(std::uint32_t first_row,
     std::uint32_t last_row,
     std::uint32_t last_column)
 {
-    const std::string first = cell_reference(first_row, first_column);
-    const std::string last = cell_reference(last_row, last_column);
-
+    validate_cell_coordinate(first_row, first_column);
+    validate_cell_coordinate(last_row, last_column);
     if (first_row > last_row || first_column > last_column) {
         throw FastXlsxError("cell range cannot be reversed");
     }
 
-    return first == last ? first : first + ":" + last;
+    std::string reference;
+    reference.reserve(17);
+    append_cell_reference_unchecked(reference, first_row, first_column);
+    if (first_row != last_row || first_column != last_column) {
+        reference.push_back(':');
+        append_cell_reference_unchecked(reference, last_row, last_column);
+    }
+    return reference;
 }
 
 std::string range_reference(const CellRange& range)

@@ -373,9 +373,17 @@ parallelism, acceptance checks, and explicit non-goals.
   bytes, `xl/drawings/vmlDrawingHF1.vml` bytes, the PNG content type default,
   and the VML content type override, and exposes those parts as
   relationship-derived copy-original entries in `EditPlan` / planned output.
-  This is Patch preservation / audit visibility, not image, VML, or
-  header/footer semantic editing, relationship repair/pruning, orphan cleanup,
-  content type repair, public API, or complete object preservation. The same
+  The internal `planned_output()` snapshot now also covers the boundary for
+  this state: fullCalcOnLoad / `CalcChainAction::Remove`, worksheet and
+  workbook `LocalDomRewrite`, content types / package relationships / workbook
+  relationships / worksheet relationships copy-original entries, background
+  picture / header-footer VML copy-original relationship metadata, preserved
+  picture/VML caller-review notes, no relationship target audit, no worksheet
+  relationship-id audit, no removed parts or package entries, and no invented
+  `xl/calcChain.xml`. This is Patch preservation / audit visibility, not
+  image, VML, or header/footer semantic editing, calcChain rebuild,
+  relationship repair/pruning, orphan cleanup, content type repair, public API,
+  or complete object preservation. The same
   lane now has worksheet-owned printerSettings opaque part preservation
   coverage: `sheetData` replacement preserves the `<pageSetup r:id>` reference,
   worksheet `.rels` `printerSettings` relationship,

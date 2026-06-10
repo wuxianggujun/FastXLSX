@@ -30400,9 +30400,60 @@ void test_package_editor_sheet_data_patch_preserves_background_picture_and_heade
         "header/footer VML audit should keep structured relationship target");
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.full_calculation_on_load,
+        "picture/VML sheetData output plan should request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+        "picture/VML sheetData output plan should expose calcChain removal policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "picture/VML sheetData output plan should not invent dependency audits");
+    check(output_plan.worksheet_relationship_reference_audits.empty(),
+        "picture/VML sheetData output plan should not invent relationship-id audits");
+    check(output_plan.removed_parts.empty(),
+        "picture/VML sheetData output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "picture/VML sheetData output plan should not expose removed package entries");
+    check(has_note_containing(output_plan.notes,
+              {"sheetData replacement", "background picture reference metadata",
+                  "caller review"}),
+        "picture/VML sheetData output plan should snapshot preserved picture notes");
+    check(has_note_containing(output_plan.notes,
+              {"sheetData replacement", "header/footer drawing reference metadata",
+                  "caller review"}),
+        "picture/VML sheetData output plan should snapshot preserved header/footer VML notes");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "picture/VML sheetData output plan should rewrite worksheet");
+    check_output_entry_part_context(output_plan.entries, "xl/worksheets/sheet1.xml",
+        true, worksheet_part.value(),
+        "picture/VML sheetData output plan should classify worksheet as a part");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "picture/VML sheetData output plan should rewrite workbook metadata");
+    check_output_entry_part_context(output_plan.entries, "xl/workbook.xml",
+        true, workbook_part.value(),
+        "picture/VML sheetData output plan should classify workbook as a part");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "picture/VML sheetData output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "picture/VML sheetData output plan should classify content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "picture/VML sheetData output plan should preserve package relationships");
+    check_output_entry_part_context(output_plan.entries, "_rels/.rels", false, "",
+        "picture/VML sheetData output plan should classify package relationships as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "picture/VML sheetData output plan should preserve workbook relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        false, "",
+        "picture/VML sheetData output plan should classify workbook relationships as metadata");
     check_output_entry_plan(output_plan.entries, "xl/media/background.png",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "picture sheetData output plan should preserve worksheet-owned background picture");
+    check_output_entry_part_context(output_plan.entries, "xl/media/background.png",
+        true, background_picture_part.value(),
+        "picture sheetData output plan should classify background picture as a part");
     check_output_entry_relationship_context(output_plan.entries, "xl/media/background.png",
         worksheet_part.value(), "rIdPicture",
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
@@ -30411,6 +30462,9 @@ void test_package_editor_sheet_data_patch_preserves_background_picture_and_heade
     check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawingHF1.vml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "picture sheetData output plan should preserve worksheet-owned header/footer VML");
+    check_output_entry_part_context(output_plan.entries, "xl/drawings/vmlDrawingHF1.vml",
+        true, header_footer_vml_part.value(),
+        "picture sheetData output plan should classify header/footer VML as a part");
     check_output_entry_relationship_context(output_plan.entries,
         "xl/drawings/vmlDrawingHF1.vml", worksheet_part.value(), "rIdHeaderFooter",
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
@@ -30419,6 +30473,18 @@ void test_package_editor_sheet_data_patch_preserves_background_picture_and_heade
     check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "picture sheetData output plan should preserve worksheet relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        false, "",
+        "picture/VML sheetData output plan should classify worksheet relationships as metadata");
+    const auto* output_worksheet_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels");
+    check(output_worksheet_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "picture/VML sheetData output plan should classify worksheet relationships metadata");
+    check(output_worksheet_relationships_plan->owner_part == worksheet_part.value(),
+        "picture/VML sheetData output plan should keep worksheet relationships owner context");
+    check(find_output_entry_plan(output_plan.entries, "xl/calcChain.xml") == nullptr,
+        "picture/VML sheetData output plan should not invent calcChain output");
 
     editor.save_as(output);
 

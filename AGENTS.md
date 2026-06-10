@@ -397,10 +397,16 @@ part preservation：`sheetData` 局部替换会保留 `<picture>` / `<legacyDraw
 引用、worksheet `.rels` 中的 `image` / `vmlDrawing` relationships、
 `xl/media/background.png` bytes、`xl/drawings/vmlDrawingHF1.vml` bytes、PNG
 content type default 和 VML content type override，并把这些 part 作为
-relationship-derived copy-original entries 暴露到 `EditPlan` / planned output；这只是
-Patch preservation / audit 可见性，不是图片/VML/header-footer 语义编辑、
-relationship repair/pruning、orphan cleanup、content type repair、public API 或
-完整 object preservation。
+relationship-derived copy-original entries 暴露到 `EditPlan` / planned output。内部
+`planned_output()` 快照现在还覆盖该状态的边界：fullCalcOnLoad /
+`CalcChainAction::Remove`、worksheet / workbook `LocalDomRewrite`、content types /
+package relationships / workbook relationships / worksheet relationships
+copy-original、background picture / header-footer VML copy-original relationship
+metadata、preserved picture/VML caller-review notes、无 relationship target audit、
+无 worksheet relationship-id audit、无 removed parts / removed package entries，且不
+凭空创建 `xl/calcChain.xml`；这只是 Patch preservation / audit 可见性，不是
+图片/VML/header-footer 语义编辑、calcChain rebuild、relationship repair/pruning、
+orphan cleanup、content type repair、public API 或完整 object preservation。
 当前还覆盖 worksheet-owned printerSettings opaque part preservation：`sheetData`
 局部替换会保留 `<pageSetup r:id>` 引用、worksheet `.rels` 中的
 `printerSettings` relationship、`xl/printerSettings/printerSettings1.bin` bytes 和

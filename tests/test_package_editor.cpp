@@ -1264,6 +1264,76 @@ void test_package_editor_replaces_one_part_and_preserves_unknown_parts()
         "preserved core properties relationship target mismatch");
 }
 
+void test_package_editor_staged_chunk_part_replacement_writes_chunks()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-staged-chunks-source.xlsx");
+    const std::filesystem::path chunk_output =
+        output_path("fastxlsx-package-editor-staged-chunks-output.xlsx");
+    const std::filesystem::path final_output =
+        output_path("fastxlsx-package-editor-staged-chunks-final-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-staged-chunks-body.xml");
+    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_body =
+        R"(<row r="2"><c r="A2"><v>22</v></c></row>)";
+    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string expected_chunked_worksheet =
+        worksheet_prefix + worksheet_body + worksheet_suffix;
+    write_binary_file(body_path, worksheet_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    editor.replace_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        },
+        "staged worksheet stream chunks");
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "staged chunk replacement should record worksheet edit-plan entry");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged chunk replacement should be a stream rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged chunk replacement should update manifest write mode");
+    check_output_entry_plan(editor.planned_output().entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "staged chunk replacement should appear in planned output");
+
+    editor.save_as(chunk_output);
+
+    const fastxlsx::detail::PackageReader chunk_output_reader =
+        fastxlsx::detail::PackageReader::open(chunk_output);
+    check_preserved_source_entries(editor.reader(), chunk_output_reader, worksheet_part.zip_path());
+    check_entry_bytes(
+        chunk_output_reader, worksheet_part.zip_path(), expected_chunked_worksheet);
+    check_entry_bytes(chunk_output_reader, "custom/opaque.bin", source.unknown);
+
+    const std::string final_worksheet =
+        R"(<worksheet><sheetData><row r="3"><c r="A3"><v>33</v></c></row></sheetData></worksheet>)";
+    editor.replace_part(worksheet_part, final_worksheet,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final worksheet string rewrite");
+
+    const auto* final_worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(final_worksheet_plan != nullptr,
+        "final string replacement should keep worksheet edit-plan entry");
+    check(final_worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final string replacement should override staged chunk write mode");
+
+    editor.save_as(final_output);
+
+    const fastxlsx::detail::PackageReader final_output_reader =
+        fastxlsx::detail::PackageReader::open(final_output);
+    check_preserved_source_entries(editor.reader(), final_output_reader, worksheet_part.zip_path());
+    check_entry_bytes(final_output_reader, worksheet_part.zip_path(), final_worksheet);
+}
+
 void test_package_editor_repeated_part_replacement_updates_final_state()
 {
     const SourcePackage source =
@@ -33039,6 +33109,7 @@ int main()
     try {
         test_package_editor_noop_save_preserves_all_source_entries();
         test_package_editor_replaces_one_part_and_preserves_unknown_parts();
+        test_package_editor_staged_chunk_part_replacement_writes_chunks();
         test_package_editor_repeated_part_replacement_updates_final_state();
         test_package_editor_replacement_audits_preserved_root_relationships();
         test_package_editor_sets_document_properties_and_adds_missing_metadata_parts();

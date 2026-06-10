@@ -1863,6 +1863,10 @@ std::string current_planned_part_data(const PackageReader& reader,
         return entry_replacement->data;
     }
     if (const auto* replacement = find_replacement(replacements, part_name.zip_path())) {
+        if (!replacement->chunks.empty()) {
+            throw FastXlsxError(
+                "planned package part uses staged chunks and cannot be materialized");
+        }
         return replacement->data;
     }
     return reader.read_entry(part_name.zip_path());
@@ -1878,6 +1882,10 @@ std::uint64_t current_planned_part_data_size(const PackageReader& reader,
         return entry_replacement->data.size();
     }
     if (const auto* replacement = find_replacement(replacements, part_name.zip_path())) {
+        if (!replacement->chunks.empty()) {
+            throw FastXlsxError(
+                "planned package part uses staged chunks and cannot be measured as materialized XML");
+        }
         return replacement->data.size();
     }
     const PackageReaderEntry* entry = reader.find_entry(part_name.zip_path());
@@ -2275,6 +2283,9 @@ PackageEntry materialize_planned_output_entry(const PackageReader& reader,
         return PackageEntry {plan.entry_name, entry_replacement->data};
     }
     if (const auto* replacement = find_replacement(replacements, plan.entry_name)) {
+        if (!replacement->chunks.empty()) {
+            return PackageEntry {plan.entry_name, replacement->chunks};
+        }
         return PackageEntry {plan.entry_name, replacement->data};
     }
     if (plan.source_entry) {
@@ -2373,12 +2384,14 @@ void PackageEditor::replace_part(
 
     if (auto* replacement = find_replacement(replacements_, part_name)) {
         replacement->data = std::move(data);
+        replacement->chunks.clear();
         replacement->write_mode = write_mode;
         replacement->reason = reason;
     } else {
         replacements_.push_back(PackagePartReplacement {
             part_name,
             std::move(data),
+            {},
             write_mode,
             reason,
         });
@@ -2395,6 +2408,30 @@ void PackageEditor::replace_part(
     }
     sync_content_types_entry_after_part_restore(
         edit_plan_, entry_replacements_, reader_, manifest_);
+}
+
+void PackageEditor::replace_part_chunks(
+    PartName part_name, std::vector<PackageEntryChunk> chunks, std::string reason)
+{
+    if (chunks.empty()) {
+        throw FastXlsxError("staged package part replacement requires at least one chunk");
+    }
+    if (part_name == PartName("/xl/workbook.xml") && edit_plan_.full_calculation_on_load()) {
+        throw FastXlsxError(
+            "staged workbook replacement cannot apply fullCalcOnLoad metadata");
+    }
+    if (reason.empty()) {
+        reason = "target package part staged stream rewrite";
+    }
+
+    const PartName target_part = part_name;
+    replace_part(part_name, std::string {}, PartWriteMode::StreamRewrite, std::move(reason));
+    PackagePartReplacement* replacement = find_replacement(replacements_, target_part);
+    if (replacement == nullptr) {
+        throw FastXlsxError("staged package part replacement was not recorded");
+    }
+    replacement->data.clear();
+    replacement->chunks = std::move(chunks);
 }
 
 void PackageEditor::remove_part(

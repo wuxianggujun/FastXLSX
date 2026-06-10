@@ -64,12 +64,16 @@ parallelism, acceptance checks, and explicit non-goals.
   calcChain/fullCalcOnLoad plus audit behavior to the existing worksheet
   replacement path. That bounded handoff now refreshes the top-level worksheet
   `<dimension>` from emitted cell refs, replacing stale dimension metadata or
-  inserting a missing dimension before commit. This is P8 reader/transformer/
-  action/output-chunk and bounded PackageEditor handoff groundwork only: no
-  public API, full XML parser/schema validation, relationship repair,
-  package-entry staged stream writer, broad range metadata recalculation,
-  dependency repair, sharedStrings/style migration, or low-memory large-file
-  editing claim.
+  inserting a missing dimension before commit. `PackageEditor` also has an
+  internal `replace_part_chunks()` foundation that records an existing package
+  part as a `StreamRewrite` replacement backed by `PackageEntryChunk`
+  memory/file chunks, and `save_as()` forwards those chunks to `PackageWriter`
+  instead of flattening them into one string. This is P8 reader/transformer/
+  action/output-chunk, bounded PackageEditor handoff, and chunked package-entry
+  source groundwork only: no public API, full XML parser/schema validation,
+  relationship repair, cell-replacement low-memory staged handoff, broad range
+  metadata recalculation, dependency repair, sharedStrings/style migration, or
+  low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.

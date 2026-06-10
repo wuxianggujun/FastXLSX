@@ -109,6 +109,15 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     package-entry staged stream writer, no broad range metadata recalculation, no
     sharedStrings/style migration, no relationship repair, and no low-memory
     large-file editing claim.
+  - Internal package-entry chunked replacement source foundation in
+    `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
+    `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
+    existing package part as a `StreamRewrite` replacement backed by
+    `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
+    to `PackageWriter` without flattening them into one string. Treat this as a
+    staged package-entry payload foundation only: no public API, no
+    cell-replacement low-memory handoff, no full worksheet stream writer, no
+    dependency repair, and no relationship/range metadata repair.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

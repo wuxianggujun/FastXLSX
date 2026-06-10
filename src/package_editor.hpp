@@ -25,6 +25,7 @@ inline constexpr std::size_t package_editor_cell_replacement_local_rewrite_byte_
 struct PackagePartReplacement {
     PartName part_name;
     std::string data;
+    std::vector<PackageEntryChunk> chunks;
     PartWriteMode write_mode = PartWriteMode::LocalDomRewrite;
     std::string reason;
 };
@@ -131,6 +132,14 @@ public:
 
     void replace_part(PartName part_name, std::string data, PartWriteMode write_mode,
         std::string reason = {});
+    // Internal staged package-entry source foundation for future worksheet stream
+    // rewrite work. The caller supplies already-produced chunks for an existing
+    // package part; this records a StreamRewrite part replacement and lets
+    // save_as() hand the chunks to PackageWriter without flattening them into one
+    // string. It is not a public Patch API, XML validator, dependency repair, or
+    // calc metadata helper.
+    void replace_part_chunks(
+        PartName part_name, std::vector<PackageEntryChunk> chunks, std::string reason = {});
     void remove_part(PartName part_name, std::string reason = {},
         const ReferencePolicy& policy = {});
     void replace_worksheet_part(PartName worksheet_part, std::string worksheet_xml,

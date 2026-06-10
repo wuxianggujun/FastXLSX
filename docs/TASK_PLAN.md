@@ -1358,9 +1358,12 @@ Tasks:
   suffixes, streaming `<row r>`, and in-memory/streaming style `s` attributes
   use it instead of `std::to_string()`. SharedStrings string-cell `<v>` indexes
   also use the same append helper, so string-dense row output avoids that
-  per-cell temporary string in the worksheet body path. This is not benchmark
-  evidence, broader date encoding, or a sharedStrings production-readiness
-  claim. Text and attribute escaping now also expose
+  per-cell temporary string in the worksheet body path. SharedStrings duplicate
+  lookup also uses transparent `std::string_view` lookup before allocating an
+  owning key, so repeated strings no longer allocate a temporary key just to
+  discover an existing index. This is not benchmark evidence, broader date
+  encoding, or a sharedStrings production-readiness claim. Text and attribute
+  escaping now also expose
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` so in-memory, CellStore, streaming,
   and small OPC serializers can append escaped XML directly while preserving
@@ -2299,6 +2302,9 @@ Tasks:
   streaming row numbers, in-memory/streaming style id attributes, and
   sharedStrings string-cell indexes; it is a local hot-path helper, not a
   benchmark result, sharedStrings strategy change, or date encoding completion.
+  Current sharedStrings duplicate lookup also uses transparent `std::string_view`
+  lookup in the workbook-scope index map, avoiding an owning temporary key for
+  repeated strings before preserving the existing index.
   Current XML text and attribute escaping similarly has append-oriented
   `detail::append_escaped_xml_text()` /
   `detail::append_escaped_xml_attribute()` helpers used by in-memory,

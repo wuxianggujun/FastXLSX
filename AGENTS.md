@@ -2175,6 +2175,11 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   buffer 追加十进制 unsigned integer，避免这些局部路径通过 `std::to_string()`
   构造临时字符串。这不是 benchmark 证据、sharedStrings 策略变更、date encoding
   完成或完整 hot-path 优化结论。
+- 当前 sharedStrings duplicate lookup 使用透明 `std::string_view` 查找
+  workbook-scope shared string index map；repeated string cell 先用 caller view
+  复用已有 index，只有新 unique string 才创建 owning key。这仍不是 sharedStrings
+  生产就绪、峰值内存证明、benchmark 结果或 existing-file sharedStrings index
+  migration。
 - 当前 XML text / attribute escaping 共享内部
   `detail::append_escaped_xml_text()` / `detail::append_escaped_xml_attribute()`
   helpers；in-memory、CellStore、streaming row/formula/metadata XML 和小型 OPC

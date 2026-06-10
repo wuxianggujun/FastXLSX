@@ -13,9 +13,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <set>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -665,6 +668,44 @@ namespace detail {
 
 struct WorkbookWriterState;
 
+struct SharedStringHash {
+    using is_transparent = void;
+
+    std::size_t operator()(std::string_view value) const noexcept
+    {
+        return std::hash<std::string_view> {}(value);
+    }
+
+    std::size_t operator()(const std::string& value) const noexcept
+    {
+        return (*this)(std::string_view(value));
+    }
+};
+
+struct SharedStringEqual {
+    using is_transparent = void;
+
+    bool operator()(std::string_view left, std::string_view right) const noexcept
+    {
+        return left == right;
+    }
+
+    bool operator()(const std::string& left, std::string_view right) const noexcept
+    {
+        return std::string_view(left) == right;
+    }
+
+    bool operator()(std::string_view left, const std::string& right) const noexcept
+    {
+        return left == std::string_view(right);
+    }
+
+    bool operator()(const std::string& left, const std::string& right) const noexcept
+    {
+        return left == right;
+    }
+};
+
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
 namespace {
 std::atomic<std::uint64_t> temporary_worksheet_part_footprint_bytes {0};
@@ -689,7 +730,8 @@ void add_benchmark_temporary_worksheet_part_bytes(std::uint64_t bytes) noexcept
 struct SharedStringTable {
     std::size_t count = 0;
     std::vector<std::string> values;
-    std::unordered_map<std::string, std::size_t> index_by_value;
+    std::unordered_map<std::string, std::size_t, SharedStringHash, SharedStringEqual>
+        index_by_value;
 };
 
 struct WorksheetWriterState {
@@ -1015,13 +1057,13 @@ std::size_t shared_string_index(detail::WorkbookWriterState& workbook, std::stri
     auto& table = workbook.shared_strings;
     ++table.count;
 
-    std::string key(value);
-    if (const auto existing = table.index_by_value.find(key);
+    if (const auto existing = table.index_by_value.find(value);
         existing != table.index_by_value.end()) {
         return existing->second;
     }
 
     const std::size_t index = table.values.size();
+    std::string key(value);
     table.values.push_back(key);
     table.index_by_value.emplace(std::move(key), index);
     return index;

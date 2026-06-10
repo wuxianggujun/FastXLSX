@@ -337,8 +337,8 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 - P6.1 sharedStrings / styles dependency policy：基础完成。
 - P6.2 tables / hyperlinks / validations / conditionalFormatting policy：基础完成。
 - P6.3 drawings / images / charts linked-part policy：基础完成。
-- P6.4 definedNames / formulas / calc metadata policy：当前最小可执行任务。
-- P6.5 unsupported edits preserve / request recalc / fail matrix。
+- P6.4 definedNames / formulas / calc metadata policy：基础完成。
+- P6.5 unsupported edits preserve / request recalc / fail matrix：当前最小可执行任务。
 
 验收：
 - 每类 dependency 都有 preserve、rewrite、audit-only 或 fail 的明确策略。
@@ -554,7 +554,7 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ### P6.4 definedNames / formulas / calc metadata policy
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
 
@@ -618,6 +618,82 @@ graph 或 calcChain rebuild。
 - 不把 request full calculation 写成公式计算。
 - 不自动 rewrite definedNames、formula references、calcChain payload、workbook
   relationships 或 content type metadata，除非已有 helper 明确管理该窄路径。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor
+```
+
+### P6.5 unsupported edits preserve / request recalc / fail matrix
+
+状态：当前最小可执行任务。
+
+类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
+
+目标：把 P6 sheet dependency policy 收束成统一决策矩阵，说明 unsupported edits
+何时 preserve/audit、何时 request recalculation、何时 strict fail，避免把当前内部
+Patch 审计和状态卫生写成完整语义编辑、relationship repair 或 public API。
+
+输入：
+- P6.1-P6.4 对 sharedStrings、styles、tables、hyperlinks、validations、
+  conditionalFormatting、drawings/images/charts、definedNames、formulas 和 calc
+  metadata 的策略。
+- 当前 `ReferencePolicyAction::Fail`、`ReferencePolicyAction::RequestRecalculation`、
+  `CalcChainAction::Remove` / `Preserve` / `Rebuild` rejection。
+- 当前 invalid replacement、metadata-entry replacement、invalid removal、malformed /
+  missing workbook metadata、`save_as()` guard、copy-original read failure 和 writer
+  failure 的 no-state-pollution 回归。
+- 当前 `EditPlan`、manifest、package-entry audit、relationship / worksheet reference /
+  payload dependency audits、calc policy、`planned_output()` 和输出 bytes。
+
+输出：
+- preserve / audit lane：未知或未修改 parts、source relationships、unsupported linked
+  dependencies 和静态 workbook/worksheet dependencies 默认 copy-original 或 audit-only；
+  不做 semantic sync、relationship pruning、orphan cleanup 或 target repair。
+- request recalculation lane：数据/公式相关 worksheet rewrite 或 caller 明确选择
+  `RequestRecalculation` 时，只请求 workbook full calculation，并按 calcChain 策略
+  remove 或 preserve；不计算公式、不重建 dependency graph、不修复 linked parts。
+- fail lane：caller 选择 strict fail、请求未实现的 calcChain rebuild、替换/移除非法
+  target、普通替换 metadata package entry、workbook metadata 不可安全重写，或输出
+  guard/copy/write 失败时，必须保持既有 plan / manifest / audits / calc policy /
+  planned output / source bytes 或 queued-safe state 不污染。
+- ordinary rewrite / removal lane：显式 ordinary replacement / removal 只表达目标 part
+  rewrite 或 omission audit；除已有 helper 管理的 docProps / calcChain / workbook calc
+  metadata 窄路径外，不自动重写 inbound relationships、content types 或 sibling parts。
+- 文档明确该矩阵不新增 public `PackageEditor`、不声明 broad safe editing、不声明完整
+  preservation pipeline。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/TASK_PLAN.md`、
+  `docs/NEXT_STEPS.md`
+- 若发现测试缺口，再触碰 `tests/test_package_editor.cpp`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- streaming writer API / tests
+- package reader ZIP 边界
+- CMake 配置
+
+可并行性：
+- 可与后续 P7 的只读设计调研并行。
+- 若需要新增 `tests/test_package_editor.cpp` 用例，写入该文件的变更必须串行合并。
+
+验收标准：
+- 文档能把 unsupported edits 明确归入 preserve/audit、request recalculation、fail 或
+  explicit part rewrite/removal。
+- 文档明确 request recalculation 不是公式求值，preserve/audit 不是 repair，fail 必须
+  no-state-pollution。
+- 若新增测试，默认 preset 下 `fastxlsx.package_editor` 通过，并保持 60s CTest 边界。
+
+禁止项：
+- 不新增 public existing-file editing API。
+- 不把 unsupported edit 自动修复、relationship pruning、orphan cleanup 或 target repair
+  写成现有行为。
+- 不把 failed `save_as()`、copy-original read failure 或 writer failure 写成已提交的
+  package mutation。
 
 验证命令：
 ```powershell

@@ -215,6 +215,43 @@ preservation-first 策略：
   `EditPlan`、manifest、package-entry audit、relationship audits、calc policy、
   planned output 和输出 bytes 不污染。
 
+### P6.5 unsupported edits preserve / request recalc / fail matrix
+
+P6 sheet dependency policy 的当前收束矩阵如下：
+
+- Preserve / audit lane：未知或未修改 package entries、source-owned `.rels`、
+  relationship-derived linked parts、sharedStrings、styles、tables、drawings/images/charts、
+  VBA、custom XML、comments、pivot、external-link 和 workbook/static dependencies 默认
+  copy-original 或 audit-only。审计可记录 caller review、relationship target /
+  worksheet reference / payload dependency risk、removed-part inbound relationship 和
+  package-entry preservation context，但不做 semantic sync、relationship pruning、
+  orphan cleanup、target repair、range repair、style merge 或 shared string migration。
+- Request recalculation lane：数据或公式相关 worksheet rewrite，或 caller 对 unsupported
+  linked dependencies 显式选择 `ReferencePolicyAction::RequestRecalculation` 时，只把风险
+  收敛为 workbook recalculation request。输出会设置 `fullCalcOnLoad="1"`，并按
+  `CalcChainAction::Remove` 清理 stale calcChain payload/metadata，或按
+  `CalcChainAction::Preserve` 保留 calcChain payload/metadata；linked parts 仍按 preserve /
+  audit 处理。这不是公式求值、cached result 更新、dependency graph、calcChain rebuild
+  或 linked-part repair。
+- Fail lane：caller 选择 `ReferencePolicyAction::Fail`、请求未实现的
+  `CalcChainAction::Rebuild`、replacement payload / workbook metadata / sheet catalog
+  无法安全解析、ordinary replacement 指向 metadata package entry、removal target 非法，
+  或 `save_as()` output guard / copy-original read / writer backend 失败时，失败必须保持
+  state hygiene。没有 queued edit 时，`EditPlan`、manifest、package-entry audit、
+  relationship audits、worksheet reference audits、payload dependency audits、removed audits、
+  calc policy、planned output 和 source/output bytes 都不得新增污染；已有 queued edit 时，
+  失败保留既有 queued-safe state，并允许后续安全输出继续消费该 plan。
+- Explicit rewrite / removal lane：ordinary `replace_part()` / `remove_part()` 只表达目标
+  part 的 `LocalDomRewrite` / omission audit，并保留 inbound relationships，除非已有窄
+  helper 明确管理对应 metadata 副作用。当前已知 helper 只覆盖 core/app docProps metadata、
+  worksheet rewrite 触发的 calcChain cleanup / workbook `fullCalcOnLoad`、以及 workbook-only
+  `request_full_calculation()`；其它 unsupported edits 不自动改写 sibling parts、owner
+  `.rels`、content types 或 workbook/worksheet references。
+
+这个矩阵只是内部 Patch MVP 的风险分流和状态卫生边界，不是 public `PackageEditor`、
+full preservation pipeline、relationship/content-type repair engine、formula engine 或 broad
+existing-file semantic editor。
+
 当前另有 internal `PackageEditor::replace_worksheet_sheet_data()` helper，只替换
 已有 worksheet XML 的 `<sheetData>` 元素或 `<sheetData/>`，保留同一 worksheet
 part 中的外围 XML metadata，并复用 worksheet replacement 的 calcChain /

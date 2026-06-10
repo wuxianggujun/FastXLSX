@@ -3,10 +3,12 @@
 #include "package_reader.hpp"
 #include "package_writer.hpp"
 
+#include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/document_properties.hpp>
 
 #include <cstddef>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -16,6 +18,8 @@ namespace fastxlsx::detail {
 // Current internal sheetData patch helper materializes the planned worksheet XML.
 // Keep that path bounded until a true streaming worksheet transformer exists.
 inline constexpr std::size_t package_editor_sheet_data_local_rewrite_byte_limit =
+    4U * 1024U * 1024U;
+inline constexpr std::size_t package_editor_cell_replacement_local_rewrite_byte_limit =
     4U * 1024U * 1024U;
 
 struct PackagePartReplacement {
@@ -170,6 +174,22 @@ public:
     // sheets.
     void replace_worksheet_sheet_data_by_name(std::string_view sheet_name,
         std::string sheet_data_xml, const ReferencePolicy& policy = {});
+    // Internal bounded handoff from the P8 worksheet transformer foundation.
+    // Rewrites selected cells by running the current planned worksheet XML
+    // through emit_cell_replacement_worksheet(), materializing the rewritten
+    // worksheet in memory, then delegating calcChain/fullCalcOnLoad and audit
+    // handling to replace_worksheet_part(). This is a bridge fixture for the
+    // future package-entry staged stream writer, not the final low-memory
+    // worksheet transformer.
+    void replace_worksheet_cells(PartName worksheet_part,
+        std::span<const WorksheetCellReplacement> replacements,
+        const ReferencePolicy& policy = {});
+    // Internal by-name convenience for replace_worksheet_cells(); it reuses the
+    // same source/planned workbook catalog resolver as the other by-name Patch
+    // helpers and does not add, delete, rename, or repair sheets.
+    void replace_worksheet_cells_by_name(std::string_view sheet_name,
+        std::span<const WorksheetCellReplacement> replacements,
+        const ReferencePolicy& policy = {});
     // Internal Patch helper for the workbook sheet catalog. Rewrites only the
     // direct `<sheets><sheet name="...">` attribute in `/xl/workbook.xml` while
     // preserving worksheet parts, workbook relationships, content types, and

@@ -1365,9 +1365,11 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 transformer contract、stream rewrite / `EditPlan` handoff，并补入首个 bounded local
 template-fill fixture。P8.6 已落地首个 internal worksheet event reader 实现切片；
 P8.7 已落地首个 internal transformer action model 切片；P8.8 已落地首个 internal
-worksheet replacement output chunk emitter 切片。后续真正 package-entry staged stream
+worksheet replacement output chunk emitter 切片；P8.9 已落地首个 internal bounded
+`PackageEditor` cell-replacement handoff 切片。后续真正 package-entry staged stream
 rewrite / `EditPlan` handoff 必须继续按任务模板拆分，不能把当前 reader、action
-scanner、chunk emitter 或 bounded local fixture 写成完整低内存大文件路径。
+scanner、chunk emitter、bounded PackageEditor handoff 或 bounded local fixture 写成完整
+低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1381,6 +1383,7 @@ scanner、chunk emitter 或 bounded local fixture 写成完整低内存大文件
 - P8.6 internal worksheet event reader first implementation slice：基础完成。
 - P8.7 internal row/cell transformer action model first implementation slice：基础完成。
 - P8.8 internal worksheet replacement output chunk emitter first implementation slice：基础完成。
+- P8.9 internal bounded PackageEditor cell-replacement handoff first implementation slice：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -1938,6 +1941,82 @@ handoff 提供真实输出形态，同时不接入 `PackageEditor` active `EditP
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
+```
+
+### P8.9 internal bounded PackageEditor cell-replacement handoff first implementation slice
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：把 P8.8 output chunk emitter 接到 internal `PackageEditor` 的受控 Patch 路径：
+caller 提供 bounded cell replacement selectors，helper 读取当前 planned worksheet XML，
+通过 `emit_cell_replacement_worksheet()` 生成 rewritten worksheet XML，再委托现有
+worksheet replacement 路径处理 calcChain/fullCalcOnLoad、payload audit、relationship
+audit 和 package output plan。当前 helper 仍物化完整 worksheet XML，只是 handoff
+fixture，不是最终 package-entry staged stream writer。
+
+输入：
+- P8.6 internal worksheet event reader。
+- P8.7 internal row/cell transformer action model。
+- P8.8 internal output chunk emitter。
+- 当前 internal `PackageEditor::replace_worksheet_part()` / by-name resolver /
+  calcChain cleanup / planned output audit。
+
+输出：
+- 新增 internal `PackageEditor::replace_worksheet_cells()` 和
+  `replace_worksheet_cells_by_name()`。
+- helper 使用 source/planned workbook sheet catalog resolver 定位 worksheet part。
+- helper 拒绝空 replacement list、missing cell selector，以及超过 bounded local rewrite
+  限制的 source / output worksheet XML；失败不污染 active `EditPlan`、manifest、
+  package-entry audit、calc policy 或输出 bytes。
+- 成功路径把 rewritten worksheet 接入现有 worksheet replacement 路径，保留
+  fullCalcOnLoad / calcChain removal / dependency audit / relationship audit 语义，并把
+  target worksheet 记录为 bounded local rewrite reason。
+- 新增 `fastxlsx.package_editor` 回归：by-name cell replacement handoff 写出 transformed
+  worksheet XML、移除 stale calcChain、保留 unknown bytes，并验证 missing selector
+  failure-before-state-change。
+
+触碰文件：
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/streaming_writer.cpp`
+- CMake 配置
+
+可并行性：
+- 后续 package-entry staged output source、true file-backed stream writer、dimension
+  recalculation 和 dependency policy 扩展必须单独串行推进。
+- 额外 selector 类型、range patch、placeholder parser 或 output artifact source 可单独补
+  小切片，但修改 `PackageEditor` state transition 或 failure-before-state-change 需串行。
+
+验收标准：
+- `fastxlsx.package_editor` 覆盖 by-name bounded cell replacement handoff 成功路径和
+  missing target 失败路径。
+- 默认完整 CTest 通过。
+- 文档明确这只是 internal bounded handoff，不是 public API、低内存 package-entry
+  staged stream writer、dimension recalculation、dependency repair、sharedStrings/style
+  migration、relationship repair、table resize、formula rewrite 或 calcChain rebuild。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不创建真正 package-entry staged stream output source。
+- 不实现 dimension update、sharedStrings/style migration、relationship repair、
+  table resize、formula rewrite、calcChain rebuild、placeholder parser 或 range patch engine。
+- 不把 materialized worksheet XML handoff 写成低内存大文件路径。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
 ## 并行拆分建议

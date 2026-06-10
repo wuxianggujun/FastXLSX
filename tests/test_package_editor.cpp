@@ -6,6 +6,7 @@
 #include <fastxlsx/streaming_writer.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -2395,6 +2396,111 @@ void test_package_editor_combines_document_properties_and_worksheet_rewrite()
     const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
     check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
         "combined patch should request full calculation on load");
+}
+
+void test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transformer_handoff()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cell-replacement-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1", R"(<c r="A1" t="inlineStr"><is><t>patched</t></is></c>)" },
+    };
+
+    editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "cell replacement handoff should keep worksheet in the edit plan");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "cell replacement handoff should expose bounded local rewrite mode");
+    check(worksheet_plan->reason.find("bounded worksheet cell replacement")
+            != std::string::npos,
+        "cell replacement handoff should describe bounded transformer output");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "cell replacement handoff manifest should mirror bounded local rewrite mode");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "cell replacement handoff should request full calculation on load");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "cell replacement handoff should remove stale calcChain");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.full_calculation_on_load,
+        "cell replacement output plan should expose full calculation request");
+    check(has_note_containing(output_plan.notes, {"bounded local output chunks"}),
+        "cell replacement output plan should expose bounded local handoff note");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "cell replacement output plan should local-rewrite worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "cell replacement output plan should local-rewrite workbook metadata");
+    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "cell replacement output plan should omit stale calcChain");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string expected_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>patched</t></is></c></row></sheetData></worksheet>)";
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+        "cell replacement handoff should write transformed worksheet XML");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "cell replacement handoff output should omit calcChain payload");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "cell replacement handoff should preserve unknown bytes");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "cell replacement handoff output should request full calculation");
+    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
+        "cell replacement handoff content types should remove calcChain");
+    const auto* output_worksheet = output_reader.part_index().find_part(worksheet_part);
+    check(output_worksheet != nullptr
+            && output_worksheet->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "output reader should ingest the rewritten worksheet as a normal source part");
+    check(output_reader.part_index().find_part(workbook_part) != nullptr,
+        "output reader should retain workbook part");
+}
+
+void test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cell-replacement-missing-source.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "C3", R"(<c r="C3"><v>missing</v></c>)" },
+    };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "C3",
+            "missing cell replacement error should include caller target");
+    }
+    check(failed, "missing cell replacement target should fail");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "missing cell replacement should not request recalculation");
+    check(output_plan.removed_parts.empty(),
+        "missing cell replacement should not remove package parts");
+    check_output_plan_preserves_source_copy_original(
+        editor, output_plan, "missing cell replacement should not dirty output plan");
 }
 
 void test_package_editor_replaces_worksheet_and_removes_stale_calc_chain()
@@ -32894,6 +33000,8 @@ int main()
         test_package_editor_document_properties_failure_preserves_state();
         test_package_editor_document_properties_app_relationship_failure_preserves_state();
         test_package_editor_combines_document_properties_and_worksheet_rewrite();
+        test_package_editor_replaces_worksheet_cells_by_name_with_bounded_transformer_handoff();
+        test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
         test_package_editor_replaces_worksheet_and_removes_stale_calc_chain();
         test_package_editor_source_overwrite_rejection_preserves_worksheet_rewrite_plan();
         test_package_editor_cleans_stale_calc_chain_metadata_without_payload();

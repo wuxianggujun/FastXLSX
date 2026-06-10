@@ -1,5 +1,6 @@
 #include "package_editor.hpp"
 
+#include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/workbook.hpp>
 
@@ -1921,6 +1922,40 @@ void require_sheet_data_local_rewrite_size(
           "large-file streaming worksheet transformer");
 }
 
+void require_cell_replacement_local_rewrite_size(
+    std::string_view payload_name, std::uint64_t byte_size)
+{
+    if (byte_size
+        <= static_cast<std::uint64_t>(
+            package_editor_cell_replacement_local_rewrite_byte_limit)) {
+        return;
+    }
+
+    throw FastXlsxError(
+        "worksheet cell replacement exceeds bounded local rewrite limit for "
+        + std::string(payload_name)
+        + "; current helper materializes planned worksheet XML and is not the "
+          "large-file streaming worksheet transformer");
+}
+
+std::string missing_cell_replacement_error(
+    const std::vector<std::string>& missing_cell_references)
+{
+    std::string message = "worksheet cell replacement target was not found";
+    if (missing_cell_references.empty()) {
+        return message;
+    }
+
+    message += ": ";
+    for (std::size_t index = 0; index < missing_cell_references.size(); ++index) {
+        if (index != 0) {
+            message += ", ";
+        }
+        message += missing_cell_references[index];
+    }
+    return message;
+}
+
 bool contains_planned_output_entry(
     const std::vector<PackageEditorOutputEntryPlan>& entries, std::string_view entry_name)
 {
@@ -2466,6 +2501,70 @@ void PackageEditor::replace_worksheet_sheet_data_by_name(
         resolve_worksheet_part_by_name_for_patch(
             reader_, manifest_, replacements_, entry_replacements_, sheet_name),
         std::move(sheet_data_xml), policy);
+}
+
+void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
+    std::span<const WorksheetCellReplacement> replacements, const ReferencePolicy& policy)
+{
+    if (replacements.empty()) {
+        throw FastXlsxError("worksheet cell replacement requires at least one replacement");
+    }
+
+    const PartName target_worksheet_part = worksheet_part;
+    const auto* worksheet = manifest_.find_part(worksheet_part);
+    if (worksheet == nullptr) {
+        throw FastXlsxError("worksheet cell replacement target is not present in the source package");
+    }
+    if (worksheet->content_type != content_type_worksheet) {
+        throw FastXlsxError("worksheet cell replacement target is not a worksheet part");
+    }
+
+    require_cell_replacement_local_rewrite_size("current planned worksheet XML",
+        current_planned_part_data_size(
+            reader_, replacements_, entry_replacements_, worksheet_part));
+    const std::string worksheet_xml =
+        current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
+
+    std::string rewritten_worksheet_xml;
+    rewritten_worksheet_xml.reserve(worksheet_xml.size());
+    const WorksheetTransformSummary summary = emit_cell_replacement_worksheet(
+        worksheet_xml, replacements, [&](std::string_view chunk) {
+            const std::uint64_t next_size =
+                static_cast<std::uint64_t>(rewritten_worksheet_xml.size())
+                + static_cast<std::uint64_t>(chunk.size());
+            require_cell_replacement_local_rewrite_size("rewritten worksheet XML", next_size);
+            rewritten_worksheet_xml.append(chunk);
+        });
+    if (!summary.missing_cell_references.empty()) {
+        throw FastXlsxError(
+            missing_cell_replacement_error(summary.missing_cell_references));
+    }
+
+    replace_worksheet_part_impl(
+        std::move(worksheet_part), std::move(rewritten_worksheet_xml), policy, true);
+    const std::string replacement_reason =
+        "target worksheet part local rewrite from bounded worksheet cell replacement "
+        "chunk emitter; current helper materializes planned worksheet XML";
+    edit_plan_.set_part(
+        target_worksheet_part, PartWriteMode::LocalDomRewrite, replacement_reason);
+    manifest_.set_part_write_mode(target_worksheet_part, PartWriteMode::LocalDomRewrite);
+    if (auto* replacement = find_replacement(replacements_, target_worksheet_part)) {
+        replacement->write_mode = PartWriteMode::LocalDomRewrite;
+        replacement->reason = replacement_reason;
+    }
+    edit_plan_.add_note(
+        "worksheet cell replacement uses bounded local output chunks; current helper "
+        "materializes the planned worksheet XML and is not the package-entry staged "
+        "large-file streaming worksheet transformer");
+}
+
+void PackageEditor::replace_worksheet_cells_by_name(std::string_view sheet_name,
+    std::span<const WorksheetCellReplacement> replacements, const ReferencePolicy& policy)
+{
+    replace_worksheet_cells(
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, entry_replacements_, sheet_name),
+        replacements, policy);
 }
 
 void PackageEditor::rename_sheet_catalog_entry(

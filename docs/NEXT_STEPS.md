@@ -95,6 +95,15 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     as action/output-chunk groundwork only: no public API, no package-entry staged
     stream writer, no dimension recalculation, no dependency repair, and no
     PackageEditor/EditPlan commit.
+  - Internal bounded PackageEditor cell-replacement handoff in
+    `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
+    `fastxlsx.package_editor`. `replace_worksheet_cells()` and
+    `replace_worksheet_cells_by_name()` materialize the current planned worksheet
+    XML, run the P8 chunk emitter, then delegate calcChain/fullCalcOnLoad and audit
+    handling to the existing worksheet replacement path. Treat this as a bounded
+    handoff fixture only: no public API, no package-entry staged stream writer, no
+    dimension recalculation, no sharedStrings/style migration, no relationship
+    repair, and no low-memory large-file editing claim.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

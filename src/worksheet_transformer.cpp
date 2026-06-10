@@ -231,10 +231,13 @@ std::map<std::string, std::string_view, std::less<>> build_replacement_index(
 void emit_pass_through(const WorksheetTransformActionCallback& callback, const WorksheetEvent& event)
 {
     callback(WorksheetTransformAction { WorksheetTransformActionKind::PassThrough,
+        event.kind,
         event.raw_xml,
+        event.element_name,
         event.row_number,
         event.cell_reference,
-        {} });
+        {},
+        event.self_closing });
 }
 
 void emit_chunk(const WorksheetOutputChunkCallback& callback, std::string_view chunk)
@@ -267,10 +270,13 @@ WorksheetTransformSummary scan_cell_replacement_actions(
             const auto replacement = replacement_index.find(event.cell_reference);
             if (replacement != replacement_index.end()) {
                 callback(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
+                    event.kind,
                     event.raw_xml,
+                    event.element_name,
                     event.row_number,
                     event.cell_reference,
-                    replacement->second });
+                    replacement->second,
+                    event.self_closing });
                 matched_replacements.insert(replacement->first);
                 replacing_current_cell = true;
                 return;

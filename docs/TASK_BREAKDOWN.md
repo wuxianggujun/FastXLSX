@@ -1371,12 +1371,13 @@ handoff 的 top-level worksheet dimension refresh 切片；P8.11 已落地 repla
 payload preflight 切片；P8.12 已落地 internal package-entry chunked replacement source
 foundation；P8.13 已落地 internal worksheet replacement chunk handoff；P8.14 已落地
 internal cell replacement staged chunk handoff；P8.15 已落地 invalid replacement
-cell payload no-state-pollution 回归。后续真正 package-entry staged
-stream rewrite / `EditPlan` hardening 必须继续按任务模板拆分，不能把当前 reader、
-action scanner、chunk emitter、bounded PackageEditor handoff、dimension refresh、
-payload preflight、chunked replacement source foundation、worksheet chunk handoff、
-cell replacement staged output handoff、invalid payload state hygiene 或 bounded
-local fixture 写成完整低内存大文件路径。
+cell payload no-state-pollution 回归；P8.16 已落地 cell replacement 输出侧
+file-backed stream handoff。后续 PackageReader 输入侧 streaming、range/row 级
+transformer、dependency repair 或完整大文件低内存编辑仍必须继续按任务模板拆分，
+不能把当前 reader、action scanner、chunk emitter、PackageEditor handoff、dimension
+refresh、payload preflight、chunked replacement source foundation、worksheet chunk
+handoff、cell replacement file-backed output handoff、invalid payload state hygiene 或
+bounded local fixture 写成完整低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1397,6 +1398,7 @@ local fixture 写成完整低内存大文件路径。
 - P8.13 internal worksheet replacement chunk handoff：基础完成。
 - P8.14 internal cell replacement staged chunk handoff：基础完成。
 - P8.15 internal cell replacement invalid payload no-state-pollution：基础完成。
+- P8.16 internal cell replacement file-backed output stream handoff：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -2333,7 +2335,8 @@ dimension-refreshed worksheet output 作为 `PackageEntryChunk` 交给
   chunk，并调用 `replace_worksheet_part_chunks()`。
 - target worksheet part、manifest 和 planned output 均记录为 `StreamRewrite`。
 - EditPlan reason / notes 明确这是 cell replacement staged package-entry chunk handoff，
-  但当前 helper 仍物化 planned 和 rewritten worksheet XML。
+  但该切片当时仍物化 planned 和 rewritten worksheet XML；P8.16 已把 rewritten
+  output 改为 PackageEditor-owned temporary file-backed chunk。
 - `fastxlsx.package_editor` 回归覆盖 by-name cell replacement 的 `StreamRewrite`
   状态、workbook calc metadata rewrite、calcChain cleanup、unknown bytes preservation
   和 dimension refresh note。
@@ -2434,6 +2437,87 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 - 不把 replacement cell payload preflight 写成完整 cell schema validation。
 - 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、
   formulas、calcChain rebuild 或其他 range-bearing metadata。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.16 internal cell replacement file-backed output stream handoff
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：把 P8.14 的 cell replacement rewritten worksheet 输出从完整内存字符串改成
+输出侧 file-backed stream handoff：仍物化 current planned worksheet XML 作为当前
+PackageReader 边界输入，但不再物化完整 rewritten worksheet XML。
+
+输入：
+- P8.8 internal output chunk emitter。
+- P8.10 top-level worksheet dimension refresh。
+- P8.11 replacement cell payload preflight。
+- P8.12 / P8.13 chunked package-entry 与 worksheet chunk handoff。
+- P6 payload / relationship audit policy。
+
+输出：
+- `PackageEditor::replace_worksheet_cells()` 先扫描 planned worksheet action stream
+  与 replacement payload，计算 top-level `<dimension>`，并分拆 audit 为 source
+  metadata 与 replacement cell payload。
+- 被 replacement selector 命中的旧 source cell payload 不参与 sharedStrings /
+  styles / formula payload audit，也不参与 worksheet relationship-id audit。
+- worksheet relationship-id audit 基于 rewritten action stream：pass-through chunk
+  与 replacement cell payload 会被扫描，被替换旧 cell 中的 stale relationship
+  reference 不污染 audit。
+- second pass 直接把 dimension-refreshed worksheet XML 写入
+  `PackageEditor` 持有的 temporary file-backed `PackageEntryChunk`，再通过
+  prevalidated worksheet chunk path 提交 `StreamRewrite`。
+- `PackageEditor` 管理临时文件 RAII 生命周期，析构和 move-assignment cleanup 会移除
+  已接管的 temporary XML 文件。
+- `fastxlsx.package_editor` 回归覆盖 file-backed handoff note、`StreamRewrite`
+  planned output、`save_as()` 后 `PackageReader` 可重读、dimension refresh、
+  old target cell audit skip、replacement payload audit / ReferencePolicy fail
+  no-state-pollution，以及 PackageEditor 析构后临时文件不残留。
+
+触碰文件：
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `include/fastxlsx/detail/worksheet_transformer.hpp`
+- `src/worksheet_transformer.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_reader.cpp`
+- `src/package_writer.cpp`
+- `src/streaming_writer.cpp`
+- CMake 配置
+
+可并行性：
+- 文档同步可与只读实现复核并行。
+- 修改 `PackageEditor` state transition、temporary file ownership 或 audit policy
+  必须串行，避免同文件/同状态机冲突。
+
+验收标准：
+- `fastxlsx.package_editor` 覆盖 file-backed cell replacement handoff、dimension
+  refresh、old target cell audit skip、replacement payload policy failure 和临时文件清理。
+- 默认完整 CTest 通过。
+- 文档明确这是 output-side streaming/file-backed handoff；当前仍物化 planned
+  worksheet XML，不是 PackageReader input streaming、完整 low-memory large-file
+  editing、relationship repair、sharedStrings/style migration 或 range metadata repair。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不把 current planned worksheet XML 物化边界写成已解决。
+- 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、
+  formulas、calcChain rebuild 或其他 range-bearing metadata。
+- 不把 replacement payload preflight 写成完整 XML schema validation。
 
 验证命令：
 ```powershell

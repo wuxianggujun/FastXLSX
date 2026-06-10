@@ -6,9 +6,12 @@
 #include <fastxlsx/workbook.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cctype>
 #include <cstdint>
 #include <exception>
+#include <fstream>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -1086,78 +1089,119 @@ bool is_worksheet_relationship_reference_element(std::string_view local_name) no
     return false;
 }
 
+class WorksheetRelationshipReferenceScanner {
+public:
+    void process(std::string_view xml)
+    {
+        for (std::size_t offset = 0;;) {
+            const std::size_t open = xml.find('<', offset);
+            if (open == std::string_view::npos) {
+                break;
+            }
+            if (open + 1 >= xml.size()) {
+                throw FastXlsxError("small XML part tag is truncated");
+            }
+            if (xml.substr(open, 4) == "<!--") {
+                const std::size_t close = xml.find("-->", open + 4);
+                if (close == std::string_view::npos) {
+                    throw FastXlsxError("small XML part comment is not closed");
+                }
+                offset = close + 3;
+                continue;
+            }
+
+            const std::size_t close = find_xml_tag_end(xml, open);
+            const char marker = xml[open + 1];
+            const XmlTagRange tag {open, close};
+            if (marker == '/') {
+                if (namespace_stack_.empty()) {
+                    throw FastXlsxError("small XML part closing tag has no matching start tag");
+                }
+                namespace_stack_.pop_back();
+                offset = close + 1;
+                continue;
+            }
+            if (marker == '?' || marker == '!') {
+                offset = close + 1;
+                continue;
+            }
+
+            XmlNamespaceScope current_scope;
+            ingest_namespace_declarations(current_scope, xml, tag);
+            std::vector<XmlNamespaceScope> current_namespaces = namespace_stack_;
+            current_namespaces.push_back(current_scope);
+
+            const std::string_view local_name = local_xml_name(start_tag_name(xml, tag));
+            if (is_worksheet_relationship_reference_element(local_name)) {
+                std::size_t value_begin = 0;
+                std::size_t value_end = 0;
+                if (find_relationship_id_value(
+                        xml, tag, current_namespaces, value_begin, value_end)) {
+                    add_reference(
+                        local_name, xml.substr(value_begin, value_end - value_begin));
+                }
+            }
+
+            if (!is_self_closing_tag(xml, tag)) {
+                namespace_stack_.push_back(std::move(current_scope));
+            }
+            offset = close + 1;
+        }
+    }
+
+    [[nodiscard]] const std::vector<WorksheetRelationshipReference>& references() const noexcept
+    {
+        return references_;
+    }
+
+private:
+    void add_reference(std::string_view element, std::string_view relationship_id)
+    {
+        const auto duplicate = std::find_if(references_.begin(), references_.end(),
+            [element, relationship_id](const WorksheetRelationshipReference& item) {
+                return item.element == element && item.relationship_id == relationship_id;
+            });
+        if (duplicate != references_.end()) {
+            return;
+        }
+
+        references_.push_back(WorksheetRelationshipReference {
+            std::string(element),
+            std::string(relationship_id),
+        });
+    }
+
+    std::vector<XmlNamespaceScope> namespace_stack_;
+    std::vector<WorksheetRelationshipReference> references_;
+};
+
+void scan_xml_relationship_references(
+    WorksheetRelationshipReferenceScanner& scanner, std::string_view xml)
+{
+    scanner.process(xml);
+}
+
+void scan_rewritten_cell_replacement_relationship_references(
+    WorksheetRelationshipReferenceScanner& scanner,
+    std::string_view worksheet_xml,
+    std::span<const WorksheetCellReplacement> replacements)
+{
+    const WorksheetTransformSummary summary = scan_cell_replacement_actions(
+        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+            scan_xml_relationship_references(scanner,
+                action.kind == WorksheetTransformActionKind::ReplaceCell
+                    ? action.replacement_cell_xml
+                    : action.raw_xml);
+        });
+    (void)summary;
+}
+
 std::vector<WorksheetRelationshipReference> worksheet_relationship_references(
     std::string_view worksheet_xml)
 {
-    std::vector<WorksheetRelationshipReference> references;
-    std::vector<XmlNamespaceScope> namespace_stack;
-    for (std::size_t offset = 0;;) {
-        const std::size_t open = worksheet_xml.find('<', offset);
-        if (open == std::string_view::npos) {
-            break;
-        }
-        if (open + 1 >= worksheet_xml.size()) {
-            throw FastXlsxError("small XML part tag is truncated");
-        }
-        if (worksheet_xml.substr(open, 4) == "<!--") {
-            const std::size_t close = worksheet_xml.find("-->", open + 4);
-            if (close == std::string_view::npos) {
-                throw FastXlsxError("small XML part comment is not closed");
-            }
-            offset = close + 3;
-            continue;
-        }
-
-        const std::size_t close = find_xml_tag_end(worksheet_xml, open);
-        const char marker = worksheet_xml[open + 1];
-        const XmlTagRange tag {open, close};
-        if (marker == '/') {
-            if (namespace_stack.empty()) {
-                throw FastXlsxError("small XML part closing tag has no matching start tag");
-            }
-            namespace_stack.pop_back();
-            offset = close + 1;
-            continue;
-        }
-        if (marker == '?' || marker == '!') {
-            offset = close + 1;
-            continue;
-        }
-
-        XmlNamespaceScope current_scope;
-        ingest_namespace_declarations(current_scope, worksheet_xml, tag);
-        std::vector<XmlNamespaceScope> current_namespaces = namespace_stack;
-        current_namespaces.push_back(current_scope);
-
-        const std::string_view local_name =
-            local_xml_name(start_tag_name(worksheet_xml, tag));
-        if (is_worksheet_relationship_reference_element(local_name)) {
-            std::size_t value_begin = 0;
-            std::size_t value_end = 0;
-            if (find_relationship_id_value(worksheet_xml, tag, current_namespaces,
-                    value_begin, value_end)) {
-                const std::string relationship_id(
-                    worksheet_xml.substr(value_begin, value_end - value_begin));
-                const auto duplicate = std::find_if(references.begin(), references.end(),
-                    [local_name, &relationship_id](const WorksheetRelationshipReference& item) {
-                        return item.element == local_name
-                            && item.relationship_id == relationship_id;
-                    });
-                if (duplicate == references.end()) {
-                    references.push_back(WorksheetRelationshipReference {
-                        std::string(local_name),
-                        relationship_id,
-                    });
-                }
-            }
-        }
-
-        if (!is_self_closing_tag(worksheet_xml, tag)) {
-            namespace_stack.push_back(std::move(current_scope));
-        }
-        offset = close + 1;
-    }
-    return references;
+    WorksheetRelationshipReferenceScanner scanner;
+    scanner.process(worksheet_xml);
+    return scanner.references();
 }
 
 bool contains_relationship_reference(
@@ -1216,19 +1260,19 @@ void append_worksheet_relationship_reference_audit(
     result.notes.push_back(std::move(note));
 }
 
-WorksheetRelationshipReferenceAuditResult worksheet_relationship_reference_audit(
-    const PartName& worksheet_part, std::string_view worksheet_xml,
+WorksheetRelationshipReferenceAuditResult worksheet_relationship_reference_parse_failure_audit()
+{
+    WorksheetRelationshipReferenceAuditResult result;
+    result.notes.push_back(
+        "worksheet replacement relationship-id audit could not parse relationship-bearing worksheet XML; caller must review worksheet .rels");
+    return result;
+}
+
+WorksheetRelationshipReferenceAuditResult worksheet_relationship_reference_audit_from_references(
+    const PartName& worksheet_part,
+    const std::vector<WorksheetRelationshipReference>& references,
     const RelationshipSet* worksheet_relationships)
 {
-    std::vector<WorksheetRelationshipReference> references;
-    try {
-        references = worksheet_relationship_references(worksheet_xml);
-    } catch (const std::exception&) {
-        WorksheetRelationshipReferenceAuditResult result;
-        result.notes.push_back(
-            "worksheet replacement relationship-id audit could not parse relationship-bearing worksheet XML; caller must review worksheet .rels");
-        return result;
-    }
     if (references.empty() && worksheet_relationships == nullptr) {
         return {};
     }
@@ -1298,6 +1342,36 @@ WorksheetRelationshipReferenceAuditResult worksheet_relationship_reference_audit
     return result;
 }
 
+WorksheetRelationshipReferenceAuditResult worksheet_relationship_reference_audit(
+    const PartName& worksheet_part, std::string_view worksheet_xml,
+    const RelationshipSet* worksheet_relationships)
+{
+    try {
+        return worksheet_relationship_reference_audit_from_references(
+            worksheet_part, worksheet_relationship_references(worksheet_xml),
+            worksheet_relationships);
+    } catch (const std::exception&) {
+        return worksheet_relationship_reference_parse_failure_audit();
+    }
+}
+
+WorksheetRelationshipReferenceAuditResult worksheet_cell_replacement_relationship_reference_audit(
+    const PartName& worksheet_part,
+    std::string_view worksheet_xml,
+    std::span<const WorksheetCellReplacement> replacements,
+    const RelationshipSet* worksheet_relationships)
+{
+    try {
+        WorksheetRelationshipReferenceScanner scanner;
+        scan_rewritten_cell_replacement_relationship_references(
+            scanner, worksheet_xml, replacements);
+        return worksheet_relationship_reference_audit_from_references(
+            worksheet_part, scanner.references(), worksheet_relationships);
+    } catch (const std::exception&) {
+        return worksheet_relationship_reference_parse_failure_audit();
+    }
+}
+
 void reject_relationship_reference_audit_by_policy(
     const WorksheetRelationshipReferenceAuditResult& audit, const ReferencePolicy& policy)
 {
@@ -1332,6 +1406,16 @@ void append_worksheet_payload_dependency_audit(
     WorksheetPayloadDependencyAuditKind kind, WorksheetPayloadDependencyAuditScope scope,
     std::string_view element, std::string note)
 {
+    const auto existing = std::find_if(result.audits.begin(), result.audits.end(),
+        [&worksheet_part, kind, scope, element](const WorksheetPayloadDependencyAudit& audit) {
+            return audit.worksheet_part == worksheet_part && audit.kind == kind
+                && audit.scope == scope && audit.element == element;
+        });
+    if (existing != result.audits.end()) {
+        existing->note = std::move(note);
+        return;
+    }
+
     result.audits.push_back(WorksheetPayloadDependencyAudit {
         worksheet_part,
         kind,
@@ -1367,6 +1451,39 @@ bool is_relationship_metadata_element(std::string_view element) noexcept
         || element == "oleObjects"
         || element == "controls"
         || element == "tableParts";
+}
+
+bool cell_start_attribute_equals_for_audit(std::string_view cell_xml,
+    std::string_view attribute_name, std::string_view expected_value) noexcept
+{
+    try {
+        if (cell_xml.size() < 2 || cell_xml.front() != '<' || cell_xml.back() != '>') {
+            return false;
+        }
+        const XmlTagRange cell {0, cell_xml.size() - 1};
+        std::size_t value_begin = 0;
+        std::size_t value_end = 0;
+        return find_attribute_value(cell_xml, cell, attribute_name, value_begin, value_end)
+            && cell_xml.substr(value_begin, value_end - value_begin) == expected_value;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+bool cell_start_has_attribute_for_audit(
+    std::string_view cell_xml, std::string_view attribute_name) noexcept
+{
+    try {
+        if (cell_xml.size() < 2 || cell_xml.front() != '<' || cell_xml.back() != '>') {
+            return false;
+        }
+        const XmlTagRange cell {0, cell_xml.size() - 1};
+        std::size_t value_begin = 0;
+        std::size_t value_end = 0;
+        return find_attribute_value(cell_xml, cell, attribute_name, value_begin, value_end);
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 WorksheetPayloadDependencyAuditResult worksheet_sheet_data_preservation_audit(
@@ -1456,97 +1573,139 @@ WorksheetPayloadDependencyAuditResult worksheet_sheet_data_replacement_audit(
     return result;
 }
 
+void append_worksheet_replacement_shared_strings_audit(
+    WorksheetPayloadDependencyAuditResult& result, const PartName& worksheet_part)
+{
+    append_worksheet_payload_dependency_audit(result, worksheet_part,
+        WorksheetPayloadDependencyAuditKind::SharedStrings,
+        WorksheetPayloadDependencyAuditScope::WorksheetReplacement, "c",
+        "worksheet replacement uses shared string indexes; caller must ensure xl/sharedStrings.xml remains valid");
+}
+
+void append_worksheet_replacement_styles_audit(
+    WorksheetPayloadDependencyAuditResult& result, const PartName& worksheet_part)
+{
+    append_worksheet_payload_dependency_audit(result, worksheet_part,
+        WorksheetPayloadDependencyAuditKind::Styles,
+        WorksheetPayloadDependencyAuditScope::WorksheetReplacement, "c",
+        "worksheet replacement uses style id references; caller must ensure xl/styles.xml remains valid");
+}
+
+void append_worksheet_replacement_formula_audit(
+    WorksheetPayloadDependencyAuditResult& result, const PartName& worksheet_part)
+{
+    append_worksheet_payload_dependency_audit(result, worksheet_part,
+        WorksheetPayloadDependencyAuditKind::Formula,
+        WorksheetPayloadDependencyAuditScope::WorksheetReplacement, "f",
+        "worksheet replacement contains formulas; workbook calc metadata and calcChain policy require caller review");
+}
+
+void append_worksheet_replacement_range_metadata_audit(WorksheetPayloadDependencyAuditResult& result,
+    const PartName& worksheet_part, std::string_view element, std::string_view description)
+{
+    std::string note = "worksheet replacement contains ";
+    note += description;
+    note += "; ranges or references require caller review";
+    append_worksheet_payload_dependency_audit(result, worksheet_part,
+        WorksheetPayloadDependencyAuditKind::RangeMetadata,
+        WorksheetPayloadDependencyAuditScope::WorksheetReplacement, element, std::move(note));
+}
+
+void append_worksheet_replacement_relationship_metadata_audit(
+    WorksheetPayloadDependencyAuditResult& result, const PartName& worksheet_part,
+    std::string_view element, std::string_view description)
+{
+    std::string note = "worksheet replacement contains ";
+    note += description;
+    note += "; worksheet relationships and linked parts require caller review";
+    append_worksheet_payload_dependency_audit(result, worksheet_part,
+        WorksheetPayloadDependencyAuditKind::RelationshipMetadata,
+        WorksheetPayloadDependencyAuditScope::WorksheetReplacement, element, std::move(note));
+}
+
+void append_payload_audit_result(
+    WorksheetPayloadDependencyAuditResult& destination,
+    WorksheetPayloadDependencyAuditResult source)
+{
+    for (WorksheetPayloadDependencyAudit& audit : source.audits) {
+        append_worksheet_payload_dependency_audit(destination, audit.worksheet_part,
+            audit.kind, audit.scope, audit.element, std::move(audit.note));
+    }
+}
+
+static constexpr WorksheetLocalMetadataAudit worksheet_replacement_range_metadata_audits[] = {
+    {"sheetPr", "worksheet sheet property metadata"},
+    {"sheetCalcPr", "worksheet sheet calculation metadata"},
+    {"dimension", "worksheet dimension metadata"},
+    {"sheetViews", "worksheet view metadata"},
+    {"customSheetViews", "worksheet custom view metadata"},
+    {"sheetFormatPr", "worksheet default format metadata"},
+    {"cols", "worksheet column metadata"},
+    {"sheetProtection", "worksheet protection metadata"},
+    {"protectedRanges", "worksheet protected-range metadata"},
+    {"sortState", "worksheet sort-state metadata"},
+    {"autoFilter", "worksheet autoFilter metadata"},
+    {"mergeCells", "worksheet merged-cell metadata"},
+    {"scenarios", "worksheet scenario metadata"},
+    {"dataConsolidate", "worksheet data consolidation metadata"},
+    {"customProperties", "worksheet custom property metadata"},
+    {"cellWatches", "worksheet cell watch metadata"},
+    {"smartTags", "worksheet smart tag metadata"},
+    {"webPublishItems", "worksheet web publishing metadata"},
+    {"dataValidations", "worksheet data validation metadata"},
+    {"conditionalFormatting", "worksheet conditional formatting metadata"},
+    {"ignoredErrors", "worksheet ignored-error metadata"},
+    {"printOptions", "worksheet print options metadata"},
+    {"pageMargins", "worksheet page margins metadata"},
+    {"pageSetup", "worksheet page setup metadata"},
+    {"headerFooter", "worksheet header/footer metadata"},
+    {"rowBreaks", "worksheet row break metadata"},
+    {"colBreaks", "worksheet column break metadata"},
+    {"phoneticPr", "worksheet phonetic metadata"},
+    {"extLst", "worksheet extension metadata"},
+};
+
+static constexpr WorksheetLocalMetadataAudit worksheet_replacement_relationship_metadata_audits[] = {
+    {"hyperlinks", "worksheet hyperlink metadata"},
+    {"drawing", "worksheet drawing relationship metadata"},
+    {"legacyDrawing", "worksheet legacy drawing relationship metadata"},
+    {"picture", "worksheet background picture relationship metadata"},
+    {"legacyDrawingHF", "worksheet header/footer drawing relationship metadata"},
+    {"oleObjects", "worksheet OLE object relationship metadata"},
+    {"controls", "worksheet control relationship metadata"},
+    {"tableParts", "worksheet table relationship metadata"},
+};
+
 WorksheetPayloadDependencyAuditResult worksheet_replacement_payload_audit(
     const PartName& worksheet_part, std::string_view worksheet_xml)
 {
-    static constexpr WorksheetLocalMetadataAudit range_metadata_audits[] = {
-        {"sheetPr", "worksheet sheet property metadata"},
-        {"sheetCalcPr", "worksheet sheet calculation metadata"},
-        {"dimension", "worksheet dimension metadata"},
-        {"sheetViews", "worksheet view metadata"},
-        {"customSheetViews", "worksheet custom view metadata"},
-        {"sheetFormatPr", "worksheet default format metadata"},
-        {"cols", "worksheet column metadata"},
-        {"sheetProtection", "worksheet protection metadata"},
-        {"protectedRanges", "worksheet protected-range metadata"},
-        {"sortState", "worksheet sort-state metadata"},
-        {"autoFilter", "worksheet autoFilter metadata"},
-        {"mergeCells", "worksheet merged-cell metadata"},
-        {"scenarios", "worksheet scenario metadata"},
-        {"dataConsolidate", "worksheet data consolidation metadata"},
-        {"customProperties", "worksheet custom property metadata"},
-        {"cellWatches", "worksheet cell watch metadata"},
-        {"smartTags", "worksheet smart tag metadata"},
-        {"webPublishItems", "worksheet web publishing metadata"},
-        {"dataValidations", "worksheet data validation metadata"},
-        {"conditionalFormatting", "worksheet conditional formatting metadata"},
-        {"ignoredErrors", "worksheet ignored-error metadata"},
-        {"printOptions", "worksheet print options metadata"},
-        {"pageMargins", "worksheet page margins metadata"},
-        {"pageSetup", "worksheet page setup metadata"},
-        {"headerFooter", "worksheet header/footer metadata"},
-        {"rowBreaks", "worksheet row break metadata"},
-        {"colBreaks", "worksheet column break metadata"},
-        {"phoneticPr", "worksheet phonetic metadata"},
-        {"extLst", "worksheet extension metadata"},
-    };
-    static constexpr WorksheetLocalMetadataAudit relationship_metadata_audits[] = {
-        {"hyperlinks", "worksheet hyperlink metadata"},
-        {"drawing", "worksheet drawing relationship metadata"},
-        {"legacyDrawing", "worksheet legacy drawing relationship metadata"},
-        {"picture", "worksheet background picture relationship metadata"},
-        {"legacyDrawingHF", "worksheet header/footer drawing relationship metadata"},
-        {"oleObjects", "worksheet OLE object relationship metadata"},
-        {"controls", "worksheet control relationship metadata"},
-        {"tableParts", "worksheet table relationship metadata"},
-    };
-
     WorksheetPayloadDependencyAuditResult result;
     if (cell_attribute_equals_for_audit(worksheet_xml, "t", "s")) {
-        append_worksheet_payload_dependency_audit(result, worksheet_part,
-            WorksheetPayloadDependencyAuditKind::SharedStrings,
-            WorksheetPayloadDependencyAuditScope::WorksheetReplacement, "c",
-            "worksheet replacement uses shared string indexes; caller must ensure xl/sharedStrings.xml remains valid");
+        append_worksheet_replacement_shared_strings_audit(result, worksheet_part);
     }
     if (cell_has_attribute_for_audit(worksheet_xml, "s")) {
-        append_worksheet_payload_dependency_audit(result, worksheet_part,
-            WorksheetPayloadDependencyAuditKind::Styles,
-            WorksheetPayloadDependencyAuditScope::WorksheetReplacement, "c",
-            "worksheet replacement uses style id references; caller must ensure xl/styles.xml remains valid");
+        append_worksheet_replacement_styles_audit(result, worksheet_part);
     }
     if (has_start_tag_for_audit(worksheet_xml, "f")) {
-        append_worksheet_payload_dependency_audit(result, worksheet_part,
-            WorksheetPayloadDependencyAuditKind::Formula,
-            WorksheetPayloadDependencyAuditScope::WorksheetReplacement, "f",
-            "worksheet replacement contains formulas; workbook calc metadata and calcChain policy require caller review");
+        append_worksheet_replacement_formula_audit(result, worksheet_part);
     }
 
-    for (const WorksheetLocalMetadataAudit& audit : range_metadata_audits) {
+    for (const WorksheetLocalMetadataAudit& audit : worksheet_replacement_range_metadata_audits) {
         if (!has_start_tag_for_audit(worksheet_xml, audit.element)) {
             continue;
         }
 
-        std::string note = "worksheet replacement contains ";
-        note += audit.description;
-        note += "; ranges or references require caller review";
-        append_worksheet_payload_dependency_audit(result, worksheet_part,
-            WorksheetPayloadDependencyAuditKind::RangeMetadata,
-            WorksheetPayloadDependencyAuditScope::WorksheetReplacement, audit.element,
-            std::move(note));
+        append_worksheet_replacement_range_metadata_audit(
+            result, worksheet_part, audit.element, audit.description);
     }
 
-    for (const WorksheetLocalMetadataAudit& audit : relationship_metadata_audits) {
+    for (const WorksheetLocalMetadataAudit& audit : worksheet_replacement_relationship_metadata_audits) {
         if (!has_start_tag_for_audit(worksheet_xml, audit.element)) {
             continue;
         }
 
-        std::string note = "worksheet replacement contains ";
-        note += audit.description;
-        note += "; worksheet relationships and linked parts require caller review";
-        append_worksheet_payload_dependency_audit(result, worksheet_part,
-            WorksheetPayloadDependencyAuditKind::RelationshipMetadata,
-            WorksheetPayloadDependencyAuditScope::WorksheetReplacement, audit.element,
-            std::move(note));
+        append_worksheet_replacement_relationship_metadata_audit(
+            result, worksheet_part, audit.element, audit.description);
     }
     return result;
 }
@@ -1933,22 +2092,6 @@ void require_sheet_data_local_rewrite_size(
           "large-file streaming worksheet transformer");
 }
 
-void require_cell_replacement_local_rewrite_size(
-    std::string_view payload_name, std::uint64_t byte_size)
-{
-    if (byte_size
-        <= static_cast<std::uint64_t>(
-            package_editor_cell_replacement_local_rewrite_byte_limit)) {
-        return;
-    }
-
-    throw FastXlsxError(
-        "worksheet cell replacement exceeds bounded local rewrite limit for "
-        + std::string(payload_name)
-        + "; current helper materializes planned worksheet XML and is not the "
-          "large-file streaming worksheet transformer");
-}
-
 std::string missing_cell_replacement_error(
     const std::vector<std::string>& missing_cell_references)
 {
@@ -2089,6 +2232,200 @@ std::string dimension_tag(std::string_view prefix, std::string_view reference)
     tag += reference;
     tag += "\"/>";
     return tag;
+}
+
+struct WorksheetCellReplacementStreamAnalysis {
+    WorksheetTransformSummary summary;
+    WorksheetDimensionScan dimension_scan;
+    std::size_t worksheet_start_end = std::string_view::npos;
+    std::string worksheet_prefix;
+    std::size_t dimension_begin = std::string_view::npos;
+    std::size_t dimension_end = std::string_view::npos;
+    std::string dimension_prefix;
+    WorksheetPayloadDependencyAuditResult payload_audit;
+};
+
+void audit_worksheet_replacement_metadata_event(
+    WorksheetPayloadDependencyAuditResult& result,
+    const PartName& worksheet_part,
+    std::string_view element_name)
+{
+    if (element_name == "dimension") {
+        return;
+    }
+    for (const WorksheetLocalMetadataAudit& audit : worksheet_replacement_range_metadata_audits) {
+        if (audit.element == element_name) {
+            append_worksheet_replacement_range_metadata_audit(
+                result, worksheet_part, audit.element, audit.description);
+            return;
+        }
+    }
+    for (const WorksheetLocalMetadataAudit& audit :
+        worksheet_replacement_relationship_metadata_audits) {
+        if (audit.element == element_name) {
+            append_worksheet_replacement_relationship_metadata_audit(
+                result, worksheet_part, audit.element, audit.description);
+            return;
+        }
+    }
+}
+
+WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream(
+    const PartName& worksheet_part,
+    std::string_view worksheet_xml,
+    std::span<const WorksheetCellReplacement> replacements)
+{
+    validate_worksheet_replacement_xml(worksheet_xml);
+
+    WorksheetCellReplacementStreamAnalysis analysis;
+    analysis.summary = scan_cell_replacement_actions(
+        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+                if (!action.cell_reference.empty()) {
+                    include_dimension_cell(analysis.dimension_scan,
+                        parse_cell_reference_coordinate(action.cell_reference));
+                }
+                append_payload_audit_result(analysis.payload_audit,
+                    worksheet_replacement_payload_audit(
+                        worksheet_part, action.replacement_cell_xml));
+                return;
+            }
+
+            const std::size_t event_offset =
+                static_cast<std::size_t>(action.raw_xml.data() - worksheet_xml.data());
+            if (action.event_kind == WorksheetEventKind::WorksheetStart
+                && analysis.worksheet_start_end == std::string_view::npos) {
+                analysis.worksheet_start_end = event_offset + action.raw_xml.size();
+                analysis.worksheet_prefix = element_prefix(action.raw_xml);
+                return;
+            }
+            if (action.event_kind == WorksheetEventKind::Metadata) {
+                audit_worksheet_replacement_metadata_event(
+                    analysis.payload_audit, worksheet_part, action.element_name);
+                if (action.element_name == "dimension") {
+                    if (analysis.dimension_begin == std::string_view::npos
+                        && !is_closing_raw_tag(action.raw_xml)) {
+                        analysis.dimension_begin = event_offset;
+                        analysis.dimension_prefix = element_prefix(action.raw_xml);
+                        if (action.self_closing) {
+                            analysis.dimension_end = event_offset + action.raw_xml.size();
+                        }
+                        return;
+                    }
+                    if (analysis.dimension_begin != std::string_view::npos
+                        && analysis.dimension_end == std::string_view::npos
+                        && is_closing_raw_tag(action.raw_xml)) {
+                        analysis.dimension_end = event_offset + action.raw_xml.size();
+                        return;
+                    }
+                }
+                return;
+            }
+            if (action.event_kind == WorksheetEventKind::CellStart) {
+                if (!action.cell_reference.empty()) {
+                    include_dimension_cell(analysis.dimension_scan,
+                        parse_cell_reference_coordinate(action.cell_reference));
+                }
+                if (cell_start_attribute_equals_for_audit(action.raw_xml, "t", "s")) {
+                    append_worksheet_replacement_shared_strings_audit(
+                        analysis.payload_audit, worksheet_part);
+                }
+                if (cell_start_has_attribute_for_audit(action.raw_xml, "s")) {
+                    append_worksheet_replacement_styles_audit(
+                        analysis.payload_audit, worksheet_part);
+                }
+                return;
+            }
+            if (action.event_kind == WorksheetEventKind::CellValueMarkup
+                && action.element_name == "f") {
+                append_worksheet_replacement_formula_audit(
+                    analysis.payload_audit, worksheet_part);
+            }
+        });
+
+    if (analysis.worksheet_start_end == std::string_view::npos) {
+        throw FastXlsxError("worksheet dimension refresh requires a worksheet root");
+    }
+    if (analysis.dimension_begin != std::string_view::npos
+        && analysis.dimension_end == std::string_view::npos) {
+        throw FastXlsxError("worksheet dimension refresh found an unclosed dimension element");
+    }
+
+    append_worksheet_replacement_range_metadata_audit(analysis.payload_audit, worksheet_part,
+        "dimension", "worksheet dimension metadata");
+    return analysis;
+}
+
+void write_file_chunk(std::ofstream& output, std::string_view chunk)
+{
+    while (!chunk.empty()) {
+        const std::size_t write_size = std::min<std::size_t>(chunk.size(),
+            static_cast<std::size_t>(std::numeric_limits<std::streamsize>::max()));
+        output.write(chunk.data(), static_cast<std::streamsize>(write_size));
+        if (!output) {
+            throw FastXlsxError("failed to write temporary worksheet cell replacement XML");
+        }
+        chunk.remove_prefix(write_size);
+    }
+}
+
+void write_worksheet_cell_replacement_stream(const std::filesystem::path& path,
+    std::string_view worksheet_xml,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetCellReplacementStreamAnalysis& analysis)
+{
+    std::ofstream output(path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create temporary worksheet cell replacement XML");
+    }
+
+    const std::string dimension_reference =
+        worksheet_dimension_reference(analysis.dimension_scan);
+    bool skipping_dimension = false;
+
+    (void)scan_cell_replacement_actions(
+        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+            if (skipping_dimension) {
+                if (action.event_kind == WorksheetEventKind::Metadata
+                    && action.element_name == "dimension"
+                    && is_closing_raw_tag(action.raw_xml)) {
+                    skipping_dimension = false;
+                }
+                return;
+            }
+
+            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+                write_file_chunk(output, action.replacement_cell_xml);
+                return;
+            }
+
+            if (action.event_kind == WorksheetEventKind::WorksheetStart) {
+                write_file_chunk(output, action.raw_xml);
+                if (analysis.dimension_begin == std::string_view::npos) {
+                    write_file_chunk(output,
+                        dimension_tag(analysis.worksheet_prefix, dimension_reference));
+                }
+                return;
+            }
+
+            if (action.event_kind == WorksheetEventKind::Metadata
+                && action.element_name == "dimension"
+                && !is_closing_raw_tag(action.raw_xml)) {
+                write_file_chunk(output,
+                    dimension_tag(analysis.dimension_prefix, dimension_reference));
+                if (!action.self_closing) {
+                    skipping_dimension = true;
+                }
+                return;
+            }
+
+            write_file_chunk(output, action.raw_xml);
+        });
+
+    output.close();
+    if (!output) {
+        throw FastXlsxError("failed to finalize temporary worksheet cell replacement XML");
+    }
 }
 
 std::string refresh_worksheet_dimension_for_cell_replacements(std::string worksheet_xml)
@@ -2326,11 +2663,97 @@ bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
     return error || !directory;
 }
 
+std::filesystem::path make_package_editor_temp_path()
+{
+    static std::atomic<std::uint64_t> counter {0};
+    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto id = counter.fetch_add(1, std::memory_order_relaxed);
+    return std::filesystem::temp_directory_path()
+        / ("fastxlsx-package-editor-" + std::to_string(tick) + "-"
+            + std::to_string(id) + ".xml");
+}
+
+void remove_temporary_files(std::vector<std::filesystem::path>& paths) noexcept
+{
+    for (const std::filesystem::path& path : paths) {
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+    }
+    paths.clear();
+}
+
+class ScopedPackageEditorTempFile {
+public:
+    ScopedPackageEditorTempFile()
+        : path_(make_package_editor_temp_path())
+    {
+    }
+
+    ~ScopedPackageEditorTempFile()
+    {
+        if (!released_) {
+            std::error_code ignored;
+            std::filesystem::remove(path_, ignored);
+        }
+    }
+
+    ScopedPackageEditorTempFile(const ScopedPackageEditorTempFile&) = delete;
+    ScopedPackageEditorTempFile& operator=(const ScopedPackageEditorTempFile&) = delete;
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept
+    {
+        return path_;
+    }
+
+    std::filesystem::path release() noexcept
+    {
+        released_ = true;
+        return path_;
+    }
+
+private:
+    std::filesystem::path path_;
+    bool released_ = false;
+};
+
 } // namespace
 
 PackageEditor PackageEditor::open(std::filesystem::path path)
 {
     return PackageEditor(PackageReader::open(std::move(path)));
+}
+
+PackageEditor::~PackageEditor()
+{
+    remove_temporary_files(temporary_files_);
+}
+
+PackageEditor::PackageEditor(PackageEditor&& other)
+    : reader_(std::move(other.reader_))
+    , manifest_(std::move(other.manifest_))
+    , edit_plan_(std::move(other.edit_plan_))
+    , replacements_(std::move(other.replacements_))
+    , entry_replacements_(std::move(other.entry_replacements_))
+    , omitted_entries_(std::move(other.omitted_entries_))
+    , temporary_files_(std::move(other.temporary_files_))
+{
+    other.temporary_files_.clear();
+}
+
+PackageEditor& PackageEditor::operator=(PackageEditor&& other)
+{
+    if (this != &other) {
+        remove_temporary_files(temporary_files_);
+        reader_ = std::move(other.reader_);
+        manifest_ = std::move(other.manifest_);
+        edit_plan_ = std::move(other.edit_plan_);
+        replacements_ = std::move(other.replacements_);
+        entry_replacements_ = std::move(other.entry_replacements_);
+        omitted_entries_ = std::move(other.omitted_entries_);
+        temporary_files_ = std::move(other.temporary_files_);
+        other.temporary_files_.clear();
+    }
+    return *this;
 }
 
 PackageEditor::PackageEditor(PackageReader reader)
@@ -2527,6 +2950,176 @@ void PackageEditor::replace_worksheet_part_chunks(PartName worksheet_part,
         "worksheet staged chunk replacement uses materialized worksheet XML for "
         "validation, dependency audit, and calc metadata; it is not the final "
         "low-memory package-entry staged worksheet transformer");
+}
+
+void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
+    std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
+    std::vector<std::string> payload_notes,
+    std::vector<WorksheetPayloadDependencyAudit> payload_audits,
+    std::vector<std::string> relationship_reference_notes,
+    std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
+    std::string replacement_reason)
+{
+    if (chunks.empty()) {
+        throw FastXlsxError("staged worksheet replacement requires at least one chunk");
+    }
+
+    const PartName target_worksheet_part = worksheet_part;
+    const auto* worksheet = manifest_.find_part(worksheet_part);
+    if (worksheet == nullptr) {
+        throw FastXlsxError("worksheet replacement target is not present in the source package");
+    }
+    if (worksheet->content_type != content_type_worksheet) {
+        throw FastXlsxError("worksheet replacement target is not a worksheet part");
+    }
+    if (policy.calc_chain_action == CalcChainAction::Rebuild) {
+        throw FastXlsxError("calcChain rebuild is not implemented for worksheet replacement");
+    }
+
+    const PartName workbook_part("/xl/workbook.xml");
+    if (manifest_.find_part(workbook_part) == nullptr
+        || reader_.find_entry(workbook_part.zip_path()) == nullptr) {
+        throw FastXlsxError("worksheet replacement requires xl/workbook.xml");
+    }
+
+    WorksheetPayloadDependencyAuditResult payload_audit;
+    payload_audit.notes = std::move(payload_notes);
+    payload_audit.audits = std::move(payload_audits);
+    WorksheetRelationshipReferenceAuditResult relationship_reference_audit;
+    relationship_reference_audit.notes = std::move(relationship_reference_notes);
+    relationship_reference_audit.audits = std::move(relationship_reference_audits);
+    reject_relationship_reference_audit_by_policy(relationship_reference_audit, policy);
+    reject_payload_dependencies_by_policy(
+        payload_audit, policy, "worksheet replacement");
+
+    const EditPlan worksheet_plan =
+        PartRewritePlanner(manifest_).plan_worksheet_stream_rewrite(worksheet_part, policy);
+    PackageManifest updated_manifest = manifest_;
+
+    std::string updated_workbook_xml;
+    if (worksheet_plan.full_calculation_on_load()) {
+        updated_workbook_xml = request_full_calculation_in_workbook_xml(
+            current_planned_part_data(reader_, replacements_, entry_replacements_, workbook_part));
+    }
+
+    const PartName calc_chain_part("/xl/calcChain.xml");
+    const EditPlanRemovedPart* removed_calc_chain =
+        worksheet_plan.find_removed_part(calc_chain_part);
+    const bool remove_calc_chain = removed_calc_chain != nullptr;
+    bool omit_calc_chain = false;
+    bool rewrite_content_types = false;
+    bool rewrite_workbook_relationships = false;
+    if (policy.calc_chain_action == CalcChainAction::Remove) {
+        omit_calc_chain = reader_.find_entry(calc_chain_part.zip_path()) != nullptr;
+        rewrite_content_types = updated_manifest.remove_part(calc_chain_part);
+
+        if (RelationshipSet* workbook_relationships =
+                updated_manifest.relationships_for(workbook_part)) {
+            rewrite_workbook_relationships =
+                workbook_relationships->remove_by_type(relationship_type_calc_chain) > 0;
+        }
+    }
+
+    if (replacement_reason.empty()) {
+        replacement_reason = "target worksheet part stream rewrite";
+    }
+    replace_part(std::move(worksheet_part), std::string {}, PartWriteMode::StreamRewrite,
+        replacement_reason);
+    PackagePartReplacement* replacement =
+        find_replacement(replacements_, target_worksheet_part);
+    if (replacement == nullptr) {
+        throw FastXlsxError("staged worksheet replacement was not recorded");
+    }
+    replacement->data.clear();
+    replacement->chunks = std::move(chunks);
+    replacement->write_mode = PartWriteMode::StreamRewrite;
+    replacement->reason = replacement_reason;
+
+    merge_copy_original_dependency_reasons(edit_plan_, worksheet_plan);
+    audit_preserved_relationship_entries(
+        edit_plan_, reader_, worksheet_plan, target_worksheet_part);
+
+    if (worksheet_plan.full_calculation_on_load()) {
+        edit_plan_.request_full_calculation(worksheet_plan.calc_chain_action());
+        edit_plan_.set_part(workbook_part, PartWriteMode::LocalDomRewrite,
+            "workbook calcPr fullCalcOnLoad updated for worksheet rewrite; definedNames preserved for policy review");
+        upsert_entry_replacement(entry_replacements_, workbook_part.zip_path(),
+            std::move(updated_workbook_xml));
+        remove_part_replacement(replacements_, workbook_part);
+        if (!rewrite_workbook_relationships) {
+            audit_preserved_relationship_entry(edit_plan_, reader_, workbook_part);
+        }
+    }
+
+    if (remove_calc_chain) {
+        const std::string calc_chain_relationship_entry =
+            relationship_entry_name_for_source_part(calc_chain_part);
+        remove_part_replacement(replacements_, calc_chain_part);
+        remove_entry_replacement(entry_replacements_, calc_chain_part.zip_path());
+        remove_entry_replacement(entry_replacements_, calc_chain_relationship_entry);
+        merge_removed_part_audit(edit_plan_, worksheet_plan, calc_chain_part);
+    }
+
+    if (omit_calc_chain) {
+        const std::string calc_chain_relationship_entry =
+            relationship_entry_name_for_source_part(calc_chain_part);
+        add_omitted_part_entries(omitted_entries_, calc_chain_part);
+        if (reader_.find_entry(calc_chain_relationship_entry) != nullptr) {
+            edit_plan_.remove_package_entry(calc_chain_relationship_entry,
+                "calcChain-owned relationships omitted with removed calcChain part",
+                PackageEntryAuditKind::SourceRelationships, calc_chain_part.value());
+        }
+    }
+
+    if (rewrite_content_types) {
+        upsert_entry_replacement(entry_replacements_, "[Content_Types].xml",
+            serialize_content_types(updated_manifest.content_types()));
+        edit_plan_.set_package_entry("[Content_Types].xml", PartWriteMode::LocalDomRewrite,
+            "content types updated for worksheet calcChain removal",
+            PackageEntryAuditKind::ContentTypes);
+    }
+
+    if (rewrite_workbook_relationships) {
+        RelationshipSet* workbook_relationships =
+            updated_manifest.relationships_for(workbook_part);
+        const std::string workbook_relationship_entry =
+            relationship_entry_name_for_source_part(workbook_part);
+        upsert_entry_replacement(entry_replacements_, workbook_relationship_entry,
+            serialize_relationships(*workbook_relationships));
+        edit_plan_.set_package_entry(workbook_relationship_entry, PartWriteMode::LocalDomRewrite,
+            "workbook relationships updated for worksheet calcChain removal",
+            PackageEntryAuditKind::SourceRelationships, workbook_part.value());
+    }
+
+    updated_manifest.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
+    if (worksheet_plan.full_calculation_on_load()) {
+        updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
+    }
+    for (const std::string& note : worksheet_plan.notes()) {
+        edit_plan_.add_note(note);
+    }
+    for (std::string& note : payload_audit.notes) {
+        edit_plan_.add_note(std::move(note));
+    }
+    for (std::string& note : relationship_reference_audit.notes) {
+        edit_plan_.add_note(std::move(note));
+    }
+    for (const RelationshipTargetAudit& audit : worksheet_plan.relationship_target_audits()) {
+        edit_plan_.add_relationship_target_audit(audit);
+    }
+    for (const WorkbookPayloadDependencyAudit& audit :
+        worksheet_plan.workbook_payload_dependency_audits()) {
+        edit_plan_.add_workbook_payload_dependency_audit(audit);
+    }
+    for (WorksheetRelationshipReferenceAudit& audit :
+        relationship_reference_audit.audits) {
+        edit_plan_.add_worksheet_relationship_reference_audit(std::move(audit));
+    }
+    for (WorksheetPayloadDependencyAudit& audit : payload_audit.audits) {
+        edit_plan_.add_worksheet_payload_dependency_audit(std::move(audit));
+    }
+
+    manifest_ = std::move(updated_manifest);
 }
 
 void PackageEditor::replace_worksheet_part_impl(PartName worksheet_part,
@@ -2773,50 +3366,42 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         throw FastXlsxError("worksheet cell replacement target is not a worksheet part");
     }
 
-    require_cell_replacement_local_rewrite_size("current planned worksheet XML",
-        current_planned_part_data_size(
-            reader_, replacements_, entry_replacements_, worksheet_part));
     const std::string worksheet_xml =
         current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
-
-    std::string rewritten_worksheet_xml;
-    rewritten_worksheet_xml.reserve(worksheet_xml.size());
-    const WorksheetTransformSummary summary = emit_cell_replacement_worksheet(
-        worksheet_xml, replacements, [&](std::string_view chunk) {
-            const std::uint64_t next_size =
-                static_cast<std::uint64_t>(rewritten_worksheet_xml.size())
-                + static_cast<std::uint64_t>(chunk.size());
-            require_cell_replacement_local_rewrite_size("rewritten worksheet XML", next_size);
-            rewritten_worksheet_xml.append(chunk);
-        });
-    if (!summary.missing_cell_references.empty()) {
+    const WorksheetCellReplacementStreamAnalysis stream_analysis =
+        analyze_worksheet_cell_replacement_stream(
+            target_worksheet_part, worksheet_xml, replacements);
+    if (!stream_analysis.summary.missing_cell_references.empty()) {
         throw FastXlsxError(
-            missing_cell_replacement_error(summary.missing_cell_references));
+            missing_cell_replacement_error(stream_analysis.summary.missing_cell_references));
     }
-    rewritten_worksheet_xml =
-        refresh_worksheet_dimension_for_cell_replacements(std::move(rewritten_worksheet_xml));
-    require_cell_replacement_local_rewrite_size(
-        "dimension-refreshed worksheet XML", rewritten_worksheet_xml.size());
+
+    const std::string replacement_reason =
+        "target worksheet part file-backed stream rewrite from worksheet cell replacement";
+    const WorksheetRelationshipReferenceAuditResult relationship_reference_audit =
+        worksheet_cell_replacement_relationship_reference_audit(
+            target_worksheet_part, worksheet_xml, replacements,
+            reader_.relationships_for(worksheet_part));
+    reject_relationship_reference_audit_by_policy(relationship_reference_audit, policy);
+    reject_payload_dependencies_by_policy(
+        stream_analysis.payload_audit, policy, "worksheet replacement");
+
+    ScopedPackageEditorTempFile temp_file;
+    write_worksheet_cell_replacement_stream(
+        temp_file.path(), worksheet_xml, replacements, stream_analysis);
 
     std::vector<PackageEntryChunk> output_chunks;
-    output_chunks.push_back(PackageEntryChunk::memory(rewritten_worksheet_xml));
-    replace_worksheet_part_chunks(std::move(worksheet_part), std::move(rewritten_worksheet_xml),
-        std::move(output_chunks), policy);
-    const std::string replacement_reason =
-        "target worksheet part staged stream rewrite chunks from bounded worksheet cell "
-        "replacement; current helper materializes planned and rewritten worksheet XML";
-    edit_plan_.set_part(
-        target_worksheet_part, PartWriteMode::StreamRewrite, replacement_reason);
-    manifest_.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
-    if (auto* replacement = find_replacement(replacements_, target_worksheet_part)) {
-        replacement->write_mode = PartWriteMode::StreamRewrite;
-        replacement->reason = replacement_reason;
-    }
+    output_chunks.push_back(PackageEntryChunk::file(temp_file.path()));
+    temporary_files_.push_back(temp_file.path());
+    temp_file.release();
+    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+        std::move(output_chunks), policy, stream_analysis.payload_audit.notes,
+        stream_analysis.payload_audit.audits, relationship_reference_audit.notes,
+        relationship_reference_audit.audits, replacement_reason);
     edit_plan_.add_note(
-        "worksheet cell replacement hands dimension-refreshed output to staged "
-        "package-entry chunks; current helper materializes the planned and rewritten "
-        "worksheet XML and is not the low-memory large-file streaming worksheet "
-        "transformer");
+        "worksheet cell replacement streams dimension-refreshed output to a "
+        "PackageEditor-owned temporary file-backed package-entry chunk; current helper "
+        "still materializes the planned worksheet XML at the PackageReader boundary");
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

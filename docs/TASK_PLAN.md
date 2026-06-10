@@ -58,33 +58,40 @@ parallelism, acceptance checks, and explicit non-goals.
   source XML chunks plus caller replacement cell XML. The transformer now
   preflights replacement payloads before action emission, requiring a `<c>` /
   `*:c` root and an unqualified `r` attribute that matches the selector.
-  Internal `PackageEditor` now also has bounded `replace_worksheet_cells()` /
-  `replace_worksheet_cells_by_name()` handoff helpers that materialize the
-  current planned worksheet XML, feed it through that chunk emitter, and delegate
-  calcChain/fullCalcOnLoad plus audit behavior to the existing worksheet
-  replacement path. That bounded handoff now refreshes the top-level worksheet
-  `<dimension>` from emitted cell refs, replacing stale dimension metadata or
-  inserting a missing dimension before commit. `PackageEditor` also has an
-  internal `replace_part_chunks()` foundation that records an existing package
-  part as a `StreamRewrite` replacement backed by `PackageEntryChunk`
-  memory/file chunks, and `save_as()` forwards those chunks to `PackageWriter`
-  instead of flattening them into one string. `replace_worksheet_part_chunks()`
-  now reuses the existing materialized worksheet XML validation / audit /
-  calc metadata path and then records the target worksheet payload as chunks.
-  The cell-replacement handoff now passes its dimension-refreshed worksheet
-  output through that staged chunk path, so the target worksheet plan is a
-  `StreamRewrite` while the current helper still materializes planned and
-  rewritten worksheet XML for bounded validation, audit, and dimension refresh.
-  Invalid replacement cell payloads at this PackageEditor handoff layer now
-  have no-state-pollution regression coverage for non-cell roots, missing or
-  qualified-only `r` attributes, and selector / `r` mismatches.
+  Internal `PackageEditor` now also has
+  `replace_worksheet_cells()` / `replace_worksheet_cells_by_name()` handoff
+  helpers that still materialize the current planned worksheet XML at the
+  `PackageReader` boundary, but no longer materialize the full rewritten
+  worksheet XML string. The handoff first scans the source action stream and
+  replacement payloads, computes top-level worksheet `<dimension>` from the
+  resulting cell references, audits preserved source metadata plus replacement
+  cell payloads, and deliberately skips the old target cell payloads that will
+  be removed from output. Relationship-id audit is also evaluated over the
+  rewritten action stream, so replaced old target cells do not contribute stale
+  relationship references. The second pass writes the dimension-refreshed output
+  directly to a `PackageEditor`-owned temporary file-backed `PackageEntryChunk`;
+  `save_as()` forwards that chunk to `PackageWriter`, and `PackageEditor`
+  removes its temporary files on destruction or move-assignment cleanup.
+  `PackageEditor` also has an internal `replace_part_chunks()` foundation that
+  records an existing package part as a `StreamRewrite` replacement backed by
+  `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
+  to `PackageWriter` instead of flattening them into one string.
+  `replace_worksheet_part_chunks()` still reuses the existing materialized
+  worksheet XML validation / audit / calc metadata path for callers that provide
+  a full worksheet payload, while the cell-replacement helper now commits
+  prevalidated audit data and a file-backed chunk through its own internal
+  prevalidated worksheet chunk path. Invalid replacement cell payloads at this
+  PackageEditor handoff layer have no-state-pollution regression coverage for
+  non-cell roots, missing or qualified-only `r` attributes, selector / `r`
+  mismatches, audit-heavy replacement payload policy failures, and temporary
+  file cleanup after `save_as()`.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
   handoff, chunked package-entry source, worksheet chunk handoff, and
-  cell-replacement staged output handoff / invalid-payload state hygiene groundwork
-  only: no public API, full XML parser/schema validation, low-memory
-  validation/audit, relationship repair, cell-replacement low-memory stream
-  transformer, broad range metadata recalculation, dependency repair,
-  sharedStrings/style migration, or low-memory large-file editing claim.
+  cell-replacement output-side file-backed stream handoff groundwork only: no
+  public API, full XML parser/schema validation, PackageReader input streaming,
+  relationship repair, broad range metadata recalculation, dependency repair,
+  sharedStrings/style migration, or complete low-memory large-file editing
+  claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.

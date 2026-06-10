@@ -19,8 +19,6 @@ namespace fastxlsx::detail {
 // Keep that path bounded until a true streaming worksheet transformer exists.
 inline constexpr std::size_t package_editor_sheet_data_local_rewrite_byte_limit =
     4U * 1024U * 1024U;
-inline constexpr std::size_t package_editor_cell_replacement_local_rewrite_byte_limit =
-    4U * 1024U * 1024U;
 
 struct PackagePartReplacement {
     PartName part_name;
@@ -125,6 +123,12 @@ struct PackageEditorOutputPlan {
 class PackageEditor {
 public:
     [[nodiscard]] static PackageEditor open(std::filesystem::path path);
+    ~PackageEditor();
+
+    PackageEditor(const PackageEditor&) = delete;
+    PackageEditor& operator=(const PackageEditor&) = delete;
+    PackageEditor(PackageEditor&& other);
+    PackageEditor& operator=(PackageEditor&& other);
 
     [[nodiscard]] const PackageReader& reader() const noexcept;
     [[nodiscard]] const PackageManifest& manifest() const noexcept;
@@ -190,13 +194,13 @@ public:
     // sheets.
     void replace_worksheet_sheet_data_by_name(std::string_view sheet_name,
         std::string sheet_data_xml, const ReferencePolicy& policy = {});
-    // Internal bounded handoff from the P8 worksheet transformer foundation.
-    // Rewrites selected cells by running the current planned worksheet XML
-    // through emit_cell_replacement_worksheet(), materializing the rewritten
-    // worksheet for dimension refresh, then delegating calcChain/fullCalcOnLoad
-    // and audit handling through the staged worksheet chunk handoff. This is a
-    // bridge fixture for the future package-entry stream writer, not the final
-    // low-memory worksheet transformer.
+    // Internal handoff from the P8 worksheet transformer foundation. It still
+    // materializes the current planned worksheet XML at the PackageReader
+    // boundary, but it audits the source/replacement payloads before commit and
+    // streams the rewritten worksheet XML to a PackageEditor-owned temporary file
+    // chunk instead of materializing the rewritten worksheet string. It is still
+    // not a public Patch API, relationship repair, sharedStrings/style
+    // migration, or a fully low-memory PackageReader input pipeline.
     void replace_worksheet_cells(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy = {});
@@ -231,6 +235,13 @@ private:
     explicit PackageEditor(PackageReader reader);
     void replace_worksheet_part_impl(PartName worksheet_part, std::string worksheet_xml,
         const ReferencePolicy& policy, bool enforce_payload_policy);
+    void replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
+        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
+        std::vector<std::string> payload_notes,
+        std::vector<WorksheetPayloadDependencyAudit> payload_audits,
+        std::vector<std::string> relationship_reference_notes,
+        std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
+        std::string replacement_reason);
 
     PackageReader reader_;
     PackageManifest manifest_;
@@ -238,6 +249,7 @@ private:
     std::vector<PackagePartReplacement> replacements_;
     std::vector<PackageEntryReplacement> entry_replacements_;
     std::vector<std::string> omitted_entries_;
+    std::vector<std::filesystem::path> temporary_files_;
 };
 
 } // namespace fastxlsx::detail

@@ -62,6 +62,7 @@ FastXLSX 的当前定位是：
 - [API 设计与文档注释](docs/API_DESIGN_AND_DOCUMENTATION.md)
 - [后续推进清单](docs/NEXT_STEPS.md)
 - [任务拆分设计](docs/TASK_BREAKDOWN.md)
+- [Patch 保留能力回归明细](docs/PATCH_PRESERVATION_COVERAGE.md)
 
 ## 构建与测试
 
@@ -95,6 +96,7 @@ FastXLSX
 │   ├── DEVELOPMENT_ENVIRONMENT.md
 │   ├── DEPENDENCIES.md
 │   ├── EDITING_MODEL.md
+│   ├── PATCH_PRESERVATION_COVERAGE.md
 │   ├── PERFORMANCE_TARGETS.md
 │   ├── PROJECT_POSITIONING.md
 │   ├── ROADMAP.md

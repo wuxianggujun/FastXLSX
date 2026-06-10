@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fastxlsx/detail/worksheet_event_reader.hpp>
+
 #include <cstddef>
 #include <functional>
 #include <span>
@@ -29,10 +31,13 @@ enum class WorksheetTransformActionKind {
 /// Non-owning transform action view emitted in source worksheet order.
 struct WorksheetTransformAction {
     WorksheetTransformActionKind kind = WorksheetTransformActionKind::PassThrough;
+    WorksheetEventKind event_kind = WorksheetEventKind::Unsupported;
     std::string_view raw_xml;
+    std::string_view element_name;
     std::string_view row_number;
     std::string_view cell_reference;
     std::string_view replacement_cell_xml;
+    bool self_closing = false;
 };
 
 struct WorksheetTransformSummary {

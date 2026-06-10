@@ -100,19 +100,25 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - Internal bounded PackageEditor cell-replacement handoff in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `replace_worksheet_cells()` and
-    `replace_worksheet_cells_by_name()` materialize the current planned worksheet
-    XML, run the P8 chunk emitter, then delegate calcChain/fullCalcOnLoad and audit
-    handling to the existing worksheet replacement path. The bounded handoff now
-    refreshes the top-level worksheet `<dimension>` from emitted cell refs,
-    replacing stale dimension metadata or inserting a missing dimension before
-    commit, and hands the dimension-refreshed output to the staged worksheet chunk
-    path so the target worksheet is planned as `StreamRewrite`. Invalid
-    replacement cell payloads now have PackageEditor-layer no-state-pollution
-    coverage for non-cell roots, missing or qualified-only `r` attributes, and
-    selector / `r` mismatches. Treat this as a bounded staged-output fixture and
-    preflight failure hygiene only: no public API, no low-memory worksheet
-    transformer, no broad range metadata recalculation, no sharedStrings/style
-    migration, no relationship repair, and no low-memory large-file editing claim.
+    `replace_worksheet_cells_by_name()` still materialize the current planned
+    worksheet XML at the `PackageReader` boundary, but no longer materialize the
+    full rewritten worksheet XML string. The handoff scans the source action
+    stream and replacement payloads first, computes top-level worksheet
+    `<dimension>`, audits preserved source metadata plus replacement cell
+    payloads, and skips old target cell payloads that will be removed from
+    output. Relationship-id audit is also based on the rewritten action stream,
+    so stale references inside replaced old cells do not pollute audit state.
+    The second pass streams the dimension-refreshed output to a
+    `PackageEditor`-owned temporary file-backed `PackageEntryChunk`, and
+    `save_as()` forwards that chunk to `PackageWriter`. Invalid replacement
+    cell payloads and audit-heavy replacement payload policy failures have
+    PackageEditor-layer no-state-pollution coverage; the file-backed handoff also
+    has coverage for `PackageReader` re-open, dimension refresh, old-target audit
+    skip, and temporary file cleanup after the editor is destroyed. Treat this as
+    output-side file-backed stream handoff only: no public API, no PackageReader
+    input streaming, no complete low-memory worksheet transformer, no broad range
+    metadata recalculation, no sharedStrings/style migration, no relationship
+    repair, and no low-memory large-file editing claim.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
@@ -124,9 +130,8 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     chunk kinds before opening the output path, so staged chunks do not
     silently discard a second payload source. Treat this as a
     staged package-entry payload foundation only: no public API, no payload
-    merge/repair, no
-    cell-replacement low-memory handoff, no full worksheet stream writer, no
-    dependency repair, and no relationship/range metadata repair.
+    merge/repair, no full worksheet stream writer, no dependency repair, and no
+    relationship/range metadata repair.
   - Internal worksheet replacement chunk handoff in `src/package_editor.hpp` and
     `src/package_editor.cpp`, covered by `fastxlsx.package_editor`.
     `PackageEditor::replace_worksheet_part_chunks()` reuses the current
@@ -357,428 +362,31 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     linked payloads and unknown extension owner `.rels` re-ingest through output
     `PackageReader` / `RelationshipGraph`. It does not preserve source ZIP compression method,
     timestamps, extra fields, or compressed bytes.
-    Current structure tests also cover byte preservation for worksheet `.rels`,
-    drawing XML, drawing `.rels`, media bytes, chart XML, table XML,
-    untouched `xl/sharedStrings.xml`, untouched `xl/styles.xml`, VBA bytes,
-    and a reachable unknown extension part plus its owner `.rels` under this
-    narrow worksheet replacement path, including when replacement worksheet XML omits source `<drawing>` /
-    `<tableParts>` references. A registered comments-part fixture now verifies
-    that worksheet rewrite preserves `xl/comments/comment1.xml` and the source
-    worksheet `.rels` as copy-original, keeps the comments content type override,
-    and roundtrips through `PackageReader` / `RelationshipGraph`. This is not
-    comments editing, threaded comments, notes UI, relationship repair, orphan
-    cleanup, or public API. A threaded comments / persons fixture now verifies
-    that worksheet rewrite preserves `xl/threadedComments/threadedComment1.xml`,
-    `xl/persons/person.xml`, the source worksheet `.rels`, and workbook `.rels`
-    as copy-original, and roundtrips those relationships through
-    `PackageReader` / `RelationshipGraph`. This is not comments / threaded
-    comments editing, notes UI, relationship repair, orphan cleanup, or public
-    API. The same threaded comments / persons fixture now covers ordinary
-    `replace_part("/xl/threadedComments/threadedComment1.xml", ...)` and
-    explicit removal: replacement rewrites only threaded comments XML while
-    preserving legacy comments, persons, worksheet-owned legacy/threaded inbound
-    relationships, the workbook-owned persons relationship, content type
-    overrides, and unknown entries; removal omits the threaded comments part and
-    its content type override while preserving the inbound worksheet
-    relationship pointing at the missing part, the persons part / workbook
-    relationship, legacy comments, and unknown entries. This is not threaded
-    comments model mutation, persons/schema repair, relationship pruning or
-    repair, orphan cleanup, notes UI, or public API. The same fixture now covers
-    ordinary `replace_part("/xl/persons/person.xml", ...)` and explicit
-    removal: replacement rewrites only persons XML while preserving the
-    workbook-owned inbound persons relationship, threaded comments, legacy
-    comments, worksheet relationships, content type overrides, and unknown
-    entries; removal omits the persons part and removes the persons content type
-    override while preserving the workbook relationship pointing at the missing
-    part, threaded comments, legacy comments, worksheet, and unknown entries.
-    This is not persons/schema repair, threaded comments model mutation,
-    relationship pruning or repair, orphan cleanup, notes UI, or public API. A
-    same-path ordering regression now covers both the threaded comments part
-    and the persons part: later ordinary replacement restores the active part,
-    clears stale removed-part audit, returns `[Content_Types].xml` to
-    source/copy-original audit, and does not invent the corresponding owner
-    `.rels`. The internal threaded-comments ordinary replacement
-    `planned_output()` snapshot now exposes the active threaded comments part
-    `LocalDomRewrite`, preserved content types / package relationships /
-    workbook / workbook `.rels` / worksheet / worksheet `.rels` / legacy
-    comments / persons part / unknown entry, and no invented threaded comments
-    owner `.rels`. This is Patch audit only, not threaded comments model
-    mutation, persons/schema repair, notes UI, relationship repair, orphan
-    cleanup, or public API; later threaded-comments remove-then-replace
-    `planned_output()` now exposes the active threaded comments part local-DOM
-    rewrite, content types copy-original audit, preserved package/workbook/worksheet
-    `.rels`, legacy comments, persons part, unknown entry, clears output-plan
-    removed_parts / removed_package_entries, and no invented threaded comments
-    owner `.rels`. This is Patch audit only, not threaded
-    comments undo, semantic merge, relationship repair, orphan cleanup, or public API; later
-    threaded-comments removal records removed-part and worksheet
-    inbound relationship audit, omits the threaded comments part, removes its
-    content type override, and preserves the worksheet inbound relationship,
-    persons part / workbook relationship, legacy comments, and unknown entries;
-    later persons removal records removed-part and workbook inbound relationship
-    audit, omits the persons part, removes the persons content type override,
-    and preserves the workbook inbound relationship, threaded comments, legacy
-    comments, worksheet, and unknown entries. This is not transactional undo,
-    threaded comments/persons semantic merging, persons/schema repair,
-    relationship pruning or repair, content type repair, orphan cleanup, notes
-    UI, or public API. The internal persons remove-then-replace `planned_output()`
-    now exposes the active persons part local-DOM rewrite, content types
-    copy-original audit, preserved package/workbook/worksheet `.rels`, threaded
-    comments, legacy comments, unknown entry, clears output-plan removed_parts /
-    removed_package_entries, and no invented persons owner `.rels`. This is Patch audit only, not persons/schema undo, semantic merge,
-    relationship repair, orphan cleanup, or public API. The internal
-    `planned_output()` snapshot now also exposes the single omitted threaded
-    comments part plus matching removed_parts target/reason/inbound audit,
-    worksheet-owned inbound threadedComment relationship metadata, content types
-    rewrite, preserved worksheet/workbook `.rels` plus persons part copy-original
-    audit, empty removed_package_entries, and no invented threaded comments owner
-    `.rels`. The internal output-plan snapshot also exposes the
-    single omitted persons part plus matching removed_parts target/reason/inbound
-    audit, workbook-owned inbound persons relationship metadata, content types
-    rewrite, preserved workbook/worksheet `.rels` plus threaded comments part
-    copy-original audit, empty removed_package_entries, and no invented persons owner `.rels`. A
-    pivot table / pivot cache fixture now verifies that worksheet rewrite
-    preserves `xl/pivotTables/pivotTable1.xml`,
-    `xl/pivotCache/pivotCacheDefinition1.xml`,
-    `xl/pivotCache/pivotCacheRecords1.xml`, the source worksheet `.rels`,
-    pivot table owner `.rels`, pivot cache definition owner `.rels`, and workbook
-    `.rels` as copy-original, and roundtrips those relationships through
-    `PackageReader` / `RelationshipGraph`. This is not pivot table editing,
-    pivot cache rebuild, relationship repair, orphan cleanup, or public API.
-    The same worksheet rewrite path now also has an internal `planned_output()`
-    snapshot for fullCalcOnLoad / `CalcChainAction::Remove`, worksheet
-    `StreamRewrite`, workbook `LocalDomRewrite`, package/workbook/worksheet
-    `.rels` copy-original decisions, pivot table / pivot cache definition /
-    pivot cache records relationship context, content types and unknown entry
-    copy-original preservation, and no invented records owner `.rels`. This is
-    Patch audit only, not pivot cache rebuild, records refresh, relationship
-    repair/pruning, orphan cleanup, or public API.
-    The same pivot table / pivot cache fixture now covers ordinary
-    `replace_part("/xl/pivotTables/pivotTable1.xml", ...)` and explicit removal:
-    replacement rewrites only pivot table XML while preserving the worksheet-owned
-    inbound pivotTable relationship, the pivot-table-owned cache-definition
-    relationship, pivot cache definition / records parts, the cache-definition
-    owner `.rels`, workbook `<pivotCaches>`, the workbook-owned pivot cache
-    relationship, content type overrides, and unknown entries; removal omits the
-    pivot table part and its owner `.rels`, removes the pivot table content type
-    override, and preserves the inbound worksheet relationship pointing at the
-    missing part, workbook pivot cache metadata, the pivot cache definition /
-    records chain, and unknown entries. This is not pivot table semantic editing,
-    pivot cache rebuild, cache-record refresh, relationship pruning or repair,
-    orphan cleanup, owner `.rels` repair, or public API.
-    The same path now covers pivot table same-path ordering too: a later
-    ordinary replacement restores the active pivot table part, clears stale
-    removed-part and removed owner `.rels` audit, restores owner `.rels`
-    copy-original audit, and returns `[Content_Types].xml` to source/copy-original
-    audit; a later explicit removal clears the active replacement, records
-    removed-part and removed owner `.rels` audit, omits the pivot table part and
-    owner `.rels`, removes the pivot table content type override, and preserves
-    the inbound worksheet relationship pointing at the missing part, workbook
-    pivot cache metadata, the pivot cache definition / records chain, and unknown
-    entries. This is not transactional undo, pivot table semantic merging,
-    pivot cache rebuild, relationship pruning or repair, content type repair,
-    orphan cleanup, or public API.
-    Internal `planned_output()` coverage for the remove-then-replace restore
-    state now exposes the active pivot table `LocalDomRewrite` entry, the pivot
-    table owner `.rels` copy-original `SourceRelationships` audit, the
-    source/copy-original content types audit, and preserved package/worksheet/
-    workbook relationships, the pivot cache definition / records chain, and
-    unknown entries. Coverage for the replace-then-remove final-removal state
-    still exposes the omitted pivot table part, omitted owner `.rels`, worksheet
-    inbound pivotTable relationship audit, content types rewrite, preserved
-    worksheet/workbook relationships, the pivot cache definition / records
-    chain, and unknown entries. This is Patch audit only, not pivot table
-    semantic editing, pivot cache rebuild, relationship pruning or repair,
-    orphan cleanup, or public API.
-    The same fixture now covers ordinary
-    `replace_part("/xl/pivotCache/pivotCacheDefinition1.xml", ...)` and explicit
-    removal: replacement rewrites only pivot cache definition XML while preserving
-    workbook/pivot-table inbound relationships, pivot cache records, the
-    cache-definition owner `.rels`, content type overrides, and unknown entries;
-    removal omits the pivot cache definition part and its owner `.rels`, removes
-    the cache definition content type override, and preserves workbook/pivot-table
-    inbound relationships, the pivot table, pivot cache records, the worksheet,
-    and unknown entries. This is not pivot cache rebuild, cache-record refresh,
-    relationship pruning or repair, orphan cleanup, owner `.rels` repair, or
-    public API.
-    The same path now covers pivot cache definition same-path ordering too:
-    a later ordinary replacement restores the active cache definition, clears
-    stale removed-part and removed owner `.rels` audit, restores owner `.rels`
-    copy-original audit, and returns `[Content_Types].xml` to source/copy-original
-    audit; a later explicit removal clears the active replacement, records
-    removed-part and removed owner `.rels` audit, omits the cache definition part
-    and owner `.rels`, and preserves workbook / pivot table inbound relationships
-    plus the pivot table, cache records, worksheet, and unknown entries. This is
-    not transactional undo, pivot cache semantic merging, relationship pruning
-    or repair, content type repair, orphan cleanup, or public API. Internal
-    `planned_output()` coverage for the remove-then-replace restore state now
-    exposes the active pivot cache definition `LocalDomRewrite` entry, the owner
-    `.rels` copy-original `SourceRelationships` audit, the source/copy-original
-    content types audit, and preserved package/worksheet/workbook relationships,
-    pivot table/cache records, and unknown entries. Coverage for the
-    replace-then-remove final-removal state still exposes the omitted cache
-    definition part, omitted owner `.rels`, workbook / pivot table inbound
-    pivotCacheDefinition relationship audit, content types rewrite, and preserved
-    workbook/worksheet/pivot table/cache records/unknown entries. This is Patch
-    audit only, not pivot cache rebuild, cache-record refresh, relationship
-    pruning or repair, content type repair, orphan cleanup, or public API.
-    The same fixture now covers ordinary
-    `replace_part("/xl/pivotCache/pivotCacheRecords1.xml", ...)` and explicit
-    removal: replacement rewrites only pivot cache records XML while preserving
-    the cache-definition-owned inbound relationship, pivot cache definition,
-    pivot table, workbook / worksheet relationships, content type overrides,
-    and unknown entries; removal omits the pivot cache records part, removes the
-    records content type override, and preserves the cache-definition-owned
-    inbound relationship pointing at the missing records part, pivot cache
-    definition, pivot table, workbook, worksheet, and unknown entries. This is
-    not pivot cache records refresh, pivot cache rebuild, relationship pruning
-    or repair, orphan cleanup, or public API.
-    The same path now covers pivot cache records same-path ordering too:
-    a later ordinary replacement restores the active pivot cache records part,
-    clears stale removed-part audit, returns `[Content_Types].xml` to
-    source/copy-original audit, and does not invent a records owner `.rels`;
-    a later explicit removal clears the active replacement, records removed-part
-    and cache-definition inbound relationship audit, omits the records part,
-    removes the records content type override, and preserves the
-    cache-definition owner `.rels` inbound relationship pointing at the missing
-    records part, pivot cache definition, pivot table, workbook, worksheet, and
-    unknown entries. This is not transactional undo, pivot cache records
-    semantic merging, relationship pruning or repair, content type repair,
-    orphan cleanup, or public API. Internal `planned_output()` coverage for the
-    remove-then-replace restore state now exposes the active pivot cache records
-    `StreamRewrite` entry, source/copy-original content types audit, preserved
-    package/worksheet/workbook relationships, pivot table/cache definition chain,
-    unknown entries, and no invented records owner `.rels`. Coverage for the
-    replace-then-remove final-removal state still exposes the omitted records
-    part, cache-definition inbound pivotCacheRecords relationship audit, content
-    types rewrite, preserved cache definition owner `.rels`, and no invented
-    records owner `.rels`. This is Patch audit only, not pivot cache records
-    refresh, pivot cache rebuild, relationship pruning or repair, content type
-    repair, orphan cleanup, or public API.
-    A workbook external links fixture now verifies that worksheet rewrite,
-    while rewriting `xl/workbook.xml` calc metadata, preserves workbook
-    `<externalReferences>`, the workbook `.rels` externalLink relationship,
-    `xl/externalLinks/externalLink1.xml`, the externalLink owner `.rels`, the
-    external `externalLinkPath` target, the content type override, and an
-    unknown entry, and roundtrips those relationships through `PackageReader` /
-    `RelationshipGraph`. This is not external links editing, external data
-    refresh, path validation, relationship repair, orphan cleanup, or public API.
-    The worksheet rewrite `planned_output()` snapshot now also exposes the
-    fullCalcOnLoad request, `CalcChainAction::Remove`, the worksheet
-    `StreamRewrite`, the workbook `LocalDomRewrite`, workbook `.rels`
-    copy-original preservation, the externalLink part plus owner `.rels`
-    copy-original preservation, content types copy-original preservation, and
-    unknown entry preservation, without adding relationship target audits. This
-    remains Patch audit only, not external links editing or relationship repair.
-    The same workbook external links fixture now covers ordinary
-    `replace_part("/xl/externalLinks/externalLink1.xml", ...)` and explicit
-    removal: replacement rewrites only externalLink XML while preserving the
-    workbook-owned inbound externalLink relationship, the externalLink-owned
-    external `externalLinkPath` target, the content type override, the
-    worksheet, and unknown entries; removal omits the externalLink part and its
-    owner `.rels`, removes the externalLink content type override, and preserves
-    workbook `<externalReferences>`, the inbound workbook relationship pointing
-    at the missing part, the worksheet, and unknown entries. This is not
-    external links semantic editing, external data refresh, path validation,
-    relationship pruning or repair, orphan cleanup, owner `.rels` repair, or
-    public API.
-    The same externalLink path now covers remove-then-ordinary-replace and
-    ordinary-replace-then-remove ordering. The restore path clears stale
-    removed-part / removed owner `.rels` audit, restores the active externalLink
-    part, restores the owner `.rels` copy-original audit, and returns content
-    types to source/copy-original audit. The final-removal path clears the active
-    replacement, records removed-part / removed owner `.rels` audit, omits the
-    externalLink part and owner `.rels`, and preserves the workbook inbound
-    relationship, worksheet, and unknown entries. This is not transactional undo,
-    external links semantic merge, relationship pruning or repair, content type
-    repair, orphan cleanup, or public API.
-    Internal `planned_output()` coverage for the remove-then-replace restore
-    state now exposes the active externalLink `LocalDomRewrite` entry, the
-    externalLink owner `.rels` copy-original `SourceRelationships` audit, the
-    source/copy-original content types audit, and preserved package/workbook
-    relationships, workbook, worksheet, and unknown entries. Coverage for the
-    replace-then-remove final-removal state still exposes the omitted
-    externalLink part, omitted owner `.rels`, workbook inbound externalLink
-    relationship audit, content types rewrite, and preserved package/workbook
-    relationships, workbook, worksheet, and unknown entries. This is Patch
-    audit only, not external links semantic editing, external data refresh,
-    relationship pruning or repair, orphan cleanup, or public API.
-    A custom XML fixture now verifies that worksheet rewrite preserves the
-    package `_rels/.rels` customXml relationship, `customXml/item1.xml`, the
-    custom XML item owner `.rels`, `customXml/itemProps1.xml`, the custom XML
-    properties content type override, and an unknown entry, and roundtrips those
-    relationships through `PackageReader` / `RelationshipGraph`. This is not
-    custom XML editing, schema/data binding, relationship repair, orphan cleanup,
-    or public API.
-    The worksheet rewrite `planned_output()` snapshot now also exposes the
-    fullCalcOnLoad request, `CalcChainAction::Remove`, the worksheet
-    `StreamRewrite`, the workbook `LocalDomRewrite`, package relationship
-    copy-original preservation, custom XML item / item-owner `.rels` /
-    properties part copy-original preservation, content types copy-original
-    preservation, and unknown entry preservation, without adding relationship
-    target audits or inventing properties owner `.rels`. This is Patch audit
-    only, not custom XML editing, schema/data binding, or relationship repair.
-    The same custom XML fixture now covers ordinary
-    `replace_part("/customXml/item1.xml", ...)`: only the custom XML item is
-    rewritten while the package `_rels/.rels` customXml inbound relationship,
-    the custom XML item owner `.rels` / customXmlProps relationship,
-    `customXml/itemProps1.xml`, the custom XML properties content type override,
-    the default XML content type, and the unknown entry stay on the copy-original
-    baseline and roundtrip through `PackageReader` / `RelationshipGraph`. This is
-    not custom XML semantic editing, schema/data binding, relationship repair,
-    content type repair, orphan cleanup, or public API.
-    The same custom XML fixture now covers explicit `customXml/item1.xml`
-    removal: output omits the custom XML item and its source-owned owner `.rels`,
-    preserves the package `_rels/.rels` customXml inbound relationship, preserves
-    `customXml/itemProps1.xml`, the custom XML properties content type override,
-    the default XML content type, and the unknown entry, and does not rewrite
-    `[Content_Types].xml`. This is not custom XML deletion semantics,
-    schema/data binding, relationship pruning or repair, content type repair,
-    orphan cleanup, or public API.
-    The same custom XML path now has ordering regressions for remove-then-
-    ordinary-replace and ordinary-replace-then-remove. The restore path clears
-    stale removed-part and removed owner `.rels` audit, restores the active
-    custom XML item and owner `.rels` copy-original audit, and still avoids
-    rewriting `[Content_Types].xml`. The final-removal path clears the active
-    replacement, records removed-part and removed owner `.rels` audit, omits the
-    custom XML item and owner `.rels`, and preserves the package inbound
-    relationship, properties part, default XML content type, and unknown entry.
-    Internal `planned_output()` coverage for this restore state now exposes the
-    active custom XML item `LocalDomRewrite` entry, owner `.rels` copy-original
-    `SourceRelationships` audit, and preserved package relationships, content
-    types, workbook, worksheet, properties part, and unknown entry. Internal
-    `planned_output()` coverage for this final-removal state still exposes the
-    omitted custom XML item, omitted source-owned owner `.rels`, package inbound
-    customXml relationship audit, and preserved package relationships, content
-    types, workbook, worksheet, properties part, and unknown entry.
-    This is not transactional undo, custom XML semantic merge, relationship
-    pruning or repair, content type repair, orphan cleanup, or public API.
-    The same custom XML fixture now covers ordinary replacement and explicit
-    removal of `customXml/itemProps1.xml`. Replacement only rewrites the
-    properties part and preserves the custom XML item, item-owned `.rels` /
-    customXmlProps inbound relationship, package customXml relationship,
-    properties content type override, and unknown entry. Removal omits the
-    properties part and removes the properties content type override, but keeps
-    the custom XML item, the item-owned `.rels` inbound customXmlProps
-    relationship pointing at the missing properties part, the package customXml
-    relationship, default XML content type, and unknown entry. This is not
-    custom XML properties editing, schema/data binding, relationship pruning or
-    repair, content type repair, orphan cleanup, or public API.
-    Internal `planned_output()` coverage for the ordinary replacement state now
-    exposes the active properties part `LocalDomRewrite`, preserved content
-    types / package relationships, preserved custom XML item / item owner
-    `.rels` / workbook / worksheet / unknown entry, and no invented properties
-    owner `.rels`. This is Patch audit only, not custom XML properties semantic
-    editing, schema/data binding, relationship pruning or repair, content type
-    repair, orphan cleanup, transactional undo, or public API.
-    The same properties-part path now has ordering regressions for
-    remove-then-ordinary-replace and ordinary-replace-then-remove. The restore
-    path clears stale removed-part audit, restores the active properties part,
-    restores the properties content type override/content-types copy-original
-    audit, and keeps the item-owned `.rels`. The final-removal path clears the
-    active replacement, records removed-part audit, omits the properties part,
-    removes the properties content type override, and keeps the inbound
-    customXmlProps relationship in the item-owned `.rels`. This is not
-    transactional undo, custom XML properties semantic merge, relationship
-    pruning or repair, content type repair, orphan cleanup, or public API.
-    Internal `planned_output()` coverage for this properties final-removal state
-    now exposes the omitted properties part, item-owned inbound customXmlProps
-    relationship audit, content types rewrite, preserved custom XML item / item
-    owner `.rels` / package relationships / workbook / worksheet / unknown entry,
-    and no invented properties owner `.rels`. This is Patch audit only, not
-    custom XML properties deletion semantics, relationship pruning or repair,
-    content type repair, orphan cleanup, or public API.
-    Internal `planned_output()` coverage for the restore state now exposes the
-    active properties part `LocalDomRewrite`, restored content types
-    copy-original audit, preserved custom XML item / item owner `.rels` /
-    package relationships / workbook / worksheet / unknown entry, and no
-    invented properties owner `.rels`. This is Patch audit only, not custom XML
-    properties semantic merge, relationship pruning or repair, content type
-    repair, orphan cleanup, transactional undo, or public API.
-    The same custom XML fixture now covers cross-path ordering where
-    `customXml/item1.xml` is removed before `customXml/itemProps1.xml` is
-    ordinary-replaced. The later properties replacement only rewrites the
-    properties payload, keeps the custom XML item and item-owned `.rels` removal
-    audits, continues to omit the item and owner `.rels` in output, and preserves
-    the package customXml inbound relationship, properties content type override,
-    default XML content type, and unknown entry. This is not custom XML
-    dependency repair, relationship pruning or repair, content type repair,
-    orphan cleanup, transactional undo, or public API.
-    Internal `planned_output()` coverage for this cross-path state now exposes
-    the omitted custom XML item, omitted source-owned owner `.rels`, package
-    inbound customXml relationship audit, active properties part local-DOM rewrite,
-    preserved package relationships / content types / workbook / worksheet /
-    unknown entry, and no invented properties owner `.rels`. This is Patch audit
-    only, not custom XML dependency repair, relationship pruning or repair,
-    content type repair, orphan cleanup, transactional undo, or public API.
-    The reverse cross-path ordering is now covered too: `customXml/itemProps1.xml`
-    is removed before `customXml/item1.xml` is ordinary-replaced. The later item
-    replacement only rewrites the item payload, keeps the removed properties-part
-    audit/content-types rewrite, continues to omit the properties part and its
-    content type override, and preserves the customXmlProps relationship in the
-    item-owned `.rels`, the package customXml inbound relationship, default XML
-    content type, and unknown entry. This is not custom XML dependency repair,
-    relationship pruning or repair, content type repair, orphan cleanup,
-    transactional undo, or public API.
-    Internal `planned_output()` coverage for this reverse cross-path state now
-    exposes the omitted properties part, item-owned inbound customXmlProps
-    relationship audit, content types rewrite, active custom XML item local-DOM
-    rewrite, preserved item owner `.rels` / package relationships / workbook /
-    worksheet / unknown entry, and no invented properties owner `.rels`. This is
-    Patch audit only, not custom XML dependency repair, relationship pruning or
-    repair, content type repair, orphan cleanup, transactional undo, or public API.
-    The same fixture now covers ordinary
-    `replace_part("/xl/comments/comment1.xml", ...)`: only comments XML is
-    rewritten while the inbound worksheet `.rels` comments relationship,
-    comments content type override, workbook XML / workbook `.rels`, worksheet, and
-    unknown entry stay on the copy-original baseline, without inventing comments
-    owner `.rels`. This is not comments model mutation, threaded comments, notes
-    UI, relationship repair, orphan cleanup, or public API. Internal
-    `planned_output()` coverage for this ordinary replacement state now exposes
-    the active comments part local-DOM rewrite, preserved content types /
-    package relationships / workbook / workbook `.rels` / worksheet / worksheet
-    `.rels` / unknown entry, and no invented comments owner `.rels`. This is
-    Patch audit only, not comments model mutation, notes UI, relationship
-    repair, orphan cleanup, or public API. The same fixture now covers explicit
-    `xl/comments/comment1.xml` removal: output omits the comments part, removes
-    the comments content type override, preserves the inbound worksheet `.rels`
-    comments relationship, and does not invent comments owner `.rels` omission.
-    This is not comments deletion semantics, threaded comments, notes UI,
-    relationship pruning/repair, orphan cleanup, or public API. The same fixture
-    also covers remove-then-ordinary-replace ordering: a later `replace_part()`
-    restores the active comments replacement, clears stale removed-part audit,
-    returns `[Content_Types].xml` to source/copy-original audit, preserves inbound
-    worksheet `.rels`, and still does not invent comments owner `.rels`. This is
-    not transactional undo, comments semantic merge, relationship repair, orphan
-    cleanup, or public API. Internal `planned_output()` coverage for this
-    remove-then-replace state now exposes the active comments part local-DOM
-    rewrite, content types copy-original audit, preserved
-    package/workbook/worksheet `.rels` and unknown entry, clears output-plan
-    removed_parts / removed_package_entries, and no invented comments owner
-    `.rels`. This is Patch audit only, not comments undo,
-    semantic merge, relationship repair, orphan cleanup, or public API. It now
-    also covers replace-then-remove ordering: a
-    later explicit removal clears the active comments replacement, records
-    removed-part audit, omits the comments part, removes the comments content
-    type override, preserves inbound worksheet `.rels`, and still does not
-    invent comments owner `.rels`. This is not comments deletion semantics,
-    transactional undo, relationship pruning/repair, orphan cleanup, or public
-    API. The internal `planned_output()` snapshot now also exposes the single
-    omitted comments part plus matching removed_parts target/reason/inbound
-    audit, worksheet-owned inbound comments relationship metadata, content types
-    rewrite, preserved package/workbook/worksheet `.rels` copy-original audit,
-    empty removed_package_entries, and no invented comments owner `.rels`.
-    They also cover workbook `definedNames`
-    preservation during workbook metadata rewrite and
-    narrow `ReferencePolicy` boundaries for linked-object failure,
-    calcChain preserve, rebuild rejection, malformed workbook metadata preflight failure,
-    missing `xl/workbook.xml` worksheet-rewrite precondition failure,
-    request-recalculation fullCalcOnLoad output, and core/app docProps package
-    relationship target conflicts failing without edit-plan entries/notes, manifest,
-    package-entry audit, or copied-output pollution. A queued core/app docProps
-    metadata edit is also preserved when a later linked worksheet rewrite fails
-    under `ReferencePolicyAction::Fail`.
-    This does not make image/chart/table/VBA passthrough complete.
+    Beyond that contract, the same path now has a large body of narrow Patch
+    preservation/audit regressions whose per-fixture detail lives in
+    `docs/PATCH_PRESERVATION_COVERAGE.md`. Classified, those cover: (1)
+    byte-preservation of worksheet `.rels`, drawing XML/`.rels`, media, chart,
+    table, untouched sharedStrings/styles, VBA, and reachable unknown extension
+    parts under the narrow worksheet replacement path; (2) worksheet-owned
+    object fixtures (background picture, header/footer VML, printerSettings,
+    OLE/control) preserved or audited under `sheetData` local rewrite, with
+    explicit removal and same-path ordering; (3) linked-part fixtures
+    (comments, threaded comments/persons, pivot table/cache, external links,
+    custom XML item/properties, drawing/VML/percent-decoded drawing, media,
+    table, sharedStrings, styles, VBA, chart) covering ordinary `replace_part()`,
+    explicit removal, and remove/replace ordering, each preserving inbound
+    relationships and content type audit without relationship/content-type
+    repair; (4) `planned_output()` aggregate snapshots for those replace/remove/
+    ordering states; (5) DEFLATE-source, no-op `save_as()` roundtrip, and
+    no-state-pollution coverage for failure paths, including workbook
+    `definedNames` preservation and narrow `ReferencePolicy` boundaries
+    (linked-object failure, calcChain preserve/rebuild rejection, malformed or
+    missing workbook metadata, request-recalculation output, and queued docProps
+    preservation across a later linked worksheet rewrite failure). These remain
+    internal Patch preservation/audit visibility only, not public API,
+    relationship/content-type repair, orphan cleanup, semantic editing, or full
+    object lifecycle support. This does not make image/chart/table/VBA
+    passthrough complete.
   - Internal OPC `PartName`, `RelationshipSet`, `ContentTypesManifest`,
     `PackageManifest`, `PartWriteMode`, package-part edit state metadata,
     minimal workbook manifest builder, and content types / relationships

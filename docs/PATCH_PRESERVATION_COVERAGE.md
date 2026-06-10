@@ -92,9 +92,16 @@ part 与 control-property part preservation：`sheetData` 局部替换保留
 `control` relationships、`xl/embeddings/oleObject1.bin` bytes、
 `xl/ctrlProps/control1.xml` bytes 和对应 content type overrides，并在
 `EditPlan` / planned output 中把这些 part 暴露为 relationship-derived
-copy-original entries；这只是 Patch preservation / audit 可见性，不是 OLE /
-ActiveX / control 语义编辑、relationship repair/pruning、orphan cleanup、
-content type repair、public API 或完整 object preservation；
+copy-original entries。内部 `planned_output()` 快照现在还覆盖该状态的边界：
+fullCalcOnLoad / `CalcChainAction::Remove`、worksheet / workbook
+`LocalDomRewrite`、content types / package relationships / workbook relationships /
+worksheet relationships copy-original、OLE / control part copy-original
+relationship metadata、preserved OLE/control caller-review notes、无 relationship
+target audit、无 worksheet relationship-id audit、无 removed parts / removed package
+entries，且不凭空创建 `xl/calcChain.xml`；这只是 Patch preservation / audit
+可见性，不是 OLE / ActiveX / control 语义编辑、calcChain rebuild、
+relationship repair/pruning、orphan cleanup、content type repair、public API 或完整
+object preservation；
 
 ### OLE / control 的显式 removal audit
 

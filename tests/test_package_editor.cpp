@@ -29465,9 +29465,58 @@ void test_package_editor_sheet_data_patch_preserves_worksheet_owned_object_parts
         "worksheet-owned control audit should keep structured relationship target");
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.full_calculation_on_load,
+        "OLE/control sheetData output plan should request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+        "OLE/control sheetData output plan should expose calcChain removal policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "OLE/control sheetData output plan should not invent dependency audits");
+    check(output_plan.worksheet_relationship_reference_audits.empty(),
+        "OLE/control sheetData output plan should not invent relationship-id audits");
+    check(output_plan.removed_parts.empty(),
+        "OLE/control sheetData output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "OLE/control sheetData output plan should not expose removed package entries");
+    check(has_note_containing(output_plan.notes,
+              {"sheetData replacement", "OLE object reference metadata", "caller review"}),
+        "OLE/control sheetData output plan should snapshot preserved OLE notes");
+    check(has_note_containing(output_plan.notes,
+              {"sheetData replacement", "control reference metadata", "caller review"}),
+        "OLE/control sheetData output plan should snapshot preserved control notes");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "OLE/control sheetData output plan should rewrite worksheet");
+    check_output_entry_part_context(output_plan.entries, "xl/worksheets/sheet1.xml",
+        true, worksheet_part.value(),
+        "OLE/control sheetData output plan should classify worksheet as a part");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "OLE/control sheetData output plan should rewrite workbook metadata");
+    check_output_entry_part_context(output_plan.entries, "xl/workbook.xml",
+        true, workbook_part.value(),
+        "OLE/control sheetData output plan should classify workbook as a part");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "OLE/control sheetData output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "OLE/control sheetData output plan should classify content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "OLE/control sheetData output plan should preserve package relationships");
+    check_output_entry_part_context(output_plan.entries, "_rels/.rels", false, "",
+        "OLE/control sheetData output plan should classify package relationships as metadata");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "OLE/control sheetData output plan should preserve workbook relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        false, "",
+        "OLE/control sheetData output plan should classify workbook relationships as metadata");
     check_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "OLE sheetData output plan should preserve worksheet-owned OLE bytes");
+    check_output_entry_part_context(output_plan.entries, "xl/embeddings/oleObject1.bin",
+        true, ole_part.value(),
+        "OLE sheetData output plan should classify OLE as a part");
     check_output_entry_relationship_context(output_plan.entries,
         "xl/embeddings/oleObject1.bin", worksheet_part.value(), "rIdOle",
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject",
@@ -29476,6 +29525,9 @@ void test_package_editor_sheet_data_patch_preserves_worksheet_owned_object_parts
     check_output_entry_plan(output_plan.entries, "xl/ctrlProps/control1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "control sheetData output plan should preserve worksheet-owned control properties");
+    check_output_entry_part_context(output_plan.entries, "xl/ctrlProps/control1.xml",
+        true, control_part.value(),
+        "control sheetData output plan should classify control properties as a part");
     check_output_entry_relationship_context(output_plan.entries,
         "xl/ctrlProps/control1.xml", worksheet_part.value(), "rIdControl",
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/control",
@@ -29484,6 +29536,18 @@ void test_package_editor_sheet_data_patch_preserves_worksheet_owned_object_parts
     check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "OLE sheetData output plan should preserve worksheet relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        false, "",
+        "OLE/control sheetData output plan should classify worksheet relationships as metadata");
+    const auto* output_worksheet_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels");
+    check(output_worksheet_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "OLE/control sheetData output plan should classify worksheet relationships metadata");
+    check(output_worksheet_relationships_plan->owner_part == worksheet_part.value(),
+        "OLE/control sheetData output plan should keep worksheet relationships owner context");
+    check(find_output_entry_plan(output_plan.entries, "xl/calcChain.xml") == nullptr,
+        "OLE/control sheetData output plan should not invent calcChain output");
 
     editor.save_as(output);
 

@@ -1807,9 +1807,16 @@ Current foundation:
   `control` relationships, `xl/embeddings/oleObject1.bin` bytes,
   `xl/ctrlProps/control1.xml` bytes, and corresponding content type overrides,
   and planned output exposes those parts as relationship-derived copy-original
-  audit metadata; this is not OLE / ActiveX / control semantic editing,
-  relationship repair/pruning, orphan cleanup, content type repair, public API,
-  or complete object preservation;
+  audit metadata. The internal `planned_output()` snapshot now also covers the
+  boundary for this state: fullCalcOnLoad / `CalcChainAction::Remove`,
+  worksheet and workbook `LocalDomRewrite`, content types / package
+  relationships / workbook relationships / worksheet relationships
+  copy-original entries, OLE / control copy-original relationship metadata,
+  preserved OLE/control caller-review notes, no relationship target audit, no
+  worksheet relationship-id audit, no removed parts or package entries, and no
+  invented `xl/calcChain.xml`; this is not OLE / ActiveX / control semantic
+  editing, calcChain rebuild, relationship repair/pruning, orphan cleanup,
+  content type repair, public API, or complete object preservation;
   explicit removal coverage for the same OLE/control fixture: omits
   `xl/embeddings/oleObject1.bin` while removing the OLE content type override,
   omits `xl/ctrlProps/control1.xml` while removing the control-properties

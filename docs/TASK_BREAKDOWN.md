@@ -710,8 +710,8 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 
 子任务：
 - P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft：基础完成。
-- P7.2 `CellValue` public value draft：当前最小可执行任务。
-- P7.3 internal `CellStore` / `CellRecord` memory model。
+- P7.2 `CellValue` public value draft：基础完成。
+- P7.3 internal `CellStore` / `CellRecord` memory model：当前最小可执行任务。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
   `estimated_memory_usage()`。
 - P7.5 save-as and Patch handoff contract。
@@ -785,7 +785,7 @@ ctest --preset windows-nmake-release
 
 ### P7.2 `CellValue` public value draft
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：public API 文档设计；不新增 header / implementation。
 
@@ -846,6 +846,76 @@ ctest --preset windows-nmake-release
 - 不把 `CellValue` 写成内部 `CellStore` / `CellRecord` 的长期存储布局。
 - 不新增 date / rich text / error cell 承诺。
 - 不在 P7.4 guardrails 前宣称 In-memory editor ready。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P7.3 internal `CellStore` / `CellRecord` memory model
+
+状态：当前最小可执行任务。
+
+类型：internal architecture / API 文档设计；不新增 header / implementation。
+
+目标：定义 future In-memory editor 的内部 cell 存储草案，确保随机编辑使用
+紧凑 `CellStore` / `CellRecord`，而不是长期保存 public `Cell` 或 `CellValue` 对象；
+同时为 P7.4 size / memory guardrails 和 P7.5 save-as / Patch handoff 留出明确输入。
+
+输入：
+- P7.1 future `WorkbookEditor` / `WorksheetEditor` facade draft。
+- P7.2 future `CellValue` public value draft。
+- 当前 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/ARCHITECTURE.md` 和
+  `docs/EDITING_MODEL.md` 的 In-memory boundary。
+- 当前 public `Cell` / `CellView` / `StyleId` / styles / sharedStrings 文档边界。
+
+输出：
+- `CellStore` 草案：worksheet-local sparse storage，按 row / column key 索引已存在或
+  显式编辑过的 cells；不分配完整 worksheet matrix。
+- `CellRecord` 草案：保存 value kind、optional/default style id 和紧凑 payload。
+  number / boolean 内联保存，text / formula 保存 pool id，blank / clear 语义用显式
+  record 或 tombstone 候选表达，最终 erase/save-as 规则留给 P7.5。
+- pool 草案：worksheet 或 workbook 作用域的 string pool / formula pool，避免每个
+  cell record 持有 owning `std::string`；是否与 `xl/sharedStrings.xml` 索引复用或迁移
+  由后续 Patch / save-as 任务定义。
+- style 边界：`CellRecord` 只保存 workbook-local style handle / default marker；
+  不在 P7.3 合并 styles、不迁移 foreign style ids、不做 existing-file style preservation。
+- sparse index 边界：可用 row-major ordered map、row buckets 或 equivalent sparse
+  index；必须支持 deterministic worksheet XML emission order，但不承诺百万行随机访问
+  低内存。
+- 计量输入：P7.3 只定义 `cell_count`、record overhead、pool bytes、sparse index
+  overhead 和 save-time assembly memory 的估算维度；实际 `max_cells` /
+  `memory_budget_bytes` enforcement 由 P7.4 定义。
+- side-effect 边界：`CellStore` 不计算公式、不重建 calcChain、不修复 relationships /
+  content types，也不负责 sharedStrings / styles migration。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与 P7.4 guardrail API 的只读调研并行。
+- 与 P7.5 save-as handoff 的写入需串行，因为 blank / erase / tombstone 语义会互相影响。
+
+验收标准：
+- 文档明确 `CellStore` / `CellRecord` 是 internal future design，不是 public API。
+- 文档明确 public `CellValue` 是边界值，内部长期存储使用 compact record / pool。
+- 文档明确 sparse storage、pooling、style handle、missing / blank / erase 边界。
+- 文档给 P7.4 提供可计量的 memory / cell-count 维度。
+
+禁止项：
+- 不新增 public 或 internal C++ 符号。
+- 不把 future `CellStore` 写成已实现能力。
+- 不承诺百万行 worksheet 低内存随机访问。
+- 不在 P7.5 前宣称 sharedStrings、styles、calcChain 或 relationship handoff 已完成。
 
 验证命令：
 ```powershell

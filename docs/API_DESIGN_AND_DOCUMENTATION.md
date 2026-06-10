@@ -215,6 +215,69 @@ cell storage layout。
 - 不承诺百万行 worksheet 随机访问、sharedStrings 索引迁移、styles 合并或 relationship
   repair。
 
+### P7.3 Future CellStore / CellRecord Internal Model Draft
+
+P7.3 只冻结 future In-memory editor 的内部 storage model 草案，不新增 public 或
+internal C++ 符号。`CellStore` / `CellRecord` 是 implementation detail；普通用户仍通过
+future `WorkbookEditor` / `WorksheetEditor` 和 `CellValue` 边界交互。
+
+核心原则：
+
+- public `CellValue` 是 API boundary value，可以 own text / formula payload。
+- internal `CellRecord` 是紧凑存储记录，不应长期保存 public `Cell` 或 `CellValue`
+  对象。
+- `CellStore` 是 worksheet-local sparse storage，只记录存在或被显式编辑过的 cells；
+  不分配完整 row-by-column matrix。
+- 该模型服务小文件随机编辑，不是 Streaming writer 的 row hot path，也不是百万行
+  worksheet 的低内存随机访问方案。
+
+`CellRecord` 字段草案：
+
+- row / column key：由 `CellStore` sparse index 持有，使用 1-based worksheet 坐标或
+  等价 normalized key；必须复用现有 A1 / row-column 边界校验。
+- value kind：blank、number、text、boolean、formula。
+- style marker：default style 或 workbook-local `StyleId` / internal style handle。
+- payload：number / boolean 内联保存；text / formula 保存 pool id。
+- edit marker：可选 dirty / tombstone / cleared-state marker，用于后续 save-as /
+  Patch handoff 判断写入、清除或保留行为。
+
+`CellStore` 结构草案：
+
+- 使用 row-major sparse map、row buckets 或等价 sparse index，保证可确定的
+  worksheet XML emission order。
+- text 和 formula 进入 pool，避免每个 record 持有 owning `std::string`。
+- pool id 是 internal handle，不等同于 `xl/sharedStrings.xml` index；是否迁移或复用
+  shared string indexes 由 P7.5 handoff 和后续 sharedStrings 策略定义。
+- style handle 是 workbook-local；P7.3 不合并 styles、不修复 foreign style ids、
+  不做 existing-file style preservation。
+- row metadata、column metadata、merged ranges、hyperlinks、tables、drawings 和
+  worksheet relationship-bearing metadata 不进入 `CellRecord`；这些对象需要独立模型或
+  Patch-side preservation / audit。
+
+missing / blank / erase 边界：
+
+- missing cell 表示 sparse index 中没有 record。
+- blank record 表示 caller 显式设置 blank / clear 候选值，可能需要在 save-as 时写出
+  empty styled cell 或删除 prior value。
+- `erase_cell(ref)` 是否移除 record、写 tombstone、保留 style，或触发 Patch handoff
+  删除语义，由 P7.5 定义。
+- 在 P7.5 前，不把 blank / erase 写成现有文件清除语义已完成。
+
+P7.4 guardrail 输入：
+
+- `cell_count()` 可按 active records 计数，是否计入 tombstone / blank record 由 P7.4
+  固化。
+- `estimated_memory_usage()` 应至少拆分 record bytes、sparse index overhead、string /
+  formula pool bytes、style handle overhead 和 save-time XML/package assembly memory。
+- `max_cells` 和 `memory_budget_bytes` enforcement 属于 P7.4；P7.3 只提供可计量维度。
+
+非目标：
+
+- 不实现 `CellStore`、`CellRecord`、string pool、formula pool 或 editor APIs。
+- 不承诺公式计算、cached formula values、calcChain rebuild、sharedStrings migration、
+  styles merge、relationship repair 或 content type repair。
+- 不把 in-memory cell model 用作 Streaming / Patch 的默认内部表示。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

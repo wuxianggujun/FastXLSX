@@ -1409,6 +1409,21 @@ CellValue -> future semantic editor/in-memory API value
 CellStore -> future compact internal storage
 ```
 
+P7.3 internal storage draft：
+
+- `CellStore` 是 worksheet-local sparse store，只索引存在或被显式编辑过的 cells，
+  不创建完整 worksheet matrix。
+- `CellRecord` 保存 value kind、default / workbook-local style handle 和紧凑 payload；
+  number / boolean 内联保存，text / formula 保存 internal pool id。
+- string / formula pool 是 internal storage detail，不等同于 `xl/sharedStrings.xml`
+  index；shared string index 迁移或复用留给 save-as / Patch handoff。
+- missing cell 表示 store 中无 record；blank / clear 候选值可用 explicit blank record
+  或 tombstone 表达，最终 erase/save-as 行为由后续 P7.5 定义。
+- `cell_count()`、record bytes、pool bytes、sparse index overhead 和 save-time
+  assembly memory 是 P7.4 guardrails 的输入；P7.3 不实现 enforcement。
+- row/column metadata、merged ranges、hyperlinks、tables、drawings 和 relationship
+  bearing worksheet metadata 不塞进 `CellRecord`，需要独立模型或 Patch preservation。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

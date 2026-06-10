@@ -2806,6 +2806,33 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
         check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
             fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
             "cell replacement linked output plan should omit stale calcChain");
+        check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve VML drawing");
+        check_output_entry_plan(output_plan.entries, "xl/drawings/drawing space.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve percent-decoded drawing");
+        check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve sharedStrings");
+        check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve sharedStrings owner relationships");
+        check_output_entry_part_context(output_plan.entries,
+            "xl/_rels/sharedStrings.xml.rels", false, "",
+            "cell replacement linked output plan should classify sharedStrings relationships as metadata");
+        check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve styles");
+        check_output_entry_plan(output_plan.entries, "xl/vbaProject.bin",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve VBA project");
+        check_output_entry_plan(output_plan.entries, "custom/_rels/opaque-extension.bin.rels",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "cell replacement linked output plan should preserve unknown extension relationships");
+        check_output_entry_part_context(output_plan.entries,
+            "custom/_rels/opaque-extension.bin.rels", false, "",
+            "cell replacement linked output plan should classify unknown extension relationships as metadata");
         check_output_entry_relationship_context(output_plan.entries,
             "xl/drawings/drawing1.xml", worksheet_part.value(), "rId1",
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
@@ -2826,6 +2853,16 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table",
             "../tables/table1.xml",
             "cell replacement linked output plan should keep table relationship audit");
+        check_output_entry_relationship_context(output_plan.entries,
+            "xl/drawings/vmlDrawing1.vml", worksheet_part.value(), "rId7",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing",
+            "../drawings/vmlDrawing1.vml#shape1",
+            "cell replacement linked output plan should keep VML relationship audit");
+        check_output_entry_relationship_context(output_plan.entries,
+            "xl/drawings/drawing space.xml", worksheet_part.value(), "rId8",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing",
+            "../drawings/drawing%20space.xml",
+            "cell replacement linked output plan should keep percent-decoded drawing audit");
         check_output_entry_relationship_context(output_plan.entries,
             "custom/opaque-extension.bin", worksheet_part.value(), "rId9",
             "https://fastxlsx.invalid/relationships/opaque-extension",

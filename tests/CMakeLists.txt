@@ -61,6 +61,19 @@ set_tests_properties(fastxlsx.worksheet_event_reader PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_worksheet_transformer_tests
+    test_worksheet_transformer.cpp
+)
+
+target_link_libraries(fastxlsx_worksheet_transformer_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_worksheet_transformer_tests PRIVATE cxx_std_20)
+
+add_test(NAME fastxlsx.worksheet_transformer COMMAND fastxlsx_worksheet_transformer_tests)
+set_tests_properties(fastxlsx.worksheet_transformer PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_package_reader_tests
     test_package_reader.cpp
 )

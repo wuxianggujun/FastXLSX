@@ -1364,8 +1364,9 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 状态：基础完成；P8.1-P8.5 已冻结大 worksheet 受控编辑边界、event reader token、
 transformer contract、stream rewrite / `EditPlan` handoff，并补入首个 bounded local
 template-fill fixture。P8.6 已落地首个 internal worksheet event reader 实现切片；
-后续真正 transformer / stream rewrite implementation 必须继续按任务模板拆分，不能把当前
-reader 或 bounded local fixture 写成完整低内存大文件路径。
+P8.7 已落地首个 internal transformer action model 切片；后续真正 stream rewrite
+implementation 必须继续按任务模板拆分，不能把当前 reader、action scanner 或 bounded
+local fixture 写成完整低内存大文件路径。
 
 目标：支持 sheet replacement、range patch、template fill 等受控大 worksheet 编辑，
 同时避免把大型 `worksheet.xml` 载入 DOM 或完整 cell matrix。
@@ -1377,6 +1378,7 @@ reader 或 bounded local fixture 写成完整低内存大文件路径。
 - P8.4 stream rewrite output and `EditPlan` integration：基础完成。
 - P8.5 first controlled edit fixture：template fill or bounded range patch：基础完成。
 - P8.6 internal worksheet event reader first implementation slice：基础完成。
+- P8.7 internal row/cell transformer action model first implementation slice：基础完成。
 
 验收：
 - 文档明确大 worksheet 编辑走 event reader → transformer → stream writer。
@@ -1789,6 +1791,72 @@ PackageEditor 语义接入。
 - 不接入 `PackageEditor` active `EditPlan`。
 - 不实现 row/cell transformer、placeholder parser、range patch engine 或 stream writer。
 - 不解码 XML entity、不验证完整 worksheet schema、不修复 namespaces / relationships。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P8.7 internal row/cell transformer action model first implementation slice
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：落地 P8.3 transformer contract 的首个内部 action scanner，让 bounded cell
+replacement selectors 能映射到 P8.6 event reader 的 source-order token，并发出
+`PassThrough` / `ReplaceCell` actions，为后续 stream writer handoff 提供真实 action
+形态，同时不生成 worksheet XML、不接入 `PackageEditor` active `EditPlan`。
+
+输入：
+- P8.6 internal worksheet event reader。
+- P8.3 transformer contract 对 selector preflight、source-order output actions 和
+  missing target diagnostics 的要求。
+- P8.4 stream rewrite handoff 对 action stream 和 failure-before-commit 的边界。
+
+输出：
+- 新增 internal `include/fastxlsx/detail/worksheet_transformer.hpp` 和
+  `src/worksheet_transformer.cpp`。
+- `scan_cell_replacement_actions()` 建立 bounded selector index，拒绝空 selector、
+  空 replacement payload 和重复 selector。
+- scanner 按 source worksheet 顺序发出 `ReplaceCell` action，跳过目标 cell 原始 payload，
+  对未命中的 selector 返回 `missing_cell_references` diagnostics。
+- 新增 `fastxlsx.worksheet_transformer` CTest 目标。
+
+触碰文件：
+- `include/fastxlsx/detail/worksheet_transformer.hpp`
+- `src/worksheet_transformer.cpp`
+- `tests/test_worksheet_transformer.cpp`
+- `CMakeLists.txt`
+- `tests/CMakeLists.txt`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_editor.*`
+- `tests/test_package_editor.cpp`
+
+可并行性：
+- 后续 stream writer/output staging 只能在 action model 稳定后串行推进。
+- 额外 selector 类型或 diagnostics 可单独补小切片，但修改 action lifetime 需串行。
+
+验收标准：
+- `fastxlsx.worksheet_transformer` 覆盖 source-order replacement actions、目标 cell
+  原始 payload consumption、missing selector diagnostics 和 duplicate/empty preflight。
+- 默认完整 CTest 通过。
+- 文档明确这只是 internal transformer action model，不是 public API、worksheet writer、
+  dimension recalculation、dependency repair、stream rewrite output 或 PackageEditor commit。
+
+禁止项：
+- 不新增 public `WorksheetTransformer` / `WorksheetRewriter` / `TemplateEditor`。
+- 不生成 rewritten worksheet XML 或临时 worksheet artifact。
+- 不接入 `PackageEditor` active `EditPlan`。
+- 不实现 placeholder parser、range patch engine、dimension update、sharedStrings/style
+  migration、relationship repair 或 calcChain rebuild。
 
 验证命令：
 ```powershell

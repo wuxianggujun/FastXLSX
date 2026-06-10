@@ -28,6 +28,7 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `fastxlsx.streaming`
   - `fastxlsx.opc`
   - `fastxlsx.worksheet_event_reader`
+  - `fastxlsx.worksheet_transformer`
   - `fastxlsx.package_reader`
   - `fastxlsx.package_editor`
   - `fastxlsx.image`
@@ -82,6 +83,14 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     reader input groundwork only: no public API, no full XML parser/schema
     validation, no relationship repair, no transformer, and no PackageEditor
     stream rewrite handoff.
+  - Internal worksheet transformer action-model first slice in
+    `include/fastxlsx/detail/worksheet_transformer.hpp` and
+    `src/worksheet_transformer.cpp`, covered by `fastxlsx.worksheet_transformer`.
+    It maps bounded cell replacement selectors onto event-reader tokens and
+    emits source-order `PassThrough` / `ReplaceCell` actions plus missing-target
+    diagnostics. Treat this as action stream groundwork only: no public API, no
+    rewritten worksheet output, no dimension recalculation, no dependency repair,
+    no stream writer, and no PackageEditor/EditPlan commit.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

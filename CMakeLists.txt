@@ -27,6 +27,7 @@ add_library(fastxlsx
     src/streaming_writer.cpp
     src/workbook.cpp
     src/worksheet_event_reader.cpp
+    src/worksheet_transformer.cpp
     src/xml.cpp
     src/zip_store_writer.cpp
 )

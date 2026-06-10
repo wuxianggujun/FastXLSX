@@ -49,8 +49,12 @@ parallelism, acceptance checks, and explicit non-goals.
   `src/worksheet_event_reader.cpp` with first-slice `scan_worksheet_events()`
   coverage for source-order XML declaration / processing instruction / comment,
   worksheet root, raw metadata, `sheetData`, row, cell, and value text token
-  boundaries. This is P8 reader input groundwork only: no public API, full XML
-  parser/schema validation, relationship repair, transformer, PackageEditor
+  boundaries, plus `include/fastxlsx/detail/worksheet_transformer.hpp` and
+  `src/worksheet_transformer.cpp` with first-slice `scan_cell_replacement_actions()`
+  action-model coverage for bounded cell replacement selectors, source-order
+  `PassThrough` / `ReplaceCell` actions, and missing-target diagnostics. This is
+  P8 reader/transformer input groundwork only: no public API, full XML parser/schema
+  validation, relationship repair, rewritten worksheet output, PackageEditor
   stream rewrite handoff, or low-memory large-file editing claim.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
@@ -1169,7 +1173,7 @@ Status: 基础.
 Already visible:
 - Compiled `fastxlsx` target and `FastXLSX::fastxlsx` alias.
 - Lightweight CTest suite with `fastxlsx.unit`, `fastxlsx.streaming`,
-  `fastxlsx.opc`, `fastxlsx.worksheet_event_reader`,
+  `fastxlsx.opc`, `fastxlsx.worksheet_event_reader`, `fastxlsx.worksheet_transformer`,
   `fastxlsx.package_reader`, `fastxlsx.package_editor`, and `fastxlsx.image`.
 - Minimal new-workbook package with workbook, worksheet, relationships,
   content types, `docProps/core.xml`, and `docProps/app.xml`.

@@ -17,6 +17,7 @@ option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" O
 option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZIP writer backend" OFF)
 
 add_library(fastxlsx
+    src/cell_store.cpp
     src/cell_value.cpp
     src/image.cpp
     src/opc.cpp

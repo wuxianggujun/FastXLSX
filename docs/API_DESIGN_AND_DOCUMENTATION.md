@@ -75,7 +75,8 @@ editor.save_as(output_path);
   `ImageOptions` 等应保持 workbook / worksheet 语义，不要泄漏底层 part 名。
 - `CellValue` 是当前已落地的 owning 单元格语义值：number、text、boolean、formula、
   blank 以及可选 style reference。它可以被 `Cell`、未来 `WorkbookEditor::set_cell()`
-  和 In-memory editor 共同使用，但不表示 editor / cell store 已经实现。
+  和 In-memory editor 共同使用。当前已有 internal `CellStore` 首个稀疏存储切片，
+  但这仍不表示 public editor、random cell editing 或 save-as handoff 已经实现。
 - `Cell` 可以继续作为小文件新建路径的 owning convenience value 或 `CellValue` 的
   轻量包装，但不要把它定义成所有模式的内部存储单元。
 - `CellView` 必须保持 Streaming-only 的非 owning view：它可以引用调用方短生命周期
@@ -87,7 +88,7 @@ editor.save_as(output_path);
 CellView  -> Streaming 输入视图，非 owning，热路径轻量
 Cell      -> 小文件创建便利值，owning，不代表大型 worksheet 内部存储
 CellValue -> 已落地 owning 语义值，适合作为 editor / in-memory / API 边界
-CellRecord / CellStore -> 未来内部紧凑存储，不作为 public API 默认暴露
+CellRecord / CellStore -> 已有首个 internal sparse-store 切片，不作为 public API 暴露
 ```
 
 Public API 概念矩阵：
@@ -106,9 +107,9 @@ sheet 入口      add_worksheet           add_worksheet            worksheet / t
 ```
 
 该矩阵是命名和职责约束，不代表 future editor 已经实现。`CellValue` 已有独立 public
-value header、实现和测试；`WorkbookEditor`、`WorksheetEditor`、`get_cell()`、
-`set_cell()` 仍必须标明为未来 public design target，直到对应 public header、实现和
-测试存在。
+value header、实现和测试；`CellStore` / `CellRecord` 已有 internal detail 首片；
+`WorkbookEditor`、`WorksheetEditor`、`get_cell()`、`set_cell()` 仍必须标明为未来
+public design target，直到对应 public header、实现和测试存在。
 
 ### P7.1 Future Editor Facade Draft
 
@@ -161,8 +162,9 @@ content type override 隐藏在内部 Patch / In-memory 底座之后。
 P7.2 冻结 `CellValue` 的 public value 语义；当前首个 implementation slice 已新增
 `include/fastxlsx/cell_value.hpp`、`src/cell_value.cpp` 和 focused unit tests。这只表示
 owning semantic value 已经落地，不表示 `WorkbookEditor` / `WorksheetEditor`、random
-cell editing 或 in-memory `CellStore` 已经实现。`CellValue` 是未来 editor facade 的 API
-boundary value，而不是内部长期 cell storage layout。
+cell editing 或 save-as handoff 已经实现。P7.3a 已有 internal `CellStore` 首个切片，
+但它只是后续 editor / guardrail / handoff 的内部输入。`CellValue` 是未来 editor
+facade 的 API boundary value，而不是内部长期 cell storage layout。
 
 `CellValueKind` 的初始草案：
 
@@ -218,11 +220,12 @@ boundary value，而不是内部长期 cell storage layout。
 - 不承诺百万行 worksheet 随机访问、sharedStrings 索引迁移、styles 合并或 relationship
   repair。
 
-### P7.3 Future CellStore / CellRecord Internal Model Draft
+### P7.3 CellStore / CellRecord Internal Model
 
-P7.3 只冻结 future In-memory editor 的内部 storage model 草案，不新增 public 或
-internal C++ 符号。`CellStore` / `CellRecord` 是 implementation detail；普通用户仍通过
-future `WorkbookEditor` / `WorksheetEditor` 和 `CellValue` 边界交互。
+P7.3 冻结 future In-memory editor 的内部 storage model；P7.3a 已新增首个
+internal implementation slice：`include/fastxlsx/detail/cell_store.hpp` 和
+`src/cell_store.cpp`。`CellStore` / `CellRecord` 仍是 implementation detail；普通用户仍
+通过 future `WorkbookEditor` / `WorksheetEditor` 和 `CellValue` 边界交互。
 
 核心原则：
 
@@ -230,7 +233,8 @@ future `WorkbookEditor` / `WorksheetEditor` 和 `CellValue` 边界交互。
 - internal `CellRecord` 是紧凑存储记录，不应长期保存 public `Cell` 或 `CellValue`
   对象。
 - `CellStore` 是 worksheet-local sparse storage，只记录存在或被显式编辑过的 cells；
-  不分配完整 row-by-column matrix。
+  当前首片使用 row-major `std::map<CellPosition, CellRecord>`，不分配完整
+  row-by-column matrix。
 - 该模型服务小文件随机编辑，不是 Streaming writer 的 row hot path，也不是百万行
   worksheet 的低内存随机访问方案。
 
@@ -240,17 +244,19 @@ future `WorkbookEditor` / `WorksheetEditor` 和 `CellValue` 边界交互。
   等价 normalized key；必须复用现有 A1 / row-column 边界校验。
 - value kind：blank、number、text、boolean、formula。
 - style marker：default style 或 workbook-local `StyleId` / internal style handle。
-- payload：number / boolean 内联保存；text / formula 保存 pool id。
+- payload：number / boolean 内联保存；当前首片把 text / formula 存为 record-owned
+  `std::string`，后续 compact-storage 演进可替换为 pool id。
 - edit marker：可选 dirty / tombstone / cleared-state marker，用于后续 save-as /
   Patch handoff 判断写入、清除或保留行为。
 
 `CellStore` 结构草案：
 
-- 使用 row-major sparse map、row buckets 或等价 sparse index，保证可确定的
-  worksheet XML emission order。
-- text 和 formula 进入 pool，避免每个 record 持有 owning `std::string`。
-- pool id 是 internal handle，不等同于 `xl/sharedStrings.xml` index；是否迁移或复用
-  shared string indexes 由 P7.5 handoff 和后续 sharedStrings 策略定义。
+- 当前实现使用 row-major sparse map，保证可确定的 worksheet XML emission order；
+  后续可以演进为 row buckets 或等价 sparse index。
+- text / formula pool 是后续 compact-storage 工作；当前 P7.3a 为了边界最小化，
+  仍在 `CellRecord` 中持有 owned string payload。
+- 未来 pool id 是 internal handle，不等同于 `xl/sharedStrings.xml` index；是否迁移
+  或复用 shared string indexes 由 P7.5 handoff 和后续 sharedStrings 策略定义。
 - style handle 是 workbook-local；P7.3 不合并 styles、不修复 foreign style ids、
   不做 existing-file style preservation。
 - row metadata、column metadata、merged ranges、hyperlinks、tables、drawings 和
@@ -262,8 +268,8 @@ missing / blank / erase 边界：
 - missing cell 表示 sparse index 中没有 record。
 - blank record 表示 caller 显式设置 blank / clear 候选值，可能需要在 save-as 时写出
   empty styled cell 或删除 prior value。
-- `erase_cell(ref)` 是否移除 record、写 tombstone、保留 style，或触发 Patch handoff
-  删除语义，由 P7.5 定义。
+- 当前 P7.3a `erase_cell(row, column)` 移除 sparse record；是否写 tombstone、
+  保留 style，或触发 Patch handoff 删除语义，由 P7.5 定义。
 - 在 P7.5 前，不把 blank / erase 写成现有文件清除语义已完成。
 
 P7.4 guardrail 输入：
@@ -276,7 +282,8 @@ P7.4 guardrail 输入：
 
 非目标：
 
-- 不实现 `CellStore`、`CellRecord`、string pool、formula pool 或 editor APIs。
+- 不实现 public editor APIs、string pool、formula pool、guardrail enforcement 或
+  save-as / Patch handoff。
 - 不承诺公式计算、cached formula values、calcChain rebuild、sharedStrings migration、
   styles merge、relationship repair 或 content type repair。
 - 不把 in-memory cell model 用作 Streaming / Patch 的默认内部表示。
@@ -749,9 +756,10 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
   局部样式和对象修改，但必须限制为小文件路径。
 - `Cell` / `CellValue` 这类 public 类型应优先作为 API 输入、返回值或临时值；
   不能直接作为百万级单元格的内部长期存储模型。
-- In-memory 内部存储应独立设计紧凑 `CellStore` / `CellRecord`：数值、布尔、
-  字符串 id、公式 id、style id 等分离存储，字符串和公式走池化/去重，避免每个
-  cell 都携带 owning `std::string`。
+- In-memory 内部存储应独立设计 `CellStore` / `CellRecord`，不要长期保存 public
+  `Cell` / `CellValue` 对象。当前首片已经有 sparse record；后续 compact-storage
+  工作仍需要把字符串 id、公式 id、style id 等进一步分离，并让字符串和公式走
+  池化/去重，避免每个 cell 都携带 owning `std::string`。
 - 必须设计 size / memory guardrails，例如 `max_cells`、`memory_budget_bytes`、
   `cell_count()`、`estimated_memory_usage()` 或类似诊断入口；超限时应明确提示调用方
   改用 Streaming 或 Patch。

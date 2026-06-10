@@ -1,3 +1,4 @@
+#include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/fastxlsx.hpp>
 
@@ -180,6 +181,89 @@ void test_cell_value_public_boundary()
     check_fastxlsx_error(
         [] { (void)fastxlsx::CellValue::number(-std::numeric_limits<double>::infinity()); },
         "CellValue should reject negative infinite numeric payloads");
+}
+
+void test_internal_cell_store_sparse_boundary()
+{
+    fastxlsx::detail::CellStore store;
+    check(store.empty(), "new CellStore should be empty");
+    check(store.cell_count() == 0, "new CellStore count should be zero");
+    const std::size_t empty_memory = store.estimated_memory_usage();
+    check(empty_memory >= sizeof(fastxlsx::detail::CellStore),
+        "empty CellStore memory estimate should include the store object");
+
+    store.set_cell(3, 3, fastxlsx::CellValue::number(3.25));
+    const fastxlsx::detail::CellRecord* number = store.find_cell(3, 3);
+    check(number != nullptr, "CellStore should find an inserted numeric cell");
+    check(number->kind == fastxlsx::CellValueKind::Number,
+        "CellStore numeric record kind mismatch");
+    check(number->number_value == 3.25, "CellStore numeric record payload mismatch");
+
+    std::string text_payload = "stored text";
+    store.set_cell(1, 2, fastxlsx::CellValue::text(text_payload));
+    text_payload = "mutated caller text";
+    const fastxlsx::detail::CellRecord* text = store.find_cell(1, 2);
+    check(text != nullptr, "CellStore should find an inserted text cell");
+    check(text->kind == fastxlsx::CellValueKind::Text, "CellStore text record kind mismatch");
+    check(text->text_value == "stored text", "CellStore should own stored text payload");
+
+    const fastxlsx::CellValue styled_formula =
+        fastxlsx::CellValue::formula("A1+B1").with_style(fastxlsx::StyleId {});
+    store.set_cell(2, 1, styled_formula);
+    const fastxlsx::detail::CellRecord* formula = store.find_cell(2, 1);
+    check(formula != nullptr, "CellStore should find an inserted formula cell");
+    check(formula->kind == fastxlsx::CellValueKind::Formula,
+        "CellStore formula record kind mismatch");
+    check(formula->text_value == "A1+B1", "CellStore formula payload mismatch");
+    check(formula->style_id.has_value(), "CellStore should retain explicit style handles");
+    const fastxlsx::CellValue round_tripped_formula = formula->to_value();
+    check(round_tripped_formula.kind() == fastxlsx::CellValueKind::Formula,
+        "CellRecord should convert back to a formula CellValue");
+    check(round_tripped_formula.text_value() == "A1+B1",
+        "CellRecord formula round trip payload mismatch");
+    check(round_tripped_formula.has_style(), "CellRecord should round trip style handles");
+
+    store.set_cell(2, 1, fastxlsx::CellValue::boolean(false));
+    check(store.cell_count() == 3, "CellStore overwrite should not grow the sparse index");
+    const fastxlsx::detail::CellRecord* boolean = store.find_cell(2, 1);
+    check(boolean != nullptr, "CellStore should find an overwritten boolean cell");
+    check(boolean->kind == fastxlsx::CellValueKind::Boolean,
+        "CellStore boolean record kind mismatch");
+    check(!boolean->boolean_value, "CellStore boolean payload mismatch");
+
+    auto iterator = store.records().begin();
+    check(iterator != store.records().end(), "CellStore records should not be empty");
+    check(iterator->first.row == 1 && iterator->first.column == 2,
+        "CellStore records should be ordered row-major");
+    ++iterator;
+    check(iterator != store.records().end(), "CellStore should have a second sparse record");
+    check(iterator->first.row == 2 && iterator->first.column == 1,
+        "CellStore records should keep deterministic sparse ordering");
+
+    store.set_cell(4, 1, fastxlsx::CellValue::blank());
+    const fastxlsx::detail::CellRecord* blank = store.find_cell(4, 1);
+    check(blank != nullptr, "CellStore should keep explicit blank records");
+    check(blank->kind == fastxlsx::CellValueKind::Blank,
+        "CellStore blank record kind mismatch");
+    check(!blank->to_value().to_cell().has_value(),
+        "CellStore blank record should round trip without a Cell representation");
+    check(store.cell_count() == 4, "CellStore blank record should count as an active record");
+
+    store.erase_cell(4, 1);
+    check(store.find_cell(4, 1) == nullptr, "CellStore erase should remove the sparse record");
+    check(store.cell_count() == 3, "CellStore erase should reduce the active record count");
+
+    store.set_cell(5, 1, fastxlsx::CellValue::text(std::string(128, 'x')));
+    check(store.estimated_memory_usage() > empty_memory,
+        "CellStore memory estimate should grow after inserting records");
+
+    check_fastxlsx_error(
+        [&store] { store.set_cell(0, 1, fastxlsx::CellValue::number(1.0)); },
+        "CellStore should reject zero row coordinates");
+    check_fastxlsx_error([&store] { (void)store.find_cell(1, 16385); },
+        "CellStore should reject columns beyond Excel's limit");
+    check_fastxlsx_error([&store] { store.erase_cell(1048577, 1); },
+        "CellStore should reject rows beyond Excel's limit");
 }
 
 void test_minimal_xlsx_package()
@@ -514,6 +598,7 @@ int main()
     try {
         test_xml_helpers();
         test_cell_value_public_boundary();
+        test_internal_cell_store_sparse_boundary();
         test_minimal_xlsx_package();
         test_workbook_document_properties();
         test_workbook_formula_and_row_height_metadata();

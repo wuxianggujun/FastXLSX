@@ -702,8 +702,9 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 
 ## P7 - In-memory Small-File Editor
 
-状态：设计基线基础完成；`CellValue` 首个 public value 切片已实现，public editor /
-`CellStore` 实现未开始。
+状态：设计基线基础完成；`CellValue` 首个 public value 切片和 internal
+`CellStore` / `CellRecord` 首个稀疏存储切片已实现，public editor、random cell
+editing 和 save-as / Patch handoff 仍未开始。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
@@ -712,6 +713,7 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 - P7.2 `CellValue` public value draft：基础完成。
 - P7.2a `CellValue` public value implementation：基础完成。
 - P7.3 internal `CellStore` / `CellRecord` memory model：基础完成。
+- P7.3a internal `CellStore` / `CellRecord` implementation：基础完成。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
   `estimated_memory_usage()`：基础完成。
 - P7.5 save-as and Patch handoff contract：基础完成。
@@ -837,7 +839,8 @@ ctest --preset windows-nmake-release
 
 验收标准：
 - 文档能回答 `CellValue`、`Cell` 和 `CellView` 的所有权和模式差异。
-- 文档明确 `CellValue` 是已实现 public value type，但不是 editor / store ready。
+- 文档明确 `CellValue` 是已实现 public value type，但它本身不是 internal store，
+  也不代表 public editor ready。
 - 文档明确 style id 是 workbook-local handle，P7.2 不做 style registry merge。
 - 文档明确 blank 与 missing cell 不等价，公式不求值，数字必须 finite。
 
@@ -912,8 +915,9 @@ ctest --preset windows-nmake-release -R fastxlsx.unit
 - `CellStore` 草案：worksheet-local sparse storage，按 row / column key 索引已存在或
   显式编辑过的 cells；不分配完整 worksheet matrix。
 - `CellRecord` 草案：保存 value kind、optional/default style id 和紧凑 payload。
-  number / boolean 内联保存，text / formula 保存 pool id，blank / clear 语义用显式
-  record 或 tombstone 候选表达，最终 erase/save-as 规则留给 P7.5。
+  number / boolean 内联保存；当前首片把 text / formula 存为 owned string，后续
+  compact-storage 演进再替换为 pool id。blank / clear 语义用显式 record 或 tombstone
+  候选表达，最终 erase/save-as 规则留给 P7.5。
 - pool 草案：worksheet 或 workbook 作用域的 string pool / formula pool，避免每个
   cell record 持有 owning `std::string`；是否与 `xl/sharedStrings.xml` 索引复用或迁移
   由后续 Patch / save-as 任务定义。
@@ -944,14 +948,16 @@ ctest --preset windows-nmake-release -R fastxlsx.unit
 - 与 P7.5 save-as handoff 的写入需串行，因为 blank / erase / tombstone 语义会互相影响。
 
 验收标准：
-- 文档明确 `CellStore` / `CellRecord` 是 internal future design，不是 public API。
+- 文档明确 `CellStore` / `CellRecord` 是 internal design / implementation detail，
+  不是 public API。
 - 文档明确 public `CellValue` 是边界值，内部长期存储使用 compact record / pool。
 - 文档明确 sparse storage、pooling、style handle、missing / blank / erase 边界。
 - 文档给 P7.4 提供可计量的 memory / cell-count 维度。
 
 禁止项：
 - 不新增 public 或 internal C++ 符号。
-- 不把 future `CellStore` 写成已实现能力。
+- 不把 P7.3 文档草案本身写成 public editor ready；实现状态以 P7.3a
+  internal first slice 为准。
 - 不承诺百万行 worksheet 低内存随机访问。
 - 不在 P7.5 前宣称 sharedStrings、styles、calcChain 或 relationship handoff 已完成。
 
@@ -959,6 +965,77 @@ ctest --preset windows-nmake-release -R fastxlsx.unit
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
+```
+
+### P7.3a internal `CellStore` / `CellRecord` implementation
+
+状态：基础完成。
+
+类型：internal detail header + implementation + focused unit tests；不新增 public API。
+
+目标：落地 P7.3 的最小 worksheet-local sparse cell store，让后续 P7.4 guardrails
+和 P7.5 save-as / Patch handoff 有真实可测的内部输入，而不是继续只停留在文档草案。
+
+输入：
+- P7.2a `CellValue` public value implementation。
+- P7.3 internal storage model draft。
+- 当前 `detail::cell_reference(row, column)` Excel 坐标边界校验。
+
+输出：
+- `include/fastxlsx/detail/cell_store.hpp` 暴露 internal `CellPosition`、`CellRecord`
+  和 `CellStore`。
+- `src/cell_store.cpp` 实现 row-major `std::map<CellPosition, CellRecord>` sparse
+  index、`set_cell()`、`find_cell()`、`erase_cell()`、`cell_count()`、
+  `estimated_memory_usage()` 和只读 `records()` 视图。
+- `CellRecord::from_value()` / `to_value()` 在 internal record 与 public
+  `CellValue` 边界之间转换，并保留 optional `StyleId` handle。
+- 当前首片把 text / formula payload 存在 record-owned `std::string` 中；string /
+  formula pool 仍是后续 compact-storage 演进，不属于 P7.3a。
+- 显式 `CellValue::blank()` 当前可作为 active blank record 存入 store；
+  `erase_cell()` 当前移除 sparse record。existing-file clear / tombstone /
+  style-preservation semantics 仍由 P7.5 定义。
+- `fastxlsx.unit` 覆盖 sparse ordering、insert / overwrite / erase、explicit blank
+  record、style handle round-trip、坐标拒绝和 memory estimate growth。
+
+触碰文件：
+- `include/fastxlsx/detail/cell_store.hpp`
+- `src/cell_store.cpp`
+- `CMakeLists.txt`
+- `tests/test_minimal_xlsx.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/TASK_PLAN.md`、`docs/NEXT_STEPS.md`、`README.md`、`AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/package_editor.*`
+- `src/streaming_writer.*`
+
+可并行性：
+- 可与 P7.4 guardrail 文档细化并行。
+- 与 P7.5 save-as / Patch handoff 写入必须串行，因为 blank / erase /
+  tombstone 和 style-preservation semantics 会影响输出 contract。
+
+验收标准：
+- 默认构建把 `src/cell_store.cpp` 纳入 `fastxlsx` target。
+- `fastxlsx.unit` 验证 internal store 的当前合同。
+- 文档明确该切片是 internal foundation，不是 public `WorkbookEditor`、
+  `WorksheetEditor`、random cell editing、existing-file editing 或 save-as handoff。
+- 文档明确当前尚未实现 string / formula pool、guardrail enforcement、
+  sharedStrings migration、styles merge、calcChain rebuild 或 relationship repair。
+
+禁止项：
+- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 不把 `CellStore` 写成 Streaming / Patch 默认内部表示。
+- 不承诺百万行 worksheet 低内存随机访问。
+- 不在 P7.5 前宣称 blank / erase 的 existing-file clear semantics 已完成。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.unit
 ```
 
 ### P7.4 guardrails：`max_cells` / `memory_budget_bytes`

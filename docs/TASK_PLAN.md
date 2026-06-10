@@ -35,6 +35,10 @@ parallelism, acceptance checks, and explicit non-goals.
   `CellValueKind`, `WorkbookWriter`, `WorksheetWriter`, `CellView`, `StyleId`,
   `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, and `FastXlsxError`.
+- Current internal In-memory foundation includes
+  `include/fastxlsx/detail/cell_store.hpp` and `src/cell_store.cpp` with
+  `CellPosition`, `CellRecord`, and worksheet-local sparse `CellStore`; this is
+  not a public editor API and does not implement save-as / Patch handoff.
 - Current image public API includes `ImageFormat`, `ImageInfo`, `ImagePixels`,
   `read_image_info()`, and `read_image_pixels()` for PNG/JPEG metadata and
   owned decoded pixel buffers; this is separate from OpenXML image packaging.
@@ -1392,8 +1396,9 @@ Tasks:
 - Define the cell value split:
   `CellView` remains streaming-only and non-owning; `Cell` remains an owning
   convenience value for small workbook creation; `CellValue` is the owning
-  semantic value used by future editor and In-memory APIs; future `CellRecord` /
-  `CellStore` are internal storage, not the default public model.
+  semantic value used by future editor and In-memory APIs; `CellRecord` /
+  `CellStore` now have a first internal sparse-store slice and remain internal
+  storage, not the default public model.
 - Standardize method names across modes: `add_worksheet`, `worksheet` /
   `try_worksheet`, `append_row`, `set_cell`, `save`, and `save_as`.
 - Add documentation examples that show the three intended user-facing paths
@@ -1456,7 +1461,9 @@ Validation:
 
 ### M7.5 - In-memory Small Workbook Editor
 
-Status: planned.
+Status: planned; first internal `CellStore` / `CellRecord` sparse-store
+foundation slice exists, but public editor, guardrails, and save-as handoff are
+not ready.
 
 Use this lane for the editing experience users expect from a workbook library:
 random cell access, small sheet edits, and convenient workbook manipulation.
@@ -1469,10 +1476,11 @@ Tasks:
 - Define size and memory guardrails. The API may hold cell maps or worksheet
   models in memory, but it must document that it is not the million-row
   low-memory path.
-- Design a compact internal cell store instead of persisting the public owning
-  `Cell` type for every stored cell. Prefer typed payload records plus string /
-  formula pools and style id references, while keeping public `Cell` /
-  `CellValue` as API boundary values.
+- Continue compacting the internal cell store instead of persisting the public
+  owning `Cell` type for every stored cell. The first slice stores typed payload
+  records and style id references in a sparse map; future work still needs
+  string / formula pools while keeping public `Cell` / `CellValue` as API
+  boundary values.
 - Add guardrail APIs or options such as `max_cells`, `memory_budget_bytes`,
   `cell_count()`, and `estimated_memory_usage()` before calling the In-memory
   editor ready.

@@ -72,6 +72,11 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
   - Minimal workbook writer and streaming writer.
+  - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
+    `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
+    `src/cell_store.cpp`. Treat this as a P7 foundation slice only: no public
+    `WorkbookEditor`, no random cell editing API, no guardrail enforcement, and
+    no save-as / Patch handoff.
   - `StringStrategy::SharedString`, internal shared string table wiring,
     `xl/sharedStrings.xml` package entry generation, and focused structure
     tests are visible in the current files. Treat this as sharedStrings
@@ -1010,7 +1015,9 @@ Do:
 - Define the `Cell` / `CellView` / `CellValue` split:
   `CellView` is streaming-only and non-owning; `Cell` is an owning convenience
   value for small new workbooks; `CellValue` is the owning semantic value shared
-  by future editor and in-memory APIs.
+  by future editor and in-memory APIs; `CellRecord` / `CellStore` now have a
+  first internal sparse-store slice and remain non-public implementation
+  details.
 - Add an API matrix that maps common concepts across Streaming, simple
   new-workbook creation, Patch, and In-memory paths: add worksheet, get
   worksheet, append row, set cell, save, save-as, style, range, and error
@@ -1030,8 +1037,9 @@ Accept when:
 
 Do not claim:
 - A new implemented `WorkbookEditor`, random cell editing API, or public
-  `PackageEditor` from this design task alone. `CellValue` exists only as a
-  standalone value type, not as editor readiness.
+  `PackageEditor` from this design task alone. `CellValue` exists as a
+  standalone value type, and `CellStore` exists as an internal foundation;
+  neither means editor readiness.
 - That one unified facade can hide Streaming/Patch/In-memory performance costs.
 
 The detailed sections below keep their historical labels for traceability. Use

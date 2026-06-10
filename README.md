@@ -193,8 +193,9 @@ FastXLSX
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
 - 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
 - 图片、VBA、table 等复杂对象的完整读写/编辑支持。
-- `CellValue` 首个 owning value 切片已落地，但 `WorkbookEditor` /
-  `WorksheetEditor`、random cell editing 和 existing-file public editing API 仍未完成。
+- `CellValue` 首个 owning value 切片和 internal `CellStore` 首个 sparse-store
+  切片已落地，但 `WorkbookEditor` / `WorksheetEditor`、random cell editing、
+  save-as handoff 和 existing-file public editing API 仍未完成。
 
 `src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取
 `stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；

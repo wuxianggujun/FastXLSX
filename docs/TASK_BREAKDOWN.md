@@ -290,16 +290,31 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 ## P5 - Preservation Fixtures
 
-状态：计划。
+状态：基础完成，后续只按对象缺口补小切片。
 
 目标：在扩大 existing-file editing 前，建立含复杂对象的保真 fixture。
 
 子任务：
-- P5.1 images/drawings fixture。
-- P5.2 charts fixture。
-- P5.3 VBA / macro-enabled fixture。
-- P5.4 sharedStrings/styles fixture。
-- P5.5 unknown extension fixture。
+- P5.1 images/drawings fixture：基础完成。现有 linked-object fixture 覆盖 worksheet
+  `.rels`、drawing XML、drawing `.rels`、PNG media bytes、VML drawing、percent-encoded
+  drawing target、ordinary replace/remove ordering 和 `planned_output()` audit
+  可见性；仍不能写成 existing-workbook image/drawing 语义编辑。
+- P5.2 charts fixture：基础完成。现有 fixture 覆盖 chart part、drawing-owned direct
+  / URI-qualified chart relationships、ordinary replace/remove ordering 和 content type
+  audit；仍不能写成 chart reference migration、series/cache update 或 chart editing。
+- P5.3 VBA / macro-enabled fixture：基础完成。现有 fixture 覆盖 `xl/vbaProject.bin`
+  bytes、workbook inbound relationship、content type override、ordinary replace/remove
+  ordering 和 no invented VBA owner `.rels`；仍不能写成 macro generation、VBA editing
+  或 signature preservation。
+- P5.4 sharedStrings/styles fixture：基础完成。现有 fixture 覆盖 sharedStrings、
+  sharedStrings owner `.rels`、styles、workbook relationships、ordinary replace/remove
+  ordering 和 no invented styles owner `.rels`；仍不能写成 sharedStrings index
+  migration、style id migration、style merge 或 cell reference sync。
+- P5.5 unknown extension fixture：基础完成。现有 fixture 覆盖 reachable unknown
+  extension part、source-owned owner `.rels`、metadata ingestion、ordinary replacement、
+  repeated replacement、remove/replace ordering、output-plan omitted/active audit 和
+  relationship target audit；仍不能写成 custom extension semantic editing、
+  relationship repair 或 broad unknown-part preservation guarantee。
 
 验收：
 - unrelated edit 后，未修改 part 仍存在且 bytes 尽量保留。
@@ -307,8 +322,10 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 - 不宣称语义编辑能力，只宣称 preservation / audit 可见性。
 
 可并行性：
-- 各 fixture 可并行设计。
-- 同一测试文件写入需要串行合并，避免冲突。
+- 后续若发现对象级缺口，各 fixture 可继续并行设计。
+- 当前测试集中在 `tests/test_package_editor.cpp`，同一测试文件写入需要串行合并，
+  避免冲突。
+- 不应把 P5 基础覆盖解释为 P6 dependency policy 已完成；依赖策略仍需按对象类型拆分。
 
 ## P6 - Sheet Dependency Policies
 
@@ -326,6 +343,71 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 验收：
 - 每类 dependency 都有 preserve、rewrite、audit-only 或 fail 的明确策略。
 - 不自动 prune relationships，除非测试证明该行为安全。
+
+### P6.1 sharedStrings / styles dependency policy
+
+状态：当前最小可执行任务。
+
+类型：文档设计 + 现有测试映射；后续可按缺口补代码测试。
+
+目标：把 sheet-local edit 遇到 shared string indexes 和 style id references 时的保守
+策略写清楚，避免把现有 audit-only 行为误写成 sharedStrings/styles 迁移或修复。
+
+输入：
+- 当前完整 worksheet replacement / `sheetData` patch 对 shared string indexes、
+  style id references 和公式 cell 的 audit-only 扫描。
+- 当前 linked-object fixture 对 `xl/sharedStrings.xml`、sharedStrings owner `.rels`、
+  `xl/styles.xml`、workbook relationships 和 content type overrides 的 copy-original /
+  replace/remove ordering 覆盖。
+- 当前 `ReferencePolicy`、`WorksheetPayloadDependencyAudit`、`EditPlan` 和
+  `planned_output()` 结构化审计。
+
+输出：
+- sharedStrings policy：保留现有 `xl/sharedStrings.xml` 和 owner `.rels`，对 worksheet
+  payload 中的 shared string indexes 只做 audit-only caller review；不迁移索引、不重建
+  string table、不改写 worksheet `t="s"` cell。
+- styles policy：保留现有 `xl/styles.xml`，对 worksheet payload 中的 style id references
+  只做 audit-only caller review；不迁移 style id、不合并 styles、不改写 cell `s`
+  references。
+- `ReferencePolicyAction::Fail` 下的失败边界：遇到 caller 不接受的 sharedStrings /
+  styles 依赖时，必须在状态变更前失败，且不污染 `EditPlan`、manifest、
+  package-entry audit、calc policy、relationship audits 或输出 bytes。
+- 文档明确该任务不新增 public API、不暴露 public `PackageEditor` / `WorkbookEditor`。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/EDITING_MODEL.md`
+- 必要时同步 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/TASK_PLAN.md`、
+  `docs/NEXT_STEPS.md`
+- 若发现测试缺口，再触碰 `tests/test_package_editor.cpp`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- streaming writer API / tests
+- package reader ZIP 边界
+- CMake 配置
+
+可并行性：
+- 可与 P6.2 / P6.3 / P6.4 的只读调研并行。
+- 若需要新增 `tests/test_package_editor.cpp` 用例，写入该文件的变更必须串行合并。
+
+验收标准：
+- 文档能回答 sharedStrings/styles 是 preserve、rewrite、audit-only 还是 fail。
+- 文档明确现有行为不做索引迁移、style merge、worksheet reference rewrite、
+  relationship pruning/repair 或 public editing API。
+- 若新增测试，默认 preset 下 `fastxlsx.package_editor` 通过，并保持 60s CTest 边界。
+
+禁止项：
+- 不新增 public `CellValue`、`WorkbookEditor`、`WorksheetEditor` 或 public
+  `PackageEditor`。
+- 不把 audit-only note 写成 repair。
+- 不自动 prune workbook relationships、owner `.rels` 或 content type overrides。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_editor
+```
 
 ## P7 - In-memory Small-File Editor
 

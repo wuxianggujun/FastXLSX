@@ -108,6 +108,26 @@ worksheet `.rels`、drawing/media/chart/table、`xl/sharedStrings.xml` /
 其中包括替换后的 worksheet XML 省略源 `<drawing>` / `<tableParts>` 引用时仍
 保留源关系和 linked parts。完整 relationship pruning、orphan cleanup、
 sharedStrings/styles/defined-name 联动管理仍是 Patch 目标。
+
+### P6.1 sharedStrings / styles dependency policy
+
+当前 sheet-local Patch 对 sharedStrings / styles 采用保守策略：
+
+- `xl/sharedStrings.xml` 和 source-owned `xl/_rels/sharedStrings.xml.rels` 默认
+  copy-original；worksheet payload 中出现 shared string indexes 时，只记录
+  audit-only caller review，不迁移索引、不重建 string table、不改写 worksheet
+  `t="s"` cell。
+- `xl/styles.xml` 默认 copy-original；worksheet payload 中出现 style id references
+  时，只记录 audit-only caller review，不迁移 style id、不合并 styles、不改写
+  cell `s` references，也不凭空创建 `xl/_rels/styles.xml.rels`。
+- `ReferencePolicyAction::Fail` 可把这些 payload-only dependency 转为失败边界；
+  失败必须发生在状态变更前，并保持 `EditPlan`、manifest、package-entry audit、
+  relationship audits、calc policy、planned output 和输出 bytes 不污染。
+- Ordinary `replace_part()` / explicit `remove_part()` 对 sharedStrings 或 styles
+  仍只是 part-level rewrite / omission audit：保留 inbound workbook relationship，
+  同步当前 content type audit，不做 worksheet cell reference sync、relationship
+  pruning、metadata repair 或 public editing API。
+
 当前另有 internal `PackageEditor::replace_worksheet_sheet_data()` helper，只替换
 已有 worksheet XML 的 `<sheetData>` 元素或 `<sheetData/>`，保留同一 worksheet
 part 中的外围 XML metadata，并复用 worksheet replacement 的 calcChain /

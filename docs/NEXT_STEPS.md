@@ -2665,6 +2665,16 @@ Current foundation:
   and unknown extension entries on the same copy-original baseline. This is not
   percent-encoded target repair, relationship rewrite, drawing mutation, or full
   drawing support.
+  Internal `planned_output()` coverage for this ordinary replacement state now
+  exposes the active `xl/drawings/drawing space.xml` `LocalDomRewrite` entry,
+  preserved content types / package relationships / workbook relationships /
+  workbook / worksheet / worksheet `.rels` / drawing / drawing `.rels` / chart /
+  media / table / VML / sharedStrings / sharedStrings owner `.rels` / styles /
+  VBA / calcChain / unknown extension entries, empty `removed_parts` /
+  `removed_package_entries`, and no invented percent-decoded drawing owner
+  `.rels`. This is Patch audit visibility only, not a public output planner,
+  percent-encoded target repair, relationship rewrite/repair, drawing mutation,
+  or full drawing support.
   The same path now covers percent-decoded drawing remove-then-ordinary-replace
   ordering: a later replacement restores the active decoded drawing part, clears
   stale removed-part audit, returns `[Content_Types].xml` to source/copy-original

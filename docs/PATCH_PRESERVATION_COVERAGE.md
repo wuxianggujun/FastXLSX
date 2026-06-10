@@ -1047,6 +1047,15 @@ worksheet、drawing、chart、media、table、VML、sharedStrings、styles、VBA
 unknown extension entries 仍保持同一 copy-original 基线，且不会凭空创建
 `xl/drawings/_rels/drawing space.xml.rels`；这不是 percent-encoded target repair、
 relationship rewrite、drawing mutation 或完整 drawing 支持。
+内部 `planned_output()` 快照还覆盖该 ordinary replacement 状态：暴露 active
+`xl/drawings/drawing space.xml` `LocalDomRewrite` entry、content types / package
+relationships / workbook relationships / workbook / worksheet / worksheet `.rels` /
+drawing / drawing `.rels` / chart / media / table / VML / sharedStrings /
+sharedStrings owner `.rels` / styles / VBA / calcChain / unknown extension
+entries 的 copy-original 决策，且不发明 percent-decoded drawing owner `.rels`，
+`removed_parts` 与 `removed_package_entries` 为空；这只是 Patch audit 可见性，
+不是 public output planner、percent-encoded target repair、relationship rewrite/repair、
+drawing mutation 或完整 drawing 支持。
 同一路径还覆盖 percent-decoded drawing 先显式移除再 ordinary replacement 的
 反向顺序：后续 replacement 会恢复 active decoded drawing part、清理 stale
 removed-part audit、让 `[Content_Types].xml` 回到 source/copy-original audit、

@@ -713,8 +713,8 @@ storage / guardrail / handoff 设计，再决定是否进入代码实现。
 - P7.2 `CellValue` public value draft：基础完成。
 - P7.3 internal `CellStore` / `CellRecord` memory model：基础完成。
 - P7.4 guardrails：`max_cells`、`memory_budget_bytes`、`cell_count()`、
-  `estimated_memory_usage()`：当前最小可执行任务。
-- P7.5 save-as and Patch handoff contract。
+  `estimated_memory_usage()`：基础完成。
+- P7.5 save-as and Patch handoff contract：当前最小可执行任务。
 
 验收：
 - API 注释明确 In-memory mode、随机访问语义和内存增长。
@@ -925,7 +925,7 @@ ctest --preset windows-nmake-release
 
 ### P7.4 guardrails：`max_cells` / `memory_budget_bytes`
 
-状态：当前最小可执行任务。
+状态：基础完成。
 
 类型：public API / internal architecture 文档设计；不新增 header / implementation。
 
@@ -983,6 +983,87 @@ ctest --preset windows-nmake-release
 - 不定义默认 limit 数值为稳定承诺。
 - 不把 `estimated_memory_usage()` 写成精确内存 profiler。
 - 不承诺百万行 worksheet 低内存随机访问。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release
+```
+
+### P7.5 save-as and Patch handoff contract
+
+状态：当前最小可执行任务。
+
+类型：public API / internal architecture 文档设计；不新增 header / implementation。
+
+目标：冻结 future In-memory editor 的 `save_as(...)` 与 internal Patch / package
+rewrite 底座的交接契约，明确 source-backed existing workbook、小文件 materialized
+cell edits、unknown/unmodified part preservation、sharedStrings / styles / calc metadata、
+blank / erase / tombstone 和输出路径 guard 的边界。
+
+输入：
+- P7.1 future editor facade draft。
+- P7.2 future `CellValue` public value draft。
+- P7.3 internal `CellStore` / `CellRecord` memory model。
+- P7.4 guardrails draft。
+- P6 dependency policies：sharedStrings/styles、worksheet metadata、linked parts、
+  calc metadata 和 unsupported edit failure lanes。
+- 当前 internal `PackageReader` / `PackageEditor` / `EditPlan` / `planned_output()`
+  只代表内部 Patch 底座，不是 public editor API。
+
+输出：
+- `save_as(output_path)` contract：不承诺原地覆盖；输出路径 guard 应延续 current
+  PackageEditor save-as 边界，拒绝 exact / path-equivalent source overwrite、空路径、
+  缺失父目录、非目录父路径和 directory output。
+- handoff source modes：new workbook materialization 与 existing package-backed
+  materialization 分开说明；existing package 默认 copy-original 未修改和 unknown entries。
+- EditPlan 交接：In-memory worksheet edits 应产生或更新 part-level plan，明确哪些
+  worksheet/workbook parts rewrite、哪些 package entries copy-original、哪些显式 omission /
+  removal 只是 audit，不做 relationship pruning。
+- worksheet cell edits：`CellStore` 到 worksheet XML emission 只负责 cell value /
+  style reference 输出；row/column metadata、merged ranges、hyperlinks、tables、drawings
+  等关系型或 range metadata 需要独立模型、audit 或 Patch preservation，不能由 cell store
+  静默修复。
+- blank / erase / tombstone：需要定义 save-as 时是删除 `<c>`、写 blank styled cell、
+  还是保留/清除 prior value 的候选规则；P7.5 只冻结 contract，不实现 existing-file
+  cell clearing。
+- sharedStrings / styles：internal string/formula pools 不等同 source sharedStrings indexes；
+  style handles 不等同 foreign style ids。P7.5 应声明 preserve / audit / fail 策略，
+  不把索引迁移、style merge 或 styles preservation 写成已实现。
+- calc policy：公式或值变更最多请求 full recalculation / calcChain remove-or-preserve
+  策略；不求值、不写 cached values、不实现 calcChain rebuild。
+- output failure semantics：preflight 或 writer failure 不应写成已提交 package mutation；
+  如果无法承诺 atomic output，必须明确 state-after-failure 和 caller recovery。
+
+触碰文件：
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/*`
+- `tests/*`
+- CMake 配置
+
+可并行性：
+- 可与后续 implementation planning 的只读调研并行。
+- 与任何新增 public editor API 或 internal store implementation 写入必须串行，避免
+  文档 contract 和代码行为分叉。
+
+验收标准：
+- 文档明确 P7.5 是 future handoff contract，不是已实现 editor。
+- 文档能回答 source-backed save-as 如何保留 unknown/unmodified parts。
+- 文档明确 sharedStrings、styles、calcChain、worksheet relationships 和 range metadata
+  是 preserve / audit / fail / future strategy，而不是自动修复。
+- 文档明确 output path guard、failure semantics 和 no in-place overwrite。
+
+禁止项：
+- 不新增 `WorkbookEditor::save_as()` 或 public editor code。
+- 不把 internal `PackageEditor` 直接暴露为 public API。
+- 不宣称 random cell editing、sharedStrings migration、style id migration、relationship
+  repair、calcChain rebuild 或 broad existing-file preservation 已完成。
 
 验证命令：
 ```powershell

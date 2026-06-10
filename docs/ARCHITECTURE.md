@@ -1439,6 +1439,25 @@ P7.4 guardrail draft：
 - 超限错误应引导 caller 改用 Streaming 进行大规模顺序导出，或改用 Patch 进行已有
   文件局部替换 / 模板填充。
 
+P7.5 save-as / Patch handoff draft：
+
+- future `WorkbookEditor::save_as(output_path)` 仍使用 save-as 语义，不承诺原地 atomic
+  overwrite；source-backed editor 必须继承当前 internal PackageEditor 的输出路径 guard。
+- new-workbook materialization 可生成完整新 package；existing-package materialization
+  应以 source package 为 preservation baseline，默认 copy-original 未修改 entries 和
+  unknown entries。
+- In-memory cell edits 需要投影到 part-level `EditPlan` / output-plan diagnostic：哪些
+  worksheet parts rewrite、哪些 workbook metadata rewrite、哪些 content types /
+  relationships package entries rewrite 或 copy-original。
+- `CellStore` 只输出 cell value / style references；row/column metadata、tables、
+  hyperlinks、drawings、comments、OLE/control parts 和其他 relationship-bearing metadata
+  需要独立模型、Patch preservation 或 audit，不能由 cell rewrite 静默修复。
+- blank / erase / tombstone 在 save-as 阶段必须有明确 contract：删除 `<c>`、写 blank
+  styled cell、保留 style/metadata 或 fail；P7.5 不宣称 existing-file cell clearing 已实现。
+- sharedStrings、styles 和 calc metadata 复用 P6 policy：默认 preserve / audit / fail，
+  不做 shared string index migration、style id migration、formula evaluation 或
+  calcChain rebuild。
+
 ## EditPlan 和联动边界
 
 编辑单个 sheet 不一定只影响一个 `sheetN.xml`。任何 Patch API 都应先生成或更新

@@ -339,6 +339,72 @@ enforcement 时机：
 - 不替代 P7.5 save-as / Patch handoff 中的 sharedStrings、styles、calc metadata 和
   unknown part preservation 策略。
 
+### P7.5 Future In-memory Save-as / Patch Handoff Draft
+
+P7.5 只冻结 future In-memory editor 的 `save_as(...)` 与 internal Patch / package
+rewrite 底座之间的交接契约，不新增 public editor code，也不把 internal
+`PackageEditor` 暴露成 public API。该 contract 用于说明 small-file random edits 如何
+写回新 package path，以及哪些 existing-file 语义必须 preserve、audit 或 fail。
+
+`save_as(output_path)` contract：
+
+- 不承诺原地 atomic overwrite。
+- source-backed editor 必须拒绝 exact / path-equivalent source overwrite。
+- output path guard 应拒绝 empty output path、missing parent、non-directory parent 和
+  directory output。
+- guard failure 不应清空 pending edits、EditPlan、planned output 或 diagnostic state；
+  caller 应能换一个安全路径再次 `save_as(...)`。
+- writer failure 不能写成已提交 package mutation；如果实现阶段无法保证 atomic temp-file
+  replacement，API 注释必须说明残留 output artifact 和 recovery guidance。
+
+handoff source modes：
+
+- new workbook materialization：从 editor workbook model 生成完整新 package，不存在
+  source unknown part preservation 问题。
+- existing package-backed materialization：以 source package 为 preservation baseline，
+  未修改 entries 和 unknown entries 默认 copy-original。
+- source-backed mode 需要保留 package relationship、content type、workbook relationships
+  和 unmodified part bytes，除非对应 edit 明确进入 rewrite / omission / removal plan。
+
+EditPlan 交接：
+
+- `CellStore` mutations 应投影成 worksheet part rewrite 或 bounded local rewrite plan；
+  plan 必须说明 worksheet、workbook metadata、content types、relationships 和 package
+  entries 的 side effects。
+- `planned_output()` / equivalent diagnostic snapshot 应能展示 active rewrites、
+  copy-original entries、omitted entries、removed-part inbound audit 和 calc policy。
+- 显式 removal / omission audit 不等于 relationship pruning；P7.5 不自动删除 inbound
+  relationships 或 orphan linked parts。
+
+worksheet value handoff：
+
+- `CellRecord` 只负责 value kind、payload 和 style reference 输出。
+- row/column metadata、merged ranges、autoFilter、data validations、conditional
+  formatting、hyperlinks、tables、drawings、images、comments、OLE/control parts 和其他
+  relationship-bearing worksheet metadata 需要独立 model、Patch preservation 或 audit。
+- `erase_cell(ref)`、blank records 和 tombstones 的 save-as 行为必须明确：删除 `<c>`、
+  写 blank styled cell、保留 style / metadata，或记录 unsupported/fail。P7.5 不实现
+  existing-file cell clearing。
+
+sharedStrings / styles / calc policy：
+
+- internal string / formula pools 不等同 source `xl/sharedStrings.xml` indexes。
+- existing shared string index migration、string table rebuild 和 worksheet `t="s"`
+  reference repair 不是 P7.5 已实现能力；contract 只能写 preserve / audit / fail /
+  future strategy。
+- `StyleId` / internal style handles 是 workbook-local；foreign style ids、existing-file
+  styles merge 和 style id migration 不是 P7.5 已实现能力。
+- formula/value edits 可以请求 full recalculation 或 apply current calcChain
+  remove/preserve policy；不求值、不写 cached formula results、不实现 calcChain rebuild。
+
+非目标：
+
+- 不实现 `WorkbookEditor::save_as()`。
+- 不实现 random cell editing 或 source workbook cell materialization。
+- 不修复 relationships / content types / defined names / table ranges / chart ranges。
+- 不宣称 broad existing-file preservation；只能要求 unknown/unmodified entries default
+  copy-original，并把不理解的 linked semantics 暴露为 audit / fail。
+
 任何新增 public API 任务都必须先回答两个问题：
 
 1. 它属于 `WorkbookWriter`、`Workbook` 还是未来 `WorkbookEditor` 门面？

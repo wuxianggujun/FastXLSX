@@ -1,5 +1,6 @@
 #include "package_writer.hpp"
 
+#include "zip_entry_name.hpp"
 #include "zip_store_writer.hpp"
 
 #include <fastxlsx/workbook.hpp>
@@ -104,6 +105,7 @@ void validate_package_entries_zip32(const std::vector<PackageEntry>& entries)
         if (entry.name.size() > zip32_max_u16) {
             throw FastXlsxError("ZIP entry name length exceeds 16-bit ZIP field limit");
         }
+        validate_zip_entry_name(entry.name);
         if (!seen_entry_names.emplace(entry.name).second) {
             throw FastXlsxError(std::string("duplicate ZIP entry name: ") + entry.name);
         }

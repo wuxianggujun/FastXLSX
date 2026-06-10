@@ -1213,9 +1213,9 @@ Do:
   no-compression/stored output, `1..9` selects zlib-compatible minizip DEFLATE
   levels, and stored bootstrap output remains stored/no-compression.
 - Keep the current no-Zip64 guardrails: reject package entry counts above
-  `65535`, entry names beyond the 16-bit ZIP field, duplicate entry names,
-  and single entry uncompressed sizes above `UINT32_MAX` before opening the
-  output path.
+  `65535`, entry names beyond the 16-bit ZIP field, invalid entry names,
+  duplicate entry names, and single entry uncompressed sizes above
+  `UINT32_MAX` before opening the output path.
 - Define real Zip64 and large-entry behavior before large-file promises.
 
 Accept when:

@@ -1,5 +1,6 @@
 #include "../src/package_reader.hpp"
 #include "../src/package_writer.hpp"
+#include "../src/zip_store_writer.hpp"
 #include "zip_test_utils.hpp"
 
 #include <cstdint>
@@ -561,6 +562,52 @@ void test_package_writer_rejects_zip_entry_name_length_before_output()
     check(failed, "PackageWriter should reject entry names beyond ZIP field size");
     check(fastxlsx::test::read_file(path) == sentinel,
         "entry-name overflow should fail before overwriting output");
+}
+
+void test_package_writer_rejects_invalid_entry_names_before_output()
+{
+    struct InvalidEntryNameCase {
+        std::string_view suffix;
+        std::string entry_name;
+    };
+
+    const std::vector<InvalidEntryNameCase> cases = {
+        {"empty", ""},
+        {"absolute", "/xl/workbook.xml"},
+        {"trailing-slash", "xl/workbook.xml/"},
+        {"empty-segment", "xl//workbook.xml"},
+        {"dot-segment", "xl/./workbook.xml"},
+        {"parent-segment", "xl/../workbook.xml"},
+        {"backslash", R"(xl\workbook.xml)"},
+        {"query", "xl/workbook.xml?version=1"},
+        {"fragment", "xl/workbook.xml#sheet"},
+        {"null-byte", std::string("xl/workbook\0.xml", 16)},
+    };
+
+    for (const InvalidEntryNameCase& test_case : cases) {
+        const std::filesystem::path path = output_path(
+            "fastxlsx-package-writer-invalid-entry-name-"
+            + std::string(test_case.suffix) + ".xlsx");
+        const std::string sentinel = "preserve existing invalid-entry-name output";
+        write_file(path, sentinel);
+
+        bool failed = false;
+        try {
+            fastxlsx::detail::write_package(path,
+                {
+                    {test_case.entry_name, "<payload/>"},
+                },
+                {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "ZIP entry name",
+                "invalid entry-name failure should explain the ZIP name constraint");
+        }
+
+        check(failed, "PackageWriter should reject invalid ZIP entry names");
+        check(fastxlsx::test::read_file(path) == sentinel,
+            "invalid entry-name failure should fail before overwriting output");
+    }
 }
 
 void test_package_writer_rejects_duplicate_entry_names_before_output()
@@ -1545,10 +1592,10 @@ void test_package_reader_rejects_invalid_entry_names()
 {
     struct InvalidEntryNameCase {
         std::string_view suffix;
-        std::string_view entry_name;
+        std::string entry_name;
     };
 
-    constexpr InvalidEntryNameCase cases[] = {
+    const std::vector<InvalidEntryNameCase> cases = {
         {"absolute", "/xl/workbook.xml"},
         {"trailing-slash", "xl/workbook.xml/"},
         {"empty-segment", "xl//workbook.xml"},
@@ -1557,19 +1604,19 @@ void test_package_reader_rejects_invalid_entry_names()
         {"backslash", R"(xl\workbook.xml)"},
         {"query", "xl/workbook.xml?version=1"},
         {"fragment", "xl/workbook.xml#sheet"},
+        {"null-byte", std::string("xl/workbook\0.xml", 16)},
     };
 
     for (const InvalidEntryNameCase& test_case : cases) {
         const std::filesystem::path path = output_path(
             "fastxlsx-package-reader-invalid-entry-name-"
             + std::string(test_case.suffix) + ".xlsx");
-        fastxlsx::detail::write_package(path,
+        fastxlsx::detail::write_stored_zip(path,
             {
                 {"[Content_Types].xml",
                     R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)"},
-                {std::string(test_case.entry_name), "<workbook/>"},
-            },
-            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+                {test_case.entry_name, "<workbook/>"},
+            });
 
         expect_open_failure(path,
             "PackageReader should reject invalid ZIP entry names");
@@ -2252,6 +2299,7 @@ int main()
         test_package_writer_rejects_invalid_compression_levels_before_output();
         test_package_writer_rejects_zip64_entry_count_before_output();
         test_package_writer_rejects_zip_entry_name_length_before_output();
+        test_package_writer_rejects_invalid_entry_names_before_output();
         test_package_writer_rejects_duplicate_entry_names_before_output();
         test_package_writer_rejects_zip64_file_chunk_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();

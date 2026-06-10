@@ -2378,7 +2378,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P9 - Production ZIP/backend and package writer hardening
 
-状态：推进中；P9.1 已落地。
+状态：推进中；P9.1 / P9.2 已落地。
 
 目标：继续加固内部 `src/package_writer.*` boundary，保持新建 workbook
 输出、chunked package entries、stored bootstrap 和 opt-in minizip backend
@@ -2387,6 +2387,7 @@ true package streaming 或 Zip64 支持。
 
 子任务：
 - P9.1 internal package writer duplicate entry-name preflight：基础完成。
+- P9.2 internal package writer invalid entry-name preflight：基础完成。
 
 ### P9.1 internal package writer duplicate entry-name preflight
 
@@ -2440,6 +2441,69 @@ true package streaming 或 Zip64 支持。
 - 不新增 public `PackageWriter` / `PackageEditor` API。
 - 不改变 ZIP backend 选择、compression-level 语义或 minizip data-descriptor 策略。
 - 不声明 reader/writer 已支持 Zip64、duplicate-entry repair 或 package streaming。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P9.2 internal package writer invalid entry-name preflight
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public API / CMake dependency。
+
+目标：让 `write_package()` 在打开输出路径前拒绝 reader 已经拒绝的非法 ZIP
+entry name，避免 writer 生成 package boundary 自己无法重新读取的 entry shape。
+
+输入：
+- 当前 `PackageReader` 已拒绝 absolute path、trailing slash、backslash、
+  query/fragment component、empty segment、dot segment、parent segment 和 null byte
+  entry names。
+- P9.1 已让 writer 在打开输出路径前拒绝重复 ZIP entry name。
+- 当前 writer guardrail 测试已使用 sentinel output 验证失败不覆盖已有输出。
+
+输出：
+- 新增 `src/zip_entry_name.hpp` 内部共享 `validate_zip_entry_name()`，reader 和 writer
+  使用同一 ZIP entry-name 规则。
+- `validate_package_entries_zip32()` 在 entry length、duplicate 和 Zip64 size
+  guardrail 之外，也预检非法 entry name。
+- `fastxlsx.package_reader` 新增 writer 回归，覆盖 empty、absolute、trailing slash、
+  empty/dot/parent segment、backslash、query、fragment 和 null-byte entry name。
+
+触碰文件：
+- `src/zip_entry_name.hpp`
+- `src/package_reader.cpp`
+- `src/package_writer.cpp`
+- `tests/test_package_reader.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `AGENTS.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/streaming_writer.cpp`
+- `src/package_editor.cpp`
+- CMake 配置
+
+可并行性：
+- 可与 P10 sharedStrings hardening、P11 benchmark groundwork 的只读调研并行。
+- 与其他 ZIP entry-name / package writer validation 行为修改串行合并，避免
+  shared helper 和同一测试文件冲突。
+
+验收标准：
+- `fastxlsx.package_reader` 通过。
+- 默认完整 CTest 通过。
+- 文档明确当前只是 internal package writer preflight，不是 ZIP repair、
+  path normalization、Zip64、package streaming 或 public editing API。
+
+禁止项：
+- 不新增 public API。
+- 不自动 normalize caller 提供的 entry name。
+- 不声明 writer 支持修复非法 ZIP entry、Zip64 或 package streaming。
 
 验证命令：
 ```powershell

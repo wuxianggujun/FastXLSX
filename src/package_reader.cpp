@@ -1,4 +1,5 @@
 #include "package_reader.hpp"
+#include "zip_entry_name.hpp"
 #include "zip_store_writer.hpp"
 
 #include <fastxlsx/workbook.hpp>
@@ -874,40 +875,6 @@ std::string read_deflated_entry(const std::filesystem::path& path,
 
 #endif
 
-void validate_entry_name(std::string_view name)
-{
-    if (name.empty()) {
-        throw FastXlsxError("ZIP entry name cannot be empty");
-    }
-    if (name.front() == '/' || name.back() == '/') {
-        throw FastXlsxError("ZIP entry name must be a relative file path");
-    }
-
-    std::size_t segment_start = 0;
-    for (std::size_t index = 0; index <= name.size(); ++index) {
-        const bool at_end = index == name.size();
-        if (!at_end && name[index] == '\0') {
-            throw FastXlsxError("ZIP entry name cannot contain null bytes");
-        }
-        if (!at_end && name[index] == '\\') {
-            throw FastXlsxError("ZIP entry name cannot contain backslashes");
-        }
-        if (!at_end && (name[index] == '?' || name[index] == '#')) {
-            throw FastXlsxError(
-                "ZIP entry name cannot contain query or fragment components");
-        }
-        if (!at_end && name[index] != '/') {
-            continue;
-        }
-
-        const std::string_view segment = name.substr(segment_start, index - segment_start);
-        if (segment.empty() || segment == "." || segment == "..") {
-            throw FastXlsxError("ZIP entry name cannot contain empty or parent path segments");
-        }
-        segment_start = index + 1;
-    }
-}
-
 bool is_relationship_entry(std::string_view name) noexcept
 {
     if (name == package_relationships_entry_name) {
@@ -1137,7 +1104,7 @@ std::vector<PackageReaderEntry> read_central_directory(
             "ZIP central directory record is truncated");
 
         std::string name = central_directory.substr(name_offset, name_size);
-        validate_entry_name(name);
+        validate_zip_entry_name(name);
         if (std::any_of(entries.begin(), entries.end(),
                 [&name](const PackageReaderEntry& entry) { return entry.name == name; })) {
             throw FastXlsxError("duplicate ZIP entry name");

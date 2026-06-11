@@ -37,7 +37,14 @@ P3 package read/copy/write foundation
 
 ## P4.0 - API Surface Unification Design
 
-状态：基础完成，后续 API 任务继续引用。
+状态：基础完成，后续 API 任务继续引用。P4.0 设计的 future existing-file editing
+facade 现已落地首个 public 切片 `WorkbookEditor`（`include/fastxlsx/workbook_editor.hpp`、
+`src/workbook_editor.cpp`、`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`）：
+`open()` / `worksheet_names()` / `has_worksheet()` / `replace_sheet_data(name, rows)` /
+`save_as()`，输入复用 `CellValue` 行，底层委托 internal
+`PackageEditor::replace_worksheet_sheet_data_by_name()` 的 bounded local rewrite。
+这是 Patch-mode whole-sheet 数据替换门面，不是 `WorksheetEditor` / random cell
+editing / `get_cell` / `set_cell`，那些仍是 future。
 
 目标：在继续扩大 Patch MVP 或 In-memory API 前，统一 public facade、命名、值类型和
 internal/public 边界。
@@ -753,9 +760,13 @@ workbook-level guardrails 和完整 save-as / Patch handoff 仍未 ready。
 
 ### P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft
 
-状态：基础完成。
+状态：基础完成。此 draft 的 Patch 子集已落地为首个 public `WorkbookEditor` 切片
+（`open` / `worksheet_names` / `has_worksheet` / `replace_sheet_data` / `save_as`，
+见 P4.0 落地说明）；`WorksheetEditor`、`get_cell` / `set_cell` / `erase_cell`、
+随机 cell 编辑和 append/insert/delete row 仍是 future facade draft，未实现。
 
-类型：public API 文档设计；不新增 header / implementation。
+类型：public API 文档设计；首个 `WorkbookEditor` Patch 切片已附带 header /
+implementation / 测试，其余仍为文档设计。
 
 目标：在进入 `CellValue`、cell store 和 guardrails 之前，先冻结 future editor facade
 的命名、职责、入口和非目标，确保 In-memory 小文件随机编辑不会污染 Streaming 热路径，

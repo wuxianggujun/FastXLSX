@@ -48,11 +48,17 @@ auto& small_sheet = wb.add_worksheet("Data");
 small_sheet.append_row({Cell::text("A")});
 wb.save(path);
 
-// Future existing-file editing: 已有文件编辑，对外用 workbook 语义。
+// Existing-file editing (已落地 Patch 切片): 打开已有 workbook，整体替换某个
+// worksheet 的 <sheetData>，再输出到新路径。
 auto editor = WorkbookEditor::open(input_path);
-auto editable_sheet = editor.worksheet("Data");
-editable_sheet.set_cell("A1", CellValue::text("A"));
+editor.replace_sheet_data("Data", {
+    {CellValue::text("A"), CellValue::number(1.0)},
+});
 editor.save_as(output_path);
+
+// Future random editing (尚未实现的设计草案): 小文件随机读写单元格。
+auto editable_sheet = editor.worksheet("Data");      // future
+editable_sheet.set_cell("A1", CellValue::text("A")); // future
 ```
 
 统一命名规则：
@@ -107,18 +113,29 @@ sheet 入口      add_worksheet           add_worksheet            worksheet / t
 错误            FastXlsxError           FastXlsxError            FastXlsxError
 ```
 
-该矩阵是命名和职责约束，不代表 future editor 已经实现。`CellValue` 已有独立 public
-value header、实现和测试；`CellStore` / `CellRecord` 已有 internal detail 首片，
-且已有 internal `<sheetData>` payload emission helper；`WorkbookEditor`、
-`WorksheetEditor`、`get_cell()`、`set_cell()` 仍必须标明为未来 public design
+该矩阵是命名和职责约束。`CellValue` 已有独立 public value header、实现和测试；
+`CellStore` / `CellRecord` 已有 internal detail 首片，且已有 internal `<sheetData>`
+payload emission helper。`WorkbookEditor` 现已落地首个 public Patch 切片
+（`include/fastxlsx/workbook_editor.hpp`、`src/workbook_editor.cpp`、
+`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`）：只覆盖
+`open()`、`worksheet_names()` / `has_worksheet()` sheet inspection、按 sheet name
+做整表 `<sheetData>` 替换的 `replace_sheet_data(rows)`，以及 `save_as()`。矩阵里其余
+future editor 能力 —— `WorksheetEditor`、`worksheet()` / `try_worksheet()` 可编辑
+handle、`get_cell()` / `set_cell()` 随机读写 —— 仍必须标明为未来 public design
 target，直到对应 public header、实现和测试存在。
 
 ### P7.1 Future Editor Facade Draft
 
-P7.1 只冻结 future editor 的 public facade 草案，不新增 `include/fastxlsx`
-符号，也不把 internal `PackageEditor` 变成 public API。该 facade 面向小文件随机编辑
-和未来 existing-file editing 用户故事；它必须继续把 OPC part、relationship owner 和
-content type override 隐藏在内部 Patch / In-memory 底座之后。
+> 落地进度：本节是 future editor facade 的命名草案。其中 `WorkbookEditor` 的
+> existing-file Patch 子集（`open()`、`worksheet_names()` / `has_worksheet()`、
+> `replace_sheet_data()`、`save_as()`）已落地为首个 public 切片，见上文矩阵说明。
+> 本节下方 `worksheet()` 可编辑 handle 与整个 `WorksheetEditor` / 随机 cell 读写仍是
+> 未实现的设计草案。
+
+P7.1 冻结 future editor 的 public facade 草案，不把 internal `PackageEditor` 变成
+public API。该 facade 面向小文件随机编辑和 existing-file editing 用户故事；它必须继续把
+OPC part、relationship owner 和 content type override 隐藏在内部 Patch / In-memory
+底座之后。
 
 `WorkbookEditor` 的初始命名草案：
 
@@ -1057,6 +1074,14 @@ unknown/unmodified part preservation 路径。不要把它写成 public `Workboo
 public `PackageEditor`、随机 cell editing、sharedStrings/style id migration、style
 merge、relationship repair/pruning、table/drawing semantic sync、range 修复、dimension
 重算或大文件 streaming worksheet transformer。
+该 internal helper 现在已有首个 public 门面切片 `WorkbookEditor`
+(`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp` /
+`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`)：它把 caller 的
+`CellValue` 行投影为 standalone `<sheetData>` 后委托上述 by-name helper，只暴露
+`open()` / `worksheet_names()` / `has_worksheet()` / `replace_sheet_data()` /
+`save_as()`。这只兑现 whole-`<sheetData>` 替换；上述 random cell editing、
+sharedStrings/style migration、relationship repair、public `PackageEditor` 等非目标
+依然成立，未被该切片实现。
 no-op `PackageEditor::save_as()` roundtrip coverage 只能描述为 linked-object fixture
 中全部源 entries 的 entry order、stored entry method / CRC / uncompressed size 和
 bytes copy baseline，以及初始 copy-original plan 没有 metadata package-entry side

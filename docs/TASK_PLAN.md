@@ -1650,9 +1650,13 @@ Validation:
   types, and internal/public boundaries.
 - Future Patch and In-memory tasks can state which facade they extend before
   implementation starts.
-- Docs explicitly mark `WorkbookEditor` and `WorksheetEditor` as future design
-  targets until code exists, and mark `CellValue` as a value type rather than
-  editor readiness.
+- Docs explicitly track facade readiness against code: `WorkbookEditor` has
+  landed a first public Patch-mode slice (`open` / `worksheet_names` /
+  `has_worksheet` / `replace_sheet_data` / `save_as` in
+  `include/fastxlsx/workbook_editor.hpp`, `src/workbook_editor.cpp`, covered by
+  `fastxlsx.workbook_editor` CTest), while `WorksheetEditor` and random cell
+  editing (`get_cell` / `set_cell`) remain future design targets until code
+  exists, and `CellValue` is a value type rather than editor readiness.
 
 Do not claim:
 - Implemented `WorkbookEditor`, random cell editing, public `PackageEditor`, or

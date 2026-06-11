@@ -110,6 +110,24 @@ set_tests_properties(fastxlsx.package_editor PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_workbook_editor_tests
+    test_workbook_editor.cpp
+)
+
+target_link_libraries(fastxlsx_workbook_editor_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_workbook_editor_tests PRIVATE cxx_std_20)
+target_include_directories(fastxlsx_workbook_editor_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    target_link_libraries(fastxlsx_workbook_editor_tests PRIVATE MINIZIP::minizip-ng)
+    target_compile_definitions(fastxlsx_workbook_editor_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+endif()
+
+add_test(NAME fastxlsx.workbook_editor COMMAND fastxlsx_workbook_editor_tests)
+set_tests_properties(fastxlsx.workbook_editor PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_image_tests
     test_image.cpp
 )

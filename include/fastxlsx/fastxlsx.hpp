@@ -14,6 +14,8 @@
 ///   future in-memory/editor APIs.
 /// - `fastxlsx/streaming_writer.hpp` for WorkbookWriter, WorksheetWriter,
 ///   CellView, and StringStrategy.
+/// - `fastxlsx/workbook_editor.hpp` for WorkbookEditor, the Patch-mode facade
+///   that edits an existing workbook's sheet data and writes a new package.
 /// - `fastxlsx/image.hpp` for stb-backed PNG/JPEG metadata probing.
 
 #include <fastxlsx/cell_value.hpp>
@@ -21,3 +23,4 @@
 #include <fastxlsx/image.hpp>
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook.hpp>
+#include <fastxlsx/workbook_editor.hpp>

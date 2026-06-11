@@ -31,6 +31,7 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `fastxlsx.worksheet_transformer`
   - `fastxlsx.package_reader`
   - `fastxlsx.package_editor`
+  - `fastxlsx.workbook_editor`
   - `fastxlsx.image`
 - Current public API:
   - `Workbook`
@@ -70,6 +71,7 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `WorksheetWriter::add_conditional_color_scale()`
   - `WorksheetWriter::add_conditional_data_bar()`
   - `WorksheetWriter::add_conditional_icon_set()`
+  - `WorkbookEditor`
   - `FastXlsxError`
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
@@ -727,6 +729,17 @@ Do not claim:
   standalone value type, and `CellStore` exists as an internal foundation;
   neither means editor readiness.
 - That one unified facade can hide Streaming/Patch/In-memory performance costs.
+
+Status update: the P4.0 design freeze has since been realized as a first public
+Patch-mode slice. `WorkbookEditor` now exists as a public facade
+(`include/fastxlsx/workbook_editor.hpp`, `src/workbook_editor.cpp`,
+`tests/test_workbook_editor.cpp`, CTest `fastxlsx.workbook_editor`) exposing
+`open()`, `worksheet_names()`, `has_worksheet()`, `replace_sheet_data()`, and
+`save_as()` over the internal by-name `<sheetData>` Patch path. This is the
+narrow whole-sheet-data slice only; `WorksheetEditor`, `get_cell()` /
+`set_cell()`, random cell editing, caller-supplied worksheet XML, and
+sharedStrings/style migration remain future design targets, and
+`PackageEditor` stays internal/test-only.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

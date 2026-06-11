@@ -11,12 +11,17 @@ FastXLSX 需要同时满足三个场景：
 因此编辑模型不能是纯内存 workbook，也不能是完全无状态流。正确模型是共享
 OpenXML / OPC 底座上的三条路径：Streaming、Patch、In-memory。
 
-执行层任务必须按 [任务拆分设计](TASK_BREAKDOWN.md) 选择最小子任务。当前顺序是
-先完成 `P4.0 API surface unification`，再推进窄 Patch MVP；不要把完整 existing-file
-editing、public `WorkbookEditor`、public `PackageEditor` 或 `WorkbookEditor` 风格的
-random editing 当作已经实现。`CellValue` 作为 public value type 已实现，internal
-`CellStore` 首个稀疏存储、guardrail 和 standalone `<sheetData>` emission 切片也已实现，
-但 public editor / random editing 仍未 ready。
+执行层任务必须按 [任务拆分设计](TASK_BREAKDOWN.md) 选择最小子任务。`P4.0 API surface
+unification` 文档基线已完成，其设计的 existing-file editing facade 现在落地了首个 public
+Patch 切片：`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp` 暴露
+`WorkbookEditor::open()` / `worksheet_names()` / `has_worksheet()` /
+`replace_sheet_data(sheet_name, rows)` / `save_as()`，由 `tests/test_workbook_editor.cpp`
+（CTest `fastxlsx.workbook_editor`）覆盖。它在内部复用
+`PackageEditor::replace_worksheet_sheet_data_by_name()`，只替换整张 `<sheetData>`，
+做 bounded local rewrite。这仍**不**表示完整 existing-file editing、public
+`PackageEditor`、随机 cell 读写（`get_cell` / `set_cell`）或 `WorksheetEditor` 已实现。
+`CellValue` 作为 public value type 已实现，internal `CellStore` 首个稀疏存储、guardrail
+和 standalone `<sheetData>` emission 切片也已实现，但 random editing 仍未 ready。
 
 ## 编辑策略
 
@@ -783,8 +788,19 @@ ws.writeRows(rows);        // 流式主路径
 wb.save();
 ```
 
-下面是规划中的 Patch public API 形态伪代码，不是当前已暴露的
-`include/fastxlsx` API；当前 `PackageEditor` 仍是 internal test-only 基础。
+已落地的 Patch public 入口是 `WorkbookEditor`：打开已有 workbook，按 sheet name
+替换整个 `<sheetData>`，再 `save_as()` 输出新 package。这是当前唯一可编译的 existing-file
+editing public API（`include/fastxlsx/workbook_editor.hpp`）。
+
+```cpp
+auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
+editor.replace_sheet_data("Data", rows);   // rows: std::vector<std::vector<CellValue>>
+editor.save_as("output.xlsx");             // 不原地覆盖
+```
+
+下面是规划中的更宽 Patch public API 形态伪代码，不是当前已暴露的
+`include/fastxlsx` API；当前 `PackageEditor` 仍是 internal test-only 基础，
+`WorkbookEditor` 尚未暴露 `setDocumentProperty()` 等更宽能力。
 
 ```cpp
 auto editor = fastxlsx::PackageEditor::open("template.xlsx");

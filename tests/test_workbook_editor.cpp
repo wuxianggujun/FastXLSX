@@ -269,6 +269,109 @@ void test_calc_metadata_requests_recalculation_without_inventing_calcchain()
         "editor should not invent a calcChain when the source has none");
 }
 
+void test_rename_sheet_changes_catalog_name_and_preserves_parts()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-rename-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-rename-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string data_sheet_before = source_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_sheet_before = source_entries.at("xl/worksheets/sheet2.xml");
+    const std::string content_types_before = source_entries.at("[Content_Types].xml");
+    const std::string package_rels_before = source_entries.at("_rels/.rels");
+    const std::string workbook_rels_before = source_entries.at("xl/_rels/workbook.xml.rels");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "Renamed & Data");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed &amp; Data")",
+        "rename should XML-escape the new sheet name in the output catalog");
+    check_not_contains(workbook_xml, R"(name="Data")",
+        "rename should drop the old sheet name from the output catalog");
+
+    check(output_entries.at("xl/worksheets/sheet1.xml") == data_sheet_before,
+        "rename should preserve the renamed sheet's worksheet bytes");
+    check(output_entries.at("xl/worksheets/sheet2.xml") == untouched_sheet_before,
+        "rename should preserve untouched worksheet bytes");
+    check(output_entries.at("[Content_Types].xml") == content_types_before,
+        "rename should preserve content types bytes");
+    check(output_entries.at("_rels/.rels") == package_rels_before,
+        "rename should preserve package relationships bytes");
+    check(output_entries.at("xl/_rels/workbook.xml.rels") == workbook_rels_before,
+        "rename should preserve workbook relationships bytes");
+
+    // Reopening the output package confirms the new catalog name is the one a
+    // reader sees, and the other sheet is unchanged.
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const std::vector<std::string> names = reopened.worksheet_names();
+    check(names.size() == 2 && names[0] == "Renamed & Data",
+        "reopened output should expose the renamed sheet in catalog order");
+    check(names.size() == 2 && names[1] == "Untouched",
+        "reopened output should keep the untouched sheet name");
+    check(!reopened.has_worksheet("Data"),
+        "reopened output should no longer expose the old sheet name");
+}
+
+void test_rename_to_existing_name_throws_and_editor_stays_usable()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-rename-dup-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-rename-dup-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] { editor.rename_sheet("Data", "Untouched"); }),
+        "renaming to an existing sheet name should throw FastXlsxError");
+    check(threw_fastxlsx_error([&] { editor.rename_sheet("Data", "untouched"); }),
+        "renaming to an ASCII case-insensitive duplicate should throw FastXlsxError");
+
+    // The editor must remain usable after a rejected rename.
+    editor.rename_sheet("Data", "Renamed");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Renamed")",
+        "editor should still apply a valid rename after a rejected one");
+}
+
+void test_rename_missing_sheet_throws_and_editor_stays_usable()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-rename-missing-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-rename-missing-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] { editor.rename_sheet("Missing", "Renamed"); }),
+        "renaming a missing sheet should throw FastXlsxError");
+
+    // The editor must remain usable after a rejected rename.
+    editor.rename_sheet("Data", "Renamed");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Renamed")",
+        "editor should still apply a valid rename after a missing-sheet rejection");
+}
+
+void test_rename_to_invalid_name_throws()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-rename-invalid-source.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] { editor.rename_sheet("Data", "Bad/Name"); }),
+        "renaming to a sheet name with invalid characters should throw FastXlsxError");
+}
+
 } // namespace
 
 int main()
@@ -281,6 +384,10 @@ int main()
         test_empty_rows_emit_empty_sheet_data();
         test_text_uses_inline_strings_and_preserves_shared_strings();
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
+        test_rename_sheet_changes_catalog_name_and_preserves_parts();
+        test_rename_to_existing_name_throws_and_editor_stays_usable();
+        test_rename_missing_sheet_throws_and_editor_stays_usable();
+        test_rename_to_invalid_name_throws();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

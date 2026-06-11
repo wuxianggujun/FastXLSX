@@ -41,10 +41,11 @@ P3 package read/copy/write foundation
 facade 现已落地首个 public 切片 `WorkbookEditor`（`include/fastxlsx/workbook_editor.hpp`、
 `src/workbook_editor.cpp`、`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`）：
 `open()` / `worksheet_names()` / `has_worksheet()` / `replace_sheet_data(name, rows)` /
-`save_as()`，输入复用 `CellValue` 行，底层委托 internal
-`PackageEditor::replace_worksheet_sheet_data_by_name()` 的 bounded local rewrite。
-这是 Patch-mode whole-sheet 数据替换门面，不是 `WorksheetEditor` / random cell
-editing / `get_cell` / `set_cell`，那些仍是 future。
+`rename_sheet(old_name, new_name)` / `save_as()`，输入复用 `CellValue` 行，底层委托
+internal `PackageEditor::replace_worksheet_sheet_data_by_name()` 的 bounded local
+rewrite 与 `rename_sheet_catalog_entry()` 的窄 catalog 名改写。这是 Patch-mode
+whole-sheet 数据替换 + sheet-catalog 改名门面，不是 `WorksheetEditor` / random cell
+editing / `get_cell` / `set_cell` / 增删 sheet / 语义 rename，那些仍是 future。
 
 目标：在继续扩大 Patch MVP 或 In-memory API 前，统一 public facade、命名、值类型和
 internal/public 边界。

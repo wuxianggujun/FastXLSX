@@ -15,11 +15,17 @@ OpenXML / OPC 底座上的三条路径：Streaming、Patch、In-memory。
 unification` 文档基线已完成，其设计的 existing-file editing facade 现在落地了首个 public
 Patch 切片：`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp` 暴露
 `WorkbookEditor::open()` / `worksheet_names()` / `has_worksheet()` /
-`replace_sheet_data(sheet_name, rows)` / `save_as()`，由 `tests/test_workbook_editor.cpp`
+`replace_sheet_data(sheet_name, rows)` / `rename_sheet(old_name, new_name)` /
+`save_as()`，由 `tests/test_workbook_editor.cpp`
 （CTest `fastxlsx.workbook_editor`）覆盖。它在内部复用
 `PackageEditor::replace_worksheet_sheet_data_by_name()`，只替换整张 `<sheetData>`，
-做 bounded local rewrite。这仍**不**表示完整 existing-file editing、public
-`PackageEditor`、随机 cell 读写（`get_cell` / `set_cell`）或 `WorksheetEditor` 已实现。
+做 bounded local rewrite；`rename_sheet()` 复用
+`PackageEditor::rename_sheet_catalog_entry()`，只改写 `/xl/workbook.xml` 里
+`<sheets><sheet name="...">` 这个 catalog 名，保留 worksheet parts / relationships /
+content types / unknown entries，不动 defined names / formulas / tables / drawings /
+rel targets（窄 catalog-name 改写，不是语义 rename）。这仍**不**表示完整
+existing-file editing、public `PackageEditor`、随机 cell 读写（`get_cell` /
+`set_cell`）或 `WorksheetEditor` 已实现。
 `CellValue` 作为 public value type 已实现，internal `CellStore` 首个稀疏存储、guardrail
 和 standalone `<sheetData>` emission 切片也已实现，但 random editing 仍未 ready。
 
@@ -789,14 +795,22 @@ wb.save();
 ```
 
 已落地的 Patch public 入口是 `WorkbookEditor`：打开已有 workbook，按 sheet name
-替换整个 `<sheetData>`，再 `save_as()` 输出新 package。这是当前唯一可编译的 existing-file
-editing public API（`include/fastxlsx/workbook_editor.hpp`）。
+替换整个 `<sheetData>` 或改写 sheet catalog 名，再 `save_as()` 输出新 package。这是
+当前唯一可编译的 existing-file editing public API（`include/fastxlsx/workbook_editor.hpp`）。
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
 editor.replace_sheet_data("Data", rows);   // rows: std::vector<std::vector<CellValue>>
+editor.rename_sheet("Data", "Report");     // 只改 save_as 输出 catalog 的 sheet@name
 editor.save_as("output.xlsx");             // 不原地覆盖
 ```
+
+`rename_sheet()` 是窄的 catalog-name 改写：只动 `xl/workbook.xml` 里
+`<sheets><sheet name="...">` 属性，保留 worksheet parts / relationships /
+content types / unknown entries，不同步 defined names / formulas / tables /
+drawings / relationship targets，也不增删 sheet。它只影响 `save_as()` 输出的
+catalog，`worksheet_names()` / `has_worksheet()` 在打开的 session 内仍报告源
+workbook 视图。
 
 下面是规划中的更宽 Patch public API 形态伪代码，不是当前已暴露的
 `include/fastxlsx` API；当前 `PackageEditor` 仍是 internal test-only 基础，

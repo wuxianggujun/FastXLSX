@@ -75,6 +75,15 @@ void WorkbookEditor::replace_sheet_data(
         sheet_name, detail::cell_store_to_sheet_data_xml(store));
 }
 
+void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_name)
+{
+    // Narrow sheet-catalog name rewrite. Delegates to the internal helper with
+    // the default ReferencePolicy; the facade does not expose policy. The helper
+    // rewrites only the workbook sheet@name attribute and preserves worksheet
+    // parts, relationships, content types, and unknown entries.
+    impl_->editor.rename_sheet_catalog_entry(old_name, std::move(new_name));
+}
+
 void WorkbookEditor::save_as(const std::filesystem::path& path) const
 {
     impl_->editor.save_as(path);

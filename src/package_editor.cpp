@@ -2231,6 +2231,22 @@ void require_sheet_data_local_rewrite_size(
           "large-file streaming worksheet transformer");
 }
 
+void require_cell_replacement_materialized_input_size(
+    std::string_view payload_name, std::uint64_t byte_size)
+{
+    if (byte_size
+        <= static_cast<std::uint64_t>(
+            package_editor_cell_replacement_materialized_input_byte_limit)) {
+        return;
+    }
+
+    throw FastXlsxError(
+        "worksheet cell replacement exceeds bounded materialized input limit for "
+        + std::string(payload_name)
+        + "; current event reader materializes validation input and is not the "
+          "large-file streaming worksheet transformer");
+}
+
 std::string missing_cell_replacement_error(
     const std::vector<std::string>& missing_cell_references)
 {
@@ -3492,12 +3508,17 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         throw FastXlsxError("worksheet cell replacement target is not a worksheet part");
     }
 
+    const bool source_entry_file_backed = current_planned_part_is_source_entry(
+        replacements_, entry_replacements_, target_worksheet_part);
+    require_cell_replacement_materialized_input_size(
+        source_entry_file_backed ? "source package worksheet XML"
+                                 : "current planned worksheet XML",
+        current_planned_part_data_size(
+            reader_, replacements_, entry_replacements_, target_worksheet_part));
+
     ScopedPackageEditorTempFile source_file;
-    bool source_entry_file_backed = false;
-    if (current_planned_part_is_source_entry(
-            replacements_, entry_replacements_, target_worksheet_part)) {
+    if (source_entry_file_backed) {
         reader_.extract_entry_to_file(target_worksheet_part.zip_path(), source_file.path());
-        source_entry_file_backed = true;
     }
 
     const std::string worksheet_xml = source_entry_file_backed

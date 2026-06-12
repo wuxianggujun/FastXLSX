@@ -181,8 +181,8 @@ In-memory random editor 仍未实现。
 
 ### C5 大 worksheet 低内存 rewrite 真正流式化
 
-状态：第一片可验证实现已完成；source-entry file-backed extraction 和 output-side
-file-backed chunk handoff 已有测试，完整低内存输入仍未实现。
+状态：第一片可验证实现已完成；source-entry file-backed extraction、output-side
+file-backed chunk handoff 和 materialized validation input guard 已有测试，完整低内存输入仍未实现。
 
 目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
 
@@ -191,6 +191,11 @@ file-backed chunk handoff 已有测试，完整低内存输入仍未实现。
   当前 source package worksheet entry 会先经 `PackageReader::extract_entry_to_file()`
   抽取到 file-backed source。stored entry 路径做 incremental CRC；DEFLATE 构建暂复用
   `read_entry()` 后写文件。
+- `PackageEditor::replace_worksheet_cells()` 在抽取 source entry 或读取 planned
+  worksheet XML 前会用
+  `package_editor_cell_replacement_materialized_input_byte_limit` 拒绝过大的
+  materialized validation input；direct/by-name source input 和 queued planned input
+  都有 no-state-pollution 覆盖。
 - by-name cell replacement linked-object fixture 已覆盖 dimension refresh、old target
   audit skip、relationship-bearing metadata audit、calcChain cleanup、unknown bytes
   preservation、output `PackageReader` 重读和 temporary file cleanup。
@@ -212,7 +217,8 @@ file-backed chunk handoff 已有测试，完整低内存输入仍未实现。
 验收：
 - `fastxlsx.package_reader` 覆盖 `extract_entry_to_file()` stored extraction 和读回一致性。
 - `fastxlsx.package_editor` 覆盖 source-entry file-backed extraction note、output-side
-  file-backed cell replacement handoff、linked-object preservation 和失败不污染状态。
+  file-backed cell replacement handoff、materialized input over-limit guard、
+  linked-object preservation 和失败不污染状态。
 - 本轮默认 `windows-nmake-release` 构建与 9 个 CTest 条目全部通过。
 
 禁止：
@@ -2864,6 +2870,73 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```powershell
 cmake --build --preset windows-nmake-release --target fastxlsx_package_reader_tests fastxlsx_package_editor_tests
 ctest --preset windows-nmake-release -R "fastxlsx.package_reader|fastxlsx.package_editor" --output-on-failure --timeout 60
+```
+
+### P8.18 internal cell-replacement materialized input guard
+
+状态：基础完成。
+
+类型：internal guardrail + tests + docs；不新增 public API / CMake dependency。
+
+目标：在真正 event reader chunk/window input 落地前，把
+`PackageEditor::replace_worksheet_cells()` 当前仍会物化 validation input 的风险变成
+显式、可测试的边界。
+
+输入：
+- P8.16 cell replacement output-side file-backed chunk handoff。
+- P8.17 source-entry file-backed extraction first slice。
+- 当前 event reader / transformer 仍接受完整 `std::string_view`。
+
+输出：
+- 新增 internal
+  `package_editor_cell_replacement_materialized_input_byte_limit`，默认与当前
+  sheetData local rewrite guard 同级。
+- `replace_worksheet_cells()` 在抽取 source package worksheet entry 或读取 current
+  planned worksheet XML 前，用 `current_planned_part_data_size()` 做状态变更前检查。
+- source package worksheet XML 超限时，direct/by-name cell replacement 均失败且不污染
+  `EditPlan`、manifest、package-entry audit、calc policy、planned output 或 save-as
+  copy-original output。
+- queued planned worksheet XML 超限时，cell replacement 失败但保留既有 queued worksheet
+  replacement、workbook metadata rewrite、calcChain omission 和输出 bytes。
+
+触碰文件：
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/worksheet_event_reader.cpp`
+- `src/worksheet_transformer.cpp`
+- `src/package_reader.cpp`
+- `src/package_writer.cpp`
+- CMake 配置
+
+可并行性：
+- 后续 event reader chunk/window input 设计可并行只读调研。
+- 修改 `replace_worksheet_cells()` state transition、planned staged chunk
+  materialization policy 或 event reader input API 必须串行。
+
+验收标准：
+- `fastxlsx.package_editor` 覆盖 source input over-limit 和 queued planned input
+  over-limit 两条 no-state-pollution 路径。
+- 文档明确该 guard 只是 bounded materialized validation input，不是 complete
+  PackageReader input streaming、event-reader chunk/window input、low-memory worksheet
+  transformer、relationship repair、sharedStrings/style migration 或 public API。
+
+禁止项：
+- 不把 materialized input guard 写成低内存输入实现。
+- 不提高 public API surface。
+- 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、
+  formulas、calcChain rebuild 或 range-bearing metadata。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests
+ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
 ```
 
 ## P9 - Production ZIP/backend and package writer hardening

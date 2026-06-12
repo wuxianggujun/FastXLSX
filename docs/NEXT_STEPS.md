@@ -17,7 +17,8 @@ Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
 indexes or capability slices. The current lane has advanced through the C5
 guarded first slice: C2 only reopens for new preservation gaps, C3/C4 keep
 their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 event-reader chunk/window input.
+lane is C5 transformer chunk-event adapter on top of the new event-reader
+chunk/window input.
 
 ## Current Verified Baseline
 
@@ -122,9 +123,14 @@ lane is C5 event-reader chunk/window input.
     processing instruction / comment, worksheet root, raw metadata,
     `sheetData`, row, cell, raw text separators, cell value wrapper markup, and
     value text boundaries. Treat this as P8
-    reader input groundwork only: no public API, no full XML parser/schema
-    validation, no relationship repair, no transformer, and no PackageEditor
-    stream rewrite handoff.
+    reader input groundwork only. It also has an internal
+    `scan_worksheet_events_from_chunks()` chunk/window scanner with
+    `WorksheetEventReaderOptions::max_window_bytes`; chunk-mode event views are
+    callback-lifetime only, and tests cover cross-token chunk boundaries,
+    source XML larger than the retained window, and oversized incomplete token
+    rejection. This is still no public API, no full XML parser/schema
+    validation, no relationship repair, no transformer chunk adapter, and no
+    PackageEditor stream rewrite handoff.
   - Internal worksheet transformer action-model first slice in
     `include/fastxlsx/detail/worksheet_transformer.hpp` and
     `src/worksheet_transformer.cpp`, covered by `fastxlsx.worksheet_transformer`.
@@ -143,10 +149,11 @@ lane is C5 event-reader chunk/window input.
     `fastxlsx.package_editor`. For source package worksheet entries,
     `replace_worksheet_cells()` and `replace_worksheet_cells_by_name()` now use
     `PackageReader::extract_entry_to_file()` to create a scoped file-backed
-    source before validation; the current event reader still materializes that
-    input, and planned replacement / chunk inputs still materialize the current
-    planned worksheet XML. The handoff no longer materializes the full rewritten
-    worksheet XML string. It scans the source action stream and replacement
+    source before validation; PackageEditor still materializes that input before
+    calling the current transformer, and planned replacement / chunk inputs still
+    materialize the current planned worksheet XML. The handoff no longer
+    materializes the full rewritten worksheet XML string. It scans the source
+    action stream and replacement
     payloads first, computes top-level worksheet
     `<dimension>`, audits preserved source metadata plus replacement cell
     payloads, and skips old target cell payloads that will be removed from
@@ -169,8 +176,8 @@ lane is C5 event-reader chunk/window input.
     over-limit source input and queued planned input. Treat this as
     source-entry file-backed extraction, bounded materialized validation input,
     and output-side file-backed stream handoff only: no public API, no complete
-    PackageReader input streaming, no event-reader chunk/window input, no
-    complete low-memory worksheet transformer, no broad range metadata
+    PackageReader input streaming, no transformer consumption of event-reader
+    chunk/window input, no complete low-memory worksheet transformer, no broad range metadata
     recalculation, no sharedStrings/style migration, no relationship
     repair/pruning, no object semantic editing, and no low-memory large-file
     editing claim.
@@ -2780,7 +2787,8 @@ Current foundation:
   `PackageReader`, and removing temporary XML files after editor destruction.
   This remains audit / preservation visibility, not relationship repair/pruning,
   object semantic editing, public API, complete PackageReader input streaming,
-  event-reader chunk/window input, or complete low-memory large-file editing.
+  transformer consumption of event-reader chunk/window input, or complete
+  low-memory large-file editing.
   It also confirms
   worksheet-owned and drawing-owned external, URI-qualified, invalid, and
   unresolved relationship target audit notes and structured `RelationshipTargetAudit`

@@ -1,5 +1,6 @@
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -23,6 +24,27 @@ void check(bool condition, const char* message)
 using fastxlsx::detail::WorksheetEvent;
 using fastxlsx::detail::WorksheetEventKind;
 
+struct CopiedWorksheetEvent {
+    WorksheetEventKind kind = WorksheetEventKind::Unsupported;
+    std::string raw_xml;
+    std::string element_name;
+    std::string row_number;
+    std::string cell_reference;
+    std::string text;
+    bool self_closing = false;
+};
+
+CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
+{
+    return CopiedWorksheetEvent { event.kind,
+        std::string(event.raw_xml),
+        std::string(event.element_name),
+        std::string(event.row_number),
+        std::string(event.cell_reference),
+        std::string(event.text),
+        event.self_closing };
+}
+
 std::vector<WorksheetEvent> read_events(const std::string& xml)
 {
     std::vector<WorksheetEvent> events;
@@ -31,10 +53,52 @@ std::vector<WorksheetEvent> read_events(const std::string& xml)
     return events;
 }
 
+std::vector<CopiedWorksheetEvent> read_copied_events(const std::string& xml)
+{
+    std::vector<CopiedWorksheetEvent> events;
+    fastxlsx::detail::scan_worksheet_events(
+        xml, [&](const WorksheetEvent& event) { events.push_back(copy_event(event)); });
+    return events;
+}
+
+std::vector<std::string_view> split_every(const std::string& xml, std::size_t width)
+{
+    std::vector<std::string_view> chunks;
+    for (std::size_t position = 0; position < xml.size(); position += width) {
+        const std::size_t length = std::min(width, xml.size() - position);
+        chunks.emplace_back(xml.data() + position, length);
+    }
+    return chunks;
+}
+
+std::vector<CopiedWorksheetEvent> read_chunked_events(
+    const std::string& xml,
+    std::size_t chunk_width,
+    fastxlsx::detail::WorksheetEventReaderOptions options = {})
+{
+    const std::vector<std::string_view> chunks = split_every(xml, chunk_width);
+    std::vector<CopiedWorksheetEvent> events;
+    fastxlsx::detail::scan_worksheet_events_from_chunks(
+        chunks, [&](const WorksheetEvent& event) { events.push_back(copy_event(event)); }, options);
+    return events;
+}
+
 std::size_t count_kind(const std::vector<WorksheetEvent>& events, WorksheetEventKind kind)
 {
     std::size_t count = 0;
     for (const WorksheetEvent& event : events) {
+        if (event.kind == kind) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t count_copied_kind(
+    const std::vector<CopiedWorksheetEvent>& events, WorksheetEventKind kind)
+{
+    std::size_t count = 0;
+    for (const CopiedWorksheetEvent& event : events) {
         if (event.kind == kind) {
             ++count;
         }
@@ -50,6 +114,24 @@ const WorksheetEvent& find_first(const std::vector<WorksheetEvent>& events, Work
         }
     }
     throw TestFailure("expected worksheet event kind not found");
+}
+
+void check_same_events(const std::vector<CopiedWorksheetEvent>& actual,
+    const std::vector<CopiedWorksheetEvent>& expected,
+    const char* message)
+{
+    check(actual.size() == expected.size(), message);
+    for (std::size_t index = 0; index < actual.size(); ++index) {
+        const CopiedWorksheetEvent& lhs = actual[index];
+        const CopiedWorksheetEvent& rhs = expected[index];
+        check(lhs.kind == rhs.kind, message);
+        check(lhs.raw_xml == rhs.raw_xml, message);
+        check(lhs.element_name == rhs.element_name, message);
+        check(lhs.row_number == rhs.row_number, message);
+        check(lhs.cell_reference == rhs.cell_reference, message);
+        check(lhs.text == rhs.text, message);
+        check(lhs.self_closing == rhs.self_closing, message);
+    }
 }
 
 void test_event_reader_scans_core_worksheet_tokens()
@@ -185,6 +267,75 @@ void test_event_reader_rejects_malformed_boundaries()
         "worksheet event reader should reject unquoted row attributes it consumes");
 }
 
+void test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries()
+{
+    const std::string xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<!--before root-->)"
+        R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<x:dimension ref="A1:B2"/>)"
+        R"(<x:sheetData>)"
+        R"(<x:row r="1">)"
+        R"(<x:c r="A1" t="inlineStr"><x:is><x:t>alpha</x:t></x:is></x:c>)"
+        R"(<x:c r="B1"><x:v>42</x:v></x:c>)"
+        R"(</x:row>)"
+        R"(</x:sheetData>)"
+        R"(<?after data?>)"
+        R"(</x:worksheet>)";
+
+    const std::vector<CopiedWorksheetEvent> full_events = read_copied_events(xml);
+    const std::vector<CopiedWorksheetEvent> chunked_events = read_chunked_events(xml, 5);
+
+    check_same_events(chunked_events,
+        full_events,
+        "chunked worksheet event reader should match full-buffer events");
+}
+
+void test_event_reader_chunked_scanner_uses_bounded_window_not_full_document()
+{
+    std::string xml = R"(<worksheet><sheetData>)";
+    for (int row = 1; row <= 24; ++row) {
+        xml += R"(<row r=")";
+        xml += std::to_string(row);
+        xml += R"("><c r="A)";
+        xml += std::to_string(row);
+        xml += R"("><v>)";
+        xml += std::to_string(row);
+        xml += R"(</v></c></row>)";
+    }
+    xml += R"(</sheetData></worksheet>)";
+
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.max_window_bytes = 96;
+    const std::vector<CopiedWorksheetEvent> events = read_chunked_events(xml, 7, options);
+
+    check(xml.size() > options.max_window_bytes,
+        "bounded-window fixture should be larger than the retained window");
+    check(count_copied_kind(events, WorksheetEventKind::RowStart) == 24,
+        "chunked scanner should emit every row without retaining the full worksheet");
+    check(count_copied_kind(events, WorksheetEventKind::CellValue) == 24,
+        "chunked scanner should emit every cell value without retaining the full worksheet");
+}
+
+void test_event_reader_chunked_scanner_rejects_oversized_incomplete_token()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>)" + std::string(80, 'x')
+        + R"(</v></c></row></sheetData></worksheet>)";
+
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.max_window_bytes = 32;
+
+    bool failed = false;
+    try {
+        (void)read_chunked_events(xml, 9, options);
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    check(failed,
+        "chunked scanner should reject an incomplete XML text token over the bounded window");
+}
+
 } // namespace
 
 int main()
@@ -193,6 +344,9 @@ int main()
         test_event_reader_scans_core_worksheet_tokens();
         test_event_reader_handles_prefixes_inline_text_and_comments();
         test_event_reader_rejects_malformed_boundaries();
+        test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries();
+        test_event_reader_chunked_scanner_uses_bounded_window_not_full_document();
+        test_event_reader_chunked_scanner_rejects_oversized_incomplete_token();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

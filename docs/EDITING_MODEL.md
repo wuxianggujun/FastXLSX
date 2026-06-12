@@ -643,9 +643,10 @@ P8.1 boundary draft：
 - 当前 `replace_worksheet_cells()` 对 source package worksheet entry 已先通过
   `PackageReader::extract_entry_to_file()` 抽取到 scoped file-backed source，再进入
   event reader validation；这只是 source-entry file-backed extraction first slice。
-  现有 event reader 仍会 materialize validation input，planned replacement / staged
-  chunk input 也仍会物化 current planned worksheet XML；该 materialized validation
-  input 现在受 internal
+  P8.19 已新增 internal `scan_worksheet_events_from_chunks()` chunk/window scanner，
+  但当前 transformer / PackageEditor cell replacement 路径尚未接入该输入，仍会
+  materialize validation input；planned replacement / staged chunk input 也仍会物化
+  current planned worksheet XML；该 materialized validation input 现在受 internal
   `package_editor_cell_replacement_materialized_input_byte_limit` 约束，超限会在抽取
   source entry 或读取 planned XML 前失败且不污染 Patch 状态。
 
@@ -699,14 +700,15 @@ P8.5 controlled template-fill fixture：
 P8.1-P8.5 完成后，编辑模型已有 controlled large worksheet editing 的 baseline 和首个
 bounded local fixture；真正低内存 event reader / transformer / stream rewrite 仍是后续
 implementation work，不能从该 fixture 推导出任意大 worksheet 随机编辑能力。
-P8.16-P8.18 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
-file-backed extraction first slice，以及 materialized validation input guard；但还没有
-event reader chunk/window input，因此不能写成完整 low-memory large worksheet
-transformer。
-本轮 C5 验收只覆盖这个第一片：`fastxlsx.package_reader` 验证 source-entry
+P8.16-P8.19 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
+file-backed extraction first slice、materialized validation input guard，以及 internal
+event-reader chunk/window input first slice；但 transformer / PackageEditor 仍未消费该
+chunk event stream，因此不能写成完整 low-memory large worksheet transformer。
+本轮 C5 验收只覆盖这些基础片：`fastxlsx.package_reader` 验证 source-entry
 `extract_entry_to_file()`，`fastxlsx.package_editor` 验证 by-name cell replacement
 file-backed handoff、linked-object preservation、dimension refresh、audit visibility、
-output re-read 和 temporary file cleanup；完整低内存 validation/input parser 仍是后续任务。
+output re-read 和 temporary file cleanup，`fastxlsx.worksheet_event_reader` 验证
+chunk/window scanner；完整低内存 validation/input parser 接入仍是后续任务。
 
 适合：
 

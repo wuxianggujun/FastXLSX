@@ -159,11 +159,13 @@ chunk foundations.
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. For source package worksheet entries,
     `replace_worksheet_cells()` and `replace_worksheet_cells_by_name()` now use
-    `PackageReader::extract_entry_to_file()` to create a scoped file-backed
-    source, then scan that source through chunk-source readers for root
-    validation, dependency/dimension analysis, relationship-id audit, and output
-    writing. Current planned staged worksheet chunks also feed the same
-    chunk-source readers. Ordinary queued planned replacement strings now feed
+    `PackageReader::entry_chunk_source()` to scan source ZIP entries through
+    chunk-source readers for root validation, dependency/dimension analysis,
+    relationship-id audit, and output writing. Stored entries stream directly
+    from the source ZIP payload with incremental CRC; DEFLATE entries still fall
+    back to the current materialized `read_entry()` path. Current planned staged
+    worksheet chunks also feed the same chunk-source readers. Ordinary queued
+    planned replacement strings now feed
     a string-view chunk-source reader; the string may already have been
     materialized by the prior planned replacement helper, so this is not a full
     planned-input low-memory pipeline. The handoff no longer materializes the
@@ -181,7 +183,8 @@ chunk foundations.
     PackageEditor-layer no-state-pollution coverage; the file-backed handoff also
     has coverage for `PackageReader` re-open, dimension refresh, old-target audit
     skip, linked-object fixture preservation/audit visibility, and temporary file
-    cleanup after the editor is destroyed. There are also large source worksheet
+    cleanup after the editor is destroyed. `fastxlsx.package_reader` also covers
+    direct stored entry chunk-source readback and CRC failure. There are also large source worksheet
     and large queued planned-string regressions where worksheet XML exceeds
     `package_editor_cell_replacement_materialized_input_byte_limit` and still
     completes cell replacement through chunk-source scanning. The
@@ -190,11 +193,11 @@ chunk foundations.
     sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
     bytes plus owner `.rels`, workbook definedNames, PNG default content type,
     calcChain cleanup, and output re-read through `PackageReader`. Treat this
-    as source-entry file-backed extraction, source-entry chunk-source scanning,
-    planned staged-chunk chunk-source scanning, queued planned-string
-    chunk-source scanning from an already-held string, and output-side file-backed stream
-    handoff only: no public API, no direct ZIP entry chunk source, no low-memory
-    DEFLATE extraction, no complete planned-input low-memory transformer, no
+    as source-entry ZIP-entry chunk-source scanning for stored entries, DEFLATE
+    materialized fallback, planned staged-chunk chunk-source scanning, queued
+    planned-string chunk-source scanning from an already-held string, and output-side
+    file-backed stream handoff only: no public API, no low-memory DEFLATE
+    extraction, no complete planned-input low-memory transformer, no
     broad range metadata recalculation, no sharedStrings/style migration, no
     relationship repair/pruning, no object semantic editing, and no full
     low-memory large-file editing claim. Planned-output notes now distinguish

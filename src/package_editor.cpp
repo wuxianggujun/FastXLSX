@@ -3055,37 +3055,6 @@ private:
     bool released_ = false;
 };
 
-class WorksheetFileChunkReader {
-public:
-    explicit WorksheetFileChunkReader(const std::filesystem::path& path)
-        : input_(path, std::ios::binary)
-    {
-        if (!input_) {
-            throw FastXlsxError("failed to open PackageReader file-backed worksheet source");
-        }
-    }
-
-    bool operator()(std::string& output_chunk)
-    {
-        output_chunk.resize(worksheet_file_chunk_size);
-        input_.read(output_chunk.data(), static_cast<std::streamsize>(output_chunk.size()));
-        const std::streamsize read_size = input_.gcount();
-        if (read_size > 0) {
-            output_chunk.resize(static_cast<std::size_t>(read_size));
-            return true;
-        }
-
-        output_chunk.clear();
-        if (input_.bad()) {
-            throw FastXlsxError("failed to read PackageReader file-backed worksheet source");
-        }
-        return false;
-    }
-
-private:
-    std::ifstream input_;
-};
-
 class PackageEntryChunkReader {
 public:
     explicit PackageEntryChunkReader(const std::vector<PackageEntryChunk>& chunks)
@@ -3176,6 +3145,15 @@ private:
     std::string_view source_;
     std::size_t offset_ = 0;
 };
+
+WorksheetInputChunkCallback package_entry_chunk_source(
+    const PackageReader& reader, std::string_view entry_name)
+{
+    PackageReaderChunkCallback source = reader.entry_chunk_source(entry_name);
+    return [source = std::move(source)](std::string& output_chunk) mutable {
+        return source(output_chunk);
+    };
+}
 
 } // namespace
 
@@ -3803,23 +3781,20 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
     const std::string* planned_string =
         current_planned_part_string(replacements_, entry_replacements_, target_worksheet_part);
     const bool planned_string_source = planned_string != nullptr;
-    const bool source_entry_file_backed = !planned_chunk_source && !planned_string_source
+    const bool source_entry_chunk_source = !planned_chunk_source && !planned_string_source
         && current_planned_part_is_source_entry(
             replacements_, entry_replacements_, target_worksheet_part);
 
-    ScopedPackageEditorTempFile source_file;
-    if (source_entry_file_backed) {
+    if (source_entry_chunk_source) {
         if (reader_.find_entry(target_worksheet_part.zip_path()) == nullptr) {
             throw FastXlsxError("worksheet cell replacement source entry is missing");
         }
-        reader_.extract_entry_to_file(target_worksheet_part.zip_path(), source_file.path());
     }
 
     WorksheetCellReplacementStreamAnalysis stream_analysis;
-    if (source_entry_file_backed) {
-        WorksheetFileChunkReader analysis_reader(source_file.path());
+    if (source_entry_chunk_source) {
         const WorksheetInputChunkCallback analysis_source =
-            [&](std::string& chunk) { return analysis_reader(chunk); };
+            package_entry_chunk_source(reader_, target_worksheet_part.zip_path());
         stream_analysis = analyze_worksheet_cell_replacement_stream_from_chunk_source(
             target_worksheet_part, analysis_source, replacements);
     } else if (planned_chunk_source) {
@@ -3845,10 +3820,9 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
     const std::string replacement_reason =
         "target worksheet part file-backed stream rewrite from worksheet cell replacement";
     WorksheetRelationshipReferenceAuditResult relationship_reference_audit;
-    if (source_entry_file_backed) {
-        WorksheetFileChunkReader relationship_reader(source_file.path());
+    if (source_entry_chunk_source) {
         const WorksheetInputChunkCallback relationship_source =
-            [&](std::string& chunk) { return relationship_reader(chunk); };
+            package_entry_chunk_source(reader_, target_worksheet_part.zip_path());
         relationship_reference_audit =
             worksheet_cell_replacement_relationship_reference_audit_from_chunk_source(
                 target_worksheet_part, relationship_source, replacements,
@@ -3877,10 +3851,9 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         stream_analysis.payload_audit, policy, "worksheet replacement");
 
     ScopedPackageEditorTempFile temp_file;
-    if (source_entry_file_backed) {
-        WorksheetFileChunkReader output_reader(source_file.path());
+    if (source_entry_chunk_source) {
         const WorksheetInputChunkCallback output_source =
-            [&](std::string& chunk) { return output_reader(chunk); };
+            package_entry_chunk_source(reader_, target_worksheet_part.zip_path());
         write_worksheet_cell_replacement_stream_from_chunk_source(
             temp_file.path(), output_source, replacements, stream_analysis);
     } else if (planned_chunk_source) {
@@ -3907,13 +3880,12 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         std::move(output_chunks), policy, stream_analysis.payload_audit.notes,
         stream_analysis.payload_audit.audits, relationship_reference_audit.notes,
         relationship_reference_audit.audits, replacement_reason);
-    if (source_entry_file_backed) {
+    if (source_entry_chunk_source) {
         edit_plan_.add_note(
             "worksheet cell replacement streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; source package "
-            "worksheet entries are extracted through the PackageReader file-backed entry "
-            "source and scanned through chunk-source readers without materializing the "
-            "source worksheet XML");
+            "worksheet entries are scanned through the PackageReader ZIP-entry chunk source "
+            "without materializing the source worksheet XML");
     } else if (planned_chunk_source) {
         edit_plan_.add_note(
             "worksheet cell replacement streams dimension-refreshed output to a "
@@ -3931,24 +3903,27 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             "worksheet cell replacement streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk");
     }
-    if (source_entry_file_backed) {
+    if (source_entry_chunk_source) {
         edit_plan_.add_note(
             "worksheet cell replacement output pass feeds source package worksheet XML "
-            "through the transformer chunk-source adapter; planned staged chunks and queued "
-            "strings use chunk-source readers when they are already queued");
+            "through the PackageReader ZIP-entry chunk source and transformer chunk-source "
+            "adapter; planned staged chunks and queued strings use chunk-source readers "
+            "when they are already queued");
         edit_plan_.add_note(
             "worksheet cell replacement dependency and dimension analysis feeds source "
-            "package worksheet XML through the transformer chunk-source adapter; planned "
-            "staged chunks and queued strings use chunk-source readers when they are already "
-            "queued");
+            "package worksheet XML through the PackageReader ZIP-entry chunk source and "
+            "transformer chunk-source adapter; planned staged chunks and queued strings use "
+            "chunk-source readers when they are already queued");
         edit_plan_.add_note(
             "worksheet cell replacement relationship-id audit feeds source package "
-            "worksheet XML through the transformer chunk-source adapter; planned staged chunks "
-            "and queued strings use chunk-source readers when they are already queued");
+            "worksheet XML through the PackageReader ZIP-entry chunk source and transformer "
+            "chunk-source adapter; planned staged chunks and queued strings use chunk-source "
+            "readers when they are already queued");
         edit_plan_.add_note(
             "worksheet cell replacement root validation feeds source package worksheet XML "
-            "through the event-reader chunk-source validator; planned staged chunks and queued "
-            "strings use chunk-source readers when they are already queued");
+            "through the PackageReader ZIP-entry chunk source and event-reader chunk-source "
+            "validator; planned staged chunks and queued strings use chunk-source readers "
+            "when they are already queued");
     } else if (planned_chunk_source) {
         edit_plan_.add_note(
             "worksheet cell replacement output pass feeds current planned worksheet staged "

@@ -893,6 +893,90 @@ void extract_stored_entry_to_file(const std::filesystem::path& package_path,
     }
 }
 
+PackageReaderChunkCallback make_stored_entry_chunk_source(
+    std::filesystem::path package_path, PackageReaderEntry entry)
+{
+    struct State {
+        std::filesystem::path package_path;
+        PackageReaderEntry entry;
+        std::ifstream input;
+        PackageReaderCrc32Accumulator crc;
+        std::uint64_t remaining = 0;
+        bool opened = false;
+        bool complete = false;
+    };
+
+    auto state = std::make_shared<State>();
+    state->package_path = std::move(package_path);
+    state->entry = std::move(entry);
+    state->remaining = state->entry.compressed_size;
+
+    return [state](std::string& output_chunk) -> bool {
+        output_chunk.clear();
+        if (state->complete) {
+            return false;
+        }
+
+        if (!state->opened) {
+            state->input.open(state->package_path, std::ios::binary);
+            if (!state->input) {
+                throw FastXlsxError("failed to open XLSX package for reading");
+            }
+            state->input.seekg(checked_stream_offset(state->entry.data_offset), std::ios::beg);
+            if (!state->input) {
+                throw FastXlsxError("failed to seek inside XLSX package");
+            }
+            state->opened = true;
+        }
+
+        if (state->remaining == 0) {
+            state->input.close();
+            if (state->crc.value() != state->entry.crc32) {
+                throw FastXlsxError("ZIP entry CRC mismatch");
+            }
+            state->complete = true;
+            return false;
+        }
+
+        const std::uint64_t requested =
+            std::min<std::uint64_t>(state->remaining, package_reader_io_buffer_size);
+        output_chunk.resize(static_cast<std::size_t>(requested));
+        state->input.read(output_chunk.data(), checked_stream_size(requested));
+        if (state->input.gcount() != checked_stream_size(requested)) {
+            throw FastXlsxError("failed to read XLSX package bytes");
+        }
+
+        state->crc.update(output_chunk);
+        state->remaining -= requested;
+        return true;
+    };
+}
+
+PackageReaderChunkCallback make_string_entry_chunk_source(std::string data)
+{
+    struct State {
+        std::string data;
+        std::size_t offset = 0;
+    };
+
+    auto state = std::make_shared<State>();
+    state->data = std::move(data);
+
+    return [state](std::string& output_chunk) -> bool {
+        if (state->offset >= state->data.size()) {
+            output_chunk.clear();
+            return false;
+        }
+
+        const std::size_t byte_count =
+            std::min<std::size_t>(
+                package_reader_io_buffer_size, state->data.size() - state->offset);
+        output_chunk.assign(state->data.data() + state->offset, byte_count);
+        state->offset += byte_count;
+        return true;
+    };
+}
+
 void write_string_to_file(std::string_view data, const std::filesystem::path& output_path)
 {
     std::ofstream output(output_path, std::ios::binary);
@@ -1652,6 +1736,26 @@ std::string PackageReader::read_entry(std::string_view name) const
         throw FastXlsxError("ZIP entry CRC mismatch");
     }
     return data;
+}
+
+PackageReaderChunkCallback PackageReader::entry_chunk_source(std::string_view name) const
+{
+    const auto* entry = find_entry(name);
+    if (entry == nullptr) {
+        throw FastXlsxError("ZIP entry is not present in the package");
+    }
+
+    if (entry->compression_method == stored_compression_method) {
+        return make_stored_entry_chunk_source(path_, *entry);
+    }
+
+#ifdef FASTXLSX_HAS_MINIZIP_NG
+    if (entry->compression_method == deflate_compression_method) {
+        return make_string_entry_chunk_source(read_entry(name));
+    }
+#endif
+
+    throw_unsupported_compression_method();
 }
 
 void PackageReader::extract_entry_to_file(

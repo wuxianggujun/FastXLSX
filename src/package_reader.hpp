@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -28,6 +29,8 @@ struct WorkbookSheetReference {
     PartName part_name;
 };
 
+using PackageReaderChunkCallback = std::function<bool(std::string& output_chunk)>;
+
 // Internal PackageReader foundation for the Patch path.
 //
 // This first slice indexes stored/no-compression ZIP entries, and can also
@@ -51,6 +54,8 @@ public:
     [[nodiscard]] const std::vector<PackageReaderEntry>& entries() const noexcept;
     [[nodiscard]] const PackageReaderEntry* find_entry(std::string_view name) const noexcept;
     [[nodiscard]] std::string read_entry(std::string_view name) const;
+    [[nodiscard]] PackageReaderChunkCallback entry_chunk_source(std::string_view name)
+        const;
     void extract_entry_to_file(std::string_view name, const std::filesystem::path& output_path)
         const;
     [[nodiscard]] const ContentTypesManifest& content_types() const noexcept;

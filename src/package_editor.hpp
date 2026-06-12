@@ -20,11 +20,10 @@ namespace fastxlsx::detail {
 inline constexpr std::size_t package_editor_sheet_data_local_rewrite_byte_limit =
     4U * 1024U * 1024U;
 
-// Current cell replacement for ordinary queued/planned worksheet replacement
-// input still materializes the planned worksheet XML before feeding the
-// PackageEditor path. Source package worksheet entries and planned staged
-// package-entry chunks are scanned through chunk-source readers; keep ordinary
-// planned string input bounded until it gets the same reader-source treatment.
+// Current cell replacement uses this as the event-reader retained-window guard.
+// Source package worksheet entries, planned staged chunks, and queued planned
+// strings are scanned through chunk-source readers; queued strings may already
+// have been materialized by the prior planned replacement helper.
 inline constexpr std::size_t package_editor_cell_replacement_materialized_input_byte_limit =
     4U * 1024U * 1024U;
 
@@ -203,9 +202,11 @@ public:
     void replace_worksheet_sheet_data_by_name(std::string_view sheet_name,
         std::string sheet_data_xml, const ReferencePolicy& policy = {});
     // Internal handoff from the P8 worksheet transformer foundation. Source
-    // package entries are extracted to a PackageReader file-backed source and
-    // then scanned through chunk-source readers for root validation,
-    // dependency/dimension analysis, relationship-id audit, and the output pass.
+    // package entries are scanned through PackageReader ZIP-entry chunk sources
+    // for root validation, dependency/dimension analysis, relationship-id audit,
+    // and the output pass. Stored entries stream directly from the source ZIP
+    // payload; DEFLATE entries still fall back to the current materialized
+    // PackageReader read path.
     // Planned staged package-entry chunks are also scanned through chunk-source
     // readers. Ordinary queued/planned worksheet replacement strings are
     // scanned through a string-view chunk-source reader; the prior helper may

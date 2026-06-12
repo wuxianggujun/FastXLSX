@@ -892,6 +892,45 @@ void test_package_reader_extracts_stored_entry_to_file()
         "PackageReader should extract stored entry bytes to a file-backed source");
 }
 
+void test_package_reader_streams_stored_entry_chunks()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-entry-chunks.xlsx");
+    std::string unknown_body;
+    for (int index = 0; index < 4096; ++index) {
+        unknown_body += "stored-entry-direct-chunk-source-";
+        unknown_body += std::to_string(index);
+        unknown_body += '\n';
+    }
+
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/unknown.bin", unknown_body},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    fastxlsx::detail::PackageReaderChunkCallback source =
+        reader.entry_chunk_source("custom/unknown.bin");
+
+    std::string chunk;
+    std::string streamed_body;
+    std::size_t chunk_count = 0;
+    while (source(chunk)) {
+        check(!chunk.empty(), "PackageReader chunk source should not emit empty chunks");
+        streamed_body += chunk;
+        ++chunk_count;
+    }
+
+    check(streamed_body == unknown_body,
+        "PackageReader should stream stored entry bytes through chunk source");
+    check(chunk_count > 1, "large stored entry should be delivered in multiple chunks");
+}
+
 void test_package_reader_ingests_content_types_and_relationships()
 {
     const std::filesystem::path path = output_path("fastxlsx-package-reader-opc.xlsx");
@@ -2466,6 +2505,42 @@ void test_package_reader_rejects_corrupt_entry_crc_on_extract()
     check(failed, "PackageReader should reject corrupt entry bytes during extract");
 }
 
+void test_package_reader_rejects_corrupt_entry_crc_on_chunk_source()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-entry-chunks-crc-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/blob.bin", "opaque"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    corrupt_first_occurrence(data, "opaque");
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-entry-chunks-crc-read.xlsx");
+    write_file(path, data);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    fastxlsx::detail::PackageReaderChunkCallback source =
+        reader.entry_chunk_source("custom/blob.bin");
+
+    bool failed = false;
+    try {
+        std::string chunk;
+        while (source(chunk)) {
+        }
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    check(failed, "PackageReader should reject corrupt entry bytes during chunk source read");
+}
+
 void test_package_reader_rejects_corrupt_metadata_crc_on_open()
 {
     const std::filesystem::path source_path =
@@ -2506,6 +2581,7 @@ int main()
         test_package_writer_rejects_invalid_chunk_sources_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_extracts_stored_entry_to_file();
+        test_package_reader_streams_stored_entry_chunks();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();
         test_package_reader_rejects_invalid_workbook_sheet_catalog();
@@ -2541,6 +2617,7 @@ int main()
         test_package_reader_rejects_root_relationships_for_missing_source_part();
         test_package_reader_rejects_corrupt_entry_crc_on_read();
         test_package_reader_rejects_corrupt_entry_crc_on_extract();
+        test_package_reader_rejects_corrupt_entry_crc_on_chunk_source();
         test_package_reader_rejects_corrupt_metadata_crc_on_open();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

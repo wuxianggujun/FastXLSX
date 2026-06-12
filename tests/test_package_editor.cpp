@@ -2692,8 +2692,8 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
         check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
             "cell replacement output plan should expose file-backed chunk handoff note");
         check(has_note_containing(output_plan.notes,
-                  {"PackageReader file-backed", "entry source"}),
-            "cell replacement output plan should expose source-entry file-backed extraction");
+                  {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
+            "cell replacement output plan should expose direct source-entry chunk source");
         check(has_note_containing(output_plan.notes,
                   {"source package worksheet XML", "transformer chunk-source adapter"}),
             "cell replacement output plan should expose source chunk transformer input");
@@ -2858,8 +2858,8 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
         check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
             "cell replacement linked output plan should expose file-backed chunk note");
         check(has_note_containing(output_plan.notes,
-                  {"PackageReader file-backed", "entry source"}),
-            "cell replacement linked output plan should expose source-entry file-backed extraction");
+                  {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
+            "cell replacement linked output plan should expose direct source-entry chunk source");
         check(has_note_containing(output_plan.notes,
                   {"source package worksheet XML", "transformer chunk-source adapter"}),
             "cell replacement linked output plan should expose source chunk transformer input");
@@ -3326,7 +3326,7 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
               {"root validation", "event-reader chunk-source validator"}),
         "planned-input cell replacement should expose chunked root validation");
     check(!has_note_containing(output_plan.notes,
-              {"PackageReader file-backed", "entry source"}),
+              {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
         "planned-input cell replacement should not claim source-entry extraction");
     check(!has_note_containing(output_plan.notes,
               {"planned worksheet replacement string", "bounded materialized input limit"}),

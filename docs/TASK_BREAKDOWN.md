@@ -8,21 +8,240 @@
 当前优先级拆成可讨论、可验收、可并行的小任务。后续执行时，应先在本文件选定一个
 最小任务，再进入设计或实现。
 
-## 当前总顺序
+## 当前阶段任务重设计
+
+截至 2026-06-12，旧的 `P3 → P4.0 → P4 → P5 → P6 → P7 → P8`
+线性顺序已经不能再作为下一步执行入口：这些阶段中的多个基础切片已经落地。
+后续执行应从下面的事实驱动队列选择最小任务，旧 P 编号只作为历史索引和能力归档。
 
 ```text
-P3 package read/copy/write foundation
-→ P4.0 API surface unification design
-→ P4 Patch MVP
-→ P5 preservation fixtures
-→ P6 sheet dependency policies
-→ P7 In-memory small-file editor
-→ P8 large worksheet controlled editing
+C0 状态校准与验证基线
+→ C1 当前 public WorkbookEditor Patch facade 硬化
+→ C2 Patch preservation / dependency audit 缺口补齐
+→ C3 public editor 扩展决策门
+→ C4 In-memory random editor 内部到 public 的窄切片
+→ C5 大 worksheet 低内存 rewrite 真正流式化
+→ C6 ZIP/backend、sharedStrings、benchmark、streaming hot path 支撑线
+→ C7 release / packaging / public wording gate
 ```
 
-当前重点不是继续扩大一个笼统的“任务 4”。`P4.0` 已形成 public API 统一文档基线，
-`P4.1` 已冻结首个 Patch MVP 用例；后续推进必须从 `P4.2` 之后选择最小缺口，
-且不得绕过该基线直接扩大 public Patch / In-memory API。
+### C0 状态校准与验证基线
+
+目标：每次进入实现前，先确认文档、public header、CMake、CTest 和当前脏工作树的事实一致。
+
+当前事实：
+- `WorkbookEditor` 已是 public 窄 Patch facade，不再是纯 future 名称。
+- `PackageReader` / `PackageEditor` / `EditPlan` / dependency audits 仍是 internal。
+- `CellValue`、internal `CellStore`、`CellStoreOptions`、standalone `<sheetData>`
+  emission 和 `CellStore` 到 by-name `PackageEditor` handoff 已有基础。
+- P8 event reader / transformer / bounded cell replacement / file-backed output handoff
+  已有 internal foundation，但仍不是 public low-memory large-file editor。
+
+验收：
+- `rg` 搜索无旧口径：`Workbook::open`、`addSheet`、`writeRows`、`saveAs`、
+  `no public WorkbookEditor` 等不应出现在当前 API 说明里。
+- `git diff --check` 通过。
+- 若触碰代码，至少运行对应 CTest；若只改文档，说明未跑 CTest。
+
+### C1 当前 public `WorkbookEditor` Patch facade 硬化
+
+状态：已完成。
+
+目标：把已落地的 public facade 固定稳定，而不是立刻扩展成完整 editor。
+
+范围：
+- 围绕 `WorkbookEditor::open()`、`worksheet_names()`、`has_worksheet()`、
+  `replace_sheet_data()`、`rename_sheet()`、`save_as()` 维护 Doxygen、README 示例、
+  public structure tests 和错误路径测试。
+- 明确 `rename_sheet()` 只是 workbook sheet catalog name rewrite，不是语义 rename。
+- 明确 `replace_sheet_data()` 只生成 whole-`<sheetData>`，不迁移 sharedStrings、
+  不合并 styles、不修复 relationships、不重算 ranges。
+
+禁止：
+- 不新增 `WorksheetEditor`。
+- 不新增 `get_cell()` / `set_cell()` random editing。
+- 不把 internal `PackageEditor` 暴露为 public API。
+
+### C2 Patch preservation / dependency audit 缺口补齐
+
+状态：当前收口批次已完成；后续只按新增对象或失败状态卫生缺口重开。
+
+目标：继续补 existing-file editing 的保真与审计证据，先保证“不破坏未知对象”，再谈语义编辑。
+
+范围：
+- 以 `docs/PATCH_PRESERVATION_COVERAGE.md` 为 fixture 明细权威来源。
+- 按对象补缺口：comments / threaded comments / persons、printerSettings、
+  OLE / controls、VML、charts、VBA、custom XML、unknown extensions、tables、
+  drawings / media、sharedStrings / styles。
+- 对每类对象只声明 preserve / audit / fail，不声明 repair / pruning / semantic editing。
+- 新增测试时优先落在 `fastxlsx.package_editor`，并保持 failure-before-state-change。
+
+推荐执行顺序：
+1. comments / threaded comments / persons 的 ordinary replace / remove / ordering：
+   当前已有 `test_package_editor_replaces_comments_and_preserves_worksheet_links()`、
+   `test_package_editor_removes_comments_and_preserves_worksheet_links()`、
+   `test_package_editor_comments_replacement_restores_prior_removal()`、
+   `test_package_editor_comments_removal_overrides_prior_replacement()`、
+   comments / threaded comments / persons repeated replacement 状态卫生，以及
+   threaded comments / persons replace-remove 和 same-path ordering 回归；后续只补真实缺口。
+2. worksheet-owned VML / printerSettings / OLE / controls 的保留与显式 removal 审计：
+   当前已有 background/header-footer VML、printerSettings、OLE/control preservation、
+   explicit removal、same-path ordering 和 repeated replacement 状态卫生回归；后续只补
+   未覆盖对象或失败状态卫生。
+3. charts / tables / drawings / media 的 linked-part 保留与 relationship audit：
+   当前批次已完成覆盖核对。`test_package_editor_replaces_drawing_and_preserves_linked_media_entries()`、
+   drawing remove / replacement ordering、media replace / remove / ordering、table
+   replace / remove / ordering、chart replace / remove / ordering，以及 percent-decoded
+   drawing replace / remove / ordering 已覆盖 planned-output 快照、remove/replace
+   state hygiene、URI-qualified / percent-decoded target、content type side effects、
+   no invented owner `.rels` 和 output `PackageReader` 重读证据。
+4. custom XML、unknown extensions、external links、pivot table / pivot cache、sharedStrings / styles、VBA 的 preserve / fail / ordering：
+   已覆盖 custom XML、unknown extensions、externalLink、pivot table / pivot cache、sharedStrings / styles 和 VBA 的
+   remove/replacement 反向顺序、owner `.rels` omission/audit 以及 repeated
+   replacement 状态卫生；worksheet-owned object 这一批也已补齐 OLE / control /
+   background picture 的 repeated replacement 状态卫生。当前收口批次未发现已知对象级
+   replacement/order 缺口；后续若新增对象或 `ReferencePolicyAction::Fail` 状态卫生缺口，
+   再按小切片重开。
+
+当前阶段的判断标准是“对象级保真和审计覆盖是否完整”，不是“是否新增了完整对象生命周期”。
+
+本轮验收：
+- `fastxlsx.package_editor` 覆盖 linked-object preservation、replacement/remove/order、
+  repeated replacement state hygiene、relationship/content-type audit 和
+  `ReferencePolicyAction::Fail` no-state-pollution。
+- `docs/PATCH_PRESERVATION_COVERAGE.md` 是对象级明细权威来源；本文件只记录任务队列状态。
+- 默认 `windows-nmake-release` 构建与 CTest 已通过，作为 C2 当前收口批次的回归基线。
+
+禁止：
+- 不把 preservation 测试写成完整 object lifecycle 支持。
+- 不自动 prune inbound relationships 或 orphan parts，除非有单独设计和测试证明安全。
+
+### C3 public editor 扩展决策门
+
+状态：首个扩展决策已完成；后续仍作为 `WorkbookEditor` / `WorksheetEditor` 分叉门。
+
+目标：在扩大 public API 前，先决定扩展方向和 guardrail，而不是顺手加方法。
+
+当前已选方向：
+- 扩展当前 `WorkbookEditor`，先落地 coarse public diagnostics。已实现
+  `has_pending_changes()` / `pending_change_count()`，它们只表示 public facade 是否已有
+  成功编辑，以及粗粒度 pending-save 数量，不暴露 internal `EditPlan`。
+- replacement payload 级 guardrails 已交给 C4 窄切片落地；不把它扩展成 future
+  `WorksheetEditor` random-edit guardrail，也不把 internal `EditPlan` 暴露给 public API。
+- future `WorksheetEditor` 仍保留为后续小文件 random cell editing 方向，但前置
+  workbook-level guardrails、load/materialization contract 和 save-as handoff 仍未进入本轮。
+
+前置条件：
+- C1 public facade 当前行为稳定。
+- C2 对 sharedStrings、styles、relationships、calc metadata、range metadata 的
+  preserve/audit/fail 策略清晰。
+- 文档能说明内存增长、失败语义和不支持大文件低内存随机访问。
+
+完成条件：
+- 下一步扩展方向已经写入 `TASK_BREAKDOWN.md` 和 `API_DESIGN_AND_DOCUMENTATION.md`。
+- `WorkbookEditor` 扩展的确切新增方法已经列出：`has_pending_changes()` /
+  `pending_change_count()`，并明确它们只是 coarse diagnostics；replacement payload
+  级 options / diagnostics 由 C4 承接。
+- `WorksheetEditor` 仍未实现，且文档先写清 load/materialization contract、大小限制和
+  save-as handoff。
+- C3 现在保留为后续 `WorkbookEditor` / `WorksheetEditor` 分叉门，而不是当前阻塞项。
+
+### C4 In-memory random editor 内部到 public 的窄切片
+
+状态：public Patch facade guardrail / diagnostics 首片完成并通过默认 CTest；真正
+In-memory random editor 仍未实现。
+
+目标：把已有 internal `CellStore` foundation 逐步推进到真正小文件 random editor，
+但不把它误用为大文件路径。
+
+当前已完成：
+- `WorkbookEditorOptions` public 首片已落地，但只作用于
+  `WorkbookEditor::replace_sheet_data()` 的 replacement payload 构建：
+  `max_replacement_cells` 和 `replacement_memory_budget_bytes`。
+- `WorkbookEditor::open(path, options)` 已落地；这些 options 不加载 source worksheet
+  cells、不提供 random editing，也不是 workbook-level / worksheet-level In-memory 限制。
+- `pending_replacement_cell_count()` 和
+  `estimated_pending_replacement_memory_usage()` 已落地；它们只统计最终 queued
+  replacement payload per sheet，不统计 source workbook cells、renamed sheets、
+  relationships、sharedStrings/styles 或 save-time package assembly。
+
+推荐切片顺序：
+1. public replacement-payload options / diagnostics contract：已完成当前
+   `WorkbookEditorOptions` 窄语义；future In-memory `max_cells` /
+   `memory_budget_bytes`、`cell_count()`、`estimated_memory_usage()` 仍需另行冻结。
+2. internal source-backed worksheet load prototype：从一个 worksheet 建立 `CellStore`，
+   只覆盖有限 cell value，不处理完整 worksheet 语义。
+3. random mutation model：`set_cell` / `erase_cell` / blank / tombstone 的 save-as 语义。
+4. public `WorksheetEditor` 首片：只在上述 guardrail 和 save-as contract 有测试后进入。
+
+禁止：
+- 不把 current `WorkbookEditor::replace_sheet_data()` 写成 random editing。
+- 不承诺 sharedStrings/style migration、formula evaluation、calcChain rebuild 或
+  relationship repair。
+
+### C5 大 worksheet 低内存 rewrite 真正流式化
+
+状态：第一片可验证实现已完成；source-entry file-backed extraction 和 output-side
+file-backed chunk handoff 已有测试，完整低内存输入仍未实现。
+
+目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
+
+当前已完成：
+- `PackageEditor::replace_worksheet_cells()` 输出侧已有 temporary file-backed chunk，
+  当前 source package worksheet entry 会先经 `PackageReader::extract_entry_to_file()`
+  抽取到 file-backed source。stored entry 路径做 incremental CRC；DEFLATE 构建暂复用
+  `read_entry()` 后写文件。
+- by-name cell replacement linked-object fixture 已覆盖 dimension refresh、old target
+  audit skip、relationship-bearing metadata audit、calcChain cleanup、unknown bytes
+  preservation、output `PackageReader` 重读和 temporary file cleanup。
+
+当前缺口：
+- 现有 event reader 仍会从 file-backed source 物化 validation input；planned replacement /
+  chunk input 也仍会物化 current planned worksheet XML。
+- 还没有 event reader chunk/window 输入；真正 rewrite validation 仍不是低内存。
+- 还没有 public low-memory worksheet transformer。
+
+推荐切片顺序：
+1. 设计 PackageReader worksheet entry streaming source，明确 CRC、错误上下文和
+   compressed input 限制。当前第一片已完成：stored entry 可 file-backed extraction
+   并做 incremental CRC；DEFLATE 构建暂复用 `read_entry()` 后写文件。
+2. 让 event reader 消费 streaming chunks 或 bounded windows，而不是完整 worksheet string。
+3. 把 transformer action stream 接到 package-entry staged writer。
+4. 在 linked-object fixture 上验证大 worksheet path 的 audit / preservation 不倒退。
+
+验收：
+- `fastxlsx.package_reader` 覆盖 `extract_entry_to_file()` stored extraction 和读回一致性。
+- `fastxlsx.package_editor` 覆盖 source-entry file-backed extraction note、output-side
+  file-backed cell replacement handoff、linked-object preservation 和失败不污染状态。
+- 本轮默认 `windows-nmake-release` 构建与 9 个 CTest 条目全部通过。
+
+禁止：
+- 不把当前 P8 foundation 宣称为 complete low-memory large-file editing。
+- 不修复 tables / drawings / formulas / ranges，除非进入对应 C2/C6 专项。
+
+### C6 支撑线：ZIP/backend、sharedStrings、benchmark、streaming hot path
+
+目标：继续硬化性能和 package writer，但不让它们重新取代编辑主线。
+
+范围：
+- P9 package writer guardrails / opt-in minizip。
+- P10 sharedStrings 证据。
+- P11 benchmark tooling。
+- P12 streaming hot path。
+- P13 streaming metadata/styles hardening。
+
+边界：
+- 支撑线可以并行，但不能作为扩大 public editor 的替代条件。
+- 小规模 benchmark 不能写成生产性能结论。
+
+### C7 release / packaging / public wording gate
+
+目标：准备发布前统一 API 稳定性、CI、examples、README、Doxygen 和兼容性证据。
+
+前置条件：
+- public surface 有 header、实现、测试、README 示例和文档注释。
+- 默认 CTest、minizip opt-in CTest、必要的 Excel/openpyxl QA 有记录。
+- 未实现能力在文档中保持 non-goals，而不是 marketing wording。
 
 ## 执行规则
 
@@ -66,7 +285,8 @@ internal/public 边界。
 - 一张稳定 public facade 矩阵：
   `WorkbookWriter` 用于 Streaming；
   `Workbook` 用于 small new workbook；
-  future `WorkbookEditor` / `WorksheetEditor` 用于 existing-file editing。
+  当前窄 `WorkbookEditor` subset 用于 Patch-mode existing-file editing；
+  future `WorksheetEditor` / random-edit 扩展用于后续小文件编辑。
 - 明确 `PackageReader` / `PackageEditor` / `EditPlan` 暂不作为稳定 public API。
 
 可并行性：
@@ -81,10 +301,11 @@ internal/public 边界。
 
 验收：
 - 四个文档对 facade 名称和 internal/public 边界表述一致。
-- 文档明确 future 名称不代表已实现。
+- 文档明确当前 `WorkbookEditor` subset 已实现，future `WorksheetEditor` /
+  random-edit 名称不代表已实现。
 
 禁止：
-- 不新增 `WorkbookEditor` 代码。
+- 本历史设计任务不再新增超出当前 subset 的 `WorkbookEditor` 代码。
 - 不把 internal `PackageEditor` 写成 public API。
 
 ### P4.0.2 Cell Value Boundary
@@ -178,11 +399,11 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
 
 输出：
 - 冻结首个 MVP 用例为 **internal by-name worksheet `<sheetData>` patch**。
-- 用户故事按 future `WorkbookEditor` 语义描述：打开已有 `.xlsx`，按 sheet name
-  定位已有 worksheet，只替换该 worksheet 的 `<sheetData>` payload，再 `save_as()`
-  输出新 package。
-- 当前实施入口仍是 internal `PackageEditor::replace_worksheet_sheet_data_by_name()`；
-  不新增 public `WorkbookEditor`、public `PackageEditor` 或随机 cell API。
+- 用户故事已通过当前窄 `WorkbookEditor` subset 对外暴露：打开已有 `.xlsx`，
+  按 sheet name 定位已有 worksheet，只替换该 worksheet 的 `<sheetData>` payload，
+  再 `save_as()` 输出新 package。
+- 底层实施入口仍是 internal `PackageEditor::replace_worksheet_sheet_data_by_name()`；
+  不新增 public `PackageEditor`、`WorksheetEditor` 或随机 cell API。
 - MVP 输入是 caller 已生成的完整 `<sheetData>` / `<sheetData/>` XML payload。
   helper 只做 bounded local rewrite，保留同一 worksheet 的外围 XML metadata，
   并复用现有 calcChain remove / `fullCalcOnLoad`、relationship/content-type audit
@@ -323,11 +544,12 @@ part 或 `<sheetData>`、保留 unknown/unmodified parts，并给出 calc policy
   / URI-qualified chart relationships、ordinary replace/remove ordering 和 content type
   audit；仍不能写成 chart reference migration、series/cache update 或 chart editing。
 - P5.3 VBA / macro-enabled fixture：基础完成。现有 fixture 覆盖 `xl/vbaProject.bin`
-  bytes、workbook inbound relationship、content type override、ordinary replace/remove
-  ordering 和 no invented VBA owner `.rels`；仍不能写成 macro generation、VBA editing
-  或 signature preservation。
+  bytes、workbook inbound relationship、content type override、ordinary replacement、
+  repeated replacement、replace/remove ordering 和 no invented VBA owner `.rels`；
+  仍不能写成 macro generation、VBA editing 或 signature preservation。
 - P5.4 sharedStrings/styles fixture：基础完成。现有 fixture 覆盖 sharedStrings、
-  sharedStrings owner `.rels`、styles、workbook relationships、ordinary replace/remove
+  sharedStrings owner `.rels`、styles、workbook relationships、ordinary replacement、
+  sharedStrings repeated replacement、styles repeated replacement、replace/remove
   ordering 和 no invented styles owner `.rels`；仍不能写成 sharedStrings index
   migration、style id migration、style merge 或 cell reference sync。
 - P5.5 unknown extension fixture：基础完成。现有 fixture 覆盖 reachable unknown
@@ -737,7 +959,8 @@ ctest --preset windows-nmake-release -R fastxlsx.package_editor
 enforcement 首片已实现；internal `CellStore` 到 standalone `<sheetData>` payload
 emission 首片也已实现，并已有首个 internal `CellStore` 到 by-name
 `PackageEditor` `sheetData` Patch handoff 回归。public editor、random cell editing、
-workbook-level guardrails 和完整 save-as / Patch handoff 仍未 ready。
+workbook-level guardrails 和 random-edit / in-memory materialization save-as handoff
+仍未 ready。
 
 目标：提供小文件随机编辑体验，但不成为大文件默认路径。
 
@@ -762,30 +985,34 @@ workbook-level guardrails 和完整 save-as / Patch handoff 仍未 ready。
 ### P7.1 `WorkbookEditor` / `WorksheetEditor` public facade draft
 
 状态：基础完成。此 draft 的 Patch 子集已落地为首个 public `WorkbookEditor` 切片
-（`open` / `worksheet_names` / `has_worksheet` / `replace_sheet_data` / `save_as`，
-见 P4.0 落地说明）；`WorksheetEditor`、`get_cell` / `set_cell` / `erase_cell`、
-随机 cell 编辑和 append/insert/delete row 仍是 future facade draft，未实现。
+（`open` / `worksheet_names` / `has_worksheet` / `replace_sheet_data` /
+`rename_sheet` / `save_as`，见 P4.0 落地说明）；`WorksheetEditor`、`get_cell` /
+`set_cell` / `erase_cell`、随机 cell 编辑和 append/insert/delete row 仍是 future
+facade draft，未实现。
 
 类型：public API 文档设计；首个 `WorkbookEditor` Patch 切片已附带 header /
 implementation / 测试，其余仍为文档设计。
 
-目标：在进入 `CellValue`、cell store 和 guardrails 之前，先冻结 future editor facade
+目标：记录当前 `WorkbookEditor` Patch subset 的职责，并冻结 future editor extension
 的命名、职责、入口和非目标，确保 In-memory 小文件随机编辑不会污染 Streaming 热路径，
 也不会把 internal `PackageEditor` 直接暴露为 public API。
 
 输入：
 - P4.0 facade matrix 和 cell value boundary 文档基线。
 - 当前 `docs/API_DESIGN_AND_DOCUMENTATION.md`、`docs/ARCHITECTURE.md` 和
-  `docs/EDITING_MODEL.md` 中的 future `WorkbookEditor` / `WorksheetEditor` /
-  `CellValue` 表述。
+  `docs/EDITING_MODEL.md` 中的 current `WorkbookEditor` subset、future
+  `WorksheetEditor` / random-edit 和 `CellValue` 表述。
 - 当前 public API：`WorkbookWriter` / `WorksheetWriter` / `CellView`、
   `Workbook` / `Worksheet` / `Cell`。
 - 当前 internal Patch 底座：`PackageReader`、`PackageEditor`、`EditPlan` 和
   `planned_output()`。
 
 输出：
-- future `WorkbookEditor` facade draft：`open(...)`、`worksheet(...)`、
-  `try_worksheet(...)`、sheet listing、`save_as(...)` 和 no in-place overwrite 边界。
+- current `WorkbookEditor` Patch subset：`open(...)`、`worksheet_names()`、
+  `has_worksheet()`、`replace_sheet_data(...)`、`rename_sheet(...)`、`save_as(...)`
+  和 no in-place overwrite 边界。
+- future `WorkbookEditor` extension draft：options / diagnostics / broader handoff
+  扩展点，不能覆盖当前 subset 的窄 Patch 边界。
 - future `WorksheetEditor` facade draft：`name()`、`get_cell()` / `try_cell()`、
   `set_cell()`、`erase_cell()`、append/insert/delete row 的阶段边界。
 - 模式说明：这是 In-memory / future editor 小文件随机编辑路径，不是大文件低内存路径，
@@ -810,12 +1037,14 @@ implementation / 测试，其余仍为文档设计。
 
 验收标准：
 - 文档能回答 `WorkbookEditor`、`WorksheetEditor`、`Workbook`、`WorkbookWriter` 的职责差异。
-- 文档明确 P7.1 只是 future facade draft，不是已实现 API。
+- 文档明确 P7.1 中 `WorkbookEditor` Patch subset 已实现；`WorksheetEditor` /
+  random-edit 只是 future facade draft，不是已实现 API。
 - 文档明确该 facade 不承诺百万行 worksheet 随机访问、原地覆盖、公式求值、
   relationship repair 或 public package editing。
 
 禁止项：
-- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `CellValue` 代码。
+- 不新增超出当前 subset 的 public `WorkbookEditor` / `WorksheetEditor` /
+  `CellValue` 代码。
 - 不把 internal `PackageEditor` 或 OPC part concepts 暴露给普通 public API。
 - 不因 internal guardrail first slice 就宣称 In-memory editor ready；仍需 P7.5 handoff。
 
@@ -1098,7 +1327,7 @@ implementation。
 - 当前 In-memory API 文档要求：超限时提示 caller 改用 Streaming 或 Patch。
 
 输出：
-- future `WorkbookEditorOptions` / equivalent guardrail options 草案：
+- future In-memory editor options / equivalent guardrail options 草案：
   `max_cells`、`memory_budget_bytes`、可选 diagnostic / strict mode 扩展点。
 - future diagnostic APIs 草案：`cell_count()`、`estimated_memory_usage()`，作用域需明确
   是 workbook-level、worksheet-level 还是两者都提供。
@@ -1130,14 +1359,16 @@ implementation。
 - 若 P7.5 要写 blank / erase / tombstone save semantics，同一段落需串行合并。
 
 验收标准：
-- 文档明确 guardrails 的 public editor API 仍是 future design；当前只实现 internal
-  `CellStore` first slice。
+- 文档明确 future In-memory guardrails 的 public editor API 仍是 future design；
+  当前只实现 internal `CellStore` first slice，以及 current public
+  `WorkbookEditorOptions` 的 replacement payload guardrail 首片。
 - 文档明确 limit options、diagnostic APIs、计量维度和 enforcement 时机。
 - 文档明确超限错误需要建议 Streaming 或 Patch。
 - 文档明确没有 guardrails 和 P7.5 handoff 前不能宣称 In-memory ready。
 
 禁止项：
-- 不新增 public `WorkbookEditorOptions` 或 public editor diagnostic APIs。
+- 不把当前 public `WorkbookEditorOptions` 写成 future In-memory workbook /
+  worksheet random-edit options；它只限制 `replace_sheet_data()` replacement payload。
 - 不定义默认 limit 数值为稳定承诺。
 - 不把 `estimated_memory_usage()` 写成精确内存 profiler。
 - 不承诺百万行 worksheet 低内存随机访问。
@@ -1282,7 +1513,7 @@ blank / erase / tombstone 和输出路径 guard 的边界。
 - 文档明确 output path guard、failure semantics 和 no in-place overwrite。
 
 禁止项：
-- 不新增 `WorkbookEditor::save_as()` 或 public editor code。
+- 不新增超出当前 `WorkbookEditor` Patch subset 的 public editor code。
 - 不把 internal `PackageEditor` 直接暴露为 public API。
 - 不宣称 random cell editing、sharedStrings migration、style id migration、relationship
   repair、calcChain rebuild 或 broad existing-file preservation 已完成。
@@ -1371,8 +1602,10 @@ by-name `PackageEditor` `sheetData` Patch helper 的回归里，证明该 payloa
   unknown entry bytes preservation 和输出 package 可由 `PackageReader` 重读。
 
 边界：
-- 这仍是 internal handoff regression，不是 `WorkbookEditor::save_as()`。
-- 不新增 public `WorkbookEditor` / `WorksheetEditor` / `PackageEditor` API。
+- 这仍是 internal handoff regression；当前 `WorkbookEditor::replace_sheet_data()` /
+  `save_as()` 只复用其 whole-`<sheetData>` facade，不代表 random cell editing。
+- 不新增超出当前 subset 的 public `WorkbookEditor` / `WorksheetEditor` /
+  `PackageEditor` API。
 - 不迁移 sharedStrings index、不合并 styles、不验证 foreign style id、不修复
   relationships、definedNames、table ranges 或 drawing metadata。
 - 不把当前 bounded local `sheetData` helper 写成大文件低内存 streaming transformer。
@@ -2540,7 +2773,7 @@ PackageReader 边界输入，但不再物化完整 rewritten worksheet XML。
   preservation fixture 和临时文件清理。
 - 默认完整 CTest 通过。
 - 文档明确这是 output-side streaming/file-backed handoff；当前仍物化 planned
-  worksheet XML，不是 PackageReader input streaming、完整 low-memory large-file
+  worksheet XML，不是完整 PackageReader input streaming、完整 low-memory large-file
   editing、relationship repair/pruning、object semantic editing、sharedStrings/style
   migration 或 range metadata repair。
 
@@ -2556,6 +2789,81 @@ PackageReader 边界输入，但不再物化完整 rewritten worksheet XML。
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.17 internal PackageReader file-backed source extraction for cell replacement
+
+状态：基础完成。
+
+类型：internal implementation + tests + docs；不新增 public header / Patch API。
+
+目标：把 C5 输入侧从直接 `PackageReader::read_entry()` 物化 source worksheet entry
+推进到第一片 file-backed source handoff。该切片只改变 source package entry 的读取
+边界，不改变当前 event reader 仍需要完整 worksheet XML validation input 的事实。
+
+输入：
+- P8.16 cell replacement output-side file-backed chunk handoff。
+- 当前 internal `PackageReader` stored/no-compression reader 和 opt-in DEFLATE reader。
+- 当前 `PackageEditor::replace_worksheet_cells()` by-name / direct cell replacement path。
+
+输出：
+- `PackageReader::extract_entry_to_file(entry_name, output_path)` internal helper：
+  stored/no-compression entry 用 64 KiB buffer 复制到 caller-provided file，并做
+  incremental CRC 校验；缺失 entry、读写失败或 CRC mismatch 失败。
+- 在 `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建中，DEFLATE entry extraction 暂复用
+  `read_entry()` 后写文件，因此仍不是低内存 compressed input extraction。
+- `PackageEditor::replace_worksheet_cells()` 当目标 worksheet 仍是 source package
+  entry 时，先通过 `PackageReader` 抽取到 scoped temporary file-backed source，再读取
+  该文件进入当前 event reader validation；planned replacement / staged chunk input
+  仍走 current planned worksheet XML materialization。
+- `EditPlan` / `planned_output()` note 区分 source-entry extraction 和 planned-input
+  materialization，避免误报 source extraction。
+- `fastxlsx.package_reader` 覆盖 stored entry extraction 和 corrupt payload CRC
+  extraction failure。
+- `fastxlsx.package_editor` 覆盖 source-entry cell replacement note、planned worksheet
+  input 不误报 source extraction、`StreamRewrite` output、calcChain cleanup 和输出
+  `PackageReader` 可重读。
+
+触碰文件：
+- `src/package_reader.hpp`
+- `src/package_reader.cpp`
+- `src/package_editor.cpp`
+- `tests/test_package_reader.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/PATCH_PRESERVATION_COVERAGE.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public headers
+- `src/worksheet_transformer.cpp`
+- `src/package_writer.cpp`
+- `src/streaming_writer.cpp`
+- CMake 配置
+
+可并行性：
+- 后续 event reader chunk/window input 设计可并行只读调研。
+- 修改 `PackageReader` input streaming、CRC policy、temporary source file ownership 或
+  `replace_worksheet_cells()` state transition 必须串行。
+
+验收标准：
+- `fastxlsx.package_reader` 和 `fastxlsx.package_editor` 通过。
+- 文档明确这是 source-entry file-backed extraction first slice；当前 event reader 仍会
+  materialize validation input，不是完整 PackageReader input streaming、low-memory
+  worksheet transformer、relationship repair、sharedStrings/style migration 或 public API。
+
+禁止项：
+- 不把 `extract_entry_to_file()` 写成 public API。
+- 不把 DEFLATE fallback 写成低内存 compressed input 支持。
+- 不把 planned replacement / staged chunk worksheet input 写成 source package extraction。
+- 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、
+  formulas、calcChain rebuild 或 range-bearing metadata。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_package_reader_tests fastxlsx_package_editor_tests
+ctest --preset windows-nmake-release -R "fastxlsx.package_reader|fastxlsx.package_editor" --output-on-failure --timeout 60
 ```
 
 ## P9 - Production ZIP/backend and package writer hardening
@@ -3603,8 +3911,9 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 - P6 dependency policy 的不同 feature 分析。
 
 必须串行：
-- P4.0 合并前，不实现 public `WorkbookEditor`；`CellValue` value type 已在 P7.2a
-  作为后续独立切片落地。
+- P4.0 已合并并已有 public `WorkbookEditor` 窄 subset；后续扩展必须先经过
+  C3 决策门，不直接追加 random-edit / `WorksheetEditor`。
+- `CellValue` value type 已在 P7.2a 作为后续独立切片落地。
 - P4.1 MVP 用例冻结前，不扩大 P4.2 / P4.3 的实现范围。
 - P5 preservation 未覆盖前，不宣称 broad existing-file editing。
 - P7 guardrails 未设计前，不把 In-memory 作为默认 workbook 编辑路径。

@@ -52,16 +52,16 @@ FastXLSX 的当前定位是：
 同时提供 Streaming、Patch 和 In-memory 三条 API 路径。
 ```
 
-更详细的定位说明见：
+更详细的说明已经并入少数主文档，避免重复维护：
 
-- [项目定位](docs/PROJECT_POSITIONING.md)
-- [开发环境](docs/DEVELOPMENT_ENVIRONMENT.md)
-- [依赖策略](docs/DEPENDENCIES.md)
-- [技术对比](docs/TECHNICAL_COMPARISON.md)
-- [测试流程](docs/TESTING_WORKFLOW.md)
+- [架构与编辑边界](docs/ARCHITECTURE.md)
+- [编辑模型](docs/EDITING_MODEL.md)
 - [API 设计与文档注释](docs/API_DESIGN_AND_DOCUMENTATION.md)
-- [后续推进清单](docs/NEXT_STEPS.md)
+- [任务计划](docs/TASK_PLAN.md)
 - [任务拆分设计](docs/TASK_BREAKDOWN.md)
+- [下一步推进](docs/NEXT_STEPS.md)
+- [性能目标](docs/PERFORMANCE_TARGETS.md)
+- [测试流程](docs/TESTING_WORKFLOW.md)
 - [Patch 保留能力回归明细](docs/PATCH_PRESERVATION_COVERAGE.md)
 
 ## 构建与测试
@@ -93,37 +93,54 @@ FastXLSX
 ├── docs
 │   ├── API_DESIGN_AND_DOCUMENTATION.md
 │   ├── ARCHITECTURE.md
-│   ├── DEVELOPMENT_ENVIRONMENT.md
-│   ├── DEPENDENCIES.md
 │   ├── EDITING_MODEL.md
+│   ├── NEXT_STEPS.md
 │   ├── PATCH_PRESERVATION_COVERAGE.md
 │   ├── PERFORMANCE_TARGETS.md
-│   ├── PROJECT_POSITIONING.md
-│   ├── ROADMAP.md
 │   ├── TASK_BREAKDOWN.md
 │   ├── TASK_PLAN.md
-│   ├── TESTING_WORKFLOW.md
-│   └── TECHNICAL_COMPARISON.md
+│   └── TESTING_WORKFLOW.md
 ├── include
 │   └── fastxlsx
 │       ├── detail
+│       │   ├── cell_store.hpp
 │       │   ├── opc.hpp
+│       │   ├── worksheet_event_reader.hpp
+│       │   ├── worksheet_transformer.hpp
 │       │   └── xml.hpp
+│       ├── cell_value.hpp
+│       ├── document_properties.hpp
 │       ├── fastxlsx.hpp
+│       ├── image.hpp
 │       ├── streaming_writer.hpp
-│       └── workbook.hpp
+│       ├── workbook.hpp
+│       └── workbook_editor.hpp
 ├── src
+│   ├── cell_store.cpp
+│   ├── cell_value.cpp
+│   ├── image.cpp
 │   ├── opc.cpp
+│   ├── package_editor.cpp
+│   ├── package_reader.cpp
 │   ├── package_writer.cpp
 │   ├── streaming_writer.cpp
 │   ├── workbook.cpp
+│   ├── workbook_editor.cpp
+│   ├── worksheet_event_reader.cpp
+│   ├── worksheet_transformer.cpp
 │   ├── xml.cpp
 │   └── zip_store_writer.cpp
 ├── tests
 │   ├── CMakeLists.txt
+│   ├── test_image.cpp
 │   ├── test_minimal_xlsx.cpp
 │   ├── test_opc.cpp
-│   └── test_streaming_writer.cpp
+│   ├── test_package_editor.cpp
+│   ├── test_package_reader.cpp
+│   ├── test_streaming_writer.cpp
+│   ├── test_workbook_editor.cpp
+│   ├── test_worksheet_event_reader.cpp
+│   └── test_worksheet_transformer.cpp
 └── CMakeLists.txt
 ```
 
@@ -138,14 +155,15 @@ FastXLSX
 
 ## 规划依赖
 
-这些依赖记录在 `vcpkg.json` 的 planned features 中，当前默认构建和 CI
-尚未接入或链接它们：
+这些依赖记录在 `vcpkg.json` 和 CMake feature 中，当前接入状态不同：
 
-- ZIP/OPC 底层：`minizip-ng`。
-- 压缩：`zlib-ng` 优先，保留 `zlib` fallback。
-- 大型 XML 流式读取：`Expat`。
-- 小型 XML DOM 编辑：`pugixml`。
-- Phase 5 图片读取/插入解码：`stb`，默认通过 vcpkg manifest 接入，用于
+- ZIP/OPC 底层：默认仍使用内部 stored ZIP writer；`FASTXLSX_ENABLE_MINIZIP_NG=ON`
+  时通过 vcpkg `planned-runtime` 接入 `minizip-ng[core,zlib]` 读写 DEFLATE entries。
+- 压缩：当前 opt-in minizip-ng 路径使用 zlib backend；`zlib-ng` 仍是后续性能依赖方向。
+- 大型 XML 流式读取：`Expat` 仍是后续 planned dependency。
+- 小型 XML DOM 编辑：`pugixml` 仍是后续 planned dependency；当前已有小型 XML
+  局部重写 helper，但没有默认接入 pugixml。
+- Phase 5 图片读取/插入解码：`stb` 默认通过 vcpkg manifest 接入，用于
   PNG/JPEG `read_image_info()` 元数据 helper 和
   `WorksheetWriter::add_image()` 基础插入切片；仍不代表 existing-workbook
   图片保真、drawing 编辑或完整图片功能。
@@ -156,27 +174,49 @@ FastXLSX
 
 ## 当前状态
 
-项目处于 Phase 1 最小可写 XLSX 的早期实现阶段。
+项目已越过单纯 Phase 1 bootstrap：最小可写 XLSX、新建 workbook 流式写入骨架、
+多项 worksheet metadata、图片插入基础切片、内部 OPC/Patch 底座，以及首个
+public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLSX 引擎；
+文档和 API 继续按 Streaming、Patch、In-memory 三条路径区分能力边界。
 
 当前已具备：
 
 - compiled `fastxlsx` CMake target 和 `FastXLSX::fastxlsx` alias。
 - 保守 `vcpkg.json`、`CMakePresets.json` 和 Windows VS2026/NMake CI workflow 基础。
-- 最小 public API：`fastxlsx::Workbook`、`fastxlsx::Worksheet`、`fastxlsx::Cell`、
-  `fastxlsx::CellValue`、`fastxlsx::CellValueKind` 和 `fastxlsx::FastXlsxError`。
-- 流式 writer 写入骨架：`WorkbookWriter`、`WorksheetWriter`、`CellView`。
+- 新建小工作簿 public API：`Workbook`、`Worksheet`、`Cell`、`CellRange`、
+  `RowOptions`、`DocumentProperties` 和 `FastXlsxError`。
+- 流式 writer public API：`WorkbookWriter`、`WorksheetWriter`、`CellView`、
+  `WorkbookWriterOptions`、`StringStrategy`、`StyleId`、`CellStyle` 及当前窄
+  styles / worksheet metadata / image insertion 值类型。
+- Patch public API 首片：`WorkbookEditorOptions`、`WorkbookEditor::open()`、
+  `WorkbookEditor::open(path, options)`、`worksheet_names()`、`has_worksheet()`、
+  `has_pending_changes()`、`pending_change_count()`、
+  `pending_replacement_cell_count()`、`estimated_pending_replacement_memory_usage()`、
+  `replace_sheet_data()`、`rename_sheet()` 和 `save_as()`。
+  它只做已有 workbook 的 whole-`<sheetData>` 替换和窄 sheet catalog 改名；
+  不是随机 cell editor、`WorksheetEditor`、语义 rename 或 public `PackageEditor`。
+- 公共值和 helper：`CellValue` / `CellValueKind`、PNG/JPEG `ImageInfo` /
+  `ImagePixels`、`read_image_info()` 和 `read_image_pixels()`。
 - 最小 OpenXML package 输出：
   `[Content_Types].xml`、`_rels/.rels`、`xl/workbook.xml`、
   `xl/_rels/workbook.xml.rels`、`xl/worksheets/sheet1.xml`、
   `docProps/core.xml` 和 `docProps/app.xml`。
 - 数字、inline string、布尔和公式单元格写入。
-- `StringStrategy::SharedString` 最小写出路径、`xl/sharedStrings.xml` package wiring
-  和结构测试；仍需 Excel 可视化、参考 XML 对比和内存/大小数据后再视为生产特性。
-- 默认写出基础 `docProps/core.xml` 和 `docProps/app.xml` 小型 XML part；
-  这只是静态文档属性元数据，不代表完整 document properties public API。
-- 行高、列宽、冻结窗格、自动筛选和合并单元格的写入骨架。
-- 内部 OPC manifest / relationships / `PartIndex` / `RelationshipGraph`
-  基础；已有文件编辑当前只有 internal Patch groundwork，不是 public editing API。
+- `StringStrategy::SharedString` 基础写出路径、`xl/sharedStrings.xml` package wiring
+  和结构测试；它是显式策略，内存随唯一字符串表增长。
+- 基础 `docProps/core.xml` 和 `docProps/app.xml` 配置；不生成
+  `docProps/custom.xml`，也不是完整 document properties editor。
+- 流式 worksheet 写入能力：行高、列宽、冻结窗格、自动筛选、合并单元格、公式
+  full recalculation request、data validations、external/internal hyperlinks、
+  streaming-only tables、two-/three-color color scales、basic data bars、basic
+  `3Arrows` icon sets、基础 styles 和 PNG/JPEG 图片插入。
+- 内部 OPC manifest / relationships / `PartIndex` / `RelationshipGraph`、ZIP
+  `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、
+  `ReferencePolicy` 和 worksheet event/transformer 基础；这些仍主要是 internal
+  Patch 底座，不是稳定 public package API。
+- 内部 `CellStore` / `CellRecord` sparse store、worksheet-local guardrail 首片、
+  standalone `<sheetData>` emission 和 by-name `PackageEditor` handoff 回归；这仍
+  不是 public random cell editing。
 - 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
   进入 ZIP backend。默认构建使用 stored/no-compression bootstrap；
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
@@ -189,6 +229,10 @@ FastXLSX
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。
 - CTest 测试 `fastxlsx.opc`，覆盖内部 OPC manifest、content types、
   relationships 和 XML serializer 基础。
+- CTest 测试 `fastxlsx.package_reader`、`fastxlsx.package_editor`、
+  `fastxlsx.workbook_editor`、`fastxlsx.image`、`fastxlsx.worksheet_event_reader`
+  和 `fastxlsx.worksheet_transformer`，覆盖当前内部 Patch / public Patch facade /
+  image helper / worksheet scan-transform 基础切片。
 - 本机已做 Excel 可视化验证并核对生成样例的关键单元格。
 
 当前仍未完成：
@@ -197,13 +241,14 @@ FastXLSX
 - Zip64、公开压缩等级配置和真正 package streaming。
 - Catch2 和 Google Benchmark 接入。
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
-- 完整 Phase 3 写入特性、完整 Phase 5 OPC 编辑能力和性能 benchmark。
-- 图片、VBA、table 等复杂对象的完整读写/编辑支持。
-- `CellValue` 首个 owning value 切片、internal `CellStore` sparse-store /
-  guardrail 首片，以及 internal `CellStore` 到 standalone `<sheetData>` payload
-  emission 首片和 internal by-name `PackageEditor` handoff 回归已落地，但
-  `WorkbookEditor` / `WorksheetEditor`、random cell editing、workbook-level guardrails、
-  完整 save-as handoff 和 existing-file public editing API 仍未完成。
+- 完整 Phase 3 写入特性、完整 Phase 5 对象编辑能力和系统化性能 benchmark。
+- `WorksheetEditor`、`get_cell()` / `set_cell()` 随机 cell 编辑、workbook-level
+  guardrails、完整 in-memory save-as handoff。
+- 大文件低内存 worksheet event reader / transformer / stream rewrite 的完整 public
+  编辑路径；当前 bounded `sheetData` patch 仍会物化当前 planned worksheet XML。
+- sharedStrings 索引迁移、style id 迁移或 styles merge、relationship repair/pruning、
+  table/drawing/chart/defined-name 语义同步、calcChain rebuild 和公式求值。
+- existing-workbook 图片、VBA、table、chart、pivot、comments 等复杂对象的语义编辑。
 
 `src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取
 `stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；

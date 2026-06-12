@@ -863,6 +863,35 @@ void test_package_reader_reads_stored_entries_and_unknown_parts()
     check(missing_read_failed, "reading a missing entry should fail");
 }
 
+void test_package_reader_extracts_stored_entry_to_file()
+{
+    const std::filesystem::path path = output_path("fastxlsx-package-reader-extract.xlsx");
+    std::string unknown_body;
+    for (int index = 0; index < 4096; ++index) {
+        unknown_body += "stored-entry-streaming-source-";
+        unknown_body += std::to_string(index);
+        unknown_body += '\n';
+    }
+
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/unknown.bin", unknown_body},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    const std::filesystem::path extracted =
+        output_path("fastxlsx-package-reader-extracted-unknown.bin");
+    reader.extract_entry_to_file("custom/unknown.bin", extracted);
+
+    check(fastxlsx::test::read_file(extracted) == unknown_body,
+        "PackageReader should extract stored entry bytes to a file-backed source");
+}
+
 void test_package_reader_ingests_content_types_and_relationships()
 {
     const std::filesystem::path path = output_path("fastxlsx-package-reader-opc.xlsx");
@@ -2404,6 +2433,39 @@ void test_package_reader_rejects_corrupt_entry_crc_on_read()
     check(failed, "PackageReader should reject corrupt entry bytes by CRC");
 }
 
+void test_package_reader_rejects_corrupt_entry_crc_on_extract()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-extract-crc-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/blob.bin", "opaque"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    corrupt_first_occurrence(data, "opaque");
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-extract-crc-read.xlsx");
+    write_file(path, data);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+
+    bool failed = false;
+    try {
+        reader.extract_entry_to_file("custom/blob.bin",
+            output_path("fastxlsx-package-reader-extract-crc-output.bin"));
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    check(failed, "PackageReader should reject corrupt entry bytes during extract");
+}
+
 void test_package_reader_rejects_corrupt_metadata_crc_on_open()
 {
     const std::filesystem::path source_path =
@@ -2443,6 +2505,7 @@ int main()
         test_package_writer_rejects_mixed_legacy_data_and_chunks_before_output();
         test_package_writer_rejects_invalid_chunk_sources_before_output();
         test_package_reader_reads_stored_entries_and_unknown_parts();
+        test_package_reader_extracts_stored_entry_to_file();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();
         test_package_reader_rejects_invalid_workbook_sheet_catalog();
@@ -2477,6 +2540,7 @@ int main()
         test_package_reader_rejects_relationships_for_missing_source_part();
         test_package_reader_rejects_root_relationships_for_missing_source_part();
         test_package_reader_rejects_corrupt_entry_crc_on_read();
+        test_package_reader_rejects_corrupt_entry_crc_on_extract();
         test_package_reader_rejects_corrupt_metadata_crc_on_open();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

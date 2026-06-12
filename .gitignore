@@ -45,6 +45,9 @@ vcpkg_installed/
 *.tmp
 *.temp
 
+# Local build/verify helper scripts (not part of the build system)
+/fx_*.bat
+
 # Python generated files
 __pycache__/
 *.py[cod]

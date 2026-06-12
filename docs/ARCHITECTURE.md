@@ -59,8 +59,6 @@ XLSX 语义层必须由 FastXLSX 自己实现：
 - part-level rewrite。
 - 图片 media part、drawing XML、relationships、content types 和 anchor 语义。
 
-更详细的依赖选择见 [依赖策略](DEPENDENCIES.md)。
-
 ## 目标总体分层（部分模块尚未实现）
 
 当前已实现的是 `Workbook` / `Worksheet` / `Cell`、`WorkbookWriter` /
@@ -1337,9 +1335,11 @@ FastXLSX
 
 - `WorkbookWriter` / `WorksheetWriter` / `CellView`：大文件新建导出。
 - `Workbook` / `Worksheet` / `Cell`：小文件新建和简单生成。
-- 未来 `WorkbookEditor` / `WorksheetEditor`：已有文件编辑和小文件随机编辑；
-  当前 `CellValue`、internal `CellStore` 首个切片、guardrail 首片和 standalone
-  `<sheetData>` emission 首片已实现，但 public editor 尚未 ready。
+- `WorkbookEditor`：当前已有窄 public Patch facade，用于打开已有 workbook、按 sheet
+  name 替换 whole-`<sheetData>`、窄 sheet catalog 改名并 `save_as()` 到新路径。
+- 未来 `WorksheetEditor` / random cell editing：小文件随机编辑和更宽 in-memory/editor
+  扩展；当前 `CellValue`、internal `CellStore` 首个切片、guardrail 首片和 standalone
+  `<sheetData>` emission 首片已实现，但 random editor 尚未 ready。
 
 当前内部 `PackageReader`、`PackageEditor`、`EditPlan`、`PartIndex` 和
 `RelationshipGraph` 是 Patch 底座，不等于稳定 public API。只有当后续任务证明需要
@@ -1358,10 +1358,10 @@ WorkbookWriter
 
 这条路径禁止大型 worksheet DOM，也不承诺随机回写已输出历史行。
 
-### 2. Patch：编辑已有 XLSX（规划路径）
+### 2. Patch：编辑已有 XLSX（当前窄 facade + 后续扩展）
 
 ```text
-future WorkbookEditor facade
+WorkbookEditor narrow Patch facade / future editor extensions
 → internal PackageReader
 → PartIndex / RelationshipGraph
 → EditPlan / DependencyAnalyzer
@@ -1378,7 +1378,7 @@ part name、relationship owner 或 content type override。
 ### 3. In-memory：小文件随机编辑（规划路径）
 
 ```text
-future WorkbookEditor / WorksheetEditor
+future WorkbookEditor extensions / WorksheetEditor
 → CellValue API boundary
 → 小型 WorkbookModel / WorksheetModel
 → compact CellStore / CellRecord
@@ -1449,8 +1449,9 @@ P7.4 guardrail draft：
 
 P7.5 save-as / Patch handoff draft：
 
-- future `WorkbookEditor::save_as(output_path)` 仍使用 save-as 语义，不承诺原地 atomic
-  overwrite；source-backed editor 必须继承当前 internal PackageEditor 的输出路径 guard。
+- 当前窄 `WorkbookEditor::save_as(output_path)` 已用于 whole-`<sheetData>` Patch facade，
+  并继承 internal PackageEditor 的输出路径 guard；future random-edit / in-memory
+  materialization handoff 仍必须使用 save-as 语义，不承诺原地 atomic overwrite。
 - new-workbook materialization 可生成完整新 package；existing-package materialization
   应以 source package 为 preservation baseline，默认 copy-original 未修改 entries 和
   unknown entries。
@@ -1462,8 +1463,9 @@ P7.5 save-as / Patch handoff draft：
   需要独立模型、Patch preservation 或 audit，不能由 cell rewrite 静默修复。
 - 当前已有 internal 回归把 `CellStore` 输出的 standalone `<sheetData>` payload 交给
   by-name `PackageEditor` `sheetData` Patch helper，验证 bounded local worksheet rewrite、
-  calc metadata request、默认 calcChain cleanup 和 unknown entry preservation；它仍不是
-  public save-as handoff。
+  calc metadata request、默认 calcChain cleanup 和 unknown entry preservation；当前
+  public `WorkbookEditor::replace_sheet_data()` 复用这条窄 handoff，但它仍不是 random
+  cell editing / in-memory materialization save-as。
 - blank / erase / tombstone 在 save-as 阶段必须有明确 contract：删除 `<c>`、写 blank
   styled cell、保留 style/metadata 或 fail；P7.5 不宣称 existing-file cell clearing 已实现。
 - sharedStrings、styles 和 calc metadata 复用 P6 policy：默认 preserve / audit / fail，

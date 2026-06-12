@@ -86,6 +86,40 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     return path;
 }
 
+// Writes a source workbook with document properties so patch tests can verify
+// that WorkbookEditor preserves docProps bytes through save_as().
+std::filesystem::path write_two_sheet_source_with_document_properties(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.document_properties.creator = "WorkbookEditor Tests";
+    options.document_properties.last_modified_by = "WorkbookEditor Tests";
+    options.document_properties.title = "WorkbookEditor preservation";
+    options.document_properties.subject = "FastXLSX";
+    options.document_properties.description = "WorkbookEditor docProps preservation source";
+    options.document_properties.keywords = "FastXLSX,WorkbookEditor,Patch";
+    options.document_properties.category = "tests";
+    options.document_properties.application = "FastXLSX";
+    options.document_properties.app_version = "1.0";
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path, options);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 void test_replaces_sheet_data_and_preserves_untouched_parts()
 {
     const std::filesystem::path source =
@@ -100,6 +134,7 @@ void test_replaces_sheet_data_and_preserves_untouched_parts()
     const std::string workbook_rels_before = source_entries.at("xl/_rels/workbook.xml.rels");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(7.0)}});
     editor.replace_sheet_data("Data",
         {
             {fastxlsx::CellValue::number(42.25), fastxlsx::CellValue::text("fresh")},
@@ -109,6 +144,8 @@ void test_replaces_sheet_data_and_preserves_untouched_parts()
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(worksheet_xml, R"(<v>7</v>)",
+        "second replacement should overwrite earlier queued data");
     check_contains(worksheet_xml, R"(<c r="A1"><v>42.25</v></c>)",
         "replaced sheet should carry new numeric cell");
     check_contains(worksheet_xml, R"(<c r="B1" t="inlineStr"><is><t>fresh</t></is></c>)",
@@ -148,6 +185,121 @@ void test_worksheet_names_and_has_worksheet()
     check(editor.has_worksheet("Untouched"), "has_worksheet should find the second sheet");
     check(!editor.has_worksheet("Missing"),
         "has_worksheet should reject an absent sheet name");
+}
+
+void test_pending_change_diagnostics_track_public_edits()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-pending-source.xlsx");
+
+    fastxlsx::WorkbookEditor clean_editor = fastxlsx::WorkbookEditor::open(source);
+    check(!clean_editor.has_pending_changes(),
+        "newly opened editor should report no pending changes");
+    check(clean_editor.pending_change_count() == 0,
+        "newly opened editor should report zero pending changes");
+    check(clean_editor.pending_replacement_cell_count() == 0,
+        "newly opened editor should report zero pending replacement cells");
+    check(clean_editor.estimated_pending_replacement_memory_usage() == 0,
+        "newly opened editor should report zero pending replacement memory");
+
+    check(threw_fastxlsx_error([&] {
+        clean_editor.replace_sheet_data("Missing",
+            {{fastxlsx::CellValue::number(1.0)}});
+    }), "rejected replace_sheet_data should throw FastXlsxError");
+    check(!clean_editor.has_pending_changes(),
+        "rejected replace_sheet_data should not mark the editor dirty");
+    check(clean_editor.pending_change_count() == 0,
+        "rejected replace_sheet_data should not add pending changes");
+
+    check(threw_fastxlsx_error([&] { clean_editor.rename_sheet("Data", "Bad/Name"); }),
+        "rejected rename_sheet should throw FastXlsxError");
+    check(!clean_editor.has_pending_changes(),
+        "rejected rename_sheet should not mark the editor dirty");
+    check(clean_editor.pending_change_count() == 0,
+        "rejected rename_sheet should not add pending changes");
+
+    clean_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(9.0)}});
+    check(clean_editor.has_pending_changes(),
+        "successful replace_sheet_data should mark the editor dirty");
+    check(clean_editor.pending_change_count() > 0,
+        "successful replace_sheet_data should expose a coarse pending count");
+    check(clean_editor.pending_replacement_cell_count() == 1,
+        "successful replace_sheet_data should expose final queued replacement cells");
+    check(clean_editor.estimated_pending_replacement_memory_usage() > 0,
+        "successful replace_sheet_data should expose estimated replacement memory");
+
+    fastxlsx::WorkbookEditor rename_editor = fastxlsx::WorkbookEditor::open(source);
+    rename_editor.rename_sheet("Data", "Renamed");
+    check(rename_editor.has_pending_changes(),
+        "successful rename_sheet should mark the editor dirty");
+    check(rename_editor.pending_change_count() > 0,
+        "successful rename_sheet should expose a coarse pending count");
+    check(rename_editor.pending_replacement_cell_count() == 0,
+        "rename_sheet should not add replacement cells");
+    check(rename_editor.estimated_pending_replacement_memory_usage() == 0,
+        "rename_sheet should not add replacement memory");
+}
+
+void test_replacement_guardrails_and_payload_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-guardrails-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-guardrails-output.xlsx");
+
+    fastxlsx::WorkbookEditorOptions max_cell_options;
+    max_cell_options.max_replacement_cells = 1;
+    fastxlsx::WorkbookEditor max_cell_editor =
+        fastxlsx::WorkbookEditor::open(source, max_cell_options);
+
+    check(threw_fastxlsx_error([&] {
+        max_cell_editor.replace_sheet_data("Data",
+            {{fastxlsx::CellValue::number(1.0), fastxlsx::CellValue::number(2.0)}});
+    }), "replace_sheet_data should enforce max_replacement_cells before commit");
+    check(!max_cell_editor.has_pending_changes(),
+        "max_replacement_cells failure should not mark the editor dirty");
+    check(max_cell_editor.pending_replacement_cell_count() == 0,
+        "max_replacement_cells failure should not record replacement cells");
+    check(max_cell_editor.estimated_pending_replacement_memory_usage() == 0,
+        "max_replacement_cells failure should not record replacement memory");
+
+    max_cell_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(3.0)}});
+    check(max_cell_editor.pending_replacement_cell_count() == 1,
+        "valid guarded replacement should record one queued cell");
+    const std::size_t first_memory =
+        max_cell_editor.estimated_pending_replacement_memory_usage();
+    check(first_memory > 0,
+        "valid guarded replacement should record non-zero estimated memory");
+
+    max_cell_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(4.0)}});
+    check(max_cell_editor.pending_change_count() == 2,
+        "repeated same-sheet replacement should still count public edit calls");
+    check(max_cell_editor.pending_replacement_cell_count() == 1,
+        "repeated same-sheet replacement should report only final queued cells");
+    check(max_cell_editor.estimated_pending_replacement_memory_usage() > 0,
+        "repeated same-sheet replacement should keep final estimated memory");
+
+    max_cell_editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>4</v></c>)",
+        "guarded replacement output should use the final queued payload");
+    check_not_contains(worksheet_xml, R"(<v>3</v>)",
+        "guarded replacement output should drop stale same-sheet payload");
+
+    fastxlsx::WorkbookEditorOptions memory_options;
+    memory_options.replacement_memory_budget_bytes = 1;
+    fastxlsx::WorkbookEditor memory_editor =
+        fastxlsx::WorkbookEditor::open(source, memory_options);
+    check(threw_fastxlsx_error([&] {
+        memory_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("too large")}});
+    }), "replace_sheet_data should enforce replacement_memory_budget_bytes before commit");
+    check(!memory_editor.has_pending_changes(),
+        "memory budget failure should not mark the editor dirty");
+    check(memory_editor.pending_replacement_cell_count() == 0,
+        "memory budget failure should not record replacement cells");
+    check(memory_editor.estimated_pending_replacement_memory_usage() == 0,
+        "memory budget failure should not record replacement memory");
 }
 
 void test_missing_sheet_throws_and_editor_stays_usable()
@@ -285,6 +437,17 @@ void test_rename_sheet_changes_catalog_name_and_preserves_parts()
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     editor.rename_sheet("Data", "Renamed & Data");
+
+    const std::vector<std::string> names = editor.worksheet_names();
+    check(names.size() == 2 && names[0] == "Data",
+        "source workbook view should stay on the original catalog after rename");
+    check(names.size() == 2 && names[1] == "Untouched",
+        "source workbook view should keep the untouched sheet name after rename");
+    check(editor.has_worksheet("Data"),
+        "source workbook view should still expose the original sheet name after rename");
+    check(!editor.has_worksheet("Renamed & Data"),
+        "source workbook view should not expose the planned rename before save");
+
     editor.save_as(output);
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -308,13 +471,37 @@ void test_rename_sheet_changes_catalog_name_and_preserves_parts()
     // Reopening the output package confirms the new catalog name is the one a
     // reader sees, and the other sheet is unchanged.
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
-    const std::vector<std::string> names = reopened.worksheet_names();
-    check(names.size() == 2 && names[0] == "Renamed & Data",
+    const std::vector<std::string> reopened_names = reopened.worksheet_names();
+    check(reopened_names.size() == 2 && reopened_names[0] == "Renamed & Data",
         "reopened output should expose the renamed sheet in catalog order");
-    check(names.size() == 2 && names[1] == "Untouched",
+    check(reopened_names.size() == 2 && reopened_names[1] == "Untouched",
         "reopened output should keep the untouched sheet name");
     check(!reopened.has_worksheet("Data"),
         "reopened output should no longer expose the old sheet name");
+}
+
+void test_docprops_are_preserved_through_patch()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_document_properties("fastxlsx-workbook-editor-docprops-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-docprops-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string core_before = source_entries.at("docProps/core.xml");
+    const std::string app_before = source_entries.at("docProps/app.xml");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(123.0)}});
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("docProps/core.xml") == core_before,
+        "patch save should preserve docProps/core.xml bytes");
+    check(output_entries.at("docProps/app.xml") == app_before,
+        "patch save should preserve docProps/app.xml bytes");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), R"(<v>123</v>)",
+        "patch save should still apply the requested workbook edit");
 }
 
 void test_rename_to_existing_name_throws_and_editor_stays_usable()
@@ -379,12 +566,15 @@ int main()
     try {
         test_replaces_sheet_data_and_preserves_untouched_parts();
         test_worksheet_names_and_has_worksheet();
+        test_pending_change_diagnostics_track_public_edits();
+        test_replacement_guardrails_and_payload_diagnostics();
         test_missing_sheet_throws_and_editor_stays_usable();
         test_save_as_over_source_throws();
         test_empty_rows_emit_empty_sheet_data();
         test_text_uses_inline_strings_and_preserves_shared_strings();
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
+        test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();
         test_rename_to_invalid_name_throws();

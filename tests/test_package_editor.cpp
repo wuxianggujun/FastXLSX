@@ -2691,6 +2691,9 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
             "cell replacement output plan should expose full calculation request");
         check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
             "cell replacement output plan should expose file-backed chunk handoff note");
+        check(has_note_containing(output_plan.notes,
+                  {"PackageReader file-backed", "entry source"}),
+            "cell replacement output plan should expose source-entry file-backed extraction");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement output plan should expose dimension refresh note");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
@@ -2842,6 +2845,9 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
             "cell replacement linked output plan should expose calcChain removal");
         check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
             "cell replacement linked output plan should expose file-backed chunk note");
+        check(has_note_containing(output_plan.notes,
+                  {"PackageReader file-backed", "entry source"}),
+            "cell replacement linked output plan should expose source-entry file-backed extraction");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement linked output plan should expose dimension refresh note");
         check(has_note_containing(output_plan.notes,
@@ -3246,6 +3252,60 @@ void test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension()
         "cell replacement handoff should replace stale worksheet dimension");
     check_contains(worksheet_xml, R"(<c r="C3"><v>3</v></c>)",
         "dimension refresh should preserve non-target cell XML");
+}
+
+void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cell-replacement-planned-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-planned-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string planned_worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>11</v></c></row></sheetData></worksheet>)";
+    editor.replace_worksheet_part(worksheet_part, planned_worksheet);
+
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1", R"(<c r="A1"><v>12</v></c>)" },
+    };
+    editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "planned-input cell replacement should keep worksheet in the edit plan");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "planned-input cell replacement should stream-rewrite worksheet output");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "planned-input cell replacement should still remove stale calcChain");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet replacement input", "materialized"}),
+        "planned-input cell replacement should report materialized planned worksheet input");
+    check(!has_note_containing(output_plan.notes,
+              {"PackageReader file-backed", "entry source"}),
+        "planned-input cell replacement should not claim source-entry extraction");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "planned-input cell replacement output plan should stream-rewrite worksheet chunks");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml = output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>12</v></c>)",
+        "planned-input cell replacement output should use the replacement cell");
+    check_not_contains(worksheet_xml, R"(<v>11</v>)",
+        "planned-input cell replacement output should consume the planned source cell");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "planned-input cell replacement output should omit stale calcChain");
 }
 
 void test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change()
@@ -14682,27 +14742,91 @@ void test_package_editor_replaces_media_and_preserves_drawing_links()
     check_output_entry_part_context(output_plan.entries, "xl/media/image1.png",
         true, image_part.value(),
         "linked fixture media output plan should classify media as package part");
+    const auto* output_media_plan =
+        find_output_entry_plan(output_plan.entries, "xl/media/image1.png");
+    check(output_media_plan->reason.find("media stream rewrite") != std::string::npos,
+        "linked fixture media output plan should keep replacement reason");
     check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked fixture media output plan should preserve content types");
     check_output_entry_part_context(output_plan.entries, "[Content_Types].xml",
         false, "",
         "linked fixture media output plan should keep content types as metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve workbook part");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve worksheet part");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve worksheet relationships");
     check_output_entry_plan(output_plan.entries, "xl/drawings/_rels/drawing1.xml.rels",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked fixture media output plan should preserve drawing relationships");
     check_output_entry_part_context(output_plan.entries,
         "xl/drawings/_rels/drawing1.xml.rels", false, "",
         "linked fixture media output plan should classify drawing relationships as metadata");
+    const auto* output_drawing_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "xl/drawings/_rels/drawing1.xml.rels");
+    check(output_drawing_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "linked fixture media output plan should classify drawing relationships metadata");
+    check(output_drawing_relationships_plan->owner_part == drawing_part.value(),
+        "linked fixture media output plan should keep drawing relationships owner");
     check_output_entry_plan(output_plan.entries, "xl/drawings/drawing1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked fixture media output plan should preserve drawing part");
     check_output_entry_plan(output_plan.entries, "xl/charts/chart1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked fixture media output plan should preserve chart part");
+    check_output_entry_plan(output_plan.entries, "xl/tables/table1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve table part");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve VML drawing");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/drawing space.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve percent-decoded drawing");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve sharedStrings");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve sharedStrings relationships");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve styles");
+    check_output_entry_plan(output_plan.entries, "xl/vbaProject.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve VBA");
+    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve calcChain");
     check_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "linked fixture media output plan should preserve unknown extension");
+    check_output_entry_plan(output_plan.entries,
+        "custom/_rels/opaque-extension.bin.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "linked fixture media output plan should preserve unknown extension relationships");
+    check_output_entry_part_context(output_plan.entries,
+        "custom/_rels/opaque-extension.bin.rels", false, "",
+        "linked fixture media output plan should classify unknown relationships as metadata");
+    const auto* output_opaque_relationships_plan = find_output_entry_plan(
+        output_plan.entries, "custom/_rels/opaque-extension.bin.rels");
+    check(output_opaque_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "linked fixture media output plan should classify unknown relationships metadata");
+    check(output_opaque_relationships_plan->owner_part == opaque_extension_part.value(),
+        "linked fixture media output plan should keep unknown relationships owner");
     check(find_output_entry_plan(output_plan.entries, "xl/media/_rels/image1.png.rels")
             == nullptr,
         "linked fixture media output plan should not invent media owner relationships");
@@ -15100,6 +15224,175 @@ void test_package_editor_replaces_shared_strings_and_preserves_workbook_links()
         "linked fixture sharedStrings replacement should not promote PNG media to an override");
 }
 
+void test_package_editor_repeated_shared_strings_replacement_updates_final_state()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package("fastxlsx-package-editor-linked-sharedstrings-repeat-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-linked-sharedstrings-repeat-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName image_part("/xl/media/image1.png");
+
+    const std::string stale_shared_strings =
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+        R"(<si><t>Stale</t></si>)"
+        R"(</sst>)";
+    const std::string final_shared_strings =
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">)"
+        R"(<si><t>Final</t></si><si><t>Shared</t></si>)"
+        R"(</sst>)";
+
+    editor.replace_part(shared_strings_part, stale_shared_strings,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "stale repeated sharedStrings stream rewrite");
+    editor.replace_part(shared_strings_part, final_shared_strings,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "final repeated sharedStrings stream rewrite");
+
+    const auto* shared_strings_plan =
+        editor.edit_plan().find_part(shared_strings_part);
+    check(shared_strings_plan != nullptr,
+        "repeated sharedStrings replacement should keep an active edit-plan part");
+    check(shared_strings_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated sharedStrings replacement should keep final stream-rewrite mode");
+    check(shared_strings_plan->reason.find("final repeated") != std::string::npos,
+        "repeated sharedStrings replacement should keep final reason");
+    check(shared_strings_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated sharedStrings replacement should drop stale reason");
+    check_manifest_write_mode(editor, shared_strings_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated sharedStrings replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(shared_strings_part) != nullptr,
+        "repeated sharedStrings replacement should keep sharedStrings content type override");
+    check(editor.edit_plan().find_removed_part(shared_strings_part) == nullptr,
+        "repeated sharedStrings replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry("xl/_rels/sharedStrings.xml.rels")
+            == nullptr,
+        "repeated sharedStrings replacement should not leave owner relationships omission");
+    const auto* shared_strings_relationships_audit =
+        editor.edit_plan().find_package_entry("xl/_rels/sharedStrings.xml.rels");
+    check(shared_strings_relationships_audit != nullptr,
+        "repeated sharedStrings replacement should preserve owner relationships audit");
+    check(shared_strings_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated sharedStrings replacement should preserve owner relationships bytes");
+    check(shared_strings_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated sharedStrings replacement should keep owner relationship audit role");
+    check(shared_strings_relationships_audit->owner_part == shared_strings_part.value(),
+        "repeated sharedStrings replacement should keep owner relationship context");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated sharedStrings replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated sharedStrings replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated sharedStrings replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated sharedStrings replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(styles_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated sharedStrings replacement should keep styles copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated sharedStrings replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated sharedStrings replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated sharedStrings replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated sharedStrings replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated sharedStrings replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "repeated sharedStrings replacement output plan should rewrite sharedStrings");
+    const auto* output_shared_strings_plan =
+        find_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml");
+    check(output_shared_strings_plan->reason.find("final repeated") != std::string::npos,
+        "repeated sharedStrings replacement output plan should keep final reason");
+    check(output_shared_strings_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated sharedStrings replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated sharedStrings replacement output plan should preserve owner relationships");
+    const auto* output_shared_strings_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels");
+    check(output_shared_strings_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated sharedStrings replacement output plan should keep owner relationship audit role");
+    check(output_shared_strings_relationships_plan->owner_part
+            == shared_strings_part.value(),
+        "repeated sharedStrings replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated sharedStrings replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated sharedStrings replacement output plan should preserve workbook relationships");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/sharedStrings.xml") == final_shared_strings,
+        "repeated sharedStrings replacement should write final sharedStrings XML");
+    check(output_reader.read_entry("xl/sharedStrings.xml") != stale_shared_strings,
+        "repeated sharedStrings replacement should not write stale sharedStrings XML");
+    check(output_reader.read_entry("xl/_rels/sharedStrings.xml.rels")
+            == source.shared_strings_relationships,
+        "repeated sharedStrings replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated sharedStrings replacement should preserve content types bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated sharedStrings replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated sharedStrings replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated sharedStrings replacement should preserve worksheet bytes");
+
+    const auto* workbook_relationships =
+        output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated sharedStrings replacement should keep workbook relationships readable");
+    const auto* shared_strings_relationship =
+        workbook_relationships->find_by_id("rId3");
+    check(shared_strings_relationship != nullptr,
+        "repeated sharedStrings replacement should keep workbook sharedStrings relationship id");
+    check(shared_strings_relationship->target == "sharedStrings.xml",
+        "repeated sharedStrings replacement should keep workbook sharedStrings target");
+    check(shared_strings_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::Internal,
+        "repeated sharedStrings replacement should keep workbook sharedStrings target mode");
+    const auto* shared_strings_relationships =
+        output_reader.relationships_for(shared_strings_part);
+    check(shared_strings_relationships != nullptr,
+        "repeated sharedStrings replacement should keep owner relationships readable");
+    const auto* shared_external =
+        shared_strings_relationships->find_by_id("rIdSharedExternal");
+    check(shared_external != nullptr,
+        "repeated sharedStrings replacement should keep owner relationship id");
+    check(shared_external->target_mode == fastxlsx::detail::Relationship::TargetMode::External,
+        "repeated sharedStrings replacement should keep owner relationship target mode");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "repeated sharedStrings replacement should keep sharedStrings content type override");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "repeated sharedStrings replacement should keep styles content type override");
+    check(output_reader.content_types().default_for("png") != nullptr,
+        "repeated sharedStrings replacement should keep PNG default content type");
+    check(output_reader.content_types().override_for(image_part) == nullptr,
+        "repeated sharedStrings replacement should not promote PNG media to an override");
+}
+
 void test_package_editor_replaces_styles_and_preserves_workbook_links()
 {
     const LinkedObjectSourcePackage source =
@@ -15317,6 +15610,160 @@ void test_package_editor_replaces_styles_and_preserves_workbook_links()
         "linked fixture styles replacement should keep PNG default content type");
     check(output_reader.content_types().override_for(image_part) == nullptr,
         "linked fixture styles replacement should not promote PNG media to an override");
+}
+
+void test_package_editor_repeated_styles_replacement_updates_final_state()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package("fastxlsx-package-editor-linked-styles-repeat-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-linked-styles-repeat-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName image_part("/xl/media/image1.png");
+
+    const std::string stale_styles =
+        R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<fonts count="1"><font><i/></font></fonts>)"
+        R"(<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>)"
+        R"(<borders count="1"><border/></borders>)"
+        R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)"
+        R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
+        R"(</styleSheet>)";
+    const std::string final_styles =
+        R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<fonts count="1"><font><b/></font></fonts>)"
+        R"(<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>)"
+        R"(<borders count="1"><border/></borders>)"
+        R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)"
+        R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
+        R"(</styleSheet>)";
+
+    editor.replace_part(styles_part, stale_styles,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated styles local-DOM rewrite");
+    editor.replace_part(styles_part, final_styles,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated styles local-DOM rewrite");
+
+    const auto* styles_plan = editor.edit_plan().find_part(styles_part);
+    check(styles_plan != nullptr,
+        "repeated styles replacement should keep an active edit-plan part");
+    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated styles replacement should keep final local-DOM-rewrite mode");
+    check(styles_plan->reason.find("final repeated") != std::string::npos,
+        "repeated styles replacement should keep final reason");
+    check(styles_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated styles replacement should drop stale reason");
+    check_manifest_write_mode(editor, styles_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated styles replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(styles_part) != nullptr,
+        "repeated styles replacement should keep styles content type override");
+    check(editor.edit_plan().find_removed_part(styles_part) == nullptr,
+        "repeated styles replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry("xl/_rels/styles.xml.rels")
+            == nullptr,
+        "repeated styles replacement should not invent owner relationships omission");
+    check(editor.edit_plan().find_package_entry("xl/_rels/styles.xml.rels") == nullptr,
+        "repeated styles replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated styles replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated styles replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated styles replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated styles replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(shared_strings_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated styles replacement should keep sharedStrings copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated styles replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated styles replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated styles replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated styles replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated styles replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated styles replacement output plan should rewrite styles");
+    const auto* output_styles_plan =
+        find_output_entry_plan(output_plan.entries, "xl/styles.xml");
+    check(output_styles_plan->reason.find("final repeated") != std::string::npos,
+        "repeated styles replacement output plan should keep final reason");
+    check(output_styles_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated styles replacement output plan should drop stale reason");
+    check(find_output_entry_plan(output_plan.entries, "xl/_rels/styles.xml.rels")
+            == nullptr,
+        "repeated styles replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated styles replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated styles replacement output plan should preserve workbook relationships");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/styles.xml") != entries.end(),
+        "repeated styles replacement output should keep styles entry");
+    check(entries.find("xl/_rels/styles.xml.rels") == entries.end(),
+        "repeated styles replacement output should not invent owner relationships entry");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/styles.xml") == final_styles,
+        "repeated styles replacement should write final styles XML");
+    check(output_reader.read_entry("xl/styles.xml") != stale_styles,
+        "repeated styles replacement should not write stale styles XML");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated styles replacement should preserve content types bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated styles replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated styles replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated styles replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == source.shared_strings,
+        "repeated styles replacement should preserve sharedStrings bytes");
+
+    const auto* workbook_relationships =
+        output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated styles replacement should keep workbook relationships readable");
+    const auto* styles_relationship = workbook_relationships->find_by_id("rId4");
+    check(styles_relationship != nullptr,
+        "repeated styles replacement should keep workbook styles relationship id");
+    check(styles_relationship->target == "styles.xml",
+        "repeated styles replacement should keep workbook styles target");
+    check(styles_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::Internal,
+        "repeated styles replacement should keep workbook styles target mode");
+    check(output_reader.relationships_for(styles_part) == nullptr,
+        "repeated styles replacement should not create styles owner relationships");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "repeated styles replacement should keep styles content type override");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "repeated styles replacement should keep sharedStrings content type override");
+    check(output_reader.content_types().default_for("png") != nullptr,
+        "repeated styles replacement should keep PNG default content type");
+    check(output_reader.content_types().override_for(image_part) == nullptr,
+        "repeated styles replacement should not promote PNG media to an override");
 }
 
 void test_package_editor_replaces_chart_and_preserves_drawing_links()
@@ -15784,6 +16231,206 @@ void test_package_editor_replaces_vba_project_and_preserves_workbook_links()
         "linked fixture VBA replacement should keep PNG default content type");
     check(output_reader.content_types().override_for(image_part) == nullptr,
         "linked fixture VBA replacement should not promote PNG media to an override");
+}
+
+void test_package_editor_repeated_vba_project_replacement_updates_final_state()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package("fastxlsx-package-editor-linked-vba-repeat-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-linked-vba-repeat-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName drawing_part("/xl/drawings/drawing1.xml");
+    const fastxlsx::detail::PartName chart_part("/xl/charts/chart1.xml");
+    const fastxlsx::detail::PartName image_part("/xl/media/image1.png");
+    const fastxlsx::detail::PartName table_part("/xl/tables/table1.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName vba_part("/xl/vbaProject.bin");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
+
+    std::string stale_vba = "VBA";
+    stale_vba.push_back('\0');
+    stale_vba += "PROJECT";
+    stale_vba.push_back('\0');
+    stale_vba += "stale";
+    std::string final_vba = "VBA";
+    final_vba.push_back('\0');
+    final_vba += "PROJECT";
+    final_vba.push_back('\0');
+    final_vba += "final";
+
+    editor.replace_part(vba_part, stale_vba,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "stale repeated VBA project stream rewrite");
+    editor.replace_part(vba_part, final_vba,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "final repeated VBA project stream rewrite");
+
+    const auto* vba_plan = editor.edit_plan().find_part(vba_part);
+    check(vba_plan != nullptr,
+        "repeated VBA replacement should keep an active edit-plan part");
+    check(vba_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated VBA replacement should keep final stream-rewrite mode");
+    check(vba_plan->reason.find("final repeated") != std::string::npos,
+        "repeated VBA replacement should keep final reason");
+    check(vba_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated VBA replacement should drop stale reason");
+    check_manifest_write_mode(editor, vba_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated VBA replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(vba_part) != nullptr,
+        "repeated VBA replacement should keep VBA content type override");
+    check(editor.edit_plan().find_removed_part(vba_part) == nullptr,
+        "repeated VBA replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry("xl/_rels/vbaProject.bin.rels")
+            == nullptr,
+        "repeated VBA replacement should not invent owner relationships omission");
+    check(editor.edit_plan().find_package_entry("xl/_rels/vbaProject.bin.rels") == nullptr,
+        "repeated VBA replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated VBA replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated VBA replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(drawing_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep drawing copy-original");
+    check(editor.edit_plan().find_part(chart_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep chart copy-original");
+    check(editor.edit_plan().find_part(image_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep media copy-original");
+    check(editor.edit_plan().find_part(table_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep table copy-original");
+    check(editor.edit_plan().find_part(shared_strings_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep sharedStrings copy-original");
+    check(editor.edit_plan().find_part(styles_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep styles copy-original");
+    check(editor.edit_plan().find_part(calc_chain_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep calcChain copy-original");
+    check(editor.edit_plan().find_part(opaque_extension_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated VBA replacement should keep unknown extension copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated VBA replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated VBA replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated VBA replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated VBA replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated VBA replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/vbaProject.bin",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "repeated VBA replacement output plan should rewrite VBA");
+    const auto* output_vba_plan =
+        find_output_entry_plan(output_plan.entries, "xl/vbaProject.bin");
+    check(output_vba_plan->reason.find("final repeated") != std::string::npos,
+        "repeated VBA replacement output plan should keep final reason");
+    check(output_vba_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated VBA replacement output plan should drop stale reason");
+    check(find_output_entry_plan(output_plan.entries, "xl/_rels/vbaProject.bin.rels")
+            == nullptr,
+        "repeated VBA replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated VBA replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated VBA replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated VBA replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated VBA replacement output plan should preserve workbook");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/vbaProject.bin") != entries.end(),
+        "repeated VBA replacement output should keep VBA project entry");
+    check(entries.find("xl/_rels/vbaProject.bin.rels") == entries.end(),
+        "repeated VBA replacement output should not invent owner relationships entry");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/vbaProject.bin") == final_vba,
+        "repeated VBA replacement should write final VBA bytes");
+    check(output_reader.read_entry("xl/vbaProject.bin") != stale_vba,
+        "repeated VBA replacement should not write stale VBA bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated VBA replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated VBA replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated VBA replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated VBA replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated VBA replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/drawings/drawing1.xml") == source.drawing,
+        "repeated VBA replacement should preserve drawing bytes");
+    check(output_reader.read_entry("xl/charts/chart1.xml") == source.chart,
+        "repeated VBA replacement should preserve chart bytes");
+    check(output_reader.read_entry("xl/media/image1.png") == source.media,
+        "repeated VBA replacement should preserve media bytes");
+    check(output_reader.read_entry("xl/tables/table1.xml") == source.table,
+        "repeated VBA replacement should preserve table bytes");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == source.shared_strings,
+        "repeated VBA replacement should preserve sharedStrings bytes");
+    check(output_reader.read_entry("xl/styles.xml") == source.styles,
+        "repeated VBA replacement should preserve styles bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "repeated VBA replacement should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque-extension.bin")
+            == source.opaque_extension,
+        "repeated VBA replacement should preserve unknown extension bytes");
+
+    const auto* workbook_relationships =
+        output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated VBA replacement should keep workbook relationships readable");
+    const auto* vba_relationship = workbook_relationships->find_by_id("rId2");
+    check(vba_relationship != nullptr,
+        "repeated VBA replacement should keep workbook VBA relationship id");
+    check(vba_relationship->target == "vbaProject.bin",
+        "repeated VBA replacement should keep workbook VBA target");
+    check(vba_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::Internal,
+        "repeated VBA replacement should keep workbook VBA target mode");
+    check(output_reader.relationships_for(vba_part) == nullptr,
+        "repeated VBA replacement should not create VBA owner relationships");
+    check(output_reader.content_types().override_for(vba_part) != nullptr,
+        "repeated VBA replacement should keep VBA content type override");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "repeated VBA replacement should keep sharedStrings content type override");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "repeated VBA replacement should keep styles content type override");
+    check(output_reader.content_types().default_for("png") != nullptr,
+        "repeated VBA replacement should keep PNG default content type");
+    check(output_reader.content_types().override_for(image_part) == nullptr,
+        "repeated VBA replacement should not promote PNG media to an override");
 }
 
 void test_package_editor_replaces_vml_drawing_and_preserves_worksheet_links()
@@ -17031,6 +17678,209 @@ void test_package_editor_replaces_pivot_table_and_preserves_cache_chain()
         "pivot table replacement should keep pivot cache records content type override");
 }
 
+void test_package_editor_repeated_pivot_table_replacement_updates_final_state()
+{
+    const PivotSourcePackage source =
+        write_pivot_source_package("fastxlsx-package-editor-repeat-pivot-table-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-pivot-table-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName pivot_table_part("/xl/pivotTables/pivotTable1.xml");
+    const fastxlsx::detail::PartName pivot_cache_definition_part(
+        "/xl/pivotCache/pivotCacheDefinition1.xml");
+    const fastxlsx::detail::PartName pivot_cache_records_part(
+        "/xl/pivotCache/pivotCacheRecords1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+    const std::string pivot_table_relationships_entry =
+        "xl/pivotTables/_rels/pivotTable1.xml.rels";
+
+    const std::string stale_pivot_table =
+        R"(<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1Stale" cacheId="1" dataCaption="Stale Values">)"
+        R"(<location ref="F3:G8" firstHeaderRow="1" firstDataRow="2" firstDataCol="1"/>)"
+        R"(<pivotFields count="1"><pivotField axis="axisRow"/></pivotFields>)"
+        R"(</pivotTableDefinition>)";
+    const std::string final_pivot_table =
+        R"(<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1Final" cacheId="1" dataCaption="Final Values">)"
+        R"(<location ref="H4:I9" firstHeaderRow="1" firstDataRow="2" firstDataCol="1"/>)"
+        R"(<pivotFields count="1"><pivotField axis="axisCol"/></pivotFields>)"
+        R"(</pivotTableDefinition>)";
+
+    editor.replace_part(pivot_table_part, stale_pivot_table,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated pivot table local-DOM rewrite");
+    editor.replace_part(pivot_table_part, final_pivot_table,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated pivot table local-DOM rewrite");
+
+    const auto* pivot_table_plan = editor.edit_plan().find_part(pivot_table_part);
+    check(pivot_table_plan != nullptr,
+        "repeated pivot table replacement should keep an active edit-plan part");
+    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated pivot table replacement should keep final local-DOM-rewrite mode");
+    check(pivot_table_plan->reason.find("final repeated") != std::string::npos,
+        "repeated pivot table replacement should keep final reason");
+    check(pivot_table_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated pivot table replacement should drop stale reason");
+    check_manifest_write_mode(editor, pivot_table_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated pivot table replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(pivot_table_part) != nullptr,
+        "repeated pivot table replacement should keep pivot table content type override");
+    check(editor.edit_plan().find_removed_part(pivot_table_part) == nullptr,
+        "repeated pivot table replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(pivot_table_relationships_entry)
+            == nullptr,
+        "repeated pivot table replacement should not leave owner relationships omission");
+    const auto* pivot_table_relationships_audit =
+        editor.edit_plan().find_package_entry(pivot_table_relationships_entry);
+    check(pivot_table_relationships_audit != nullptr,
+        "repeated pivot table replacement should preserve owner relationships audit");
+    check(pivot_table_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot table replacement should preserve owner relationships bytes");
+    check(pivot_table_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated pivot table replacement should keep owner relationship audit role");
+    check(pivot_table_relationships_audit->owner_part == pivot_table_part.value(),
+        "repeated pivot table replacement should keep owner relationship context");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated pivot table replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated pivot table replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot table replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot table replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(pivot_cache_definition_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot table replacement should keep pivot cache definition copy-original");
+    check(editor.edit_plan().find_part(pivot_cache_records_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot table replacement should keep pivot cache records copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot table replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated pivot table replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated pivot table replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated pivot table replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated pivot table replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated pivot table replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated pivot table replacement output plan should rewrite pivot table");
+    const auto* output_pivot_table_plan =
+        find_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml");
+    check(output_pivot_table_plan->reason.find("final repeated") != std::string::npos,
+        "repeated pivot table replacement output plan should keep final reason");
+    check(output_pivot_table_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated pivot table replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, pivot_table_relationships_entry,
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve owner relationships");
+    const auto* output_pivot_table_relationships_plan =
+        find_output_entry_plan(output_plan.entries, pivot_table_relationships_entry);
+    check(output_pivot_table_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated pivot table replacement output plan should keep owner relationship audit role");
+    check(output_pivot_table_relationships_plan->owner_part == pivot_table_part.value(),
+        "repeated pivot table replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve worksheet relationships");
+    check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheDefinition1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve pivot cache definition");
+    check_output_entry_plan(output_plan.entries,
+        "xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve pivot cache definition relationships");
+    check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheRecords1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve pivot cache records");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot table replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader, pivot_table_part.zip_path());
+    check(output_reader.read_entry("xl/pivotTables/pivotTable1.xml") == final_pivot_table,
+        "repeated pivot table replacement should write final pivot table payload");
+    check(output_reader.read_entry("xl/pivotTables/_rels/pivotTable1.xml.rels")
+            == source.pivot_table_relationships,
+        "repeated pivot table replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("xl/pivotCache/pivotCacheDefinition1.xml")
+            == source.pivot_cache_definition,
+        "repeated pivot table replacement should preserve pivot cache definition bytes");
+    check(output_reader.read_entry("xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels")
+            == source.pivot_cache_definition_relationships,
+        "repeated pivot table replacement should preserve pivot cache definition relationships bytes");
+    check(output_reader.read_entry("xl/pivotCache/pivotCacheRecords1.xml")
+            == source.pivot_cache_records,
+        "repeated pivot table replacement should preserve pivot cache records bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated pivot table replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated pivot table replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated pivot table replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated pivot table replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated pivot table replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "repeated pivot table replacement should preserve worksheet relationships bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated pivot table replacement should preserve unknown bytes");
+
+    const fastxlsx::detail::RelationshipGraph output_graph =
+        output_reader.relationship_graph();
+    check(output_graph.relationships_for(worksheet_part)->find_by_id("rIdPivotTable")
+            != nullptr,
+        "relationship graph should keep worksheet pivot table relationship after repeated replacement");
+    check(output_graph.relationships_for(pivot_table_part)->find_by_id("rIdPivotCacheDef")
+            != nullptr,
+        "relationship graph should keep pivot table cache relationship after repeated replacement");
+    check(output_graph.relationships_for(pivot_cache_definition_part)
+                ->find_by_id("rIdPivotRecords")
+            != nullptr,
+        "relationship graph should keep pivot cache records relationship after repeated replacement");
+    check(output_reader.content_types().override_for(pivot_table_part) != nullptr,
+        "repeated pivot table replacement should keep pivot table content type override");
+}
+
 void test_package_editor_removes_pivot_table_and_preserves_cache_chain()
 {
     const PivotSourcePackage source =
@@ -18209,6 +19059,213 @@ void test_package_editor_pivot_cache_definition_replacement_restores_prior_remov
         "pivot cache definition replacement after removal should keep content type override");
 }
 
+void test_package_editor_repeated_pivot_cache_definition_replacement_updates_final_state()
+{
+    const PivotSourcePackage source =
+        write_pivot_source_package(
+            "fastxlsx-package-editor-repeat-pivot-cache-definition-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-pivot-cache-definition-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName pivot_table_part("/xl/pivotTables/pivotTable1.xml");
+    const fastxlsx::detail::PartName pivot_cache_definition_part(
+        "/xl/pivotCache/pivotCacheDefinition1.xml");
+    const fastxlsx::detail::PartName pivot_cache_records_part(
+        "/xl/pivotCache/pivotCacheRecords1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+    const std::string pivot_cache_relationships_entry =
+        "xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels";
+
+    const std::string stale_cache_definition =
+        R"(<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" refreshOnLoad="1" refreshedVersion="11">)"
+        R"(<cacheSource type="worksheet"><worksheetSource ref="A1:B6" sheet="Sheet1"/></cacheSource>)"
+        R"(<cacheFields count="1"><cacheField name="StaleValue" numFmtId="0"><sharedItems containsNumber="1"/></cacheField></cacheFields>)"
+        R"(<cacheRecords r:id="rIdPivotRecords"/>)"
+        R"(</pivotCacheDefinition>)";
+    const std::string final_cache_definition =
+        R"(<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" refreshOnLoad="1" refreshedVersion="12">)"
+        R"(<cacheSource type="worksheet"><worksheetSource ref="B2:C7" sheet="Sheet1"/></cacheSource>)"
+        R"(<cacheFields count="1"><cacheField name="FinalValue" numFmtId="0"><sharedItems containsNumber="1"/></cacheField></cacheFields>)"
+        R"(<cacheRecords r:id="rIdPivotRecords"/>)"
+        R"(</pivotCacheDefinition>)";
+
+    editor.replace_part(pivot_cache_definition_part, stale_cache_definition,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated pivot cache definition local-DOM rewrite");
+    editor.replace_part(pivot_cache_definition_part, final_cache_definition,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated pivot cache definition local-DOM rewrite");
+
+    const auto* cache_definition_plan =
+        editor.edit_plan().find_part(pivot_cache_definition_part);
+    check(cache_definition_plan != nullptr,
+        "repeated pivot cache definition replacement should keep an active edit-plan part");
+    check(cache_definition_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated pivot cache definition replacement should keep final local-DOM-rewrite mode");
+    check(cache_definition_plan->reason.find("final repeated") != std::string::npos,
+        "repeated pivot cache definition replacement should keep final reason");
+    check(cache_definition_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated pivot cache definition replacement should drop stale reason");
+    check_manifest_write_mode(editor, pivot_cache_definition_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated pivot cache definition replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(pivot_cache_definition_part) != nullptr,
+        "repeated pivot cache definition replacement should keep cache definition content type override");
+    check(editor.edit_plan().find_removed_part(pivot_cache_definition_part) == nullptr,
+        "repeated pivot cache definition replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(pivot_cache_relationships_entry)
+            == nullptr,
+        "repeated pivot cache definition replacement should not leave owner relationships omission");
+    const auto* cache_relationships_audit =
+        editor.edit_plan().find_package_entry(pivot_cache_relationships_entry);
+    check(cache_relationships_audit != nullptr,
+        "repeated pivot cache definition replacement should preserve owner relationships audit");
+    check(cache_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache definition replacement should preserve owner relationships bytes");
+    check(cache_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated pivot cache definition replacement should keep owner relationship audit role");
+    check(cache_relationships_audit->owner_part == pivot_cache_definition_part.value(),
+        "repeated pivot cache definition replacement should keep owner relationship context");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated pivot cache definition replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated pivot cache definition replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache definition replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache definition replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(pivot_table_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache definition replacement should keep pivot table copy-original");
+    check(editor.edit_plan().find_part(pivot_cache_records_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache definition replacement should keep pivot cache records copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache definition replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated pivot cache definition replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated pivot cache definition replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated pivot cache definition replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated pivot cache definition replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated pivot cache definition replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheDefinition1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated pivot cache definition replacement output plan should rewrite cache definition");
+    const auto* output_cache_definition_plan =
+        find_output_entry_plan(output_plan.entries,
+            "xl/pivotCache/pivotCacheDefinition1.xml");
+    check(output_cache_definition_plan->reason.find("final repeated") != std::string::npos,
+        "repeated pivot cache definition replacement output plan should keep final reason");
+    check(output_cache_definition_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated pivot cache definition replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, pivot_cache_relationships_entry,
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve owner relationships");
+    const auto* output_cache_relationships_plan =
+        find_output_entry_plan(output_plan.entries, pivot_cache_relationships_entry);
+    check(output_cache_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated pivot cache definition replacement output plan should keep owner relationship audit role");
+    check(output_cache_relationships_plan->owner_part == pivot_cache_definition_part.value(),
+        "repeated pivot cache definition replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve worksheet relationships");
+    check_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve pivot table");
+    check_output_entry_plan(output_plan.entries,
+        "xl/pivotTables/_rels/pivotTable1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve pivot table relationships");
+    check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheRecords1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve pivot cache records");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache definition replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader,
+        pivot_cache_definition_part.zip_path());
+    check(output_reader.read_entry("xl/pivotCache/pivotCacheDefinition1.xml")
+            == final_cache_definition,
+        "repeated pivot cache definition replacement should write final cache definition payload");
+    check(output_reader.read_entry("xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels")
+            == source.pivot_cache_definition_relationships,
+        "repeated pivot cache definition replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("xl/pivotCache/pivotCacheRecords1.xml")
+            == source.pivot_cache_records,
+        "repeated pivot cache definition replacement should preserve pivot cache records bytes");
+    check(output_reader.read_entry("xl/pivotTables/pivotTable1.xml") == source.pivot_table,
+        "repeated pivot cache definition replacement should preserve pivot table bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated pivot cache definition replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated pivot cache definition replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated pivot cache definition replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated pivot cache definition replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated pivot cache definition replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "repeated pivot cache definition replacement should preserve worksheet relationships bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated pivot cache definition replacement should preserve unknown bytes");
+
+    const fastxlsx::detail::RelationshipGraph output_graph =
+        output_reader.relationship_graph();
+    check(output_graph.relationships_for(workbook_part)->find_by_id("rIdPivotCache")
+            != nullptr,
+        "relationship graph should keep workbook cache relationship after repeated replacement");
+    check(output_graph.relationships_for(pivot_table_part)->find_by_id("rIdPivotCacheDef")
+            != nullptr,
+        "relationship graph should keep pivot table cache relationship after repeated replacement");
+    check(output_graph.relationships_for(pivot_cache_definition_part)
+                ->find_by_id("rIdPivotRecords")
+            != nullptr,
+        "relationship graph should keep pivot cache records relationship after repeated replacement");
+    check(output_reader.content_types().override_for(pivot_cache_definition_part) != nullptr,
+        "repeated pivot cache definition replacement should keep cache definition content type override");
+}
+
 void test_package_editor_pivot_cache_definition_removal_overrides_prior_replacement()
 {
     const PivotSourcePackage source =
@@ -18875,6 +19932,188 @@ void test_package_editor_pivot_cache_records_replacement_restores_prior_removal(
         "pivot cache records replacement after removal should keep records content type override");
 }
 
+void test_package_editor_repeated_pivot_cache_records_replacement_updates_final_state()
+{
+    const PivotSourcePackage source =
+        write_pivot_source_package(
+            "fastxlsx-package-editor-repeat-pivot-cache-records-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-pivot-cache-records-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName pivot_table_part("/xl/pivotTables/pivotTable1.xml");
+    const fastxlsx::detail::PartName pivot_cache_definition_part(
+        "/xl/pivotCache/pivotCacheDefinition1.xml");
+    const fastxlsx::detail::PartName pivot_cache_records_part(
+        "/xl/pivotCache/pivotCacheRecords1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+    const std::string pivot_cache_records_relationships_entry =
+        "xl/pivotCache/_rels/pivotCacheRecords1.xml.rels";
+
+    const std::string stale_cache_records =
+        R"(<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2">)"
+        R"(<r><n v="128"/></r><r><n v="256"/></r>)"
+        R"(</pivotCacheRecords>)";
+    const std::string final_cache_records =
+        R"(<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4">)"
+        R"(<r><n v="128"/></r><r><n v="256"/></r><r><n v="512"/></r><r><n v="1024"/></r>)"
+        R"(</pivotCacheRecords>)";
+
+    editor.replace_part(pivot_cache_records_part, stale_cache_records,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "stale repeated pivot cache records stream rewrite");
+    editor.replace_part(pivot_cache_records_part, final_cache_records,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "final repeated pivot cache records stream rewrite");
+
+    const auto* cache_records_plan = editor.edit_plan().find_part(pivot_cache_records_part);
+    check(cache_records_plan != nullptr,
+        "repeated pivot cache records replacement should keep an active edit-plan part");
+    check(cache_records_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated pivot cache records replacement should keep final stream-rewrite mode");
+    check(cache_records_plan->reason.find("final repeated") != std::string::npos,
+        "repeated pivot cache records replacement should keep final reason");
+    check(cache_records_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated pivot cache records replacement should drop stale reason");
+    check_manifest_write_mode(editor, pivot_cache_records_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated pivot cache records replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(pivot_cache_records_part) != nullptr,
+        "repeated pivot cache records replacement should keep cache records content type override");
+    check(editor.edit_plan().find_removed_part(pivot_cache_records_part) == nullptr,
+        "repeated pivot cache records replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(pivot_cache_records_relationships_entry)
+            == nullptr,
+        "repeated pivot cache records replacement should not leave owner relationships omission");
+    check(editor.edit_plan().find_package_entry(pivot_cache_records_relationships_entry)
+            == nullptr,
+        "repeated pivot cache records replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated pivot cache records replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated pivot cache records replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache records replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache records replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(pivot_table_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache records replacement should keep pivot table copy-original");
+    check(editor.edit_plan().find_part(pivot_cache_definition_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache records replacement should keep cache definition copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated pivot cache records replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated pivot cache records replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated pivot cache records replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated pivot cache records replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated pivot cache records replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated pivot cache records replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheRecords1.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "repeated pivot cache records replacement output plan should rewrite cache records");
+    const auto* output_cache_records_plan =
+        find_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheRecords1.xml");
+    check(output_cache_records_plan->reason.find("final repeated") != std::string::npos,
+        "repeated pivot cache records replacement output plan should keep final reason");
+    check(output_cache_records_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated pivot cache records replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve worksheet relationships");
+    check_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve pivot table");
+    check_output_entry_plan(output_plan.entries,
+        "xl/pivotTables/_rels/pivotTable1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve pivot table relationships");
+    check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheDefinition1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve cache definition");
+    check_output_entry_plan(output_plan.entries,
+        "xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve cache definition relationships");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated pivot cache records replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader, pivot_cache_records_part.zip_path());
+    check(output_reader.read_entry("xl/pivotCache/pivotCacheRecords1.xml") == final_cache_records,
+        "repeated pivot cache records replacement should write final cache records payload");
+    check(output_reader.read_entry("xl/pivotCache/pivotCacheDefinition1.xml")
+            == source.pivot_cache_definition,
+        "repeated pivot cache records replacement should preserve pivot cache definition bytes");
+    check(output_reader.read_entry("xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels")
+            == source.pivot_cache_definition_relationships,
+        "repeated pivot cache records replacement should preserve pivot cache definition relationships bytes");
+    check(output_reader.read_entry("xl/pivotTables/pivotTable1.xml") == source.pivot_table,
+        "repeated pivot cache records replacement should preserve pivot table bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated pivot cache records replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated pivot cache records replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated pivot cache records replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated pivot cache records replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated pivot cache records replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "repeated pivot cache records replacement should preserve worksheet relationships bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated pivot cache records replacement should preserve unknown bytes");
+
+    const auto* cache_definition_relationships =
+        output_reader.relationships_for(pivot_cache_definition_part);
+    check(cache_definition_relationships != nullptr,
+        "repeated pivot cache records replacement should keep cache definition relationships readable");
+    check(cache_definition_relationships->find_by_id("rIdPivotRecords") != nullptr,
+        "repeated pivot cache records replacement should keep inbound cache records relationship");
+
+    const fastxlsx::detail::RelationshipGraph output_graph =
+        output_reader.relationship_graph();
+    check(output_graph.relationships_for(pivot_cache_definition_part)
+                ->find_by_id("rIdPivotRecords")
+            != nullptr,
+        "relationship graph should keep cache records relationship after repeated replacement");
+}
+
 void test_package_editor_pivot_cache_records_removal_overrides_prior_replacement()
 {
     const PivotSourcePackage source =
@@ -19426,6 +20665,181 @@ void test_package_editor_replaces_external_link_and_preserves_workbook_links()
         "relationship graph should keep external workbook relationship after replacement");
     check(output_reader.content_types().override_for(external_link_part) != nullptr,
         "externalLink replacement should keep externalLink content type override");
+}
+
+void test_package_editor_repeated_external_link_replacement_updates_final_state()
+{
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package(
+            "fastxlsx-package-editor-repeat-external-link-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-external-link-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+    const std::string external_link_relationships_entry =
+        "xl/externalLinks/_rels/externalLink1.xml.rels";
+
+    const std::string stale_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="StaleExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+    const std::string final_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="FinalExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+
+    editor.replace_part(external_link_part, stale_external_link,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated externalLink local-DOM rewrite");
+    editor.replace_part(external_link_part, final_external_link,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated externalLink local-DOM rewrite");
+
+    const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
+    check(external_link_plan != nullptr,
+        "repeated externalLink replacement should keep an active edit-plan part");
+    check(external_link_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated externalLink replacement should keep final local-DOM-rewrite mode");
+    check(external_link_plan->reason.find("final repeated") != std::string::npos,
+        "repeated externalLink replacement should keep final reason");
+    check(external_link_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated externalLink replacement should drop stale reason");
+    check_manifest_write_mode(editor, external_link_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated externalLink replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(external_link_part) != nullptr,
+        "repeated externalLink replacement should keep externalLink content type override");
+    check(editor.edit_plan().find_removed_part(external_link_part) == nullptr,
+        "repeated externalLink replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(external_link_relationships_entry)
+            == nullptr,
+        "repeated externalLink replacement should not leave owner relationships omission");
+    const auto* external_link_relationships_audit =
+        editor.edit_plan().find_package_entry(external_link_relationships_entry);
+    check(external_link_relationships_audit != nullptr,
+        "repeated externalLink replacement should preserve owner relationships audit");
+    check(external_link_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should preserve owner relationships bytes");
+    check(external_link_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated externalLink replacement should keep owner relationship audit role");
+    check(external_link_relationships_audit->owner_part == external_link_part.value(),
+        "repeated externalLink replacement should keep owner relationship context");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated externalLink replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated externalLink replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated externalLink replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated externalLink replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated externalLink replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated externalLink replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated externalLink replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated externalLink replacement output plan should rewrite externalLink");
+    const auto* output_external_link_plan =
+        find_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml");
+    check(output_external_link_plan->reason.find("final repeated") != std::string::npos,
+        "repeated externalLink replacement output plan should keep final reason");
+    check(output_external_link_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated externalLink replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, external_link_relationships_entry,
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated externalLink replacement output plan should preserve owner relationships");
+    const auto* output_external_link_relationships_plan =
+        find_output_entry_plan(output_plan.entries, external_link_relationships_entry);
+    check(output_external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated externalLink replacement output plan should keep owner relationship audit role");
+    check(output_external_link_relationships_plan->owner_part
+            == external_link_part.value(),
+        "repeated externalLink replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated externalLink replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated externalLink replacement output plan should preserve workbook relationships");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            == final_external_link,
+        "repeated externalLink replacement should write final externalLink XML");
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            != stale_external_link,
+        "repeated externalLink replacement should not write stale externalLink XML");
+    check(output_reader.read_entry(external_link_relationships_entry)
+            == source.external_link_relationships,
+        "repeated externalLink replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated externalLink replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated externalLink replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated externalLink replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated externalLink replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated externalLink replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated externalLink replacement should preserve unknown bytes");
+
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated externalLink replacement should keep workbook relationships readable");
+    const auto* external_link_relationship =
+        workbook_relationships->find_by_id("rIdExternalLink");
+    check(external_link_relationship != nullptr,
+        "repeated externalLink replacement should keep workbook externalLink relationship id");
+    check(external_link_relationship->target == "externalLinks/externalLink1.xml",
+        "repeated externalLink replacement should preserve workbook externalLink target");
+    const auto* external_link_relationships =
+        output_reader.relationships_for(external_link_part);
+    check(external_link_relationships != nullptr,
+        "repeated externalLink replacement should keep owner relationships readable");
+    const auto* external_workbook_relationship =
+        external_link_relationships->find_by_id("rIdExternalWorkbook");
+    check(external_workbook_relationship != nullptr,
+        "repeated externalLink replacement should keep external workbook relationship id");
+    check(external_workbook_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::External,
+        "repeated externalLink replacement should keep external workbook target mode");
+    check(output_reader.content_types().override_for(external_link_part) != nullptr,
+        "repeated externalLink replacement should keep externalLink content type override");
 }
 
 void test_package_editor_removes_external_link_and_preserves_workbook_links()
@@ -20312,6 +21726,176 @@ void test_package_editor_replaces_custom_xml_and_preserves_package_links()
         "custom XML replacement should preserve custom XML properties content type override");
 }
 
+void test_package_editor_repeated_custom_xml_replacement_updates_final_state()
+{
+    const CustomXmlSourcePackage source =
+        write_custom_xml_source_package(
+            "fastxlsx-package-editor-repeat-custom-xml-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-custom-xml-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName custom_xml_part("/customXml/item1.xml");
+    const fastxlsx::detail::PartName custom_xml_props_part("/customXml/itemProps1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+    const std::string custom_xml_relationships_entry = "customXml/_rels/item1.xml.rels";
+
+    const std::string stale_custom_xml =
+        R"(<fx:payload xmlns:fx="urn:fastxlsx:test-custom-xml">)"
+        R"(<fx:value>Stale custom XML payload</fx:value>)"
+        R"(</fx:payload>)";
+    const std::string final_custom_xml =
+        R"(<fx:payload xmlns:fx="urn:fastxlsx:test-custom-xml">)"
+        R"(<fx:value>Final custom XML payload</fx:value>)"
+        R"(</fx:payload>)";
+
+    editor.replace_part(custom_xml_part, stale_custom_xml,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated custom XML item replacement");
+    editor.replace_part(custom_xml_part, final_custom_xml,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated custom XML item replacement");
+
+    const auto* custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
+    check(custom_xml_plan != nullptr,
+        "repeated custom XML replacement should keep an active edit-plan part");
+    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated custom XML replacement should keep final local-DOM-rewrite mode");
+    check(custom_xml_plan->reason.find("final repeated") != std::string::npos,
+        "repeated custom XML replacement should keep final reason");
+    check(custom_xml_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated custom XML replacement should drop stale reason");
+    check_manifest_write_mode(editor, custom_xml_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated custom XML replacement should mirror final write mode into manifest");
+    const auto* custom_xml_content_type =
+        editor.manifest().content_types().content_type_for(custom_xml_part);
+    check(custom_xml_content_type != nullptr && *custom_xml_content_type == "application/xml",
+        "repeated custom XML replacement should keep default XML content type");
+    check(editor.edit_plan().find_removed_part(custom_xml_part) == nullptr,
+        "repeated custom XML replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(custom_xml_relationships_entry)
+            == nullptr,
+        "repeated custom XML replacement should not leave owner relationships omission");
+    const auto* custom_xml_relationships_audit =
+        editor.edit_plan().find_package_entry(custom_xml_relationships_entry);
+    check(custom_xml_relationships_audit != nullptr,
+        "repeated custom XML replacement should preserve owner relationships audit");
+    check(custom_xml_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML replacement should preserve owner relationships bytes");
+    check(custom_xml_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated custom XML replacement should keep owner relationship audit role");
+    check(custom_xml_relationships_audit->owner_part == custom_xml_part.value(),
+        "repeated custom XML replacement should keep owner relationship context");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated custom XML replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("_rels/.rels") == nullptr,
+        "repeated custom XML replacement should not rewrite package relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(custom_xml_props_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML replacement should keep properties part copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated custom XML replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated custom XML replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated custom XML replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated custom XML replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated custom XML replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated custom XML replacement output plan should rewrite custom XML item");
+    const auto* output_custom_xml_plan =
+        find_output_entry_plan(output_plan.entries, "customXml/item1.xml");
+    check(output_custom_xml_plan->reason.find("final repeated") != std::string::npos,
+        "repeated custom XML replacement output plan should keep final reason");
+    check(output_custom_xml_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated custom XML replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, custom_xml_relationships_entry,
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML replacement output plan should preserve owner relationships");
+    const auto* output_custom_xml_relationships_plan =
+        find_output_entry_plan(output_plan.entries, custom_xml_relationships_entry);
+    check(output_custom_xml_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated custom XML replacement output plan should keep owner relationship audit role");
+    check(output_custom_xml_relationships_plan->owner_part == custom_xml_part.value(),
+        "repeated custom XML replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML replacement output plan should preserve package relationships");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("customXml/item1.xml") == final_custom_xml,
+        "repeated custom XML replacement should write final custom XML payload");
+    check(output_reader.read_entry("customXml/item1.xml") != stale_custom_xml,
+        "repeated custom XML replacement should not write stale custom XML payload");
+    check(output_reader.read_entry(custom_xml_relationships_entry)
+            == source.custom_xml_relationships,
+        "repeated custom XML replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("customXml/itemProps1.xml")
+            == source.custom_xml_properties,
+        "repeated custom XML replacement should preserve properties bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated custom XML replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated custom XML replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated custom XML replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated custom XML replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated custom XML replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated custom XML replacement should preserve unknown bytes");
+
+    const auto* package_custom_xml_relationship =
+        output_reader.package_relationships().find_by_id("rIdCustomXml");
+    check(package_custom_xml_relationship != nullptr,
+        "repeated custom XML replacement should keep package customXml relationship id");
+    check(package_custom_xml_relationship->target == "customXml/item1.xml",
+        "repeated custom XML replacement should preserve package customXml target");
+    const auto* custom_xml_relationships =
+        output_reader.relationships_for(custom_xml_part);
+    check(custom_xml_relationships != nullptr,
+        "repeated custom XML replacement should keep owner relationships readable");
+    const auto* custom_xml_props_relationship =
+        custom_xml_relationships->find_by_id("rIdCustomXmlProps");
+    check(custom_xml_props_relationship != nullptr,
+        "repeated custom XML replacement should keep customXmlProps relationship id");
+    check(custom_xml_props_relationship->target == "itemProps1.xml",
+        "repeated custom XML replacement should preserve customXmlProps target");
+    check(output_reader.content_types().content_type_for(custom_xml_part) != nullptr,
+        "repeated custom XML replacement should keep default XML content type");
+    check(output_reader.content_types().override_for(custom_xml_props_part) != nullptr,
+        "repeated custom XML replacement should keep properties content type override");
+}
+
 void test_package_editor_removes_custom_xml_and_preserves_package_links()
 {
     const CustomXmlSourcePackage source =
@@ -21069,6 +22653,158 @@ void test_package_editor_replaces_custom_xml_properties_and_preserves_owner_link
         "custom XML properties replacement should not invent properties owner relationships");
     check(output_reader.content_types().override_for(custom_xml_props_part) != nullptr,
         "custom XML properties replacement should preserve properties content type override");
+}
+
+void test_package_editor_repeated_custom_xml_properties_replacement_updates_final_state()
+{
+    const CustomXmlSourcePackage source =
+        write_custom_xml_source_package(
+            "fastxlsx-package-editor-repeat-custom-xml-props-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-custom-xml-props-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName custom_xml_part("/customXml/item1.xml");
+    const fastxlsx::detail::PartName custom_xml_props_part("/customXml/itemProps1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::string stale_properties =
+        R"(<ds:datastoreItem ds:itemID="{11111111-2222-3333-4444-aaaaaaaaaaaa}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">)"
+        R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:stale"/></ds:schemaRefs>)"
+        R"(</ds:datastoreItem>)";
+    const std::string final_properties =
+        R"(<ds:datastoreItem ds:itemID="{22222222-3333-4444-5555-bbbbbbbbbbbb}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">)"
+        R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:final"/></ds:schemaRefs>)"
+        R"(</ds:datastoreItem>)";
+
+    editor.replace_part(custom_xml_props_part, stale_properties,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated custom XML properties replacement");
+    editor.replace_part(custom_xml_props_part, final_properties,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated custom XML properties replacement");
+
+    const auto* custom_xml_props_plan =
+        editor.edit_plan().find_part(custom_xml_props_part);
+    check(custom_xml_props_plan != nullptr,
+        "repeated custom XML properties replacement should keep an active edit-plan part");
+    check(custom_xml_props_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated custom XML properties replacement should keep final local-DOM-rewrite mode");
+    check(custom_xml_props_plan->reason.find("final repeated") != std::string::npos,
+        "repeated custom XML properties replacement should keep final reason");
+    check(custom_xml_props_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated custom XML properties replacement should drop stale reason");
+    check_manifest_write_mode(editor, custom_xml_props_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated custom XML properties replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(custom_xml_props_part) != nullptr,
+        "repeated custom XML properties replacement should keep properties content type override");
+    check(editor.edit_plan().find_removed_part(custom_xml_props_part) == nullptr,
+        "repeated custom XML properties replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(
+              "customXml/_rels/itemProps1.xml.rels")
+            == nullptr,
+        "repeated custom XML properties replacement should not invent owner relationships omission");
+    check(editor.edit_plan().find_package_entry("customXml/_rels/itemProps1.xml.rels")
+            == nullptr,
+        "repeated custom XML properties replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated custom XML properties replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("_rels/.rels") == nullptr,
+        "repeated custom XML properties replacement should not rewrite package relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML properties replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML properties replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(custom_xml_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML properties replacement should keep custom XML item copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated custom XML properties replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated custom XML properties replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated custom XML properties replacement output plan should preserve calcChain policy");
+    check(output_plan.notes.empty(),
+        "repeated custom XML properties replacement output plan should not invent audit notes");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated custom XML properties replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated custom XML properties replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated custom XML properties replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated custom XML properties replacement output plan should rewrite properties part");
+    const auto* output_props_plan =
+        find_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml");
+    check(output_props_plan->reason.find("final repeated") != std::string::npos,
+        "repeated custom XML properties replacement output plan should keep final reason");
+    check(output_props_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated custom XML properties replacement output plan should drop stale reason");
+    check(find_output_entry_plan(output_plan.entries, "customXml/_rels/itemProps1.xml.rels")
+            == nullptr,
+        "repeated custom XML properties replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML properties replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML properties replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML properties replacement output plan should preserve custom XML item");
+    check_output_entry_plan(output_plan.entries, "customXml/_rels/item1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated custom XML properties replacement output plan should preserve item owner relationships");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("customXml/itemProps1.xml") == final_properties,
+        "repeated custom XML properties replacement should write final properties payload");
+    check(output_reader.read_entry("customXml/itemProps1.xml") != stale_properties,
+        "repeated custom XML properties replacement should not write stale properties payload");
+    check(output_reader.read_entry("customXml/item1.xml") == source.custom_xml,
+        "repeated custom XML properties replacement should preserve custom XML item bytes");
+    check(output_reader.read_entry("customXml/_rels/item1.xml.rels")
+            == source.custom_xml_relationships,
+        "repeated custom XML properties replacement should preserve item owner relationships bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated custom XML properties replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated custom XML properties replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated custom XML properties replacement should preserve unknown bytes");
+
+    const auto* package_custom_xml_relationship =
+        output_reader.package_relationships().find_by_id("rIdCustomXml");
+    check(package_custom_xml_relationship != nullptr,
+        "repeated custom XML properties replacement should keep package customXml relationship");
+    const auto* custom_xml_relationships =
+        output_reader.relationships_for(custom_xml_part);
+    check(custom_xml_relationships != nullptr,
+        "repeated custom XML properties replacement should keep item relationships readable");
+    const auto* custom_xml_props_relationship =
+        custom_xml_relationships->find_by_id("rIdCustomXmlProps");
+    check(custom_xml_props_relationship != nullptr,
+        "repeated custom XML properties replacement should keep customXmlProps relationship");
+    check(custom_xml_props_relationship->target == "itemProps1.xml",
+        "repeated custom XML properties replacement should preserve customXmlProps target");
+    check(output_reader.relationships_for(custom_xml_props_part) == nullptr,
+        "repeated custom XML properties replacement should not invent properties owner relationships");
+    check(output_reader.content_types().override_for(custom_xml_props_part) != nullptr,
+        "repeated custom XML properties replacement should keep properties content type override");
 }
 
 void test_package_editor_removes_custom_xml_properties_and_preserves_owner_links()
@@ -22123,6 +23859,160 @@ void test_package_editor_replaces_comments_and_preserves_worksheet_links()
         "linked fixture comments replacement should keep comments content type override");
 }
 
+void test_package_editor_repeated_comments_replacement_updates_final_state()
+{
+    const CommentsSourcePackage source =
+        write_comments_source_package("fastxlsx-package-editor-repeat-comments-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-comments-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName comments_part("/xl/comments/comment1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::string stale_comments =
+        R"(<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<authors><author>Stale</author></authors>)"
+        R"(<commentList><comment ref="A1" authorId="0"><text><t>stale comment</t></text></comment></commentList>)"
+        R"(</comments>)";
+    const std::string final_comments =
+        R"(<comments xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<authors><author>Final</author></authors>)"
+        R"(<commentList><comment ref="A1" authorId="0"><text><t>final comment</t></text></comment></commentList>)"
+        R"(</comments>)";
+
+    editor.replace_part(comments_part, stale_comments,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated comments local-DOM rewrite");
+    editor.replace_part(comments_part, final_comments,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated comments local-DOM rewrite");
+
+    const auto* comments_plan = editor.edit_plan().find_part(comments_part);
+    check(comments_plan != nullptr,
+        "repeated comments replacement should keep an active edit-plan part");
+    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated comments replacement should keep final local-DOM-rewrite mode");
+    check(comments_plan->reason.find("final repeated") != std::string::npos,
+        "repeated comments replacement should keep final reason");
+    check(comments_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated comments replacement should drop stale reason");
+    check_manifest_write_mode(editor, comments_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated comments replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(comments_part) != nullptr,
+        "repeated comments replacement should keep comments content type override");
+    check(editor.edit_plan().find_removed_part(comments_part) == nullptr,
+        "repeated comments replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry("xl/comments/_rels/comment1.xml.rels")
+            == nullptr,
+        "repeated comments replacement should not leave owner relationships omission");
+    check(editor.edit_plan().find_package_entry("xl/comments/_rels/comment1.xml.rels")
+            == nullptr,
+        "repeated comments replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated comments replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == nullptr,
+        "repeated comments replacement should not rewrite inbound worksheet relationships");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated comments replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated comments replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated comments replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated comments replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated comments replacement output plan should preserve calcChain policy");
+    check(output_plan.notes.empty(),
+        "repeated comments replacement output plan should not invent audit notes");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated comments replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated comments replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated comments replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated comments replacement output plan should rewrite comments");
+    const auto* output_comments_plan =
+        find_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml");
+    check(output_comments_plan->reason.find("final repeated") != std::string::npos,
+        "repeated comments replacement output plan should keep final reason");
+    check(output_comments_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated comments replacement output plan should drop stale reason");
+    check(find_output_entry_plan(output_plan.entries, "xl/comments/_rels/comment1.xml.rels")
+            == nullptr,
+        "repeated comments replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve worksheet relationships");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated comments replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader, comments_part.zip_path());
+    check(output_reader.read_entry("xl/comments/comment1.xml") == final_comments,
+        "repeated comments replacement should write final comments payload");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated comments replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated comments replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated comments replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated comments replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated comments replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "repeated comments replacement should preserve worksheet relationships bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated comments replacement should preserve unknown bytes");
+
+    const auto* worksheet_relationships = output_reader.relationships_for(worksheet_part);
+    check(worksheet_relationships != nullptr,
+        "repeated comments replacement should keep worksheet relationships readable");
+    const auto* comments_relationship = worksheet_relationships->find_by_id("rId1");
+    check(comments_relationship != nullptr,
+        "repeated comments replacement should keep inbound comments relationship id");
+    check(comments_relationship->target == "../comments/comment1.xml",
+        "repeated comments replacement should not rewrite inbound comments target");
+    check(output_reader.relationships_for(comments_part) == nullptr,
+        "repeated comments replacement should not invent comments owner relationships");
+    check(output_reader.content_types().override_for(comments_part) != nullptr,
+        "repeated comments replacement should keep comments content type override");
+}
+
 void test_package_editor_removes_comments_and_preserves_worksheet_links()
 {
     const CommentsSourcePackage source =
@@ -22951,6 +24841,193 @@ void test_package_editor_removes_threaded_comments_and_preserves_person_links()
         "threaded comments removal should not keep owner relationships for absent part");
 }
 
+void test_package_editor_repeated_threaded_comments_replacement_updates_final_state()
+{
+    const ThreadedCommentsSourcePackage source =
+        write_threaded_comments_source_package(
+            "fastxlsx-package-editor-repeat-threaded-comments-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-threaded-comments-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName comments_part("/xl/comments/comment1.xml");
+    const fastxlsx::detail::PartName threaded_comments_part(
+        "/xl/threadedComments/threadedComment1.xml");
+    const fastxlsx::detail::PartName persons_part("/xl/persons/person.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::string stale_threaded_comments =
+        R"(<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
+        R"(<threadedComment ref="A1" id="{aaaaaaaa-bbbb-cccc-dddd-000000000001}" personId="{22222222-2222-2222-2222-222222222222}" dT="2026-06-08T03:00:00Z">)"
+        R"(<text>Stale threaded comment</text>)"
+        R"(</threadedComment>)"
+        R"(</ThreadedComments>)";
+    const std::string final_threaded_comments =
+        R"(<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
+        R"(<threadedComment ref="A1" id="{aaaaaaaa-bbbb-cccc-dddd-000000000002}" personId="{22222222-2222-2222-2222-222222222222}" dT="2026-06-08T04:00:00Z">)"
+        R"(<text>Final threaded comment</text>)"
+        R"(</threadedComment>)"
+        R"(</ThreadedComments>)";
+
+    editor.replace_part(threaded_comments_part, stale_threaded_comments,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated threaded comments local-DOM rewrite");
+    editor.replace_part(threaded_comments_part, final_threaded_comments,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated threaded comments local-DOM rewrite");
+
+    const auto* threaded_plan = editor.edit_plan().find_part(threaded_comments_part);
+    check(threaded_plan != nullptr,
+        "repeated threaded comments replacement should keep an active edit-plan part");
+    check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated threaded comments replacement should keep final local-DOM-rewrite mode");
+    check(threaded_plan->reason.find("final repeated") != std::string::npos,
+        "repeated threaded comments replacement should keep final reason");
+    check(threaded_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated threaded comments replacement should drop stale reason");
+    check_manifest_write_mode(editor, threaded_comments_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated threaded comments replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(threaded_comments_part) != nullptr,
+        "repeated threaded comments replacement should keep content type override");
+    check(editor.edit_plan().find_removed_part(threaded_comments_part) == nullptr,
+        "repeated threaded comments replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(
+              "xl/threadedComments/_rels/threadedComment1.xml.rels")
+            == nullptr,
+        "repeated threaded comments replacement should not leave owner relationships omission");
+    check(editor.edit_plan().find_package_entry(
+              "xl/threadedComments/_rels/threadedComment1.xml.rels")
+            == nullptr,
+        "repeated threaded comments replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated threaded comments replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == nullptr,
+        "repeated threaded comments replacement should not rewrite worksheet relationships");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated threaded comments replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated threaded comments replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(comments_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated threaded comments replacement should keep legacy comments copy-original");
+    check(editor.edit_plan().find_part(persons_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated threaded comments replacement should keep persons copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated threaded comments replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated threaded comments replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated threaded comments replacement output plan should preserve calcChain policy");
+    check(output_plan.notes.empty(),
+        "repeated threaded comments replacement output plan should not invent audit notes");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated threaded comments replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated threaded comments replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated threaded comments replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/threadedComments/threadedComment1.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated threaded comments replacement output plan should rewrite threaded comments");
+    const auto* output_threaded_plan =
+        find_output_entry_plan(output_plan.entries, "xl/threadedComments/threadedComment1.xml");
+    check(output_threaded_plan->reason.find("final repeated") != std::string::npos,
+        "repeated threaded comments replacement output plan should keep final reason");
+    check(output_threaded_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated threaded comments replacement output plan should drop stale reason");
+    check(find_output_entry_plan(
+              output_plan.entries, "xl/threadedComments/_rels/threadedComment1.xml.rels")
+            == nullptr,
+        "repeated threaded comments replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve worksheet relationships");
+    check_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve legacy comments");
+    check_output_entry_plan(output_plan.entries, "xl/persons/person.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve persons");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated threaded comments replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(
+        editor.reader(), output_reader, threaded_comments_part.zip_path());
+    check(output_reader.read_entry("xl/threadedComments/threadedComment1.xml")
+            == final_threaded_comments,
+        "repeated threaded comments replacement should write final threaded comments payload");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated threaded comments replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated threaded comments replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated threaded comments replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated threaded comments replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated threaded comments replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "repeated threaded comments replacement should preserve worksheet relationships bytes");
+    check(output_reader.read_entry("xl/comments/comment1.xml") == source.comments,
+        "repeated threaded comments replacement should preserve legacy comments bytes");
+    check(output_reader.read_entry("xl/persons/person.xml") == source.persons,
+        "repeated threaded comments replacement should preserve persons bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated threaded comments replacement should preserve unknown bytes");
+
+    const auto* worksheet_relationships = output_reader.relationships_for(worksheet_part);
+    check(worksheet_relationships != nullptr,
+        "repeated threaded comments replacement should keep worksheet relationships readable");
+    check(worksheet_relationships->find_by_id("rIdThreaded") != nullptr,
+        "repeated threaded comments replacement should keep threaded comments relationship");
+    check(worksheet_relationships->find_by_id("rIdLegacy") != nullptr,
+        "repeated threaded comments replacement should keep legacy comments relationship");
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated threaded comments replacement should keep workbook relationships readable");
+    check(workbook_relationships->find_by_id("rIdPerson") != nullptr,
+        "repeated threaded comments replacement should keep persons relationship");
+    check(output_reader.relationships_for(threaded_comments_part) == nullptr,
+        "repeated threaded comments replacement should not invent owner relationships");
+    check(output_reader.content_types().override_for(threaded_comments_part) != nullptr,
+        "repeated threaded comments replacement should keep threaded comments content type override");
+    check(output_reader.content_types().override_for(persons_part) != nullptr,
+        "repeated threaded comments replacement should keep persons content type override");
+}
+
 void test_package_editor_replaces_persons_and_preserves_threaded_comments_links()
 {
     const ThreadedCommentsSourcePackage source =
@@ -23208,6 +25285,184 @@ void test_package_editor_removes_persons_and_preserves_threaded_comments_links()
         "relationship graph should keep threaded comments relationship after persons removal");
     check(output_reader.relationships_for(persons_part) == nullptr,
         "persons removal should not keep owner relationships for absent part");
+}
+
+void test_package_editor_repeated_persons_replacement_updates_final_state()
+{
+    const ThreadedCommentsSourcePackage source =
+        write_threaded_comments_source_package(
+            "fastxlsx-package-editor-repeat-persons-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-persons-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName comments_part("/xl/comments/comment1.xml");
+    const fastxlsx::detail::PartName threaded_comments_part(
+        "/xl/threadedComments/threadedComment1.xml");
+    const fastxlsx::detail::PartName persons_part("/xl/persons/person.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::string stale_persons =
+        R"(<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
+        R"(<person displayName="Stale Person" id="{22222222-2222-2222-2222-222222222222}" providerId="None" userId="stale@example.invalid"/>)"
+        R"(</personList>)";
+    const std::string final_persons =
+        R"(<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
+        R"(<person displayName="Final Person" id="{22222222-2222-2222-2222-222222222222}" providerId="None" userId="final@example.invalid"/>)"
+        R"(</personList>)";
+
+    editor.replace_part(persons_part, stale_persons,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "stale repeated persons local-DOM rewrite");
+    editor.replace_part(persons_part, final_persons,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "final repeated persons local-DOM rewrite");
+
+    const auto* persons_plan = editor.edit_plan().find_part(persons_part);
+    check(persons_plan != nullptr,
+        "repeated persons replacement should keep an active edit-plan part");
+    check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated persons replacement should keep final local-DOM-rewrite mode");
+    check(persons_plan->reason.find("final repeated") != std::string::npos,
+        "repeated persons replacement should keep final reason");
+    check(persons_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated persons replacement should drop stale reason");
+    check_manifest_write_mode(editor, persons_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "repeated persons replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(persons_part) != nullptr,
+        "repeated persons replacement should keep content type override");
+    check(editor.edit_plan().find_removed_part(persons_part) == nullptr,
+        "repeated persons replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry("xl/persons/_rels/person.xml.rels")
+            == nullptr,
+        "repeated persons replacement should not leave owner relationships omission");
+    check(editor.edit_plan().find_package_entry("xl/persons/_rels/person.xml.rels")
+            == nullptr,
+        "repeated persons replacement should not invent owner relationships audit");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated persons replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated persons replacement should not rewrite workbook relationships");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated persons replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated persons replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(comments_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated persons replacement should keep legacy comments copy-original");
+    check(editor.edit_plan().find_part(threaded_comments_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated persons replacement should keep threaded comments copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated persons replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated persons replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated persons replacement output plan should preserve calcChain policy");
+    check(output_plan.notes.empty(),
+        "repeated persons replacement output plan should not invent audit notes");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated persons replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated persons replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated persons replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/persons/person.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "repeated persons replacement output plan should rewrite persons");
+    const auto* output_persons_plan =
+        find_output_entry_plan(output_plan.entries, "xl/persons/person.xml");
+    check(output_persons_plan->reason.find("final repeated") != std::string::npos,
+        "repeated persons replacement output plan should keep final reason");
+    check(output_persons_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated persons replacement output plan should drop stale reason");
+    check(find_output_entry_plan(output_plan.entries, "xl/persons/_rels/person.xml.rels")
+            == nullptr,
+        "repeated persons replacement output plan should not invent owner relationships");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve worksheet relationships");
+    check_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve legacy comments");
+    check_output_entry_plan(output_plan.entries, "xl/threadedComments/threadedComment1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve threaded comments");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated persons replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader, persons_part.zip_path());
+    check(output_reader.read_entry("xl/persons/person.xml") == final_persons,
+        "repeated persons replacement should write final persons payload");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated persons replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated persons replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated persons replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated persons replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated persons replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "repeated persons replacement should preserve worksheet relationships bytes");
+    check(output_reader.read_entry("xl/comments/comment1.xml") == source.comments,
+        "repeated persons replacement should preserve legacy comments bytes");
+    check(output_reader.read_entry("xl/threadedComments/threadedComment1.xml")
+            == source.threaded_comments,
+        "repeated persons replacement should preserve threaded comments bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated persons replacement should preserve unknown bytes");
+
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated persons replacement should keep workbook relationships readable");
+    check(workbook_relationships->find_by_id("rIdPerson") != nullptr,
+        "repeated persons replacement should keep persons relationship");
+    const auto* worksheet_relationships = output_reader.relationships_for(worksheet_part);
+    check(worksheet_relationships != nullptr,
+        "repeated persons replacement should keep worksheet relationships readable");
+    check(worksheet_relationships->find_by_id("rIdThreaded") != nullptr,
+        "repeated persons replacement should keep threaded comments relationship");
+    check(worksheet_relationships->find_by_id("rIdLegacy") != nullptr,
+        "repeated persons replacement should keep legacy comments relationship");
+    check(output_reader.relationships_for(persons_part) == nullptr,
+        "repeated persons replacement should not invent owner relationships");
+    check(output_reader.content_types().override_for(persons_part) != nullptr,
+        "repeated persons replacement should keep persons content type override");
+    check(output_reader.content_types().override_for(threaded_comments_part) != nullptr,
+        "repeated persons replacement should keep threaded comments content type override");
 }
 
 void test_package_editor_threaded_comments_same_path_ordering()
@@ -31122,6 +33377,227 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
         check(control_link->target == "../ctrlProps/control1.xml",
             "worksheet-owned control removal after replacement should not rewrite inbound target");
     }
+
+    {
+        const std::filesystem::path output =
+            output_path("fastxlsx-package-editor-repeat-worksheet-ole-output.xlsx");
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source);
+
+        const std::string stale_ole = std::string("STALE\0OLE", 9);
+        const std::string final_ole = std::string("FINAL\0OLE", 9);
+        editor.replace_part(ole_part, stale_ole,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "stale repeated worksheet-owned OLE replacement");
+        editor.replace_part(ole_part, final_ole,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "final repeated worksheet-owned OLE replacement");
+
+        const auto* ole_plan = editor.edit_plan().find_part(ole_part);
+        check(ole_plan != nullptr,
+            "repeated worksheet-owned OLE replacement should keep an active edit-plan part");
+        check(ole_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "repeated worksheet-owned OLE replacement should keep final write mode");
+        check(ole_plan->reason.find("final repeated") != std::string::npos,
+            "repeated worksheet-owned OLE replacement should keep final reason");
+        check(ole_plan->reason.find("stale repeated") == std::string::npos,
+            "repeated worksheet-owned OLE replacement should drop stale reason");
+        check_manifest_write_mode(editor, ole_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "repeated worksheet-owned OLE replacement should mirror final write mode into manifest");
+        check(editor.manifest().content_types().override_for(ole_part) != nullptr,
+            "repeated worksheet-owned OLE replacement should keep OLE content type override");
+        check(editor.edit_plan().find_removed_part(ole_part) == nullptr,
+            "repeated worksheet-owned OLE replacement should not leave removed-part audit");
+        check(editor.edit_plan().find_removed_package_entry(
+                  "xl/embeddings/_rels/oleObject1.bin.rels") == nullptr,
+            "repeated worksheet-owned OLE replacement should not leave owner relationships omission");
+        check(editor.edit_plan().find_package_entry(
+                  "xl/embeddings/_rels/oleObject1.bin.rels") == nullptr,
+            "repeated worksheet-owned OLE replacement should not invent owner relationships audit");
+        check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+            "repeated worksheet-owned OLE replacement should not rewrite content types audit");
+        check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
+                == nullptr,
+            "repeated worksheet-owned OLE replacement should not rewrite inbound worksheet relationships");
+        check(editor.edit_plan().find_part(control_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "repeated worksheet-owned OLE replacement should keep sibling control copy-original");
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check(!output_plan.full_calculation_on_load,
+            "repeated worksheet-owned OLE replacement output plan should not request full calculation");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+            "repeated worksheet-owned OLE replacement output plan should preserve calcChain policy");
+        check(output_plan.relationship_target_audits.empty(),
+            "repeated worksheet-owned OLE replacement output plan should not invent target audits");
+        check(output_plan.removed_parts.empty(),
+            "repeated worksheet-owned OLE replacement output plan should not expose removed parts");
+        check(output_plan.removed_package_entries.empty(),
+            "repeated worksheet-owned OLE replacement output plan should not omit metadata entries");
+        check_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "repeated worksheet-owned OLE replacement output plan should rewrite OLE part");
+        const auto* output_ole_plan =
+            find_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin");
+        check(output_ole_plan->reason.find("final repeated") != std::string::npos,
+            "repeated worksheet-owned OLE replacement output plan should keep final reason");
+        check(output_ole_plan->reason.find("stale repeated") == std::string::npos,
+            "repeated worksheet-owned OLE replacement output plan should drop stale reason");
+        check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated worksheet-owned OLE replacement output plan should preserve content types");
+        check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated worksheet-owned OLE replacement output plan should preserve worksheet relationships");
+        check_output_entry_plan(output_plan.entries, "xl/ctrlProps/control1.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated worksheet-owned OLE replacement output plan should preserve sibling control");
+        check(find_output_entry_plan(output_plan.entries,
+                  "xl/embeddings/_rels/oleObject1.bin.rels") == nullptr,
+            "repeated worksheet-owned OLE replacement output plan should not invent owner relationships");
+
+        editor.save_as(output);
+
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check_preserved_source_entries(editor.reader(), output_reader, ole_part.zip_path());
+        check(output_reader.read_entry("xl/embeddings/oleObject1.bin") == final_ole,
+            "repeated worksheet-owned OLE replacement should write final bytes");
+        check(output_reader.read_entry("xl/embeddings/oleObject1.bin") != stale_ole,
+            "repeated worksheet-owned OLE replacement should not write stale bytes");
+        check(output_reader.read_entry("[Content_Types].xml") == content_types,
+            "repeated worksheet-owned OLE replacement should preserve content types bytes");
+        check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+                == worksheet_relationships,
+            "repeated worksheet-owned OLE replacement should not prune worksheet relationships");
+        check(output_reader.read_entry("xl/ctrlProps/control1.xml") == control_properties,
+            "repeated worksheet-owned OLE replacement should preserve sibling control bytes");
+        check(output_reader.relationships_for(ole_part) == nullptr,
+            "repeated worksheet-owned OLE replacement should not create owner relationships");
+        const auto* output_relationships =
+            output_reader.relationships_for(worksheet_part);
+        check(output_relationships != nullptr,
+            "repeated worksheet-owned OLE replacement should keep worksheet relationships readable");
+        const auto* ole_link = output_relationships->find_by_id("rIdOle");
+        check(ole_link != nullptr,
+            "repeated worksheet-owned OLE replacement should keep inbound relationship id");
+        check(ole_link->target == "../embeddings/oleObject1.bin",
+            "repeated worksheet-owned OLE replacement should not rewrite inbound target");
+    }
+
+    {
+        const std::filesystem::path output =
+            output_path("fastxlsx-package-editor-repeat-worksheet-control-output.xlsx");
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source);
+
+        const std::string stale_control =
+            R"(<controlPr xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" shapeId="2"/>)";
+        const std::string final_control =
+            R"(<controlPr xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" shapeId="3"/>)";
+        editor.replace_part(control_part, stale_control,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "stale repeated worksheet-owned control replacement");
+        editor.replace_part(control_part, final_control,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "final repeated worksheet-owned control replacement");
+
+        const auto* control_plan = editor.edit_plan().find_part(control_part);
+        check(control_plan != nullptr,
+            "repeated worksheet-owned control replacement should keep an active edit-plan part");
+        check(control_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "repeated worksheet-owned control replacement should keep final write mode");
+        check(control_plan->reason.find("final repeated") != std::string::npos,
+            "repeated worksheet-owned control replacement should keep final reason");
+        check(control_plan->reason.find("stale repeated") == std::string::npos,
+            "repeated worksheet-owned control replacement should drop stale reason");
+        check_manifest_write_mode(editor, control_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "repeated worksheet-owned control replacement should mirror final write mode into manifest");
+        check(editor.manifest().content_types().override_for(control_part) != nullptr,
+            "repeated worksheet-owned control replacement should keep control content type override");
+        check(editor.edit_plan().find_removed_part(control_part) == nullptr,
+            "repeated worksheet-owned control replacement should not leave removed-part audit");
+        check(editor.edit_plan().find_removed_package_entry(
+                  "xl/ctrlProps/_rels/control1.xml.rels") == nullptr,
+            "repeated worksheet-owned control replacement should not leave owner relationships omission");
+        check(editor.edit_plan().find_package_entry(
+                  "xl/ctrlProps/_rels/control1.xml.rels") == nullptr,
+            "repeated worksheet-owned control replacement should not invent owner relationships audit");
+        check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+            "repeated worksheet-owned control replacement should not rewrite content types audit");
+        check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
+                == nullptr,
+            "repeated worksheet-owned control replacement should not rewrite inbound worksheet relationships");
+        check(editor.edit_plan().find_part(ole_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "repeated worksheet-owned control replacement should keep sibling OLE copy-original");
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check(!output_plan.full_calculation_on_load,
+            "repeated worksheet-owned control replacement output plan should not request full calculation");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+            "repeated worksheet-owned control replacement output plan should preserve calcChain policy");
+        check(output_plan.relationship_target_audits.empty(),
+            "repeated worksheet-owned control replacement output plan should not invent target audits");
+        check(output_plan.removed_parts.empty(),
+            "repeated worksheet-owned control replacement output plan should not expose removed parts");
+        check(output_plan.removed_package_entries.empty(),
+            "repeated worksheet-owned control replacement output plan should not omit metadata entries");
+        check_output_entry_plan(output_plan.entries, "xl/ctrlProps/control1.xml",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "repeated worksheet-owned control replacement output plan should rewrite control part");
+        const auto* output_control_plan =
+            find_output_entry_plan(output_plan.entries, "xl/ctrlProps/control1.xml");
+        check(output_control_plan->reason.find("final repeated") != std::string::npos,
+            "repeated worksheet-owned control replacement output plan should keep final reason");
+        check(output_control_plan->reason.find("stale repeated") == std::string::npos,
+            "repeated worksheet-owned control replacement output plan should drop stale reason");
+        check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated worksheet-owned control replacement output plan should preserve content types");
+        check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated worksheet-owned control replacement output plan should preserve worksheet relationships");
+        check_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated worksheet-owned control replacement output plan should preserve sibling OLE");
+        check(find_output_entry_plan(output_plan.entries,
+                  "xl/ctrlProps/_rels/control1.xml.rels") == nullptr,
+            "repeated worksheet-owned control replacement output plan should not invent owner relationships");
+
+        editor.save_as(output);
+
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check_preserved_source_entries(editor.reader(), output_reader,
+            control_part.zip_path());
+        check(output_reader.read_entry("xl/ctrlProps/control1.xml") == final_control,
+            "repeated worksheet-owned control replacement should write final XML");
+        check(output_reader.read_entry("xl/ctrlProps/control1.xml") != stale_control,
+            "repeated worksheet-owned control replacement should not write stale XML");
+        check(output_reader.read_entry("[Content_Types].xml") == content_types,
+            "repeated worksheet-owned control replacement should preserve content types bytes");
+        check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+                == worksheet_relationships,
+            "repeated worksheet-owned control replacement should not prune worksheet relationships");
+        check(output_reader.read_entry("xl/embeddings/oleObject1.bin") == ole_object,
+            "repeated worksheet-owned control replacement should preserve sibling OLE bytes");
+        check(output_reader.relationships_for(control_part) == nullptr,
+            "repeated worksheet-owned control replacement should not create owner relationships");
+        const auto* output_relationships =
+            output_reader.relationships_for(worksheet_part);
+        check(output_relationships != nullptr,
+            "repeated worksheet-owned control replacement should keep worksheet relationships readable");
+        const auto* control_link = output_relationships->find_by_id("rIdControl");
+        check(control_link != nullptr,
+            "repeated worksheet-owned control replacement should keep inbound relationship id");
+        check(control_link->target == "../ctrlProps/control1.xml",
+            "repeated worksheet-owned control replacement should not rewrite inbound target");
+    }
 }
 
 void test_package_editor_sheet_data_patch_preserves_background_picture_and_header_footer_vml()
@@ -32336,6 +34812,125 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
         check(output_relationships->find_by_id("rIdPicture") != nullptr,
             "header/footer VML removal after replacement should keep background picture relationship");
     }
+
+    {
+        const std::filesystem::path output =
+            output_path("fastxlsx-package-editor-repeat-background-picture-output.xlsx");
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source);
+
+        const std::string stale_picture = "stale-background-image-bytes";
+        const std::string final_picture = "final-background-image-bytes";
+        editor.replace_part(background_picture_part, stale_picture,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "stale repeated worksheet-owned background picture replacement");
+        editor.replace_part(background_picture_part, final_picture,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "final repeated worksheet-owned background picture replacement");
+
+        const auto* picture_plan =
+            editor.edit_plan().find_part(background_picture_part);
+        check(picture_plan != nullptr,
+            "repeated background picture replacement should keep an active edit-plan part");
+        check(picture_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "repeated background picture replacement should keep final write mode");
+        check(picture_plan->reason.find("final repeated") != std::string::npos,
+            "repeated background picture replacement should keep final reason");
+        check(picture_plan->reason.find("stale repeated") == std::string::npos,
+            "repeated background picture replacement should drop stale reason");
+        check_manifest_write_mode(editor, background_picture_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "repeated background picture replacement should mirror final write mode into manifest");
+        check(editor.manifest().content_types().default_for("png") != nullptr,
+            "repeated background picture replacement should keep PNG default");
+        check(editor.manifest().content_types().override_for(background_picture_part)
+                == nullptr,
+            "repeated background picture replacement should not promote PNG media to override");
+        check(editor.edit_plan().find_removed_part(background_picture_part) == nullptr,
+            "repeated background picture replacement should not leave removed-part audit");
+        check(editor.edit_plan().find_removed_package_entry(
+                  "xl/media/_rels/background.png.rels") == nullptr,
+            "repeated background picture replacement should not leave owner relationships omission");
+        check(editor.edit_plan().find_package_entry("xl/media/_rels/background.png.rels")
+                == nullptr,
+            "repeated background picture replacement should not invent owner relationships audit");
+        check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+            "repeated background picture replacement should not rewrite content types audit");
+        check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
+                == nullptr,
+            "repeated background picture replacement should not rewrite inbound worksheet relationships");
+        check(editor.edit_plan().find_part(header_footer_vml_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "repeated background picture replacement should keep sibling header/footer VML copy-original");
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check(!output_plan.full_calculation_on_load,
+            "repeated background picture replacement output plan should not request full calculation");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+            "repeated background picture replacement output plan should preserve calcChain policy");
+        check(output_plan.relationship_target_audits.empty(),
+            "repeated background picture replacement output plan should not invent target audits");
+        check(output_plan.removed_parts.empty(),
+            "repeated background picture replacement output plan should not expose removed parts");
+        check(output_plan.removed_package_entries.empty(),
+            "repeated background picture replacement output plan should not omit metadata entries");
+        check_output_entry_plan(output_plan.entries, "xl/media/background.png",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "repeated background picture replacement output plan should rewrite picture part");
+        const auto* output_picture_plan =
+            find_output_entry_plan(output_plan.entries, "xl/media/background.png");
+        check(output_picture_plan->reason.find("final repeated") != std::string::npos,
+            "repeated background picture replacement output plan should keep final reason");
+        check(output_picture_plan->reason.find("stale repeated") == std::string::npos,
+            "repeated background picture replacement output plan should drop stale reason");
+        check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated background picture replacement output plan should preserve content types");
+        check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated background picture replacement output plan should preserve worksheet relationships");
+        check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawingHF1.vml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+            "repeated background picture replacement output plan should preserve sibling VML");
+        check(find_output_entry_plan(output_plan.entries,
+                  "xl/media/_rels/background.png.rels") == nullptr,
+            "repeated background picture replacement output plan should not invent owner relationships");
+
+        editor.save_as(output);
+
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check_preserved_source_entries(editor.reader(), output_reader,
+            background_picture_part.zip_path());
+        check(output_reader.read_entry("xl/media/background.png") == final_picture,
+            "repeated background picture replacement should write final bytes");
+        check(output_reader.read_entry("xl/media/background.png") != stale_picture,
+            "repeated background picture replacement should not write stale bytes");
+        check(output_reader.read_entry("[Content_Types].xml") == content_types,
+            "repeated background picture replacement should preserve content types bytes");
+        check(output_reader.content_types().default_for("png") != nullptr,
+            "repeated background picture replacement output should preserve PNG default");
+        check(output_reader.content_types().override_for(background_picture_part) == nullptr,
+            "repeated background picture replacement output should not promote PNG media to override");
+        check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+                == worksheet_relationships,
+            "repeated background picture replacement should not prune worksheet relationships");
+        check(output_reader.read_entry("xl/drawings/vmlDrawingHF1.vml")
+                == header_footer_vml,
+            "repeated background picture replacement should preserve sibling VML bytes");
+        check(output_reader.relationships_for(background_picture_part) == nullptr,
+            "repeated background picture replacement should not create owner relationships");
+        const auto* output_relationships =
+            output_reader.relationships_for(worksheet_part);
+        check(output_relationships != nullptr,
+            "repeated background picture replacement should keep worksheet relationships readable");
+        const auto* picture_link = output_relationships->find_by_id("rIdPicture");
+        check(picture_link != nullptr,
+            "repeated background picture replacement should keep inbound relationship id");
+        check(picture_link->target == "../media/background.png",
+            "repeated background picture replacement should not rewrite inbound target");
+    }
 }
 
 void test_package_editor_replaces_worksheet_and_preserves_linked_object_parts()
@@ -32990,6 +35585,8 @@ void test_package_editor_preserves_source_relationship_parts_when_replacement_om
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const fastxlsx::detail::PartName drawing_part("/xl/drawings/drawing1.xml");
     const fastxlsx::detail::PartName table_part("/xl/tables/table1.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
     const fastxlsx::detail::PartName vba_part("/xl/vbaProject.bin");
 
     const std::string replacement_sheet =
@@ -33006,6 +35603,59 @@ void test_package_editor_preserves_source_relationship_parts_when_replacement_om
         "omitted-reference worksheet rewrite should still plan table copy-original");
     check(table_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "omitted-reference worksheet rewrite should preserve source table part");
+    const fastxlsx::detail::PartName worksheet_relationships_part(
+        "/xl/worksheets/_rels/sheet1.xml.rels");
+    const fastxlsx::detail::PartName drawing_relationships_part(
+        "/xl/drawings/_rels/drawing1.xml.rels");
+    const fastxlsx::detail::PartName shared_strings_relationships_part(
+        "/xl/_rels/sharedStrings.xml.rels");
+    const auto* worksheet_relationships_plan = editor.edit_plan().find_package_entry(
+        "xl/worksheets/_rels/sheet1.xml.rels");
+    check(worksheet_relationships_plan != nullptr,
+        "omitted-reference worksheet rewrite should still plan worksheet relationship audit");
+    check(worksheet_relationships_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "omitted-reference worksheet rewrite should preserve worksheet relationships part");
+    check(worksheet_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "omitted-reference worksheet rewrite should classify worksheet relationships as source relationships");
+    check(worksheet_relationships_plan->owner_part == worksheet_part.value(),
+        "omitted-reference worksheet rewrite should keep worksheet relationships owner");
+    const auto* drawing_relationships_plan = editor.edit_plan().find_package_entry(
+        "xl/drawings/_rels/drawing1.xml.rels");
+    check(drawing_relationships_plan != nullptr,
+        "omitted-reference worksheet rewrite should still plan drawing relationship audit");
+    check(drawing_relationships_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "omitted-reference worksheet rewrite should preserve drawing relationships part");
+    check(drawing_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "omitted-reference worksheet rewrite should classify drawing relationships as source relationships");
+    check(drawing_relationships_plan->owner_part == drawing_part.value(),
+        "omitted-reference worksheet rewrite should keep drawing relationships owner");
+    const auto* shared_strings_relationships_plan =
+        editor.edit_plan().find_package_entry("xl/_rels/sharedStrings.xml.rels");
+    check(shared_strings_relationships_plan != nullptr,
+        "omitted-reference worksheet rewrite should still plan sharedStrings relationship audit");
+    check(shared_strings_relationships_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "omitted-reference worksheet rewrite should preserve sharedStrings relationships part");
+    check(shared_strings_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "omitted-reference worksheet rewrite should classify sharedStrings relationships as source relationships");
+    check(shared_strings_relationships_plan->owner_part
+            == shared_strings_part.value(),
+        "omitted-reference worksheet rewrite should keep sharedStrings relationships owner");
+    const auto* opaque_extension_relationships_plan =
+        editor.edit_plan().find_package_entry("custom/_rels/opaque-extension.bin.rels");
+    check(opaque_extension_relationships_plan != nullptr,
+        "omitted-reference worksheet rewrite should still plan unknown extension relationship audit");
+    check(opaque_extension_relationships_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "omitted-reference worksheet rewrite should preserve unknown extension relationships part");
+    check(opaque_extension_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "omitted-reference worksheet rewrite should classify unknown extension relationships as source relationships");
+    check(opaque_extension_relationships_plan->owner_part == opaque_extension_part.value(),
+        "omitted-reference worksheet rewrite should keep unknown extension relationships owner");
     check(!editor.edit_plan().notes().empty(),
         "omitted-reference worksheet rewrite should record relationship preservation notes");
 
@@ -33042,6 +35692,9 @@ void test_package_editor_preserves_source_relationship_parts_when_replacement_om
     check(output_reader.read_entry("custom/opaque-extension.bin")
             == source.opaque_extension,
         "omitted-reference worksheet rewrite should preserve unknown extension bytes");
+    check(output_reader.read_entry("custom/_rels/opaque-extension.bin.rels")
+            == source.opaque_extension_relationships,
+        "omitted-reference worksheet rewrite should byte-preserve unknown extension relationships");
 
     const auto* sheet_relationships = output_reader.relationships_for(worksheet_part);
     check(sheet_relationships != nullptr,
@@ -33050,6 +35703,57 @@ void test_package_editor_preserves_source_relationship_parts_when_replacement_om
         "omitted-reference worksheet rewrite should keep source drawing relationship");
     check(sheet_relationships->find_by_id("rId3") != nullptr,
         "omitted-reference worksheet rewrite should keep source table relationship");
+    const auto* opaque_extension_relationships = output_reader.relationships_for(
+        opaque_extension_part);
+    check(opaque_extension_relationships != nullptr,
+        "omitted-reference worksheet rewrite should keep unknown extension relationships readable");
+    check(opaque_extension_relationships->find_by_id("rIdOpaqueExternal") != nullptr,
+        "omitted-reference worksheet rewrite should keep unknown extension external relationship");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    const auto* output_worksheet_relationships_plan = find_output_entry_plan(
+        output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/_rels/sheet1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "omitted-reference worksheet rewrite output should preserve worksheet relationships part");
+    check(output_worksheet_relationships_plan != nullptr
+            && output_worksheet_relationships_plan->audit_kind
+                == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships
+            && output_worksheet_relationships_plan->owner_part
+                == worksheet_part.value(),
+        "omitted-reference worksheet rewrite output should keep worksheet relationships audit");
+    const auto* output_drawing_relationships_plan = find_output_entry_plan(
+        output_plan.entries, "xl/drawings/_rels/drawing1.xml.rels");
+    check_output_entry_plan(output_plan.entries, "xl/drawings/_rels/drawing1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "omitted-reference worksheet rewrite output should preserve drawing relationships part");
+    check(output_drawing_relationships_plan != nullptr
+            && output_drawing_relationships_plan->audit_kind
+                == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships
+            && output_drawing_relationships_plan->owner_part
+                == drawing_part.value(),
+        "omitted-reference worksheet rewrite output should keep drawing relationships audit");
+    const auto* output_shared_strings_relationships_plan = find_output_entry_plan(
+        output_plan.entries, "xl/_rels/sharedStrings.xml.rels");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/sharedStrings.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "omitted-reference worksheet rewrite output should preserve sharedStrings relationships part");
+    check(output_shared_strings_relationships_plan != nullptr
+            && output_shared_strings_relationships_plan->audit_kind
+                == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships
+            && output_shared_strings_relationships_plan->owner_part
+            == shared_strings_part.value(),
+        "omitted-reference worksheet rewrite output should keep sharedStrings relationships audit");
+    const auto* output_opaque_extension_relationships_plan = find_output_entry_plan(
+        output_plan.entries, "custom/_rels/opaque-extension.bin.rels");
+    check_output_entry_plan(output_plan.entries, "custom/_rels/opaque-extension.bin.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "omitted-reference worksheet rewrite output should preserve unknown extension relationships part");
+    check(output_opaque_extension_relationships_plan != nullptr
+            && output_opaque_extension_relationships_plan->audit_kind
+                == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships
+            && output_opaque_extension_relationships_plan->owner_part
+                == opaque_extension_part.value(),
+        "omitted-reference worksheet rewrite output should keep unknown extension relationships audit");
     check(output_reader.content_types().override_for(calc_chain_part) == nullptr,
         "omitted-reference worksheet rewrite should still remove calcChain override");
     check(output_reader.content_types().override_for(table_part) != nullptr,
@@ -35124,6 +37828,7 @@ int main()
         test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payload_audit();
         test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
         test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
+        test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input();
         test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
         test_package_editor_rejects_invalid_cell_replacement_payload_without_state_changes();
         test_package_editor_replaces_worksheet_and_removes_stale_calc_chain();
@@ -35198,18 +37903,24 @@ int main()
         test_package_editor_replaces_media_and_preserves_drawing_links();
         test_package_editor_replaces_table_and_preserves_worksheet_links();
         test_package_editor_replaces_shared_strings_and_preserves_workbook_links();
+        test_package_editor_repeated_shared_strings_replacement_updates_final_state();
         test_package_editor_replaces_styles_and_preserves_workbook_links();
+        test_package_editor_repeated_styles_replacement_updates_final_state();
         test_package_editor_replaces_chart_and_preserves_drawing_links();
         test_package_editor_replaces_vba_project_and_preserves_workbook_links();
+        test_package_editor_repeated_vba_project_replacement_updates_final_state();
         test_package_editor_replaces_vml_drawing_and_preserves_worksheet_links();
         test_package_editor_replaces_percent_decoded_drawing_and_preserves_encoded_link();
         test_package_editor_replaces_comments_and_preserves_worksheet_links();
+        test_package_editor_repeated_comments_replacement_updates_final_state();
         test_package_editor_removes_comments_and_preserves_worksheet_links();
         test_package_editor_comments_replacement_restores_prior_removal();
         test_package_editor_comments_removal_overrides_prior_replacement();
         test_package_editor_replaces_threaded_comments_and_preserves_person_links();
+        test_package_editor_repeated_threaded_comments_replacement_updates_final_state();
         test_package_editor_removes_threaded_comments_and_preserves_person_links();
         test_package_editor_replaces_persons_and_preserves_threaded_comments_links();
+        test_package_editor_repeated_persons_replacement_updates_final_state();
         test_package_editor_removes_persons_and_preserves_threaded_comments_links();
         test_package_editor_threaded_comments_same_path_ordering();
         test_package_editor_persons_same_path_ordering();
@@ -35217,28 +37928,34 @@ int main()
         test_package_editor_worksheet_rewrite_preserves_threaded_comments_and_persons();
         test_package_editor_worksheet_rewrite_preserves_pivot_table_cache_chain();
         test_package_editor_replaces_pivot_table_and_preserves_cache_chain();
+        test_package_editor_repeated_pivot_table_replacement_updates_final_state();
         test_package_editor_removes_pivot_table_and_preserves_cache_chain();
         test_package_editor_pivot_table_replacement_restores_prior_removal();
         test_package_editor_pivot_table_removal_overrides_prior_replacement();
         test_package_editor_replaces_pivot_cache_definition_and_preserves_cache_records();
+        test_package_editor_repeated_pivot_cache_definition_replacement_updates_final_state();
         test_package_editor_removes_pivot_cache_definition_and_preserves_cache_records();
         test_package_editor_pivot_cache_definition_replacement_restores_prior_removal();
         test_package_editor_pivot_cache_definition_removal_overrides_prior_replacement();
         test_package_editor_replaces_pivot_cache_records_and_preserves_cache_definition();
+        test_package_editor_repeated_pivot_cache_records_replacement_updates_final_state();
         test_package_editor_removes_pivot_cache_records_and_preserves_cache_definition();
         test_package_editor_pivot_cache_records_replacement_restores_prior_removal();
         test_package_editor_pivot_cache_records_removal_overrides_prior_replacement();
         test_package_editor_worksheet_rewrite_preserves_external_links();
         test_package_editor_replaces_external_link_and_preserves_workbook_links();
+        test_package_editor_repeated_external_link_replacement_updates_final_state();
         test_package_editor_removes_external_link_and_preserves_workbook_links();
         test_package_editor_external_link_replacement_restores_prior_removal();
         test_package_editor_external_link_removal_overrides_prior_replacement();
         test_package_editor_worksheet_rewrite_preserves_custom_xml_parts();
         test_package_editor_replaces_custom_xml_and_preserves_package_links();
+        test_package_editor_repeated_custom_xml_replacement_updates_final_state();
         test_package_editor_removes_custom_xml_and_preserves_package_links();
         test_package_editor_custom_xml_replacement_restores_prior_removal();
         test_package_editor_custom_xml_removal_overrides_prior_replacement();
         test_package_editor_replaces_custom_xml_properties_and_preserves_owner_links();
+        test_package_editor_repeated_custom_xml_properties_replacement_updates_final_state();
         test_package_editor_removes_custom_xml_properties_and_preserves_owner_links();
         test_package_editor_custom_xml_properties_replacement_restores_prior_removal();
         test_package_editor_custom_xml_properties_removal_overrides_prior_replacement();

@@ -13,6 +13,12 @@ For executable subtask boundaries, use [TASK_BREAKDOWN.md](TASK_BREAKDOWN.md).
 This file gives ordering; the breakdown file gives the per-task input, output,
 parallelism, touched files, acceptance checks, and explicit non-goals.
 
+Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
+indexes or capability slices. The current lane has advanced through the C5
+first verifiable slice: C2 only reopens for new preservation gaps, C3/C4 keep
+their public-editor decision and guardrail boundaries, and the next actionable
+lane is C5 event-reader chunk/window input.
+
 ## Current Verified Baseline
 
 - Main local environment: Visual Studio 2026 / MSVC 2026.
@@ -37,19 +43,28 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `Workbook`
   - `Worksheet`
   - `Cell`
+  - `CellRange`
+  - `RowOptions`
   - `CellValue`
   - `CellValueKind`
+  - `DocumentProperties`
   - `WorkbookWriter`
+  - `WorkbookWriterOptions`
+  - `StringStrategy`
   - `WorksheetWriter`
   - `CellView`
   - `StyleId`
   - `CellAlignment`
+  - `HorizontalAlignment`
+  - `VerticalAlignment`
   - `CellFont`
   - `CellFill`
   - `CellStyle`
   - `DataValidationRule`
   - `DataValidationType`
   - `DataValidationOperator`
+  - `DataValidationErrorStyle`
+  - `HyperlinkOptions`
   - `ArgbColor`
   - `ColorScaleValueType`
   - `ColorScalePoint`
@@ -61,17 +76,41 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
   - `IconSetStyle`
   - `IconSetValueType`
   - `IconSetRule`
+  - `TableOptions`
+  - `TableTotalsFunction`
   - `ImageFormat`
   - `ImageInfo`
   - `ImagePixels`
+  - `ImageEditAs`
+  - `ImageAnchorOffset`
+  - `ImageOptions`
   - `read_image_info()`
   - `read_image_pixels()`
+  - `Workbook::set_document_properties()`
+  - `WorkbookWriterOptions::document_properties`
   - `WorkbookWriter::add_style()`
   - `CellView::with_style()`
+  - `WorksheetWriter::add_data_validation()`
+  - `WorksheetWriter::add_external_hyperlink()`
+  - `WorksheetWriter::add_internal_hyperlink()`
+  - `WorksheetWriter::add_table()`
   - `WorksheetWriter::add_conditional_color_scale()`
   - `WorksheetWriter::add_conditional_data_bar()`
   - `WorksheetWriter::add_conditional_icon_set()`
+  - `WorksheetWriter::add_image()`
+  - `WorkbookEditorOptions`
   - `WorkbookEditor`
+  - `WorkbookEditor::open()`
+  - `WorkbookEditor::open(path, options)`
+  - `WorkbookEditor::worksheet_names()`
+  - `WorkbookEditor::has_worksheet()`
+  - `WorkbookEditor::has_pending_changes()`
+  - `WorkbookEditor::pending_change_count()`
+  - `WorkbookEditor::pending_replacement_cell_count()`
+  - `WorkbookEditor::estimated_pending_replacement_memory_usage()`
+  - `WorkbookEditor::replace_sheet_data()`
+  - `WorkbookEditor::rename_sheet()`
+  - `WorkbookEditor::save_as()`
   - `FastXlsxError`
 - Current internal foundations:
   - XML escape and cell/range/sqref helpers.
@@ -101,11 +140,14 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     PackageEditor/EditPlan commit.
   - Internal bounded PackageEditor cell-replacement handoff in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
-    `fastxlsx.package_editor`. `replace_worksheet_cells()` and
-    `replace_worksheet_cells_by_name()` still materialize the current planned
-    worksheet XML at the `PackageReader` boundary, but no longer materialize the
-    full rewritten worksheet XML string. The handoff scans the source action
-    stream and replacement payloads first, computes top-level worksheet
+    `fastxlsx.package_editor`. For source package worksheet entries,
+    `replace_worksheet_cells()` and `replace_worksheet_cells_by_name()` now use
+    `PackageReader::extract_entry_to_file()` to create a scoped file-backed
+    source before validation; the current event reader still materializes that
+    input, and planned replacement / chunk inputs still materialize the current
+    planned worksheet XML. The handoff no longer materializes the full rewritten
+    worksheet XML string. It scans the source action stream and replacement
+    payloads first, computes top-level worksheet
     `<dimension>`, audits preserved source metadata plus replacement cell
     payloads, and skips old target cell payloads that will be removed from
     output. Relationship-id audit is also based on the rewritten action stream,
@@ -122,11 +164,12 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
     bytes plus owner `.rels`, workbook definedNames, PNG default content type,
     calcChain cleanup, and output re-read through `PackageReader`. Treat this as
-    output-side file-backed stream handoff only: no public API, no PackageReader
-    input streaming, no complete low-memory worksheet transformer, no broad range
-    metadata recalculation, no sharedStrings/style migration, no relationship
-    repair/pruning, no object semantic editing, and no low-memory large-file
-    editing claim.
+    source-entry file-backed extraction plus output-side file-backed stream
+    handoff only: no public API, no complete PackageReader input streaming, no
+    event-reader chunk/window input, no complete low-memory worksheet
+    transformer, no broad range metadata recalculation, no sharedStrings/style
+    migration, no relationship repair/pruning, no object semantic editing, and
+    no low-memory large-file editing claim.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
@@ -155,9 +198,10 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
     `max_cells` / `memory_budget_bytes` enforcement, plus an internal
     `cell_store_to_sheet_data_xml()` helper for standalone `<sheetData>`
     payload emission and a focused by-name `PackageEditor` handoff regression.
-    Treat this as a P7 foundation slice only: no public `WorkbookEditor`, no
-    random cell editing API, no workbook-level guardrails, and no full save-as /
-    Patch handoff.
+    Treat this as a P7 foundation slice only: it feeds the current narrow
+    `WorkbookEditor::replace_sheet_data()` Patch facade, but it is still not a
+    random cell editing API, workbook-level guardrail system, or full in-memory
+    save-as / Patch handoff.
   - `StringStrategy::SharedString`, internal shared string table wiring,
     `xl/sharedStrings.xml` package entry generation, and focused structure
     tests are visible in the current files. Treat this as sharedStrings
@@ -431,14 +475,19 @@ Status words in this section are intentionally limited to 计划, 进行中, and
 基础. They describe visible project state and next work only; they do not claim
 feature completion.
 
-1. Phase plan reset - 基础.
-   - The next queue should no longer say "P5 sharedStrings -> P6 benchmark ->
-     P7 hot path" as the default lane.
-   - Current priority is split into executable steps: P3 package read/copy/write
-     foundation, P4.0 API surface unification, then a narrow P4 Patch MVP.
-     Writer/backend performance hardening continues as supporting work.
+1. Queue reset - 基础.
+   - The active next-task queue is `C0 -> C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7`.
+   - `P*` labels remain historical indices only; they are not the default
+     execution order.
+   - C0 validates the current code/docs baseline, C1 hardens the current
+     `WorkbookEditor` Patch facade, C2 now reopens only for new preservation /
+     dependency-audit gaps, C3 keeps the public editor decision gate, C4 has
+     the public Patch guardrail / diagnostics first slice, C5 is the
+     large-worksheet rewrite lane whose next input-side step is event-reader
+     chunk/window consumption, C6 is the support line, and C7 is the release /
+     packaging gate.
    - Keep docs, AGENTS, skills, and `TASK_BREAKDOWN.md` aligned with this
-     positioning and keep roadmap symbols separate from implemented code.
+     queue and keep roadmap symbols separate from implemented code.
 
 2. Editing architecture foundation - 计划 with internal groundwork 基础.
    - Current internal OPC metadata has part names, relationships, content types,
@@ -456,8 +505,9 @@ feature completion.
 3. API surface unification - 基础.
    - The public facade vocabulary is now frozen for current planning:
      `WorkbookWriter` for Streaming, `Workbook` for small new-workbook
-     creation, and future `WorkbookEditor` / `WorksheetEditor` for
-     existing-file editing.
+     creation, current narrow `WorkbookEditor` for existing-file Patch, and
+     future `WorksheetEditor` / `WorkbookEditor` extensions for random small-file
+     editing.
    - Keep low-level `PackageReader`, `PackageEditor`, `EditPlan`,
      `PartIndex`, and `RelationshipGraph` internal unless a later task proves a
      stable low-level public API is needed.
@@ -476,28 +526,6 @@ feature completion.
    - vcpkg / CMakePresets / CI remains 基础: `stb` is default, minizip is opt-in,
      Excel visual verification remains local, and benchmark jobs stay opt-in.
 
-6. Styles number formats + limited alignment + bold/italic/direct-color fonts + solid fills - 基础.
-   - Current files show workbook-local `StyleId`, `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
-     `WorkbookWriter::add_style()`, `CellView::with_style()`, generated
-     `xl/styles.xml`, workbook styles relationship, and focused CTest coverage.
-   - The current slices support custom number formats, narrow
-     `CellAlignment::wrap_text`, limited `HorizontalAlignment` / `VerticalAlignment`,
-     narrow `CellFont::bold` / `italic` plus optional direct ARGB `color`, and narrow
-     `CellFill` solid foreground ARGB.
-     Duplicate complete styles reuse the same style id; equal number-format
-     strings reuse the same custom `numFmtId` across different style
-     combinations; equal bold/italic/direct-color font combinations reuse the same `fontId`;
-     equal foreground ARGB fills reuse the same `fillId`;
-     default cells omit `s="0"`.
-   - Current local QA uses `tools/verify_styles_number_formats.py` for
-     package XML / `openpyxl` / optional `XlsxWriter` checks and
-     `tools/verify_styles_excel.ps1` for Excel COM read-only visible checks,
-     including `fastxlsx-streaming-styles-fonts.xlsx` bold, italic, direct
-     color, number+color, and default-cell scenarios.
-   - Before expanding support wording, add separate tasks and tests for
-     full font control, full fill/pattern control, borders/full alignment, date serial helper policy, conditional
-     formatting, rich text, and existing-file style preservation.
-
 ## Repository State
 
 - Local Git repository initialized on branch `main`.
@@ -511,12 +539,12 @@ Use this order for the next implementation pushes. Each item should be a small
 commit or short series with its own tests and docs update.
 
 1. Task docs, skills, and branch/worktree context.
-   - Align `TASK_PLAN.md`, `TASK_BREAKDOWN.md`, `NEXT_STEPS.md`, `ROADMAP.md`,
-     `AGENTS.md`, and FastXLSX skills with the editable-engine positioning.
+   - Align `TASK_PLAN.md`, `TASK_BREAKDOWN.md`, `NEXT_STEPS.md`, `AGENTS.md`,
+     and FastXLSX skills with the editable-engine positioning.
    - Reconcile concurrent agent output before overlapping file edits.
-   - Keep `TECHNICAL_COMPARISON.md` as the cross-language XLSX reference
-     matrix. Feature tasks should name the reference libraries they borrow from
-     and the architecture limits they intentionally avoid.
+   - Keep the cross-language reference notes current in `ARCHITECTURE.md`.
+     Feature tasks should name the reference libraries they borrow from and
+     the architecture limits they intentionally avoid.
    - Keep generated artifacts, local build outputs, and private state out of
      commits.
 
@@ -691,9 +719,9 @@ boundary, and before exposing or broadening public existing-file edit APIs.
 Do:
 - Define the three public-facing facades:
   `WorkbookWriter` for large new-workbook streaming export,
-  `Workbook` for small new-workbook convenience creation, and future
-  `WorkbookEditor` / `WorksheetEditor` for existing-file editing and small-file
-  random edit workflows.
+  `Workbook` for small new-workbook convenience creation, current narrow
+  `WorkbookEditor` for existing-file Patch, and future `WorksheetEditor` /
+  `WorkbookEditor` extensions for small-file random edit workflows.
 - Keep `PackageReader`, `PackageEditor`, `EditPlan`, `DependencyAnalyzer`,
   `PartIndex`, and `RelationshipGraph` internal until a later task explicitly
   proves a stable low-level public API is needed.
@@ -719,27 +747,27 @@ Accept when:
   `docs/TASK_PLAN.md`, and `docs/TASK_BREAKDOWN.md` agree on the public
   facades and internal/public boundary.
 - Future Patch MVP tasks know whether a new API belongs to `WorkbookWriter`,
-  `Workbook`, or future `WorkbookEditor`.
+  `Workbook`, current narrow `WorkbookEditor`, or future editor extensions.
 - The docs explicitly say which current Patch classes are internal and which
   names are only future public design targets.
 
 Do not claim:
-- A new implemented `WorkbookEditor`, random cell editing API, or public
-  `PackageEditor` from this design task alone. `CellValue` exists as a
-  standalone value type, and `CellStore` exists as an internal foundation;
-  neither means editor readiness.
+- Full editor readiness, random cell editing API, or public `PackageEditor` from
+  this design task or the narrow `WorkbookEditor` Patch slice. `CellValue`
+  exists as a standalone value type, and `CellStore` exists as an internal
+  foundation; neither means random editor readiness.
 - That one unified facade can hide Streaming/Patch/In-memory performance costs.
 
 Status update: the P4.0 design freeze has since been realized as a first public
 Patch-mode slice. `WorkbookEditor` now exists as a public facade
 (`include/fastxlsx/workbook_editor.hpp`, `src/workbook_editor.cpp`,
 `tests/test_workbook_editor.cpp`, CTest `fastxlsx.workbook_editor`) exposing
-`open()`, `worksheet_names()`, `has_worksheet()`, `replace_sheet_data()`, and
-`save_as()` over the internal by-name `<sheetData>` Patch path. This is the
-narrow whole-sheet-data slice only; `WorksheetEditor`, `get_cell()` /
-`set_cell()`, random cell editing, caller-supplied worksheet XML, and
-sharedStrings/style migration remain future design targets, and
-`PackageEditor` stays internal/test-only.
+`open()`, `worksheet_names()`, `has_worksheet()`, `replace_sheet_data()`,
+`rename_sheet()`, and `save_as()` over the internal by-name `<sheetData>` Patch
+path plus narrow sheet-catalog rename. This is the narrow whole-sheet-data /
+catalog-name slice only; `WorksheetEditor`, `get_cell()` / `set_cell()`, random
+cell editing, caller-supplied worksheet XML, and sharedStrings/style migration
+remain future design targets, and `PackageEditor` stays internal/test-only.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.
@@ -749,11 +777,12 @@ the authoritative execution order above for actual next-task selection.
 Status: complete documentation gate.
 
 The first Patch MVP is frozen as an internal by-name worksheet `<sheetData>`
-patch. The future user story is `WorkbookEditor`-shaped: open an existing
-`.xlsx`, select an existing worksheet by sheet name, replace that worksheet's
-`<sheetData>` / `<sheetData/>` payload with caller-generated XML, and `save_as()`
-a new package. Current implementation remains internal
-`PackageEditor::replace_worksheet_sheet_data_by_name()`.
+patch. That user story now has the narrow public `WorkbookEditor` facade: open
+an existing `.xlsx`, select an existing worksheet by sheet name, replace that
+worksheet's `<sheetData>` from `CellValue` rows, optionally rename the sheet
+catalog entry, and `save_as()` a new package. The underlying implementation
+still delegates to internal `PackageEditor::replace_worksheet_sheet_data_by_name()`
+and `rename_sheet_catalog_entry()`.
 
 Accept when:
 - `TASK_BREAKDOWN.md`, `TASK_PLAN.md`, and this file agree that the MVP is the
@@ -761,11 +790,10 @@ Accept when:
 - The docs state that the helper is a bounded local rewrite and reuses existing
   calcChain remove / `fullCalcOnLoad`, relationship/content-type audit, and
   unknown/unmodified part preservation behavior.
-- Non-goals are explicit: public `WorkbookEditor`, public `PackageEditor`,
-  random cell editing, sharedStrings index migration, style id migration/style
-  merge, relationship repair/pruning, table/drawing semantic sync, range
-  repair, dimension recalculation, and large-file streaming worksheet
-  transformation.
+- Non-goals are explicit: public `PackageEditor`, random cell editing,
+  sharedStrings index migration, style id migration/style merge, relationship
+  repair/pruning, table/drawing semantic sync, range repair, dimension
+  recalculation, and large-file streaming worksheet transformation.
 
 Do not claim:
 - Existing-file editing is public API.
@@ -2467,12 +2495,16 @@ Current foundation:
   rewriting only `xl/media/image1.png` preserves drawing `.rels`, keeps the PNG
   default content type from being promoted to an override, and leaves workbook,
   worksheet, drawing, chart, and unknown extension entries on the same
-  copy-original baseline. The internal output-plan snapshot now also exposes
-  the active media `StreamRewrite`, content types / drawing `.rels`
-  copy-original decisions, preserved drawing/chart/unknown entries, empty
-  removal / relationship-target audits, and no invented media owner `.rels`.
-  This is not image decoding, drawing mutation, or existing-workbook image
-  editing.
+  copy-original baseline. Internal output-plan coverage now also exposes the
+  active media `StreamRewrite`, replacement reason, preserved content types /
+  package relationships / workbook / workbook `.rels` / worksheet / worksheet
+  `.rels` / drawing / drawing `.rels` / chart / table / VML /
+  percent-decoded drawing / sharedStrings / sharedStrings owner `.rels` /
+  styles / VBA / calcChain / unknown extension / unknown owner `.rels` entries,
+  source-owned metadata context for drawing `.rels` and the unknown owner
+  `.rels`, empty removal / relationship-target audits, and no invented media
+  owner `.rels`. This is Patch audit visibility only, not a public output
+  planner, image decoding, drawing mutation, or existing-workbook image editing.
   The same path now covers default-typed media remove-then-ordinary-replace
   ordering: a later replacement restores the active media part, clears stale
   removed-part audit, keeps the PNG default content type without promoting
@@ -2743,8 +2775,8 @@ Current foundation:
   dimension, cleaning calcChain metadata, re-opening output through
   `PackageReader`, and removing temporary XML files after editor destruction.
   This remains audit / preservation visibility, not relationship repair/pruning,
-  object semantic editing, public API, PackageReader input streaming, or complete
-  low-memory large-file editing.
+  object semantic editing, public API, complete PackageReader input streaming,
+  event-reader chunk/window input, or complete low-memory large-file editing.
   It also confirms
   worksheet-owned and drawing-owned external, URI-qualified, invalid, and
   unresolved relationship target audit notes and structured `RelationshipTargetAudit`

@@ -6,6 +6,7 @@
 #include <fastxlsx/workbook.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cctype>
@@ -1722,6 +1723,55 @@ std::string relationship_entry_name_for_source_part(const PartName& source_part)
         + source_path.substr(slash + 1) + ".rels";
 }
 
+// Reverse of relationship_entry_name_for_source_part(): given a `.rels` entry
+// name, return the owning source part value (such as `/xl/drawings/drawing1.xml`)
+// when the entry is a source-owned owner `.rels` whose part is present in the
+// package. Returns an empty string for non-`.rels` entries, the package
+// `_rels/.rels`, or owner parts that are not registered source parts. This is a
+// read-only audit-visibility lookup; it does not repair, prune, or invent
+// relationships.
+std::string source_part_for_relationship_entry(
+    const PackageReader& reader, std::string_view entry_name)
+{
+    if (entry_name == package_relationships_entry_name) {
+        return {};
+    }
+    if (entry_name.size() <= relationship_part_extension.size()
+        || entry_name.substr(entry_name.size() - relationship_part_extension.size())
+            != relationship_part_extension) {
+        return {};
+    }
+
+    std::string owner_path;
+    if (const std::size_t segment = entry_name.find(relationship_part_segment);
+        segment != std::string_view::npos) {
+        const std::string_view directory = entry_name.substr(0, segment);
+        const std::string_view file = entry_name.substr(segment + relationship_part_segment.size());
+        owner_path.assign(directory);
+        owner_path.push_back('/');
+        owner_path.append(file.substr(0, file.size() - relationship_part_extension.size()));
+    } else if (entry_name.rfind(root_relationships_prefix, 0) == 0) {
+        const std::string_view file = entry_name.substr(root_relationships_prefix.size());
+        owner_path.assign(file.substr(0, file.size() - relationship_part_extension.size()));
+    } else {
+        return {};
+    }
+
+    if (owner_path.empty()) {
+        return {};
+    }
+
+    try {
+        const PartName owner_part("/" + owner_path);
+        if (reader.part_index().find_part(owner_part) == nullptr) {
+            return {};
+        }
+        return owner_part.value();
+    } catch (const FastXlsxError&) {
+        return {};
+    }
+}
+
 std::string default_replacement_reason(PartWriteMode write_mode)
 {
     switch (write_mode) {
@@ -1823,6 +1873,26 @@ void remove_part_replacement(
                 return replacement.part_name == part_name;
             }),
         replacements.end());
+}
+
+void upsert_part_replacement(std::vector<PackagePartReplacement>& replacements,
+    PartName part_name, std::string data, PartWriteMode write_mode, std::string reason)
+{
+    if (auto* replacement = find_replacement(replacements, part_name)) {
+        replacement->data = std::move(data);
+        replacement->chunks.clear();
+        replacement->write_mode = write_mode;
+        replacement->reason = std::move(reason);
+        return;
+    }
+
+    replacements.push_back(PackagePartReplacement {
+        std::move(part_name),
+        std::move(data),
+        {},
+        write_mode,
+        std::move(reason),
+    });
 }
 
 PackageEntryReplacement* find_entry_replacement(
@@ -1988,6 +2058,44 @@ void sync_content_types_entry_after_part_restore(EditPlan& edit_plan,
         PackageEntryAuditKind::ContentTypes);
 }
 
+void restore_active_part_entry_state_after_replacement(EditPlan& edit_plan,
+    std::vector<PackageEntryReplacement>& entry_replacements,
+    std::vector<std::string>& omitted_entries, const PackageReader& reader,
+    const PackageManifest& manifest, const PartName& part_name)
+{
+    remove_entry_replacement(entry_replacements, part_name.zip_path());
+    remove_omitted_entry(omitted_entries, part_name.zip_path());
+
+    const std::string relationship_entry = relationship_entry_name_for_source_part(part_name);
+    remove_omitted_entry(omitted_entries, relationship_entry);
+    if (find_entry_replacement(entry_replacements, relationship_entry) == nullptr) {
+        audit_preserved_relationship_entry(edit_plan, reader, part_name);
+    }
+
+    sync_content_types_entry_after_part_restore(
+        edit_plan, entry_replacements, reader, manifest);
+}
+
+void stage_part_removal_entries(EditPlan& edit_plan,
+    std::vector<PackagePartReplacement>& replacements,
+    std::vector<PackageEntryReplacement>& entry_replacements,
+    std::vector<std::string>& omitted_entries, const PackageReader& reader,
+    const PartName& part_name)
+{
+    remove_part_replacement(replacements, part_name);
+    remove_entry_replacement(entry_replacements, part_name.zip_path());
+    add_omitted_entry(omitted_entries, part_name.zip_path());
+
+    const std::string relationship_entry = relationship_entry_name_for_source_part(part_name);
+    remove_entry_replacement(entry_replacements, relationship_entry);
+    if (reader.find_entry(relationship_entry) != nullptr) {
+        add_omitted_entry(omitted_entries, relationship_entry);
+        edit_plan.remove_package_entry(relationship_entry,
+            "source-owned relationships omitted with removed package part",
+            PackageEntryAuditKind::SourceRelationships, part_name.value());
+    }
+}
+
 void audit_preserved_relationship_entries(EditPlan& edit_plan, const PackageReader& reader,
     const EditPlan& worksheet_plan, const PartName& worksheet_part)
 {
@@ -2031,6 +2139,28 @@ std::string current_planned_part_data(const PackageReader& reader,
     return reader.read_entry(part_name.zip_path());
 }
 
+std::string current_planned_part_data_from_file(const std::filesystem::path& path)
+{
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw FastXlsxError("failed to open PackageReader file-backed worksheet source");
+    }
+
+    std::string data;
+    std::array<char, 64U * 1024U> buffer {};
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize read_size = input.gcount();
+        if (read_size > 0) {
+            data.append(buffer.data(), static_cast<std::size_t>(read_size));
+        }
+    }
+    if (input.bad()) {
+        throw FastXlsxError("failed to read PackageReader file-backed worksheet source");
+    }
+    return data;
+}
+
 std::uint64_t current_planned_part_data_size(const PackageReader& reader,
     const std::vector<PackagePartReplacement>& replacements,
     const std::vector<PackageEntryReplacement>& entry_replacements,
@@ -2052,6 +2182,15 @@ std::uint64_t current_planned_part_data_size(const PackageReader& reader,
         throw FastXlsxError("worksheet sheetData replacement source entry is missing");
     }
     return entry->uncompressed_size;
+}
+
+bool current_planned_part_is_source_entry(
+    const std::vector<PackagePartReplacement>& replacements,
+    const std::vector<PackageEntryReplacement>& entry_replacements,
+    const PartName& part_name) noexcept
+{
+    return find_entry_replacement(entry_replacements, part_name.zip_path()) == nullptr
+        && find_replacement(replacements, part_name.zip_path()) == nullptr;
 }
 
 PartName resolve_worksheet_part_by_name_for_patch(const PackageReader& reader,
@@ -2604,6 +2743,23 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
     }
 
     plan.copied_from_source = reader.find_entry(plan.entry_name) != nullptr;
+
+    // Patch audit visibility: a preserved source-owned owner `.rels` copied as-is
+    // without its own EditPlan package-entry audit (for example the drawing or
+    // unknown-extension owner `.rels` carried along when an ordinary media part is
+    // replaced) still lands here as a Generic copy-original entry. Classify it as
+    // SourceRelationships with its owning part so the output-plan snapshot exposes
+    // the same source-owner context the EditPlan-managed `.rels` already carry.
+    // This is read-only classification; it does not repair, prune, or invent
+    // relationships, and the Generic guard leaves any already-classified entry
+    // untouched.
+    if (plan.copied_from_source && plan.audit_kind == PackageEntryAuditKind::Generic) {
+        std::string owner_part = source_part_for_relationship_entry(reader, plan.entry_name);
+        if (!owner_part.empty()) {
+            plan.audit_kind = PackageEntryAuditKind::SourceRelationships;
+            plan.owner_part = std::move(owner_part);
+        }
+    }
     return plan;
 }
 
@@ -2805,32 +2961,12 @@ void PackageEditor::replace_part(
         reason = default_replacement_reason(write_mode);
     }
 
-    if (auto* replacement = find_replacement(replacements_, part_name)) {
-        replacement->data = std::move(data);
-        replacement->chunks.clear();
-        replacement->write_mode = write_mode;
-        replacement->reason = reason;
-    } else {
-        replacements_.push_back(PackagePartReplacement {
-            part_name,
-            std::move(data),
-            {},
-            write_mode,
-            reason,
-        });
-    }
+    upsert_part_replacement(replacements_, part_name, std::move(data), write_mode, reason);
 
     manifest_.set_part_write_mode(part_name, write_mode);
     edit_plan_.set_part(part_name, write_mode, reason);
-    remove_entry_replacement(entry_replacements_, part_name.zip_path());
-    remove_omitted_entry(omitted_entries_, part_name.zip_path());
-    const std::string relationship_entry = relationship_entry_name_for_source_part(part_name);
-    remove_omitted_entry(omitted_entries_, relationship_entry);
-    if (find_entry_replacement(entry_replacements_, relationship_entry) == nullptr) {
-        audit_preserved_relationship_entry(edit_plan_, reader_, part_name);
-    }
-    sync_content_types_entry_after_part_restore(
-        edit_plan_, entry_replacements_, reader_, manifest_);
+    restore_active_part_entry_state_after_replacement(edit_plan_, entry_replacements_,
+        omitted_entries_, reader_, manifest_, part_name);
 }
 
 void PackageEditor::replace_part_chunks(
@@ -2890,18 +3026,8 @@ void PackageEditor::remove_part(
         edit_plan_.add_note(note);
     }
 
-    remove_part_replacement(replacements_, part_name);
-    remove_entry_replacement(entry_replacements_, part_name.zip_path());
-    add_omitted_entry(omitted_entries_, part_name.zip_path());
-
-    const std::string relationship_entry = relationship_entry_name_for_source_part(part_name);
-    remove_entry_replacement(entry_replacements_, relationship_entry);
-    if (reader_.find_entry(relationship_entry) != nullptr) {
-        add_omitted_entry(omitted_entries_, relationship_entry);
-        edit_plan_.remove_package_entry(relationship_entry,
-            "source-owned relationships omitted with removed package part",
-            PackageEntryAuditKind::SourceRelationships, part_name.value());
-    }
+    stage_part_removal_entries(edit_plan_, replacements_, entry_replacements_,
+        omitted_entries_, reader_, part_name);
 
     if (rewrite_content_types) {
         upsert_entry_replacement(entry_replacements_, "[Content_Types].xml",
@@ -3366,8 +3492,17 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         throw FastXlsxError("worksheet cell replacement target is not a worksheet part");
     }
 
-    const std::string worksheet_xml =
-        current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
+    ScopedPackageEditorTempFile source_file;
+    bool source_entry_file_backed = false;
+    if (current_planned_part_is_source_entry(
+            replacements_, entry_replacements_, target_worksheet_part)) {
+        reader_.extract_entry_to_file(target_worksheet_part.zip_path(), source_file.path());
+        source_entry_file_backed = true;
+    }
+
+    const std::string worksheet_xml = source_entry_file_backed
+        ? current_planned_part_data_from_file(source_file.path())
+        : current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
     const WorksheetCellReplacementStreamAnalysis stream_analysis =
         analyze_worksheet_cell_replacement_stream(
             target_worksheet_part, worksheet_xml, replacements);
@@ -3398,10 +3533,18 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         std::move(output_chunks), policy, stream_analysis.payload_audit.notes,
         stream_analysis.payload_audit.audits, relationship_reference_audit.notes,
         relationship_reference_audit.audits, replacement_reason);
-    edit_plan_.add_note(
-        "worksheet cell replacement streams dimension-refreshed output to a "
-        "PackageEditor-owned temporary file-backed package-entry chunk; current helper "
-        "still materializes the planned worksheet XML at the PackageReader boundary");
+    if (source_entry_file_backed) {
+        edit_plan_.add_note(
+            "worksheet cell replacement streams dimension-refreshed output to a "
+            "PackageEditor-owned temporary file-backed package-entry chunk; source package "
+            "worksheet entries are first extracted through the PackageReader file-backed "
+            "entry source before the current event reader materializes validation input");
+    } else {
+        edit_plan_.add_note(
+            "worksheet cell replacement streams dimension-refreshed output to a "
+            "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
+            "worksheet replacement input is still materialized before the event reader runs");
+    }
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

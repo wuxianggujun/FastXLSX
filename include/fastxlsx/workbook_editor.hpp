@@ -5,13 +5,39 @@
 
 #include <fastxlsx/cell_value.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace fastxlsx {
+
+/// Public guardrails for the current narrow WorkbookEditor Patch facade.
+///
+/// API mode: Patch. These limits apply only to replacement rows passed to
+/// WorkbookEditor::replace_sheet_data(). They do not materialize source
+/// worksheet cells, do not enable random editing, and are not workbook-level
+/// memory limits for a future WorksheetEditor.
+struct WorkbookEditorOptions {
+    /// Maximum number of explicit CellValue records accepted by one
+    /// replace_sheet_data() call.
+    ///
+    /// Empty row vectors advance no stored cells. Blank CellValue objects inside
+    /// a row still count as explicit replacement cells because they can affect
+    /// the saved <sheetData> payload.
+    std::optional<std::size_t> max_replacement_cells;
+
+    /// Estimated CellStore memory budget for one replace_sheet_data() call.
+    ///
+    /// This is a conservative budget check based on the temporary sparse store
+    /// used to build the replacement <sheetData> payload. It is not exact process
+    /// RSS tracking and does not include source package bytes, the generated XML
+    /// string, ZIP writer buffers, or future save-time assembly costs.
+    std::optional<std::size_t> replacement_memory_budget_bytes;
+};
 
 /// Edits an existing XLSX workbook by replacing whole-sheet data, then writes a
 /// new package.
@@ -80,6 +106,19 @@ public:
     /// @throws FastXlsxError if the package cannot be opened or is malformed.
     [[nodiscard]] static WorkbookEditor open(const std::filesystem::path& path);
 
+    /// Opens an existing XLSX workbook with Patch facade guardrails.
+    ///
+    /// The options currently apply only to replace_sheet_data() replacement
+    /// payload construction. They do not load source worksheet cells into an
+    /// in-memory random editor and do not change PackageReader compression
+    /// support.
+    ///
+    /// @param path Existing `.xlsx` package to edit.
+    /// @param options Replacement-payload guardrails for this editor.
+    /// @throws FastXlsxError if the package cannot be opened or is malformed.
+    [[nodiscard]] static WorkbookEditor open(
+        const std::filesystem::path& path, WorkbookEditorOptions options);
+
     ~WorkbookEditor();
 
     WorkbookEditor(WorkbookEditor&& other) noexcept;
@@ -96,6 +135,47 @@ public:
     /// Returns whether a worksheet with the given name exists in the source
     /// workbook sheet catalog.
     [[nodiscard]] bool has_worksheet(std::string_view sheet_name) const;
+
+    /// Returns whether this editor has queued Patch-mode changes.
+    ///
+    /// This is a coarse save-as diagnostic for the current public WorkbookEditor
+    /// facade. It reports whether successful public edits such as
+    /// replace_sheet_data() or rename_sheet() have queued work for save_as().
+    /// It does not expose EditPlan entries, dependency audits, relationship
+    /// diagnostics, output-plan reasons, or a full unsaved-change model. Failed
+    /// edits leave this state unchanged.
+    [[nodiscard]] bool has_pending_changes() const noexcept;
+
+    /// Returns a coarse count of successful public edit calls queued in this
+    /// facade.
+    ///
+    /// The value is useful for diagnostics and tests that need to distinguish a
+    /// clean editor from one with pending save_as() work. It is not a package
+    /// part count, EditPlan size, or stable semantic diff: repeated edits to the
+    /// same sheet may replace earlier queued payloads while still incrementing
+    /// this public facade diagnostic.
+    [[nodiscard]] std::size_t pending_change_count() const noexcept;
+
+    /// Returns the number of explicit replacement cells currently represented by
+    /// successful replace_sheet_data() calls.
+    ///
+    /// This is a narrow diagnostic for the public Patch facade. It sums the final
+    /// queued replacement payload per sheet name, so a later successful
+    /// replace_sheet_data() for the same sheet replaces the earlier payload in
+    /// this count. It does not count source workbook cells, renamed sheets,
+    /// preserved worksheet metadata, shared strings, styles, relationships, or
+    /// any future in-memory editor state.
+    [[nodiscard]] std::size_t pending_replacement_cell_count() const noexcept;
+
+    /// Returns the estimated sparse-store memory used to prepare final queued
+    /// replacement payloads.
+    ///
+    /// The estimate is the sum of the temporary CellStore estimates recorded at
+    /// successful replace_sheet_data() calls. It is useful for checking the
+    /// current Patch facade guardrail behavior, but it is not a process RSS
+    /// measurement and excludes generated XML strings, PackageEditor state,
+    /// source package bytes, ZIP writer buffers, and save-time assembly costs.
+    [[nodiscard]] std::size_t estimated_pending_replacement_memory_usage() const noexcept;
 
     /// Replaces the entire `<sheetData>` of an existing worksheet from rows of
     /// CellValue.

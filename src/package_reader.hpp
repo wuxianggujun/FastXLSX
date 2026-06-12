@@ -51,6 +51,8 @@ public:
     [[nodiscard]] const std::vector<PackageReaderEntry>& entries() const noexcept;
     [[nodiscard]] const PackageReaderEntry* find_entry(std::string_view name) const noexcept;
     [[nodiscard]] std::string read_entry(std::string_view name) const;
+    void extract_entry_to_file(std::string_view name, const std::filesystem::path& output_path)
+        const;
     [[nodiscard]] const ContentTypesManifest& content_types() const noexcept;
     [[nodiscard]] const PartIndex& part_index() const noexcept;
     [[nodiscard]] const RelationshipSet& package_relationships() const noexcept;

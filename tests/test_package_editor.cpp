@@ -3344,6 +3344,109 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
         "planned-input cell replacement output should omit stale calcChain");
 }
 
+void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replacement()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-cell-replacement-planned-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-planned-chunks-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-cell-replacement-planned-chunks-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    std::string worksheet_body;
+    std::uint32_t last_row = 1;
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    while (worksheet_prefix.size() + worksheet_body.size() + worksheet_suffix.size()
+        <= fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit
+            + 4096U) {
+        ++last_row;
+        worksheet_body += R"(<row r=")";
+        worksheet_body += std::to_string(last_row);
+        worksheet_body += R"("><c r="A)";
+        worksheet_body += std::to_string(last_row);
+        worksheet_body += R"("><v>1</v></c></row>)";
+    }
+    const std::size_t staged_worksheet_size =
+        worksheet_prefix.size() + worksheet_body.size() + worksheet_suffix.size();
+    check(staged_worksheet_size
+            > fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit,
+        "planned staged chunk fixture should exceed the materialized input guard");
+    write_binary_file(body_path, worksheet_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string validation_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>validation-only</v></c></row></sheetData></worksheet>)";
+    editor.replace_worksheet_part_chunks(worksheet_part, validation_worksheet,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1", R"(<c r="A1"><v>patched-staged</v></c>)" },
+    };
+    editor.replace_worksheet_cells(worksheet_part, replacements);
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "without materializing"}),
+        "planned staged chunks cell replacement should expose non-materialized staged input");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
+        "planned staged chunks cell replacement should expose chunk-source transformer input");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "event-reader chunk-source validator"}),
+        "planned staged chunks cell replacement should expose chunk-source root validation");
+    check(!has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "bounded materialized input limit"}),
+        "planned staged chunks cell replacement should not expose staged materialized guard");
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "planned staged chunks cell replacement should stream-rewrite worksheet chunks");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "planned staged chunks cell replacement should local-rewrite workbook metadata");
+    check_output_entry_plan(output_plan.entries, calc_chain_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "planned staged chunks cell replacement should omit stale calcChain");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml = output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(worksheet_xml, R"(<c r="A1"><v>patched-staged</v></c>)",
+        "planned staged chunks cell replacement output should include replacement cell");
+    check_not_contains(worksheet_xml, "old-staged",
+        "planned staged chunks cell replacement output should consume old staged target cell");
+    check_not_contains(worksheet_xml, "validation-only",
+        "planned staged chunks cell replacement output should read staged chunks, not validation XML");
+    const std::string expected_dimension =
+        R"(<dimension ref="A1:A)" + std::to_string(last_row) + R"("/>)";
+    check_contains(worksheet_xml, expected_dimension,
+        "planned staged chunks cell replacement output should refresh dimension from chunk-source cells");
+    check_contains(worksheet_xml,
+        R"(<row r=")" + std::to_string(last_row) + R"("><c r="A)"
+            + std::to_string(last_row) + R"("><v>1</v></c></row>)",
+        "planned staged chunks cell replacement output should preserve tail staged rows");
+    check(output_reader.find_entry(calc_chain_part.zip_path()) == nullptr,
+        "planned staged chunks cell replacement output should omit stale calcChain payload");
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), R"(fullCalcOnLoad="1")",
+        "planned staged chunks cell replacement output should request full calculation");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "planned staged chunks cell replacement output should preserve unknown bytes");
+}
+
 void test_package_editor_streams_large_source_worksheet_cell_replacement_without_materialized_input_limit()
 {
     CalcSourcePackage source =
@@ -38112,6 +38215,7 @@ int main()
         test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
         test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
         test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input();
+        test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replacement();
         test_package_editor_streams_large_source_worksheet_cell_replacement_without_materialized_input_limit();
         test_package_editor_rejects_worksheet_cell_replacement_planned_input_over_limit_without_state_changes();
         test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();

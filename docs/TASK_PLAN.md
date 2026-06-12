@@ -18,8 +18,9 @@ parallelism, acceptance checks, and explicit non-goals.
 Current execution order is `C0 -> C7`; `P*` labels remain historical indexes
 or capability slices. C2 current preservation coverage, the C3 public-editor
 decision, the C4 public Patch guardrail / diagnostics first slice, and the C5
-first verifiable rewrite slice are now grounded in tests; the next narrow lane
-is C5 event-reader chunk/window input.
+first verifiable rewrite slices are now grounded in tests; the next narrow lane
+is C5 direct PackageReader ZIP-entry chunk source / ordinary planned string
+source input.
 
 ## Current Verified State
 
@@ -74,9 +75,10 @@ is C5 event-reader chunk/window input.
   helpers that use `PackageReader::extract_entry_to_file()` for source package
   worksheet entries before validation. Source-entry validation, dependency /
   dimension analysis, relationship-id audit, and output pass now consume that
-  file-backed source through pull-based chunk-source readers. Planned
-  replacement / chunk input still materializes the current planned worksheet
-  XML, but the handoff no longer materializes the full rewritten worksheet XML
+  file-backed source through pull-based chunk-source readers. Current planned
+  staged worksheet chunks also feed those chunk-source readers; ordinary planned
+  replacement strings still materialize the current planned worksheet XML. The
+  handoff no longer materializes the full rewritten worksheet XML
   string. It first scans the source action stream and replacement payloads,
   computes top-level worksheet `<dimension>` from the
   resulting cell references, audits preserved source metadata plus replacement
@@ -100,18 +102,20 @@ is C5 event-reader chunk/window input.
   to `PackageWriter` instead of flattening them into one string.
   `replace_worksheet_part_chunks()` still reuses the existing materialized
   worksheet XML validation / audit / calc metadata path for callers that provide
-  a full worksheet payload, while the cell-replacement helper now commits
-  prevalidated audit data and a file-backed chunk through its own internal
-  prevalidated worksheet chunk path. Invalid replacement cell payloads at this
+  a full worksheet payload, while follow-up cell replacement now consumes its
+  staged chunks through chunk-source readers and commits prevalidated audit data
+  plus a file-backed chunk through its own internal prevalidated worksheet chunk
+  path. Invalid replacement cell payloads at this
   PackageEditor handoff layer have no-state-pollution regression coverage for
   non-cell roots, missing or qualified-only `r` attributes, selector / `r`
   mismatches, audit-heavy replacement payload policy failures, and temporary
   file cleanup after `save_as()`.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
-  handoff, source-entry chunk-source input, chunked package-entry source,
-  worksheet chunk handoff, and source-entry extraction plus cell-replacement output-side file-backed stream
+  handoff, source-entry chunk-source input, planned staged-chunk chunk-source
+  input, chunked package-entry source, worksheet chunk handoff, and
+  source-entry extraction plus cell-replacement output-side file-backed stream
   handoff groundwork only: no public API, full XML parser/schema validation,
-  complete PackageReader input streaming, event-reader chunk/window input,
+  complete PackageReader input streaming, ordinary planned string source input,
   relationship repair/pruning, object semantic editing, broad range metadata
   recalculation, dependency repair, sharedStrings/style migration, or complete
   low-memory large-file editing claim.

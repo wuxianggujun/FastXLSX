@@ -15,11 +15,12 @@ parallelism, touched files, acceptance checks, and explicit non-goals.
 
 Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
 indexes or capability slices. The current lane has advanced through the C5
-guarded first slice: C2 only reopens for new preservation gaps, C3/C4 keep
+guarded first slices: C2 only reopens for new preservation gaps, C3/C4 keep
 their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 PackageReader/source input streaming on top of the new event-reader,
-transformer, PackageEditor validation, analysis, audit, and output-pass chunk
-foundations.
+lane is C5 direct PackageReader ZIP-entry chunk source / ordinary planned string
+source input on top of the new event-reader, transformer, PackageEditor
+validation, analysis, audit, output-pass, source-entry, and planned staged-chunk
+chunk foundations.
 
 ## Current Verified Baseline
 
@@ -161,8 +162,9 @@ foundations.
     `PackageReader::extract_entry_to_file()` to create a scoped file-backed
     source, then scan that source through chunk-source readers for root
     validation, dependency/dimension analysis, relationship-id audit, and output
-    writing. Planned replacement / chunk inputs still materialize the current
-    planned worksheet XML. The handoff no longer materializes the full rewritten
+    writing. Current planned staged worksheet chunks also feed the same
+    chunk-source readers. Ordinary planned replacement strings still materialize
+    the current planned worksheet XML. The handoff no longer materializes the full rewritten
     worksheet XML string. It scans the source
     action stream and replacement
     payloads first, computes top-level worksheet
@@ -186,17 +188,18 @@ foundations.
     sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
     bytes plus owner `.rels`, workbook definedNames, PNG default content type,
     calcChain cleanup, and output re-read through `PackageReader`. It still has
-    a bounded materialized input guard for queued/planned worksheet XML, with
+    a bounded materialized input guard for ordinary queued/planned worksheet XML strings, with
     no-state-pollution coverage for queued planned over-limit input. Treat this
     as source-entry file-backed extraction, source-entry chunk-source scanning,
-    planned-input materialization guard, and output-side file-backed stream
+    planned staged-chunk chunk-source scanning, ordinary planned-input
+    materialization guard, and output-side file-backed stream
     handoff only: no public API, no direct ZIP entry chunk source, no low-memory
     DEFLATE extraction, no complete planned-input low-memory transformer, no
     broad range metadata recalculation, no sharedStrings/style migration, no
     relationship repair/pruning, no object semantic editing, and no full
     low-memory large-file editing claim. Planned-output notes now distinguish
-    source-entry `chunk-source` paths from planned-input materialized
-    `chunk-event` / `chunk-window` boundaries.
+    source-entry and planned staged-chunk `chunk-source` paths from ordinary
+    planned-input materialized `chunk-event` / `chunk-window` boundaries.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
@@ -215,10 +218,13 @@ foundations.
     `PackageEditor::replace_worksheet_part_chunks()` reuses the current
     materialized worksheet XML validation, dependency audit, relationship audit,
     and calc metadata path, then records the target worksheet payload as
-    `PackageEntryChunk` memory/file chunks for `save_as()`. Treat this as a
-    worksheet staged payload bridge only: no public API, no low-memory
-    validation/audit, no cell-replacement low-memory stream writer, no full worksheet
-    stream writer, and no dependency or relationship repair.
+    `PackageEntryChunk` memory/file chunks for `save_as()`. Follow-up cell
+    replacement can now consume those planned staged chunks through
+    chunk-source readers, but the staged worksheet replacement helper itself
+    still uses materialized validation/audit input. Treat this as a worksheet
+    staged payload bridge only: no public API, no low-memory replacement
+    validation/audit, no full worksheet stream writer, and no dependency or
+    relationship repair.
   - Internal `CellPosition`, `CellRecord`, and worksheet-local sparse
     `CellStore` in `include/fastxlsx/detail/cell_store.hpp` and
     `src/cell_store.cpp`, plus internal `CellStoreOptions` for first-slice

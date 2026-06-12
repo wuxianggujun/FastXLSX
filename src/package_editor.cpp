@@ -2263,6 +2263,24 @@ const std::vector<PackageEntryChunk>* current_planned_part_chunks(
     return &replacement->chunks;
 }
 
+const std::string* current_planned_part_string(
+    const std::vector<PackagePartReplacement>& replacements,
+    const std::vector<PackageEntryReplacement>& entry_replacements,
+    const PartName& part_name) noexcept
+{
+    if (const auto* entry_replacement =
+            find_entry_replacement(entry_replacements, part_name.zip_path())) {
+        return &entry_replacement->data;
+    }
+
+    const PackagePartReplacement* replacement =
+        find_replacement(replacements, part_name.zip_path());
+    if (replacement == nullptr || !replacement->chunks.empty()) {
+        return nullptr;
+    }
+    return &replacement->data;
+}
+
 PartName resolve_worksheet_part_by_name_for_patch(const PackageReader& reader,
     const PackageManifest& manifest, const std::vector<PackagePartReplacement>& replacements,
     const std::vector<PackageEntryReplacement>& entry_replacements,
@@ -2299,22 +2317,6 @@ void require_sheet_data_local_rewrite_size(
         + std::string(payload_name)
         + "; current helper materializes planned worksheet XML and is not the "
           "large-file streaming worksheet transformer");
-}
-
-void require_cell_replacement_materialized_input_size(
-    std::string_view payload_name, std::uint64_t byte_size)
-{
-    if (byte_size
-        <= static_cast<std::uint64_t>(
-            package_editor_cell_replacement_materialized_input_byte_limit)) {
-        return;
-    }
-
-    throw FastXlsxError(
-        "worksheet cell replacement exceeds bounded materialized input limit for "
-        + std::string(payload_name)
-        + "; current planned worksheet replacement input is still materialized "
-          "and is not the large-file streaming worksheet transformer");
 }
 
 std::string missing_cell_replacement_error(
@@ -3149,6 +3151,32 @@ private:
     std::ifstream input_;
 };
 
+class WorksheetStringChunkReader {
+public:
+    explicit WorksheetStringChunkReader(std::string_view source)
+        : source_(source)
+    {
+    }
+
+    bool operator()(std::string& output_chunk)
+    {
+        if (offset_ >= source_.size()) {
+            output_chunk.clear();
+            return false;
+        }
+
+        const std::size_t byte_count =
+            std::min<std::size_t>(worksheet_file_chunk_size, source_.size() - offset_);
+        output_chunk.assign(source_.substr(offset_, byte_count));
+        offset_ += byte_count;
+        return true;
+    }
+
+private:
+    std::string_view source_;
+    std::size_t offset_ = 0;
+};
+
 } // namespace
 
 PackageEditor PackageEditor::open(std::filesystem::path path)
@@ -3772,7 +3800,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
     const std::vector<PackageEntryChunk>* planned_chunks = current_planned_part_chunks(
         replacements_, entry_replacements_, target_worksheet_part);
     const bool planned_chunk_source = planned_chunks != nullptr;
-    const bool source_entry_file_backed = !planned_chunk_source
+    const std::string* planned_string =
+        current_planned_part_string(replacements_, entry_replacements_, target_worksheet_part);
+    const bool planned_string_source = planned_string != nullptr;
+    const bool source_entry_file_backed = !planned_chunk_source && !planned_string_source
         && current_planned_part_is_source_entry(
             replacements_, entry_replacements_, target_worksheet_part);
 
@@ -3782,13 +3813,8 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             throw FastXlsxError("worksheet cell replacement source entry is missing");
         }
         reader_.extract_entry_to_file(target_worksheet_part.zip_path(), source_file.path());
-    } else if (!planned_chunk_source) {
-        require_cell_replacement_materialized_input_size("current planned worksheet XML",
-            current_planned_part_data_size(
-                reader_, replacements_, entry_replacements_, target_worksheet_part));
     }
 
-    std::string worksheet_xml;
     WorksheetCellReplacementStreamAnalysis stream_analysis;
     if (source_entry_file_backed) {
         WorksheetFileChunkReader analysis_reader(source_file.path());
@@ -3802,11 +3828,14 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             [&](std::string& chunk) { return analysis_reader(chunk); };
         stream_analysis = analyze_worksheet_cell_replacement_stream_from_chunk_source(
             target_worksheet_part, analysis_source, replacements);
+    } else if (planned_string_source) {
+        WorksheetStringChunkReader analysis_reader(*planned_string);
+        const WorksheetInputChunkCallback analysis_source =
+            [&](std::string& chunk) { return analysis_reader(chunk); };
+        stream_analysis = analyze_worksheet_cell_replacement_stream_from_chunk_source(
+            target_worksheet_part, analysis_source, replacements);
     } else {
-        worksheet_xml =
-            current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
-        stream_analysis = analyze_worksheet_cell_replacement_stream(
-            target_worksheet_part, worksheet_xml, replacements);
+        throw FastXlsxError("worksheet cell replacement input source is missing");
     }
     if (!stream_analysis.summary.missing_cell_references.empty()) {
         throw FastXlsxError(
@@ -3832,10 +3861,16 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             worksheet_cell_replacement_relationship_reference_audit_from_chunk_source(
                 target_worksheet_part, relationship_source, replacements,
                 reader_.relationships_for(worksheet_part));
+    } else if (planned_string_source) {
+        WorksheetStringChunkReader relationship_reader(*planned_string);
+        const WorksheetInputChunkCallback relationship_source =
+            [&](std::string& chunk) { return relationship_reader(chunk); };
+        relationship_reference_audit =
+            worksheet_cell_replacement_relationship_reference_audit_from_chunk_source(
+                target_worksheet_part, relationship_source, replacements,
+                reader_.relationships_for(worksheet_part));
     } else {
-        relationship_reference_audit = worksheet_cell_replacement_relationship_reference_audit(
-            target_worksheet_part, worksheet_xml, replacements,
-            reader_.relationships_for(worksheet_part));
+        throw FastXlsxError("worksheet cell replacement input source is missing");
     }
     reject_relationship_reference_audit_by_policy(relationship_reference_audit, policy);
     reject_payload_dependencies_by_policy(
@@ -3854,9 +3889,14 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             [&](std::string& chunk) { return output_reader(chunk); };
         write_worksheet_cell_replacement_stream_from_chunk_source(
             temp_file.path(), output_source, replacements, stream_analysis);
+    } else if (planned_string_source) {
+        WorksheetStringChunkReader output_reader(*planned_string);
+        const WorksheetInputChunkCallback output_source =
+            [&](std::string& chunk) { return output_reader(chunk); };
+        write_worksheet_cell_replacement_stream_from_chunk_source(
+            temp_file.path(), output_source, replacements, stream_analysis);
     } else {
-        write_worksheet_cell_replacement_stream(
-            temp_file.path(), worksheet_xml, replacements, stream_analysis);
+        throw FastXlsxError("worksheet cell replacement input source is missing");
     }
 
     std::vector<PackageEntryChunk> output_chunks;
@@ -3880,63 +3920,78 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
             "worksheet staged chunks are scanned through chunk-source readers without "
             "materializing the planned staged worksheet XML");
-    } else {
+    } else if (planned_string_source) {
         edit_plan_.add_note(
             "worksheet cell replacement streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
-            "worksheet replacement input is still materialized before the event reader runs");
+            "worksheet replacement string is scanned through chunk-source readers from the "
+            "queued string source without an additional materialized input guard");
+    } else {
+        edit_plan_.add_note(
+            "worksheet cell replacement streams dimension-refreshed output to a "
+            "PackageEditor-owned temporary file-backed package-entry chunk");
     }
     if (source_entry_file_backed) {
         edit_plan_.add_note(
             "worksheet cell replacement output pass feeds source package worksheet XML "
-            "through the transformer chunk-source adapter; ordinary planned worksheet replacement "
-            "input is still materialized");
+            "through the transformer chunk-source adapter; planned staged chunks and queued "
+            "strings use chunk-source readers when they are already queued");
         edit_plan_.add_note(
             "worksheet cell replacement dependency and dimension analysis feeds source "
-            "package worksheet XML through the transformer chunk-source adapter; ordinary "
-            "planned worksheet replacement input is still materialized");
+            "package worksheet XML through the transformer chunk-source adapter; planned "
+            "staged chunks and queued strings use chunk-source readers when they are already "
+            "queued");
         edit_plan_.add_note(
             "worksheet cell replacement relationship-id audit feeds source package "
-            "worksheet XML through the transformer chunk-source adapter; ordinary planned "
-            "worksheet replacement input is still materialized");
+            "worksheet XML through the transformer chunk-source adapter; planned staged chunks "
+            "and queued strings use chunk-source readers when they are already queued");
         edit_plan_.add_note(
             "worksheet cell replacement root validation feeds source package worksheet XML "
-            "through the event-reader chunk-source validator; ordinary planned worksheet "
-            "replacement input is still materialized");
+            "through the event-reader chunk-source validator; planned staged chunks and queued "
+            "strings use chunk-source readers when they are already queued");
     } else if (planned_chunk_source) {
         edit_plan_.add_note(
             "worksheet cell replacement output pass feeds current planned worksheet staged "
-            "chunks through the transformer chunk-source adapter; ordinary planned worksheet "
-            "replacement input is still materialized");
+            "chunks through the transformer chunk-source adapter");
         edit_plan_.add_note(
             "worksheet cell replacement dependency and dimension analysis feeds current "
-            "planned worksheet staged chunks through the transformer chunk-source adapter; "
-            "ordinary planned worksheet replacement input is still materialized");
+            "planned worksheet staged chunks through the transformer chunk-source adapter");
         edit_plan_.add_note(
             "worksheet cell replacement relationship-id audit feeds current planned "
-            "worksheet staged chunks through the transformer chunk-source adapter; ordinary "
-            "planned worksheet replacement input is still materialized");
+            "worksheet staged chunks through the transformer chunk-source adapter");
         edit_plan_.add_note(
             "worksheet cell replacement root validation feeds current planned worksheet "
-            "staged chunks through the event-reader chunk-source validator; ordinary planned "
-            "worksheet replacement input is still materialized");
+            "staged chunks through the event-reader chunk-source validator");
+    } else if (planned_string_source) {
+        edit_plan_.add_note(
+            "worksheet cell replacement output pass feeds current planned worksheet queued "
+            "string through the transformer chunk-source adapter; the string was already "
+            "materialized by the prior planned replacement helper");
+        edit_plan_.add_note(
+            "worksheet cell replacement dependency and dimension analysis feeds current "
+            "planned worksheet queued string through the transformer chunk-source adapter; "
+            "the string was already materialized by the prior planned replacement helper");
+        edit_plan_.add_note(
+            "worksheet cell replacement relationship-id audit feeds current planned "
+            "worksheet queued string through the transformer chunk-source adapter; the string "
+            "was already materialized by the prior planned replacement helper");
+        edit_plan_.add_note(
+            "worksheet cell replacement root validation feeds current planned worksheet "
+            "queued string through the event-reader chunk-source validator; the string was "
+            "already materialized by the prior planned replacement helper");
     } else {
         edit_plan_.add_note(
-            "worksheet cell replacement output pass feeds the current bounded materialized "
-            "worksheet XML through the transformer chunk-event adapter; validation and audit "
-            "input is still materialized");
+            "worksheet cell replacement output pass feeds the current worksheet XML through "
+            "the transformer chunk-event adapter");
         edit_plan_.add_note(
             "worksheet cell replacement dependency and dimension analysis feeds the current "
-            "bounded materialized worksheet XML through the transformer chunk-event adapter; "
-            "worksheet root validation and relationship audit input are still materialized");
+            "worksheet XML through the transformer chunk-event adapter");
         edit_plan_.add_note(
-            "worksheet cell replacement relationship-id audit feeds the current bounded "
-            "materialized worksheet XML through the transformer chunk-event adapter; worksheet "
-            "root validation input is still materialized");
+            "worksheet cell replacement relationship-id audit feeds the current worksheet XML "
+            "through the transformer chunk-event adapter");
         edit_plan_.add_note(
-            "worksheet cell replacement root validation feeds the current bounded materialized "
-            "worksheet XML through the event-reader chunk-window validator; PackageReader input "
-            "is still materialized");
+            "worksheet cell replacement root validation feeds the current worksheet XML "
+            "through the event-reader chunk-window validator");
     }
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "

@@ -207,8 +207,10 @@ public:
     // then scanned through chunk-source readers for root validation,
     // dependency/dimension analysis, relationship-id audit, and the output pass.
     // Planned staged package-entry chunks are also scanned through chunk-source
-    // readers. Ordinary queued/planned worksheet replacement strings are still
-    // bounded and materialized before they reach the same transformer adapters.
+    // readers. Ordinary queued/planned worksheet replacement strings are
+    // scanned through a string-view chunk-source reader; the prior helper may
+    // already have materialized that queued string, so this is not a fully
+    // low-memory planned-input pipeline.
     // The rewritten output is streamed into a PackageEditor-owned temporary file
     // chunk instead of materializing the rewritten worksheet string. It is still
     // not a public Patch API, relationship repair, sharedStrings/style

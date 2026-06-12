@@ -186,9 +186,10 @@ file-backed chunk-source input、output-side file-backed chunk handoff、planned
 materialized guard、event-reader chunk/window 与 chunk-source input first slices、
 transformer chunk-event / chunk-source adapters、PackageEditor output-pass /
 dependency-dimension / relationship-id audit / worksheet root validation chunk-source
-handoff first slices，以及 planned staged chunk input chunk-source first slice 已有测试。
-ordinary planned replacement string input 仍会物化 current planned worksheet XML，
-DEFLATE source extraction 仍暂复用 `read_entry()`。
+handoff first slices、planned staged chunk input chunk-source first slice，以及 queued
+planned replacement string chunk-source first slice 已有测试。queued string 仍是前序
+planned replacement helper 持有的完整字符串，不代表 full planned-input low-memory
+pipeline。DEFLATE source extraction 仍暂复用 `read_entry()`。
 
 目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
 
@@ -201,10 +202,9 @@ DEFLATE source extraction 仍暂复用 `read_entry()`。
   `read_entry()` 后写文件。
 - `PackageEditor::replace_worksheet_cells()` 不再用
   `package_editor_cell_replacement_materialized_input_byte_limit` 拒绝 source package
-  worksheet XML 的总大小；source 路径改由 event-reader `max_window_bytes` 约束单个
-  未完成 token / retained window。queued/planned worksheet replacement input 仍会在读取
-  planned worksheet XML 前用该 materialized guard 拒绝过大输入，并有 no-state-pollution
-  覆盖。
+  worksheet XML 或 queued planned replacement string 的总大小；这些路径改由
+  event-reader `max_window_bytes` 约束单个未完成 token / retained window。queued
+  planned string 仍是前序 helper 已持有的完整字符串。
 - by-name cell replacement linked-object fixture 已覆盖 dimension refresh、old target
   audit skip、relationship-bearing metadata audit、calcChain cleanup、unknown bytes
   preservation、output `PackageReader` 重读和 temporary file cleanup。
@@ -226,19 +226,22 @@ DEFLATE source extraction 仍暂复用 `read_entry()`。
   transformer chunk-source adapter 消费 file-backed source 并写入 PackageEditor-owned
   temporary file-backed `PackageEntryChunk`；planned staged chunk 输入也可由
   `PackageEntryChunkReader` 逐块喂给同一 transformer chunk-source adapter；ordinary
-  planned string input 仍从 bounded materialized worksheet XML 切 chunks 后走 transformer
-  chunk-event adapter。
+  queued planned string input 也通过 string-view chunk-source reader 逐块喂给同一
+  transformer chunk-source adapter。
 - `PackageEditor::replace_worksheet_cells()` 的 source-entry dependency/dimension analysis、
   rewritten relationship-id audit 和 worksheet root validation 已分别走 transformer /
-  event-reader chunk-source；planned staged chunk input 也已走 chunk-source；ordinary
-  planned string input 仍暴露 materialized chunk-window boundary。
+  event-reader chunk-source；planned staged chunk input 和 queued planned string input
+  也已走 chunk-source。
 - `PackageEditor` 回归覆盖 source worksheet XML 总大小超过
+  `package_editor_cell_replacement_materialized_input_byte_limit` 时仍能完成 cell
+  replacement、dimension refresh、calcChain cleanup、unknown bytes preservation 和
+  output `PackageReader` 重读。
+- `PackageEditor` 回归覆盖 queued planned replacement string 总大小超过
   `package_editor_cell_replacement_materialized_input_byte_limit` 时仍能完成 cell
   replacement、dimension refresh、calcChain cleanup、unknown bytes preservation 和
   output `PackageReader` 重读。
 
 当前缺口：
-- ordinary planned replacement string input 仍会物化 current planned worksheet XML。
 - PackageReader 仍通过 `extract_entry_to_file()` 建立 source 文件；尚不是直接从 ZIP entry
   暴露 reader chunk source。DEFLATE input extraction 仍暂复用 `read_entry()`。
 - 还没有 public low-memory worksheet transformer。
@@ -253,15 +256,15 @@ DEFLATE source extraction 仍暂复用 `read_entry()`。
    当前 transformer chunk-event adapter、PackageEditor output-pass chunk adapter、
   dependency/dimension analysis、relationship-id audit 和 worksheet root validation
   first slices 已完成；source-entry file-backed chunk-source first slice 已完成；planned
-  staged-chunk source 化 first slice 已完成。下一步是 ordinary planned string source 化，
-  以及更直接的 PackageReader ZIP entry chunk source。
+  staged-chunk source 化 first slice 和 queued planned string source 化 first slice 已完成。
+  下一步是更直接的 PackageReader ZIP entry chunk source。
 4. 在 linked-object fixture 上验证大 worksheet path 的 audit / preservation 不倒退。
 
 验收：
 - `fastxlsx.package_reader` 覆盖 `extract_entry_to_file()` stored extraction 和读回一致性。
 - `fastxlsx.package_editor` 覆盖 source-entry file-backed extraction note、output-side
   file-backed cell replacement handoff、source-entry chunk-source note、large source
-  worksheet 超过 materialized guard 仍成功、planned-input materialized over-limit guard、
+  worksheet 和 queued planned string 超过 prior materialized guard 仍成功、
   linked-object preservation 和失败不污染状态。
 - `fastxlsx.worksheet_event_reader` 覆盖 chunk/window scanner 与 full-buffer scanner
   token 等价、总 XML 大于 retained window 的成功路径，以及 oversized incomplete token
@@ -271,7 +274,7 @@ DEFLATE source extraction 仍暂复用 `read_entry()`。
 - `fastxlsx.package_editor` 覆盖 source-entry cell replacement output pass、
   dependency/dimension analysis、relationship-id audit 和 root validation 暴露
   chunk-source adapter notes；planned staged chunk input 暴露 chunk-source adapter notes；
-  ordinary planned-input 路径继续暴露 materialized chunk-event / chunk-window boundary。
+  queued planned string input 暴露 chunk-source adapter notes。
 - `fastxlsx.worksheet_event_reader` 覆盖 root 外非法 markup/text 拒绝路径。
 - 本轮默认 `windows-nmake-release` 构建与 9 个 CTest 条目全部通过。
 
@@ -3419,7 +3422,8 @@ relationship-id audit 和 output pass。
 - P8.17 `PackageReader::extract_entry_to_file()` source-entry extraction。
 - P8.19 event-reader chunk/window scanner。
 - P8.20-P8.24 transformer / PackageEditor chunk handoff。
-- 当前 planned worksheet replacement input 仍是 materialized guard 路径。
+- P8.25 scope 开始时，planned worksheet replacement input 仍是 materialized guard
+  路径；P8.27 后续切片已把 queued planned string 接到 chunk-source reader。
 
 输出：
 - 新增 internal `WorksheetInputChunkCallback`。
@@ -3432,10 +3436,12 @@ relationship-id audit 和 output pass。
 - 删除旧的 `current_planned_part_data_from_file()` 整文件物化 helper。
 - source package worksheet XML 总大小不再受
   `package_editor_cell_replacement_materialized_input_byte_limit` 拒绝；该 guard 只保留给
-  queued/planned worksheet replacement input。source 路径仍受 event-reader
-  `max_window_bytes` 保护，单个过大未完成 token 会失败。
-- planned output notes 区分 source-entry `chunk-source` 与 planned-input
-  `chunk-event` / `materialized` boundary。
+  P8.25 当时的 queued/planned worksheet replacement input；P8.27 后续切片已让 queued
+  planned string 走 chunk-source reader。source 路径仍受 event-reader `max_window_bytes`
+  保护，单个过大未完成 token 会失败。
+- planned output notes 区分 source-entry `chunk-source` 与当时 planned-input
+  `chunk-event` / `materialized` boundary；P8.27 后续切片已新增 queued planned-string
+  `chunk-source` notes。
 
 触碰文件：
 - `include/fastxlsx/detail/worksheet_event_reader.hpp`
@@ -3474,14 +3480,16 @@ relationship-id audit 和 output pass。
   `package_editor_cell_replacement_materialized_input_byte_limit` 仍可成功替换目标 cell，
   并验证 dimension refresh、calcChain cleanup、unknown bytes preservation 和 output
   `PackageReader` 重读。
-- `fastxlsx.package_editor` 保留 queued/planned worksheet replacement input over-limit
-  no-state-pollution 回归。
+- P8.25 当时保留 queued/planned worksheet replacement input over-limit
+  no-state-pollution 回归；P8.27 后续切片已替换为 queued planned-string over-limit
+  成功路径。
 - 默认 `windows-nmake-release` 构建与 9 个 CTest 条目通过。
 
 禁止项：
 - 不把 `extract_entry_to_file()` 写成直接 ZIP input streaming；stored source 仍先落盘。
 - 不把 DEFLATE extraction 写成低内存 compressed input streaming。
-- 不取消 planned-input materialized guard。
+- P8.25 本片不取消 planned-input materialized guard；P8.27 后续切片只取消 queued
+  planned string 的额外 cell-replacement 总大小 guard。
 - 不新增 public `PackageEditor` / `WorksheetEditor` API。
 - 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、公式、
   calcChain rebuild 或 range-bearing metadata。
@@ -3508,19 +3516,21 @@ analysis、relationship-id audit 和 output pass。
 - P8.21-P8.25 transformer / PackageEditor chunk-source handoff。
 - 当前 `PackageEditor::replace_worksheet_part_chunks()` 可把 worksheet staged payload
   记录为 `PackageEntryChunk` memory/file chunks。
-- ordinary planned worksheet replacement string input 仍保留 materialized guard。
+- P8.26 scope 开始时，ordinary planned worksheet replacement string input 仍保留
+  materialized guard；P8.27 后续切片已把 queued planned string 接到 chunk-source reader。
 
 输出：
 - 新增 internal `PackageEntryChunkReader`，按 memory/file chunks 逐块填充
   `WorksheetInputChunkCallback`，并在 cell replacement input path 上拒绝 memory/file
   source 混用或未知 chunk kind。
 - `replace_worksheet_cells()` 区分三种输入：source package worksheet entry、
-  current planned staged chunks、ordinary planned materialized string。
+  current planned staged chunks、ordinary planned materialized string；P8.27 后续切片把
+  ordinary queued planned string 改为 string-view chunk-source input。
 - current planned staged chunks 走 `scan_cell_replacement_actions_from_chunk_source()` /
   `emit_cell_replacement_worksheet_from_chunk_source()`，避免触发
   `current_planned_part_data_size()` 的 staged-chunk materialization failure。
-- planned output notes 区分 planned staged chunk-source 与 ordinary planned
-  materialized boundary。
+- planned output notes 区分 planned staged chunk-source 与 P8.26 当时的 ordinary planned
+  materialized boundary；P8.27 后续切片已新增 queued planned-string chunk-source notes。
 
 触碰文件：
 - `src/package_editor.hpp`
@@ -3539,8 +3549,7 @@ analysis、relationship-id audit 和 output pass。
 
 可并行性：
 - PackageReader 直接 ZIP entry chunk source 设计可并行只读调研。
-- ordinary planned string source 化、DEFLATE extraction streaming 和 PackageEditor
-  state transition 继续串行。
+- DEFLATE extraction streaming 和 PackageEditor state transition 继续串行。
 
 验收标准：
 - `fastxlsx.package_editor` 覆盖 prior `replace_worksheet_part_chunks()` staged worksheet
@@ -3552,12 +3561,14 @@ analysis、relationship-id audit 和 output pass。
   chunk-source adapter，且不暴露 staged chunks 的 bounded materialized input limit。
 - 输出验证 dimension refresh、calcChain cleanup、unknown bytes preservation 和 output
   `PackageReader` 重读。
-- ordinary planned string over-limit no-state-pollution 回归继续保留。
+- P8.26 当时的 ordinary planned string over-limit no-state-pollution 回归已在 P8.27
+  后续切片替换为 over-limit 成功路径。
 
 禁止项：
 - 不把 `replace_worksheet_part_chunks()` 的 validation/audit 路径写成低内存；它仍需要
   caller 提供 materialized validation XML。
-- 不把 ordinary planned string input 写成已 source 化。
+- P8.26 本片不把 ordinary planned string input 写成已 source 化；P8.27 后续切片已完成
+  queued planned string chunk-source first slice。
 - 不把 PackageReader source extraction 写成直接 ZIP entry streaming。
 - 不新增 public `PackageEditor` / `WorksheetEditor` API。
 - 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、公式、
@@ -3567,6 +3578,83 @@ analysis、relationship-id audit 和 output pass。
 ```powershell
 cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests
 ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+```
+
+### P8.27 internal queued planned-string cell replacement input
+
+状态：基础完成。
+
+类型：internal PackageEditor implementation + tests + docs；不新增 public API /
+CMake dependency。
+
+目标：让 `PackageEditor::replace_worksheet_cells()` 在当前 planned worksheet part
+已经是普通 queued string replacement 时，不再用
+`current_planned_part_data_size()` / materialized total-size guard 拒绝该输入，而是通过
+string-view chunk-source reader 驱动 root validation、dependency/dimension analysis、
+relationship-id audit 和 output pass。
+
+输入：
+- P8.25 source-entry chunk-source handoff。
+- P8.26 planned staged-chunk chunk-source handoff。
+- 当前 ordinary planned worksheet replacement string 已由 prior helper 持有完整
+  `std::string`；本片只避免 cell replacement 再走额外 materialized input guard，不把
+  prior helper 改成低内存。
+
+输出：
+- 新增 internal `current_planned_part_string()`，区分 source entry、staged chunks 和
+  queued string replacement。
+- 新增 internal `WorksheetStringChunkReader`，按 `worksheet_file_chunk_size` 从
+  `std::string_view` 分块填充 `WorksheetInputChunkCallback`。
+- `replace_worksheet_cells()` 对 queued planned string 的 analysis、relationship-id audit
+  和 output pass 都复用 `*_from_chunk_source()` 路径。
+- 删除 cell replacement 对 queued planned string 的
+  `require_cell_replacement_materialized_input_size()` 总大小 guard；event-reader
+  `max_window_bytes` 仍限制单个未完成 token / retained window。
+- planned output notes 区分 queued planned-string `chunk-source` 路径，并明确该 string
+  已由 prior planned replacement helper 持有，不代表 full planned-input low-memory pipeline。
+
+触碰文件：
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/EDITING_MODEL.md`
+- `docs/TASK_PLAN.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public API headers
+- `src/package_reader.cpp`
+- `src/package_writer.cpp`
+- CMake 配置
+
+可并行性：
+- PackageReader direct ZIP entry chunk source 设计可并行只读调研。
+- DEFLATE extraction streaming 和 broader PackageEditor state transition 继续串行。
+
+验收标准：
+- `fastxlsx.package_editor` 覆盖 ordinary queued planned string cell replacement
+  成功路径暴露 queued-string chunk-source notes。
+- `fastxlsx.package_editor` 覆盖 queued planned worksheet string 总 payload 超过
+  `package_editor_cell_replacement_materialized_input_byte_limit` 时仍可完成 cell
+  replacement。
+- 输出验证 dimension refresh、calcChain cleanup、unknown bytes preservation、fullCalcOnLoad
+  和 output `PackageReader` 重读。
+- source-entry large worksheet 与 planned staged-chunk large worksheet 回归继续通过。
+
+禁止项：
+- 不把 `replace_worksheet_part()` / `replace_worksheet_sheet_data()` 的 prior queued
+  string production 写成低内存。
+- 不把 PackageReader source extraction 写成直接 ZIP entry streaming。
+- 不新增 public `PackageEditor` / `WorksheetEditor` API。
+- 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、公式、
+  calcChain rebuild 或 range-bearing metadata。
+
+验证命令：
+```powershell
+cmd /c fx_pkg.bat
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
 ## P9 - Production ZIP/backend and package writer hardening

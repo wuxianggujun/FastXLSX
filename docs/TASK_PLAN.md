@@ -19,8 +19,8 @@ Current execution order is `C0 -> C7`; `P*` labels remain historical indexes
 or capability slices. C2 current preservation coverage, the C3 public-editor
 decision, the C4 public Patch guardrail / diagnostics first slice, and the C5
 first verifiable rewrite slices are now grounded in tests; the next narrow lane
-is C5 direct PackageReader ZIP-entry chunk source / ordinary planned string
-source input.
+is C5 direct PackageReader ZIP-entry chunk source on top of source-entry,
+planned staged-chunk, and queued planned-string chunk-source inputs.
 
 ## Current Verified State
 
@@ -76,9 +76,11 @@ source input.
   worksheet entries before validation. Source-entry validation, dependency /
   dimension analysis, relationship-id audit, and output pass now consume that
   file-backed source through pull-based chunk-source readers. Current planned
-  staged worksheet chunks also feed those chunk-source readers; ordinary planned
-  replacement strings still materialize the current planned worksheet XML. The
-  handoff no longer materializes the full rewritten worksheet XML
+  staged worksheet chunks also feed those chunk-source readers. Ordinary queued
+  planned replacement strings now feed a string-view chunk-source reader; the
+  string may already have been materialized by the prior planned replacement
+  helper, so this is not a full planned-input low-memory pipeline. The handoff
+  no longer materializes the full rewritten worksheet XML
   string. It first scans the source action stream and replacement payloads,
   computes top-level worksheet `<dimension>` from the
   resulting cell references, audits preserved source metadata plus replacement
@@ -94,8 +96,9 @@ source input.
   drawing/media/chart/table/VML/percent-decoded drawing, sharedStrings plus its
   owner `.rels`, styles, VBA, a reachable unknown extension plus its owner
   `.rels`, workbook definedNames, PNG default content type, calcChain cleanup,
-  `PackageReader` re-read, large source worksheet success beyond the planned
-  materialized input guard, and temporary XML file cleanup after `save_as()`.
+  `PackageReader` re-read, large source worksheet and large queued
+  planned-string success beyond the prior materialized input guard, and
+  temporary XML file cleanup after `save_as()`.
   `PackageEditor` also has an internal `replace_part_chunks()` foundation that
   records an existing package part as a `StreamRewrite` replacement backed by
   `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
@@ -112,10 +115,11 @@ source input.
   file cleanup after `save_as()`.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
   handoff, source-entry chunk-source input, planned staged-chunk chunk-source
-  input, chunked package-entry source, worksheet chunk handoff, and
+  input, queued planned-string chunk-source input from an already-held string,
+  chunked package-entry source, worksheet chunk handoff, and
   source-entry extraction plus cell-replacement output-side file-backed stream
   handoff groundwork only: no public API, full XML parser/schema validation,
-  complete PackageReader input streaming, ordinary planned string source input,
+  complete PackageReader input streaming, full planned-input low-memory behavior,
   relationship repair/pruning, object semantic editing, broad range metadata
   recalculation, dependency repair, sharedStrings/style migration, or complete
   low-memory large-file editing claim.

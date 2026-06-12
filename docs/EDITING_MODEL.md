@@ -650,10 +650,11 @@ P8.1 boundary draft：
   adapter，P8.23 已把 relationship-id audit 接到 chunk transformer adapter，P8.24 已把
   worksheet root validation 接到 event-reader chunk-window validator，P8.25 已把
   source-entry file-backed input 接到 pull-based chunk-source scanner，P8.26 已把
-  current planned staged chunk input 接到同一 chunk-source scanner。ordinary planned
-  replacement string input 仍会物化 current planned worksheet XML；该 materialized input
-  受 internal `package_editor_cell_replacement_materialized_input_byte_limit` 约束，超限会在
-  读取 planned XML 前失败且不污染 Patch 状态。
+  current planned staged chunk input 接到同一 chunk-source scanner，P8.27 已把 queued
+  planned replacement string input 接到 string-view chunk-source scanner。queued string
+  仍由 prior planned replacement helper 持有完整 `std::string`，所以这不是 full
+  planned-input low-memory pipeline；event-reader `max_window_bytes` 仍约束单个未完成
+  token / retained window。
 
 P8.2 token model draft：
 
@@ -705,25 +706,25 @@ P8.5 controlled template-fill fixture：
 P8.1-P8.5 完成后，编辑模型已有 controlled large worksheet editing 的 baseline 和首个
 bounded local fixture；真正低内存 event reader / transformer / stream rewrite 仍是后续
 implementation work，不能从该 fixture 推导出任意大 worksheet 随机编辑能力。
-P8.16-P8.26 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
+P8.16-P8.27 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
 file-backed extraction first slice、planned-input materialized guard、internal event-reader
 chunk/window 与 chunk-source input first slices、transformer chunk-event / chunk-source
 adapters，以及 PackageEditor output-pass / dependency-dimension analysis / relationship-id
 audit / root validation 对 source-entry chunk-source 的 handoff，并把 current planned
-staged chunk input 接到 chunk-source handoff；但 ordinary planned replacement string input
-仍未 source 化，PackageReader 仍没有直接 ZIP entry chunk provider，
-因此不能写成完整 low-memory large worksheet transformer。
+staged chunk input 和 queued planned replacement string input 接到 chunk-source handoff；
+但 queued string 仍是 prior helper 已持有的完整字符串，且 PackageReader 仍没有直接
+ZIP entry chunk provider，因此不能写成完整 low-memory large worksheet transformer。
 本轮 C5 验收只覆盖这些基础片：`fastxlsx.package_reader` 验证 source-entry
 `extract_entry_to_file()`，`fastxlsx.package_editor` 验证 by-name cell replacement
 file-backed handoff、linked-object preservation、dimension refresh、audit visibility、
 output re-read、large source worksheet 超过 materialized guard 仍成功和 temporary file
-cleanup，`fastxlsx.worksheet_event_reader` 验证 chunk/window 与 chunk-source scanner，
+cleanup，large queued planned string 超过 prior materialized guard 仍成功，
+`fastxlsx.worksheet_event_reader` 验证 chunk/window 与 chunk-source scanner，
 `fastxlsx.worksheet_transformer` 验证 chunk-event 与 chunk-source transformer，
 `fastxlsx.package_editor` 验证 source-entry output-pass、dependency/dimension analysis、
-relationship-id audit 和 root validation chunk-source note，并继续验证 planned-input
-materialized guard；planned staged chunk cell replacement 也验证 chunk-source note、large
-staged payload 和 output re-read；ordinary planned string / direct PackageReader ZIP-entry
-source 接入仍是后续任务。
+relationship-id audit 和 root validation chunk-source note；planned staged chunk 和 queued
+planned string cell replacement 也验证 chunk-source note、large payload 和 output re-read；
+direct PackageReader ZIP-entry source 接入仍是后续任务。
 
 适合：
 

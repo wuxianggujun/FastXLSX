@@ -17,9 +17,9 @@ Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
 indexes or capability slices. The current lane has advanced through the C5
 guarded first slices: C2 only reopens for new preservation gaps, C3/C4 keep
 their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 direct PackageReader ZIP-entry chunk source / ordinary planned string
-source input on top of the new event-reader, transformer, PackageEditor
-validation, analysis, audit, output-pass, source-entry, and planned staged-chunk
+lane is C5 direct PackageReader ZIP-entry chunk source on top of the new
+event-reader, transformer, PackageEditor validation, analysis, audit,
+output-pass, source-entry, planned staged-chunk, and queued planned-string
 chunk foundations.
 
 ## Current Verified Baseline
@@ -163,9 +163,11 @@ chunk foundations.
     source, then scan that source through chunk-source readers for root
     validation, dependency/dimension analysis, relationship-id audit, and output
     writing. Current planned staged worksheet chunks also feed the same
-    chunk-source readers. Ordinary planned replacement strings still materialize
-    the current planned worksheet XML. The handoff no longer materializes the full rewritten
-    worksheet XML string. It scans the source
+    chunk-source readers. Ordinary queued planned replacement strings now feed
+    a string-view chunk-source reader; the string may already have been
+    materialized by the prior planned replacement helper, so this is not a full
+    planned-input low-memory pipeline. The handoff no longer materializes the
+    full rewritten worksheet XML string. It scans the source
     action stream and replacement
     payloads first, computes top-level worksheet
     `<dimension>`, audits preserved source metadata plus replacement cell
@@ -179,27 +181,25 @@ chunk foundations.
     PackageEditor-layer no-state-pollution coverage; the file-backed handoff also
     has coverage for `PackageReader` re-open, dimension refresh, old-target audit
     skip, linked-object fixture preservation/audit visibility, and temporary file
-    cleanup after the editor is destroyed. There is also a large source worksheet
-    regression where source XML exceeds
+    cleanup after the editor is destroyed. There are also large source worksheet
+    and large queued planned-string regressions where worksheet XML exceeds
     `package_editor_cell_replacement_materialized_input_byte_limit` and still
-    completes cell replacement through file-backed chunk-source scanning. The
+    completes cell replacement through chunk-source scanning. The
     linked-object regression covers
     worksheet `.rels`, drawing/media/chart/table/VML/percent-decoded drawing,
     sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
     bytes plus owner `.rels`, workbook definedNames, PNG default content type,
-    calcChain cleanup, and output re-read through `PackageReader`. It still has
-    a bounded materialized input guard for ordinary queued/planned worksheet XML strings, with
-    no-state-pollution coverage for queued planned over-limit input. Treat this
+    calcChain cleanup, and output re-read through `PackageReader`. Treat this
     as source-entry file-backed extraction, source-entry chunk-source scanning,
-    planned staged-chunk chunk-source scanning, ordinary planned-input
-    materialization guard, and output-side file-backed stream
+    planned staged-chunk chunk-source scanning, queued planned-string
+    chunk-source scanning from an already-held string, and output-side file-backed stream
     handoff only: no public API, no direct ZIP entry chunk source, no low-memory
     DEFLATE extraction, no complete planned-input low-memory transformer, no
     broad range metadata recalculation, no sharedStrings/style migration, no
     relationship repair/pruning, no object semantic editing, and no full
     low-memory large-file editing claim. Planned-output notes now distinguish
-    source-entry and planned staged-chunk `chunk-source` paths from ordinary
-    planned-input materialized `chunk-event` / `chunk-window` boundaries.
+    source-entry, planned staged-chunk, and queued planned-string `chunk-source`
+    paths.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an

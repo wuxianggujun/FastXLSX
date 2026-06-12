@@ -409,6 +409,51 @@ void test_package_reader_streams_deflated_entry_chunks_with_minizip()
     check(chunk_count > 1, "large DEFLATE entry should be delivered in multiple chunks");
 }
 
+void test_package_reader_closes_abandoned_deflated_entry_chunk_source()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-abandoned-deflated-entry-chunks.xlsx");
+
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(</Types>)";
+    std::string unknown_body;
+    for (int index = 0; index < 4096; ++index) {
+        unknown_body += "abandoned-deflated-entry-direct-chunk-source-";
+        unknown_body += std::to_string(index);
+        unknown_body += '\n';
+    }
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    options.compression_level = fastxlsx::detail::package_writer_max_compression_level;
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/deflated.bin", unknown_body},
+        },
+        options);
+
+    {
+        const fastxlsx::detail::PackageReader reader =
+            fastxlsx::detail::PackageReader::open(path);
+        fastxlsx::detail::PackageReaderChunkCallback source =
+            reader.entry_chunk_source("custom/deflated.bin");
+
+        std::string chunk;
+        check(source(chunk), "abandoned DEFLATE chunk source should read a first chunk");
+        check(!chunk.empty(), "abandoned DEFLATE chunk source should emit bytes");
+    }
+
+    std::error_code error;
+    const bool removed = std::filesystem::remove(path, error);
+    check(removed && !error,
+        "abandoned DEFLATE chunk source should close the source package handle");
+}
+
 void test_package_writer_applies_explicit_minizip_compression_levels()
 {
     const std::filesystem::path fastest_path =
@@ -2700,6 +2745,7 @@ int main()
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
         test_package_reader_reads_deflated_entries_with_minizip();
         test_package_reader_streams_deflated_entry_chunks_with_minizip();
+        test_package_reader_closes_abandoned_deflated_entry_chunk_source();
         test_package_writer_applies_explicit_minizip_compression_levels();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source();

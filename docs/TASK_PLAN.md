@@ -75,9 +75,10 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   helpers that use `PackageReader::entry_chunk_source()` for source package
   worksheet entries. Stored source entries are read directly from the ZIP
   payload with incremental CRC; minizip DEFLATE source entries now stream
-  decompressed chunks through `entry_read` with EOF size/CRC validation.
-  `read_entry()` and `extract_entry_to_file()` still materialize DEFLATE
-  payloads. Source-entry validation, dependency /
+  decompressed chunks through `entry_read` with EOF size/CRC validation, and
+  abandoned DEFLATE chunk-source callbacks best-effort close their minizip
+  entry/package handles. `read_entry()` and `extract_entry_to_file()` still
+  materialize DEFLATE payloads. Source-entry validation, dependency /
   dimension analysis, relationship-id audit, and output pass now consume that
   PackageReader source through pull-based chunk-source readers. Current planned
   staged worksheet chunks also feed those chunk-source readers. Ordinary queued
@@ -101,7 +102,8 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   owner `.rels`, styles, VBA, a reachable unknown extension plus its owner
   `.rels`, workbook definedNames, PNG default content type, calcChain cleanup,
   `PackageReader` re-read, direct stored ZIP-entry chunk-source readback / CRC
-  failure, large source worksheet and large queued planned-string success beyond
+  failure, abandoned DEFLATE chunk-source handle cleanup, large source worksheet
+  and large queued planned-string success beyond
   the prior materialized input guard, and temporary XML file cleanup after `save_as()`.
   `PackageEditor` also has an internal `replace_part_chunks()` foundation that
   records an existing package part as a `StreamRewrite` replacement backed by
@@ -120,7 +122,8 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
   handoff, source-entry ZIP-entry chunk-source input for stored and minizip
   DEFLATE entries, planned staged-chunk chunk-source input, queued
-  planned-string chunk-source input from an already-held string, chunked
+  planned-string chunk-source input from an already-held string, DEFLATE
+  chunk-source early-abandon cleanup, chunked
   package-entry source, worksheet chunk handoff, and
   cell-replacement output-side file-backed stream
   handoff groundwork only: no public API, full XML parser/schema validation,

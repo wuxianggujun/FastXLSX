@@ -191,7 +191,8 @@ planned replacement string chunk-source first slice 已有测试。queued string
 planned replacement helper 持有的完整字符串，不代表 full planned-input low-memory
 pipeline。P8.29 已让 minizip DEFLATE source entry 通过 pull-based `entry_read`
 解压 chunk source 输入；`read_entry()` / `extract_entry_to_file()` 的 DEFLATE
-路径仍会物化 payload。
+路径仍会物化 payload。P8.30 已补 DEFLATE chunk source 被 caller 在 EOF 前丢弃时的
+best-effort entry/package close 回归。
 
 目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
 
@@ -200,8 +201,9 @@ pipeline。P8.29 已让 minizip DEFLATE source entry 通过 pull-based `entry_re
   chunk source。stored/no-compression entry 直接从 source ZIP payload offset 分块读取并
   在 EOF 前做 incremental CRC；`FASTXLSX_ENABLE_MINIZIP_NG` 构建下，DEFLATE
   entry 通过 minizip `entry_read` 输出 decompressed chunks，并在 EOF 校验 emitted
-  size 与 CRC。`read_entry()` / `extract_entry_to_file()` 的 DEFLATE 路径仍会物化
-  payload。
+  size 与 CRC；若 caller 在 EOF 前丢弃 callback，chunk source state 析构会
+  best-effort 关闭已打开的 minizip entry/package。`read_entry()` /
+  `extract_entry_to_file()` 的 DEFLATE 路径仍会物化 payload。
 - `PackageEditor::replace_worksheet_cells()` 输出侧已有 temporary file-backed chunk；
   source package worksheet entry 不再先经 `PackageReader::extract_entry_to_file()` 落盘，
   而是由 root validation、dependency/dimension analysis、relationship-id audit 和
@@ -258,7 +260,8 @@ pipeline。P8.29 已让 minizip DEFLATE source entry 通过 pull-based `entry_re
 1. 设计 PackageReader worksheet entry streaming source，明确 CRC、错误上下文和
    compressed input 限制。当前第一片已完成：stored entry 可 file-backed extraction
    并做 incremental CRC；direct stored ZIP-entry chunk source 已完成；P8.29 已完成
-   minizip DEFLATE entry direct decompressed chunk source。
+   minizip DEFLATE entry direct decompressed chunk source；P8.30 已补该 chunk source
+   early-abandon cleanup。
 2. 让 event reader 消费 streaming chunks 或 bounded windows，而不是完整 worksheet string。
    当前 first slice 已完成。
 3. 把 transformer action stream 接到 package-entry staged writer。
@@ -267,14 +270,16 @@ pipeline。P8.29 已让 minizip DEFLATE source entry 通过 pull-based `entry_re
   first slices 已完成；source-entry file-backed chunk-source first slice 已完成；planned
   staged-chunk source 化 first slice 和 queued planned string source 化 first slice 已完成。
   direct stored PackageReader ZIP entry chunk source first slice 已完成；P8.29 已完成
-  DEFLATE direct decompressed chunk source。下一步是更广的 PackageReader input-state
+  DEFLATE direct decompressed chunk source；P8.30 已完成 DEFLATE chunk source
+  early-abandon cleanup。下一步是更广的 PackageReader input-state
   hardening 或 full transformer/public boundary 决策。
 4. 在 linked-object fixture 上验证大 worksheet path 的 audit / preservation 不倒退。
 
 验收：
 - `fastxlsx.package_reader` 覆盖 `extract_entry_to_file()` stored extraction、direct
   stored entry chunk source 读回一致性、minizip DEFLATE chunk source 读回一致性和
-  chunk-source CRC 失败路径。
+  chunk-source CRC 失败路径，以及 DEFLATE chunk source 提前丢弃时的 source package
+  handle close 回归。
 - `fastxlsx.package_editor` 覆盖 source-entry ZIP-entry chunk-source note、output-side
   file-backed cell replacement handoff、large source worksheet 和 queued planned string
   超过 prior materialized guard 仍成功、
@@ -3817,6 +3822,68 @@ replacement 路径回退到 `read_entry()` 整 entry 物化。
 ```powershell
 cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build build/windows-nmake-release --target fastxlsx_package_reader_tests && ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure'
 cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build --preset windows-nmake-release-minizip --target fastxlsx_package_reader_tests fastxlsx_package_editor_tests && ctest --preset windows-nmake-release-minizip -R "fastxlsx.package_(reader|editor)" --output-on-failure'
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.30 internal DEFLATE chunk-source early-abandon cleanup
+
+状态：基础完成。
+
+类型：internal PackageReader lifecycle hardening + minizip test + docs；不新增 public
+API / CMake dependency。
+
+目标：让 `PackageReader::entry_chunk_source()` 的 DEFLATE 分支在 caller 读取部分
+chunk 后直接丢弃 callback 时，也能释放 minizip entry/package 句柄，避免输入侧
+resource lifecycle 依赖正常 EOF 消费。
+
+输入：
+- P8.29 minizip DEFLATE entry direct decompressed chunk source。
+- 当前 `DeflatedEntryChunkSourceState` 的 package/entry open state。
+- Windows 下 source package 文件句柄未释放会阻止删除的行为。
+
+输出：
+- `DeflatedEntryChunkSourceState` 析构时 best-effort 关闭已打开的 minizip
+  entry/package。
+- 正常 EOF 路径继续使用原有 throwing close path，并继续校验 emitted byte count 与
+  CRC；提前丢弃 callback 不被当成成功 payload read，也不做完整 payload CRC 验收。
+- minizip 回归测试读取 DEFLATE entry 第一个 chunk 后丢弃 callback，再删除源
+  package，验证句柄已释放。
+
+触碰文件：
+- `src/package_reader.cpp`
+- `tests/test_package_reader.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/EDITING_MODEL.md`
+- `docs/TASK_PLAN.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public API headers
+- `src/package_editor.cpp`
+- `src/package_writer.cpp`
+- CMake 配置
+
+可并行性：
+- Broader PackageReader input-state hardening、full low-memory transformer 和 public
+  editor boundary 继续串行决策。
+- 与 streaming writer / sharedStrings / styles 性能切片无直接耦合。
+
+验收标准：
+- minizip preset 下 `fastxlsx.package_reader` 覆盖 abandoned DEFLATE chunk source
+  关闭 source package handle。
+- 默认 preset 下 `fastxlsx.package_reader` / 全量 CTest 继续通过。
+- 文档明确该切片只是 lifecycle hardening，不是 full compressed input streaming。
+
+禁止项：
+- 不新增 public `PackageEditor` / `WorksheetEditor` API。
+- 不把 `read_entry()` / `extract_entry_to_file()` 写成已低内存。
+- 不声明完整低内存大 worksheet editor、完整 compressed input streaming、Zip64、
+  data descriptor support、relationship repair、sharedStrings/styles migration 或 table /
+  drawing semantic sync。
+
+验证命令：
+```powershell
+cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build --preset windows-nmake-release-minizip --target fastxlsx_package_reader_tests && ctest --preset windows-nmake-release-minizip -R fastxlsx.package_reader --output-on-failure'
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

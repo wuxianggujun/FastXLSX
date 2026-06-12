@@ -164,9 +164,11 @@ chunk foundations.
     relationship-id audit, and output writing. Stored entries stream directly
     from the source ZIP payload with incremental CRC; in minizip builds,
     DEFLATE entries stream decompressed chunks through `entry_read` with EOF
-    size/CRC validation. `read_entry()` and `extract_entry_to_file()` still
-    materialize DEFLATE payloads. Current planned staged worksheet chunks also
-    feed the same chunk-source readers. Ordinary queued
+    size/CRC validation, and abandoned DEFLATE chunk-source callbacks
+    best-effort close their minizip entry/package handles. `read_entry()` and
+    `extract_entry_to_file()` still materialize DEFLATE payloads. Current
+    planned staged worksheet chunks also feed the same chunk-source readers.
+    Ordinary queued
     planned replacement strings now feed
     a string-view chunk-source reader; the string may already have been
     materialized by the prior planned replacement helper, so this is not a full
@@ -186,7 +188,8 @@ chunk foundations.
     has coverage for `PackageReader` re-open, dimension refresh, old-target audit
     skip, linked-object fixture preservation/audit visibility, and temporary file
     cleanup after the editor is destroyed. `fastxlsx.package_reader` also covers
-    direct stored entry chunk-source readback and CRC failure. There are also large source worksheet
+    direct stored entry chunk-source readback, CRC failure, and abandoned
+    DEFLATE chunk-source handle cleanup. There are also large source worksheet
     and large queued planned-string regressions where worksheet XML exceeds
     `package_editor_cell_replacement_materialized_input_byte_limit` and still
     completes cell replacement through chunk-source scanning. The

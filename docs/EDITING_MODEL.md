@@ -645,7 +645,9 @@ P8.1 boundary draft：
   event-reader / transformer chunk-source readers 驱动 root validation、
   dependency/dimension analysis、relationship-id audit 和 output pass。stored entry
   直接从 source ZIP payload 分块读取并做 incremental CRC；minizip DEFLATE entry 通过
-  `entry_read` 输出 decompressed chunks，并在 EOF 校验 emitted size 与 CRC。P8.19 已新增
+  `entry_read` 输出 decompressed chunks，并在 EOF 校验 emitted size 与 CRC；DEFLATE
+  chunk source 被 caller 在 EOF 前丢弃时会 best-effort 关闭 minizip entry/package。
+  P8.19 已新增
   internal `scan_worksheet_events_from_chunks()` chunk/window scanner，P8.20 已新增
   internal chunk transformer adapter，P8.21 已把 PackageEditor output pass 接到 chunk
   transformer adapter，P8.22 已把 dependency/dimension analysis 接到 chunk transformer
@@ -655,7 +657,8 @@ P8.1 boundary draft：
   current planned staged chunk input 接到同一 chunk-source scanner，P8.27 已把 queued
   planned replacement string input 接到 string-view chunk-source scanner，P8.28 已把 stored
   source entry 接到 direct ZIP-entry chunk source，P8.29 已把 minizip DEFLATE source
-  entry 接到 direct decompressed chunk source。queued string 仍由 prior planned
+  entry 接到 direct decompressed chunk source，P8.30 已补 DEFLATE chunk source
+  early-abandon cleanup。queued string 仍由 prior planned
   replacement helper 持有完整 `std::string`，`read_entry()` / `extract_entry_to_file()`
   的 DEFLATE 路径仍会 materialize，所以这不是 full input low-memory pipeline；
   event-reader `max_window_bytes` 仍约束单个未完成 token / retained window。
@@ -710,7 +713,7 @@ P8.5 controlled template-fill fixture：
 P8.1-P8.5 完成后，编辑模型已有 controlled large worksheet editing 的 baseline 和首个
 bounded local fixture；真正低内存 event reader / transformer / stream rewrite 仍是后续
 implementation work，不能从该 fixture 推导出任意大 worksheet 随机编辑能力。
-P8.16-P8.29 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
+P8.16-P8.30 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
 file-backed extraction first slice、planned-input materialized guard、internal event-reader
 chunk/window 与 chunk-source input first slices、transformer chunk-event / chunk-source
 adapters，以及 PackageEditor output-pass / dependency-dimension analysis / relationship-id
@@ -718,11 +721,13 @@ audit / root validation 对 source-entry chunk-source 的 handoff，并把 curre
 staged chunk input 和 queued planned replacement string input 接到 chunk-source handoff；
 P8.28 还把 stored source entry 接到 PackageReader direct ZIP-entry chunk provider，
 P8.29 又把 minizip DEFLATE source entry 接到 PackageReader direct decompressed
-chunk provider。但 queued string 仍是 prior helper 已持有的完整字符串，且
+chunk provider，P8.30 补上 abandoned DEFLATE chunk source 的 minizip handle cleanup。
+但 queued string 仍是 prior helper 已持有的完整字符串，且
 `read_entry()` / `extract_entry_to_file()` 的 DEFLATE 路径仍会 materialize，因此不能写成
 完整 low-memory large worksheet transformer。
 本轮 C5 验收只覆盖这些基础片：`fastxlsx.package_reader` 验证 source-entry
-`extract_entry_to_file()`、direct stored/minizip DEFLATE entry chunk source 和 CRC failure，
+`extract_entry_to_file()`、direct stored/minizip DEFLATE entry chunk source、CRC failure
+和 abandoned DEFLATE chunk-source handle cleanup，
 `fastxlsx.package_editor` 验证 by-name cell replacement
 file-backed handoff、linked-object preservation、dimension refresh、audit visibility、
 output re-read、large source worksheet 超过 materialized guard 仍成功和 temporary file

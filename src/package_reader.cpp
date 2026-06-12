@@ -991,7 +991,30 @@ void check_minizip_result(int result, const char* operation)
     }
 }
 
+void cleanup_open_minizip_reader(void* reader, bool& package_open, bool& entry_open) noexcept
+{
+    if (reader == nullptr) {
+        entry_open = false;
+        package_open = false;
+        return;
+    }
+
+    if (entry_open) {
+        (void)mz_zip_reader_entry_close(reader);
+        entry_open = false;
+    }
+    if (package_open) {
+        (void)mz_zip_reader_close(reader);
+        package_open = false;
+    }
+}
+
 struct DeflatedEntryChunkSourceState {
+    ~DeflatedEntryChunkSourceState()
+    {
+        cleanup_open_minizip_reader(reader.get(), package_open, entry_open);
+    }
+
     std::filesystem::path package_path;
     PackageReaderEntry entry;
     std::unique_ptr<void, MinizipReaderDeleter> reader;
@@ -1025,14 +1048,7 @@ void close_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state)
 
 void cleanup_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state) noexcept
 {
-    if (state.entry_open) {
-        (void)mz_zip_reader_entry_close(state.reader.get());
-        state.entry_open = false;
-    }
-    if (state.package_open) {
-        (void)mz_zip_reader_close(state.reader.get());
-        state.package_open = false;
-    }
+    cleanup_open_minizip_reader(state.reader.get(), state.package_open, state.entry_open);
 }
 
 void open_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state)

@@ -71,6 +71,17 @@ using WorksheetOutputChunkCallback = std::function<void(std::string_view)>;
     const WorksheetTransformActionCallback& callback,
     WorksheetEventReaderOptions reader_options = {});
 
+/// Emits source-order transform actions from a pull-based worksheet chunk source.
+///
+/// This is the file/reader-source counterpart to
+/// scan_cell_replacement_actions_from_chunks(). Action views are valid only for
+/// the duration of the callback.
+[[nodiscard]] WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetTransformActionCallback& callback,
+    WorksheetEventReaderOptions reader_options = {});
+
 /// Emits rewritten worksheet XML chunks for the current replacement action model.
 ///
 /// This streams pass-through source chunks and caller replacement cell XML
@@ -89,6 +100,16 @@ using WorksheetOutputChunkCallback = std::function<void(std::string_view)>;
 /// write a package entry, or commit PackageEditor/EditPlan state.
 [[nodiscard]] WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunks(
     std::span<const std::string_view> worksheet_xml_chunks,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetOutputChunkCallback& callback,
+    WorksheetEventReaderOptions reader_options = {});
+
+/// Emits rewritten worksheet XML chunks while consuming a pull-based source.
+///
+/// This is used by PackageEditor file-backed source entries to avoid
+/// materializing the source worksheet XML before the transformer runs.
+[[nodiscard]] WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
     std::span<const WorksheetCellReplacement> replacements,
     const WorksheetOutputChunkCallback& callback,
     WorksheetEventReaderOptions reader_options = {});

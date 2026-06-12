@@ -20,9 +20,11 @@ namespace fastxlsx::detail {
 inline constexpr std::size_t package_editor_sheet_data_local_rewrite_byte_limit =
     4U * 1024U * 1024U;
 
-// Current cell replacement validation/audit still materializes the source/planned
-// worksheet XML before feeding the PackageEditor path. Keep the input bounded
-// until PackageEditor consumes a true streamed reader/transformer source.
+// Current cell replacement for queued/planned worksheet replacement input still
+// materializes the planned worksheet XML before feeding the PackageEditor path.
+// Source package worksheet entries are extracted to a temporary file and scanned
+// through chunk-source readers; keep planned input bounded until it gets the
+// same reader-source treatment.
 inline constexpr std::size_t package_editor_cell_replacement_materialized_input_byte_limit =
     4U * 1024U * 1024U;
 
@@ -201,16 +203,15 @@ public:
     void replace_worksheet_sheet_data_by_name(std::string_view sheet_name,
         std::string sheet_data_xml, const ReferencePolicy& policy = {});
     // Internal handoff from the P8 worksheet transformer foundation. Source
-    // package entries are first extracted to a PackageReader file-backed source,
-    // but PackageReader source/planned worksheet XML is still bounded and
-    // materialized before this helper runs. Root validation feeds that bounded
-    // XML through the event-reader chunk-window validator. Dependency/dimension
-    // analysis, relationship-id audit, and the output pass feed it through the
-    // transformer chunk-event adapter, then stream the rewritten output into a
-    // PackageEditor-owned temporary file chunk instead of materializing the
-    // rewritten worksheet string. It is still not a public Patch API,
-    // relationship repair, sharedStrings/style migration, or a fully low-memory
-    // PackageReader input pipeline.
+    // package entries are extracted to a PackageReader file-backed source and
+    // then scanned through chunk-source readers for root validation,
+    // dependency/dimension analysis, relationship-id audit, and the output pass.
+    // Queued/planned worksheet replacement input is still bounded and
+    // materialized before it reaches the same transformer adapters. The
+    // rewritten output is streamed into a PackageEditor-owned temporary file
+    // chunk instead of materializing the rewritten worksheet string. It is still
+    // not a public Patch API, relationship repair, sharedStrings/style
+    // migration, or a fully low-memory planned-input pipeline.
     void replace_worksheet_cells(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy = {});

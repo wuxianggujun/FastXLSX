@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <functional>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -58,6 +59,7 @@ constexpr std::string_view package_relationships_entry_name = "_rels/.rels";
 constexpr std::string_view relationship_part_extension = ".rels";
 constexpr std::string_view relationship_part_segment = "/_rels/";
 constexpr std::string_view root_relationships_prefix = "_rels/";
+constexpr std::size_t worksheet_file_chunk_size = 64U * 1024U;
 
 struct XmlTagRange {
     std::size_t open = 0;
@@ -1237,6 +1239,22 @@ void scan_rewritten_cell_replacement_relationship_references(
     (void)summary;
 }
 
+void scan_rewritten_cell_replacement_relationship_references_from_chunk_source(
+    WorksheetRelationshipReferenceScanner& scanner,
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements)
+{
+    const WorksheetTransformSummary summary = scan_cell_replacement_actions_from_chunk_source(
+        read_next_chunk, replacements, [&](const WorksheetTransformAction& action) {
+            scan_xml_relationship_references(scanner,
+                action.kind == WorksheetTransformActionKind::ReplaceCell
+                    ? action.replacement_cell_xml
+                    : action.raw_xml);
+        },
+        package_editor_cell_replacement_reader_options());
+    (void)summary;
+}
+
 std::vector<WorksheetRelationshipReference> worksheet_relationship_references(
     std::string_view worksheet_xml)
 {
@@ -1406,6 +1424,24 @@ WorksheetRelationshipReferenceAuditResult worksheet_cell_replacement_relationshi
         WorksheetRelationshipReferenceScanner scanner;
         scan_rewritten_cell_replacement_relationship_references(
             scanner, worksheet_xml, replacements);
+        return worksheet_relationship_reference_audit_from_references(
+            worksheet_part, scanner.references(), worksheet_relationships);
+    } catch (const std::exception&) {
+        return worksheet_relationship_reference_parse_failure_audit();
+    }
+}
+
+WorksheetRelationshipReferenceAuditResult
+worksheet_cell_replacement_relationship_reference_audit_from_chunk_source(
+    const PartName& worksheet_part,
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements,
+    const RelationshipSet* worksheet_relationships)
+{
+    try {
+        WorksheetRelationshipReferenceScanner scanner;
+        scan_rewritten_cell_replacement_relationship_references_from_chunk_source(
+            scanner, read_next_chunk, replacements);
         return worksheet_relationship_reference_audit_from_references(
             worksheet_part, scanner.references(), worksheet_relationships);
     } catch (const std::exception&) {
@@ -2179,28 +2215,6 @@ std::string current_planned_part_data(const PackageReader& reader,
     return reader.read_entry(part_name.zip_path());
 }
 
-std::string current_planned_part_data_from_file(const std::filesystem::path& path)
-{
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw FastXlsxError("failed to open PackageReader file-backed worksheet source");
-    }
-
-    std::string data;
-    std::array<char, 64U * 1024U> buffer {};
-    while (input) {
-        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        const std::streamsize read_size = input.gcount();
-        if (read_size > 0) {
-            data.append(buffer.data(), static_cast<std::size_t>(read_size));
-        }
-    }
-    if (input.bad()) {
-        throw FastXlsxError("failed to read PackageReader file-backed worksheet source");
-    }
-    return data;
-}
-
 std::uint64_t current_planned_part_data_size(const PackageReader& reader,
     const std::vector<PackagePartReplacement>& replacements,
     const std::vector<PackageEntryReplacement>& entry_replacements,
@@ -2283,8 +2297,8 @@ void require_cell_replacement_materialized_input_size(
     throw FastXlsxError(
         "worksheet cell replacement exceeds bounded materialized input limit for "
         + std::string(payload_name)
-        + "; current event reader materializes validation input and is not the "
-          "large-file streaming worksheet transformer");
+        + "; current planned worksheet replacement input is still materialized "
+          "and is not the large-file streaming worksheet transformer");
 }
 
 std::string missing_cell_replacement_error(
@@ -2484,6 +2498,88 @@ void audit_worksheet_replacement_metadata_event(
     }
 }
 
+void consume_worksheet_cell_replacement_analysis_action(
+    WorksheetCellReplacementStreamAnalysis& analysis,
+    const PartName& worksheet_part,
+    const WorksheetTransformAction& action)
+{
+    if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+        if (!action.cell_reference.empty()) {
+            include_dimension_cell(analysis.dimension_scan,
+                parse_cell_reference_coordinate(action.cell_reference));
+        }
+        append_payload_audit_result(analysis.payload_audit,
+            worksheet_replacement_payload_audit(
+                worksheet_part, action.replacement_cell_xml));
+        return;
+    }
+
+    if (action.event_kind == WorksheetEventKind::WorksheetStart
+        && analysis.worksheet_start_end == std::string_view::npos) {
+        analysis.worksheet_start_end = 0;
+        analysis.worksheet_prefix = element_prefix(action.raw_xml);
+        return;
+    }
+    if (action.event_kind == WorksheetEventKind::Metadata) {
+        audit_worksheet_replacement_metadata_event(
+            analysis.payload_audit, worksheet_part, action.element_name);
+        if (action.element_name == "dimension") {
+            if (analysis.dimension_begin == std::string_view::npos
+                && !is_closing_raw_tag(action.raw_xml)) {
+                analysis.dimension_begin = 0;
+                analysis.dimension_prefix = element_prefix(action.raw_xml);
+                if (action.self_closing) {
+                    analysis.dimension_end = 0;
+                }
+                return;
+            }
+            if (analysis.dimension_begin != std::string_view::npos
+                && analysis.dimension_end == std::string_view::npos
+                && is_closing_raw_tag(action.raw_xml)) {
+                analysis.dimension_end = 0;
+                return;
+            }
+        }
+        return;
+    }
+    if (action.event_kind == WorksheetEventKind::CellStart) {
+        if (!action.cell_reference.empty()) {
+            include_dimension_cell(analysis.dimension_scan,
+                parse_cell_reference_coordinate(action.cell_reference));
+        }
+        if (cell_start_attribute_equals_for_audit(action.raw_xml, "t", "s")) {
+            append_worksheet_replacement_shared_strings_audit(
+                analysis.payload_audit, worksheet_part);
+        }
+        if (cell_start_has_attribute_for_audit(action.raw_xml, "s")) {
+            append_worksheet_replacement_styles_audit(
+                analysis.payload_audit, worksheet_part);
+        }
+        return;
+    }
+    if (action.event_kind == WorksheetEventKind::CellValueMarkup
+        && action.element_name == "f") {
+        append_worksheet_replacement_formula_audit(
+            analysis.payload_audit, worksheet_part);
+    }
+}
+
+void finalize_worksheet_cell_replacement_stream_analysis(
+    WorksheetCellReplacementStreamAnalysis& analysis,
+    const PartName& worksheet_part)
+{
+    if (analysis.worksheet_start_end == std::string_view::npos) {
+        throw FastXlsxError("worksheet dimension refresh requires a worksheet root");
+    }
+    if (analysis.dimension_begin != std::string_view::npos
+        && analysis.dimension_end == std::string_view::npos) {
+        throw FastXlsxError("worksheet dimension refresh found an unclosed dimension element");
+    }
+
+    append_worksheet_replacement_range_metadata_audit(analysis.payload_audit, worksheet_part,
+        "dimension", "worksheet dimension metadata");
+}
+
 WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream(
     const PartName& worksheet_part,
     std::string_view worksheet_xml,
@@ -2497,78 +2593,29 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
     WorksheetCellReplacementStreamAnalysis analysis;
     analysis.summary = scan_cell_replacement_actions_from_chunks(
         worksheet_chunks, replacements, [&](const WorksheetTransformAction& action) {
-            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
-                if (!action.cell_reference.empty()) {
-                    include_dimension_cell(analysis.dimension_scan,
-                        parse_cell_reference_coordinate(action.cell_reference));
-                }
-                append_payload_audit_result(analysis.payload_audit,
-                    worksheet_replacement_payload_audit(
-                        worksheet_part, action.replacement_cell_xml));
-                return;
-            }
-
-            if (action.event_kind == WorksheetEventKind::WorksheetStart
-                && analysis.worksheet_start_end == std::string_view::npos) {
-                analysis.worksheet_start_end = 0;
-                analysis.worksheet_prefix = element_prefix(action.raw_xml);
-                return;
-            }
-            if (action.event_kind == WorksheetEventKind::Metadata) {
-                audit_worksheet_replacement_metadata_event(
-                    analysis.payload_audit, worksheet_part, action.element_name);
-                if (action.element_name == "dimension") {
-                    if (analysis.dimension_begin == std::string_view::npos
-                        && !is_closing_raw_tag(action.raw_xml)) {
-                        analysis.dimension_begin = 0;
-                        analysis.dimension_prefix = element_prefix(action.raw_xml);
-                        if (action.self_closing) {
-                            analysis.dimension_end = 0;
-                        }
-                        return;
-                    }
-                    if (analysis.dimension_begin != std::string_view::npos
-                        && analysis.dimension_end == std::string_view::npos
-                        && is_closing_raw_tag(action.raw_xml)) {
-                        analysis.dimension_end = 0;
-                        return;
-                    }
-                }
-                return;
-            }
-            if (action.event_kind == WorksheetEventKind::CellStart) {
-                if (!action.cell_reference.empty()) {
-                    include_dimension_cell(analysis.dimension_scan,
-                        parse_cell_reference_coordinate(action.cell_reference));
-                }
-                if (cell_start_attribute_equals_for_audit(action.raw_xml, "t", "s")) {
-                    append_worksheet_replacement_shared_strings_audit(
-                        analysis.payload_audit, worksheet_part);
-                }
-                if (cell_start_has_attribute_for_audit(action.raw_xml, "s")) {
-                    append_worksheet_replacement_styles_audit(
-                        analysis.payload_audit, worksheet_part);
-                }
-                return;
-            }
-            if (action.event_kind == WorksheetEventKind::CellValueMarkup
-                && action.element_name == "f") {
-                append_worksheet_replacement_formula_audit(
-                    analysis.payload_audit, worksheet_part);
-            }
+            consume_worksheet_cell_replacement_analysis_action(
+                analysis, worksheet_part, action);
         },
         package_editor_cell_replacement_reader_options());
 
-    if (analysis.worksheet_start_end == std::string_view::npos) {
-        throw FastXlsxError("worksheet dimension refresh requires a worksheet root");
-    }
-    if (analysis.dimension_begin != std::string_view::npos
-        && analysis.dimension_end == std::string_view::npos) {
-        throw FastXlsxError("worksheet dimension refresh found an unclosed dimension element");
-    }
+    finalize_worksheet_cell_replacement_stream_analysis(analysis, worksheet_part);
+    return analysis;
+}
 
-    append_worksheet_replacement_range_metadata_audit(analysis.payload_audit, worksheet_part,
-        "dimension", "worksheet dimension metadata");
+WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream_from_chunk_source(
+    const PartName& worksheet_part,
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements)
+{
+    WorksheetCellReplacementStreamAnalysis analysis;
+    analysis.summary = scan_cell_replacement_actions_from_chunk_source(
+        read_next_chunk, replacements, [&](const WorksheetTransformAction& action) {
+            consume_worksheet_cell_replacement_analysis_action(
+                analysis, worksheet_part, action);
+        },
+        package_editor_cell_replacement_reader_options());
+
+    finalize_worksheet_cell_replacement_stream_analysis(analysis, worksheet_part);
     return analysis;
 }
 
@@ -2583,6 +2630,49 @@ void write_file_chunk(std::ofstream& output, std::string_view chunk)
         }
         chunk.remove_prefix(write_size);
     }
+}
+
+void write_worksheet_cell_replacement_action(std::ofstream& output,
+    const WorksheetTransformAction& action,
+    const WorksheetCellReplacementStreamAnalysis& analysis,
+    std::string_view dimension_reference,
+    bool& skipping_dimension)
+{
+    if (skipping_dimension) {
+        if (action.event_kind == WorksheetEventKind::Metadata
+            && action.element_name == "dimension"
+            && is_closing_raw_tag(action.raw_xml)) {
+            skipping_dimension = false;
+        }
+        return;
+    }
+
+    if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+        write_file_chunk(output, action.replacement_cell_xml);
+        return;
+    }
+
+    if (action.event_kind == WorksheetEventKind::WorksheetStart) {
+        write_file_chunk(output, action.raw_xml);
+        if (analysis.dimension_begin == std::string_view::npos) {
+            write_file_chunk(output,
+                dimension_tag(analysis.worksheet_prefix, dimension_reference));
+        }
+        return;
+    }
+
+    if (action.event_kind == WorksheetEventKind::Metadata
+        && action.element_name == "dimension"
+        && !is_closing_raw_tag(action.raw_xml)) {
+        write_file_chunk(output,
+            dimension_tag(analysis.dimension_prefix, dimension_reference));
+        if (!action.self_closing) {
+            skipping_dimension = true;
+        }
+        return;
+    }
+
+    write_file_chunk(output, action.raw_xml);
 }
 
 void write_worksheet_cell_replacement_stream(const std::filesystem::path& path,
@@ -2603,41 +2693,36 @@ void write_worksheet_cell_replacement_stream(const std::filesystem::path& path,
         worksheet_transformer_chunks(worksheet_xml);
     (void)scan_cell_replacement_actions_from_chunks(
         worksheet_chunks, replacements, [&](const WorksheetTransformAction& action) {
-            if (skipping_dimension) {
-                if (action.event_kind == WorksheetEventKind::Metadata
-                    && action.element_name == "dimension"
-                    && is_closing_raw_tag(action.raw_xml)) {
-                    skipping_dimension = false;
-                }
-                return;
-            }
+            write_worksheet_cell_replacement_action(
+                output, action, analysis, dimension_reference, skipping_dimension);
+        },
+        package_editor_cell_replacement_reader_options());
 
-            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
-                write_file_chunk(output, action.replacement_cell_xml);
-                return;
-            }
+    output.close();
+    if (!output) {
+        throw FastXlsxError("failed to finalize temporary worksheet cell replacement XML");
+    }
+}
 
-            if (action.event_kind == WorksheetEventKind::WorksheetStart) {
-                write_file_chunk(output, action.raw_xml);
-                if (analysis.dimension_begin == std::string_view::npos) {
-                    write_file_chunk(output,
-                        dimension_tag(analysis.worksheet_prefix, dimension_reference));
-                }
-                return;
-            }
+void write_worksheet_cell_replacement_stream_from_chunk_source(
+    const std::filesystem::path& path,
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetCellReplacementStreamAnalysis& analysis)
+{
+    std::ofstream output(path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create temporary worksheet cell replacement XML");
+    }
 
-            if (action.event_kind == WorksheetEventKind::Metadata
-                && action.element_name == "dimension"
-                && !is_closing_raw_tag(action.raw_xml)) {
-                write_file_chunk(output,
-                    dimension_tag(analysis.dimension_prefix, dimension_reference));
-                if (!action.self_closing) {
-                    skipping_dimension = true;
-                }
-                return;
-            }
+    const std::string dimension_reference =
+        worksheet_dimension_reference(analysis.dimension_scan);
+    bool skipping_dimension = false;
 
-            write_file_chunk(output, action.raw_xml);
+    (void)scan_cell_replacement_actions_from_chunk_source(
+        read_next_chunk, replacements, [&](const WorksheetTransformAction& action) {
+            write_worksheet_cell_replacement_action(
+                output, action, analysis, dimension_reference, skipping_dimension);
         },
         package_editor_cell_replacement_reader_options());
 
@@ -2950,6 +3035,37 @@ public:
 private:
     std::filesystem::path path_;
     bool released_ = false;
+};
+
+class WorksheetFileChunkReader {
+public:
+    explicit WorksheetFileChunkReader(const std::filesystem::path& path)
+        : input_(path, std::ios::binary)
+    {
+        if (!input_) {
+            throw FastXlsxError("failed to open PackageReader file-backed worksheet source");
+        }
+    }
+
+    bool operator()(std::string& output_chunk)
+    {
+        output_chunk.resize(worksheet_file_chunk_size);
+        input_.read(output_chunk.data(), static_cast<std::streamsize>(output_chunk.size()));
+        const std::streamsize read_size = input_.gcount();
+        if (read_size > 0) {
+            output_chunk.resize(static_cast<std::size_t>(read_size));
+            return true;
+        }
+
+        output_chunk.clear();
+        if (input_.bad()) {
+            throw FastXlsxError("failed to read PackageReader file-backed worksheet source");
+        }
+        return false;
+    }
+
+private:
+    std::ifstream input_;
 };
 
 } // namespace
@@ -3574,23 +3690,33 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
 
     const bool source_entry_file_backed = current_planned_part_is_source_entry(
         replacements_, entry_replacements_, target_worksheet_part);
-    require_cell_replacement_materialized_input_size(
-        source_entry_file_backed ? "source package worksheet XML"
-                                 : "current planned worksheet XML",
-        current_planned_part_data_size(
-            reader_, replacements_, entry_replacements_, target_worksheet_part));
 
     ScopedPackageEditorTempFile source_file;
     if (source_entry_file_backed) {
+        if (reader_.find_entry(target_worksheet_part.zip_path()) == nullptr) {
+            throw FastXlsxError("worksheet cell replacement source entry is missing");
+        }
         reader_.extract_entry_to_file(target_worksheet_part.zip_path(), source_file.path());
+    } else {
+        require_cell_replacement_materialized_input_size("current planned worksheet XML",
+            current_planned_part_data_size(
+                reader_, replacements_, entry_replacements_, target_worksheet_part));
     }
 
-    const std::string worksheet_xml = source_entry_file_backed
-        ? current_planned_part_data_from_file(source_file.path())
-        : current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
-    const WorksheetCellReplacementStreamAnalysis stream_analysis =
-        analyze_worksheet_cell_replacement_stream(
+    std::string worksheet_xml;
+    WorksheetCellReplacementStreamAnalysis stream_analysis;
+    if (source_entry_file_backed) {
+        WorksheetFileChunkReader analysis_reader(source_file.path());
+        const WorksheetInputChunkCallback analysis_source =
+            [&](std::string& chunk) { return analysis_reader(chunk); };
+        stream_analysis = analyze_worksheet_cell_replacement_stream_from_chunk_source(
+            target_worksheet_part, analysis_source, replacements);
+    } else {
+        worksheet_xml =
+            current_planned_part_data(reader_, replacements_, entry_replacements_, worksheet_part);
+        stream_analysis = analyze_worksheet_cell_replacement_stream(
             target_worksheet_part, worksheet_xml, replacements);
+    }
     if (!stream_analysis.summary.missing_cell_references.empty()) {
         throw FastXlsxError(
             missing_cell_replacement_error(stream_analysis.summary.missing_cell_references));
@@ -3598,17 +3724,35 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
 
     const std::string replacement_reason =
         "target worksheet part file-backed stream rewrite from worksheet cell replacement";
-    const WorksheetRelationshipReferenceAuditResult relationship_reference_audit =
-        worksheet_cell_replacement_relationship_reference_audit(
+    WorksheetRelationshipReferenceAuditResult relationship_reference_audit;
+    if (source_entry_file_backed) {
+        WorksheetFileChunkReader relationship_reader(source_file.path());
+        const WorksheetInputChunkCallback relationship_source =
+            [&](std::string& chunk) { return relationship_reader(chunk); };
+        relationship_reference_audit =
+            worksheet_cell_replacement_relationship_reference_audit_from_chunk_source(
+                target_worksheet_part, relationship_source, replacements,
+                reader_.relationships_for(worksheet_part));
+    } else {
+        relationship_reference_audit = worksheet_cell_replacement_relationship_reference_audit(
             target_worksheet_part, worksheet_xml, replacements,
             reader_.relationships_for(worksheet_part));
+    }
     reject_relationship_reference_audit_by_policy(relationship_reference_audit, policy);
     reject_payload_dependencies_by_policy(
         stream_analysis.payload_audit, policy, "worksheet replacement");
 
     ScopedPackageEditorTempFile temp_file;
-    write_worksheet_cell_replacement_stream(
-        temp_file.path(), worksheet_xml, replacements, stream_analysis);
+    if (source_entry_file_backed) {
+        WorksheetFileChunkReader output_reader(source_file.path());
+        const WorksheetInputChunkCallback output_source =
+            [&](std::string& chunk) { return output_reader(chunk); };
+        write_worksheet_cell_replacement_stream_from_chunk_source(
+            temp_file.path(), output_source, replacements, stream_analysis);
+    } else {
+        write_worksheet_cell_replacement_stream(
+            temp_file.path(), worksheet_xml, replacements, stream_analysis);
+    }
 
     std::vector<PackageEntryChunk> output_chunks;
     output_chunks.push_back(PackageEntryChunk::file(temp_file.path()));
@@ -3622,30 +3766,50 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         edit_plan_.add_note(
             "worksheet cell replacement streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; source package "
-            "worksheet entries are first extracted through the PackageReader file-backed "
-            "entry source before the current event reader materializes validation input");
+            "worksheet entries are extracted through the PackageReader file-backed entry "
+            "source and scanned through chunk-source readers without materializing the "
+            "source worksheet XML");
     } else {
         edit_plan_.add_note(
             "worksheet cell replacement streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
             "worksheet replacement input is still materialized before the event reader runs");
     }
-    edit_plan_.add_note(
-        "worksheet cell replacement output pass feeds the current bounded materialized "
-        "worksheet XML through the transformer chunk-event adapter; validation and audit "
-        "input is still materialized");
-    edit_plan_.add_note(
-        "worksheet cell replacement dependency and dimension analysis feeds the current "
-        "bounded materialized worksheet XML through the transformer chunk-event adapter; "
-        "worksheet root validation and relationship audit input are still materialized");
-    edit_plan_.add_note(
-        "worksheet cell replacement relationship-id audit feeds the current bounded "
-        "materialized worksheet XML through the transformer chunk-event adapter; worksheet "
-        "root validation input is still materialized");
-    edit_plan_.add_note(
-        "worksheet cell replacement root validation feeds the current bounded materialized "
-        "worksheet XML through the event-reader chunk-window validator; PackageReader input "
-        "is still materialized");
+    if (source_entry_file_backed) {
+        edit_plan_.add_note(
+            "worksheet cell replacement output pass feeds source package worksheet XML "
+            "through the transformer chunk-source adapter; planned worksheet replacement "
+            "input is still materialized");
+        edit_plan_.add_note(
+            "worksheet cell replacement dependency and dimension analysis feeds source "
+            "package worksheet XML through the transformer chunk-source adapter; planned "
+            "worksheet replacement input is still materialized");
+        edit_plan_.add_note(
+            "worksheet cell replacement relationship-id audit feeds source package "
+            "worksheet XML through the transformer chunk-source adapter; planned worksheet "
+            "replacement input is still materialized");
+        edit_plan_.add_note(
+            "worksheet cell replacement root validation feeds source package worksheet XML "
+            "through the event-reader chunk-source validator; planned worksheet replacement "
+            "input is still materialized");
+    } else {
+        edit_plan_.add_note(
+            "worksheet cell replacement output pass feeds the current bounded materialized "
+            "worksheet XML through the transformer chunk-event adapter; validation and audit "
+            "input is still materialized");
+        edit_plan_.add_note(
+            "worksheet cell replacement dependency and dimension analysis feeds the current "
+            "bounded materialized worksheet XML through the transformer chunk-event adapter; "
+            "worksheet root validation and relationship audit input are still materialized");
+        edit_plan_.add_note(
+            "worksheet cell replacement relationship-id audit feeds the current bounded "
+            "materialized worksheet XML through the transformer chunk-event adapter; worksheet "
+            "root validation input is still materialized");
+        edit_plan_.add_note(
+            "worksheet cell replacement root validation feeds the current bounded materialized "
+            "worksheet XML through the event-reader chunk-window validator; PackageReader input "
+            "is still materialized");
+    }
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

@@ -12,6 +12,7 @@ namespace {
 using fastxlsx::detail::WorksheetEvent;
 using fastxlsx::detail::WorksheetEventCallback;
 using fastxlsx::detail::WorksheetEventKind;
+using fastxlsx::detail::WorksheetEventReaderOptions;
 
 bool starts_with_at(std::string_view text, std::size_t position, std::string_view prefix)
 {
@@ -606,6 +607,33 @@ void process_window(std::string& window, bool final_chunk, WorksheetEventState& 
     erase_consumed_prefix(window, consume_available_events(window, final_chunk, state));
 }
 
+void process_source_chunk(std::string_view chunk,
+    WorksheetEventReaderOptions options,
+    std::string& window,
+    WorksheetEventState& state)
+{
+    std::size_t chunk_offset = 0;
+    while (chunk_offset < chunk.size()) {
+        process_window(window, false, state);
+        if (window.size() >= options.max_window_bytes) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader exceeded bounded input window");
+        }
+
+        const std::size_t available = options.max_window_bytes - window.size();
+        const std::size_t remaining = chunk.size() - chunk_offset;
+        const std::size_t bytes_to_append = std::min(available, remaining);
+        window.append(chunk.data() + chunk_offset, bytes_to_append);
+        chunk_offset += bytes_to_append;
+        process_window(window, false, state);
+
+        if (bytes_to_append == 0 && !window.empty()) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader exceeded bounded input window");
+        }
+    }
+}
+
 } // namespace
 
 namespace fastxlsx::detail {
@@ -639,24 +667,35 @@ void scan_worksheet_events_from_chunks(
     window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
 
     for (std::string_view chunk : worksheet_xml_chunks) {
-        std::size_t chunk_offset = 0;
-        while (chunk_offset < chunk.size()) {
-            process_window(window, false, state);
-            if (window.size() >= options.max_window_bytes) {
-                throw FastXlsxError("worksheet event reader exceeded bounded input window");
-            }
+        process_source_chunk(chunk, options, window, state);
+    }
 
-            const std::size_t available = options.max_window_bytes - window.size();
-            const std::size_t remaining = chunk.size() - chunk_offset;
-            const std::size_t bytes_to_append = std::min(available, remaining);
-            window.append(chunk.data() + chunk_offset, bytes_to_append);
-            chunk_offset += bytes_to_append;
-            process_window(window, false, state);
+    process_window(window, true, state);
+    state.finish();
+}
 
-            if (bytes_to_append == 0 && !window.empty()) {
-                throw FastXlsxError("worksheet event reader exceeded bounded input window");
-            }
-        }
+void scan_worksheet_events_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetEventCallback& callback,
+    WorksheetEventReaderOptions options)
+{
+    if (!read_next_chunk) {
+        throw FastXlsxError("worksheet event reader requires a chunk source");
+    }
+    if (!callback) {
+        throw FastXlsxError("worksheet event reader requires a callback");
+    }
+    if (options.max_window_bytes == 0) {
+        throw FastXlsxError("worksheet event reader requires a nonzero input window limit");
+    }
+
+    WorksheetEventState state(callback, true);
+    std::string window;
+    window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
+
+    std::string chunk;
+    while (read_next_chunk(chunk)) {
+        process_source_chunk(chunk, options, window, state);
     }
 
     process_window(window, true, state);

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace fastxlsx::detail {
@@ -48,6 +49,14 @@ struct WorksheetEvent {
 
 using WorksheetEventCallback = std::function<void(const WorksheetEvent&)>;
 
+/// Internal pull-based worksheet XML chunk source.
+///
+/// The callback should replace output_chunk with the next input chunk and return
+/// true. Returning false signals end-of-input. Event-reader callbacks never
+/// retain views into output_chunk; source implementations may reuse the same
+/// storage across calls.
+using WorksheetInputChunkCallback = std::function<bool(std::string& output_chunk)>;
+
 struct WorksheetEventReaderOptions {
     /// Maximum source bytes retained by the chunk/window scanner.
     ///
@@ -80,6 +89,17 @@ void scan_worksheet_events(
 /// must copy any field they need to retain after the callback returns.
 void scan_worksheet_events_from_chunks(
     std::span<const std::string_view> worksheet_xml_chunks,
+    const WorksheetEventCallback& callback,
+    WorksheetEventReaderOptions options = {});
+
+/// Scans worksheet XML from a pull-based chunk source.
+///
+/// This is the file/reader-source counterpart to
+/// scan_worksheet_events_from_chunks(). It keeps the same bounded retained
+/// window contract while avoiding a full source XML string or a prebuilt chunk
+/// vector.
+void scan_worksheet_events_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetEventCallback& callback,
     WorksheetEventReaderOptions options = {});
 

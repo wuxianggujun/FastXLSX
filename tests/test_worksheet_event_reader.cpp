@@ -83,6 +83,29 @@ std::vector<CopiedWorksheetEvent> read_chunked_events(
     return events;
 }
 
+std::vector<CopiedWorksheetEvent> read_source_events(
+    const std::string& xml,
+    std::size_t chunk_width,
+    fastxlsx::detail::WorksheetEventReaderOptions options = {})
+{
+    std::size_t position = 0;
+    std::vector<CopiedWorksheetEvent> events;
+    fastxlsx::detail::scan_worksheet_events_from_chunk_source(
+        [&](std::string& chunk) {
+            if (position >= xml.size()) {
+                chunk.clear();
+                return false;
+            }
+            const std::size_t length = std::min(chunk_width, xml.size() - position);
+            chunk.assign(xml.data() + position, length);
+            position += length;
+            return true;
+        },
+        [&](const WorksheetEvent& event) { events.push_back(copy_event(event)); },
+        options);
+    return events;
+}
+
 std::size_t count_kind(const std::vector<WorksheetEvent>& events, WorksheetEventKind kind)
 {
     std::size_t count = 0;
@@ -324,6 +347,26 @@ void test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries
         "chunked worksheet event reader should match full-buffer events");
 }
 
+void test_event_reader_chunk_source_matches_full_scan_across_token_boundaries()
+{
+    const std::string xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<!--before root-->)"
+        R"(<worksheet>)"
+        R"(<dimension ref="A1:B2"/>)"
+        R"(<sheetData>)"
+        R"(<row r="1"><c r="A1"><v>alpha</v></c><c r="B1"><v>42</v></c></row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+
+    const std::vector<CopiedWorksheetEvent> full_events = read_copied_events(xml);
+    const std::vector<CopiedWorksheetEvent> source_events = read_source_events(xml, 3);
+
+    check_same_events(source_events,
+        full_events,
+        "chunk-source worksheet event reader should match full-buffer events");
+}
+
 void test_event_reader_chunked_scanner_uses_bounded_window_not_full_document()
 {
     std::string xml = R"(<worksheet><sheetData>)";
@@ -379,6 +422,7 @@ int main()
         test_event_reader_rejects_malformed_boundaries();
         test_event_reader_rejects_non_prolog_markup_outside_worksheet_root();
         test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries();
+        test_event_reader_chunk_source_matches_full_scan_across_token_boundaries();
         test_event_reader_chunked_scanner_uses_bounded_window_not_full_document();
         test_event_reader_chunked_scanner_rejects_oversized_incomplete_token();
     } catch (const std::exception& error) {

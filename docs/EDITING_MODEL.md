@@ -641,17 +641,18 @@ P8.1 boundary draft：
 - 当前 bounded `sheetData` local rewrite 会物化 worksheet XML，不能写成大文件低内存
   transformer。
 - 当前 `replace_worksheet_cells()` 对 source package worksheet entry 已先通过
-  `PackageReader::extract_entry_to_file()` 抽取到 scoped file-backed source，再进入
-  event reader validation；这只是 source-entry file-backed extraction first slice。
-  P8.19 已新增 internal `scan_worksheet_events_from_chunks()` chunk/window scanner，
-  P8.20 已新增 internal chunk transformer adapter，P8.21 已把 PackageEditor output pass
-  接到 chunk transformer adapter，P8.22 已把 dependency/dimension analysis 接到 chunk
-  transformer adapter，P8.23 已把 relationship-id audit 接到 chunk transformer adapter，
-  P8.24 已把 worksheet root validation 接到 event-reader chunk-window validator；
-  但当前 PackageReader/source input 仍会 materialize input，planned replacement / staged
-  chunk input 也仍会物化 current planned worksheet XML；该 materialized validation input 现在受 internal
-  `package_editor_cell_replacement_materialized_input_byte_limit` 约束，超限会在抽取
-  source entry 或读取 planned XML 前失败且不污染 Patch 状态。
+  `PackageReader::extract_entry_to_file()` 抽取到 scoped file-backed source，再由
+  event-reader / transformer chunk-source readers 驱动 root validation、
+  dependency/dimension analysis、relationship-id audit 和 output pass。P8.19 已新增
+  internal `scan_worksheet_events_from_chunks()` chunk/window scanner，P8.20 已新增
+  internal chunk transformer adapter，P8.21 已把 PackageEditor output pass 接到 chunk
+  transformer adapter，P8.22 已把 dependency/dimension analysis 接到 chunk transformer
+  adapter，P8.23 已把 relationship-id audit 接到 chunk transformer adapter，P8.24 已把
+  worksheet root validation 接到 event-reader chunk-window validator，P8.25 已把
+  source-entry file-backed input 接到 pull-based chunk-source scanner。planned replacement /
+  staged chunk input 仍会物化 current planned worksheet XML；该 planned materialized input
+  受 internal `package_editor_cell_replacement_materialized_input_byte_limit` 约束，超限会在
+  读取 planned XML 前失败且不污染 Patch 状态。
 
 P8.2 token model draft：
 
@@ -703,20 +704,22 @@ P8.5 controlled template-fill fixture：
 P8.1-P8.5 完成后，编辑模型已有 controlled large worksheet editing 的 baseline 和首个
 bounded local fixture；真正低内存 event reader / transformer / stream rewrite 仍是后续
 implementation work，不能从该 fixture 推导出任意大 worksheet 随机编辑能力。
-P8.16-P8.24 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
-file-backed extraction first slice、materialized validation input guard，以及 internal
-event-reader chunk/window input first slice、transformer chunk-event adapter 和 PackageEditor
-output-pass / dependency-dimension analysis / relationship-id audit chunk transformer handoff 与
-root validation chunk-window handoff；但 PackageReader/source input 仍未消费 streaming input，
+P8.16-P8.25 又补上 cell replacement 输出侧 file-backed chunk handoff、source-entry
+file-backed extraction first slice、planned-input materialized guard、internal event-reader
+chunk/window 与 chunk-source input first slices、transformer chunk-event / chunk-source
+adapters，以及 PackageEditor output-pass / dependency-dimension analysis / relationship-id
+audit / root validation 对 source-entry chunk-source 的 handoff；但 planned replacement /
+staged chunk input 仍未 source 化，PackageReader 仍没有直接 ZIP entry chunk provider，
 因此不能写成完整 low-memory large worksheet transformer。
 本轮 C5 验收只覆盖这些基础片：`fastxlsx.package_reader` 验证 source-entry
 `extract_entry_to_file()`，`fastxlsx.package_editor` 验证 by-name cell replacement
 file-backed handoff、linked-object preservation、dimension refresh、audit visibility、
-output re-read 和 temporary file cleanup，`fastxlsx.worksheet_event_reader` 验证
-chunk/window scanner，`fastxlsx.worksheet_transformer` 验证 chunk transformer，
-`fastxlsx.package_editor` 验证 output-pass、dependency/dimension analysis 与 relationship-id
-audit chunk transformer handoff note 和 root validation chunk-window note；完整低内存
-PackageReader/source input 接入仍是后续任务。
+output re-read、large source worksheet 超过 materialized guard 仍成功和 temporary file
+cleanup，`fastxlsx.worksheet_event_reader` 验证 chunk/window 与 chunk-source scanner，
+`fastxlsx.worksheet_transformer` 验证 chunk-event 与 chunk-source transformer，
+`fastxlsx.package_editor` 验证 source-entry output-pass、dependency/dimension analysis、
+relationship-id audit 和 root validation chunk-source note，并继续验证 planned-input
+materialized guard；完整 planned-input / direct PackageReader ZIP-entry source 接入仍是后续任务。
 
 适合：
 

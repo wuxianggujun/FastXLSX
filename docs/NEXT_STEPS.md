@@ -129,9 +129,12 @@ foundations.
     `WorksheetEventReaderOptions::max_window_bytes`; chunk-mode event views are
     callback-lifetime only, and tests cover cross-token chunk boundaries,
     source XML larger than the retained window, and oversized incomplete token
-    rejection. This is still no public API, no full XML parser/schema
-    validation, no relationship repair, and no PackageEditor stream rewrite
-    handoff; the transformer chunk adapter is a separate internal foundation.
+    rejection. It also exposes internal
+    `scan_worksheet_events_from_chunk_source()` for pull-based file/reader
+    sources; tests cover source callbacks matching full-buffer token output.
+    This is still no public API, no full XML parser/schema validation, no
+    relationship repair, and no PackageEditor stream rewrite by itself; the
+    transformer chunk adapters are separate internal foundations.
   - Internal worksheet transformer action-model first slice in
     `include/fastxlsx/detail/worksheet_transformer.hpp` and
     `src/worksheet_transformer.cpp`, covered by `fastxlsx.worksheet_transformer`.
@@ -142,22 +145,25 @@ foundations.
     source XML chunks and caller replacement cell XML through callback, with a
     narrow payload preflight that requires a `<c>` / `*:c` root and matching
     unqualified `r` attribute before action emission. It also exposes internal
-    `scan_cell_replacement_actions_from_chunks()` and
+    `scan_cell_replacement_actions_from_chunks()` /
     `emit_cell_replacement_worksheet_from_chunks()` for consuming the P8.19
-    event-reader chunk/window stream; chunk-mode action views are
-    callback-lifetime only. Treat this as action/output-chunk and transformer
-    input groundwork only: no public API, no PackageEditor package-entry staged
-    writer wiring, no full cell schema validation, no dependency repair, and no
-    PackageEditor/EditPlan commit.
+    event-reader chunk/window stream, plus pull-based
+    `scan_cell_replacement_actions_from_chunk_source()` /
+    `emit_cell_replacement_worksheet_from_chunk_source()` for file/reader
+    sources. Chunk-mode and source-mode action views are callback-lifetime only.
+    Treat this as action/output-chunk and transformer input groundwork only: no
+    public API, no full cell schema validation, no dependency repair, and no
+    PackageEditor/EditPlan commit by itself.
   - Internal bounded PackageEditor cell-replacement handoff in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. For source package worksheet entries,
     `replace_worksheet_cells()` and `replace_worksheet_cells_by_name()` now use
     `PackageReader::extract_entry_to_file()` to create a scoped file-backed
-    source before validation; PackageEditor still materializes that input before
-    calling the current transformer, and planned replacement / chunk inputs still
-    materialize the current planned worksheet XML. The handoff no longer
-    materializes the full rewritten worksheet XML string. It scans the source
+    source, then scan that source through chunk-source readers for root
+    validation, dependency/dimension analysis, relationship-id audit, and output
+    writing. Planned replacement / chunk inputs still materialize the current
+    planned worksheet XML. The handoff no longer materializes the full rewritten
+    worksheet XML string. It scans the source
     action stream and replacement
     payloads first, computes top-level worksheet
     `<dimension>`, audits preserved source metadata plus replacement cell
@@ -171,24 +177,26 @@ foundations.
     PackageEditor-layer no-state-pollution coverage; the file-backed handoff also
     has coverage for `PackageReader` re-open, dimension refresh, old-target audit
     skip, linked-object fixture preservation/audit visibility, and temporary file
-    cleanup after the editor is destroyed. The linked-object regression covers
+    cleanup after the editor is destroyed. There is also a large source worksheet
+    regression where source XML exceeds
+    `package_editor_cell_replacement_materialized_input_byte_limit` and still
+    completes cell replacement through file-backed chunk-source scanning. The
+    linked-object regression covers
     worksheet `.rels`, drawing/media/chart/table/VML/percent-decoded drawing,
     sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
     bytes plus owner `.rels`, workbook definedNames, PNG default content type,
-    calcChain cleanup, and output re-read through `PackageReader`. It now also
-    has a bounded materialized input guard before source-entry extraction or
-    planned worksheet XML validation, with no-state-pollution coverage for
-    over-limit source input and queued planned input. Treat this as
-    source-entry file-backed extraction, bounded materialized validation input,
-    and output-side file-backed stream handoff only: no public API, no complete
-    PackageReader input streaming, no complete low-memory worksheet transformer,
-    no broad range metadata recalculation, no sharedStrings/style migration, no
-    relationship repair/pruning, no object semantic editing, and no low-memory
-    large-file editing claim. Root validation feeds the current bounded materialized
-    worksheet XML through the event-reader chunk-window validator; dependency/dimension
-    analysis, relationship-id audit, and output pass feed it through the transformer
-    chunk-event adapter before writing the PackageEditor-owned temporary file-backed
-    chunk, and planned-output notes expose that boundary.
+    calcChain cleanup, and output re-read through `PackageReader`. It still has
+    a bounded materialized input guard for queued/planned worksheet XML, with
+    no-state-pollution coverage for queued planned over-limit input. Treat this
+    as source-entry file-backed extraction, source-entry chunk-source scanning,
+    planned-input materialization guard, and output-side file-backed stream
+    handoff only: no public API, no direct ZIP entry chunk source, no low-memory
+    DEFLATE extraction, no complete planned-input low-memory transformer, no
+    broad range metadata recalculation, no sharedStrings/style migration, no
+    relationship repair/pruning, no object semantic editing, and no full
+    low-memory large-file editing claim. Planned-output notes now distinguish
+    source-entry `chunk-source` paths from planned-input materialized
+    `chunk-event` / `chunk-window` boundaries.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an

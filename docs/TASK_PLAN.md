@@ -72,8 +72,9 @@ is C5 event-reader chunk/window input.
   Internal `PackageEditor` now also has
   `replace_worksheet_cells()` / `replace_worksheet_cells_by_name()` handoff
   helpers that use `PackageReader::extract_entry_to_file()` for source package
-  worksheet entries before validation. The current event reader still
-  materializes that file-backed source as validation input, and planned
+  worksheet entries before validation. Source-entry validation, dependency /
+  dimension analysis, relationship-id audit, and output pass now consume that
+  file-backed source through pull-based chunk-source readers. Planned
   replacement / chunk input still materializes the current planned worksheet
   XML, but the handoff no longer materializes the full rewritten worksheet XML
   string. It first scans the source action stream and replacement payloads,
@@ -91,7 +92,8 @@ is C5 event-reader chunk/window input.
   drawing/media/chart/table/VML/percent-decoded drawing, sharedStrings plus its
   owner `.rels`, styles, VBA, a reachable unknown extension plus its owner
   `.rels`, workbook definedNames, PNG default content type, calcChain cleanup,
-  `PackageReader` re-read, and temporary XML file cleanup after `save_as()`.
+  `PackageReader` re-read, large source worksheet success beyond the planned
+  materialized input guard, and temporary XML file cleanup after `save_as()`.
   `PackageEditor` also has an internal `replace_part_chunks()` foundation that
   records an existing package part as a `StreamRewrite` replacement backed by
   `PackageEntryChunk` memory/file chunks, and `save_as()` forwards those chunks
@@ -106,8 +108,8 @@ is C5 event-reader chunk/window input.
   mismatches, audit-heavy replacement payload policy failures, and temporary
   file cleanup after `save_as()`.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
-  handoff, chunked package-entry source, worksheet chunk handoff, and
-  source-entry extraction plus cell-replacement output-side file-backed stream
+  handoff, source-entry chunk-source input, chunked package-entry source,
+  worksheet chunk handoff, and source-entry extraction plus cell-replacement output-side file-backed stream
   handoff groundwork only: no public API, full XML parser/schema validation,
   complete PackageReader input streaming, event-reader chunk/window input,
   relationship repair/pruning, object semantic editing, broad range metadata

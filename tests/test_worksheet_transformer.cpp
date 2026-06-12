@@ -79,6 +79,30 @@ EmittedWorksheet emit_chunked_worksheet(const std::string& xml,
     return emitted;
 }
 
+EmittedWorksheet emit_source_worksheet(const std::string& xml,
+    std::span<const WorksheetCellReplacement> replacements,
+    std::size_t chunk_width,
+    fastxlsx::detail::WorksheetEventReaderOptions reader_options = {})
+{
+    std::size_t position = 0;
+    EmittedWorksheet emitted;
+    emitted.summary = fastxlsx::detail::emit_cell_replacement_worksheet_from_chunk_source(
+        [&](std::string& chunk) {
+            if (position >= xml.size()) {
+                chunk.clear();
+                return false;
+            }
+            const std::size_t length = std::min(chunk_width, xml.size() - position);
+            chunk.assign(xml.data() + position, length);
+            position += length;
+            return true;
+        },
+        replacements,
+        [&](std::string_view chunk) { emitted.xml += chunk; },
+        reader_options);
+    return emitted;
+}
+
 std::vector<std::string_view> replacement_order(const std::vector<WorksheetTransformAction>& actions)
 {
     std::vector<std::string_view> order;
@@ -322,6 +346,32 @@ void test_transformer_chunked_emitter_matches_full_emitter_across_boundaries()
         "chunked output emitter should preserve missing replacement diagnostics");
 }
 
+void test_transformer_chunk_source_emitter_matches_full_emitter_across_boundaries()
+{
+    const std::string xml =
+        "<?xml version=\"1.0\"?>\n"
+        "<worksheet>\n"
+        "  <sheetData>\n"
+        "    <row r=\"1\"><c r=\"A1\"><v>old-a</v></c><c r=\"B1\"><v>old-b</v></c></row>\n"
+        "  </sheetData>\n"
+        "</worksheet>";
+    const std::string replacement_xml =
+        R"(<c r="B1" t="inlineStr"><is><t>new-b</t></is></c>)";
+    const std::array replacements {
+        WorksheetCellReplacement { "B1", replacement_xml },
+    };
+
+    const EmittedWorksheet full = emit_worksheet(xml, replacements);
+    const EmittedWorksheet source = emit_source_worksheet(xml, replacements, 4);
+
+    check(source.xml == full.xml,
+        "chunk-source output emitter should match full-buffer output across token boundaries");
+    check(source.summary.matched_replacement_count == full.summary.matched_replacement_count,
+        "chunk-source output emitter should preserve matched replacement count");
+    check(source.summary.missing_cell_references == full.summary.missing_cell_references,
+        "chunk-source output emitter should preserve missing replacement diagnostics");
+}
+
 void test_transformer_chunked_emitter_uses_bounded_window_not_full_document()
 {
     std::string xml = R"(<worksheet><sheetData>)";
@@ -406,6 +456,7 @@ int main()
         test_transformer_validates_replacement_cell_payload_root_and_reference();
         test_transformer_emits_rewritten_chunks_with_raw_text_preserved();
         test_transformer_chunked_emitter_matches_full_emitter_across_boundaries();
+        test_transformer_chunk_source_emitter_matches_full_emitter_across_boundaries();
         test_transformer_chunked_emitter_uses_bounded_window_not_full_document();
         test_transformer_chunked_emitter_reports_missing_and_rejects_oversized_input();
     } catch (const std::exception& error) {

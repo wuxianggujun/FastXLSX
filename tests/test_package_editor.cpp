@@ -2695,17 +2695,17 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
                   {"PackageReader file-backed", "entry source"}),
             "cell replacement output plan should expose source-entry file-backed extraction");
         check(has_note_containing(output_plan.notes,
-                  {"transformer chunk-event adapter", "validation", "materialized"}),
-            "cell replacement output plan should expose chunk transformer materialized-input boundary");
+                  {"source package worksheet XML", "transformer chunk-source adapter"}),
+            "cell replacement output plan should expose source chunk transformer input");
         check(has_note_containing(output_plan.notes,
-                  {"dependency and dimension analysis", "transformer chunk-event adapter"}),
+                  {"dependency and dimension analysis", "transformer chunk-source adapter"}),
             "cell replacement output plan should expose chunked dependency/dimension analysis");
         check(has_note_containing(output_plan.notes,
-                  {"relationship-id audit", "transformer chunk-event adapter"}),
+                  {"relationship-id audit", "transformer chunk-source adapter"}),
             "cell replacement output plan should expose chunked relationship-id audit");
         check(has_note_containing(output_plan.notes,
-                  {"root validation", "event-reader chunk-window validator"}),
-            "cell replacement output plan should expose chunked root validation");
+                  {"root validation", "event-reader chunk-source validator"}),
+            "cell replacement output plan should expose chunk-source root validation");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement output plan should expose dimension refresh note");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
@@ -2861,17 +2861,17 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
                   {"PackageReader file-backed", "entry source"}),
             "cell replacement linked output plan should expose source-entry file-backed extraction");
         check(has_note_containing(output_plan.notes,
-                  {"transformer chunk-event adapter", "validation", "materialized"}),
-            "cell replacement linked output plan should expose chunk transformer materialized-input boundary");
+                  {"source package worksheet XML", "transformer chunk-source adapter"}),
+            "cell replacement linked output plan should expose source chunk transformer input");
         check(has_note_containing(output_plan.notes,
-                  {"dependency and dimension analysis", "transformer chunk-event adapter"}),
+                  {"dependency and dimension analysis", "transformer chunk-source adapter"}),
             "cell replacement linked output plan should expose chunked dependency/dimension analysis");
         check(has_note_containing(output_plan.notes,
-                  {"relationship-id audit", "transformer chunk-event adapter"}),
+                  {"relationship-id audit", "transformer chunk-source adapter"}),
             "cell replacement linked output plan should expose chunked relationship-id audit");
         check(has_note_containing(output_plan.notes,
-                  {"root validation", "event-reader chunk-window validator"}),
-            "cell replacement linked output plan should expose chunked root validation");
+                  {"root validation", "event-reader chunk-source validator"}),
+            "cell replacement linked output plan should expose chunk-source root validation");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement linked output plan should expose dimension refresh note");
         check(has_note_containing(output_plan.notes,
@@ -3344,19 +3344,31 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
         "planned-input cell replacement output should omit stale calcChain");
 }
 
-void test_package_editor_rejects_worksheet_cell_replacement_source_input_over_limit_without_state_changes()
+void test_package_editor_streams_large_source_worksheet_cell_replacement_without_materialized_input_limit()
 {
     CalcSourcePackage source =
         write_calc_source_package(
-            "fastxlsx-package-editor-cell-replacement-source-input-over-limit-source.xlsx");
+            "fastxlsx-package-editor-cell-replacement-large-source-input-source.xlsx");
     const std::filesystem::path output =
         output_path(
-            "fastxlsx-package-editor-cell-replacement-source-input-over-limit-output.xlsx");
-    source.worksheet = std::string("<worksheet><!--")
-        + std::string(
-            fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit + 1U,
-            'x')
-        + R"(--><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+            "fastxlsx-package-editor-cell-replacement-large-source-input-output.xlsx");
+    source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old</v></c></row>)";
+    std::uint32_t last_row = 1;
+    while (source.worksheet.size()
+        <= fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit
+            + 4096U) {
+        ++last_row;
+        source.worksheet += R"(<row r=")";
+        source.worksheet += std::to_string(last_row);
+        source.worksheet += R"("><c r="A)";
+        source.worksheet += std::to_string(last_row);
+        source.worksheet += R"("><v>1</v></c></row>)";
+    }
+    source.worksheet += R"(</sheetData></worksheet>)";
+    check(source.worksheet.size()
+            > fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit,
+        "large source worksheet fixture should exceed the materialized input guard");
     fastxlsx::detail::write_package(source.path,
         {
             {"[Content_Types].xml", source.content_types},
@@ -3376,126 +3388,57 @@ void test_package_editor_rejects_worksheet_cell_replacement_source_input_over_li
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::array replacements {
         fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>2</v></c>)" },
+            "A1", R"(<c r="A1"><v>patched</v></c>)" },
     };
 
-    const std::size_t initial_plan_size = editor.edit_plan().size();
-    const std::size_t initial_note_count = editor.edit_plan().notes().size();
-    const std::size_t initial_relationship_target_audit_count =
-        editor.edit_plan().relationship_target_audits().size();
-    const std::size_t initial_worksheet_relationship_reference_audit_count =
-        editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const std::size_t initial_worksheet_payload_dependency_audit_count =
-        editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t initial_workbook_payload_dependency_audit_count =
-        editor.edit_plan().workbook_payload_dependency_audits().size();
+    editor.replace_worksheet_cells(worksheet_part, replacements);
 
-    const auto check_no_state_change = [&]() {
-        check(editor.edit_plan().size() == initial_plan_size,
-            "over-limit cell replacement source input should not change edit plan size");
-        check(editor.edit_plan().notes().size() == initial_note_count,
-            "over-limit cell replacement source input should not add audit notes");
-        check(editor.edit_plan().relationship_target_audits().size()
-                == initial_relationship_target_audit_count,
-            "over-limit cell replacement source input should not add relationship target audits");
-        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
-                == initial_worksheet_relationship_reference_audit_count,
-            "over-limit cell replacement source input should not add worksheet reference audits");
-        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
-                == initial_worksheet_payload_dependency_audit_count,
-            "over-limit cell replacement source input should not add worksheet payload audits");
-        check(editor.edit_plan().workbook_payload_dependency_audits().size()
-                == initial_workbook_payload_dependency_audit_count,
-            "over-limit cell replacement source input should not add workbook payload audits");
-        check(editor.edit_plan().removed_parts().empty(),
-            "over-limit cell replacement source input should not record removed parts");
-        check(editor.edit_plan().package_entries().empty(),
-            "over-limit cell replacement source input should not record package-entry audit");
-        check(editor.edit_plan().removed_package_entries().empty(),
-            "over-limit cell replacement source input should not record removed package-entry audit");
-        check(!editor.edit_plan().full_calculation_on_load(),
-            "over-limit cell replacement source input should not request recalculation");
-        check(editor.edit_plan().calc_chain_action()
-                == fastxlsx::detail::CalcChainAction::Preserve,
-            "over-limit cell replacement source input should not change calcChain policy");
-        check_manifest_write_mode(editor, worksheet_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "over-limit cell replacement source input should keep worksheet copy-original");
-        check_manifest_write_mode(editor, workbook_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "over-limit cell replacement source input should keep workbook copy-original");
-        check_manifest_write_mode(editor, calc_chain_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "over-limit cell replacement source input should keep calcChain copy-original");
-
-        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
-            editor.planned_output();
-        check(output_plan.notes.empty(),
-            "over-limit cell replacement source input should leave planned output notes empty");
-        check(!output_plan.full_calculation_on_load,
-            "over-limit cell replacement source input output plan should not request recalculation");
-        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
-            "over-limit cell replacement source input output plan should preserve calcChain policy");
-        check(output_plan.removed_parts.empty(),
-            "over-limit cell replacement source input output plan should not expose removed parts");
-        check(output_plan.removed_package_entries.empty(),
-            "over-limit cell replacement source input output plan should not expose removed package entries");
-        check(output_plan.relationship_target_audits.empty(),
-            "over-limit cell replacement source input output plan should not expose relationship audits");
-        check(output_plan.worksheet_relationship_reference_audits.empty(),
-            "over-limit cell replacement source input output plan should not expose worksheet reference audits");
-        check(output_plan.worksheet_payload_dependency_audits.empty(),
-            "over-limit cell replacement source input output plan should not expose worksheet payload audits");
-        check(output_plan.workbook_payload_dependency_audits.empty(),
-            "over-limit cell replacement source input output plan should not expose workbook payload audits");
-        check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-            "over-limit cell replacement source input output plan should keep worksheet copy-original");
-        check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-            "over-limit cell replacement source input output plan should keep workbook copy-original");
-        check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-            "over-limit cell replacement source input output plan should keep calcChain copy-original");
-    };
-
-    bool failed = false;
-    try {
-        editor.replace_worksheet_cells(worksheet_part, replacements);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "worksheet cell replacement",
-            "over-limit source input failure should name cell replacement");
-        check_contains(error.what(), "bounded materialized input limit",
-            "over-limit source input failure should name materialized input limit");
-        check_contains(error.what(), "source package worksheet XML",
-            "over-limit source input failure should identify source worksheet XML");
-    }
-    check(failed,
-        "PackageEditor should reject oversized source worksheet input before cell replacement");
-    check_no_state_change();
-
-    failed = false;
-    try {
-        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "source package worksheet XML",
-            "by-name over-limit source input failure should identify source worksheet XML");
-    }
-    check(failed,
-        "PackageEditor by-name helper should reject oversized source worksheet input");
-    check_no_state_change();
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(has_note_containing(output_plan.notes,
+              {"without materializing", "source worksheet XML"}),
+        "large source cell replacement should expose non-materialized source input");
+    check(has_note_containing(output_plan.notes,
+              {"transformer chunk-source adapter", "source package worksheet XML"}),
+        "large source cell replacement should expose chunk-source transformer input");
+    check(has_note_containing(output_plan.notes,
+              {"root validation", "event-reader chunk-source validator"}),
+        "large source cell replacement should expose chunk-source root validation");
+    check(!has_note_containing(output_plan.notes,
+              {"source package worksheet XML", "bounded materialized input limit"}),
+        "large source cell replacement should not expose source materialized guard");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "large source cell replacement should stream-rewrite worksheet chunks");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "large source cell replacement should local-rewrite workbook metadata");
+    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "large source cell replacement should omit stale calcChain");
 
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
-    check_preserved_source_entries(editor.reader(), output_reader);
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
-        "over-limit cell replacement source input output should preserve worksheet bytes");
+    const std::string worksheet_xml = output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>patched</v></c>)",
+        "large source cell replacement output should include replacement cell");
+    check_not_contains(worksheet_xml, R"(<v>old</v>)",
+        "large source cell replacement output should consume old target cell");
+    const std::string expected_dimension =
+        R"(<dimension ref="A1:A)" + std::to_string(last_row) + R"("/>)";
+    check_contains(worksheet_xml, expected_dimension,
+        "large source cell replacement output should refresh dimension from streamed cells");
+    check_contains(worksheet_xml,
+        R"(<row r=")" + std::to_string(last_row) + R"("><c r="A)"
+            + std::to_string(last_row) + R"("><v>1</v></c></row>)",
+        "large source cell replacement output should preserve tail source rows");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "large source cell replacement output should omit stale calcChain payload");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "large source cell replacement output should request full calculation");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "over-limit cell replacement source input output should preserve unknown bytes");
+        "large source cell replacement output should preserve unknown bytes");
 }
 
 void test_package_editor_rejects_worksheet_cell_replacement_planned_input_over_limit_without_state_changes()
@@ -38169,7 +38112,7 @@ int main()
         test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
         test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
         test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input();
-        test_package_editor_rejects_worksheet_cell_replacement_source_input_over_limit_without_state_changes();
+        test_package_editor_streams_large_source_worksheet_cell_replacement_without_materialized_input_limit();
         test_package_editor_rejects_worksheet_cell_replacement_planned_input_over_limit_without_state_changes();
         test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
         test_package_editor_rejects_invalid_cell_replacement_payload_without_state_changes();

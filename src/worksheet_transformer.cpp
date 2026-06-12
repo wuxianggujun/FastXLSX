@@ -345,6 +345,34 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunks(
     return build_summary(replacement_index, matched_replacements);
 }
 
+WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetTransformActionCallback& callback,
+    WorksheetEventReaderOptions reader_options)
+{
+    if (!read_next_chunk) {
+        throw FastXlsxError("worksheet transformer requires a chunk source");
+    }
+    if (!callback) {
+        throw FastXlsxError("worksheet transformer requires a callback");
+    }
+
+    const ReplacementIndex replacement_index = build_replacement_index(replacements);
+    std::set<std::string, std::less<>> matched_replacements;
+    bool replacing_current_cell = false;
+
+    scan_worksheet_events_from_chunk_source(
+        read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            consume_replacement_event(
+                event, replacement_index, matched_replacements, replacing_current_cell, callback);
+        },
+        reader_options);
+
+    return build_summary(replacement_index, matched_replacements);
+}
+
 WorksheetTransformSummary emit_cell_replacement_worksheet(
     std::string_view worksheet_xml,
     std::span<const WorksheetCellReplacement> replacements,
@@ -376,6 +404,32 @@ WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunks(
 
     return scan_cell_replacement_actions_from_chunks(
         worksheet_xml_chunks,
+        replacements,
+        [&](const WorksheetTransformAction& action) {
+            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+                emit_chunk(callback, action.replacement_cell_xml);
+                return;
+            }
+            emit_chunk(callback, action.raw_xml);
+        },
+        reader_options);
+}
+
+WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetOutputChunkCallback& callback,
+    WorksheetEventReaderOptions reader_options)
+{
+    if (!read_next_chunk) {
+        throw FastXlsxError("worksheet transformer output emitter requires a chunk source");
+    }
+    if (!callback) {
+        throw FastXlsxError("worksheet transformer output emitter requires a callback");
+    }
+
+    return scan_cell_replacement_actions_from_chunk_source(
+        read_next_chunk,
         replacements,
         [&](const WorksheetTransformAction& action) {
             if (action.kind == WorksheetTransformActionKind::ReplaceCell) {

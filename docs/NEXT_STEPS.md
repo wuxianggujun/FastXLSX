@@ -17,8 +17,8 @@ Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
 indexes or capability slices. The current lane has advanced through the C5
 guarded first slice: C2 only reopens for new preservation gaps, C3/C4 keep
 their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 transformer chunk-event adapter on top of the new event-reader
-chunk/window input.
+lane is C5 PackageEditor chunk transformer input wiring on top of the new
+event-reader and transformer chunk/window foundations.
 
 ## Current Verified Baseline
 
@@ -129,8 +129,8 @@ chunk/window input.
     callback-lifetime only, and tests cover cross-token chunk boundaries,
     source XML larger than the retained window, and oversized incomplete token
     rejection. This is still no public API, no full XML parser/schema
-    validation, no relationship repair, no transformer chunk adapter, and no
-    PackageEditor stream rewrite handoff.
+    validation, no relationship repair, and no PackageEditor stream rewrite
+    handoff; the transformer chunk adapter is a separate internal foundation.
   - Internal worksheet transformer action-model first slice in
     `include/fastxlsx/detail/worksheet_transformer.hpp` and
     `src/worksheet_transformer.cpp`, covered by `fastxlsx.worksheet_transformer`.
@@ -140,9 +140,13 @@ chunk/window input.
     `emit_cell_replacement_worksheet()` chunk emitter that forwards pass-through
     source XML chunks and caller replacement cell XML through callback, with a
     narrow payload preflight that requires a `<c>` / `*:c` root and matching
-    unqualified `r` attribute before action emission. Treat this as
-    action/output-chunk groundwork only: no public API, no package-entry staged
-    stream writer, no full cell schema validation, no dependency repair, and no
+    unqualified `r` attribute before action emission. It also exposes internal
+    `scan_cell_replacement_actions_from_chunks()` and
+    `emit_cell_replacement_worksheet_from_chunks()` for consuming the P8.19
+    event-reader chunk/window stream; chunk-mode action views are
+    callback-lifetime only. Treat this as action/output-chunk and transformer
+    input groundwork only: no public API, no PackageEditor package-entry staged
+    writer wiring, no full cell schema validation, no dependency repair, and no
     PackageEditor/EditPlan commit.
   - Internal bounded PackageEditor cell-replacement handoff in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
@@ -176,8 +180,8 @@ chunk/window input.
     over-limit source input and queued planned input. Treat this as
     source-entry file-backed extraction, bounded materialized validation input,
     and output-side file-backed stream handoff only: no public API, no complete
-    PackageReader input streaming, no transformer consumption of event-reader
-    chunk/window input, no complete low-memory worksheet transformer, no broad range metadata
+    PackageReader input streaming, no PackageEditor consumption of the chunk
+    transformer, no complete low-memory worksheet transformer, no broad range metadata
     recalculation, no sharedStrings/style migration, no relationship
     repair/pruning, no object semantic editing, and no low-memory large-file
     editing claim.
@@ -2787,8 +2791,8 @@ Current foundation:
   `PackageReader`, and removing temporary XML files after editor destruction.
   This remains audit / preservation visibility, not relationship repair/pruning,
   object semantic editing, public API, complete PackageReader input streaming,
-  transformer consumption of event-reader chunk/window input, or complete
-  low-memory large-file editing.
+  PackageEditor consumption of the chunk transformer, or complete low-memory
+  large-file editing.
   It also confirms
   worksheet-owned and drawing-owned external, URI-qualified, invalid, and
   unresolved relationship target audit notes and structured `RelationshipTargetAudit`

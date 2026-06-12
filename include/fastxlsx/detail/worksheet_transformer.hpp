@@ -59,6 +59,18 @@ using WorksheetOutputChunkCallback = std::function<void(std::string_view)>;
     std::span<const WorksheetCellReplacement> replacements,
     const WorksheetTransformActionCallback& callback);
 
+/// Emits source-order transform actions from bounded worksheet XML chunks.
+///
+/// This is the input-streaming counterpart to scan_cell_replacement_actions().
+/// Action string views are valid only for the duration of the callback because
+/// they may point into the event-reader retained window. Replacement XML views
+/// still point to caller-provided replacement payloads.
+[[nodiscard]] WorksheetTransformSummary scan_cell_replacement_actions_from_chunks(
+    std::span<const std::string_view> worksheet_xml_chunks,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetTransformActionCallback& callback,
+    WorksheetEventReaderOptions reader_options = {});
+
 /// Emits rewritten worksheet XML chunks for the current replacement action model.
 ///
 /// This streams pass-through source chunks and caller replacement cell XML
@@ -69,5 +81,16 @@ using WorksheetOutputChunkCallback = std::function<void(std::string_view)>;
     std::string_view worksheet_xml,
     std::span<const WorksheetCellReplacement> replacements,
     const WorksheetOutputChunkCallback& callback);
+
+/// Emits rewritten worksheet XML chunks while consuming bounded source chunks.
+///
+/// This avoids concatenating the source worksheet into one string, but remains
+/// internal and narrow: it does not update dimensions, run dependency repair,
+/// write a package entry, or commit PackageEditor/EditPlan state.
+[[nodiscard]] WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunks(
+    std::span<const std::string_view> worksheet_xml_chunks,
+    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetOutputChunkCallback& callback,
+    WorksheetEventReaderOptions reader_options = {});
 
 } // namespace fastxlsx::detail

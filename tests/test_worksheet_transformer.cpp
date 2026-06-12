@@ -1,5 +1,6 @@
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -56,6 +57,28 @@ EmittedWorksheet emit_worksheet(
     return emitted;
 }
 
+std::vector<std::string_view> split_every(const std::string& xml, std::size_t width)
+{
+    std::vector<std::string_view> chunks;
+    for (std::size_t position = 0; position < xml.size(); position += width) {
+        const std::size_t length = std::min(width, xml.size() - position);
+        chunks.emplace_back(xml.data() + position, length);
+    }
+    return chunks;
+}
+
+EmittedWorksheet emit_chunked_worksheet(const std::string& xml,
+    std::span<const WorksheetCellReplacement> replacements,
+    std::size_t chunk_width,
+    fastxlsx::detail::WorksheetEventReaderOptions reader_options = {})
+{
+    const std::vector<std::string_view> chunks = split_every(xml, chunk_width);
+    EmittedWorksheet emitted;
+    emitted.summary = fastxlsx::detail::emit_cell_replacement_worksheet_from_chunks(
+        chunks, replacements, [&](std::string_view chunk) { emitted.xml += chunk; }, reader_options);
+    return emitted;
+}
+
 std::vector<std::string_view> replacement_order(const std::vector<WorksheetTransformAction>& actions)
 {
     std::vector<std::string_view> order;
@@ -76,6 +99,11 @@ bool has_pass_through_raw(
         }
     }
     return false;
+}
+
+bool contains_text(std::string_view haystack, std::string_view needle)
+{
+    return haystack.find(needle) != std::string_view::npos;
 }
 
 const WorksheetTransformAction& find_replace(
@@ -268,6 +296,105 @@ void test_transformer_emits_rewritten_chunks_with_raw_text_preserved()
         "output emitter should not report matched target as missing");
 }
 
+void test_transformer_chunked_emitter_matches_full_emitter_across_boundaries()
+{
+    const std::string xml =
+        "<?xml version=\"1.0\"?>\n"
+        "<worksheet>\n"
+        "  <sheetData>\n"
+        "    <row r=\"1\"><c r=\"A1\"><v>old-a</v></c><c r=\"B1\"><v>old-b</v></c></row>\n"
+        "  </sheetData>\n"
+        "</worksheet>";
+    const std::string replacement_xml =
+        R"(<c r="B1" t="inlineStr"><is><t>new-b</t></is></c>)";
+    const std::array replacements {
+        WorksheetCellReplacement { "B1", replacement_xml },
+    };
+
+    const EmittedWorksheet full = emit_worksheet(xml, replacements);
+    const EmittedWorksheet chunked = emit_chunked_worksheet(xml, replacements, 5);
+
+    check(chunked.xml == full.xml,
+        "chunked output emitter should match full-buffer output across token boundaries");
+    check(chunked.summary.matched_replacement_count == full.summary.matched_replacement_count,
+        "chunked output emitter should preserve matched replacement count");
+    check(chunked.summary.missing_cell_references == full.summary.missing_cell_references,
+        "chunked output emitter should preserve missing replacement diagnostics");
+}
+
+void test_transformer_chunked_emitter_uses_bounded_window_not_full_document()
+{
+    std::string xml = R"(<worksheet><sheetData>)";
+    for (int row = 1; row <= 24; ++row) {
+        xml += R"(<row r=")";
+        xml += std::to_string(row);
+        xml += R"("><c r="A)";
+        xml += std::to_string(row);
+        xml += R"("><v>old-)";
+        xml += std::to_string(row);
+        xml += R"(</v></c></row>)";
+    }
+    xml += R"(</sheetData></worksheet>)";
+
+    const std::string replacement_xml = R"(<c r="A17"><v>new-17</v></c>)";
+    const std::array replacements {
+        WorksheetCellReplacement { "A17", replacement_xml },
+    };
+
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.max_window_bytes = 96;
+    const EmittedWorksheet emitted = emit_chunked_worksheet(xml, replacements, 7, options);
+
+    check(xml.size() > options.max_window_bytes,
+        "chunked transformer fixture should be larger than the retained window");
+    check(emitted.summary.matched_replacement_count == 1,
+        "chunked transformer should match the replacement inside a bounded window");
+    check(emitted.summary.missing_cell_references.empty(),
+        "chunked transformer should not report matched replacement as missing");
+    check(contains_text(emitted.xml, replacement_xml),
+        "chunked transformer output should include the replacement cell");
+    check(!contains_text(emitted.xml, R"(<c r="A17"><v>old-17</v></c>)"),
+        "chunked transformer output should consume the old target cell");
+    check(contains_text(emitted.xml, R"(<c r="A16"><v>old-16</v></c>)"),
+        "chunked transformer output should preserve adjacent non-target cells");
+}
+
+void test_transformer_chunked_emitter_reports_missing_and_rejects_oversized_input()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    const std::array missing_replacements {
+        WorksheetCellReplacement { "C3", R"(<c r="C3"><v>missing</v></c>)" },
+    };
+    const EmittedWorksheet missing = emit_chunked_worksheet(xml, missing_replacements, 4);
+
+    check(missing.xml == xml, "missing chunked replacement should pass through source XML");
+    check(missing.summary.matched_replacement_count == 0,
+        "missing chunked replacement should not count as matched");
+    check(missing.summary.missing_cell_references.size() == 1,
+        "missing chunked replacement should be reported");
+    check(missing.summary.missing_cell_references[0] == "C3",
+        "missing chunked replacement should retain caller reference");
+
+    const std::string oversized_xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>)" + std::string(80, 'x')
+        + R"(</v></c></row></sheetData></worksheet>)";
+    const std::array replacements {
+        WorksheetCellReplacement { "B1", R"(<c r="B1"><v>new</v></c>)" },
+    };
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.max_window_bytes = 32;
+
+    bool failed = false;
+    try {
+        (void)emit_chunked_worksheet(oversized_xml, replacements, 9, options);
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    check(failed,
+        "chunked transformer should propagate oversized event-reader window failures");
+}
+
 } // namespace
 
 int main()
@@ -278,6 +405,9 @@ int main()
         test_transformer_reports_missing_and_rejects_invalid_replacements();
         test_transformer_validates_replacement_cell_payload_root_and_reference();
         test_transformer_emits_rewritten_chunks_with_raw_text_preserved();
+        test_transformer_chunked_emitter_matches_full_emitter_across_boundaries();
+        test_transformer_chunked_emitter_uses_bounded_window_not_full_document();
+        test_transformer_chunked_emitter_reports_missing_and_rejects_oversized_input();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

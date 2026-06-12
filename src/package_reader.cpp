@@ -1139,60 +1139,18 @@ PackageReaderChunkCallback make_deflated_entry_chunk_source(
     };
 }
 
-std::string read_deflated_entry(const std::filesystem::path& path,
-    const PackageReaderEntry& entry)
+std::string read_entry_chunks_to_string(
+    PackageReaderChunkCallback source, std::uint64_t expected_size)
 {
-    if (entry.uncompressed_size
-        > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
-        throw FastXlsxError("DEFLATE ZIP entry is too large for one read operation");
-    }
-
-    std::unique_ptr<void, MinizipReaderDeleter> reader(mz_zip_reader_create());
-    if (!reader) {
-        throw FastXlsxError("failed to create minizip-ng reader");
-    }
-
-    const std::string input_path = path_to_utf8(path);
-    check_minizip_result(
-        mz_zip_reader_open_file(reader.get(), input_path.c_str()), "open XLSX package");
-
-    bool found = false;
     std::string data;
-    try {
-        for (int result = mz_zip_reader_goto_first_entry(reader.get()); result == MZ_OK;
-             result = mz_zip_reader_goto_next_entry(reader.get())) {
-            mz_zip_file* file_info = nullptr;
-            check_minizip_result(
-                mz_zip_reader_entry_get_info(reader.get(), &file_info), "read ZIP entry info");
-            if (file_info == nullptr || file_info->filename == nullptr
-                || entry.name != file_info->filename) {
-                continue;
-            }
-
-            const int length = mz_zip_reader_entry_save_buffer_length(reader.get());
-            if (length < 0) {
-                throw FastXlsxError("minizip-ng failed to get ZIP entry length");
-            }
-            if (static_cast<std::uint64_t>(length) != entry.uncompressed_size) {
-                throw FastXlsxError("DEFLATE ZIP entry uncompressed size mismatch");
-            }
-
-            data.assign(static_cast<std::size_t>(length), '\0');
-            check_minizip_result(
-                mz_zip_reader_entry_save_buffer(reader.get(), data.data(), length),
-                "read ZIP entry data");
-            found = true;
-            break;
-        }
-
-        check_minizip_result(mz_zip_reader_close(reader.get()), "close XLSX package");
-    } catch (...) {
-        (void)mz_zip_reader_close(reader.get());
-        throw;
+    if (expected_size > static_cast<std::uint64_t>(data.max_size())) {
+        throw FastXlsxError("ZIP entry is too large to read into memory");
     }
+    data.reserve(static_cast<std::size_t>(expected_size));
 
-    if (!found) {
-        throw FastXlsxError("ZIP entry is not present in the package");
+    std::string chunk;
+    while (source(chunk)) {
+        data.append(chunk);
     }
     return data;
 }
@@ -1850,7 +1808,7 @@ std::string PackageReader::read_entry(std::string_view name) const
         data = read_bytes_at(path_, entry->data_offset, entry->compressed_size);
 #ifdef FASTXLSX_HAS_MINIZIP_NG
     } else if (entry->compression_method == deflate_compression_method) {
-        data = read_deflated_entry(path_, *entry);
+        data = read_entry_chunks_to_string(entry_chunk_source(name), entry->uncompressed_size);
 #endif
     } else {
         throw_unsupported_compression_method();

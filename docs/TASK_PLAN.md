@@ -78,7 +78,8 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   decompressed chunks through `entry_read` with EOF size/CRC validation, and
   abandoned DEFLATE chunk-source callbacks best-effort close their minizip
   entry/package handles. `extract_entry_to_file()` now consumes the same chunk
-  source for DEFLATE entries; `read_entry()` still materializes DEFLATE payloads.
+  source for DEFLATE entries; `read_entry()` also consumes the chunk source before
+  returning a materialized string.
   Source-entry validation, dependency /
   dimension analysis, relationship-id audit, and output pass now consume that
   PackageReader source through pull-based chunk-source readers. Current planned
@@ -104,7 +105,8 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   `.rels`, workbook definedNames, PNG default content type, calcChain cleanup,
   `PackageReader` re-read, direct stored ZIP-entry chunk-source readback / CRC
   failure, abandoned DEFLATE chunk-source handle cleanup, DEFLATE extract-to-file
-  readback / corrupt-payload failure, large source worksheet and large queued planned-string success beyond
+  readback / corrupt-payload failure, multi-chunk DEFLATE `read_entry()`
+  materialization, large source worksheet and large queued planned-string success beyond
   the prior materialized input guard, and temporary XML file cleanup after `save_as()`.
   `PackageEditor` also has an internal `replace_part_chunks()` foundation that
   records an existing package part as a `StreamRewrite` replacement backed by
@@ -125,12 +127,12 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   DEFLATE entries, planned staged-chunk chunk-source input, queued
   planned-string chunk-source input from an already-held string, DEFLATE
   chunk-source early-abandon cleanup, DEFLATE extract-to-file chunk-source
-  handoff, chunked
+  handoff, DEFLATE read-entry chunk-source materialization handoff, chunked
   package-entry source, worksheet chunk handoff, and
   cell-replacement output-side file-backed stream
   handoff groundwork only: no public API, full XML parser/schema validation,
-  low-memory DEFLATE `read_entry()` behavior, complete compressed-input
-  streaming, full planned-input low-memory behavior,
+  low-memory DEFLATE `read_entry()` API behavior because it still returns
+  `std::string`, complete compressed-input streaming, full planned-input low-memory behavior,
   relationship repair/pruning, object semantic editing, broad range metadata
   recalculation, dependency repair, sharedStrings/style migration, or complete
   low-memory large-file editing claim.

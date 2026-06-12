@@ -194,7 +194,8 @@ pipeline。P8.29 已让 minizip DEFLATE source entry 通过 pull-based `entry_re
 路径仍会物化 payload。P8.30 已补 DEFLATE chunk source 被 caller 在 EOF 前丢弃时的
 best-effort entry/package close 回归。P8.31 已把 minizip DEFLATE
 `extract_entry_to_file()` 改为 chunk-source extraction；`read_entry()` 仍会物化
-DEFLATE payload。
+DEFLATE payload。P8.32 已把 minizip DEFLATE `read_entry()` 的解压逻辑改为复用
+同一 chunk source 再 materialize 到返回 string，消除单次 minizip buffer read 分支。
 
 目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
 
@@ -206,7 +207,8 @@ DEFLATE payload。
   size 与 CRC；若 caller 在 EOF 前丢弃 callback，chunk source state 析构会
   best-effort 关闭已打开的 minizip entry/package。`extract_entry_to_file()` 在
   minizip DEFLATE 路径下复用该 chunk source 逐块写 output file；`read_entry()` 的
-  DEFLATE 路径仍会物化 payload。
+  DEFLATE 路径也复用该 chunk source，但仍会 materialize 完整 payload 作为
+  `std::string` 返回。
 - `PackageEditor::replace_worksheet_cells()` 输出侧已有 temporary file-backed chunk；
   source package worksheet entry 不再先经 `PackageReader::extract_entry_to_file()` 落盘，
   而是由 root validation、dependency/dimension analysis、relationship-id audit 和
@@ -256,15 +258,17 @@ DEFLATE payload。
 - 还没有 public low-memory worksheet transformer。
 - 还没有完整 planned-input low-memory pipeline；queued planned replacement string 仍由
   prior helper 持有完整字符串。
-- `read_entry()` 的 DEFLATE 路径仍会物化 payload；当前只完成 `entry_chunk_source()`
-  和 `extract_entry_to_file()` 的 DEFLATE input chunk-source 窄切片。
+- `read_entry()` 因返回 `std::string` 仍会物化 payload；当前只完成
+  `entry_chunk_source()`、`extract_entry_to_file()` 和 `read_entry()` 内部解压逻辑
+  复用 DEFLATE input chunk-source 的窄切片。
 
 推荐切片顺序：
 1. 设计 PackageReader worksheet entry streaming source，明确 CRC、错误上下文和
    compressed input 限制。当前第一片已完成：stored entry 可 file-backed extraction
    并做 incremental CRC；direct stored ZIP-entry chunk source 已完成；P8.29 已完成
    minizip DEFLATE entry direct decompressed chunk source；P8.30 已补该 chunk source
-   early-abandon cleanup；P8.31 已让 minizip DEFLATE extraction 复用 chunk source。
+   early-abandon cleanup；P8.31 已让 minizip DEFLATE extraction 复用 chunk source；
+   P8.32 已让 minizip DEFLATE `read_entry()` 的解压逻辑复用 chunk source。
 2. 让 event reader 消费 streaming chunks 或 bounded windows，而不是完整 worksheet string。
    当前 first slice 已完成。
 3. 把 transformer action stream 接到 package-entry staged writer。
@@ -275,6 +279,7 @@ DEFLATE payload。
   direct stored PackageReader ZIP entry chunk source first slice 已完成；P8.29 已完成
   DEFLATE direct decompressed chunk source；P8.30 已完成 DEFLATE chunk source
   early-abandon cleanup；P8.31 已完成 DEFLATE extract-to-file chunk-source handoff。
+  P8.32 已完成 DEFLATE read-entry chunk-source materialization handoff。
   下一步是更广的 PackageReader input-state
   hardening 或 full transformer/public boundary 决策。
 4. 在 linked-object fixture 上验证大 worksheet path 的 audit / preservation 不倒退。
@@ -284,7 +289,8 @@ DEFLATE payload。
   stored entry chunk source 读回一致性、minizip DEFLATE chunk source 读回一致性和
   chunk-source CRC 失败路径，以及 DEFLATE chunk source 提前丢弃时的 source package
   handle close 回归；minizip DEFLATE `extract_entry_to_file()` 读回一致性和 corrupt
-  payload failure 也已覆盖。
+  payload failure 也已覆盖；minizip DEFLATE `read_entry()` 多 chunk materialization
+  也已覆盖。
 - `fastxlsx.package_editor` 覆盖 source-entry ZIP-entry chunk-source note、output-side
   file-backed cell replacement handoff、large source worksheet 和 queued planned string
   超过 prior materialized guard 仍成功、
@@ -3950,6 +3956,70 @@ payload。
 禁止项：
 - 不新增 public `PackageEditor` / `WorksheetEditor` API。
 - 不把 `read_entry()` 写成已低内存。
+- 不声明完整低内存大 worksheet editor、完整 compressed input streaming、Zip64、
+  data descriptor support、relationship repair、sharedStrings/styles migration 或 table /
+  drawing semantic sync。
+
+验证命令：
+```powershell
+cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build --preset windows-nmake-release-minizip --target fastxlsx_package_reader_tests && ctest --preset windows-nmake-release-minizip -R fastxlsx.package_reader --output-on-failure'
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.32 internal DEFLATE read-entry chunk-source materialization handoff
+
+状态：基础完成。
+
+类型：internal PackageReader implementation + minizip test + docs；不新增 public API /
+CMake dependency。
+
+目标：让 `PackageReader::read_entry()` 的 minizip DEFLATE 分支复用
+`entry_chunk_source()` 的 locate/open/read/close、size 和 CRC 语义，再 materialize 到
+返回的 `std::string`，消除旧的 one-shot minizip `entry_save_buffer` 分支。
+
+输入：
+- P8.29 minizip DEFLATE entry direct decompressed chunk source。
+- P8.30 DEFLATE chunk source lifecycle cleanup。
+- P8.31 DEFLATE extract-to-file chunk-source handoff。
+
+输出：
+- 新增 internal `read_entry_chunks_to_string()`，消费 `PackageReaderChunkCallback` 并
+  追加到返回字符串。
+- `PackageReader::read_entry()` 的 DEFLATE 分支改为
+  `read_entry_chunks_to_string(entry_chunk_source(name), entry.uncompressed_size)`。
+- 移除旧的 `read_deflated_entry()` one-shot minizip buffer read 分支。
+- `read_entry()` 仍返回完整 `std::string`，因此仍是 materialized read；本切片只是
+  统一 DEFLATE 解压和校验路径。
+
+触碰文件：
+- `src/package_reader.cpp`
+- `tests/test_package_reader.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/EDITING_MODEL.md`
+- `docs/TASK_PLAN.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public API headers
+- `src/package_editor.cpp`
+- `src/package_writer.cpp`
+- CMake 配置
+
+可并行性：
+- Broader PackageReader input-state hardening、full low-memory transformer 和 public
+  editor boundary 继续串行决策。
+- 与 streaming writer / sharedStrings / styles 性能切片无直接耦合。
+
+验收标准：
+- minizip preset 下 `fastxlsx.package_reader` 覆盖 DEFLATE `read_entry()` 读回一致性，
+  且 fixture 大于一个 64 KiB reader chunk。
+- minizip preset 下既有 corrupt DEFLATE `read_entry()` failure 继续通过。
+- 默认 preset 下全量 CTest 继续通过。
+- 文档明确该切片不是低内存 `read_entry()`。
+
+禁止项：
+- 不新增 public `PackageEditor` / `WorksheetEditor` API。
+- 不把 `read_entry()` 写成低内存 API；它仍返回完整 `std::string`。
 - 不声明完整低内存大 worksheet editor、完整 compressed input streaming、Zip64、
   data descriptor support、relationship repair、sharedStrings/styles migration 或 table /
   drawing semantic sync。

@@ -288,6 +288,12 @@ void test_package_reader_reads_deflated_entries_with_minizip()
     unknown_body += "payload";
     unknown_body.append(1, '\0');
     unknown_body += std::string(256, 'X');
+    for (int index = 0; index < 4096; ++index) {
+        unknown_body += "\ndeflated-read-entry-chunk-source-";
+        unknown_body += std::to_string(index);
+    }
+    check(unknown_body.size() > 64U * 1024U,
+        "DEFLATE read_entry fixture should exceed one reader chunk");
 
     fastxlsx::detail::write_package(path,
         {

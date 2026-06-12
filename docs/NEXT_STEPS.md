@@ -165,9 +165,9 @@ chunk foundations.
     from the source ZIP payload with incremental CRC; in minizip builds,
     DEFLATE entries stream decompressed chunks through `entry_read` with EOF
     size/CRC validation, and abandoned DEFLATE chunk-source callbacks
-    best-effort close their minizip entry/package handles. `read_entry()` and
-    `extract_entry_to_file()` still materialize DEFLATE payloads. Current
-    planned staged worksheet chunks also feed the same chunk-source readers.
+    best-effort close their minizip entry/package handles. `extract_entry_to_file()`
+    now consumes the same chunk source for DEFLATE entries; `read_entry()` still
+    materializes DEFLATE payloads. Current planned staged worksheet chunks also feed the same chunk-source readers.
     Ordinary queued
     planned replacement strings now feed
     a string-view chunk-source reader; the string may already have been
@@ -189,7 +189,8 @@ chunk foundations.
     skip, linked-object fixture preservation/audit visibility, and temporary file
     cleanup after the editor is destroyed. `fastxlsx.package_reader` also covers
     direct stored entry chunk-source readback, CRC failure, and abandoned
-    DEFLATE chunk-source handle cleanup. There are also large source worksheet
+    DEFLATE chunk-source handle cleanup, plus DEFLATE extract-to-file readback
+    and corrupt-payload failure. There are also large source worksheet
     and large queued planned-string regressions where worksheet XML exceeds
     `package_editor_cell_replacement_materialized_input_byte_limit` and still
     completes cell replacement through chunk-source scanning. The
@@ -202,7 +203,7 @@ chunk foundations.
     entries, planned staged-chunk chunk-source scanning, queued planned-string
     chunk-source scanning from an already-held string, and output-side
     file-backed stream handoff only: no public API, no low-memory DEFLATE
-    `read_entry()` / `extract_entry_to_file()` behavior, no complete
+    `read_entry()` behavior, no complete compressed-input streaming, no complete
     planned-input low-memory transformer, no
     broad range metadata recalculation, no sharedStrings/style migration, no
     relationship repair/pruning, no object semantic editing, and no full

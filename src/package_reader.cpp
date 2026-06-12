@@ -952,23 +952,22 @@ PackageReaderChunkCallback make_stored_entry_chunk_source(
     };
 }
 
-void write_string_to_file(std::string_view data, const std::filesystem::path& output_path)
+void extract_entry_chunks_to_file(
+    PackageReaderChunkCallback source, const std::filesystem::path& output_path)
 {
     std::ofstream output(output_path, std::ios::binary);
     if (!output) {
         throw FastXlsxError("failed to open package entry extraction output");
     }
-    std::size_t written = 0;
-    while (written < data.size()) {
-        const std::size_t chunk_size = std::min<std::size_t>(
-            data.size() - written, package_reader_io_buffer_size);
-        output.write(data.data() + written,
-            static_cast<std::streamsize>(chunk_size));
+
+    std::string chunk;
+    while (source(chunk)) {
+        output.write(chunk.data(), checked_stream_size(chunk.size()));
         if (!output) {
             throw FastXlsxError("failed to write package entry extraction output");
         }
-        written += chunk_size;
     }
+
     output.close();
     if (!output) {
         throw FastXlsxError("failed to finalize package entry extraction output");
@@ -1897,7 +1896,7 @@ void PackageReader::extract_entry_to_file(
 
 #ifdef FASTXLSX_HAS_MINIZIP_NG
     if (entry->compression_method == deflate_compression_method) {
-        write_string_to_file(read_entry(name), output_path);
+        extract_entry_chunks_to_file(entry_chunk_source(name), output_path);
         return;
     }
 #endif

@@ -186,7 +186,8 @@ file-backed chunk handoff、materialized validation input guard 和 event-reader
 chunk/window input first slice、transformer chunk-event adapter first slice、PackageEditor
 output-pass chunk transformer adapter first slice、PackageEditor dependency/dimension
 analysis chunk transformer first slice、PackageEditor relationship-id audit chunk transformer
-first slice 已有测试，worksheet root validation 仍未接入完整低内存输入。
+first slice、PackageEditor worksheet root validation chunk-window first slice 已有测试，
+PackageReader/source input 仍未接入完整低内存输入。
 
 目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
 
@@ -221,12 +222,15 @@ first slice 已有测试，worksheet root validation 仍未接入完整低内存
 - `PackageEditor::replace_worksheet_cells()` 的 rewritten relationship-id audit 已改为通过
   transformer chunk-event adapter 消费当前 bounded materialized worksheet XML chunks；
   source-entry、linked fixture 和 planned-input 成功路径都有 planned-output note 覆盖。
+- `PackageEditor::replace_worksheet_cells()` 的 worksheet root validation 已改为通过
+  event-reader chunk-window validator 消费当前 bounded materialized worksheet XML chunks；
+  event reader 也拒绝 root 前/后的非 prolog markup / 非 whitespace text。
 
 当前缺口：
 - PackageEditor cell replacement 仍会从 file-backed source 物化 validation input；
   planned replacement / chunk input 也仍会物化 current planned worksheet XML。
-- Worksheet root validation 仍基于完整 worksheet `std::string_view`；真正 rewrite
-  validation 仍不是端到端低内存。
+- PackageReader/source input provider 还不是 streaming chunk source；真正 rewrite validation
+  仍不是端到端低内存。
 - 还没有 public low-memory worksheet transformer。
 
 推荐切片顺序：
@@ -236,11 +240,9 @@ first slice 已有测试，worksheet root validation 仍未接入完整低内存
 2. 让 event reader 消费 streaming chunks 或 bounded windows，而不是完整 worksheet string。
    当前 first slice 已完成。
 3. 把 transformer action stream 接到 package-entry staged writer。
-   当前 transformer chunk-event adapter first slice 已完成；下一步是 PackageEditor
-   output-pass chunk adapter first slice 已完成。下一步是 validation/audit 输入流式化和
-   no-state-pollution。
-   当前 dependency/dimension analysis 和 relationship-id audit first slice 已完成；
-   下一步是 worksheet root validation 输入流式化。
+   当前 transformer chunk-event adapter、PackageEditor output-pass chunk adapter、
+   dependency/dimension analysis、relationship-id audit 和 worksheet root validation
+   first slices 已完成；下一步是 PackageReader/source input streaming。
 4. 在 linked-object fixture 上验证大 worksheet path 的 audit / preservation 不倒退。
 
 验收：
@@ -254,11 +256,14 @@ first slice 已有测试，worksheet root validation 仍未接入完整低内存
 - `fastxlsx.worksheet_transformer` 覆盖 chunk event stream 上的 cell replacement
   action/output emitter、missing selector summary 和 window failure 传播。
 - `fastxlsx.package_editor` 覆盖 cell replacement output pass 暴露 transformer
-  chunk-event adapter note，同时保留 materialized validation/audit 边界。
+  chunk-event adapter note，同时保留 PackageReader/source input materialization 边界。
 - `fastxlsx.package_editor` 覆盖 cell replacement dependency/dimension analysis 暴露
-  transformer chunk-event adapter note，同时保留 root validation / relationship audit 物化边界。
+  transformer chunk-event adapter note，同时保留 PackageReader/source input materialization 边界。
 - `fastxlsx.package_editor` 覆盖 cell replacement relationship-id audit 暴露 transformer
-  chunk-event adapter note，同时保留 root validation 物化边界。
+  chunk-event adapter note，同时保留 PackageReader/source input materialization 边界。
+- `fastxlsx.package_editor` 覆盖 cell replacement root validation 暴露 event-reader
+  chunk-window validator note；`fastxlsx.worksheet_event_reader` 覆盖 root 外非法 markup/text
+  拒绝路径。
 - 本轮默认 `windows-nmake-release` 构建与 9 个 CTest 条目全部通过。
 
 禁止：
@@ -2966,8 +2971,8 @@ ctest --preset windows-nmake-release -R "fastxlsx.package_reader|fastxlsx.packag
 - `fastxlsx.package_editor` 覆盖 source input over-limit 和 queued planned input
   over-limit 两条 no-state-pollution 路径。
 - 文档明确该 guard 只是 bounded materialized validation input，不是 complete
-  PackageReader input streaming、worksheet root validation streaming、low-memory worksheet
-  transformer、relationship repair、sharedStrings/style migration 或 public API。
+  PackageReader input streaming、low-memory worksheet transformer、relationship repair、
+  sharedStrings/style migration 或 public API。
 
 禁止项：
 - 不把 materialized input guard 写成低内存输入实现。
@@ -3157,7 +3162,8 @@ relationship audit 的 no-state-pollution 边界。
 
 可并行性：
 - P8.22 dependency/dimension analysis chunk input 和 P8.23 relationship-id audit chunk input
-  已完成；root validation chunk input 设计可并行只读调研。
+  已完成；P8.24 root validation chunk input 已完成；PackageReader/source input streaming
+  设计可并行只读调研。
 - 修改 dependency audit、relationship audit、dimension refresh 或 PackageEditor state
   transition 必须串行。
 
@@ -3167,9 +3173,8 @@ relationship audit 的 no-state-pollution 边界。
   note。
 - `fastxlsx.package_editor` 既有 linked-object preservation、dimension refresh、output re-read、
   temporary file cleanup、missing/invalid/no-state-pollution 回归不倒退。
-- 文档明确该 slice 不是 worksheet root validation streaming、PackageReader input streaming、
-  relationship repair、sharedStrings/style migration、full low-memory worksheet transformer
-  或 public API。
+- 文档明确该 slice 不是 PackageReader input streaming、relationship repair、
+  sharedStrings/style migration、full low-memory worksheet transformer 或 public API。
 
 禁止项：
 - 不把 PackageEditor output-pass handoff 写成端到端低内存 validation。
@@ -3222,8 +3227,8 @@ PackageEditor 对完整 worksheet `std::string_view` transformer 的依赖。
 - CMake 配置
 
 可并行性：
-- P8.23 relationship-id audit chunk input 已完成；root validation chunk input 设计可并行
-  只读调研。
+- P8.23 relationship-id audit chunk input 和 P8.24 root validation chunk input 已完成；
+  PackageReader/source input streaming 设计可并行只读调研。
 - 修改 relationship scanner namespace state、root validation grammar 或 PackageEditor state
   transition 必须串行。
 
@@ -3234,9 +3239,8 @@ PackageEditor 对完整 worksheet `std::string_view` transformer 的依赖。
 - `fastxlsx.package_editor` 既有 linked-object preservation、dimension refresh、payload audit、
   relationship audit、output re-read、temporary file cleanup、missing/invalid/no-state-pollution
   回归不倒退。
-- 文档明确该 slice 不是 worksheet root validation streaming、PackageReader input streaming、
-  relationship repair、sharedStrings/style migration、full low-memory worksheet transformer
-  或 public API。
+- 文档明确该 slice 不是 PackageReader input streaming、relationship repair、
+  sharedStrings/style migration、full low-memory worksheet transformer 或 public API。
 
 禁止项：
 - 不把 dependency/dimension analysis handoff 写成端到端低内存 validation。
@@ -3264,7 +3268,8 @@ worksheet `std::string_view` transformer 的依赖。
 输入：
 - P8.20 internal worksheet transformer chunk-event adapter。
 - P8.22 dependency/dimension analysis chunk handoff。
-- 当前 worksheet root validation 仍物化。
+- P8.23 实施时 worksheet root validation 仍物化；P8.24 已补上 root validation
+  chunk-window handoff。
 
 输出：
 - `scan_rewritten_cell_replacement_relationship_references()` 将当前 bounded materialized
@@ -3289,7 +3294,8 @@ worksheet `std::string_view` transformer 的依赖。
 - CMake 配置
 
 可并行性：
-- worksheet root validation chunk input 设计可并行只读调研。
+- P8.24 worksheet root validation chunk input 已完成；PackageReader/source input streaming
+  设计可并行只读调研。
 - 修改 root validation grammar、replacement preflight ordering 或 PackageEditor state transition
   必须串行。
 
@@ -3299,9 +3305,8 @@ worksheet `std::string_view` transformer 的依赖。
 - `fastxlsx.package_editor` 既有 linked-object preservation、dimension refresh、payload audit、
   relationship audit、output re-read、temporary file cleanup、missing/invalid/no-state-pollution
   回归不倒退。
-- 文档明确该 slice 不是 worksheet root validation streaming、PackageReader input streaming、
-  relationship repair、sharedStrings/style migration、full low-memory worksheet transformer
-  或 public API。
+- 文档明确该 slice 不是 PackageReader input streaming、relationship repair、
+  sharedStrings/style migration、full low-memory worksheet transformer 或 public API。
 
 禁止项：
 - 不把 relationship-id audit handoff 写成端到端低内存 validation。
@@ -3313,6 +3318,75 @@ worksheet `std::string_view` transformer 的依赖。
 ```powershell
 cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests
 ctest --preset windows-nmake-release -R fastxlsx.package_editor --output-on-failure --timeout 60
+```
+
+### P8.24 internal PackageEditor cell-replacement chunked worksheet root validation
+
+状态：基础完成。
+
+类型：internal PackageEditor validation handoff + tests + docs；不新增 public API /
+CMake dependency。
+
+目标：把 cell replacement worksheet root validation 从 full-buffer worksheet XML helper
+切到 P8.19 event-reader chunk-window validator，完成当前 PackageEditor cell replacement
+内部 validation / analysis / audit / output pass 对 chunk event foundations 的接线。
+
+输入：
+- P8.19 internal worksheet event-reader chunk/window input。
+- P8.20-P8.23 transformer / PackageEditor chunk handoff。
+- 当前 PackageReader/source input 仍物化为 bounded `worksheet_xml`。
+
+输出：
+- 新增 internal `validate_worksheet_replacement_xml_from_chunks()`。
+- `analyze_worksheet_cell_replacement_stream()` 用 chunk root validator 替代
+  full-buffer `validate_worksheet_replacement_xml()`。
+- `WorksheetEventState` 拒绝 worksheet root 前后的非法 markup / non-whitespace text，
+  让 chunk validator 能覆盖 single-root hygiene。
+- `EditPlan` / planned output notes 明确 root validation 经过 event-reader chunk-window
+  validator，但 PackageReader input 仍 materialized。
+
+触碰文件：
+- `src/worksheet_event_reader.cpp`
+- `tests/test_worksheet_event_reader.cpp`
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/EDITING_MODEL.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public API headers
+- `src/package_reader.cpp`
+- `src/package_writer.cpp`
+- CMake 配置
+
+可并行性：
+- PackageReader/source input streaming 设计可并行只读调研。
+- 修改 PackageReader chunk source API、compressed input behavior 或 PackageEditor state
+  transition 必须串行。
+
+验收标准：
+- `fastxlsx.worksheet_event_reader` 覆盖 root 前后非法 markup / non-whitespace text 拒绝。
+- `fastxlsx.package_editor` 覆盖 source-entry cell replacement、linked-object fixture 和
+  planned-input cell replacement 成功路径均暴露 root validation chunk-window note。
+- `fastxlsx.package_editor` 既有 linked-object preservation、dimension refresh、payload audit、
+  relationship audit、output re-read、temporary file cleanup、missing/invalid/no-state-pollution
+  回归不倒退。
+- 文档明确该 slice 不是 PackageReader input streaming、compressed input streaming、
+  relationship repair、sharedStrings/style migration、full low-memory worksheet transformer
+  或 public API。
+
+禁止项：
+- 不把 chunk root validation 写成端到端低内存 PackageReader source input。
+- 不取消 materialized input guard。
+- 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、
+  formulas、calcChain rebuild 或 range-bearing metadata。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_event_reader_tests fastxlsx_package_editor_tests
+ctest --preset windows-nmake-release -R "fastxlsx.(worksheet_event_reader|package_editor)" --output-on-failure --timeout 60
 ```
 
 ## P9 - Production ZIP/backend and package writer hardening

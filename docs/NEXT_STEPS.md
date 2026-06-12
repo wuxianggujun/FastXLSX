@@ -17,9 +17,9 @@ Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
 indexes or capability slices. The current lane has advanced through the C5
 guarded first slice: C2 only reopens for new preservation gaps, C3/C4 keep
 their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 PackageEditor worksheet root validation streaming on top of the new
-event-reader, transformer, output-pass, dependency/dimension, and relationship-id
-audit chunk foundations.
+lane is C5 PackageReader/source input streaming on top of the new event-reader,
+transformer, PackageEditor validation, analysis, audit, and output-pass chunk
+foundations.
 
 ## Current Verified Baseline
 
@@ -181,12 +181,12 @@ audit chunk foundations.
     over-limit source input and queued planned input. Treat this as
     source-entry file-backed extraction, bounded materialized validation input,
     and output-side file-backed stream handoff only: no public API, no complete
-    PackageReader input streaming, no worksheet root validation streaming, no
-    complete low-memory worksheet transformer, no broad range metadata recalculation,
-    no sharedStrings/style migration, no relationship repair/pruning, no object
-    semantic editing, and no low-memory large-file editing claim. The
-    dependency/dimension analysis, relationship-id audit, and output pass now feed
-    the current bounded materialized worksheet XML through the transformer
+    PackageReader input streaming, no complete low-memory worksheet transformer,
+    no broad range metadata recalculation, no sharedStrings/style migration, no
+    relationship repair/pruning, no object semantic editing, and no low-memory
+    large-file editing claim. Root validation feeds the current bounded materialized
+    worksheet XML through the event-reader chunk-window validator; dependency/dimension
+    analysis, relationship-id audit, and output pass feed it through the transformer
     chunk-event adapter before writing the PackageEditor-owned temporary file-backed
     chunk, and planned-output notes expose that boundary.
   - Internal package-entry chunked replacement source foundation in
@@ -2795,7 +2795,7 @@ Current foundation:
   `PackageReader`, and removing temporary XML files after editor destruction.
   This remains audit / preservation visibility, not relationship repair/pruning,
   object semantic editing, public API, complete PackageReader input streaming,
-  worksheet root validation streaming, or complete low-memory large-file editing.
+  or complete low-memory large-file editing.
   It also confirms
   worksheet-owned and drawing-owned external, URI-qualified, invalid, and
   unresolved relationship target audit notes and structured `RelationshipTargetAudit`

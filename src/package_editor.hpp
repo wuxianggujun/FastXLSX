@@ -202,10 +202,11 @@ public:
         std::string sheet_data_xml, const ReferencePolicy& policy = {});
     // Internal handoff from the P8 worksheet transformer foundation. Source
     // package entries are first extracted to a PackageReader file-backed source,
-    // but worksheet root validation still receives bounded materialized
-    // source/planned worksheet XML. Dependency/dimension analysis,
-    // relationship-id audit, and the output pass feed that bounded XML through
-    // the transformer chunk-event adapter, then stream the rewritten output into a
+    // but PackageReader source/planned worksheet XML is still bounded and
+    // materialized before this helper runs. Root validation feeds that bounded
+    // XML through the event-reader chunk-window validator. Dependency/dimension
+    // analysis, relationship-id audit, and the output pass feed it through the
+    // transformer chunk-event adapter, then stream the rewritten output into a
     // PackageEditor-owned temporary file chunk instead of materializing the
     // rewritten worksheet string. It is still not a public Patch API,
     // relationship repair, sharedStrings/style migration, or a fully low-memory

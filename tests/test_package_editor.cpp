@@ -2703,6 +2703,9 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
         check(has_note_containing(output_plan.notes,
                   {"relationship-id audit", "transformer chunk-event adapter"}),
             "cell replacement output plan should expose chunked relationship-id audit");
+        check(has_note_containing(output_plan.notes,
+                  {"root validation", "event-reader chunk-window validator"}),
+            "cell replacement output plan should expose chunked root validation");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement output plan should expose dimension refresh note");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
@@ -2866,6 +2869,9 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
         check(has_note_containing(output_plan.notes,
                   {"relationship-id audit", "transformer chunk-event adapter"}),
             "cell replacement linked output plan should expose chunked relationship-id audit");
+        check(has_note_containing(output_plan.notes,
+                  {"root validation", "event-reader chunk-window validator"}),
+            "cell replacement linked output plan should expose chunked root validation");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement linked output plan should expose dimension refresh note");
         check(has_note_containing(output_plan.notes,
@@ -3315,6 +3321,9 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
     check(has_note_containing(output_plan.notes,
               {"relationship-id audit", "transformer chunk-event adapter"}),
         "planned-input cell replacement should expose chunked relationship-id audit");
+    check(has_note_containing(output_plan.notes,
+              {"root validation", "event-reader chunk-window validator"}),
+        "planned-input cell replacement should expose chunked root validation");
     check(!has_note_containing(output_plan.notes,
               {"PackageReader file-backed", "entry source"}),
         "planned-input cell replacement should not claim source-entry extraction");

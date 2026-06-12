@@ -197,11 +197,13 @@ public:
 
     void emit_comment(std::string_view raw)
     {
+        reject_markup_after_root();
         emit(WorksheetEvent { WorksheetEventKind::Comment, raw, {}, current_row_, current_cell_ });
     }
 
     void emit_processing_instruction(std::string_view raw)
     {
+        reject_markup_after_root();
         const WorksheetEventKind kind = starts_with_at(raw, 0, "<?xml")
             ? WorksheetEventKind::XmlDeclaration
             : WorksheetEventKind::ProcessingInstruction;
@@ -210,6 +212,7 @@ public:
 
     void emit_unsupported(std::string_view raw)
     {
+        reject_markup_outside_root();
         emit(WorksheetEvent { WorksheetEventKind::Unsupported,
             raw,
             {},
@@ -223,6 +226,14 @@ public:
     {
         if (text.empty()) {
             return;
+        }
+        if (!seen_worksheet_start_ && has_non_whitespace(text)) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader found text before worksheet root");
+        }
+        if (seen_worksheet_end_ && has_non_whitespace(text)) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader found text after worksheet root");
         }
 
         const WorksheetEventKind kind =
@@ -241,6 +252,11 @@ public:
         const std::string_view name = element_name(raw);
         const bool closing = is_closing_tag(raw);
         const bool self_closing = is_self_closing_tag(raw);
+        if (name != "worksheet") {
+            reject_markup_outside_root();
+        } else {
+            reject_markup_after_root();
+        }
 
         if (closing) {
             emit_closing_tag(raw, name);
@@ -269,6 +285,23 @@ private:
     void emit(WorksheetEvent event) const
     {
         callback_(event);
+    }
+
+    void reject_markup_after_root() const
+    {
+        if (seen_worksheet_end_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader found markup after worksheet root");
+        }
+    }
+
+    void reject_markup_outside_root() const
+    {
+        if (!seen_worksheet_start_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader found markup before worksheet root");
+        }
+        reject_markup_after_root();
     }
 
     void set_current_row(std::string_view row_number)

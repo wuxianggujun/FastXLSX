@@ -995,6 +995,40 @@ void validate_worksheet_replacement_xml(std::string_view worksheet_xml)
     }
 }
 
+void validate_worksheet_replacement_xml_from_chunks(
+    std::span<const std::string_view> worksheet_chunks,
+    WorksheetEventReaderOptions options)
+{
+    bool has_non_whitespace_input = false;
+    for (std::string_view chunk : worksheet_chunks) {
+        for (const char ch : chunk) {
+            if (!is_xml_space(ch)) {
+                has_non_whitespace_input = true;
+                break;
+            }
+        }
+        if (has_non_whitespace_input) {
+            break;
+        }
+    }
+    if (!has_non_whitespace_input) {
+        throw FastXlsxError("worksheet replacement XML is empty");
+    }
+
+    bool saw_worksheet_root = false;
+    scan_worksheet_events_from_chunks(
+        worksheet_chunks,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::WorksheetStart) {
+                saw_worksheet_root = true;
+            }
+        },
+        options);
+    if (!saw_worksheet_root) {
+        throw FastXlsxError("worksheet replacement XML must start with a worksheet element");
+    }
+}
+
 std::string replace_sheet_data_in_worksheet_xml(
     std::string worksheet_xml, std::string_view sheet_data_xml)
 {
@@ -2455,11 +2489,12 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
     std::string_view worksheet_xml,
     std::span<const WorksheetCellReplacement> replacements)
 {
-    validate_worksheet_replacement_xml(worksheet_xml);
-
-    WorksheetCellReplacementStreamAnalysis analysis;
     const std::vector<std::string_view> worksheet_chunks =
         worksheet_transformer_chunks(worksheet_xml);
+    validate_worksheet_replacement_xml_from_chunks(
+        worksheet_chunks, package_editor_cell_replacement_reader_options());
+
+    WorksheetCellReplacementStreamAnalysis analysis;
     analysis.summary = scan_cell_replacement_actions_from_chunks(
         worksheet_chunks, replacements, [&](const WorksheetTransformAction& action) {
             if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
@@ -3607,6 +3642,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         "worksheet cell replacement relationship-id audit feeds the current bounded "
         "materialized worksheet XML through the transformer chunk-event adapter; worksheet "
         "root validation input is still materialized");
+    edit_plan_.add_note(
+        "worksheet cell replacement root validation feeds the current bounded materialized "
+        "worksheet XML through the event-reader chunk-window validator; PackageReader input "
+        "is still materialized");
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

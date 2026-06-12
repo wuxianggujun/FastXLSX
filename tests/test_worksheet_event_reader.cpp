@@ -267,6 +267,39 @@ void test_event_reader_rejects_malformed_boundaries()
         "worksheet event reader should reject unquoted row attributes it consumes");
 }
 
+void test_event_reader_rejects_non_prolog_markup_outside_worksheet_root()
+{
+    bool pre_root_element_failed = false;
+    try {
+        const std::string xml = R"(<ignored/><worksheet><sheetData/></worksheet>)";
+        (void)read_events(xml);
+    } catch (const std::exception&) {
+        pre_root_element_failed = true;
+    }
+    check(pre_root_element_failed,
+        "worksheet event reader should reject non-prolog markup before worksheet root");
+
+    bool post_root_element_failed = false;
+    try {
+        const std::string xml = R"(<worksheet><sheetData/></worksheet><ignored/>)";
+        (void)read_events(xml);
+    } catch (const std::exception&) {
+        post_root_element_failed = true;
+    }
+    check(post_root_element_failed,
+        "worksheet event reader should reject markup after worksheet root");
+
+    bool post_root_text_failed = false;
+    try {
+        const std::string xml = R"(<worksheet><sheetData/></worksheet>text)";
+        (void)read_events(xml);
+    } catch (const std::exception&) {
+        post_root_text_failed = true;
+    }
+    check(post_root_text_failed,
+        "worksheet event reader should reject non-whitespace text after worksheet root");
+}
+
 void test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries()
 {
     const std::string xml =
@@ -344,6 +377,7 @@ int main()
         test_event_reader_scans_core_worksheet_tokens();
         test_event_reader_handles_prefixes_inline_text_and_comments();
         test_event_reader_rejects_malformed_boundaries();
+        test_event_reader_rejects_non_prolog_markup_outside_worksheet_root();
         test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries();
         test_event_reader_chunked_scanner_uses_bounded_window_not_full_document();
         test_event_reader_chunked_scanner_rejects_oversized_incomplete_token();

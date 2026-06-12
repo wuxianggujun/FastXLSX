@@ -17,8 +17,9 @@ Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
 indexes or capability slices. The current lane has advanced through the C5
 guarded first slice: C2 only reopens for new preservation gaps, C3/C4 keep
 their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 PackageEditor validation/audit input streaming on top of the new
-event-reader, transformer, and output-pass chunk foundations.
+lane is C5 PackageEditor worksheet root validation and relationship-id audit
+streaming on top of the new event-reader, transformer, output-pass, and
+dependency/dimension chunk foundations.
 
 ## Current Verified Baseline
 
@@ -180,14 +181,14 @@ event-reader, transformer, and output-pass chunk foundations.
     over-limit source input and queued planned input. Treat this as
     source-entry file-backed extraction, bounded materialized validation input,
     and output-side file-backed stream handoff only: no public API, no complete
-    PackageReader input streaming, no PackageEditor validation/audit input
-    streaming, no complete low-memory worksheet transformer, no broad range
+    PackageReader input streaming, no worksheet root validation or relationship-id
+    audit streaming, no complete low-memory worksheet transformer, no broad range
     metadata recalculation, no sharedStrings/style migration, no relationship
     repair/pruning, no object semantic editing, and no low-memory large-file
-    editing claim. The output pass now feeds the current bounded materialized
-    worksheet XML through the transformer chunk-event adapter before writing the
-    PackageEditor-owned temporary file-backed chunk, and planned-output notes
-    expose that boundary.
+    editing claim. The dependency/dimension analysis and output pass now feed the
+    current bounded materialized worksheet XML through the transformer chunk-event
+    adapter before writing the PackageEditor-owned temporary file-backed chunk,
+    and planned-output notes expose that boundary.
   - Internal package-entry chunked replacement source foundation in
     `src/package_editor.hpp` and `src/package_editor.cpp`, covered by
     `fastxlsx.package_editor`. `PackageEditor::replace_part_chunks()` records an
@@ -2794,8 +2795,8 @@ Current foundation:
   `PackageReader`, and removing temporary XML files after editor destruction.
   This remains audit / preservation visibility, not relationship repair/pruning,
   object semantic editing, public API, complete PackageReader input streaming,
-  PackageEditor validation/audit input streaming, or complete low-memory
-  large-file editing.
+  worksheet root validation / relationship-id audit streaming, or complete
+  low-memory large-file editing.
   It also confirms
   worksheet-owned and drawing-owned external, URI-qualified, invalid, and
   unresolved relationship target audit notes and structured `RelationshipTargetAudit`

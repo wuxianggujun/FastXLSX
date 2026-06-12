@@ -2452,8 +2452,10 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
     validate_worksheet_replacement_xml(worksheet_xml);
 
     WorksheetCellReplacementStreamAnalysis analysis;
-    analysis.summary = scan_cell_replacement_actions(
-        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+    const std::vector<std::string_view> worksheet_chunks =
+        worksheet_transformer_chunks(worksheet_xml);
+    analysis.summary = scan_cell_replacement_actions_from_chunks(
+        worksheet_chunks, replacements, [&](const WorksheetTransformAction& action) {
             if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
                 if (!action.cell_reference.empty()) {
                     include_dimension_cell(analysis.dimension_scan,
@@ -2465,11 +2467,9 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
                 return;
             }
 
-            const std::size_t event_offset =
-                static_cast<std::size_t>(action.raw_xml.data() - worksheet_xml.data());
             if (action.event_kind == WorksheetEventKind::WorksheetStart
                 && analysis.worksheet_start_end == std::string_view::npos) {
-                analysis.worksheet_start_end = event_offset + action.raw_xml.size();
+                analysis.worksheet_start_end = 0;
                 analysis.worksheet_prefix = element_prefix(action.raw_xml);
                 return;
             }
@@ -2479,17 +2479,17 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
                 if (action.element_name == "dimension") {
                     if (analysis.dimension_begin == std::string_view::npos
                         && !is_closing_raw_tag(action.raw_xml)) {
-                        analysis.dimension_begin = event_offset;
+                        analysis.dimension_begin = 0;
                         analysis.dimension_prefix = element_prefix(action.raw_xml);
                         if (action.self_closing) {
-                            analysis.dimension_end = event_offset + action.raw_xml.size();
+                            analysis.dimension_end = 0;
                         }
                         return;
                     }
                     if (analysis.dimension_begin != std::string_view::npos
                         && analysis.dimension_end == std::string_view::npos
                         && is_closing_raw_tag(action.raw_xml)) {
-                        analysis.dimension_end = event_offset + action.raw_xml.size();
+                        analysis.dimension_end = 0;
                         return;
                     }
                 }
@@ -2515,7 +2515,8 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
                 append_worksheet_replacement_formula_audit(
                     analysis.payload_audit, worksheet_part);
             }
-        });
+        },
+        package_editor_cell_replacement_reader_options());
 
     if (analysis.worksheet_start_end == std::string_view::npos) {
         throw FastXlsxError("worksheet dimension refresh requires a worksheet root");
@@ -3592,6 +3593,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         "worksheet cell replacement output pass feeds the current bounded materialized "
         "worksheet XML through the transformer chunk-event adapter; validation and audit "
         "input is still materialized");
+    edit_plan_.add_note(
+        "worksheet cell replacement dependency and dimension analysis feeds the current "
+        "bounded materialized worksheet XML through the transformer chunk-event adapter; "
+        "worksheet root validation and relationship audit input are still materialized");
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

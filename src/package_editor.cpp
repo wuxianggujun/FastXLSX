@@ -1182,18 +1182,24 @@ void scan_xml_relationship_references(
     scanner.process(xml);
 }
 
+std::vector<std::string_view> worksheet_transformer_chunks(std::string_view worksheet_xml);
+WorksheetEventReaderOptions package_editor_cell_replacement_reader_options();
+
 void scan_rewritten_cell_replacement_relationship_references(
     WorksheetRelationshipReferenceScanner& scanner,
     std::string_view worksheet_xml,
     std::span<const WorksheetCellReplacement> replacements)
 {
-    const WorksheetTransformSummary summary = scan_cell_replacement_actions(
-        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+    const std::vector<std::string_view> worksheet_chunks =
+        worksheet_transformer_chunks(worksheet_xml);
+    const WorksheetTransformSummary summary = scan_cell_replacement_actions_from_chunks(
+        worksheet_chunks, replacements, [&](const WorksheetTransformAction& action) {
             scan_xml_relationship_references(scanner,
                 action.kind == WorksheetTransformActionKind::ReplaceCell
                     ? action.replacement_cell_xml
                     : action.raw_xml);
-        });
+        },
+        package_editor_cell_replacement_reader_options());
     (void)summary;
 }
 
@@ -3597,6 +3603,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         "worksheet cell replacement dependency and dimension analysis feeds the current "
         "bounded materialized worksheet XML through the transformer chunk-event adapter; "
         "worksheet root validation and relationship audit input are still materialized");
+    edit_plan_.add_note(
+        "worksheet cell replacement relationship-id audit feeds the current bounded "
+        "materialized worksheet XML through the transformer chunk-event adapter; worksheet "
+        "root validation input is still materialized");
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

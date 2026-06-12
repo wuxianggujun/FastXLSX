@@ -20,9 +20,9 @@ namespace fastxlsx::detail {
 inline constexpr std::size_t package_editor_sheet_data_local_rewrite_byte_limit =
     4U * 1024U * 1024U;
 
-// Current cell replacement validation still materializes the source/planned
-// worksheet XML before feeding the event reader. Keep the input bounded until
-// the event reader has a chunk/window API.
+// Current cell replacement validation/audit still materializes the source/planned
+// worksheet XML before feeding the PackageEditor path. Keep the input bounded
+// until PackageEditor consumes a true streamed reader/transformer source.
 inline constexpr std::size_t package_editor_cell_replacement_materialized_input_byte_limit =
     4U * 1024U * 1024U;
 
@@ -202,10 +202,10 @@ public:
         std::string sheet_data_xml, const ReferencePolicy& policy = {});
     // Internal handoff from the P8 worksheet transformer foundation. Source
     // package entries are first extracted to a PackageReader file-backed source,
-    // but the current event reader still receives bounded materialized
-    // source/planned worksheet XML for validation. It audits the
-    // source/replacement payloads before commit and streams the rewritten
-    // worksheet XML to a PackageEditor-owned temporary file chunk instead of
+    // but the current validation/audit path still receives bounded materialized
+    // source/planned worksheet XML. It audits the source/replacement payloads
+    // before commit and feeds the output pass through the transformer chunk-event
+    // adapter into a PackageEditor-owned temporary file chunk instead of
     // materializing the rewritten worksheet string. It is still not a public
     // Patch API, relationship repair, sharedStrings/style migration, or a fully
     // low-memory PackageReader input pipeline.

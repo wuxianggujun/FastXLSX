@@ -2694,6 +2694,9 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
         check(has_note_containing(output_plan.notes,
                   {"PackageReader file-backed", "entry source"}),
             "cell replacement output plan should expose source-entry file-backed extraction");
+        check(has_note_containing(output_plan.notes,
+                  {"transformer chunk-event adapter", "validation", "materialized"}),
+            "cell replacement output plan should expose chunk transformer materialized-input boundary");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement output plan should expose dimension refresh note");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
@@ -2848,6 +2851,9 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
         check(has_note_containing(output_plan.notes,
                   {"PackageReader file-backed", "entry source"}),
             "cell replacement linked output plan should expose source-entry file-backed extraction");
+        check(has_note_containing(output_plan.notes,
+                  {"transformer chunk-event adapter", "validation", "materialized"}),
+            "cell replacement linked output plan should expose chunk transformer materialized-input boundary");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement linked output plan should expose dimension refresh note");
         check(has_note_containing(output_plan.notes,
@@ -3288,6 +3294,9 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
     check(has_note_containing(output_plan.notes,
               {"planned worksheet replacement input", "materialized"}),
         "planned-input cell replacement should report materialized planned worksheet input");
+    check(has_note_containing(output_plan.notes,
+              {"transformer chunk-event adapter", "validation", "materialized"}),
+        "planned-input cell replacement should expose chunk transformer materialized-input boundary");
     check(!has_note_containing(output_plan.notes,
               {"PackageReader file-backed", "entry source"}),
         "planned-input cell replacement should not claim source-entry extraction");

@@ -2389,6 +2389,25 @@ std::string dimension_tag(std::string_view prefix, std::string_view reference)
     return tag;
 }
 
+std::vector<std::string_view> worksheet_transformer_chunks(std::string_view worksheet_xml)
+{
+    constexpr std::size_t chunk_size = 64U * 1024U;
+    std::vector<std::string_view> chunks;
+    chunks.reserve((worksheet_xml.size() + chunk_size - 1U) / chunk_size);
+    for (std::size_t position = 0; position < worksheet_xml.size(); position += chunk_size) {
+        chunks.push_back(worksheet_xml.substr(position,
+            std::min<std::size_t>(chunk_size, worksheet_xml.size() - position)));
+    }
+    return chunks;
+}
+
+WorksheetEventReaderOptions package_editor_cell_replacement_reader_options()
+{
+    WorksheetEventReaderOptions options;
+    options.max_window_bytes = package_editor_cell_replacement_materialized_input_byte_limit;
+    return options;
+}
+
 struct WorksheetCellReplacementStreamAnalysis {
     WorksheetTransformSummary summary;
     WorksheetDimensionScan dimension_scan;
@@ -2538,8 +2557,10 @@ void write_worksheet_cell_replacement_stream(const std::filesystem::path& path,
         worksheet_dimension_reference(analysis.dimension_scan);
     bool skipping_dimension = false;
 
-    (void)scan_cell_replacement_actions(
-        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
+    const std::vector<std::string_view> worksheet_chunks =
+        worksheet_transformer_chunks(worksheet_xml);
+    (void)scan_cell_replacement_actions_from_chunks(
+        worksheet_chunks, replacements, [&](const WorksheetTransformAction& action) {
             if (skipping_dimension) {
                 if (action.event_kind == WorksheetEventKind::Metadata
                     && action.element_name == "dimension"
@@ -2575,7 +2596,8 @@ void write_worksheet_cell_replacement_stream(const std::filesystem::path& path,
             }
 
             write_file_chunk(output, action.raw_xml);
-        });
+        },
+        package_editor_cell_replacement_reader_options());
 
     output.close();
     if (!output) {
@@ -3566,6 +3588,10 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
             "worksheet replacement input is still materialized before the event reader runs");
     }
+    edit_plan_.add_note(
+        "worksheet cell replacement output pass feeds the current bounded materialized "
+        "worksheet XML through the transformer chunk-event adapter; validation and audit "
+        "input is still materialized");
     edit_plan_.add_note(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "

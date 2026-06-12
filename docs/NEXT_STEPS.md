@@ -162,9 +162,11 @@ chunk foundations.
     `PackageReader::entry_chunk_source()` to scan source ZIP entries through
     chunk-source readers for root validation, dependency/dimension analysis,
     relationship-id audit, and output writing. Stored entries stream directly
-    from the source ZIP payload with incremental CRC; DEFLATE entries still fall
-    back to the current materialized `read_entry()` path. Current planned staged
-    worksheet chunks also feed the same chunk-source readers. Ordinary queued
+    from the source ZIP payload with incremental CRC; in minizip builds,
+    DEFLATE entries stream decompressed chunks through `entry_read` with EOF
+    size/CRC validation. `read_entry()` and `extract_entry_to_file()` still
+    materialize DEFLATE payloads. Current planned staged worksheet chunks also
+    feed the same chunk-source readers. Ordinary queued
     planned replacement strings now feed
     a string-view chunk-source reader; the string may already have been
     materialized by the prior planned replacement helper, so this is not a full
@@ -193,11 +195,12 @@ chunk foundations.
     sharedStrings plus owner `.rels`, styles, VBA, reachable unknown extension
     bytes plus owner `.rels`, workbook definedNames, PNG default content type,
     calcChain cleanup, and output re-read through `PackageReader`. Treat this
-    as source-entry ZIP-entry chunk-source scanning for stored entries, DEFLATE
-    materialized fallback, planned staged-chunk chunk-source scanning, queued
-    planned-string chunk-source scanning from an already-held string, and output-side
+    as source-entry ZIP-entry chunk-source scanning for stored/minizip DEFLATE
+    entries, planned staged-chunk chunk-source scanning, queued planned-string
+    chunk-source scanning from an already-held string, and output-side
     file-backed stream handoff only: no public API, no low-memory DEFLATE
-    extraction, no complete planned-input low-memory transformer, no
+    `read_entry()` / `extract_entry_to_file()` behavior, no complete
+    planned-input low-memory transformer, no
     broad range metadata recalculation, no sharedStrings/style migration, no
     relationship repair/pruning, no object semantic editing, and no full
     low-memory large-file editing claim. Planned-output notes now distinguish

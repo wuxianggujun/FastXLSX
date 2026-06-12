@@ -952,31 +952,6 @@ PackageReaderChunkCallback make_stored_entry_chunk_source(
     };
 }
 
-PackageReaderChunkCallback make_string_entry_chunk_source(std::string data)
-{
-    struct State {
-        std::string data;
-        std::size_t offset = 0;
-    };
-
-    auto state = std::make_shared<State>();
-    state->data = std::move(data);
-
-    return [state](std::string& output_chunk) -> bool {
-        if (state->offset >= state->data.size()) {
-            output_chunk.clear();
-            return false;
-        }
-
-        const std::size_t byte_count =
-            std::min<std::size_t>(
-                package_reader_io_buffer_size, state->data.size() - state->offset);
-        output_chunk.assign(state->data.data() + state->offset, byte_count);
-        state->offset += byte_count;
-        return true;
-    };
-}
-
 void write_string_to_file(std::string_view data, const std::filesystem::path& output_path)
 {
     std::ofstream output(output_path, std::ios::binary);
@@ -1014,6 +989,139 @@ void check_minizip_result(int result, const char* operation)
         throw FastXlsxError(std::string("minizip-ng failed to ") + operation
             + " (error " + std::to_string(result) + ")");
     }
+}
+
+struct DeflatedEntryChunkSourceState {
+    std::filesystem::path package_path;
+    PackageReaderEntry entry;
+    std::unique_ptr<void, MinizipReaderDeleter> reader;
+    PackageReaderCrc32Accumulator crc;
+    std::uint64_t emitted_bytes = 0;
+    bool package_open = false;
+    bool entry_open = false;
+    bool complete = false;
+};
+
+void close_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state)
+{
+    int entry_result = MZ_OK;
+    if (state.entry_open) {
+        entry_result = mz_zip_reader_entry_close(state.reader.get());
+        state.entry_open = false;
+    }
+
+    int close_result = MZ_OK;
+    if (state.package_open) {
+        close_result = mz_zip_reader_close(state.reader.get());
+        state.package_open = false;
+    }
+
+    if (entry_result == MZ_CRC_ERROR) {
+        throw FastXlsxError("ZIP entry CRC mismatch");
+    }
+    check_minizip_result(entry_result, "close ZIP entry");
+    check_minizip_result(close_result, "close XLSX package");
+}
+
+void cleanup_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state) noexcept
+{
+    if (state.entry_open) {
+        (void)mz_zip_reader_entry_close(state.reader.get());
+        state.entry_open = false;
+    }
+    if (state.package_open) {
+        (void)mz_zip_reader_close(state.reader.get());
+        state.package_open = false;
+    }
+}
+
+void open_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state)
+{
+    state.reader.reset(mz_zip_reader_create());
+    if (!state.reader) {
+        throw FastXlsxError("failed to create minizip-ng reader");
+    }
+
+    const std::string input_path = path_to_utf8(state.package_path);
+    check_minizip_result(
+        mz_zip_reader_open_file(state.reader.get(), input_path.c_str()), "open XLSX package");
+    state.package_open = true;
+
+    check_minizip_result(
+        mz_zip_reader_locate_entry(state.reader.get(), state.entry.name.c_str(), 0),
+        "locate ZIP entry");
+
+    mz_zip_file* file_info = nullptr;
+    check_minizip_result(
+        mz_zip_reader_entry_get_info(state.reader.get(), &file_info), "read ZIP entry info");
+    if (file_info == nullptr || file_info->filename == nullptr
+        || state.entry.name != file_info->filename) {
+        throw FastXlsxError("minizip-ng located an unexpected ZIP entry");
+    }
+    if (file_info->compression_method != deflate_compression_method) {
+        throw FastXlsxError("minizip-ng located entry compression method mismatch");
+    }
+    if (file_info->uncompressed_size < 0
+        || static_cast<std::uint64_t>(file_info->uncompressed_size)
+            != state.entry.uncompressed_size) {
+        throw FastXlsxError("DEFLATE ZIP entry uncompressed size mismatch");
+    }
+    if (file_info->crc != state.entry.crc32) {
+        throw FastXlsxError("DEFLATE ZIP entry CRC metadata mismatch");
+    }
+
+    check_minizip_result(mz_zip_reader_entry_open(state.reader.get()), "open ZIP entry");
+    state.entry_open = true;
+}
+
+PackageReaderChunkCallback make_deflated_entry_chunk_source(
+    std::filesystem::path package_path, PackageReaderEntry entry)
+{
+    auto state = std::make_shared<DeflatedEntryChunkSourceState>();
+    state->package_path = std::move(package_path);
+    state->entry = std::move(entry);
+
+    return [state](std::string& output_chunk) -> bool {
+        output_chunk.clear();
+        if (state->complete) {
+            return false;
+        }
+
+        if (!state->package_open) {
+            try {
+                open_deflated_entry_chunk_source(*state);
+            } catch (...) {
+                cleanup_deflated_entry_chunk_source(*state);
+                throw;
+            }
+        }
+
+        output_chunk.resize(package_reader_io_buffer_size);
+        const int read_size = mz_zip_reader_entry_read(state->reader.get(), output_chunk.data(),
+            static_cast<std::int32_t>(package_reader_io_buffer_size));
+        if (read_size > 0) {
+            output_chunk.resize(static_cast<std::size_t>(read_size));
+            state->crc.update(output_chunk);
+            state->emitted_bytes += static_cast<std::uint64_t>(read_size);
+            return true;
+        }
+
+        output_chunk.clear();
+        if (read_size < 0 && read_size != MZ_END_OF_STREAM) {
+            cleanup_deflated_entry_chunk_source(*state);
+            check_minizip_result(read_size, "read ZIP entry data");
+        }
+
+        close_deflated_entry_chunk_source(*state);
+        if (state->emitted_bytes != state->entry.uncompressed_size) {
+            throw FastXlsxError("DEFLATE ZIP entry uncompressed size mismatch");
+        }
+        if (state->crc.value() != state->entry.crc32) {
+            throw FastXlsxError("ZIP entry CRC mismatch");
+        }
+        state->complete = true;
+        return false;
+    };
 }
 
 std::string read_deflated_entry(const std::filesystem::path& path,
@@ -1751,7 +1859,7 @@ PackageReaderChunkCallback PackageReader::entry_chunk_source(std::string_view na
 
 #ifdef FASTXLSX_HAS_MINIZIP_NG
     if (entry->compression_method == deflate_compression_method) {
-        return make_string_entry_chunk_source(read_entry(name));
+        return make_deflated_entry_chunk_source(path_, *entry);
     }
 #endif
 

@@ -845,7 +845,9 @@ SourcePackage write_missing_sheet_data_source_package(std::string_view name)
     return source;
 }
 
-CalcSourcePackage write_calc_source_package(std::string_view name)
+CalcSourcePackage write_calc_source_package(std::string_view name,
+    fastxlsx::detail::PackageWriterBackend backend =
+        fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap)
 {
     CalcSourcePackage source;
     source.path = output_path(name);
@@ -887,7 +889,7 @@ CalcSourcePackage write_calc_source_package(std::string_view name)
             {"xl/calcChain.xml", source.calc_chain},
             {"custom/opaque.bin", source.unknown},
         },
-        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+        {backend});
 
     return source;
 }
@@ -5927,6 +5929,68 @@ void test_package_editor_replaces_workbook_and_preserves_linked_fixture_entries(
 }
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+
+void test_package_editor_replaces_worksheet_cells_from_deflated_source_chunk_source()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-deflated-cell-replacement-source.xlsx",
+            fastxlsx::detail::PackageWriterBackend::MinizipNg);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-deflated-cell-replacement-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const auto* source_worksheet_entry =
+        editor.reader().find_entry(worksheet_part.zip_path());
+    check(source_worksheet_entry != nullptr,
+        "DEFLATE cell replacement fixture should include worksheet entry");
+    check(source_worksheet_entry->compression_method == 8,
+        "DEFLATE cell replacement fixture should deflate worksheet entry");
+
+    const std::array replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1", R"(<c r="A1" t="inlineStr"><is><t>deflated-patched</t></is></c>)" },
+    };
+    editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "DEFLATE source cell replacement should keep worksheet in the edit plan");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "DEFLATE source cell replacement should use staged stream rewrite mode");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "DEFLATE source cell replacement should request full calculation");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "DEFLATE source cell replacement should remove stale calcChain");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(has_note_containing(output_plan.notes,
+              {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
+        "DEFLATE source cell replacement should expose PackageReader chunk source note");
+    check(has_note_containing(output_plan.notes,
+              {"relationship-id audit", "transformer chunk-source adapter"}),
+        "DEFLATE source cell replacement should expose chunked relationship audit");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(worksheet_xml, "deflated-patched",
+        "DEFLATE source cell replacement output should include replacement cell payload");
+    check_not_contains(worksheet_xml, "SUM(B1:C1)",
+        "DEFLATE source cell replacement output should remove old target cell payload");
+    check(output_reader.find_entry(calc_chain_part.zip_path()) == nullptr,
+        "DEFLATE source cell replacement output should omit stale calcChain payload");
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), "fullCalcOnLoad=\"1\"",
+        "DEFLATE source cell replacement output should request full recalculation");
+}
 
 void test_package_editor_replaces_workbook_from_deflated_source_and_preserves_unknown_payloads()
 {
@@ -38207,6 +38271,7 @@ int main()
         test_package_editor_rejects_malformed_workbook_calc_metadata_without_state_changes();
         test_package_editor_replaces_workbook_and_preserves_linked_fixture_entries();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+        test_package_editor_replaces_worksheet_cells_from_deflated_source_chunk_source();
         test_package_editor_replaces_workbook_from_deflated_source_and_preserves_unknown_payloads();
         test_package_editor_replaces_unknown_extension_from_deflated_source_and_preserves_owner_relationships();
         test_package_editor_request_full_calculation_from_deflated_source_preserves_linked_payloads();

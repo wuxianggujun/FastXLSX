@@ -189,14 +189,19 @@ dependency-dimension / relationship-id audit / worksheet root validation chunk-s
 handoff first slices、planned staged chunk input chunk-source first slice，以及 queued
 planned replacement string chunk-source first slice 已有测试。queued string 仍是前序
 planned replacement helper 持有的完整字符串，不代表 full planned-input low-memory
-pipeline。DEFLATE source chunk source 仍暂复用 `read_entry()` materialized fallback。
+pipeline。P8.29 已让 minizip DEFLATE source entry 通过 pull-based `entry_read`
+解压 chunk source 输入；`read_entry()` / `extract_entry_to_file()` 的 DEFLATE
+路径仍会物化 payload。
 
 目标：把 P8 internal reader/transformer/output chunks 从 bounded foundation 推向真正大文件 rewrite。
 
 当前已完成：
 - `PackageReader::entry_chunk_source()` 已支持 internal pull-based package entry
   chunk source。stored/no-compression entry 直接从 source ZIP payload offset 分块读取并
-  在 EOF 前做 incremental CRC；DEFLATE 构建暂复用 `read_entry()` materialized fallback。
+  在 EOF 前做 incremental CRC；`FASTXLSX_ENABLE_MINIZIP_NG` 构建下，DEFLATE
+  entry 通过 minizip `entry_read` 输出 decompressed chunks，并在 EOF 校验 emitted
+  size 与 CRC。`read_entry()` / `extract_entry_to_file()` 的 DEFLATE 路径仍会物化
+  payload。
 - `PackageEditor::replace_worksheet_cells()` 输出侧已有 temporary file-backed chunk；
   source package worksheet entry 不再先经 `PackageReader::extract_entry_to_file()` 落盘，
   而是由 root validation、dependency/dimension analysis、relationship-id audit 和
@@ -243,14 +248,17 @@ pipeline。DEFLATE source chunk source 仍暂复用 `read_entry()` materialized 
   output `PackageReader` 重读。
 
 当前缺口：
-- DEFLATE input chunk source 仍暂复用 `read_entry()` materialized fallback。
 - 还没有 public low-memory worksheet transformer。
+- 还没有完整 planned-input low-memory pipeline；queued planned replacement string 仍由
+  prior helper 持有完整字符串。
+- `read_entry()` / `extract_entry_to_file()` 的 DEFLATE 路径仍会物化 payload；当前只完成
+  `entry_chunk_source()` 的 DEFLATE input chunk-source 窄切片。
 
 推荐切片顺序：
 1. 设计 PackageReader worksheet entry streaming source，明确 CRC、错误上下文和
    compressed input 限制。当前第一片已完成：stored entry 可 file-backed extraction
-   并做 incremental CRC；当前 direct stored ZIP-entry chunk source 也已完成。DEFLATE
-   构建暂复用 `read_entry()` materialized fallback。
+   并做 incremental CRC；direct stored ZIP-entry chunk source 已完成；P8.29 已完成
+   minizip DEFLATE entry direct decompressed chunk source。
 2. 让 event reader 消费 streaming chunks 或 bounded windows，而不是完整 worksheet string。
    当前 first slice 已完成。
 3. 把 transformer action stream 接到 package-entry staged writer。
@@ -258,13 +266,15 @@ pipeline。DEFLATE source chunk source 仍暂复用 `read_entry()` materialized 
   dependency/dimension analysis、relationship-id audit 和 worksheet root validation
   first slices 已完成；source-entry file-backed chunk-source first slice 已完成；planned
   staged-chunk source 化 first slice 和 queued planned string source 化 first slice 已完成。
-  direct stored PackageReader ZIP entry chunk source first slice 已完成。下一步是
-  DEFLATE input streaming 或更广的 PackageReader input-state hardening。
+  direct stored PackageReader ZIP entry chunk source first slice 已完成；P8.29 已完成
+  DEFLATE direct decompressed chunk source。下一步是更广的 PackageReader input-state
+  hardening 或 full transformer/public boundary 决策。
 4. 在 linked-object fixture 上验证大 worksheet path 的 audit / preservation 不倒退。
 
 验收：
 - `fastxlsx.package_reader` 覆盖 `extract_entry_to_file()` stored extraction、direct
-  stored entry chunk source 读回一致性和 chunk-source CRC 失败路径。
+  stored entry chunk source 读回一致性、minizip DEFLATE chunk source 读回一致性和
+  chunk-source CRC 失败路径。
 - `fastxlsx.package_editor` 覆盖 source-entry ZIP-entry chunk-source note、output-side
   file-backed cell replacement handoff、large source worksheet 和 queued planned string
   超过 prior materialized guard 仍成功、
@@ -3685,8 +3695,9 @@ dependency/dimension analysis、relationship-id audit 和 output pass。
   `PackageReader::entry_chunk_source(entry_name)`。
 - stored/no-compression entry chunk source 直接从 source ZIP payload offset 读取
   64 KiB chunks，并在 source EOF 前做 incremental CRC 校验。
-- DEFLATE entry 在 minizip 构建下仍复用当前 `read_entry()` materialized fallback 后再
-  分块喂给 callback；这不是 compressed input low-memory streaming。
+- P8.28 完成时，DEFLATE entry 在 minizip 构建下仍复用 `read_entry()` materialized
+  fallback 后再分块喂给 callback；P8.29 已把该窄路径替换为 direct decompressed chunk
+  source，见下方 P8.29。
 - `PackageEditor::replace_worksheet_cells()` 对 source package worksheet entry 的
   analysis、relationship-id audit 和 output pass 都各自创建新的
   `PackageReader::entry_chunk_source()`，避免共享 EOF 状态，也不创建 source extraction
@@ -3711,7 +3722,7 @@ dependency/dimension analysis、relationship-id audit 和 output pass。
 - CMake 配置
 
 可并行性：
-- DEFLATE input streaming 设计可并行只读调研。
+- P8.29 已接上 DEFLATE entry chunk source 的窄切片。
 - Broader PackageReader input-state hardening 与 PackageEditor state transition 继续串行。
 
 验收标准：
@@ -3725,8 +3736,8 @@ dependency/dimension analysis、relationship-id audit 和 output pass。
   回归继续通过。
 
 禁止项：
-- 不把 DEFLATE chunk source 写成低内存 compressed input streaming；当前仍是
-  materialized fallback。
+- 不把 P8.29 的 DEFLATE entry chunk source 写成完整 compressed-package input
+  streaming；`read_entry()` / `extract_entry_to_file()` 的 DEFLATE 路径仍会物化 payload。
 - 不删除 `PackageReader::extract_entry_to_file()`；它仍是 internal helper 和历史回归。
 - 不新增 public `PackageEditor` / `WorksheetEditor` API。
 - 不修复 sharedStrings/styles、relationships、tables、drawings、definedNames、公式、
@@ -3737,6 +3748,75 @@ dependency/dimension analysis、relationship-id audit 和 output pass。
 cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build build/windows-nmake-release --target fastxlsx_package_reader_tests && ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure'
 cmd /c fx_pkg.bat
 cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P8.29 internal minizip DEFLATE entry chunk source for cell replacement
+
+状态：基础完成。
+
+类型：internal PackageReader / PackageEditor implementation + minizip tests + docs；
+不新增 public API / CMake dependency。
+
+目标：让 `PackageReader::entry_chunk_source()` 在 `FASTXLSX_ENABLE_MINIZIP_NG`
+构建下直接从 DEFLATE ZIP entry pull decompressed chunks，避免 C5 source-entry cell
+replacement 路径回退到 `read_entry()` 整 entry 物化。
+
+输入：
+- P8.28 `PackageReader::entry_chunk_source()` stored/no-compression direct ZIP payload
+  chunk source。
+- minizip-ng `mz_zip_reader_entry_open/read/close`。
+- `PackageReaderEntry` 的 name、compression method、uncompressed size 和 CRC metadata。
+
+输出：
+- `entry_chunk_source()` 的 DEFLATE 分支创建独立 minizip reader，locate/open 目标 entry，
+  再用 `mz_zip_reader_entry_read()` 输出 64 KiB decompressed chunks。
+- chunk source EOF 时关闭 entry/package，并校验 emitted byte count 与 CRC；损坏
+  DEFLATE payload 在 chunk source 消费完成前失败。
+- `PackageEditor::replace_worksheet_cells_by_name()` 在 minizip DEFLATE source workbook
+  上复用同一 source-entry chunk-source handoff，worksheet replacement 输出仍是
+  `StreamRewrite` + temporary file-backed chunk。
+- `read_entry()` / `extract_entry_to_file()` 的 DEFLATE 路径仍保持 materialized
+  implementation；本切片只覆盖 `entry_chunk_source()`。
+
+触碰文件：
+- `src/package_reader.cpp`
+- `tests/test_package_reader.cpp`
+- `tests/test_package_editor.cpp`
+- `docs/TASK_BREAKDOWN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/EDITING_MODEL.md`
+- `docs/TASK_PLAN.md`
+
+不触碰文件：
+- `include/fastxlsx/*` public API headers
+- `src/package_writer.cpp`
+- CMake 配置
+
+可并行性：
+- Broader PackageReader input-state hardening、full low-memory transformer 和 public
+  editor boundary 继续串行决策。
+- 与 streaming writer / sharedStrings / styles 性能切片无直接耦合。
+
+验收标准：
+- 默认 preset 下 `fastxlsx.package_reader` 继续通过。
+- minizip preset 下 `fastxlsx.package_reader` 覆盖 large DEFLATE entry chunk source
+  读回一致性、multi-chunk 输出和 corrupt DEFLATE chunk-source failure。
+- minizip preset 下 `fastxlsx.package_editor` 覆盖 DEFLATE source workbook 的 by-name
+  cell replacement、`PackageReader ZIP-entry chunk source` note、`StreamRewrite`
+  planned output、calcChain cleanup、output package re-read 和 `fullCalcOnLoad`。
+
+禁止项：
+- 不新增 public `PackageEditor` / `WorksheetEditor` API。
+- 不把 `read_entry()` / `extract_entry_to_file()` 写成已低内存。
+- 不声明完整低内存大 worksheet editor、完整 compressed input streaming、Zip64、
+  data descriptor support、relationship repair、sharedStrings/styles migration 或 table /
+  drawing semantic sync。
+
+验证命令：
+```powershell
+cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build build/windows-nmake-release --target fastxlsx_package_reader_tests && ctest --preset windows-nmake-release -R fastxlsx.package_reader --output-on-failure'
+cmd /c 'call "D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" >nul 2>nul && cmake --build --preset windows-nmake-release-minizip --target fastxlsx_package_reader_tests fastxlsx_package_editor_tests && ctest --preset windows-nmake-release-minizip -R "fastxlsx.package_(reader|editor)" --output-on-failure'
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

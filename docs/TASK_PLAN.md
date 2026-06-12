@@ -74,8 +74,10 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   `replace_worksheet_cells()` / `replace_worksheet_cells_by_name()` handoff
   helpers that use `PackageReader::entry_chunk_source()` for source package
   worksheet entries. Stored source entries are read directly from the ZIP
-  payload with incremental CRC; DEFLATE entries still fall back to the current
-  materialized `read_entry()` path. Source-entry validation, dependency /
+  payload with incremental CRC; minizip DEFLATE source entries now stream
+  decompressed chunks through `entry_read` with EOF size/CRC validation.
+  `read_entry()` and `extract_entry_to_file()` still materialize DEFLATE
+  payloads. Source-entry validation, dependency /
   dimension analysis, relationship-id audit, and output pass now consume that
   PackageReader source through pull-based chunk-source readers. Current planned
   staged worksheet chunks also feed those chunk-source readers. Ordinary queued
@@ -116,13 +118,14 @@ planned staged-chunk, and queued planned-string chunk-source inputs.
   mismatches, audit-heavy replacement payload policy failures, and temporary
   file cleanup after `save_as()`.
   This is P8 reader/transformer/action/output-chunk, bounded PackageEditor
-  handoff, source-entry ZIP-entry chunk-source input for stored entries, DEFLATE
-  materialized fallback, planned staged-chunk chunk-source input, queued
+  handoff, source-entry ZIP-entry chunk-source input for stored and minizip
+  DEFLATE entries, planned staged-chunk chunk-source input, queued
   planned-string chunk-source input from an already-held string, chunked
   package-entry source, worksheet chunk handoff, and
   cell-replacement output-side file-backed stream
   handoff groundwork only: no public API, full XML parser/schema validation,
-  low-memory DEFLATE input streaming, full planned-input low-memory behavior,
+  low-memory DEFLATE `read_entry()` / `extract_entry_to_file()` behavior,
+  full planned-input low-memory behavior,
   relationship repair/pruning, object semantic editing, broad range metadata
   recalculation, dependency repair, sharedStrings/style migration, or complete
   low-memory large-file editing claim.

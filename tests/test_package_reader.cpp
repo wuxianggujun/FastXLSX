@@ -356,6 +356,59 @@ void test_package_reader_reads_deflated_entries_with_minizip()
         "DEFLATE PackageReader relationship graph should attach unknown owner relationships");
 }
 
+void test_package_reader_streams_deflated_entry_chunks_with_minizip()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-deflated-entry-chunks.xlsx");
+
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(</Types>)";
+    std::string unknown_body;
+    for (int index = 0; index < 4096; ++index) {
+        unknown_body += "deflated-entry-direct-chunk-source-";
+        unknown_body += std::to_string(index);
+        unknown_body += '\n';
+    }
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    options.compression_level = fastxlsx::detail::package_writer_max_compression_level;
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/deflated.bin", unknown_body},
+        },
+        options);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    const auto* deflated_entry = reader.find_entry("custom/deflated.bin");
+    check(deflated_entry != nullptr,
+        "DEFLATE chunk-source fixture should include target entry");
+    check(deflated_entry->compression_method == 8,
+        "DEFLATE chunk-source fixture should use method 8");
+
+    fastxlsx::detail::PackageReaderChunkCallback source =
+        reader.entry_chunk_source("custom/deflated.bin");
+
+    std::string chunk;
+    std::string streamed_body;
+    std::size_t chunk_count = 0;
+    while (source(chunk)) {
+        check(!chunk.empty(), "DEFLATE chunk source should not emit empty chunks");
+        streamed_body += chunk;
+        ++chunk_count;
+    }
+
+    check(streamed_body == unknown_body,
+        "PackageReader should stream decompressed DEFLATE entry bytes through chunk source");
+    check(chunk_count > 1, "large DEFLATE entry should be delivered in multiple chunks");
+}
+
 void test_package_writer_applies_explicit_minizip_compression_levels()
 {
     const std::filesystem::path fastest_path =
@@ -467,6 +520,59 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_read()
         failed = true;
     }
     check(failed, "PackageReader should reject corrupt DEFLATE entry bytes");
+}
+
+void test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-deflated-chunks-crc-source.xlsx");
+
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(</Types>)";
+    std::string unknown_body = "deflated-chunk-crc-target";
+    unknown_body.append(512, 'Z');
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/blob.bin", unknown_body},
+        },
+        {fastxlsx::detail::PackageWriterBackend::MinizipNg});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    const ZipEntryLocation blob = find_zip_entry_location(data, "custom/blob.bin");
+    check(blob.compression_method == 8,
+        "corrupt-deflate chunk-source setup should target a DEFLATE entry");
+    check(blob.compressed_size > 0,
+        "corrupt-deflate chunk-source setup should have compressed payload bytes");
+    if (blob.data_offset + blob.compressed_size > data.size()) {
+        throw TestFailure("test ZIP compressed payload is outside file bounds");
+    }
+    const std::size_t corrupt_offset = blob.data_offset + blob.compressed_size / 2u;
+    data[corrupt_offset] = data[corrupt_offset] == 'X' ? 'Y' : 'X';
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-deflated-chunks-crc.xlsx");
+    write_file(path, data);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    fastxlsx::detail::PackageReaderChunkCallback source =
+        reader.entry_chunk_source("custom/blob.bin");
+
+    bool failed = false;
+    try {
+        std::string chunk;
+        while (source(chunk)) {
+        }
+    } catch (const std::exception&) {
+        failed = true;
+    }
+    check(failed,
+        "PackageReader should reject corrupt DEFLATE entry bytes during chunk source read");
 }
 
 #endif
@@ -2593,8 +2699,10 @@ int main()
         test_package_reader_rejects_central_directory_trailing_data_before_eocd();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
         test_package_reader_reads_deflated_entries_with_minizip();
+        test_package_reader_streams_deflated_entry_chunks_with_minizip();
         test_package_writer_applies_explicit_minizip_compression_levels();
         test_package_reader_rejects_corrupt_deflated_entry_crc_on_read();
+        test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source();
 #else
         test_package_reader_rejects_compressed_entries_without_minizip();
 #endif

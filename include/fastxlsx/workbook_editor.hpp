@@ -499,6 +499,18 @@ public:
     /// relationships, shared strings, styles, or save-time package entries.
     [[nodiscard]] std::vector<std::string> pending_replacement_worksheet_names() const;
 
+    /// Returns planned worksheet names for dirty materialized WorksheetEditor
+    /// sessions that still need save_as() auto-flush.
+    ///
+    /// API mode: In-memory / existing-workbook small-file diagnostics. Names
+    /// are reported in the current planned sheet-catalog order. Clean
+    /// materialized sessions are omitted. A successful save_as() flushes dirty
+    /// sessions into the Patch plan and clears them from this list; this method
+    /// does not itself flush, increment pending_change_count(), expose internal
+    /// EditPlan state, include whole-<sheetData> replacement payloads, or update
+    /// last_edit_error(). It returns an empty vector for a moved-from editor.
+    [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const;
+
     /// Returns whether the current planned worksheet name has a queued
     /// replace_sheet_data() payload.
     ///

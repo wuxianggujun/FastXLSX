@@ -193,6 +193,7 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `source_worksheet_names()`、`has_source_worksheet()`、`has_pending_changes()`、
   `pending_change_count()`、
   `pending_replacement_cell_count()`、`pending_replacement_worksheet_names()`、
+  `pending_materialized_worksheet_names()`、
   `has_pending_replacement()`、`estimated_pending_replacement_memory_usage()`、
   `last_edit_error()`、
   `WorkbookEditorWorksheetCatalogEntry`、`worksheet_catalog()`、
@@ -350,6 +351,7 @@ const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
 const bool sheet_dirty = sheet.has_pending_changes();
+const auto dirty_materialized_sheets = editor.pending_materialized_worksheet_names();
 
 editor.save_as("edited.xlsx");
 ```
@@ -365,6 +367,10 @@ worksheet metadata。
 `WorksheetEditor::has_pending_changes()` 只检查该 borrowed handle 对应的
 materialized session 是否 dirty；它不触发 flush、不增加
 `WorkbookEditor::pending_change_count()`，也不更新 `last_edit_error()`。
+`WorkbookEditor::pending_materialized_worksheet_names()` 返回当前 dirty
+materialized sessions 的 planned sheet names，按 planned catalog order 排列；
+它同样不触发 flush、不增加 pending change count，也不更新
+`last_edit_error()`。成功 `save_as()` 自动 flush 后，这个列表会清空。
 
 当前仍未完成：
 

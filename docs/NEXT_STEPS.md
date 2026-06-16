@@ -124,6 +124,7 @@ the large-worksheet low-memory line.
   - `WorkbookEditor::pending_change_count()`
   - `WorkbookEditor::pending_replacement_cell_count()`
   - `WorkbookEditor::pending_replacement_worksheet_names()`
+  - `WorkbookEditor::pending_materialized_worksheet_names()`
   - `WorkbookEditor::has_pending_replacement()`
   - `WorkbookEditor::estimated_pending_replacement_memory_usage()`
   - `WorkbookEditor::last_edit_error()`
@@ -1758,6 +1759,14 @@ owner move construction or move assignment; callers must reacquire from the
 moved-to / assigned-to editor. Reacquired handles can continue editing the
 transferred materialized session. This does not add detached worksheet ownership,
 automatic handle retargeting, reference counting, or thread-safety guarantees.
+
+P8.385 adds `WorkbookEditor::pending_materialized_worksheet_names()` as a
+workbook-level dirty materialized-session diagnostic. It returns current planned
+sheet names for dirty `WorksheetEditor` sessions in planned catalog order,
+omits clean materialized sessions, clears after successful `save_as()`
+auto-flush, and does not itself flush, increment `pending_change_count()`,
+expose internal Patch state, include whole-`<sheetData>` replacements, or update
+`last_edit_error()`.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

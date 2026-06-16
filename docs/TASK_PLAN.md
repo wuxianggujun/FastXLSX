@@ -156,6 +156,7 @@ own `fastxlsx.package_editor.c5` shard to keep the 60s CTest boundary stable.
   `WorkbookEditor::has_pending_changes()`, `WorkbookEditor::pending_change_count()`,
   `WorkbookEditor::pending_replacement_cell_count()`,
   `WorkbookEditor::pending_replacement_worksheet_names()`,
+  `WorkbookEditor::pending_materialized_worksheet_names()`,
   `WorkbookEditor::has_pending_replacement()`,
   `WorkbookEditor::estimated_pending_replacement_memory_usage()`,
   `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`,
@@ -2124,7 +2125,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       flushing, counting a Patch handoff, exposing internal Patch state, or
       updating `last_edit_error()`; P8.384 enforces owner-move invalidation for
       borrowed handles so callers must reacquire from the moved-to /
-      assigned-to `WorkbookEditor`.
+      assigned-to `WorkbookEditor`; P8.385 adds
+      `WorkbookEditor::pending_materialized_worksheet_names()` so callers can
+      inspect dirty materialized sessions by planned sheet name without
+      flushing, incrementing `pending_change_count()`, exposing internal Patch
+      state, or updating `last_edit_error()`.
    - Keep limits explicit: this path can hold a workbook or worksheet model in
      memory and is not the large-file low-memory path. `WorksheetEditorOptions`
      are per-materialization guardrails; current `WorkbookEditorOptions`

@@ -123,6 +123,9 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   owner-generation guard and public regressions so WorksheetEditor handles
   borrowed before `WorkbookEditor` move construction / move assignment are
   invalidated and must be reacquired from the moved-to / assigned-to editor.
+  P8.385 adds `WorkbookEditor::pending_materialized_worksheet_names()` so
+  callers can inspect dirty materialized sessions by planned sheet name without
+  forcing a `save_as()` flush or exposing internal Patch state.
   This still does not add non-default `StyleId` support, sharedStrings/style
   migration, semantic metadata sync, relationship repair, or large-file
   low-memory random editing.
@@ -18573,6 +18576,45 @@ Acceptance:
 - `fastxlsx.workbook_editor` passes.
 - Public docs state that handles must be reacquired after owner move or
   move-assignment.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.385 - Add WorkbookEditor dirty materialized sheet diagnostics
+
+Status: done.
+
+Type: public API inspection convenience, Doxygen update, public regression
+tests, and task-doc sync; no CMake membership change and no package format
+expansion.
+
+Goal: let callers inspect which materialized `WorksheetEditor` sessions are
+dirty and waiting for `WorkbookEditor::save_as()` auto-flush even when they do
+not retain every borrowed worksheet handle.
+
+Output:
+- Added `WorkbookEditor::pending_materialized_worksheet_names()`, returning
+  planned sheet names for dirty materialized sessions in current planned catalog
+  order.
+- Clean materialized sessions are omitted; failed mutations do not add names;
+  failed save-as path preflight preserves dirty names; successful `save_as()`
+  clears names after auto-flush.
+- Public regressions cover fresh / clean state, dirty one-sheet and multi-sheet
+  diagnostics, `last_edit_error()` inspection invariance, move construction,
+  move assignment replacement of target dirty names, and save-as output.
+
+Non-goals / boundary:
+- No explicit flush/commit API, dirty count, cell-count summary, dense snapshot,
+  internal `EditPlan` exposure, dependency audit exposure, whole-`<sheetData>`
+  replacement inclusion, transaction model, or large-file low-memory random
+  editing.
+- This diagnostic does not replace `WorksheetEditor::has_pending_changes()`; it
+  is the workbook-level planned-name list for dirty materialized sessions only.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public docs state that the method does not flush, increment
+  `pending_change_count()`, expose internal Patch state, include replacement
+  payloads, or update `last_edit_error()`.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

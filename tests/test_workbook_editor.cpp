@@ -104,6 +104,10 @@ void check_public_inspection_preserves_last_edit_error(
     check(editor.last_edit_error() == expected,
         "pending_replacement_worksheet_names should not update last_edit_error");
 
+    (void)editor.pending_materialized_worksheet_names();
+    check(editor.last_edit_error() == expected,
+        "pending_materialized_worksheet_names should not update last_edit_error");
+
     (void)editor.has_pending_replacement("Data");
     check(editor.last_edit_error() == expected,
         "has_pending_replacement should not update last_edit_error");
@@ -1315,6 +1319,8 @@ void test_move_assignment_from_moved_from_source_clears_dirty_target_state()
         "assignment from a moved-from source should clear replacement cell diagnostics");
     check(target.pending_replacement_worksheet_names().empty(),
         "assignment from a moved-from source should clear pending replacement names");
+    check(target.pending_materialized_worksheet_names().empty(),
+        "assignment from a moved-from source should clear dirty materialized names");
     check(!target.has_pending_replacement("DirtyBeforeMovedFromAssign"),
         "assignment from a moved-from source should clear target replacement lookup");
     check(target.estimated_pending_replacement_memory_usage() == 0,
@@ -1743,6 +1749,127 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "dirty-again",
         "post-save dirty WorksheetEditor mutation should persist on a later save_as");
+}
+
+void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-names-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "fresh WorkbookEditor should expose no pending materialized worksheet names");
+
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialized sessions should not appear in pending materialized names");
+
+    check(threw_fastxlsx_error([&] {
+        data.set_cell("a1", fastxlsx::CellValue::text("invalid-reference"));
+    }), "failed WorksheetEditor mutation should throw before pending materialized diagnostics");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "failed WorksheetEditor mutation should set last_edit_error before diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed WorksheetEditor mutation should not add a dirty materialized name");
+    check(editor.last_edit_error() == prior_error,
+        "pending materialized name inspection should not update last_edit_error");
+
+    data.set_cell(1, 1, fastxlsx::CellValue::text("dirty-data"));
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "one dirty materialized session should report its planned sheet name");
+    }
+    check(editor.pending_change_count() == 0,
+        "dirty materialized names should not count as Patch handoffs before save_as");
+
+    untouched.set_cell(1, 2, fastxlsx::CellValue::text("dirty-untouched"));
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2,
+            "two dirty materialized sessions should both be reported");
+        if (names.size() == 2) {
+            check(names[0] == "Data",
+                "dirty materialized names should follow planned catalog order");
+            check(names[1] == "Untouched",
+                "dirty materialized names should include the second planned sheet");
+        }
+    }
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "save_as path preflight failure should not flush dirty materialized sessions");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "failed save_as should preserve dirty materialized names");
+    }
+
+    editor.save_as(output);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful save_as should clear dirty materialized names");
+    check(editor.pending_change_count() == 2,
+        "successful save_as should count both materialized Patch handoffs");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "dirty-data",
+        "first dirty materialized worksheet should persist through save_as");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "dirty-untouched",
+        "second dirty materialized worksheet should persist through save_as");
+}
+
+void test_public_workbook_editor_pending_materialized_names_move_with_owner()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-names-move-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-names-move-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
+    source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-dirty-data"));
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "moved-from editor should expose no pending materialized names");
+    {
+        const std::vector<std::string> names = moved.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "move construction should preserve dirty materialized names");
+    }
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_sheet = target.worksheet("Untouched");
+    target_sheet.set_cell(1, 1, fastxlsx::CellValue::text("discarded-target-dirty"));
+    {
+        const std::vector<std::string> names = target.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Untouched",
+            "target should start with its own dirty materialized name");
+    }
+
+    target = std::move(moved);
+    check(moved.pending_materialized_worksheet_names().empty(),
+        "move-assigned-from editor should expose no pending materialized names");
+    {
+        const std::vector<std::string> names = target.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "move assignment should replace target dirty materialized names");
+    }
+
+    target.save_as(output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "save_as after move assignment should clear assigned dirty materialized names");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-dirty-data",
+        "move-assigned editor should save assigned dirty materialized payload");
+    check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-target-dirty",
+        "move assignment should not leak discarded target dirty materialized payload");
 }
 
 void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
@@ -5141,6 +5268,8 @@ int main()
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
         test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
         test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
+        test_public_workbook_editor_pending_materialized_names_track_dirty_state();
+        test_public_workbook_editor_pending_materialized_names_move_with_owner();
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();

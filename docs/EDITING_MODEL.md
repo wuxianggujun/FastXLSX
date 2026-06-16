@@ -901,6 +901,7 @@ sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
 auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
 auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 auto has_sheet_edits = sheet.has_pending_changes(); // dirty-state inspection only
+auto dirty_sheets = editor.pending_materialized_worksheet_names(); // no flush
 editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
 ```
@@ -909,6 +910,10 @@ editor.save_as("output.xlsx");
 move-assign owning `WorkbookEditor` 后，旧 handle 的 session access 会失败；调用方
 必须从 moved-to / assigned-to editor 重新获取 handle。当前实现用 owner generation
 guard 防止旧 target-side handle 在 move assignment 后误连到同名新 session。
+`WorkbookEditor::pending_materialized_worksheet_names()` 是 workbook-level
+dirty materialized-session 诊断，只返回等待 `save_as()` auto-flush 的 planned
+sheet names；它不触发 flush、不增加 pending Patch handoff count，也不暴露
+`EditPlan`。
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("small.xlsx", options);

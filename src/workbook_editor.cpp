@@ -342,6 +342,19 @@ struct WorkbookEditor::Impl {
         return names;
     }
 
+    [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
+    {
+        std::vector<std::string> names;
+        for (const std::string& sheet_name : current_worksheet_names()) {
+            const detail::MaterializedWorksheetSession* session =
+                materialized_sessions.try_session(sheet_name);
+            if (session != nullptr && session->dirty()) {
+                names.push_back(sheet_name);
+            }
+        }
+        return names;
+    }
+
     [[nodiscard]] std::vector<WorkbookEditorWorksheetEditSummary> pending_worksheet_edits()
         const
     {
@@ -512,6 +525,14 @@ std::vector<std::string> WorkbookEditor::pending_replacement_worksheet_names() c
         return {};
     }
     return impl_->pending_replacement_worksheet_names();
+}
+
+std::vector<std::string> WorkbookEditor::pending_materialized_worksheet_names() const
+{
+    if (impl_ == nullptr) {
+        return {};
+    }
+    return impl_->pending_materialized_worksheet_names();
 }
 
 bool WorkbookEditor::has_pending_replacement(std::string_view sheet_name) const noexcept

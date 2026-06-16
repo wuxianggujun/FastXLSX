@@ -228,6 +228,11 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   sheet 先改到临时 planned name，再改回 source name 时，replacement diagnostics
   会迁回 source name，`worksheet_catalog()` / `pending_worksheet_edits()` 不再标记
   renamed，输出也不会泄漏临时 planned name。
+- `pending_materialized_worksheet_names()`：只统计 dirty materialized
+  `WorksheetEditor` sessions，按 current planned catalog order 返回 planned sheet
+  names；clean materialized sessions 不返回，successful `save_as()` auto-flush 后清空。
+  它不触发 flush、不增加 `pending_change_count()`、不包含 whole-`<sheetData>`
+  replacement payloads、不暴露 internal `EditPlan`，也不更新 `last_edit_error()`。
 - `last_edit_error()`：返回最近一次失败的 public edit（当前包括
   `replace_sheet_data()`、`rename_sheet()` 和 `WorksheetEditor::set_cell()` /
   `erase_cell()` mutation failure）的可读诊断；成功 public edit 会清空它，
@@ -399,6 +404,13 @@ Current F2 gate audit:
   transferred materialized session. This is enforced with an owner generation
   guard so an overwritten target handle cannot accidentally attach to a new
   same-name assigned session.
+- P8.385 adds `WorkbookEditor::pending_materialized_worksheet_names()` as a
+  workbook-level dirty-materialized-session diagnostic. It returns planned sheet
+  names for dirty `WorksheetEditor` sessions in current planned catalog order,
+  omits clean materialized sessions, clears after successful `save_as()`
+  auto-flush, and does not itself flush, increment
+  `WorkbookEditor::pending_change_count()`, expose internal Patch state, include
+  whole-`<sheetData>` replacement payloads, or update `last_edit_error()`.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being

@@ -4,6 +4,7 @@
 /// Minimal public Patch-mode facade for editing an existing XLSX workbook.
 
 #include <fastxlsx/cell_value.hpp>
+#include <fastxlsx/workbook.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -261,6 +262,19 @@ public:
     /// iteration, metadata synchronization, or large-file low-memory random
     /// access semantics.
     [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells() const;
+
+    /// Returns an owning row-major snapshot of active sparse records inside a
+    /// rectangular range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. The
+    /// CellRange is 1-based and inclusive, and is validated against Excel
+    /// worksheet limits. Only active sparse records currently present in the
+    /// materialized store are returned; missing cells inside the range are not
+    /// synthesized as blanks. This is a filtered snapshot convenience, not a
+    /// dense matrix read, streaming iterator, metadata recalculation, or
+    /// large-file low-memory random access API. It does not mutate dirty state
+    /// and does not update WorkbookEditor::last_edit_error().
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells(CellRange range) const;
 
     /// Returns the current CellStore memory estimate for this materialized
     /// worksheet. This is not process RSS and excludes package/write buffers.

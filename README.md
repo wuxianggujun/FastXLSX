@@ -205,7 +205,7 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
   `set_cell()`、`erase_cell()`、这些 cell API 的 strict uppercase A1 string
   overload、`WorksheetCellReference`、`WorksheetCellSnapshot`、
-  `sparse_cells()`、`cell_count()` 和
+  `sparse_cells()`、`sparse_cells(CellRange)`、`cell_count()` 和
   `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；不支持 non-default `StyleId`、
   sharedStrings/style migration、semantic metadata sync、relationship repair 或
@@ -343,6 +343,7 @@ auto required_a1 = sheet.get_cell(1, 1); // Throws if the sparse cell is missing
 sheet.set_cell(1, 1, fastxlsx::CellValue::text("updated"));
 sheet.set_cell("D4", fastxlsx::CellValue::text("strict A1 ref"));
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
+const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
 
 editor.save_as("edited.xlsx");
@@ -352,8 +353,10 @@ editor.save_as("edited.xlsx");
 `A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
 行列上限的引用会被拒绝。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，
-包含 explicit blank records；它不暴露内部 iterator/lifetime，不是 range iteration，
-也不会同步 worksheet metadata。
+包含 explicit blank records；`sparse_cells(CellRange)` 返回 1-based inclusive
+range 内已经存在的 active sparse records，不补齐 missing cells。两者都不暴露内部
+iterator/lifetime，不是 dense range read 或 streaming sparse iterator，也不会同步
+worksheet metadata。
 
 当前仍未完成：
 

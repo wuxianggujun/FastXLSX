@@ -4,6 +4,7 @@
 
 #include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
+#include <fastxlsx/detail/xml.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -142,6 +143,25 @@ WorksheetEditorCellCoordinate parse_strict_a1_cell_reference(
 
     return WorksheetEditorCellCoordinate {
         static_cast<std::uint32_t>(row), static_cast<std::uint32_t>(column)};
+}
+
+void validate_worksheet_editor_cell_range(const CellRange& range)
+{
+    (void)detail::range_reference(range);
+}
+
+std::vector<WorksheetCellSnapshot> public_snapshots_from_internal(
+    const std::vector<detail::MaterializedCellSnapshot>& internal_snapshots)
+{
+    std::vector<WorksheetCellSnapshot> snapshots;
+    snapshots.reserve(internal_snapshots.size());
+    for (const detail::MaterializedCellSnapshot& snapshot : internal_snapshots) {
+        snapshots.push_back(WorksheetCellSnapshot {
+            WorksheetCellReference {snapshot.position.row, snapshot.position.column},
+            snapshot.value,
+        });
+    }
+    return snapshots;
 }
 
 bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
@@ -812,15 +832,23 @@ std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells() const
 
     const std::vector<detail::MaterializedCellSnapshot> internal_snapshots =
         session->sparse_cell_snapshots();
-    std::vector<WorksheetCellSnapshot> snapshots;
-    snapshots.reserve(internal_snapshots.size());
-    for (const detail::MaterializedCellSnapshot& snapshot : internal_snapshots) {
-        snapshots.push_back(WorksheetCellSnapshot {
-            WorksheetCellReference {snapshot.position.row, snapshot.position.column},
-            snapshot.value,
-        });
+    return public_snapshots_from_internal(internal_snapshots);
+}
+
+std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(CellRange range) const
+{
+    validate_worksheet_editor_cell_range(range);
+
+    const WorkbookEditor::Impl& state = *owner().impl_;
+    const detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name_);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
     }
-    return snapshots;
+
+    const std::vector<detail::MaterializedCellSnapshot> internal_snapshots =
+        session->sparse_cell_snapshots(range);
+    return public_snapshots_from_internal(internal_snapshots);
 }
 
 std::size_t WorksheetEditor::estimated_memory_usage() const

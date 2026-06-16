@@ -97,6 +97,20 @@ public:
         return snapshots;
     }
 
+    [[nodiscard]] std::vector<MaterializedCellSnapshot> sparse_cell_snapshots(
+        const CellRange& range) const
+    {
+        std::vector<MaterializedCellSnapshot> snapshots;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.row < range.first_row || position.row > range.last_row ||
+                position.column < range.first_column || position.column > range.last_column) {
+                continue;
+            }
+            snapshots.push_back(MaterializedCellSnapshot {position, record.to_value()});
+        }
+        return snapshots;
+    }
+
     [[nodiscard]] const CellStore& store() const noexcept
     {
         return store_;

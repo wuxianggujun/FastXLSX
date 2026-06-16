@@ -163,8 +163,8 @@ own `fastxlsx.package_editor.c5` shard to keep the 60s CTest boundary stable.
   `WorksheetEditor::try_cell()` / `get_cell()` / `set_cell()` /
   `erase_cell()` with row/column and strict uppercase A1 single-cell overloads,
   `WorksheetCellReference`, `WorksheetCellSnapshot`,
-  `WorksheetEditor::sparse_cells()`, `WorksheetEditor::cell_count()`,
-  `WorksheetEditor::estimated_memory_usage()`,
+  `WorksheetEditor::sparse_cells()`, `WorksheetEditor::sparse_cells(CellRange)`,
+  `WorksheetEditor::cell_count()`, `WorksheetEditor::estimated_memory_usage()`,
   and `FastXlsxError`.
 - Current internal In-memory foundation includes
   `include/fastxlsx/detail/cell_store.hpp` and `src/cell_store.cpp` with
@@ -2112,7 +2112,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostics, while the prior moved-to holder remains saveable. P8.378 then
       opens the first public `WorksheetEditor` slice and wires
       `WorkbookEditor::save_as()` to preflight output paths before auto-flushing
-      dirty materialized sessions into the Patch plan.
+      dirty materialized sessions into the Patch plan. P8.379 adds
+      `WorkbookEditor::try_worksheet()` and `WorksheetEditor::get_cell()`;
+      P8.380 adds strict uppercase A1 cell-reference overloads; P8.381 adds
+      owning sparse cell snapshots; P8.382 adds filtered
+      `WorksheetEditor::sparse_cells(CellRange)` snapshots without adding dense
+      range reads, streaming sparse iterators, metadata recalculation, or
+      large-file random access.
    - Keep limits explicit: this path can hold a workbook or worksheet model in
      memory and is not the large-file low-memory path. `WorksheetEditorOptions`
      are per-materialization guardrails; current `WorkbookEditorOptions`

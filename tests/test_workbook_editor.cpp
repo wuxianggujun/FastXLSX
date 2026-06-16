@@ -1734,6 +1734,75 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
         "sparse_cells should not revive erased source cells");
 }
 
+void test_public_worksheet_editor_sparse_cells_range_snapshot()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-range-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-sparse-range-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("range-excluded"));
+    sheet.set_cell(3, 2, fastxlsx::CellValue::blank());
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("range-new"));
+    sheet.erase_cell(2, 1);
+
+    const fastxlsx::CellRange range {1, 2, 3, 3};
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells = sheet.sparse_cells(range);
+    check(cells.size() == 3,
+        "range sparse_cells should return only active sparse records inside the range");
+    check(cells[0].reference.row == 1 && cells[0].reference.column == 2 &&
+            cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+            cells[0].value.number_value() == 1.0,
+        "range sparse_cells should include source-backed cells in row-major order");
+    check(cells[1].reference.row == 3 && cells[1].reference.column == 2 &&
+            cells[1].value.kind() == fastxlsx::CellValueKind::Blank,
+        "range sparse_cells should include explicit blank records");
+    check(cells[2].reference.row == 3 && cells[2].reference.column == 3 &&
+            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[2].value.text_value() == "range-new",
+        "range sparse_cells should include edited records in range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> empty_range =
+        sheet.sparse_cells(fastxlsx::CellRange {2, 2, 2, 3});
+    check(empty_range.empty(),
+        "range sparse_cells should not synthesize missing cells as blank snapshots");
+
+    sheet.set_cell(1, 2, fastxlsx::CellValue::number(2.0));
+    check(cells[0].value.number_value() == 1.0,
+        "range sparse_cells should return owning snapshots, not borrowed records");
+    check(!editor.last_edit_error().has_value(),
+        "range sparse_cells read should not update last_edit_error");
+
+    const std::size_t cell_count_before_invalid_ranges = sheet.cell_count();
+    const std::array<fastxlsx::CellRange, 4> invalid_ranges {
+        fastxlsx::CellRange {3, 3, 1, 1},
+        fastxlsx::CellRange {0, 1, 1, 1},
+        fastxlsx::CellRange {1, 1, 1048577, 1},
+        fastxlsx::CellRange {1, 1, 1, 16385},
+    };
+    for (const fastxlsx::CellRange invalid_range : invalid_ranges) {
+        check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid_range); }),
+            "range sparse_cells should reject invalid CellRange values");
+    }
+    check(sheet.cell_count() == cell_count_before_invalid_ranges,
+        "invalid range sparse_cells calls should not mutate sparse store state");
+    check(!editor.last_edit_error().has_value(),
+        "invalid range sparse_cells calls should not update last_edit_error");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "range sparse_cells should not interfere with dirty-session save_as");
+    check_contains(worksheet_xml, "range-excluded",
+        "cells outside the inspected range should still persist");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "range sparse_cells should not revive erased source cells");
+}
+
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -4892,6 +4961,7 @@ int main()
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();
         test_public_worksheet_editor_sparse_cells_snapshot();
+        test_public_worksheet_editor_sparse_cells_range_snapshot();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();

@@ -146,6 +146,7 @@ the large-worksheet low-memory line.
   - `WorksheetCellReference`
   - `WorksheetCellSnapshot`
   - `WorksheetEditor::sparse_cells()`
+  - `WorksheetEditor::sparse_cells(CellRange)`
   - `WorksheetEditor::cell_count()`
   - `WorksheetEditor::estimated_memory_usage()`
   - `WorkbookEditor::save_as()`
@@ -1736,6 +1737,13 @@ the active materialized sparse records, including explicit blank cells. It does
 not expose internal iterators, borrow CellStore lifetime, add range iteration,
 mutate dirty state, update `last_edit_error()`, or synchronize worksheet
 metadata.
+
+P8.382 adds `WorksheetEditor::sparse_cells(CellRange)` as a filtered owning
+row-major snapshot over active sparse records inside a 1-based inclusive range.
+It reuses existing `CellRange` validation, does not synthesize missing cells as
+blank snapshots, and does not mutate dirty state or update `last_edit_error()`.
+This is not a dense range read, broader range iterator, streaming sparse
+iterator, metadata recalculation, or large-file low-memory random access API.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

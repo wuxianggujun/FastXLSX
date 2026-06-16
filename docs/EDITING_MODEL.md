@@ -895,6 +895,7 @@ auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);
 auto sheet = editor.worksheet("Data");
 sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
 auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
+auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
 ```

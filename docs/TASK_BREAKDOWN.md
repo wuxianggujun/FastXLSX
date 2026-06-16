@@ -18449,6 +18449,49 @@ Acceptance:
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 
+## P8.382 - Add WorksheetEditor sparse range snapshot
+
+Status: done.
+
+Type: public API inspection convenience, Doxygen update, public regression
+tests, and task-doc sync; no CMake membership change and no package format
+expansion.
+
+Goal: add a narrow range-filtered owning snapshot API for the current
+materialized sparse `WorksheetEditor` state so callers can inspect active
+records in a small rectangular range without borrowing internal `CellStore`
+iterators or building a dense matrix.
+
+Output:
+- Added `WorksheetEditor::sparse_cells(CellRange)`, returning an owning
+  row-major `std::vector<WorksheetCellSnapshot>` copied from active sparse
+  records whose coordinates fall inside the 1-based inclusive range.
+- The overload reuses existing `CellRange` / Excel limit validation, returns
+  only records that currently exist in the materialized store, and does not
+  synthesize missing cells as blank snapshots.
+- Public tests cover source-backed values, explicit blank records, edited cells,
+  range exclusion, empty missing-cell ranges, owning-copy behavior, invalid
+  range rejection without store mutation or `last_edit_error()` updates, and
+  save-as compatibility through the existing dirty materialized-session handoff.
+
+Non-goals / boundary:
+- No dense matrix read, synthetic missing-cell fill, internal iterator exposure,
+  borrowed lifetime handles, streaming sparse iterator, row insertion/deletion,
+  non-default `StyleId` support, sharedStrings/style migration, relationship
+  repair/pruning, formula evaluation, calcChain rebuild, range/table/drawing
+  metadata sync, workbook-level in-memory guardrails, or large-file low-memory
+  random editing.
+- The range snapshot copies `CellValue` payloads and coordinates only; it does
+  not expose worksheet metadata, relationships, source XML offsets, or Patch
+  `EditPlan` state.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public-header grep finds the intended `WorksheetEditor::sparse_cells(CellRange)`
+  overload without adding dense range read or iterator APIs.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

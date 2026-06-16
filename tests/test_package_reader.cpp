@@ -1,6 +1,9 @@
 #include "../src/package_reader.hpp"
 #include "../src/package_writer.hpp"
 #include "../src/zip_store_writer.hpp"
+#include <fastxlsx/detail/cell_store.hpp>
+#include <fastxlsx/detail/materialized_worksheet_session.hpp>
+#include <fastxlsx/fastxlsx.hpp>
 #include "zip_test_utils.hpp"
 
 #include <cstdint>
@@ -8,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -46,6 +50,59 @@ void check_contains(std::string_view haystack, std::string_view needle, const ch
     }
 }
 
+void check_zip_entry_crc_mismatch_diagnostics(
+    std::string_view error, std::string_view entry_name, const char* context)
+{
+    check_contains(error, "ZIP entry '", context);
+    check_contains(error, entry_name, context);
+    check_contains(error, "' CRC mismatch", context);
+    check_contains(error, "expected ", context);
+    check_contains(error, "actual ", context);
+}
+
+void check_zip_entry_chunk_source_progress_diagnostics(std::string_view error,
+    std::size_t read_attempt,
+    std::size_t emitted_chunks,
+    std::uint64_t emitted_bytes,
+    std::uint64_t last_chunk_bytes,
+    const char* context)
+{
+    check_contains(error,
+        std::string("ZIP entry chunk-source read attempt ") + std::to_string(read_attempt),
+        context);
+    check_contains(error,
+        std::string("after emitting ") + std::to_string(emitted_chunks) + " chunk",
+        context);
+    check_contains(error, std::to_string(emitted_bytes) + " bytes", context);
+    if (emitted_chunks > 0) {
+        check_contains(error,
+            std::string("last chunk ") + std::to_string(last_chunk_bytes) + " bytes",
+            context);
+    }
+}
+
+void check_zip_entry_chunk_consumer_progress_diagnostics(std::string_view error,
+    std::string_view operation,
+    std::size_t read_attempt,
+    std::size_t consumed_chunks,
+    std::uint64_t consumed_bytes,
+    std::uint64_t last_chunk_bytes,
+    const char* context)
+{
+    check_contains(error,
+        std::string(operation) + " read attempt " + std::to_string(read_attempt),
+        context);
+    check_contains(error,
+        std::string("after consuming ") + std::to_string(consumed_chunks) + " chunk",
+        context);
+    check_contains(error, std::to_string(consumed_bytes) + " bytes", context);
+    if (consumed_chunks > 0) {
+        check_contains(error,
+            std::string("last chunk ") + std::to_string(last_chunk_bytes) + " bytes",
+            context);
+    }
+}
+
 std::filesystem::path output_path(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -61,6 +118,19 @@ void write_file(const std::filesystem::path& path, std::string_view data)
     if (!stream) {
         throw TestFailure("failed to write test package");
     }
+}
+
+fastxlsx::detail::PackageReaderChunkCallback make_package_reader_test_chunk_source(
+    std::vector<std::string> chunks)
+{
+    return [chunks, index = std::size_t {0}](std::string& output_chunk) mutable -> bool {
+        output_chunk.clear();
+        if (index == chunks.size()) {
+            return false;
+        }
+        output_chunk = chunks[index++];
+        return true;
+    };
 }
 
 void create_sparse_file_with_size(const std::filesystem::path& path, std::uint64_t size)
@@ -242,6 +312,19 @@ void expect_open_failure(const std::filesystem::path& path, const char* message)
     check(failed, message);
 }
 
+void expect_open_failure_contains(
+    const std::filesystem::path& path, std::string_view needle, const char* message)
+{
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::PackageReader::open(path);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), needle, message);
+    }
+    check(failed, message);
+}
+
 void expect_workbook_sheets_failure(const std::filesystem::path& path, const char* message)
 {
     const fastxlsx::detail::PackageReader reader =
@@ -252,6 +335,22 @@ void expect_workbook_sheets_failure(const std::filesystem::path& path, const cha
         (void)reader.workbook_sheets();
     } catch (const std::exception&) {
         failed = true;
+    }
+    check(failed, message);
+}
+
+void expect_workbook_sheets_failure_contains(
+    const std::filesystem::path& path, std::string_view needle, const char* message)
+{
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+
+    bool failed = false;
+    try {
+        (void)reader.workbook_sheets();
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), needle, message);
     }
     check(failed, message);
 }
@@ -498,10 +597,11 @@ void test_package_reader_extracts_deflated_entry_to_file_with_minizip()
 
     const std::filesystem::path extracted =
         output_path("fastxlsx-package-reader-deflated-entry-extracted.bin");
+    write_file(extracted, "stale deflated extraction output");
     reader.extract_entry_to_file("custom/deflated.bin", extracted);
 
     check(fastxlsx::test::read_file(extracted) == unknown_body,
-        "PackageReader should extract decompressed DEFLATE entry bytes to file");
+        "PackageReader should atomically replace DEFLATE extraction output with entry bytes");
 }
 
 void test_package_writer_applies_explicit_minizip_compression_levels()
@@ -611,8 +711,10 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_read()
     bool failed = false;
     try {
         (void)reader.read_entry("custom/blob.bin");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         failed = true;
+        check_contains(error.what(), "custom/blob.bin",
+            "corrupt DEFLATE read should report the ZIP entry name");
     }
     check(failed, "PackageReader should reject corrupt DEFLATE entry bytes");
 }
@@ -656,15 +758,23 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_extract()
     const fastxlsx::detail::PackageReader reader =
         fastxlsx::detail::PackageReader::open(path);
 
+    const std::filesystem::path extracted =
+        output_path("fastxlsx-package-reader-deflated-extract-crc-output.bin");
+    const std::string sentinel = "preserve existing corrupt-deflate extraction output";
+    write_file(extracted, sentinel);
+
     bool failed = false;
     try {
-        reader.extract_entry_to_file("custom/blob.bin",
-            output_path("fastxlsx-package-reader-deflated-extract-crc-output.bin"));
-    } catch (const std::exception&) {
+        reader.extract_entry_to_file("custom/blob.bin", extracted);
+    } catch (const std::exception& error) {
         failed = true;
+        check_contains(error.what(), "custom/blob.bin",
+            "corrupt DEFLATE extract should report the ZIP entry name");
     }
     check(failed,
         "PackageReader should reject corrupt DEFLATE entry bytes during extract");
+    check(fastxlsx::test::read_file(extracted) == sentinel,
+        "corrupt DEFLATE extraction should preserve the previous output file");
 }
 
 void test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source()
@@ -678,7 +788,12 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source()
         R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
         R"(</Types>)";
     std::string unknown_body = "deflated-chunk-crc-target";
-    unknown_body.append(512, 'Z');
+    for (int index = 0; index < 4096; ++index) {
+        unknown_body += "\ndeflated-chunk-crc-target-row-";
+        unknown_body += std::to_string(index);
+    }
+    check(unknown_body.size() > 64U * 1024U,
+        "DEFLATE chunk-source CRC fixture should exceed one reader chunk");
     fastxlsx::detail::write_package(source_path,
         {
             {"[Content_Types].xml", content_types},
@@ -709,12 +824,25 @@ void test_package_reader_rejects_corrupt_deflated_entry_crc_on_chunk_source()
         reader.entry_chunk_source("custom/blob.bin");
 
     bool failed = false;
+    std::size_t emitted_chunks = 0;
+    std::uint64_t emitted_bytes = 0;
+    std::uint64_t last_chunk_bytes = 0;
     try {
         std::string chunk;
         while (source(chunk)) {
+            ++emitted_chunks;
+            emitted_bytes += static_cast<std::uint64_t>(chunk.size());
+            last_chunk_bytes = static_cast<std::uint64_t>(chunk.size());
         }
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         failed = true;
+        check_contains(error.what(), "custom/blob.bin",
+            "corrupt DEFLATE chunk-source read should report the ZIP entry name");
+        check_zip_entry_chunk_source_progress_diagnostics(error.what(), emitted_chunks + 1,
+            emitted_chunks,
+            emitted_bytes,
+            last_chunk_bytes,
+            "corrupt DEFLATE chunk-source read should report reader progress");
     }
     check(failed,
         "PackageReader should reject corrupt DEFLATE entry bytes during chunk source read");
@@ -1045,6 +1173,8 @@ void test_package_writer_rejects_invalid_chunk_sources_before_output()
                 {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
         } catch (const std::exception& error) {
             failed = true;
+            check_contains(error.what(), "ZIP entry 'xl/chunk-source.xml' chunk 0",
+                "invalid chunk-source failure should identify the entry and chunk");
             check_contains(error.what(), test_case.expected_message,
                 "invalid chunk-source failure should explain the bad chunk state");
         }
@@ -1056,6 +1186,54 @@ void test_package_writer_rejects_invalid_chunk_sources_before_output()
 
     std::error_code remove_error;
     std::filesystem::remove(file_chunk_path, remove_error);
+}
+
+void test_stored_zip_backend_contextualizes_actual_chunk_failures()
+{
+    const std::filesystem::path file_chunk_path =
+        output_path("fastxlsx-stored-zip-backend-actual-chunk-context.bin");
+    const std::string original_body = "file-backed stored backend chunk";
+    write_file(file_chunk_path, original_body);
+
+    fastxlsx::detail::PackageEntryChunk file_chunk =
+        fastxlsx::detail::PackageEntryChunk::file(file_chunk_path);
+    file_chunk.has_expected_size = true;
+    file_chunk.expected_size = static_cast<std::uint64_t>(original_body.size());
+    write_file(file_chunk_path, original_body + "-extended-after-validation");
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-stored-zip-backend-actual-chunk-context.xlsx");
+
+    bool failed = false;
+    try {
+        fastxlsx::detail::write_stored_zip(path,
+            {
+                {"xl/chunk-source.xml",
+                    std::vector<fastxlsx::detail::PackageEntryChunk> {
+                        fastxlsx::detail::PackageEntryChunk::memory("<prefix/>"),
+                        file_chunk}},
+            });
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "ZIP entry 'xl/chunk-source.xml' chunk 1",
+            "stored backend chunk failure should identify the output entry and chunk");
+        check_contains(error.what(), file_chunk_path.filename().generic_string(),
+            "stored backend chunk failure should include the file-backed chunk path");
+        check_contains(error.what(), "produced more bytes than expected",
+            "stored backend chunk failure should preserve the size-contract detail");
+        check_contains(error.what(),
+            std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+            "stored backend chunk failure should report expected bytes");
+        check_contains(error.what(),
+            std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                + " bytes",
+            "stored backend chunk failure should report the lower-bound actual bytes");
+    }
+
+    std::error_code remove_error;
+    std::filesystem::remove(file_chunk_path, remove_error);
+
+    check(failed, "stored ZIP backend should reject changed file-backed chunks");
 }
 
 void test_package_reader_reads_stored_entries_and_unknown_parts()
@@ -1135,12 +1313,172 @@ void test_package_reader_extracts_stored_entry_to_file()
 
     const fastxlsx::detail::PackageReader reader =
         fastxlsx::detail::PackageReader::open(path);
+    const std::filesystem::path fresh_extracted =
+        output_path("fastxlsx-package-reader-extracted-unknown-fresh.bin");
+    std::error_code ignored;
+    std::filesystem::remove(fresh_extracted, ignored);
+    reader.extract_entry_to_file("custom/unknown.bin", fresh_extracted);
+    check(fastxlsx::test::read_file(fresh_extracted) == unknown_body,
+        "PackageReader should extract stored entries to a fresh output path");
+
     const std::filesystem::path extracted =
         output_path("fastxlsx-package-reader-extracted-unknown.bin");
+    write_file(extracted, "stale extraction output");
     reader.extract_entry_to_file("custom/unknown.bin", extracted);
 
     check(fastxlsx::test::read_file(extracted) == unknown_body,
-        "PackageReader should extract stored entry bytes to a file-backed source");
+        "PackageReader should atomically replace stored extraction output with entry bytes");
+}
+
+void test_package_reader_rejects_extracting_to_directory()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-extract-to-directory.xlsx");
+    const std::string unknown_body = "opaque unknown bytes";
+
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/unknown.bin", unknown_body},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    const std::filesystem::path directory_output =
+        output_path("fastxlsx-package-reader-extract-directory-output");
+    std::filesystem::create_directories(directory_output);
+    const std::filesystem::path sentinel = directory_output / "sentinel.txt";
+    write_file(sentinel, "preserve extraction output directory");
+
+    bool failed = false;
+    try {
+        reader.extract_entry_to_file("custom/unknown.bin", directory_output);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "output path cannot be a directory",
+            "extract-to-directory should explain the invalid output target");
+    }
+    check(failed, "PackageReader should reject directory extraction output targets");
+    check(std::filesystem::is_directory(directory_output),
+        "failed extract-to-directory should preserve the output directory");
+    check(fastxlsx::test::read_file(sentinel) == "preserve extraction output directory",
+        "failed extract-to-directory should preserve existing directory contents");
+}
+
+void test_package_reader_rejects_extracting_to_invalid_parent_before_read()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-extract-parent-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/unknown.bin", "opaque"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string corrupt_source_bytes = fastxlsx::test::read_file(source_path);
+    corrupt_first_occurrence(corrupt_source_bytes, "opaque");
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-extract-parent-corrupt.xlsx");
+    write_file(path, corrupt_source_bytes);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+
+    const std::filesystem::path missing_parent =
+        output_path("fastxlsx-package-reader-extract-missing-parent");
+    std::error_code ignored;
+    std::filesystem::remove_all(missing_parent, ignored);
+    const std::filesystem::path missing_parent_output = missing_parent / "entry.bin";
+
+    bool missing_parent_failed = false;
+    try {
+        reader.extract_entry_to_file("custom/unknown.bin", missing_parent_output);
+    } catch (const std::exception& error) {
+        missing_parent_failed = true;
+        check_contains(error.what(), "parent path must be an existing directory",
+            "extract-to-missing-parent should fail before reading entry chunks");
+    }
+    check(missing_parent_failed,
+        "PackageReader should reject extraction output with a missing parent");
+    check(!std::filesystem::exists(missing_parent_output),
+        "failed extract-to-missing-parent should not create the output file");
+
+    const std::filesystem::path file_parent =
+        output_path("fastxlsx-package-reader-extract-file-parent.bin");
+    write_file(file_parent, "not a directory");
+    const std::filesystem::path file_parent_output = file_parent / "entry.bin";
+
+    bool file_parent_failed = false;
+    try {
+        reader.extract_entry_to_file("custom/unknown.bin", file_parent_output);
+    } catch (const std::exception& error) {
+        file_parent_failed = true;
+        check_contains(error.what(), "parent path must be an existing directory",
+            "extract-to-file-parent should fail before reading entry chunks");
+    }
+    check(file_parent_failed,
+        "PackageReader should reject extraction output with a non-directory parent");
+    check(fastxlsx::test::read_file(file_parent) == "not a directory",
+        "failed extract-to-file-parent should preserve the existing parent file");
+}
+
+void test_package_reader_rejects_extracting_over_source_package()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-extract-over-source.xlsx");
+    const std::string unknown_body = "opaque unknown bytes";
+
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/unknown.bin", unknown_body},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const std::string source_bytes = fastxlsx::test::read_file(path);
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+
+    bool direct_failed = false;
+    try {
+        reader.extract_entry_to_file("custom/unknown.bin", path);
+    } catch (const std::exception& error) {
+        direct_failed = true;
+        check_contains(error.what(), "cannot overwrite the source package",
+            "extract-over-source should explain the invalid output target");
+    }
+    check(direct_failed,
+        "PackageReader should reject extracting a package entry over the source package");
+    check(fastxlsx::test::read_file(path) == source_bytes,
+        "extract-over-source rejection should preserve the source package bytes");
+
+    const std::filesystem::path equivalent_path =
+        path.parent_path() / "." / path.filename();
+    bool equivalent_failed = false;
+    try {
+        reader.extract_entry_to_file("custom/unknown.bin", equivalent_path);
+    } catch (const std::exception& error) {
+        equivalent_failed = true;
+        check_contains(error.what(), "cannot overwrite the source package",
+            "extract-over-equivalent-source should explain the invalid output target");
+    }
+    check(equivalent_failed,
+        "PackageReader should reject extracting over a path-equivalent source package");
+    check(fastxlsx::test::read_file(path) == source_bytes,
+        "extract-over-equivalent-source rejection should preserve source package bytes");
+    const fastxlsx::detail::PackageReader reopened =
+        fastxlsx::detail::PackageReader::open(path);
+    check(reopened.read_entry("custom/unknown.bin") == unknown_body,
+        "extract-over-source rejection should leave source package readable");
 }
 
 void test_package_reader_streams_stored_entry_chunks()
@@ -1180,6 +1518,180 @@ void test_package_reader_streams_stored_entry_chunks()
     check(streamed_body == unknown_body,
         "PackageReader should stream stored entry bytes through chunk source");
     check(chunk_count > 1, "large stored entry should be delivered in multiple chunks");
+}
+
+void test_package_reader_missing_entry_diagnostics_include_requested_name()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-missing-entry-context.xlsx");
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/present.bin", "present"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    constexpr std::string_view missing_entry = "custom/missing.bin";
+
+    const auto expect_missing_entry_failure =
+        [&](auto&& action, const char* scenario) {
+            bool failed = false;
+            try {
+                action();
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(), "ZIP entry 'custom/missing.bin'",
+                    "missing entry failure should name the requested entry");
+                check_contains(error.what(), "not present in the package",
+                    "missing entry failure should preserve the lookup failure reason");
+            }
+            check(failed, scenario);
+        };
+
+    expect_missing_entry_failure(
+        [&] { (void)reader.read_entry(missing_entry); },
+        "PackageReader::read_entry should reject a missing entry with context");
+    expect_missing_entry_failure(
+        [&] { (void)reader.entry_chunk_source(missing_entry); },
+        "PackageReader::entry_chunk_source should reject a missing entry with context");
+
+    const std::filesystem::path extracted =
+        output_path("fastxlsx-package-reader-missing-entry-output.bin");
+    const std::string sentinel = "preserve output when requested entry is missing";
+    write_file(extracted, sentinel);
+    expect_missing_entry_failure(
+        [&] { reader.extract_entry_to_file(missing_entry, extracted); },
+        "PackageReader::extract_entry_to_file should reject a missing entry with context");
+    check(fastxlsx::test::read_file(extracted) == sentinel,
+        "missing entry extraction should not modify an existing output file");
+}
+
+void test_package_reader_rejects_inconsistent_materialized_chunk_sizes()
+{
+    const std::string combined = fastxlsx::detail::testing_read_entry_chunks_to_string(
+        make_package_reader_test_chunk_source({"mat", "erial", "ized"}), 12);
+    check(combined == "materialized",
+        "PackageReader chunk materialization should concatenate valid chunks");
+
+    const auto expect_failure =
+        [](std::vector<std::string> chunks, std::uint64_t expected_size,
+            std::string_view expected_error_fragment,
+            std::size_t read_attempt,
+            std::size_t consumed_chunks,
+            std::uint64_t consumed_bytes,
+            std::uint64_t last_chunk_bytes,
+            const char* scenario) {
+            std::uint64_t actual_size = 0;
+            for (const std::string& chunk : chunks) {
+                actual_size += static_cast<std::uint64_t>(chunk.size());
+            }
+            bool failed = false;
+            try {
+                (void)fastxlsx::detail::testing_read_entry_chunks_to_string(
+                    make_package_reader_test_chunk_source(chunks), expected_size);
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(), expected_error_fragment,
+                    "chunk materialization failure should explain the size contract violation");
+                if (expected_error_fragment != std::string_view("emitted an empty chunk")) {
+                    check_contains(error.what(),
+                        std::string("expected ") + std::to_string(expected_size) + " bytes",
+                        "chunk materialization failure should report expected bytes");
+                    const std::string actual_prefix =
+                        actual_size > expected_size ? "actual at least " : "actual ";
+                    check_contains(error.what(),
+                        actual_prefix + std::to_string(actual_size) + " bytes",
+                        "chunk materialization failure should report actual bytes");
+                }
+                check_zip_entry_chunk_consumer_progress_diagnostics(error.what(),
+                    "ZIP entry materialization chunk source",
+                    read_attempt,
+                    consumed_chunks,
+                    consumed_bytes,
+                    last_chunk_bytes,
+                    "chunk materialization failure should report consumer progress");
+            }
+            check(failed, scenario);
+        };
+
+    expect_failure({"short"}, 6, "ended before expected bytes", 2, 1, 5, 5,
+        "PackageReader should reject chunk sources that end before the expected size");
+    expect_failure({"over", "flow"}, 7, "produced more bytes than expected", 2, 1, 4, 4,
+        "PackageReader should reject chunk sources that produce too many bytes");
+    expect_failure({""}, 0, "emitted an empty chunk", 1, 0, 0, 0,
+        "PackageReader should reject empty chunks from a materialized entry source");
+}
+
+void test_package_reader_rejects_inconsistent_extraction_chunk_sizes_before_commit()
+{
+    const std::filesystem::path package_path =
+        output_path("fastxlsx-package-reader-extract-size-contract-source.xlsx");
+    write_file(package_path, "source package placeholder");
+
+    const std::filesystem::path extracted =
+        output_path("fastxlsx-package-reader-extract-size-contract-output.bin");
+    const std::string sentinel = "preserve stale extraction output";
+    write_file(extracted, sentinel);
+
+    fastxlsx::detail::testing_extract_entry_chunks_to_committed_file(package_path,
+        make_package_reader_test_chunk_source({"ex", "act"}), extracted, 5);
+    check(fastxlsx::test::read_file(extracted) == "exact",
+        "PackageReader extraction chunk helper should commit exact-size output");
+
+    const auto expect_failure =
+        [&](std::vector<std::string> chunks, std::uint64_t expected_size,
+            std::string_view expected_error_fragment,
+            std::size_t read_attempt,
+            std::size_t consumed_chunks,
+            std::uint64_t consumed_bytes,
+            std::uint64_t last_chunk_bytes,
+            const char* scenario) {
+            std::uint64_t actual_size = 0;
+            for (const std::string& chunk : chunks) {
+                actual_size += static_cast<std::uint64_t>(chunk.size());
+            }
+            write_file(extracted, sentinel);
+            bool failed = false;
+            try {
+                fastxlsx::detail::testing_extract_entry_chunks_to_committed_file(package_path,
+                    make_package_reader_test_chunk_source(chunks), extracted, expected_size);
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(), expected_error_fragment,
+                    "chunk extraction failure should explain the size contract violation");
+                if (expected_error_fragment != std::string_view("emitted an empty chunk")) {
+                    check_contains(error.what(),
+                        std::string("expected ") + std::to_string(expected_size) + " bytes",
+                        "chunk extraction failure should report expected bytes");
+                    const std::string actual_prefix =
+                        actual_size > expected_size ? "actual at least " : "actual ";
+                    check_contains(error.what(),
+                        actual_prefix + std::to_string(actual_size) + " bytes",
+                        "chunk extraction failure should report actual bytes");
+                }
+                check_zip_entry_chunk_consumer_progress_diagnostics(error.what(),
+                    "ZIP entry file extraction chunk source",
+                    read_attempt,
+                    consumed_chunks,
+                    consumed_bytes,
+                    last_chunk_bytes,
+                    "chunk extraction failure should report consumer progress");
+            }
+            check(failed, scenario);
+            check(fastxlsx::test::read_file(extracted) == sentinel,
+                "failed chunk extraction should preserve the previous output file");
+        };
+
+    expect_failure({"short"}, 6, "ended before expected bytes", 2, 1, 5, 5,
+        "PackageReader extraction should reject chunk sources that end early");
+    expect_failure({"over", "flow"}, 7, "produced more bytes than expected", 2, 1, 4, 4,
+        "PackageReader extraction should reject chunk sources that produce too many bytes");
+    expect_failure({""}, 0, "emitted an empty chunk", 1, 0, 0, 0,
+        "PackageReader extraction should reject empty chunks");
 }
 
 void test_package_reader_ingests_content_types_and_relationships()
@@ -1456,74 +1968,91 @@ void test_package_reader_resolves_workbook_sheet_catalog()
         "planned sheet-name lookup should support alternate relationship prefixes");
 
     const auto expect_planned_workbook_failure =
-        [&](std::string_view workbook_xml, const char* message) {
+        [&](std::string_view workbook_xml, std::string_view expected_diagnostic,
+            const char* message) {
             bool planned_failed = false;
             try {
                 (void)reader.workbook_sheets_from_xml(workbook_xml);
-            } catch (const std::exception&) {
+            } catch (const std::exception& error) {
                 planned_failed = true;
+                check_contains(error.what(), expected_diagnostic, message);
             }
             check(planned_failed, message);
         };
     const auto expect_planned_sheet_lookup_failure =
-        [&](std::string_view sheet_name, std::string_view workbook_xml, const char* message) {
+        [&](std::string_view sheet_name, std::string_view workbook_xml,
+            std::string_view expected_diagnostic, const char* message) {
             bool planned_failed = false;
             try {
                 (void)reader.worksheet_part_by_sheet_name_from_xml(sheet_name, workbook_xml);
-            } catch (const std::exception&) {
+            } catch (const std::exception& error) {
                 planned_failed = true;
+                check_contains(error.what(), expected_diagnostic, message);
             }
             check(planned_failed, message);
         };
     expect_planned_sheet_lookup_failure("Planned Ignored Outer", planned_scoped_workbook,
+        "workbook sheet name is not present",
         "planned sheet-name lookup should ignore sheet tags outside the sheets catalog");
     expect_planned_sheet_lookup_failure(
         "Planned Ignored Decoy Catalog", planned_scoped_workbook,
+        "workbook sheet name is not present",
         "planned sheet-name lookup should ignore non-root workbook sheets catalogs");
     expect_planned_sheet_lookup_failure("Planned Ignored Nested", planned_scoped_workbook,
+        "workbook sheet name is not present",
         "planned sheet-name lookup should ignore non-direct sheet tags inside sheets");
     const std::string planned_wrong_namespace_workbook =
         R"(<workbook xmlns:x="urn:fastxlsx:not-relationships">)"
         R"(<sheets><sheet name="Planned Wrong Namespace" sheetId="1" x:id="rId1"/></sheets>)"
         R"(</workbook>)";
     expect_planned_workbook_failure(planned_wrong_namespace_workbook,
+        "workbook sheet is missing relationship id",
         "planned workbook sheet catalog should reject wrong-namespace id attributes");
     const std::string planned_unqualified_id_workbook =
         R"(<workbook><sheets>)"
         R"(<sheet name="Planned Plain Id" sheetId="1" id="rId1"/>)"
         R"(</sheets></workbook>)";
     expect_planned_workbook_failure(planned_unqualified_id_workbook,
+        "workbook sheet is missing relationship id",
         "planned workbook sheet catalog should reject unqualified id attributes");
     const std::string planned_missing_relationship_id_workbook =
         R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheets><sheet name="Planned Missing Rel" sheetId="1" r:id="missingRel"/></sheets>)"
         R"(</workbook>)";
     expect_planned_workbook_failure(planned_missing_relationship_id_workbook,
+        "workbook sheet relationship id is not present in workbook .rels",
         "planned workbook sheet catalog should reject sheet ids absent from workbook relationships");
     expect_planned_sheet_lookup_failure(
         "Planned Missing Rel", planned_missing_relationship_id_workbook,
+        "workbook sheet relationship id is not present in workbook .rels",
         "planned sheet-name lookup should reject sheet ids absent from workbook relationships");
     bool ignored_outer_failed = false;
     try {
         (void)reader.worksheet_part_by_sheet_name("Ignored Outer");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         ignored_outer_failed = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "sheet-name lookup should preserve missing-sheet diagnostic for ignored outer sheets");
     }
     check(ignored_outer_failed,
         "sheet-name lookup should ignore sheet tags outside the sheets catalog");
     bool ignored_decoy_catalog_failed = false;
     try {
         (void)reader.worksheet_part_by_sheet_name("Ignored Decoy Catalog");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         ignored_decoy_catalog_failed = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "sheet-name lookup should preserve missing-sheet diagnostic for decoy catalogs");
     }
     check(ignored_decoy_catalog_failed,
         "sheet-name lookup should ignore non-root workbook sheets catalogs");
     bool ignored_nested_failed = false;
     try {
         (void)reader.worksheet_part_by_sheet_name("Ignored Nested");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         ignored_nested_failed = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "sheet-name lookup should preserve missing-sheet diagnostic for nested decoy sheets");
     }
     check(ignored_nested_failed,
         "sheet-name lookup should ignore non-direct sheet tags inside sheets");
@@ -1531,8 +2060,10 @@ void test_package_reader_resolves_workbook_sheet_catalog()
     bool failed = false;
     try {
         (void)reader.worksheet_part_by_sheet_name("Missing");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         failed = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "sheet-name lookup should preserve missing-sheet diagnostic");
     }
     check(failed, "sheet-name lookup should reject missing sheet names");
 
@@ -1576,11 +2107,426 @@ void test_package_reader_resolves_workbook_sheet_catalog()
     bool ambiguous_failed = false;
     try {
         (void)duplicate_reader.worksheet_part_by_sheet_name("Duplicated");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         ambiguous_failed = true;
+        check_contains(error.what(), "workbook sheet name is ambiguous",
+            "sheet-name lookup should preserve ambiguous duplicate sheet diagnostic");
     }
     check(ambiguous_failed,
         "sheet-name lookup should reject ambiguous duplicate sheet names");
+
+    bool ambiguous_cell_store_failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            duplicate_reader, "Duplicated");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        ambiguous_cell_store_failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Duplicated'",
+            "CellStore loader should report the requested duplicate sheet name");
+        check_contains(error.what(), "workbook sheet name is ambiguous",
+            "CellStore loader should preserve the ambiguous sheet-name diagnostic");
+    }
+    check(ambiguous_cell_store_failed,
+        "CellStore loader should reject ambiguous duplicate sheet names");
+}
+
+void test_package_reader_loads_cell_store_from_workbook_sheet()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-cell-store.xlsx");
+
+    auto workbook = fastxlsx::Workbook::create();
+    auto& source_sheet = workbook.add_worksheet("Source");
+    source_sheet.append_row({
+        fastxlsx::Cell::number(12.5),
+        fastxlsx::Cell::text(" text & <tag> "),
+        fastxlsx::Cell::boolean(true),
+    });
+    source_sheet.append_row({
+        fastxlsx::Cell::formula("SUM(A1:C1)&\"<ok>\""),
+    });
+    workbook.add_worksheet("Untouched");
+    workbook.save(path);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    const fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(reader, "Source");
+
+    check(store.cell_count() == 4,
+        "workbook sheet loader should materialize the selected worksheet cells");
+
+    const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
+    check(number != nullptr, "workbook sheet loader should load the numeric cell");
+    check(number->kind == fastxlsx::CellValueKind::Number,
+        "workbook sheet loader numeric kind mismatch");
+    check(number->number_value == 12.5,
+        "workbook sheet loader numeric payload mismatch");
+
+    const fastxlsx::detail::CellRecord* text = store.find_cell(1, 2);
+    check(text != nullptr, "workbook sheet loader should load the inline string cell");
+    check(text->kind == fastxlsx::CellValueKind::Text,
+        "workbook sheet loader inline string kind mismatch");
+    check(text->text_value == " text & <tag> ",
+        "workbook sheet loader inline string payload mismatch");
+
+    const fastxlsx::detail::CellRecord* boolean = store.find_cell(1, 3);
+    check(boolean != nullptr, "workbook sheet loader should load the boolean cell");
+    check(boolean->kind == fastxlsx::CellValueKind::Boolean,
+        "workbook sheet loader boolean kind mismatch");
+    check(boolean->boolean_value,
+        "workbook sheet loader boolean payload mismatch");
+
+    const fastxlsx::detail::CellRecord* formula = store.find_cell(2, 1);
+    check(formula != nullptr, "workbook sheet loader should load the formula cell");
+    check(formula->kind == fastxlsx::CellValueKind::Formula,
+        "workbook sheet loader formula kind mismatch");
+    check(formula->text_value == "SUM(A1:C1)&\"<ok>\"",
+        "workbook sheet loader formula text mismatch");
+
+    fastxlsx::detail::CellStoreOptions max_cell_options;
+    max_cell_options.max_cells = 1;
+    bool max_cells_failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            reader, "Source", max_cell_options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        max_cells_failed = true;
+        check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+            "workbook sheet loader should propagate CellStore max_cells guardrails");
+    }
+    check(max_cells_failed, "workbook sheet loader should reject max_cells overflow");
+
+    const fastxlsx::detail::CellStore reloaded_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(reader, "Source");
+    check(reloaded_store.cell_count() == 4,
+        "workbook sheet loader guardrail failure should not poison the source reader");
+
+    bool missing_sheet_failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(reader, "Missing");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        missing_sheet_failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Missing'",
+            "workbook sheet loader should report the requested missing sheet name");
+        check_contains(error.what(), "workbook sheet name is not present",
+            "workbook sheet loader should report missing sheet names");
+    }
+    check(missing_sheet_failed, "workbook sheet loader should reject missing sheets");
+}
+
+void test_package_reader_materializes_registry_session_from_workbook_sheet()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-materialized-session.xlsx");
+
+    auto workbook = fastxlsx::Workbook::create();
+    auto& source_sheet = workbook.add_worksheet("Source");
+    source_sheet.append_row({
+        fastxlsx::Cell::number(42.0),
+        fastxlsx::Cell::text("source"),
+    });
+    workbook.add_worksheet("Untouched");
+    workbook.save(path);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+
+    fastxlsx::detail::CellStoreOptions options;
+    options.max_cells = 4;
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    auto& session = registry.materialize_from_workbook_sheet(
+        reader, "Planned", "Source", options);
+
+    check(session.planned_name() == "Planned",
+        "registry materialization should keep the planned sheet name");
+    check(session.options_match(options),
+        "registry materialization should preserve source-load options");
+    check(session.cell_count() == 2,
+        "registry materialization should load source worksheet cells");
+    const fastxlsx::detail::CellRecord* number = session.try_cell(1, 1);
+    check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number
+            && number->number_value == 42.0,
+        "registry materialization should expose loaded numeric cells");
+    const fastxlsx::detail::CellRecord* text = session.try_cell(1, 2);
+    check(text != nullptr && text->kind == fastxlsx::CellValueKind::Text
+            && text->text_value == "source",
+        "registry materialization should expose loaded text cells");
+    check(!session.dirty(),
+        "registry source materialization should return a clean session");
+
+    session.set_cell(2, 1, fastxlsx::CellValue::boolean(true));
+    auto& repeated_session = registry.materialize_from_workbook_sheet(
+        reader, "Planned", "Missing", options);
+    check(&repeated_session == &session,
+        "matching repeated registry materialization should reuse the existing session");
+    check(session.dirty(),
+        "matching repeated registry materialization should preserve dirty state");
+    check(session.try_cell(2, 1) != nullptr,
+        "matching repeated registry materialization should not replace dirty cells");
+
+    fastxlsx::detail::CellStoreOptions mismatched_options;
+    mismatched_options.max_cells = 5;
+    bool mismatch_failed = false;
+    try {
+        (void)registry.materialize_from_workbook_sheet(
+            reader, "Planned", "Missing", mismatched_options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        mismatch_failed = true;
+        check_contains(error.what(), "options mismatch",
+            "registry materialization should fail on options mismatch before package lookup");
+    }
+    check(mismatch_failed,
+        "registry materialization should reject mismatched repeated options");
+    check(registry.session_count() == 1,
+        "mismatched repeated registry materialization should not insert sessions");
+    check(registry.try_session("Planned") == &session,
+        "mismatched repeated registry materialization should preserve existing session");
+    check(session.dirty(),
+        "mismatched repeated registry materialization should preserve dirty state");
+
+    bool missing_failed = false;
+    try {
+        (void)registry.materialize_from_workbook_sheet(
+            reader, "MissingPlanned", "Missing", options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        missing_failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Missing'",
+            "registry materialization should propagate missing source sheet diagnostics");
+    }
+    check(missing_failed,
+        "registry materialization should reject missing source sheets");
+    check(registry.try_session("MissingPlanned") == nullptr,
+        "failed source registry materialization should not leave a session");
+
+    fastxlsx::detail::CellStoreOptions too_small_options;
+    too_small_options.max_cells = 1;
+    bool max_cells_failed = false;
+    try {
+        (void)registry.materialize_from_workbook_sheet(
+            reader, "TooSmall", "Source", too_small_options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        max_cells_failed = true;
+        check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+            "registry materialization should propagate source load guardrails");
+    }
+    check(max_cells_failed,
+        "registry materialization should reject source load guardrail failures");
+    check(registry.try_session("TooSmall") == nullptr,
+        "failed guarded registry materialization should not leave a session");
+}
+
+void test_package_reader_cell_store_loader_rejects_style_and_shared_string_sources()
+{
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>)"
+        R"(<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>)"
+        R"(</Types>)";
+    const std::string package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(</Relationships>)";
+    const std::string workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)"
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>)"
+        R"(</Relationships>)";
+    const std::string workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Source" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    const std::string shared_strings =
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>from sst</t></si></sst>)";
+    const std::string styles =
+        R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>)";
+
+    const std::filesystem::path styled_path =
+        output_path("fastxlsx-package-reader-cell-store-styled-source.xlsx");
+    fastxlsx::detail::write_package(styled_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"_rels/.rels", package_relationships},
+            {"xl/workbook.xml", workbook},
+            {"xl/_rels/workbook.xml.rels", workbook_relationships},
+            {"xl/worksheets/sheet1.xml",
+                R"(<worksheet><sheetData><row r="1"><c r="A1" s="1"><v>1</v></c></row></sheetData></worksheet>)"},
+            {"xl/sharedStrings.xml", shared_strings},
+            {"xl/styles.xml", styles},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader styled_reader =
+        fastxlsx::detail::PackageReader::open(styled_path);
+    bool styled_failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(styled_reader, "Source");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        styled_failed = true;
+        check_contains(error.what(), "does not load style id references",
+            "workbook sheet CellStore loader should reject source style ids");
+    }
+    check(styled_failed, "workbook sheet CellStore loader should reject styled source cells");
+    check_contains(styled_reader.read_entry("xl/worksheets/sheet1.xml"), R"(s="1")",
+        "styled source loader failure should not poison the PackageReader");
+
+    const std::filesystem::path explicit_default_style_path =
+        output_path("fastxlsx-package-reader-cell-store-explicit-default-style-source.xlsx");
+    fastxlsx::detail::write_package(explicit_default_style_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"_rels/.rels", package_relationships},
+            {"xl/workbook.xml", workbook},
+            {"xl/_rels/workbook.xml.rels", workbook_relationships},
+            {"xl/worksheets/sheet1.xml",
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1" s="0"><v>2</v></c></row></sheetData></worksheet>)"},
+            {"xl/sharedStrings.xml", shared_strings},
+            {"xl/styles.xml", styles},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader explicit_default_style_reader =
+        fastxlsx::detail::PackageReader::open(explicit_default_style_path);
+    std::optional<fastxlsx::detail::CellStore> explicit_default_style_store;
+    bool explicit_default_style_failed = false;
+    try {
+        explicit_default_style_store = fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            explicit_default_style_reader, "Source");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        explicit_default_style_failed = true;
+        check_contains(error.what(), "does not load style id references",
+            "workbook sheet CellStore loader should reject explicit default source styles");
+    }
+    check(explicit_default_style_failed,
+        "workbook sheet CellStore loader should reject explicit default source styles");
+    check(!explicit_default_style_store.has_value(),
+        "explicit-default-style loader failure should not expose a partial CellStore");
+    check_contains(
+        explicit_default_style_reader.read_entry("xl/worksheets/sheet1.xml"), R"(s="0")",
+        "explicit-default-style source loader failure should not poison the PackageReader");
+
+    const std::filesystem::path shared_string_path =
+        output_path("fastxlsx-package-reader-cell-store-shared-string-source.xlsx");
+    fastxlsx::detail::write_package(shared_string_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"_rels/.rels", package_relationships},
+            {"xl/workbook.xml", workbook},
+            {"xl/_rels/workbook.xml.rels", workbook_relationships},
+            {"xl/worksheets/sheet1.xml",
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1" t="s"><v>0</v></c></row></sheetData></worksheet>)"},
+            {"xl/sharedStrings.xml", shared_strings},
+            {"xl/styles.xml", styles},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader shared_string_reader =
+        fastxlsx::detail::PackageReader::open(shared_string_path);
+    std::optional<fastxlsx::detail::CellStore> shared_string_store;
+    bool shared_string_failed = false;
+    try {
+        shared_string_store = fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            shared_string_reader, "Source");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        shared_string_failed = true;
+        check_contains(error.what(), "does not load shared string indexes",
+            "workbook sheet CellStore loader should reject source shared string indexes");
+    }
+    check(shared_string_failed,
+        "workbook sheet CellStore loader should reject shared-string source cells");
+    check(!shared_string_store.has_value(),
+        "shared-string loader failure should not expose a partial CellStore");
+    check_contains(shared_string_reader.read_entry("xl/sharedStrings.xml"), "from sst",
+        "shared-string source loader failure should not poison the PackageReader");
+}
+
+void test_package_reader_cell_store_loader_rejects_unsupported_source_cell_shapes()
+{
+    const std::string content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)";
+    const std::string package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(</Relationships>)";
+    const std::string workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
+        R"(</Relationships>)";
+    const std::string workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Source" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+
+    const auto write_source_package = [&](const std::filesystem::path& path,
+                                          std::string_view worksheet_xml) {
+        fastxlsx::detail::write_package(path,
+            {
+                {"[Content_Types].xml", content_types},
+                {"_rels/.rels", package_relationships},
+                {"xl/workbook.xml", workbook},
+                {"xl/_rels/workbook.xml.rels", workbook_relationships},
+                {"xl/worksheets/sheet1.xml", std::string(worksheet_xml)},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    };
+
+    const std::filesystem::path unsupported_type_path =
+        output_path("fastxlsx-package-reader-cell-store-unsupported-type.xlsx");
+    write_source_package(unsupported_type_path,
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1" t="str"><v>cached</v></c></row></sheetData></worksheet>)");
+
+    const fastxlsx::detail::PackageReader unsupported_type_reader =
+        fastxlsx::detail::PackageReader::open(unsupported_type_path);
+    std::optional<fastxlsx::detail::CellStore> unsupported_type_store;
+    bool unsupported_type_failed = false;
+    try {
+        unsupported_type_store = fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            unsupported_type_reader, "Source");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        unsupported_type_failed = true;
+        check_contains(error.what(), "unsupported cell type: str",
+            "workbook sheet CellStore loader should reject unsupported source cell types");
+    }
+    check(unsupported_type_failed,
+        "workbook sheet CellStore loader should reject unsupported source cell types");
+    check(!unsupported_type_store.has_value(),
+        "unsupported-type loader failure should not expose a partial CellStore");
+    check_contains(unsupported_type_reader.read_entry("xl/worksheets/sheet1.xml"), R"(t="str")",
+        "unsupported-type source loader failure should not poison the PackageReader");
+
+    const std::filesystem::path invalid_boolean_path =
+        output_path("fastxlsx-package-reader-cell-store-invalid-boolean.xlsx");
+    write_source_package(invalid_boolean_path,
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>2</v></c></row></sheetData></worksheet>)");
+
+    const fastxlsx::detail::PackageReader invalid_boolean_reader =
+        fastxlsx::detail::PackageReader::open(invalid_boolean_path);
+    std::optional<fastxlsx::detail::CellStore> invalid_boolean_store;
+    bool invalid_boolean_failed = false;
+    try {
+        invalid_boolean_store = fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            invalid_boolean_reader, "Source");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        invalid_boolean_failed = true;
+        check_contains(error.what(), "invalid boolean cell value",
+            "workbook sheet CellStore loader should reject invalid boolean source values");
+    }
+    check(invalid_boolean_failed,
+        "workbook sheet CellStore loader should reject invalid boolean source values");
+    check(!invalid_boolean_store.has_value(),
+        "invalid-boolean loader failure should not expose a partial CellStore");
+    check_contains(invalid_boolean_reader.read_entry("xl/worksheets/sheet1.xml"), R"(t="b")",
+        "invalid-boolean source loader failure should not poison the PackageReader");
 }
 
 void test_package_reader_rejects_invalid_workbook_sheet_catalog()
@@ -1598,6 +2544,29 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
         R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
         R"(</Relationships>)";
 
+    const std::filesystem::path corrupt_workbook_source_path =
+        output_path("fastxlsx-package-reader-workbook-sheets-corrupt-source.xlsx");
+    fastxlsx::detail::write_package(corrupt_workbook_source_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"_rels/.rels", package_relationships},
+            {"xl/workbook.xml",
+                R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+            {"xl/_rels/workbook.xml.rels",
+                R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>)"},
+            {"xl/worksheets/sheet1.xml", "<worksheet/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    std::string corrupt_workbook_data =
+        fastxlsx::test::read_file(corrupt_workbook_source_path);
+    corrupt_first_occurrence(corrupt_workbook_data, "Sheet1");
+    const std::filesystem::path corrupt_workbook_path =
+        output_path("fastxlsx-package-reader-workbook-sheets-corrupt.xlsx");
+    write_file(corrupt_workbook_path, corrupt_workbook_data);
+    expect_workbook_sheets_failure_contains(corrupt_workbook_path,
+        "failed to read materialized workbook sheet catalog XML",
+        "workbook sheet catalog should wrap materialized workbook read failures");
+
     const std::filesystem::path missing_office_document_path =
         output_path("fastxlsx-package-reader-workbook-sheets-missing-office-document.xlsx");
     fastxlsx::detail::write_package(missing_office_document_path,
@@ -1614,7 +2583,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(missing_office_document_path,
+    expect_workbook_sheets_failure_contains(missing_office_document_path,
+        "workbook sheet catalog requires package officeDocument relationship",
         "workbook sheet catalog should require a package officeDocument relationship");
 
     const std::filesystem::path duplicate_office_document_path =
@@ -1634,7 +2604,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(duplicate_office_document_path,
+    expect_workbook_sheets_failure_contains(duplicate_office_document_path,
+        "workbook sheet catalog has multiple officeDocument relationships",
         "workbook sheet catalog should reject multiple officeDocument relationships");
 
     const std::filesystem::path external_office_document_path =
@@ -1653,7 +2624,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(external_office_document_path,
+    expect_workbook_sheets_failure_contains(external_office_document_path,
+        "workbook sheet catalog officeDocument target cannot be external",
         "workbook sheet catalog should reject external officeDocument targets");
 
     const std::filesystem::path query_office_document_path =
@@ -1672,8 +2644,53 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(query_office_document_path,
+    expect_workbook_sheets_failure_contains(query_office_document_path,
+        "workbook sheet catalog officeDocument target must be a package part",
         "workbook sheet catalog should reject URI-qualified officeDocument targets");
+
+    struct OfficeDocumentPercentFailureCase {
+        const char* name;
+        const char* target;
+        const char* expected_diagnostic;
+    };
+    const OfficeDocumentPercentFailureCase office_document_percent_failure_cases[] = {
+        {
+            "fastxlsx-package-reader-workbook-sheets-incomplete-percent-office-document.xlsx",
+            "xl/workbook.xml%",
+            "relationship target percent escape is incomplete",
+        },
+        {
+            "fastxlsx-package-reader-workbook-sheets-invalid-percent-office-document.xlsx",
+            "xl/workbook%GG.xml",
+            "relationship target percent escape is invalid",
+        },
+        {
+            "fastxlsx-package-reader-workbook-sheets-null-percent-office-document.xlsx",
+            "xl/workbook%00.xml",
+            "relationship target cannot contain null bytes",
+        },
+    };
+    for (const OfficeDocumentPercentFailureCase& test_case
+        : office_document_percent_failure_cases) {
+        const std::filesystem::path percent_office_document_path = output_path(test_case.name);
+        fastxlsx::detail::write_package(percent_office_document_path,
+            {
+                {"[Content_Types].xml", content_types},
+                {"_rels/.rels",
+                    std::string(
+                        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target=")")
+                    + test_case.target + R"("/></Relationships>)"},
+                {"xl/workbook.xml",
+                    R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+                {"xl/_rels/workbook.xml.rels",
+                    R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>)"},
+                {"xl/worksheets/sheet1.xml", "<worksheet/>"},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+        expect_workbook_sheets_failure_contains(percent_office_document_path,
+            test_case.expected_diagnostic,
+            "workbook sheet catalog should reject malformed percent-encoded officeDocument targets precisely");
+    }
 
     const std::string alternate_content_types =
         R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
@@ -1698,7 +2715,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(alternate_office_document_path,
+    expect_workbook_sheets_failure_contains(alternate_office_document_path,
+        "workbook sheet catalog only supports officeDocument target xl/workbook.xml",
         "workbook sheet catalog should reject non-fixed officeDocument targets");
 
     const std::filesystem::path missing_id_path =
@@ -1713,7 +2731,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(missing_id_path,
+    expect_workbook_sheets_failure_contains(missing_id_path,
+        "workbook sheet is missing relationship id",
         "workbook sheet catalog should reject sheets without relationship ids");
 
     const std::filesystem::path missing_relationship_id_path =
@@ -1731,7 +2750,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(missing_relationship_id_path,
+    expect_workbook_sheets_failure_contains(missing_relationship_id_path,
+        "workbook sheet relationship id is not present in workbook .rels",
         "workbook sheet catalog should reject sheet ids missing from workbook relationships");
 
     const std::filesystem::path unregistered_target_path =
@@ -1749,7 +2769,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(unregistered_target_path,
+    expect_workbook_sheets_failure_contains(unregistered_target_path,
+        "workbook sheet relationship targets an unknown part",
         "workbook sheet catalog should reject worksheet relationships to unregistered parts");
     const fastxlsx::detail::PackageReader unregistered_target_reader =
         fastxlsx::detail::PackageReader::open(unregistered_target_path);
@@ -1761,8 +2782,10 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
     try {
         (void)unregistered_target_reader.workbook_sheets_from_xml(
             planned_unregistered_target_workbook);
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         planned_unregistered_target_failed = true;
+        check_contains(error.what(), "workbook sheet relationship targets an unknown part",
+            "planned workbook sheet catalog should preserve unregistered target diagnostic");
     }
     check(planned_unregistered_target_failed,
         "planned workbook sheet catalog should reject worksheet relationships to unregistered parts");
@@ -1770,8 +2793,10 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
     try {
         (void)unregistered_target_reader.worksheet_part_by_sheet_name_from_xml(
             "Planned Missing Target", planned_unregistered_target_workbook);
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         planned_unregistered_lookup_failed = true;
+        check_contains(error.what(), "workbook sheet relationship targets an unknown part",
+            "planned sheet-name lookup should preserve unregistered target diagnostic");
     }
     check(planned_unregistered_lookup_failed,
         "planned sheet-name lookup should reject worksheet relationships to unregistered parts");
@@ -1789,7 +2814,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(namespaced_name_path,
+    expect_workbook_sheets_failure_contains(namespaced_name_path,
+        "workbook sheet is missing name",
         "workbook sheet catalog should reject namespaced sheet name attributes");
 
     const std::filesystem::path namespaced_sheet_id_path =
@@ -1805,7 +2831,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(namespaced_sheet_id_path,
+    expect_workbook_sheets_failure_contains(namespaced_sheet_id_path,
+        "workbook sheet is missing sheetId",
         "workbook sheet catalog should reject namespaced sheetId attributes");
 
     const std::filesystem::path wrong_id_namespace_path =
@@ -1821,7 +2848,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(wrong_id_namespace_path,
+    expect_workbook_sheets_failure_contains(wrong_id_namespace_path,
+        "workbook sheet is missing relationship id",
         "workbook sheet catalog should reject non-relationship namespace id attributes");
 
     const std::filesystem::path unqualified_id_path =
@@ -1837,7 +2865,8 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(unqualified_id_path,
+    expect_workbook_sheets_failure_contains(unqualified_id_path,
+        "workbook sheet is missing relationship id",
         "workbook sheet catalog should reject unqualified id attributes");
 
     const std::filesystem::path external_path =
@@ -1847,14 +2876,91 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"[Content_Types].xml", content_types},
             {"_rels/.rels", package_relationships},
             {"xl/workbook.xml",
-                R"(<workbook><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+                R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
             {"xl/_rels/workbook.xml.rels",
                 R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="https://example.invalid/sheet.xml" TargetMode="External"/></Relationships>)"},
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(external_path,
-        "workbook sheet catalog should reject external worksheet targets");
+    expect_workbook_sheets_failure_contains(external_path,
+        "workbook sheet relationship target cannot be external",
+        "workbook sheet catalog should reject external worksheet targets with a precise diagnostic");
+
+    const std::filesystem::path uri_qualified_path =
+        output_path("fastxlsx-package-reader-workbook-sheets-uri-qualified-target.xlsx");
+    fastxlsx::detail::write_package(uri_qualified_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"_rels/.rels", package_relationships},
+            {"xl/workbook.xml",
+                R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+            {"xl/_rels/workbook.xml.rels",
+                R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml?version=1"/></Relationships>)"},
+            {"xl/worksheets/sheet1.xml", "<worksheet/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    expect_workbook_sheets_failure_contains(uri_qualified_path,
+        "workbook sheet relationship target must be a package part",
+        "workbook sheet catalog should reject URI-qualified worksheet targets with a precise diagnostic");
+
+    struct PercentTargetFailureCase {
+        const char* name;
+        const char* target;
+        const char* expected_diagnostic;
+    };
+    const PercentTargetFailureCase percent_target_failure_cases[] = {
+        {
+            "fastxlsx-package-reader-workbook-sheets-incomplete-percent-target.xlsx",
+            "worksheets/sheet1.xml%",
+            "relationship target percent escape is incomplete",
+        },
+        {
+            "fastxlsx-package-reader-workbook-sheets-invalid-percent-target.xlsx",
+            "worksheets/sheet%GG.xml",
+            "relationship target percent escape is invalid",
+        },
+        {
+            "fastxlsx-package-reader-workbook-sheets-null-percent-target.xlsx",
+            "worksheets/sheet%00.xml",
+            "relationship target cannot contain null bytes",
+        },
+    };
+    for (const PercentTargetFailureCase& test_case : percent_target_failure_cases) {
+        const std::filesystem::path percent_target_path = output_path(test_case.name);
+        fastxlsx::detail::write_package(percent_target_path,
+            {
+                {"[Content_Types].xml", content_types},
+                {"_rels/.rels", package_relationships},
+                {"xl/workbook.xml",
+                    R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+                {"xl/_rels/workbook.xml.rels",
+                    std::string(
+                        R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target=")")
+                    + test_case.target + R"("/></Relationships>)"},
+                {"xl/worksheets/sheet1.xml", "<worksheet/>"},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+        expect_workbook_sheets_failure_contains(percent_target_path,
+            test_case.expected_diagnostic,
+            "workbook sheet catalog should reject malformed percent-encoded worksheet targets precisely");
+    }
+
+    const std::filesystem::path non_worksheet_relationship_type_path =
+        output_path("fastxlsx-package-reader-workbook-sheets-non-worksheet-rel-type.xlsx");
+    fastxlsx::detail::write_package(non_worksheet_relationship_type_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"_rels/.rels", package_relationships},
+            {"xl/workbook.xml",
+                R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+            {"xl/_rels/workbook.xml.rels",
+                R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="worksheets/sheet1.xml"/></Relationships>)"},
+            {"xl/worksheets/sheet1.xml", "<worksheet/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    expect_workbook_sheets_failure_contains(non_worksheet_relationship_type_path,
+        "workbook sheet relationship is not a worksheet relationship",
+        "workbook sheet catalog should reject non-worksheet relationship types with a precise diagnostic");
 
     const std::filesystem::path non_worksheet_path =
         output_path("fastxlsx-package-reader-workbook-sheets-non-worksheet.xlsx");
@@ -1863,15 +2969,16 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"[Content_Types].xml", content_types},
             {"_rels/.rels", package_relationships},
             {"xl/workbook.xml",
-                R"(<workbook><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+                R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
             {"xl/_rels/workbook.xml.rels",
                 R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="styles.xml"/></Relationships>)"},
             {"xl/styles.xml", "<styleSheet/>"},
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure(non_worksheet_path,
-        "workbook sheet catalog should reject non-worksheet relationship targets");
+    expect_workbook_sheets_failure_contains(non_worksheet_path,
+        "workbook sheet relationship target is not a worksheet part",
+        "workbook sheet catalog should reject non-worksheet relationship targets with a precise diagnostic");
 }
 
 void test_package_reader_ingests_root_source_relationships_as_metadata()
@@ -2040,7 +3147,8 @@ void test_package_reader_rejects_duplicate_entries()
     const std::filesystem::path path = output_path("fastxlsx-package-reader-duplicate.xlsx");
     write_file(path, data);
 
-    expect_open_failure(path, "PackageReader should reject duplicate ZIP entry names");
+    expect_open_failure_contains(path, "ZIP entry 'xl/sheet1.xml'",
+        "duplicate ZIP entry rejection should include the entry name");
 }
 
 void test_package_reader_rejects_invalid_entry_names()
@@ -2048,18 +3156,21 @@ void test_package_reader_rejects_invalid_entry_names()
     struct InvalidEntryNameCase {
         std::string_view suffix;
         std::string entry_name;
+        std::string_view expected_context;
     };
 
     const std::vector<InvalidEntryNameCase> cases = {
-        {"absolute", "/xl/workbook.xml"},
-        {"trailing-slash", "xl/workbook.xml/"},
-        {"empty-segment", "xl//workbook.xml"},
-        {"dot-segment", "xl/./workbook.xml"},
-        {"parent-segment", "xl/../workbook.xml"},
-        {"backslash", R"(xl\workbook.xml)"},
-        {"query", "xl/workbook.xml?version=1"},
-        {"fragment", "xl/workbook.xml#sheet"},
-        {"null-byte", std::string("xl/workbook\0.xml", 16)},
+        {"absolute", "/xl/workbook.xml", "ZIP entry '/xl/workbook.xml'"},
+        {"trailing-slash", "xl/workbook.xml/", "ZIP entry 'xl/workbook.xml/'"},
+        {"empty-segment", "xl//workbook.xml", "ZIP entry 'xl//workbook.xml'"},
+        {"dot-segment", "xl/./workbook.xml", "ZIP entry 'xl/./workbook.xml'"},
+        {"parent-segment", "xl/../workbook.xml", "ZIP entry 'xl/../workbook.xml'"},
+        {"backslash", R"(xl\workbook.xml)", R"(ZIP entry 'xl\\workbook.xml')"},
+        {"query", "xl/workbook.xml?version=1",
+            "ZIP entry 'xl/workbook.xml?version=1'"},
+        {"fragment", "xl/workbook.xml#sheet", "ZIP entry 'xl/workbook.xml#sheet'"},
+        {"null-byte", std::string("xl/workbook\0.xml", 16),
+            R"(ZIP entry 'xl/workbook\0.xml')"},
     };
 
     for (const InvalidEntryNameCase& test_case : cases) {
@@ -2073,9 +3184,32 @@ void test_package_reader_rejects_invalid_entry_names()
                 {test_case.entry_name, "<workbook/>"},
             });
 
-        expect_open_failure(path,
-            "PackageReader should reject invalid ZIP entry names");
+        expect_open_failure_contains(path, test_case.expected_context,
+            "PackageReader invalid entry-name rejection should include entry context");
     }
+}
+
+void test_package_reader_rejects_empty_central_directory_entry_name_with_context()
+{
+    const std::string entry_name = "xl/workbook.xml";
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-empty-central-entry-name-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {entry_name, "<workbook/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    const ZipEntryLocation location = find_zip_entry_location(data, entry_name);
+    write_u16(data, location.central_offset + 28u, 0);
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-empty-central-entry-name.xlsx");
+    write_file(path, data);
+
+    expect_open_failure_contains(path, "ZIP entry '': ZIP entry name cannot be empty",
+        "PackageReader empty central-directory entry-name rejection should include context");
 }
 
 void test_package_reader_rejects_bad_zip()
@@ -2135,6 +3269,40 @@ void test_package_reader_rejects_compressed_entries_without_minizip()
 }
 #endif
 
+void test_package_reader_unsupported_compression_diagnostics_include_entry_name()
+{
+    constexpr std::uint16_t unsupported_method = 12;
+    const std::string entry_name = "custom/blob.bin";
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-unsupported-method-context-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {entry_name, "payload"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    std::string data = fastxlsx::test::read_file(source_path);
+    const ZipEntryLocation location = find_zip_entry_location(data, entry_name);
+    write_u16(data, location.local_offset + 8u, unsupported_method);
+    write_u16(data, location.central_offset + 10u, unsupported_method);
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-unsupported-method-context.xlsx");
+    write_file(path, data);
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::PackageReader::open(path);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), entry_name,
+            "unsupported compression failure should include the ZIP entry name");
+        check_contains(error.what(), "compression method 12",
+            "unsupported compression failure should include the method number");
+    }
+    check(failed, "PackageReader should reject unsupported ZIP compression methods");
+}
+
 void test_package_reader_rejects_central_encrypted_flag()
 {
     const std::filesystem::path source_path =
@@ -2157,8 +3325,8 @@ void test_package_reader_rejects_central_encrypted_flag()
         output_path("fastxlsx-package-reader-central-encrypted.xlsx");
     write_file(path, data);
 
-    expect_open_failure(path,
-        "PackageReader should reject central-directory encrypted flags");
+    expect_open_failure_contains(path, "ZIP entry '[Content_Types].xml'",
+        "central-directory encrypted flag rejection should include the entry name");
 }
 
 void test_package_reader_rejects_local_encrypted_flag()
@@ -2207,8 +3375,8 @@ void test_package_reader_rejects_local_header_method_mismatch()
         output_path("fastxlsx-package-reader-local-method.xlsx");
     write_file(path, data);
 
-    expect_open_failure(path,
-        "PackageReader should reject local-header compression method mismatches");
+    expect_open_failure_contains(path, "ZIP entry '[Content_Types].xml'",
+        "local-header compression method mismatches should include the ZIP entry name");
 }
 
 void test_package_reader_rejects_local_header_name_mismatch()
@@ -2284,8 +3452,8 @@ void test_package_reader_rejects_central_data_descriptor_flag()
         output_path("fastxlsx-package-reader-central-data-descriptor.xlsx");
     write_file(path, data);
 
-    expect_open_failure(path,
-        "PackageReader should reject central-directory data descriptor flags");
+    expect_open_failure_contains(path, "ZIP entry '[Content_Types].xml'",
+        "central-directory data descriptor rejection should include the entry name");
 }
 
 void test_package_reader_rejects_local_data_descriptor_flag()
@@ -2444,6 +3612,27 @@ void test_package_reader_rejects_bad_content_types_xml()
 
     expect_open_failure(mismatched_qname_path,
         "PackageReader should reject mismatched content type metadata tag names");
+}
+
+void test_package_reader_rejects_oversized_metadata_materialization_on_open()
+{
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-oversized-metadata.xlsx");
+    const std::string oversized_content_types =
+        "<Types>"
+        + std::string((4U * 1024U * 1024U) + 1U, ' ')
+        + "</Types>";
+
+    fastxlsx::detail::write_package(path,
+        {
+            {"[Content_Types].xml", oversized_content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    expect_open_failure_contains(path,
+        "materialized package metadata entry exceeds small XML limit",
+        "PackageReader should reject oversized materialized metadata on open");
 }
 
 void test_package_reader_rejects_conflicting_content_type_defaults()
@@ -2717,8 +3906,10 @@ void test_package_reader_rejects_corrupt_entry_crc_on_read()
     bool failed = false;
     try {
         (void)reader.read_entry("custom/blob.bin");
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         failed = true;
+        check_zip_entry_crc_mismatch_diagnostics(error.what(), "custom/blob.bin",
+            "corrupt stored read should report entry and expected/actual CRC");
     }
     check(failed, "PackageReader should reject corrupt entry bytes by CRC");
 }
@@ -2746,26 +3937,42 @@ void test_package_reader_rejects_corrupt_entry_crc_on_extract()
     const fastxlsx::detail::PackageReader reader =
         fastxlsx::detail::PackageReader::open(path);
 
+    const std::filesystem::path extracted =
+        output_path("fastxlsx-package-reader-extract-crc-output.bin");
+    const std::string sentinel = "preserve existing corrupt stored extraction output";
+    write_file(extracted, sentinel);
+
     bool failed = false;
     try {
-        reader.extract_entry_to_file("custom/blob.bin",
-            output_path("fastxlsx-package-reader-extract-crc-output.bin"));
-    } catch (const std::exception&) {
+        reader.extract_entry_to_file("custom/blob.bin", extracted);
+    } catch (const std::exception& error) {
         failed = true;
+        check_zip_entry_crc_mismatch_diagnostics(error.what(), "custom/blob.bin",
+            "corrupt stored extract should report entry and expected/actual CRC");
     }
     check(failed, "PackageReader should reject corrupt entry bytes during extract");
+    check(fastxlsx::test::read_file(extracted) == sentinel,
+        "corrupt stored extraction should preserve the previous output file");
 }
 
 void test_package_reader_rejects_corrupt_entry_crc_on_chunk_source()
 {
     const std::filesystem::path source_path =
         output_path("fastxlsx-package-reader-entry-chunks-crc-source.xlsx");
+    std::string opaque_body = "opaque";
+    for (int index = 0; index < 4096; ++index) {
+        opaque_body += "\nstored-chunk-source-crc-target-row-";
+        opaque_body += std::to_string(index);
+    }
+    check(opaque_body.size() > 64U * 1024U,
+        "stored chunk-source CRC fixture should exceed one reader chunk");
+
     fastxlsx::detail::write_package(source_path,
         {
             {"[Content_Types].xml", "<Types/>"},
             {"_rels/.rels", "<Relationships/>"},
             {"xl/workbook.xml", "<workbook/>"},
-            {"custom/blob.bin", "opaque"},
+            {"custom/blob.bin", opaque_body},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 
@@ -2782,14 +3989,68 @@ void test_package_reader_rejects_corrupt_entry_crc_on_chunk_source()
         reader.entry_chunk_source("custom/blob.bin");
 
     bool failed = false;
+    std::size_t emitted_chunks = 0;
+    std::uint64_t emitted_bytes = 0;
+    std::uint64_t last_chunk_bytes = 0;
     try {
         std::string chunk;
         while (source(chunk)) {
+            ++emitted_chunks;
+            emitted_bytes += static_cast<std::uint64_t>(chunk.size());
+            last_chunk_bytes = static_cast<std::uint64_t>(chunk.size());
         }
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
         failed = true;
+        check_zip_entry_crc_mismatch_diagnostics(error.what(), "custom/blob.bin",
+            "corrupt stored chunk source should report entry and expected/actual CRC");
+        check(emitted_chunks > 1,
+            "corrupt stored chunk-source setup should emit multiple chunks before CRC failure");
+        check(emitted_bytes == opaque_body.size(),
+            "corrupt stored chunk-source setup should emit the full payload before CRC failure");
+        check_zip_entry_chunk_source_progress_diagnostics(error.what(), emitted_chunks + 1,
+            emitted_chunks,
+            emitted_bytes,
+            last_chunk_bytes,
+            "corrupt stored chunk source should report reader progress");
     }
     check(failed, "PackageReader should reject corrupt entry bytes during chunk source read");
+}
+
+void test_package_reader_contextualizes_truncated_stored_entry_read_failure()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-truncated-entry-source.xlsx");
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml", "<Types/>"},
+            {"_rels/.rels", "<Relationships/>"},
+            {"xl/workbook.xml", "<workbook/>"},
+            {"custom/blob.bin", "opaque"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const std::string data = fastxlsx::test::read_file(source_path);
+    const ZipEntryLocation blob = find_zip_entry_location(data, "custom/blob.bin");
+
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-truncated-entry-read.xlsx");
+    write_file(path, data);
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+
+    write_file(path, data.substr(0, blob.data_offset));
+
+    bool failed = false;
+    try {
+        (void)reader.read_entry("custom/blob.bin");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "ZIP entry 'custom/blob.bin'",
+            "truncated stored entry read failure should identify the entry");
+        check_contains(error.what(), "failed to read XLSX package bytes",
+            "truncated stored entry read failure should preserve the read failure");
+    }
+    check(failed, "PackageReader should reject truncated stored entry bytes");
 }
 
 void test_package_reader_rejects_corrupt_metadata_crc_on_open()
@@ -2830,16 +4091,28 @@ int main()
         test_package_writer_rejects_missing_file_chunk_before_output();
         test_package_writer_rejects_mixed_legacy_data_and_chunks_before_output();
         test_package_writer_rejects_invalid_chunk_sources_before_output();
+        test_stored_zip_backend_contextualizes_actual_chunk_failures();
         test_package_reader_reads_stored_entries_and_unknown_parts();
         test_package_reader_extracts_stored_entry_to_file();
+        test_package_reader_rejects_extracting_to_directory();
+        test_package_reader_rejects_extracting_to_invalid_parent_before_read();
+        test_package_reader_rejects_extracting_over_source_package();
         test_package_reader_streams_stored_entry_chunks();
+        test_package_reader_missing_entry_diagnostics_include_requested_name();
+        test_package_reader_rejects_inconsistent_materialized_chunk_sizes();
+        test_package_reader_rejects_inconsistent_extraction_chunk_sizes_before_commit();
         test_package_reader_ingests_content_types_and_relationships();
         test_package_reader_resolves_workbook_sheet_catalog();
+        test_package_reader_loads_cell_store_from_workbook_sheet();
+        test_package_reader_materializes_registry_session_from_workbook_sheet();
+        test_package_reader_cell_store_loader_rejects_style_and_shared_string_sources();
+        test_package_reader_cell_store_loader_rejects_unsupported_source_cell_shapes();
         test_package_reader_rejects_invalid_workbook_sheet_catalog();
         test_package_reader_ingests_root_source_relationships_as_metadata();
         test_package_reader_ingests_unknown_extension_relationships_as_metadata();
         test_package_reader_rejects_duplicate_entries();
         test_package_reader_rejects_invalid_entry_names();
+        test_package_reader_rejects_empty_central_directory_entry_name_with_context();
         test_package_reader_rejects_bad_zip();
         test_package_reader_rejects_central_directory_trailing_data_before_eocd();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
@@ -2854,6 +4127,7 @@ int main()
 #else
         test_package_reader_rejects_compressed_entries_without_minizip();
 #endif
+        test_package_reader_unsupported_compression_diagnostics_include_entry_name();
         test_package_reader_rejects_central_encrypted_flag();
         test_package_reader_rejects_local_encrypted_flag();
         test_package_reader_rejects_local_header_method_mismatch();
@@ -2864,6 +4138,7 @@ int main()
         test_package_reader_rejects_local_header_crc_mismatch();
         test_package_reader_rejects_missing_content_types();
         test_package_reader_rejects_bad_content_types_xml();
+        test_package_reader_rejects_oversized_metadata_materialization_on_open();
         test_package_reader_rejects_conflicting_content_type_defaults();
         test_package_reader_rejects_conflicting_content_type_overrides();
         test_package_reader_rejects_bad_relationships_xml();
@@ -2874,6 +4149,7 @@ int main()
         test_package_reader_rejects_corrupt_entry_crc_on_read();
         test_package_reader_rejects_corrupt_entry_crc_on_extract();
         test_package_reader_rejects_corrupt_entry_crc_on_chunk_source();
+        test_package_reader_contextualizes_truncated_stored_entry_read_failure();
         test_package_reader_rejects_corrupt_metadata_crc_on_open();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

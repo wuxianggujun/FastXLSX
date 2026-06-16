@@ -282,6 +282,10 @@ py tools\run_benchmark_matrix.py `
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_benchmark_matrix_excel.ps1 `
   -ReportPath build\qa\benchmark-matrix\benchmark-matrix-report.json `
   -MaxWorkbooks 4
+py tools\summarize_benchmark_results.py --self-test
+py tools\summarize_benchmark_results.py build\qa\benchmark-matrix `
+  --output-markdown build\qa\benchmark-matrix\summary.md `
+  --output-json build\qa\benchmark-matrix\summary.json
 ```
 
 `run_benchmark_matrix.py` 只调用已构建的 `fastxlsx_bench_streaming_writer`，检查
@@ -293,7 +297,11 @@ report 中的前几个 workbook，核对 `Sheet1` 的 used range 和首尾值，
 验证，也不要把小矩阵写成大文件性能结论。需要更新 sharedStrings 趋势记录时，再显式用
 `--rows 50000 --cols 10 --sheets 1` 运行 strings repeated/unique 的 inline/shared
 矩阵，并单独记录 Excel COM / openpyxl 读取结果。
-`--self-test` 只验证 runner 内部 case 解析、字符串分布期望值和 report shape，不调用
+`summarize_benchmark_results.py` 只读取已有 schema-v4 case JSON 或
+`benchmark-matrix-report.json`，输出 Markdown / JSON 摘要、吞吐量、输出体积和保守
+风险提示；它不重新运行 benchmark、不生成 workbook、不替代 Office/openpyxl 兼容性检查。
+summary helper 的 `--self-test` 只验证已有 result / matrix report collection、目录输入
+skip summary JSON、warning、Markdown rendering 和 Markdown / JSON output writes，不调用
 benchmark exe、不生成 workbook，也不替代实际 benchmark / Office / openpyxl 检查。
 
 当前 Phase 1 smoke 样例由 `fastxlsx.unit` 生成，位于测试工作目录。推荐

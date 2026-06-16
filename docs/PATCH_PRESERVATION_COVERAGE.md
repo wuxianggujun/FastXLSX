@@ -173,12 +173,15 @@ repair/pruning、content type repair、orphan cleanup、事务式 undo 或 publi
 
 linked-object fixture 现在还覆盖 by-name `replace_worksheet_cells()` 路径：
 cell replacement 输出侧使用 temporary file-backed `PackageEntryChunk` 记录
-worksheet `StreamRewrite`；source package worksheet entry 现在会先通过
-`PackageReader::extract_entry_to_file()` 抽取到 file-backed source，再通过
-event-reader / transformer chunk-source readers 执行 root validation、
-dependency/dimension analysis、relationship-id audit 和 output pass。planned worksheet
-replacement input 仍会物化 current planned worksheet XML，DEFLATE extraction 暂不代表
-低内存 compressed input。`save_as()` 后输出可由 `PackageReader` 重读，并验证 dimension refresh、calcChain cleanup、workbook
+worksheet `StreamRewrite`；source package worksheet entry 现在通过
+`PackageReader::entry_chunk_source()` 进入 event-reader / transformer
+chunk-source readers，执行 root validation、dependency/dimension analysis、
+relationship-id audit 和 output pass。planned worksheet replacement input 只接受
+source entry 或 planned staged chunks；旧的 current planned worksheet XML string
+fallback 已删除，package-editor 测试侧固定 payload wrapper 也已改名为
+single-chunk chunk-source fixture。minizip 构建下 DEFLATE worksheet source 也通过 decompressed
+entry chunk source 读取，但 public `read_entry()` 仍返回完整 `std::string`，这不代表
+完整 compressed input streaming API 已完成。`save_as()` 后输出可由 `PackageReader` 重读，并验证 dimension refresh、calcChain cleanup、workbook
 `fullCalcOnLoad`、old target cell payload 跳过审计和临时 XML 文件析构清理。
 该回归同时证明 worksheet `.rels`、
 drawing / drawing `.rels`、media、chart、table、VML、percent-decoded drawing、
@@ -187,8 +190,8 @@ reachable unknown extension bytes / owner `.rels`、workbook definedNames、PNG
 default content type 和 workbook sharedStrings/styles/VBA relationships 在 cell
 replacement handoff 下保持 internal Patch preservation / audit 可见性。
 这不是 relationship repair/pruning、object 语义编辑、public API、sharedStrings /
-styles migration、table/drawing sync、direct ZIP entry chunk source、planned-input
-低内存 source 化、PackageReader 完整输入侧 streaming，或完整 low-memory large-file editing。
+styles migration、table/drawing sync、PackageReader public streaming read API，
+或完整 low-memory large-file editing。
 
 ### comments part
 

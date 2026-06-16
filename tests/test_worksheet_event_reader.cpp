@@ -45,49 +45,15 @@ CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
         event.self_closing };
 }
 
-std::vector<WorksheetEvent> read_events(const std::string& xml)
-{
-    std::vector<WorksheetEvent> events;
-    fastxlsx::detail::scan_worksheet_events(
-        xml, [&](const WorksheetEvent& event) { events.push_back(event); });
-    return events;
-}
-
-std::vector<CopiedWorksheetEvent> read_copied_events(const std::string& xml)
-{
-    std::vector<CopiedWorksheetEvent> events;
-    fastxlsx::detail::scan_worksheet_events(
-        xml, [&](const WorksheetEvent& event) { events.push_back(copy_event(event)); });
-    return events;
-}
-
-std::vector<std::string_view> split_every(const std::string& xml, std::size_t width)
-{
-    std::vector<std::string_view> chunks;
-    for (std::size_t position = 0; position < xml.size(); position += width) {
-        const std::size_t length = std::min(width, xml.size() - position);
-        chunks.emplace_back(xml.data() + position, length);
-    }
-    return chunks;
-}
-
-std::vector<CopiedWorksheetEvent> read_chunked_events(
-    const std::string& xml,
-    std::size_t chunk_width,
-    fastxlsx::detail::WorksheetEventReaderOptions options = {})
-{
-    const std::vector<std::string_view> chunks = split_every(xml, chunk_width);
-    std::vector<CopiedWorksheetEvent> events;
-    fastxlsx::detail::scan_worksheet_events_from_chunks(
-        chunks, [&](const WorksheetEvent& event) { events.push_back(copy_event(event)); }, options);
-    return events;
-}
-
 std::vector<CopiedWorksheetEvent> read_source_events(
     const std::string& xml,
     std::size_t chunk_width,
     fastxlsx::detail::WorksheetEventReaderOptions options = {})
 {
+    if (chunk_width == 0) {
+        throw TestFailure("test chunk width must be nonzero");
+    }
+
     std::size_t position = 0;
     std::vector<CopiedWorksheetEvent> events;
     fastxlsx::detail::scan_worksheet_events_from_chunk_source(
@@ -106,19 +72,20 @@ std::vector<CopiedWorksheetEvent> read_source_events(
     return events;
 }
 
-std::size_t count_kind(const std::vector<WorksheetEvent>& events, WorksheetEventKind kind)
+std::vector<CopiedWorksheetEvent> read_single_chunk_events(const std::string& xml)
 {
-    std::size_t count = 0;
-    for (const WorksheetEvent& event : events) {
-        if (event.kind == kind) {
-            ++count;
-        }
-    }
-    return count;
+    return read_source_events(xml, std::max<std::size_t>(xml.size(), 1U));
 }
 
-std::size_t count_copied_kind(
-    const std::vector<CopiedWorksheetEvent>& events, WorksheetEventKind kind)
+std::vector<CopiedWorksheetEvent> read_chunked_events(
+    const std::string& xml,
+    std::size_t chunk_width,
+    fastxlsx::detail::WorksheetEventReaderOptions options = {})
+{
+    return read_source_events(xml, chunk_width, options);
+}
+
+std::size_t count_kind(const std::vector<CopiedWorksheetEvent>& events, WorksheetEventKind kind)
 {
     std::size_t count = 0;
     for (const CopiedWorksheetEvent& event : events) {
@@ -129,9 +96,10 @@ std::size_t count_copied_kind(
     return count;
 }
 
-const WorksheetEvent& find_first(const std::vector<WorksheetEvent>& events, WorksheetEventKind kind)
+const CopiedWorksheetEvent& find_first(
+    const std::vector<CopiedWorksheetEvent>& events, WorksheetEventKind kind)
 {
-    for (const WorksheetEvent& event : events) {
+    for (const CopiedWorksheetEvent& event : events) {
         if (event.kind == kind) {
             return event;
         }
@@ -174,7 +142,7 @@ void test_event_reader_scans_core_worksheet_tokens()
         R"(<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>)"
         R"(</worksheet>)";
 
-    const std::vector<WorksheetEvent> events = read_events(xml);
+    const std::vector<CopiedWorksheetEvent> events = read_single_chunk_events(xml);
 
     check(!events.empty(), "worksheet event reader should emit events");
     check(events.front().kind == WorksheetEventKind::XmlDeclaration,
@@ -204,14 +172,14 @@ void test_event_reader_scans_core_worksheet_tokens()
     check(count_kind(events, WorksheetEventKind::Metadata) >= 4,
         "worksheet metadata tags should be exposed as raw pass-through events");
 
-    const WorksheetEvent& first_row = find_first(events, WorksheetEventKind::RowStart);
+    const CopiedWorksheetEvent& first_row = find_first(events, WorksheetEventKind::RowStart);
     check(first_row.row_number == "1", "row token should expose row number");
 
-    const WorksheetEvent& first_cell = find_first(events, WorksheetEventKind::CellStart);
+    const CopiedWorksheetEvent& first_cell = find_first(events, WorksheetEventKind::CellStart);
     check(first_cell.row_number == "1", "cell token should expose current row number");
     check(first_cell.cell_reference == "A1", "cell token should expose cell reference");
 
-    const WorksheetEvent& first_value = find_first(events, WorksheetEventKind::CellValue);
+    const CopiedWorksheetEvent& first_value = find_first(events, WorksheetEventKind::CellValue);
     check(first_value.row_number == "1", "value token should expose current row number");
     check(first_value.cell_reference == "A1", "value token should expose cell reference");
     check(first_value.text == "alpha", "value token should expose raw text");
@@ -233,7 +201,7 @@ void test_event_reader_handles_prefixes_inline_text_and_comments()
         R"(</x:sheetData>)"
         R"(</x:worksheet>)";
 
-    const std::vector<WorksheetEvent> events = read_events(xml);
+    const std::vector<CopiedWorksheetEvent> events = read_single_chunk_events(xml);
 
     check(count_kind(events, WorksheetEventKind::Comment) == 1,
         "comments should be emitted as pass-through events");
@@ -244,17 +212,176 @@ void test_event_reader_handles_prefixes_inline_text_and_comments()
     check(count_kind(events, WorksheetEventKind::CellValueMarkup) == 2,
         "prefixed inline value wrapper should emit start and end markup");
 
-    const WorksheetEvent& worksheet = find_first(events, WorksheetEventKind::WorksheetStart);
+    const CopiedWorksheetEvent& worksheet = find_first(events, WorksheetEventKind::WorksheetStart);
     check(worksheet.element_name == "worksheet", "qualified worksheet element should expose local name");
 
-    const WorksheetEvent& row = find_first(events, WorksheetEventKind::RowStart);
+    const CopiedWorksheetEvent& row = find_first(events, WorksheetEventKind::RowStart);
     check(row.row_number == "3", "prefixed row token should expose row number");
 
-    const WorksheetEvent& cell = find_first(events, WorksheetEventKind::CellStart);
+    const CopiedWorksheetEvent& cell = find_first(events, WorksheetEventKind::CellStart);
     check(cell.cell_reference == "C3", "prefixed cell token should expose cell reference");
 
-    const WorksheetEvent& value = find_first(events, WorksheetEventKind::CellValue);
+    const CopiedWorksheetEvent& value = find_first(events, WorksheetEventKind::CellValue);
     check(value.text == "hello &amp; raw", "inline text should remain raw and non-decoded");
+}
+
+void test_event_reader_exposes_cell_inner_metadata()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1" t="inlineStr"><is><r><t>rich</t></r></is></c>)"
+        R"(</row></sheetData></worksheet>)";
+
+    const std::vector<CopiedWorksheetEvent> events = read_single_chunk_events(xml);
+    const auto has_cell_metadata = [&](std::string_view raw_xml) {
+        return std::any_of(events.begin(), events.end(), [&](const CopiedWorksheetEvent& event) {
+            return event.kind == WorksheetEventKind::Metadata && event.raw_xml == raw_xml
+                && event.row_number == "1" && event.cell_reference == "A1";
+        });
+    };
+
+    check(has_cell_metadata("<is>"),
+        "inline-string container should be exposed as cell metadata");
+    check(has_cell_metadata("<r>"),
+        "inline rich-text run should be exposed as cell metadata");
+    check(has_cell_metadata("</r>"),
+        "inline rich-text run close should be exposed as cell metadata");
+    check(has_cell_metadata("</is>"),
+        "inline-string container close should be exposed as cell metadata");
+    check(count_kind(events, WorksheetEventKind::CellValue) == 1,
+        "inline rich-text text should still be exposed as cell value text");
+}
+
+void test_event_reader_distinguishes_xml_stylesheet_processing_instruction()
+{
+    const std::string xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<?xml-stylesheet type="text/xsl" href="sheet.xsl"?>)"
+        R"(<worksheet><sheetData/></worksheet>)";
+
+    const std::vector<CopiedWorksheetEvent> events = read_chunked_events(xml, 4);
+
+    check(count_kind(events, WorksheetEventKind::XmlDeclaration) == 1,
+        "xml declaration should be classified once");
+    check(count_kind(events, WorksheetEventKind::ProcessingInstruction) == 1,
+        "xml-stylesheet should be classified as a processing instruction");
+    const CopiedWorksheetEvent& processing_instruction =
+        find_first(events, WorksheetEventKind::ProcessingInstruction);
+    check(processing_instruction.raw_xml.find("xml-stylesheet") != std::string::npos,
+        "processing instruction should preserve the xml-stylesheet raw XML");
+}
+
+void test_event_reader_rejects_xml_declaration_after_root_start()
+{
+    const std::string xml =
+        R"(<worksheet><?xml version="1.0"?><sheetData/></worksheet>)";
+
+    bool failed = false;
+    try {
+        (void)read_chunked_events(xml, 5);
+    } catch (const std::exception& error) {
+        failed = true;
+        check(std::string_view(error.what()).find("XML declaration after worksheet root")
+                != std::string_view::npos,
+            "late XML declaration failure should name the invalid root position");
+    }
+    check(failed, "worksheet event reader should reject XML declaration inside the root");
+
+    const std::string processing_instruction_xml =
+        R"(<worksheet><?fastxlsx probe?><sheetData/></worksheet>)";
+    const std::vector<CopiedWorksheetEvent> events =
+        read_chunked_events(processing_instruction_xml, 5);
+    check(count_kind(events, WorksheetEventKind::ProcessingInstruction) == 1,
+        "ordinary processing instructions inside the root should remain pass-through tokens");
+}
+
+void test_event_reader_rejects_mismatched_cell_value_boundaries()
+{
+    bool mismatched_value_failed = false;
+    try {
+        const std::string xml =
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</f></c></row></sheetData></worksheet>)";
+        (void)read_chunked_events(xml, 4);
+    } catch (const std::exception& error) {
+        mismatched_value_failed = true;
+        check(std::string_view(error.what()).find("mismatched cell value boundary")
+                != std::string_view::npos,
+            "mismatched value wrapper failure should name the cell value boundary");
+    }
+    check(mismatched_value_failed,
+        "worksheet event reader should reject mismatched cell value wrapper tags");
+
+    bool orphan_value_end_failed = false;
+    try {
+        const std::string xml =
+            R"(<worksheet><sheetData><row r="1"><c r="A1"></v></c></row></sheetData></worksheet>)";
+        (void)read_chunked_events(xml, 5);
+    } catch (const std::exception& error) {
+        orphan_value_end_failed = true;
+        check(std::string_view(error.what()).find("mismatched cell value boundary")
+                != std::string_view::npos,
+            "orphan value wrapper failure should name the cell value boundary");
+    }
+    check(orphan_value_end_failed,
+        "worksheet event reader should reject orphan cell value closing tags");
+
+    bool nested_value_failed = false;
+    try {
+        const std::string xml =
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v><t>nested</t></v></c></row></sheetData></worksheet>)";
+        (void)read_chunked_events(xml, 6);
+    } catch (const std::exception& error) {
+        nested_value_failed = true;
+        check(std::string_view(error.what()).find("nested cell value markup")
+                != std::string_view::npos,
+            "nested value wrapper failure should name nested value markup");
+    }
+    check(nested_value_failed,
+        "worksheet event reader should reject nested cell value wrapper tags");
+}
+
+void test_event_reader_rejects_invalid_core_element_nesting()
+{
+    bool duplicate_sheet_data_failed = false;
+    try {
+        const std::string xml = R"(<worksheet><sheetData/><sheetData/></worksheet>)";
+        (void)read_chunked_events(xml, 3);
+    } catch (const std::exception& error) {
+        duplicate_sheet_data_failed = true;
+        check(std::string_view(error.what()).find("invalid sheetData boundary")
+                != std::string_view::npos,
+            "duplicate sheetData failure should name the sheetData boundary");
+    }
+    check(duplicate_sheet_data_failed,
+        "worksheet event reader should reject duplicate sheetData elements");
+
+    bool nested_row_failed = false;
+    try {
+        const std::string xml =
+            R"(<worksheet><sheetData><row r="1"><row r="2"/></row></sheetData></worksheet>)";
+        (void)read_chunked_events(xml, 4);
+    } catch (const std::exception& error) {
+        nested_row_failed = true;
+        check(std::string_view(error.what()).find("invalid row boundary")
+                != std::string_view::npos,
+            "nested row failure should name the row boundary");
+    }
+    check(nested_row_failed,
+        "worksheet event reader should reject nested row elements");
+
+    bool nested_cell_failed = false;
+    try {
+        const std::string xml =
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><c r="B1"/></c></row></sheetData></worksheet>)";
+        (void)read_chunked_events(xml, 5);
+    } catch (const std::exception& error) {
+        nested_cell_failed = true;
+        check(std::string_view(error.what()).find("invalid cell boundary")
+                != std::string_view::npos,
+            "nested cell failure should name the cell boundary");
+    }
+    check(nested_cell_failed,
+        "worksheet event reader should reject nested cell elements");
 }
 
 void test_event_reader_rejects_malformed_boundaries()
@@ -262,7 +389,7 @@ void test_event_reader_rejects_malformed_boundaries()
     bool missing_root_failed = false;
     try {
         const std::string xml = R"(<sheetData/>)";
-        (void)read_events(xml);
+        (void)read_single_chunk_events(xml);
     } catch (const std::exception&) {
         missing_root_failed = true;
     }
@@ -272,7 +399,7 @@ void test_event_reader_rejects_malformed_boundaries()
     try {
         const std::string xml =
             R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></row></sheetData></worksheet>)";
-        (void)read_events(xml);
+        (void)read_single_chunk_events(xml);
     } catch (const std::exception&) {
         open_cell_failed = true;
     }
@@ -282,7 +409,7 @@ void test_event_reader_rejects_malformed_boundaries()
     try {
         const std::string xml =
             R"(<worksheet><sheetData><row r=1></row></sheetData></worksheet>)";
-        (void)read_events(xml);
+        (void)read_single_chunk_events(xml);
     } catch (const std::exception&) {
         unquoted_attribute_failed = true;
     }
@@ -295,7 +422,7 @@ void test_event_reader_rejects_non_prolog_markup_outside_worksheet_root()
     bool pre_root_element_failed = false;
     try {
         const std::string xml = R"(<ignored/><worksheet><sheetData/></worksheet>)";
-        (void)read_events(xml);
+        (void)read_single_chunk_events(xml);
     } catch (const std::exception&) {
         pre_root_element_failed = true;
     }
@@ -305,7 +432,7 @@ void test_event_reader_rejects_non_prolog_markup_outside_worksheet_root()
     bool post_root_element_failed = false;
     try {
         const std::string xml = R"(<worksheet><sheetData/></worksheet><ignored/>)";
-        (void)read_events(xml);
+        (void)read_single_chunk_events(xml);
     } catch (const std::exception&) {
         post_root_element_failed = true;
     }
@@ -315,7 +442,7 @@ void test_event_reader_rejects_non_prolog_markup_outside_worksheet_root()
     bool post_root_text_failed = false;
     try {
         const std::string xml = R"(<worksheet><sheetData/></worksheet>text)";
-        (void)read_events(xml);
+        (void)read_single_chunk_events(xml);
     } catch (const std::exception&) {
         post_root_text_failed = true;
     }
@@ -323,7 +450,7 @@ void test_event_reader_rejects_non_prolog_markup_outside_worksheet_root()
         "worksheet event reader should reject non-whitespace text after worksheet root");
 }
 
-void test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries()
+void test_event_reader_chunk_source_matches_single_chunk_scan_across_token_boundaries()
 {
     const std::string xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -339,15 +466,15 @@ void test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries
         R"(<?after data?>)"
         R"(</x:worksheet>)";
 
-    const std::vector<CopiedWorksheetEvent> full_events = read_copied_events(xml);
-    const std::vector<CopiedWorksheetEvent> chunked_events = read_chunked_events(xml, 5);
+    const std::vector<CopiedWorksheetEvent> single_chunk_events = read_single_chunk_events(xml);
+    const std::vector<CopiedWorksheetEvent> chunked_events = read_source_events(xml, 5);
 
     check_same_events(chunked_events,
-        full_events,
-        "chunked worksheet event reader should match full-buffer events");
+        single_chunk_events,
+        "chunk-source worksheet event reader should match single-chunk events");
 }
 
-void test_event_reader_chunk_source_matches_full_scan_across_token_boundaries()
+void test_event_reader_tiny_chunk_source_matches_single_chunk_scan_across_token_boundaries()
 {
     const std::string xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -359,12 +486,12 @@ void test_event_reader_chunk_source_matches_full_scan_across_token_boundaries()
         R"(</sheetData>)"
         R"(</worksheet>)";
 
-    const std::vector<CopiedWorksheetEvent> full_events = read_copied_events(xml);
+    const std::vector<CopiedWorksheetEvent> single_chunk_events = read_single_chunk_events(xml);
     const std::vector<CopiedWorksheetEvent> source_events = read_source_events(xml, 3);
 
     check_same_events(source_events,
-        full_events,
-        "chunk-source worksheet event reader should match full-buffer events");
+        single_chunk_events,
+        "chunk-source worksheet event reader should match single-chunk events");
 }
 
 void test_event_reader_chunked_scanner_uses_bounded_window_not_full_document()
@@ -383,13 +510,13 @@ void test_event_reader_chunked_scanner_uses_bounded_window_not_full_document()
 
     fastxlsx::detail::WorksheetEventReaderOptions options;
     options.max_window_bytes = 96;
-    const std::vector<CopiedWorksheetEvent> events = read_chunked_events(xml, 7, options);
+    const std::vector<CopiedWorksheetEvent> events = read_source_events(xml, 7, options);
 
     check(xml.size() > options.max_window_bytes,
         "bounded-window fixture should be larger than the retained window");
-    check(count_copied_kind(events, WorksheetEventKind::RowStart) == 24,
+    check(count_kind(events, WorksheetEventKind::RowStart) == 24,
         "chunked scanner should emit every row without retaining the full worksheet");
-    check(count_copied_kind(events, WorksheetEventKind::CellValue) == 24,
+    check(count_kind(events, WorksheetEventKind::CellValue) == 24,
         "chunked scanner should emit every cell value without retaining the full worksheet");
 }
 
@@ -404,7 +531,7 @@ void test_event_reader_chunked_scanner_rejects_oversized_incomplete_token()
 
     bool failed = false;
     try {
-        (void)read_chunked_events(xml, 9, options);
+        (void)read_source_events(xml, 9, options);
     } catch (const std::exception&) {
         failed = true;
     }
@@ -419,10 +546,15 @@ int main()
     try {
         test_event_reader_scans_core_worksheet_tokens();
         test_event_reader_handles_prefixes_inline_text_and_comments();
+        test_event_reader_exposes_cell_inner_metadata();
+        test_event_reader_distinguishes_xml_stylesheet_processing_instruction();
+        test_event_reader_rejects_xml_declaration_after_root_start();
+        test_event_reader_rejects_mismatched_cell_value_boundaries();
+        test_event_reader_rejects_invalid_core_element_nesting();
         test_event_reader_rejects_malformed_boundaries();
         test_event_reader_rejects_non_prolog_markup_outside_worksheet_root();
-        test_event_reader_chunked_scanner_matches_full_scan_across_token_boundaries();
-        test_event_reader_chunk_source_matches_full_scan_across_token_boundaries();
+        test_event_reader_chunk_source_matches_single_chunk_scan_across_token_boundaries();
+        test_event_reader_tiny_chunk_source_matches_single_chunk_scan_across_token_boundaries();
         test_event_reader_chunked_scanner_uses_bounded_window_not_full_document();
         test_event_reader_chunked_scanner_rejects_oversized_incomplete_token();
     } catch (const std::exception& error) {

@@ -31,6 +31,14 @@ struct WorkbookSheetReference {
 
 using PackageReaderChunkCallback = std::function<bool(std::string& output_chunk)>;
 
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+[[nodiscard]] std::string testing_read_entry_chunks_to_string(
+    PackageReaderChunkCallback source, std::uint64_t expected_size);
+void testing_extract_entry_chunks_to_committed_file(
+    const std::filesystem::path& package_path, PackageReaderChunkCallback source,
+    const std::filesystem::path& output_path, std::uint64_t expected_size);
+#endif
+
 // Internal PackageReader foundation for the Patch path.
 //
 // This first slice indexes stored/no-compression ZIP entries, and can also

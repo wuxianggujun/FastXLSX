@@ -190,11 +190,23 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   styles / worksheet metadata / image insertion 值类型。
 - Patch public API 首片：`WorkbookEditorOptions`、`WorkbookEditor::open()`、
   `WorkbookEditor::open(path, options)`、`worksheet_names()`、`has_worksheet()`、
-  `has_pending_changes()`、`pending_change_count()`、
-  `pending_replacement_cell_count()`、`estimated_pending_replacement_memory_usage()`、
+  `source_worksheet_names()`、`has_source_worksheet()`、`has_pending_changes()`、
+  `pending_change_count()`、
+  `pending_replacement_cell_count()`、`pending_replacement_worksheet_names()`、
+  `has_pending_replacement()`、`estimated_pending_replacement_memory_usage()`、
+  `last_edit_error()`、
+  `WorkbookEditorWorksheetCatalogEntry`、`worksheet_catalog()`、
+  `WorkbookEditorWorksheetEditSummary`、`pending_worksheet_edits()`、
   `replace_sheet_data()`、`rename_sheet()` 和 `save_as()`。
-  它只做已有 workbook 的 whole-`<sheetData>` 替换和窄 sheet catalog 改名；
-  不是随机 cell editor、`WorksheetEditor`、语义 rename 或 public `PackageEditor`。
+  Patch path 只做已有 workbook 的 whole-`<sheetData>` 替换和窄 sheet catalog 改名；
+  不是语义 rename 或 public `PackageEditor`。
+- In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
+  `WorkbookEditor::worksheet()`、`WorksheetEditor`、`WorksheetEditor::name()`、
+  `try_cell()`、`set_cell()`、`erase_cell()`、`cell_count()` 和
+  `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
+  `WorkbookEditor::save_as()` 自动 flush；不支持 `try_worksheet()`、`get_cell()`、
+  non-default `StyleId`、sharedStrings/style migration、semantic metadata sync、
+  relationship repair 或 large-file low-memory random editing。
 - 公共值和 helper：`CellValue` / `CellValueKind`、PNG/JPEG `ImageInfo` /
   `ImagePixels`、`read_image_info()` 和 `read_image_pixels()`。
 - 最小 OpenXML package 输出：
@@ -215,8 +227,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `ReferencePolicy` 和 worksheet event/transformer 基础；这些仍主要是 internal
   Patch 底座，不是稳定 public package API。
 - 内部 `CellStore` / `CellRecord` sparse store、worksheet-local guardrail 首片、
-  standalone `<sheetData>` emission 和 by-name `PackageEditor` handoff 回归；这仍
-  不是 public random cell editing。
+  standalone `<sheetData>` / full worksheet emission 和 by-name `PackageEditor`
+  handoff 回归；其首个 public 入口是 `WorkbookEditor::worksheet()` / `WorksheetEditor`。
 - 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
   进入 ZIP backend。默认构建使用 stored/no-compression bootstrap；
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
@@ -229,11 +241,102 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。
 - CTest 测试 `fastxlsx.opc`，覆盖内部 OPC manifest、content types、
   relationships 和 XML serializer 基础。
-- CTest 测试 `fastxlsx.package_reader`、`fastxlsx.package_editor`、
-  `fastxlsx.workbook_editor`、`fastxlsx.image`、`fastxlsx.worksheet_event_reader`
-  和 `fastxlsx.worksheet_transformer`，覆盖当前内部 Patch / public Patch facade /
+- CTest 测试 `fastxlsx.package_reader`、`fastxlsx.workbook_editor`、
+  `fastxlsx.image`、`fastxlsx.worksheet_event_reader` 和
+  `fastxlsx.worksheet_transformer`，以及按对象/预算拆分的
+  `fastxlsx.package_editor.*` shards，覆盖当前内部 Patch / public Patch facade /
   image helper / worksheet scan-transform 基础切片。
 - 本机已做 Excel 可视化验证并核对生成样例的关键单元格。
+
+## WorkbookEditor Patch facade 示例
+
+当前 `WorkbookEditor` 的默认 worksheet inspection 面向 current planned catalog：
+成功 `rename_sheet()` 后，`worksheet_names()` / `has_worksheet()` 会看到将要写入
+`save_as()` 输出的名称；`source_worksheet_names()` / `has_source_worksheet()` 保留
+打开时的 source workbook 视图。`replace_sheet_data()` 后再 `rename_sheet()` 会把
+pending replacement diagnostics 迁移到 planned 新名称；如果之后再改回 source 名称，
+diagnostics 也会迁回 source 名称，public summaries 不再标记 renamed。`save_as()`
+被输出路径 guard 拒绝时，不会清空 queued replacement / rename，也不会覆盖
+`last_edit_error()`；调用方
+可以换一个安全输出路径后重试。成功 `save_as()` 也不是 commit / close 操作；
+pending diagnostics 仍可见，同一个 planned state 可以再次另存或继续编辑。
+`pending_replacement_worksheet_names()` 按 current planned catalog order 返回 planned
+names；`pending_worksheet_edits()` / `worksheet_catalog()` 保持 source workbook
+sheet-catalog order。`pending_worksheet_edits()` 是 current planned-state
+summary：rename-only 链如果最终回到 source name，不会留下 summary；粗粒度
+`pending_change_count()` 仍会统计这些成功 public edit calls。public inspection 和 pending diagnostic methods 不会清空、替换或
+创建 `last_edit_error()`。没有 queued public edits 时，no-op `save_as()` 仍是
+reader-backed roundtrip copy；如果之前失败的是 `replace_sheet_data()` 或
+`rename_sheet()`，该失败诊断也会保留，后续成功 public edit 才会清空它。
+`WorkbookEditor` move construction / move assignment 只是 ownership transfer：
+move assignment 会用 source editor state 替换 target state，不合并 queued edits；
+如果 source 已经 moved-from，target 也会变为 moved-from / not open。
+
+```cpp
+#include <fastxlsx/workbook_editor.hpp>
+
+auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
+
+const auto source_names = editor.source_worksheet_names();
+const bool source_has_data = editor.has_source_worksheet("Data");
+
+editor.replace_sheet_data("Data", {
+    {fastxlsx::CellValue::text("Name"), fastxlsx::CellValue::text("Score")},
+    {fastxlsx::CellValue::text("Alice"), fastxlsx::CellValue::number(98.0)},
+});
+
+editor.rename_sheet("Data", "Report");
+
+const bool output_has_report = editor.has_worksheet("Report");
+const auto source_to_planned_catalog = editor.worksheet_catalog();
+const auto pending_replacements = editor.pending_replacement_worksheet_names();
+const auto pending_edit_summaries = editor.pending_worksheet_edits();
+const auto pending_cells = editor.pending_replacement_cell_count();
+const auto last_edit_error = editor.last_edit_error();
+
+editor.replace_sheet_data("Report", {
+    {fastxlsx::CellValue::text("Name"), fastxlsx::CellValue::text("Score"),
+        fastxlsx::CellValue::text("Comment")},
+    {}, // Advances row mapping; it does not emit an explicit empty row.
+    {fastxlsx::CellValue::text("Bob"), fastxlsx::CellValue::number(87.0),
+        fastxlsx::CellValue::blank()}, // Emits an explicit empty cell.
+});
+
+editor.save_as("patched.xlsx");
+```
+
+这条路径只替换已有 worksheet 的 whole-`<sheetData>` 并保存到新文件；它不是
+small-file random cell editing、语义 sheet rename、sharedStrings/style migration 或 public
+`PackageEditor`。小文件随机 cell 编辑请显式使用 `WorkbookEditor::worksheet()` /
+`WorksheetEditor`。`CellValue::blank()` 是显式 replacement cell，会写 empty cell；
+空 row vector 只推进输入行号，不表示 tombstone / erase。
+如果没有 queued public edits，`WorkbookEditor::save_as()` 只是写一个 reader-backed
+roundtrip copy，用于另存为已有 workbook；它仍不是原地 atomic save、transaction
+commit 或 undo/redo history。
+
+## WorksheetEditor small-file In-memory 示例
+
+`WorksheetEditor` 是 `WorkbookEditor` 下的 borrowed handle，用于显式 materialize
+一个已有 worksheet 的小文件随机 cell edits。dirty edits 通过
+`WorkbookEditor::save_as()` 自动 flush 到 Patch plan。这个路径不会迁移
+sharedStrings/style ids，不修复 relationships，也不是大 worksheet 低内存 random access。
+
+```cpp
+#include <fastxlsx/workbook_editor.hpp>
+
+auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
+
+auto sheet = editor.worksheet("Data", fastxlsx::WorksheetEditorOptions{
+    .max_cells = 10000,
+    .memory_budget_bytes = 8 * 1024 * 1024,
+});
+
+auto old_a1 = sheet.try_cell(1, 1);
+sheet.set_cell(1, 1, fastxlsx::CellValue::text("updated"));
+sheet.erase_cell(2, 1);
+
+editor.save_as("edited.xlsx");
+```
 
 当前仍未完成：
 
@@ -242,10 +345,40 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - Catch2 和 Google Benchmark 接入。
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
 - 完整 Phase 3 写入特性、完整 Phase 5 对象编辑能力和系统化性能 benchmark。
-- `WorksheetEditor`、`get_cell()` / `set_cell()` 随机 cell 编辑、workbook-level
-  guardrails、完整 in-memory save-as handoff。
+- `try_worksheet()`、`get_cell()`、workbook-level in-memory guardrails、
+  non-default style migration、sharedStrings migration、完整 semantic metadata sync、
+  relationship repair 和 large-file low-memory random editing。
+  当前 public wording gate 也保持这个边界：README 和 API docs 只把
+  `WorkbookEditor` 写成已实现的 Patch facade；`WorksheetEditorOptions`、
+  `WorkbookEditor::worksheet()` / `try_worksheet()`、`get_cell()` / `set_cell()` /
+  `erase_cell()` 仍是 future draft，不应出现在 public headers，直到 operation-mixing
+  guardrails、dimension refresh 和 save-as persistence 测试一起落地。当前 internal
+  evidence 已补到 source-loaded `CellStore` 在 queued sheet rename 后必须按 planned
+  catalog name handoff；whole-`<sheetData>` handoff 和 full worksheet chunk projection
+  都已有对应回归，后者还验证 refreshed `<dimension>`；old source name 失败也已覆盖
+  不消费 prepared chunk source，planned name 可重试；queued whole worksheet replacement
+  之后再用 source-loaded `CellStore` patch `<sheetData>` 也已覆盖，证明 follow-up
+  handoff 使用 planned worksheet wrapper 而不复活 source-only payload；full worksheet
+  `CellStore` projection 在 queued worksheet replacement 之后也已覆盖，证明后续完整
+  worksheet handoff 会替换 prior planned wrapper 并刷新 `<dimension>`；queued rename
+  与 queued worksheet replacement 组合后，source-loaded `CellStore` `<sheetData>`
+  handoff 也必须按 planned sheet name 执行，old source name 失败不消费 chunk source。
+  同一组合下的 full worksheet `CellStore` projection 也已覆盖，证明 planned-name
+  路径会替换 prior queued wrapper、保留 renamed catalog 并刷新 `<dimension>`。
+  该 staged state 还覆盖 exact 和 path-equivalent source-overwrite `save_as()`
+  失败卫生，并覆盖 empty output path / missing parent / non-directory parent /
+  existing-directory output guards：拒绝这些非法输出路径后仍保留
+  staged chunks / pending edits；source-copy temp failure 和 writer/backend failure
+  也不会覆盖既有输出或丢失 staged state，随后安全输出路径仍可成功保存；成功
+  `save_as()` 后 staged chunks 仍可复用到第二个安全输出路径。
+  这些仍是 internal `PackageEditor` / `CellStore` 回归，不是 public worksheet handle
+  或 random cell editing。
 - 大文件低内存 worksheet event reader / transformer / stream rewrite 的完整 public
-  编辑路径；当前 bounded `sheetData` patch 仍会物化当前 planned worksheet XML。
+  编辑路径；当前 bounded `sheetData` patch 已通过 source entry / planned staged chunks
+  的 chunk-source 读取 worksheet input，并把 rewritten output 写成 file-backed staged
+  chunks，replacement `<sheetData>` caller chunks 会在 rewritten output pass 中直接
+  消费而不是先单独 staging/replay，但仍受 bounded local rewrite 限制，不是完整大文件
+  transformer。
 - sharedStrings 索引迁移、style id 迁移或 styles merge、relationship repair/pruning、
   table/drawing/chart/defined-name 语义同步、calcChain rebuild 和公式求值。
 - existing-workbook 图片、VBA、table、chart、pivot、comments 等复杂对象的语义编辑。

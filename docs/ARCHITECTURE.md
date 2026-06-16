@@ -134,14 +134,19 @@ mergeCells、scenarios、dataConsolidate、customProperties、cellWatches、smar
 webPublishItems、dataValidations、conditionalFormatting、hyperlinks、ignoredErrors、
 printOptions、pageMargins、pageSetup、drawing、legacyDrawing、picture、
 legacyDrawingHF、oleObjects、controls、tableParts 和 extLst；
-当前 helper 仍会物化当前 planned worksheet XML，因此受内部
-`package_editor_sheet_data_local_rewrite_byte_limit` 约束；source/queued worksheet
-XML、replacement `<sheetData>` payload 或 rewritten worksheet XML 超过该 bounded local rewrite 限制时，
-direct/by-name 路径都会在状态变更前失败，不污染 EditPlan、manifest、
-package-entry audit、calc policy、planned output 或输出 bytes，并保留 unknown
-extension bytes；成功路径也会在 EditPlan/output-plan note 和 worksheet part
-reason 中暴露 bounded local rewrite 边界，不能写成大文件低内存 streaming
-worksheet transformer；
+当前 helper 已通过 source package entry 或 planned staged chunks 的 chunk-source 读取
+worksheet input，并把 rewritten worksheet XML 写成 PackageEditor-owned file-backed
+staged chunks；replacement `<sheetData>` caller chunks 会在 rewritten worksheet output
+pass 中直接消费，并在同一 pass 完成 root/structure validation、bounded payload
+guard、payload dependency audit、relationship-id scan 和 output insertion；它仍受内部
+`package_editor_sheet_data_replacement_payload_byte_limit` 约束：
+replacement `<sheetData>` payload 超过该 bounded payload 限制时，direct/by-name
+路径都会在状态变更前失败；source/planned worksheet input 仍可能受 event-reader
+bounded window 拒绝。file-backed rewritten worksheet output 不再仅因最终大小超过该
+payload guard 而失败。这些失败不污染 EditPlan、manifest、package-entry audit、
+calc policy、planned output 或输出 bytes，并保留 unknown extension bytes；成功路径
+也会在 EditPlan/output-plan note 和 worksheet part reason 中
+暴露 bounded local rewrite 边界，不能写成大文件低内存 streaming worksheet transformer；
 当前还覆盖 worksheet-owned background picture part 与 header/footer VML drawing
 part preservation：`sheetData` 局部替换保留 `<picture>` / `<legacyDrawingHF>`
 引用、worksheet `.rels` 中的 `image` / `vmlDrawing` relationships、
@@ -1464,8 +1469,9 @@ P7.5 save-as / Patch handoff draft：
 - 当前已有 internal 回归把 `CellStore` 输出的 standalone `<sheetData>` payload 交给
   by-name `PackageEditor` `sheetData` Patch helper，验证 bounded local worksheet rewrite、
   calc metadata request、默认 calcChain cleanup 和 unknown entry preservation；当前
-  public `WorkbookEditor::replace_sheet_data()` 复用这条窄 handoff，但它仍不是 random
-  cell editing / in-memory materialization save-as。
+  public `WorkbookEditor::replace_sheet_data()` 复用这条窄 handoff，并通过
+  `CellStore` row/cell chunk source 避免先构造完整 standalone `<sheetData>` 字符串，
+  但它仍不是 random cell editing / in-memory materialization save-as。
 - blank / erase / tombstone 在 save-as 阶段必须有明确 contract：删除 `<c>`、写 blank
   styled cell、保留 style/metadata 或 fail；P7.5 不宣称 existing-file cell clearing 已实现。
 - sharedStrings、styles 和 calc metadata 复用 P6 policy：默认 preserve / audit / fail，
@@ -1479,8 +1485,10 @@ P8.1 controlled large worksheet editing draft：
   full cell matrix。
 - 初始能力边界是 sheet replacement、bounded range patch、template fill 和受控 row/cell
   streaming transformation；任意随机 cell editor 仍属于 P7 In-memory 小文件路径。
-- 当前 bounded `replace_worksheet_sheet_data()` 会物化当前 planned worksheet XML，不能
-  写成大文件低内存 transformer；P8 需要新的 event-reader / stream-rewrite 边界。
+- 当前 bounded `replace_worksheet_sheet_data()` 已使用 chunk-source worksheet input、
+  direct replacement sheetData chunk consumption 和 file-backed staged output，但仍是
+  bounded local rewrite，不是完整大文件低内存 transformer；P8/C5 仍需要继续推进真正
+  public stream-rewrite 边界。
 - P8 rewrite 仍必须通过 DependencyAnalyzer / EditPlan 暴露 sharedStrings、styles、
   worksheet `.rels`、tables、drawings、definedNames、calcChain 和 workbook calc metadata
   的 preserve / audit / fail / request-recalc 策略。

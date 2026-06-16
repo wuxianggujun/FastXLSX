@@ -24,6 +24,19 @@ bool is_space(char ch)
     return std::isspace(static_cast<unsigned char>(ch)) != 0;
 }
 
+bool is_xml_declaration(std::string_view raw)
+{
+    if (!starts_with_at(raw, 0, "<?xml")) {
+        return false;
+    }
+    if (raw.size() <= 5) {
+        return false;
+    }
+
+    const char after_target = raw[5];
+    return is_space(after_target) || after_target == '?';
+}
+
 std::string_view trim(std::string_view value)
 {
     while (!value.empty() && is_space(value.front())) {
@@ -205,7 +218,12 @@ public:
     void emit_processing_instruction(std::string_view raw)
     {
         reject_markup_after_root();
-        const WorksheetEventKind kind = starts_with_at(raw, 0, "<?xml")
+        const bool xml_declaration = is_xml_declaration(raw);
+        if (xml_declaration && seen_worksheet_start_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet event reader found XML declaration after worksheet root");
+        }
+        const WorksheetEventKind kind = xml_declaration
             ? WorksheetEventKind::XmlDeclaration
             : WorksheetEventKind::ProcessingInstruction;
         emit(WorksheetEvent { kind, raw, {}, current_row_, current_cell_ });
@@ -337,19 +355,33 @@ private:
         current_cell_storage_.clear();
     }
 
+    void clear_current_cell_value()
+    {
+        in_cell_value_ = false;
+        current_cell_value_element_.clear();
+    }
+
     void emit_closing_tag(std::string_view raw, std::string_view name)
     {
         if (is_value_element(name) && in_cell_) {
+            if (!in_cell_value_ || current_cell_value_element_ != name) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet event reader found a mismatched cell value boundary");
+            }
             emit(WorksheetEvent { WorksheetEventKind::CellValueMarkup,
                 raw,
                 name,
                 current_row_,
                 current_cell_ });
-            in_cell_value_ = false;
+            clear_current_cell_value();
         } else if (name == "c") {
             if (!in_cell_) {
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found a closing cell without a start");
+            }
+            if (in_cell_value_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet event reader found a cell boundary inside an open cell value");
             }
             emit(WorksheetEvent { WorksheetEventKind::CellEnd,
                 raw,
@@ -386,6 +418,12 @@ private:
             }
             emit(WorksheetEvent { WorksheetEventKind::WorksheetEnd, raw, name });
             seen_worksheet_end_ = true;
+        } else if (in_cell_) {
+            emit(WorksheetEvent { WorksheetEventKind::Metadata,
+                raw,
+                name,
+                current_row_,
+                current_cell_ });
         } else if (seen_worksheet_start_ && !seen_worksheet_end_ && !in_sheet_data_) {
             emit(WorksheetEvent { WorksheetEventKind::Metadata, raw, name });
         }
@@ -417,6 +455,11 @@ private:
                 seen_worksheet_end_ = true;
             }
         } else if (name == "sheetData") {
+            if (seen_sheet_data_ || in_sheet_data_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet event reader found an invalid sheetData boundary");
+            }
+            seen_sheet_data_ = true;
             in_sheet_data_ = true;
             emit(WorksheetEvent { WorksheetEventKind::SheetDataStart,
                 raw,
@@ -438,6 +481,10 @@ private:
         } else if (name == "row") {
             if (!in_sheet_data_) {
                 throw fastxlsx::FastXlsxError("worksheet event reader found row outside sheetData");
+            }
+            if (in_row_ || in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet event reader found an invalid row boundary");
             }
             set_current_row(unqualified_attribute_value(raw, "r"));
             in_row_ = true;
@@ -463,6 +510,10 @@ private:
             if (!in_row_) {
                 throw fastxlsx::FastXlsxError("worksheet event reader found cell outside row");
             }
+            if (in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet event reader found an invalid cell boundary");
+            }
             set_current_cell(unqualified_attribute_value(raw, "r"));
             in_cell_ = true;
             emit(WorksheetEvent { WorksheetEventKind::CellStart,
@@ -484,6 +535,10 @@ private:
                 clear_current_cell();
             }
         } else if (is_value_element(name) && in_cell_) {
+            if (in_cell_value_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet event reader found nested cell value markup");
+            }
             emit(WorksheetEvent { WorksheetEventKind::CellValueMarkup,
                 raw,
                 name,
@@ -491,7 +546,18 @@ private:
                 current_cell_,
                 {},
                 self_closing });
-            in_cell_value_ = !self_closing;
+            if (!self_closing) {
+                in_cell_value_ = true;
+                current_cell_value_element_ = std::string(name);
+            }
+        } else if (in_cell_) {
+            emit(WorksheetEvent { WorksheetEventKind::Metadata,
+                raw,
+                name,
+                current_row_,
+                current_cell_,
+                {},
+                self_closing });
         } else if (seen_worksheet_start_ && !seen_worksheet_end_ && !in_sheet_data_) {
             emit(WorksheetEvent { WorksheetEventKind::Metadata,
                 raw,
@@ -507,37 +573,39 @@ private:
     bool copy_context_attributes_ = false;
     bool seen_worksheet_start_ = false;
     bool seen_worksheet_end_ = false;
+    bool seen_sheet_data_ = false;
     bool in_sheet_data_ = false;
     bool in_row_ = false;
     bool in_cell_ = false;
     bool in_cell_value_ = false;
     std::string current_row_storage_;
     std::string current_cell_storage_;
+    std::string current_cell_value_element_;
     std::string_view current_row_;
     std::string_view current_cell_;
 };
 
 std::size_t consume_available_events(
-    std::string_view worksheet_xml, bool final_chunk, WorksheetEventState& state)
+    std::string_view xml_window, bool final_chunk, WorksheetEventState& state)
 {
     std::size_t position = 0;
-    while (position < worksheet_xml.size()) {
-        const std::size_t open = worksheet_xml.find('<', position);
+    while (position < xml_window.size()) {
+        const std::size_t open = xml_window.find('<', position);
         if (open == std::string_view::npos) {
             if (final_chunk) {
-                state.emit_text(worksheet_xml.substr(position));
-                return worksheet_xml.size();
+                state.emit_text(xml_window.substr(position));
+                return xml_window.size();
             }
             return position;
         }
 
         if (open > position) {
-            state.emit_text(worksheet_xml.substr(position, open - position));
+            state.emit_text(xml_window.substr(position, open - position));
             position = open;
         }
 
-        if (starts_with_at(worksheet_xml, position, "<!--")) {
-            const std::size_t end = worksheet_xml.find("-->", position + 4);
+        if (starts_with_at(xml_window, position, "<!--")) {
+            const std::size_t end = xml_window.find("-->", position + 4);
             if (end == std::string_view::npos) {
                 if (!final_chunk) {
                     return position;
@@ -545,14 +613,14 @@ std::size_t consume_available_events(
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found an unterminated XML comment");
             }
-            const std::string_view raw = worksheet_xml.substr(position, end + 3 - position);
+            const std::string_view raw = xml_window.substr(position, end + 3 - position);
             state.emit_comment(raw);
             position = end + 3;
             continue;
         }
 
-        if (starts_with_at(worksheet_xml, position, "<?")) {
-            const std::size_t end = worksheet_xml.find("?>", position + 2);
+        if (starts_with_at(xml_window, position, "<?")) {
+            const std::size_t end = xml_window.find("?>", position + 2);
             if (end == std::string_view::npos) {
                 if (!final_chunk) {
                     return position;
@@ -560,34 +628,34 @@ std::size_t consume_available_events(
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found an unterminated processing instruction");
             }
-            const std::string_view raw = worksheet_xml.substr(position, end + 2 - position);
+            const std::string_view raw = xml_window.substr(position, end + 2 - position);
             state.emit_processing_instruction(raw);
             position = end + 2;
             continue;
         }
 
-        if (starts_with_at(worksheet_xml, position, "<!")) {
-            const std::size_t end = find_markup_end_or_npos(worksheet_xml, position);
+        if (starts_with_at(xml_window, position, "<!")) {
+            const std::size_t end = find_markup_end_or_npos(xml_window, position);
             if (end == std::string_view::npos) {
                 if (!final_chunk) {
                     return position;
                 }
                 throw fastxlsx::FastXlsxError("worksheet event reader found unterminated markup");
             }
-            const std::string_view raw = worksheet_xml.substr(position, end + 1 - position);
+            const std::string_view raw = xml_window.substr(position, end + 1 - position);
             state.emit_unsupported(raw);
             position = end + 1;
             continue;
         }
 
-        const std::size_t close = find_markup_end_or_npos(worksheet_xml, position);
+        const std::size_t close = find_markup_end_or_npos(xml_window, position);
         if (close == std::string_view::npos) {
             if (!final_chunk) {
                 return position;
             }
             throw fastxlsx::FastXlsxError("worksheet event reader found unterminated markup");
         }
-        const std::string_view raw = worksheet_xml.substr(position, close + 1 - position);
+        const std::string_view raw = xml_window.substr(position, close + 1 - position);
         state.emit_tag(raw);
         position = close + 1;
     }
@@ -637,42 +705,6 @@ void process_source_chunk(std::string_view chunk,
 } // namespace
 
 namespace fastxlsx::detail {
-
-void scan_worksheet_events(
-    std::string_view worksheet_xml, const WorksheetEventCallback& callback)
-{
-    if (!callback) {
-        throw FastXlsxError("worksheet event reader requires a callback");
-    }
-
-    WorksheetEventState state(callback, false);
-    (void)consume_available_events(worksheet_xml, true, state);
-    state.finish();
-}
-
-void scan_worksheet_events_from_chunks(
-    std::span<const std::string_view> worksheet_xml_chunks,
-    const WorksheetEventCallback& callback,
-    WorksheetEventReaderOptions options)
-{
-    if (!callback) {
-        throw FastXlsxError("worksheet event reader requires a callback");
-    }
-    if (options.max_window_bytes == 0) {
-        throw FastXlsxError("worksheet event reader requires a nonzero input window limit");
-    }
-
-    WorksheetEventState state(callback, true);
-    std::string window;
-    window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
-
-    for (std::string_view chunk : worksheet_xml_chunks) {
-        process_source_chunk(chunk, options, window, state);
-    }
-
-    process_window(window, true, state);
-    state.finish();
-}
 
 void scan_worksheet_events_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,

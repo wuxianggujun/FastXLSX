@@ -4,22 +4,24 @@
 #include <fastxlsx/workbook.hpp>
 
 #include <cctype>
+#include <limits>
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace {
 
 using fastxlsx::detail::WorksheetCellReplacement;
+using fastxlsx::detail::WorksheetCellReplacementPayload;
 using fastxlsx::detail::WorksheetEvent;
 using fastxlsx::detail::WorksheetEventKind;
+using fastxlsx::detail::WorksheetCellReplacementPlan;
 using fastxlsx::detail::WorksheetOutputChunkCallback;
 using fastxlsx::detail::WorksheetTransformAction;
 using fastxlsx::detail::WorksheetTransformActionCallback;
 using fastxlsx::detail::WorksheetTransformActionKind;
 using fastxlsx::detail::WorksheetTransformSummary;
-
-using ReplacementIndex = std::map<std::string, std::string_view, std::less<>>;
 
 bool is_space(char ch)
 {
@@ -34,6 +36,18 @@ bool has_non_whitespace(std::string_view value)
         }
     }
     return false;
+}
+
+void require_replacement_cell_payload_size(const fastxlsx::detail::WorksheetCellReplacementPayload& payload)
+{
+    if (payload.byte_size()
+        <= fastxlsx::detail::worksheet_replacement_cell_xml_materialization_byte_limit) {
+        return;
+    }
+
+    throw fastxlsx::FastXlsxError(
+        "worksheet transformer replacement cell XML exceeds the single-cell materialized "
+        "payload limit");
 }
 
 std::size_t find_start_tag_end(std::string_view xml, std::size_t start)
@@ -70,26 +84,182 @@ std::string_view xml_local_name(std::string_view qualified_name)
     return qualified_name.substr(colon + 1);
 }
 
-std::string_view parse_replacement_cell_reference(std::string_view replacement_cell_xml)
+std::string_view parse_tag_name(
+    std::string_view xml,
+    std::size_t name_start,
+    std::size_t tag_end)
+{
+    while (name_start < tag_end && is_space(xml[name_start])) {
+        ++name_start;
+    }
+    std::size_t name_end = name_start;
+    while (name_end < tag_end && !is_space(xml[name_end])
+           && xml[name_end] != '/' && xml[name_end] != '>') {
+        ++name_end;
+    }
+    if (name_end == name_start) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML tag name is missing");
+    }
+    return xml.substr(name_start, name_end - name_start);
+}
+
+bool start_tag_is_self_closing(std::string_view xml, std::size_t tag_end)
+{
+    std::size_t cursor = tag_end;
+    while (cursor > 0 && is_space(xml[cursor - 1])) {
+        --cursor;
+    }
+    return cursor > 0 && xml[cursor - 1] == '/';
+}
+
+void validate_no_non_whitespace_outside_root(std::string_view text)
+{
+    if (has_non_whitespace(text)) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML has text outside the root element");
+    }
+}
+
+void validate_replacement_cell_xml_structure(std::string_view xml)
+{
+    std::vector<std::string_view> open_elements;
+    bool saw_root = false;
+    bool root_closed = false;
+    std::size_t cursor = 0;
+
+    while (cursor < xml.size()) {
+        const std::size_t open = xml.find('<', cursor);
+        if (open == std::string_view::npos) {
+            if (open_elements.empty()) {
+                validate_no_non_whitespace_outside_root(xml.substr(cursor));
+            }
+            break;
+        }
+        if (open > cursor && open_elements.empty()) {
+            validate_no_non_whitespace_outside_root(xml.substr(cursor, open - cursor));
+        }
+        cursor = open;
+
+        if (xml.substr(cursor, 4) == "<!--") {
+            const std::size_t close = xml.find("-->", cursor + 4);
+            if (close == std::string_view::npos) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML comment is not closed");
+            }
+            cursor = close + 3;
+            continue;
+        }
+        if (xml.substr(cursor, 9) == "<![CDATA[") {
+            if (open_elements.empty()) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML has CDATA outside the root element");
+            }
+            const std::size_t close = xml.find("]]>", cursor + 9);
+            if (close == std::string_view::npos) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML CDATA is not closed");
+            }
+            cursor = close + 3;
+            continue;
+        }
+        if (xml.substr(cursor, 2) == "<?") {
+            const std::size_t close = xml.find("?>", cursor + 2);
+            if (close == std::string_view::npos) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML processing instruction is not closed");
+            }
+            cursor = close + 2;
+            continue;
+        }
+        if (xml.substr(cursor, 2) == "<!") {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML contains unsupported markup");
+        }
+
+        const std::size_t tag_end = find_start_tag_end(xml, cursor);
+        if (tag_end == std::string_view::npos) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML tag is truncated");
+        }
+
+        if (cursor + 1 < xml.size() && xml[cursor + 1] == '/') {
+            const std::string_view closing_name =
+                parse_tag_name(xml, cursor + 2, tag_end);
+            if (open_elements.empty()) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML closing tag has no matching start tag");
+            }
+            if (xml_local_name(open_elements.back()) != xml_local_name(closing_name)) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML closing tag does not match start tag");
+            }
+            open_elements.pop_back();
+            if (open_elements.empty()) {
+                root_closed = true;
+            }
+            cursor = tag_end + 1;
+            continue;
+        }
+
+        if (root_closed) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet transformer replacement cell XML has multiple root elements");
+        }
+
+        const std::string_view start_name = parse_tag_name(xml, cursor + 1, tag_end);
+        if (!saw_root) {
+            if (xml_local_name(start_name) != "c") {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet transformer replacement cell XML root must be a cell element");
+            }
+            saw_root = true;
+        }
+
+        if (start_tag_is_self_closing(xml, tag_end)) {
+            if (open_elements.empty()) {
+                root_closed = true;
+            }
+        } else {
+            open_elements.push_back(start_name);
+        }
+        cursor = tag_end + 1;
+    }
+
+    if (!saw_root) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML must begin with a cell element");
+    }
+    if (!open_elements.empty()) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet transformer replacement cell XML closing tag is missing");
+    }
+}
+
+std::string_view parse_replacement_cell_reference(
+    std::string_view materialized_replacement_cell_xml)
 {
     std::size_t cursor = 0;
-    while (cursor < replacement_cell_xml.size() && is_space(replacement_cell_xml[cursor])) {
+    while (cursor < materialized_replacement_cell_xml.size()
+        && is_space(materialized_replacement_cell_xml[cursor])) {
         ++cursor;
     }
 
-    if (cursor >= replacement_cell_xml.size() || replacement_cell_xml[cursor] != '<'
-        || cursor + 1 >= replacement_cell_xml.size()) {
+    if (cursor >= materialized_replacement_cell_xml.size()
+        || materialized_replacement_cell_xml[cursor] != '<'
+        || cursor + 1 >= materialized_replacement_cell_xml.size()) {
         throw fastxlsx::FastXlsxError(
             "worksheet transformer replacement cell XML must begin with a cell element");
     }
 
-    const char first_tag_char = replacement_cell_xml[cursor + 1];
+    const char first_tag_char = materialized_replacement_cell_xml[cursor + 1];
     if (first_tag_char == '/' || first_tag_char == '?' || first_tag_char == '!') {
         throw fastxlsx::FastXlsxError(
             "worksheet transformer replacement cell XML must begin with a cell element");
     }
 
-    const std::size_t tag_end = find_start_tag_end(replacement_cell_xml, cursor);
+    const std::size_t tag_end =
+        find_start_tag_end(materialized_replacement_cell_xml, cursor);
     if (tag_end == std::string_view::npos) {
         throw fastxlsx::FastXlsxError(
             "worksheet transformer replacement cell XML has an unterminated start tag");
@@ -97,8 +267,8 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
 
     std::size_t name_start = cursor + 1;
     std::size_t name_end = name_start;
-    while (name_end < tag_end && !is_space(replacement_cell_xml[name_end])
-           && replacement_cell_xml[name_end] != '/') {
+    while (name_end < tag_end && !is_space(materialized_replacement_cell_xml[name_end])
+           && materialized_replacement_cell_xml[name_end] != '/') {
         ++name_end;
     }
     if (name_end == name_start) {
@@ -107,7 +277,7 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
     }
 
     const std::string_view qualified_name =
-        replacement_cell_xml.substr(name_start, name_end - name_start);
+        materialized_replacement_cell_xml.substr(name_start, name_end - name_start);
     if (xml_local_name(qualified_name) != "c") {
         throw fastxlsx::FastXlsxError(
             "worksheet transformer replacement cell XML root must be a cell element");
@@ -117,15 +287,15 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
     std::string_view cell_reference;
     cursor = name_end;
     while (cursor < tag_end) {
-        while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+        while (cursor < tag_end && is_space(materialized_replacement_cell_xml[cursor])) {
             ++cursor;
         }
         if (cursor >= tag_end) {
             break;
         }
-        if (replacement_cell_xml[cursor] == '/') {
+        if (materialized_replacement_cell_xml[cursor] == '/') {
             ++cursor;
-            while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+            while (cursor < tag_end && is_space(materialized_replacement_cell_xml[cursor])) {
                 ++cursor;
             }
             if (cursor != tag_end) {
@@ -136,8 +306,9 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
         }
 
         const std::size_t attribute_name_start = cursor;
-        while (cursor < tag_end && !is_space(replacement_cell_xml[cursor])
-               && replacement_cell_xml[cursor] != '=' && replacement_cell_xml[cursor] != '/') {
+        while (cursor < tag_end && !is_space(materialized_replacement_cell_xml[cursor])
+               && materialized_replacement_cell_xml[cursor] != '='
+               && materialized_replacement_cell_xml[cursor] != '/') {
             ++cursor;
         }
         if (cursor == attribute_name_start) {
@@ -145,28 +316,30 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
                 "worksheet transformer replacement cell XML has malformed attributes");
         }
         const std::string_view attribute_name =
-            replacement_cell_xml.substr(attribute_name_start, cursor - attribute_name_start);
+            materialized_replacement_cell_xml.substr(
+                attribute_name_start, cursor - attribute_name_start);
 
-        while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+        while (cursor < tag_end && is_space(materialized_replacement_cell_xml[cursor])) {
             ++cursor;
         }
-        if (cursor >= tag_end || replacement_cell_xml[cursor] != '=') {
+        if (cursor >= tag_end || materialized_replacement_cell_xml[cursor] != '=') {
             throw fastxlsx::FastXlsxError(
                 "worksheet transformer replacement cell XML has malformed attributes");
         }
         ++cursor;
-        while (cursor < tag_end && is_space(replacement_cell_xml[cursor])) {
+        while (cursor < tag_end && is_space(materialized_replacement_cell_xml[cursor])) {
             ++cursor;
         }
         if (cursor >= tag_end
-            || (replacement_cell_xml[cursor] != '"' && replacement_cell_xml[cursor] != '\'')) {
+            || (materialized_replacement_cell_xml[cursor] != '"'
+                && materialized_replacement_cell_xml[cursor] != '\'')) {
             throw fastxlsx::FastXlsxError(
                 "worksheet transformer replacement cell XML attributes must be quoted");
         }
 
-        const char quote = replacement_cell_xml[cursor];
+        const char quote = materialized_replacement_cell_xml[cursor];
         const std::size_t attribute_value_start = ++cursor;
-        while (cursor < tag_end && replacement_cell_xml[cursor] != quote) {
+        while (cursor < tag_end && materialized_replacement_cell_xml[cursor] != quote) {
             ++cursor;
         }
         if (cursor >= tag_end) {
@@ -174,7 +347,8 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
                 "worksheet transformer replacement cell XML has an unterminated attribute");
         }
         const std::string_view attribute_value =
-            replacement_cell_xml.substr(attribute_value_start, cursor - attribute_value_start);
+            materialized_replacement_cell_xml.substr(
+                attribute_value_start, cursor - attribute_value_start);
         ++cursor;
 
         if (attribute_name == "r") {
@@ -194,40 +368,17 @@ std::string_view parse_replacement_cell_reference(std::string_view replacement_c
     return cell_reference;
 }
 
-void validate_replacement_cell_payload(const WorksheetCellReplacement& replacement)
+void validate_replacement_cell_payload(
+    const WorksheetCellReplacement& replacement,
+    std::string_view materialized_replacement_cell_xml)
 {
     const std::string_view replacement_cell_reference =
-        parse_replacement_cell_reference(replacement.replacement_cell_xml);
+        parse_replacement_cell_reference(materialized_replacement_cell_xml);
     if (replacement_cell_reference != replacement.cell_reference) {
         throw fastxlsx::FastXlsxError(
             "worksheet transformer replacement cell XML r attribute must match its selector");
     }
-}
-
-ReplacementIndex build_replacement_index(std::span<const WorksheetCellReplacement> replacements)
-{
-    ReplacementIndex index;
-
-    for (const WorksheetCellReplacement& replacement : replacements) {
-        if (!has_non_whitespace(replacement.cell_reference)) {
-            throw fastxlsx::FastXlsxError(
-                "worksheet transformer replacement cell reference cannot be empty");
-        }
-        if (!has_non_whitespace(replacement.replacement_cell_xml)) {
-            throw fastxlsx::FastXlsxError(
-                "worksheet transformer replacement cell XML cannot be empty");
-        }
-        validate_replacement_cell_payload(replacement);
-
-        auto [_, inserted] =
-            index.emplace(std::string(replacement.cell_reference), replacement.replacement_cell_xml);
-        if (!inserted) {
-            throw fastxlsx::FastXlsxError(
-                "worksheet transformer replacement cell references must be unique");
-        }
-    }
-
-    return index;
+    validate_replacement_cell_xml_structure(materialized_replacement_cell_xml);
 }
 
 void emit_pass_through(const WorksheetTransformActionCallback& callback, const WorksheetEvent& event)
@@ -243,14 +394,15 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback, const W
 }
 
 void consume_replacement_event(const WorksheetEvent& event,
-    const ReplacementIndex& replacement_index,
-    std::set<std::string, std::less<>>& matched_replacements,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    std::set<std::string_view, std::less<>>& matched_replacements,
     bool& replacing_current_cell,
     const WorksheetTransformActionCallback& callback)
 {
     if (event.kind == WorksheetEventKind::CellStart) {
-        const auto replacement = replacement_index.find(event.cell_reference);
-        if (replacement != replacement_index.end()) {
+        const auto replacement =
+            replacement_plan.replacement_payloads_by_reference.find(event.cell_reference);
+        if (replacement != replacement_plan.replacement_payloads_by_reference.end()) {
             callback(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
                 event.kind,
                 event.raw_xml,
@@ -275,14 +427,15 @@ void consume_replacement_event(const WorksheetEvent& event,
     emit_pass_through(callback, event);
 }
 
-WorksheetTransformSummary build_summary(const ReplacementIndex& replacement_index,
-    const std::set<std::string, std::less<>>& matched_replacements)
+WorksheetTransformSummary build_summary(const WorksheetCellReplacementPlan& replacement_plan,
+    const std::set<std::string_view, std::less<>>& matched_replacements)
 {
     WorksheetTransformSummary summary;
     summary.matched_replacement_count = matched_replacements.size();
-    for (const auto& [cell_reference, _] : replacement_index) {
+    for (const auto& [cell_reference, _] :
+        replacement_plan.replacement_payloads_by_reference) {
         if (!matched_replacements.contains(cell_reference)) {
-            summary.missing_cell_references.push_back(cell_reference);
+            summary.missing_cell_references.emplace_back(cell_reference);
         }
     }
     return summary;
@@ -295,59 +448,85 @@ void emit_chunk(const WorksheetOutputChunkCallback& callback, std::string_view c
     }
 }
 
+bool is_self_closing_synthetic_end_event(
+    WorksheetEventKind event_kind, bool self_closing) noexcept
+{
+    if (!self_closing) {
+        return false;
+    }
+
+    return event_kind == WorksheetEventKind::WorksheetEnd
+        || event_kind == WorksheetEventKind::SheetDataEnd
+        || event_kind == WorksheetEventKind::RowEnd
+        || event_kind == WorksheetEventKind::CellEnd;
+}
+
 } // namespace
 
 namespace fastxlsx::detail {
 
-WorksheetTransformSummary scan_cell_replacement_actions(
-    std::string_view worksheet_xml,
-    std::span<const WorksheetCellReplacement> replacements,
-    const WorksheetTransformActionCallback& callback)
+WorksheetCellReplacementPayload WorksheetCellReplacementPayload::from_chunks(
+    std::span<const std::string_view> chunks)
 {
-    if (!callback) {
-        throw FastXlsxError("worksheet transformer requires a callback");
+    WorksheetCellReplacementPayload payload;
+    payload.chunks_.reserve(chunks.size());
+
+    for (const std::string_view chunk : chunks) {
+        if (chunk.size() > std::numeric_limits<std::size_t>::max() - payload.byte_size_) {
+            throw FastXlsxError(
+                "worksheet transformer replacement cell XML byte size overflow");
+        }
+        payload.chunks_.push_back(chunk);
+        payload.byte_size_ += chunk.size();
     }
 
-    const ReplacementIndex replacement_index = build_replacement_index(replacements);
-    std::set<std::string, std::less<>> matched_replacements;
-    bool replacing_current_cell = false;
-
-    scan_worksheet_events(worksheet_xml, [&](const WorksheetEvent& event) {
-        consume_replacement_event(
-            event, replacement_index, matched_replacements, replacing_current_cell, callback);
-    });
-
-    return build_summary(replacement_index, matched_replacements);
+    return payload;
 }
 
-WorksheetTransformSummary scan_cell_replacement_actions_from_chunks(
-    std::span<const std::string_view> worksheet_xml_chunks,
-    std::span<const WorksheetCellReplacement> replacements,
-    const WorksheetTransformActionCallback& callback,
-    WorksheetEventReaderOptions reader_options)
+std::string WorksheetCellReplacementPayload::materialize_for_preflight() const
 {
-    if (!callback) {
-        throw FastXlsxError("worksheet transformer requires a callback");
+    require_replacement_cell_payload_size(*this);
+
+    std::string materialized;
+    materialized.reserve(byte_size_);
+    for_each_chunk([&](std::string_view chunk) { materialized += chunk; });
+    return materialized;
+}
+
+WorksheetCellReplacementPlan make_worksheet_cell_replacement_plan(
+    std::span<const WorksheetCellReplacement> replacements)
+{
+    WorksheetCellReplacementPlan plan;
+
+    for (const WorksheetCellReplacement& replacement : replacements) {
+        if (!has_non_whitespace(replacement.cell_reference)) {
+            throw FastXlsxError(
+                "worksheet transformer replacement cell reference cannot be empty");
+        }
+        require_replacement_cell_payload_size(replacement.replacement_payload);
+        const std::string materialized_replacement_cell_xml =
+            replacement.replacement_payload.materialize_for_preflight();
+        if (!has_non_whitespace(materialized_replacement_cell_xml)) {
+            throw FastXlsxError(
+                "worksheet transformer replacement cell XML cannot be empty");
+        }
+        validate_replacement_cell_payload(replacement, materialized_replacement_cell_xml);
+
+        auto [_, inserted] =
+            plan.replacement_payloads_by_reference.emplace(replacement.cell_reference,
+                replacement.replacement_payload);
+        if (!inserted) {
+            throw FastXlsxError(
+                "worksheet transformer replacement cell references must be unique");
+        }
     }
 
-    const ReplacementIndex replacement_index = build_replacement_index(replacements);
-    std::set<std::string, std::less<>> matched_replacements;
-    bool replacing_current_cell = false;
-
-    scan_worksheet_events_from_chunks(
-        worksheet_xml_chunks,
-        [&](const WorksheetEvent& event) {
-            consume_replacement_event(
-                event, replacement_index, matched_replacements, replacing_current_cell, callback);
-        },
-        reader_options);
-
-    return build_summary(replacement_index, matched_replacements);
+    return plan;
 }
 
 WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
-    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetCellReplacementPlan& replacement_plan,
     const WorksheetTransformActionCallback& callback,
     WorksheetEventReaderOptions reader_options)
 {
@@ -358,66 +537,23 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
         throw FastXlsxError("worksheet transformer requires a callback");
     }
 
-    const ReplacementIndex replacement_index = build_replacement_index(replacements);
-    std::set<std::string, std::less<>> matched_replacements;
+    std::set<std::string_view, std::less<>> matched_replacements;
     bool replacing_current_cell = false;
 
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
         [&](const WorksheetEvent& event) {
             consume_replacement_event(
-                event, replacement_index, matched_replacements, replacing_current_cell, callback);
+                event, replacement_plan, matched_replacements, replacing_current_cell, callback);
         },
         reader_options);
 
-    return build_summary(replacement_index, matched_replacements);
-}
-
-WorksheetTransformSummary emit_cell_replacement_worksheet(
-    std::string_view worksheet_xml,
-    std::span<const WorksheetCellReplacement> replacements,
-    const WorksheetOutputChunkCallback& callback)
-{
-    if (!callback) {
-        throw FastXlsxError("worksheet transformer output emitter requires a callback");
-    }
-
-    return scan_cell_replacement_actions(
-        worksheet_xml, replacements, [&](const WorksheetTransformAction& action) {
-            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
-                emit_chunk(callback, action.replacement_cell_xml);
-                return;
-            }
-            emit_chunk(callback, action.raw_xml);
-        });
-}
-
-WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunks(
-    std::span<const std::string_view> worksheet_xml_chunks,
-    std::span<const WorksheetCellReplacement> replacements,
-    const WorksheetOutputChunkCallback& callback,
-    WorksheetEventReaderOptions reader_options)
-{
-    if (!callback) {
-        throw FastXlsxError("worksheet transformer output emitter requires a callback");
-    }
-
-    return scan_cell_replacement_actions_from_chunks(
-        worksheet_xml_chunks,
-        replacements,
-        [&](const WorksheetTransformAction& action) {
-            if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
-                emit_chunk(callback, action.replacement_cell_xml);
-                return;
-            }
-            emit_chunk(callback, action.raw_xml);
-        },
-        reader_options);
+    return build_summary(replacement_plan, matched_replacements);
 }
 
 WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
-    std::span<const WorksheetCellReplacement> replacements,
+    const WorksheetCellReplacementPlan& replacement_plan,
     const WorksheetOutputChunkCallback& callback,
     WorksheetEventReaderOptions reader_options)
 {
@@ -430,10 +566,14 @@ WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(
 
     return scan_cell_replacement_actions_from_chunk_source(
         read_next_chunk,
-        replacements,
+        replacement_plan,
         [&](const WorksheetTransformAction& action) {
             if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
-                emit_chunk(callback, action.replacement_cell_xml);
+                action.replacement_payload.for_each_chunk(
+                    [&](std::string_view chunk) { emit_chunk(callback, chunk); });
+                return;
+            }
+            if (is_self_closing_synthetic_end_event(action.event_kind, action.self_closing)) {
                 return;
             }
             emit_chunk(callback, action.raw_xml);

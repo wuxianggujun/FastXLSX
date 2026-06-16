@@ -15,21 +15,42 @@
 
 namespace fastxlsx::detail {
 
-// Current internal sheetData patch helper materializes the planned worksheet XML.
-// Keep that path bounded until a true streaming worksheet transformer exists.
-inline constexpr std::size_t package_editor_sheet_data_local_rewrite_byte_limit =
+// Current internal sheetData patch helper uses chunk-source input and
+// file-backed staged output, but keeps the replacement payload guard until a
+// true streaming worksheet transformer exists. Source/planned worksheet input is
+// separately constrained by the event-reader retained-window guard below.
+inline constexpr std::size_t package_editor_sheet_data_replacement_payload_byte_limit =
     4U * 1024U * 1024U;
 
 // Current cell replacement uses this as the event-reader retained-window guard.
-// Source package worksheet entries, planned staged chunks, and queued planned
-// strings are scanned through chunk-source readers; queued strings may already
-// have been materialized by the prior planned replacement helper.
-inline constexpr std::size_t package_editor_cell_replacement_materialized_input_byte_limit =
+// Source package worksheet entries and planned staged chunks are scanned through
+// chunk-source readers. Ordinary non-worksheet part replacements can still be
+// queued as strings, but worksheet part replacement paths hand off planned
+// worksheet XML as staged chunks after validation/audit or ordinary staging.
+inline constexpr std::size_t package_editor_cell_replacement_event_window_byte_limit =
     4U * 1024U * 1024U;
+
+// Workbook catalog/calc helpers intentionally materialize workbook.xml as a
+// small metadata part. Keep that boundary explicit so it cannot become a broad
+// package-part string fallback.
+inline constexpr std::size_t package_editor_workbook_xml_materialization_byte_limit =
+    4U * 1024U * 1024U;
+
+// Active/generated content types, relationships, and docProps rewrites are
+// intentionally materialized as small metadata XML. Copy-original source
+// metadata entries use file-backed chunks instead.
+inline constexpr std::size_t package_editor_metadata_xml_materialization_byte_limit =
+    4U * 1024U * 1024U;
+
+// Ordinary replace_part() is only an internal small-XML convenience for
+// workbook/core/app source parts and generated metadata. Other existing source
+// package parts use staged chunks so object payloads and worksheet dependencies
+// do not re-enter materialized replacement state.
 
 struct PackagePartReplacement {
     PartName part_name;
-    std::string data;
+    // Bounded workbook/core/app or generated small XML. Other source parts use chunks.
+    std::string materialized_small_xml;
     std::vector<PackageEntryChunk> chunks;
     PartWriteMode write_mode = PartWriteMode::LocalDomRewrite;
     std::string reason;
@@ -37,7 +58,9 @@ struct PackagePartReplacement {
 
 struct PackageEntryReplacement {
     std::string entry_name;
-    std::string data;
+    // Materialized payload for active metadata entries only:
+    // [Content_Types].xml, package relationships, and source-owned .rels.
+    std::string materialized_data;
 };
 
 struct PackageEditorOutputEntryPlan {
@@ -48,6 +71,11 @@ struct PackageEditorOutputEntryPlan {
     bool generated = false;
     bool copied_from_source = false;
     bool omitted = false;
+    bool file_backed_source_copy = false;
+    bool staged_replacement_chunks = false;
+    bool materialized_replacement = false;
+    std::string file_backed_source_copy_reason;
+    std::string materialized_replacement_reason;
     PackageEntryAuditKind audit_kind = PackageEntryAuditKind::Generic;
     std::string part_name;
     std::string owner_part;
@@ -71,6 +99,45 @@ struct PackageEditorOutputPlan {
     std::vector<WorksheetPayloadDependencyAudit> worksheet_payload_dependency_audits;
     std::vector<WorkbookPayloadDependencyAudit> workbook_payload_dependency_audits;
 };
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+using PackageEditorSourceCopyTempFilesHook =
+    void (*)(std::span<const std::filesystem::path> temporary_source_files);
+void testing_set_package_editor_source_copy_temp_files_hook(
+    PackageEditorSourceCopyTempFilesHook hook) noexcept;
+
+struct ReplacementCellPayloadScannerTestResult {
+    std::size_t start_tag_count = 0;
+    std::size_t formula_tag_count = 0;
+    std::size_t relationship_reference_tag_count = 0;
+};
+
+ReplacementCellPayloadScannerTestResult testing_scan_replacement_cell_payload_start_tags(
+    const WorksheetCellReplacementPayload& payload);
+
+struct SheetDataStartTagScannerTestResult {
+    std::size_t start_tag_count = 0;
+    std::size_t formula_tag_count = 0;
+    std::size_t shared_string_cell_tag_count = 0;
+};
+
+SheetDataStartTagScannerTestResult testing_scan_sheet_data_start_tags_from_chunks(
+    std::span<const std::string_view> chunks,
+    std::size_t max_window_bytes);
+
+struct RelationshipReferenceScannerTestResult {
+    std::vector<std::string> elements;
+    std::vector<std::string> relationship_ids;
+};
+
+RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_references_from_chunks(
+    std::span<const std::string_view> chunks);
+
+[[nodiscard]] std::string testing_read_package_entry_chunks_to_string(
+    std::vector<PackageEntryChunk> chunks);
+[[nodiscard]] std::string testing_read_first_package_entry_chunk_for_lifecycle(
+    std::vector<PackageEntryChunk> chunks);
+#endif
 
 // Internal PackageEditor foundation for the Patch path.
 //
@@ -141,44 +208,86 @@ public:
     [[nodiscard]] const PackageManifest& manifest() const noexcept;
     [[nodiscard]] const EditPlan& edit_plan() const noexcept;
 
-    void replace_part(PartName part_name, std::string data, PartWriteMode write_mode,
-        std::string reason = {});
-    // Internal staged package-entry source foundation for future worksheet stream
+    void replace_part(PartName part_name, std::string materialized_small_xml,
+        PartWriteMode write_mode, std::string reason = {});
+    // Internal staged package-entry source foundation for non-worksheet stream
     // rewrite work. The caller supplies already-produced chunks for an existing
-    // package part; this records a StreamRewrite part replacement and lets
-    // save_as() hand the chunks to PackageWriter without flattening them into one
-    // string. It is not a public Patch API, XML validator, dependency repair, or
-    // calc metadata helper.
+    // non-small package part; this records a StreamRewrite part replacement and
+    // lets save_as() hand the chunks to PackageWriter without flattening them
+    // into one string. Worksheet parts are routed through
+    // replace_worksheet_part_chunks() so generic staged chunks cannot bypass
+    // worksheet root validation, dependency/relationship audit, or calc metadata
+    // handling. Workbook/core/app small XML parts are intentionally kept on
+    // replace_part()'s materialized small-XML path. It is not a public Patch API,
+    // XML validator, dependency repair, or calc metadata helper for
+    // non-worksheet parts.
     void replace_part_chunks(
         PartName part_name, std::vector<PackageEntryChunk> chunks, std::string reason = {});
     void remove_part(PartName part_name, std::string reason = {},
         const ReferencePolicy& policy = {});
-    void replace_worksheet_part(PartName worksheet_part, std::string worksheet_xml,
-        const ReferencePolicy& policy = {});
-    // Internal staged-output variant for worksheet replacement. It uses the
-    // materialized worksheet_xml for current validation, dependency audit, and
-    // calc metadata handling, then records the final worksheet part payload as
-    // PackageEntry chunks for save_as(). This is a bridge toward package-entry
-    // staged stream output, not a low-memory worksheet transformer.
-    void replace_worksheet_part_chunks(PartName worksheet_part, std::string worksheet_xml,
-        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy = {});
+    // Internal chunk-source variant for complete worksheet replacement. The
+    // source callback is consumed once after target/workbook/calc-policy
+    // preflight while writing a PackageEditor-owned file-backed staged chunk and
+    // running worksheet root validation plus dependency/relationship audit.
+    // Calc metadata handling and save_as() then reuse the prevalidated staged
+    // chunks. This avoids forcing internal callers with pull-based worksheet XML
+    // sources to first materialize a std::string or prebuild a PackageEntryChunk
+    // vector, and avoids reopening the staged chunk just to validate/audit it.
+    void replace_worksheet_part_from_chunk_source(PartName worksheet_part,
+        const WorksheetInputChunkCallback& read_next_chunk,
+        const ReferencePolicy& policy = {}, std::string reason = {});
+    // Internal staged-output variant for worksheet replacement. Validation and
+    // dependency/relationship audit read the provided PackageEntry chunks
+    // through chunk-source readers before the chunks are recorded for save_as().
+    // This is still an internal staged payload bridge, not a public low-memory
+    // worksheet transformer.
+    void replace_worksheet_part_chunks(PartName worksheet_part,
+        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy = {},
+        std::string reason = {});
     // Internal Patch convenience for workbook-targeted worksheet replacement.
     // Resolves the sheet name through the source workbook sheet catalog, or
-    // through the currently planned `/xl/workbook.xml` bytes when an ordinary
-    // workbook replacement is queued, and workbook relationships, then delegates
-    // to replace_worksheet_part(). It can target a sheet name that exists only
-    // in the planned workbook catalog. If `/xl/workbook.xml` has already been
-    // removed from the planned package, it fails instead of falling back to the
-    // source workbook catalog. It does not rename, add, delete, or repair sheets.
-    void replace_worksheet_part_by_name(std::string_view sheet_name,
-        std::string worksheet_xml, const ReferencePolicy& policy = {});
+    // through the currently planned `/xl/workbook.xml` small XML when a
+    // materialized workbook replacement is queued, and workbook relationships,
+    // then delegates to replace_worksheet_part_from_chunk_source(). It can target
+    // a sheet name that exists only in the planned workbook catalog. If
+    // `/xl/workbook.xml` has been removed, it fails before consuming caller
+    // worksheet chunks instead of falling back to source workbook XML. A
+    // defensive failure still exists for impossible staged-workbook internal
+    // state; staged workbook chunks are rejected at replace_part_chunks(). It
+    // does not rename, add, delete, or repair sheets.
+    // Internal by-name chunk-source variant for complete worksheet replacement.
+    // Resolves the sheet name through the same planned/source workbook catalog
+    // path as the direct by-name Patch resolver, then delegates to
+    // replace_worksheet_part_from_chunk_source().
+    void replace_worksheet_part_from_chunk_source_by_name(std::string_view sheet_name,
+        const WorksheetInputChunkCallback& read_next_chunk,
+        const ReferencePolicy& policy = {}, std::string reason = {});
+    // Internal by-name staged-output variant for worksheet replacement. Resolves
+    // the sheet name through the same planned/source workbook catalog path as
+    // the chunk-source by-name helper, then validates and audits the provided
+    // chunks through replace_worksheet_part_chunks(). This avoids reintroducing
+    // a materialized worksheet string entry point for by-name callers.
+    void replace_worksheet_part_chunks_by_name(std::string_view sheet_name,
+        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy = {},
+        std::string reason = {});
     // Internal Patch helper for template-style data updates. Replaces only the
     // worksheet <sheetData> element while preserving the surrounding worksheet
     // XML through a bounded local rewrite, then delegates calcChain/fullCalcOnLoad
-    // and preservation handling to replace_worksheet_part(). The current helper
-    // materializes the planned worksheet XML and refuses worksheets or replacement
-    // payloads above package_editor_sheet_data_local_rewrite_byte_limit; it is not
-    // the future large-file streaming worksheet transformer. Preserved
+    // and preservation handling to the worksheet staged-chunk commit path. The
+    // current helper streams the source/planned worksheet and replacement
+    // sheetData through
+    // chunk-source readers and records the rewritten worksheet XML as
+    // PackageEditor-owned file-backed staged chunks. Replacement sheetData
+    // payloads above package_editor_sheet_data_replacement_payload_byte_limit are
+    // still refused, but the file-backed rewritten worksheet output is not
+    // rejected just because its final size exceeds that payload guard; this is
+    // still not the future large-file streaming worksheet transformer.
+    // Replacement sheetData root
+    // validation, the bounded payload-size guard, output insertion, payload
+    // dependency audit, and relationship-id scanning consume caller replacement
+    // chunks directly while writing the rewritten worksheet staged chunk. This
+    // path no longer stages or replays a separate replacement sheetData chunk.
+    // Preserved
     // worksheet-local metadata such as
     // sheet properties, dimensions, views, default formatting, columns,
     // protection, filters, validations, print/page setup, header/footer,
@@ -188,30 +297,35 @@ public:
     // semantic sync for sharedStrings, styles, tables, drawings, filters,
     // columns, print/page setup, protection, ignored errors, object
     // relationships, extensions, or merged ranges.
-    void replace_worksheet_sheet_data(PartName worksheet_part, std::string sheet_data_xml,
+    void replace_worksheet_sheet_data_from_chunk_source(PartName worksheet_part,
+        const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
         const ReferencePolicy& policy = {});
     // Internal Patch convenience for workbook-targeted template fills. Resolves
     // the sheet name through the source workbook sheet catalog, or through the
-    // currently planned `/xl/workbook.xml` bytes when an ordinary workbook
+    // currently planned `/xl/workbook.xml` small XML when a materialized workbook
     // replacement is queued, and workbook relationships, then delegates to
-    // replace_worksheet_sheet_data(). It can target a sheet name that exists
-    // only in the planned workbook catalog. If `/xl/workbook.xml` has already
-    // been removed from the planned package, it fails instead of falling back to
-    // the source workbook catalog. It does not rename, add, delete, or repair
-    // sheets.
-    void replace_worksheet_sheet_data_by_name(std::string_view sheet_name,
-        std::string sheet_data_xml, const ReferencePolicy& policy = {});
+    // replace_worksheet_sheet_data_from_chunk_source(). It can target a sheet
+    // name that exists only in the planned workbook catalog. If
+    // `/xl/workbook.xml` has been removed, it fails before consuming caller
+    // sheetData chunks instead of falling back to source workbook XML. A
+    // defensive failure still exists for impossible staged-workbook internal
+    // state; staged workbook chunks are rejected at replace_part_chunks(). It
+    // does not rename, add, delete, or repair sheets.
+    void replace_worksheet_sheet_data_from_chunk_source_by_name(std::string_view sheet_name,
+        const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
+        const ReferencePolicy& policy = {});
     // Internal handoff from the P8 worksheet transformer foundation. Source
     // package entries are scanned through PackageReader ZIP-entry chunk sources
     // for root validation, dependency/dimension analysis, relationship-id audit,
     // and the output pass. Stored entries stream directly from the source ZIP
-    // payload; DEFLATE entries still fall back to the current materialized
-    // PackageReader read path.
+    // payload; minizip builds stream DEFLATE entries through decompressed
+    // PackageReader chunk sources.
     // Planned staged package-entry chunks are also scanned through chunk-source
-    // readers. Ordinary queued/planned worksheet replacement strings are
-    // scanned through a string-view chunk-source reader; the prior helper may
-    // already have materialized that queued string, so this is not a fully
-    // low-memory planned-input pipeline.
+    // readers. Worksheet replacement helpers write caller-provided worksheet XML
+    // chunk sources to PackageEditor-owned staged chunks and run follow-up
+    // transforms over those chunks, so follow-up cell replacement does not
+    // retain that planned worksheet payload as a replacement string. Ordinary
+    // replace_part() is no longer a worksheet replacement entry point.
     // The rewritten output is streamed into a PackageEditor-owned temporary file
     // chunk instead of materializing the rewritten worksheet string. It is still
     // not a public Patch API, relationship repair, sharedStrings/style
@@ -248,15 +362,13 @@ public:
 
 private:
     explicit PackageEditor(PackageReader reader);
-    void replace_worksheet_part_impl(PartName worksheet_part, std::string worksheet_xml,
-        const ReferencePolicy& policy, bool enforce_payload_policy);
     void replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
         std::vector<std::string> payload_notes,
         std::vector<WorksheetPayloadDependencyAudit> payload_audits,
         std::vector<std::string> relationship_reference_notes,
         std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
-        std::string replacement_reason);
+        std::string replacement_reason, bool enforce_payload_policy = true);
 
     PackageReader reader_;
     PackageManifest manifest_;

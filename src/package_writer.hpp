@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -16,12 +17,18 @@ struct PackageEntryChunk {
     Kind kind = Kind::Memory;
     std::string data;
     std::filesystem::path path;
+    bool has_expected_size = false;
+    std::uint64_t expected_size = 0;
+    bool has_expected_crc32 = false;
+    std::uint32_t expected_crc32 = 0;
 
     [[nodiscard]] static PackageEntryChunk memory(std::string value)
     {
         PackageEntryChunk chunk;
         chunk.kind = Kind::Memory;
         chunk.data = std::move(value);
+        chunk.has_expected_size = true;
+        chunk.expected_size = static_cast<std::uint64_t>(chunk.data.size());
         return chunk;
     }
 

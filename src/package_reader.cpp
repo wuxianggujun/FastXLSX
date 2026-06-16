@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -50,6 +51,10 @@ constexpr std::string_view relationship_type_office_document =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 constexpr std::string_view office_document_relationships_namespace =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+constexpr std::uint64_t metadata_materialization_byte_limit =
+    4ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t workbook_catalog_materialization_byte_limit =
+    4ULL * 1024ULL * 1024ULL;
 
 struct XmlAttribute {
     std::string name;
@@ -134,14 +139,27 @@ bool is_supported_compression_method(std::uint16_t method) noexcept
 #endif
 }
 
-[[noreturn]] void throw_unsupported_compression_method()
+std::string zip_entry_io_context(std::string_view entry_name, std::string_view detail);
+
+std::string unsupported_compression_method_detail(std::uint16_t method)
 {
 #ifdef FASTXLSX_HAS_MINIZIP_NG
-    throw FastXlsxError("PackageReader only supports stored or DEFLATE ZIP entries");
+    return "unsupported ZIP compression method " + std::to_string(method)
+        + "; PackageReader only supports stored or DEFLATE ZIP entries";
 #else
-    throw FastXlsxError(
-        "PackageReader only supports stored ZIP entries without minizip-ng");
+    return "unsupported ZIP compression method " + std::to_string(method)
+        + "; PackageReader only supports stored ZIP entries without minizip-ng";
 #endif
+}
+
+[[noreturn]] void throw_unsupported_compression_method(
+    std::uint16_t method, std::string_view entry_name = {})
+{
+    std::string detail = unsupported_compression_method_detail(method);
+    if (!entry_name.empty()) {
+        detail = zip_entry_io_context(entry_name, detail);
+    }
+    throw FastXlsxError(detail);
 }
 
 std::streamoff checked_stream_offset(std::uint64_t offset)
@@ -845,52 +863,113 @@ std::string read_bytes_at(const std::filesystem::path& path, std::uint64_t offse
     return data;
 }
 
-void extract_stored_entry_to_file(const std::filesystem::path& package_path,
-    const PackageReaderEntry& entry, const std::filesystem::path& output_path)
+std::string expected_actual_crc32_message(
+    std::string_view entry_name, std::uint32_t expected_crc32, std::uint32_t actual_crc32);
+
+void require_expected_entry_crc32(
+    std::string_view entry_name, std::uint32_t expected_crc32, std::uint32_t actual_crc32);
+
+std::string zip_entry_io_context(std::string_view entry_name, std::string_view detail)
 {
-    std::ifstream input(package_path, std::ios::binary);
-    if (!input) {
-        throw FastXlsxError("failed to open XLSX package for reading");
+    std::string diagnostic_name;
+    diagnostic_name.reserve(entry_name.size());
+    static constexpr char hex_digits[] = "0123456789ABCDEF";
+    for (const unsigned char byte : entry_name) {
+        if (byte == '\\') {
+            diagnostic_name += "\\\\";
+        } else if (byte == '\0') {
+            diagnostic_name += "\\0";
+        } else if (byte < 0x20u || byte == 0x7fu) {
+            diagnostic_name += "\\x";
+            diagnostic_name += hex_digits[(byte >> 4u) & 0x0fu];
+            diagnostic_name += hex_digits[byte & 0x0fu];
+        } else {
+            diagnostic_name.push_back(static_cast<char>(byte));
+        }
     }
+    return "ZIP entry '" + diagnostic_name + "': " + std::string(detail);
+}
 
-    std::ofstream output(output_path, std::ios::binary);
-    if (!output) {
-        throw FastXlsxError("failed to open package entry extraction output");
-    }
+std::string missing_zip_entry_message(std::string_view entry_name)
+{
+    return "ZIP entry '" + std::string(entry_name) + "' is not present in the package";
+}
 
-    input.seekg(checked_stream_offset(entry.data_offset), std::ios::beg);
-    if (!input) {
-        throw FastXlsxError("failed to seek inside XLSX package");
-    }
+bool has_zip_entry_io_context(std::string_view message) noexcept
+{
+    return message.find("ZIP entry '") != std::string_view::npos;
+}
 
-    PackageReaderCrc32Accumulator crc;
-    std::array<char, package_reader_io_buffer_size> buffer {};
-    std::uint64_t remaining = entry.compressed_size;
-    while (remaining != 0) {
-        const std::uint64_t requested =
-            std::min<std::uint64_t>(remaining, buffer.size());
-        input.read(buffer.data(), checked_stream_size(requested));
-        if (input.gcount() != checked_stream_size(requested)) {
-            throw FastXlsxError("failed to read XLSX package bytes");
+PackageReaderChunkCallback with_zip_entry_chunk_source_context(
+    std::string entry_name, PackageReaderChunkCallback source)
+{
+    struct State {
+        std::string entry_name;
+        PackageReaderChunkCallback source;
+        std::size_t read_attempts = 0;
+        std::size_t emitted_chunks = 0;
+        std::uint64_t emitted_bytes = 0;
+        std::uint64_t last_emitted_chunk_bytes = 0;
+        bool emitted_bytes_overflow = false;
+
+        [[nodiscard]] std::string progress_description() const
+        {
+            std::string description = "ZIP entry chunk-source read attempt "
+                + std::to_string(read_attempts) + " after emitting "
+                + std::to_string(emitted_chunks) + " chunk";
+            if (emitted_chunks != 1) {
+                description += "s";
+            }
+            description += " and ";
+            if (emitted_bytes_overflow) {
+                description += "overflow";
+            } else {
+                description += std::to_string(emitted_bytes);
+            }
+            description += " bytes";
+            if (emitted_chunks > 0) {
+                description += "; last chunk ";
+                description += std::to_string(last_emitted_chunk_bytes);
+                description += " bytes";
+            }
+            return description;
         }
 
-        const auto chunk_size = static_cast<std::size_t>(requested);
-        const std::string_view chunk(buffer.data(), chunk_size);
-        crc.update(chunk);
-        output.write(buffer.data(), checked_stream_size(requested));
-        if (!output) {
-            throw FastXlsxError("failed to write package entry extraction output");
+        void record_emitted_chunk(std::string_view output_chunk)
+        {
+            ++emitted_chunks;
+            last_emitted_chunk_bytes = static_cast<std::uint64_t>(output_chunk.size());
+            if (output_chunk.size()
+                > std::numeric_limits<std::uint64_t>::max() - emitted_bytes) {
+                emitted_bytes_overflow = true;
+            } else if (!emitted_bytes_overflow) {
+                emitted_bytes += static_cast<std::uint64_t>(output_chunk.size());
+            }
         }
-        remaining -= requested;
-    }
+    };
 
-    output.close();
-    if (!output) {
-        throw FastXlsxError("failed to finalize package entry extraction output");
-    }
-    if (crc.value() != entry.crc32) {
-        throw FastXlsxError("ZIP entry CRC mismatch");
-    }
+    auto state = std::make_shared<State>();
+    state->entry_name = std::move(entry_name);
+    state->source = std::move(source);
+
+    return [state = std::move(state)](
+               std::string& output_chunk) mutable -> bool {
+        ++state->read_attempts;
+        try {
+            const bool has_chunk = state->source(output_chunk);
+            if (has_chunk) {
+                state->record_emitted_chunk(output_chunk);
+            }
+            return has_chunk;
+        } catch (const std::exception& error) {
+            const std::string detail =
+                std::string(error.what()) + " during " + state->progress_description();
+            if (has_zip_entry_io_context(error.what())) {
+                throw FastXlsxError(detail);
+            }
+            throw FastXlsxError(zip_entry_io_context(state->entry_name, detail));
+        }
+    };
 }
 
 PackageReaderChunkCallback make_stored_entry_chunk_source(
@@ -920,20 +999,21 @@ PackageReaderChunkCallback make_stored_entry_chunk_source(
         if (!state->opened) {
             state->input.open(state->package_path, std::ios::binary);
             if (!state->input) {
-                throw FastXlsxError("failed to open XLSX package for reading");
+                throw FastXlsxError(zip_entry_io_context(
+                    state->entry.name, "failed to open XLSX package for reading"));
             }
             state->input.seekg(checked_stream_offset(state->entry.data_offset), std::ios::beg);
             if (!state->input) {
-                throw FastXlsxError("failed to seek inside XLSX package");
+                throw FastXlsxError(zip_entry_io_context(
+                    state->entry.name, "failed to seek inside XLSX package"));
             }
             state->opened = true;
         }
 
         if (state->remaining == 0) {
             state->input.close();
-            if (state->crc.value() != state->entry.crc32) {
-                throw FastXlsxError("ZIP entry CRC mismatch");
-            }
+            require_expected_entry_crc32(
+                state->entry.name, state->entry.crc32, state->crc.value());
             state->complete = true;
             return false;
         }
@@ -943,7 +1023,8 @@ PackageReaderChunkCallback make_stored_entry_chunk_source(
         output_chunk.resize(static_cast<std::size_t>(requested));
         state->input.read(output_chunk.data(), checked_stream_size(requested));
         if (state->input.gcount() != checked_stream_size(requested)) {
-            throw FastXlsxError("failed to read XLSX package bytes");
+            throw FastXlsxError(zip_entry_io_context(
+                state->entry.name, "failed to read XLSX package bytes"));
         }
 
         state->crc.update(output_chunk);
@@ -952,8 +1033,119 @@ PackageReaderChunkCallback make_stored_entry_chunk_source(
     };
 }
 
-void extract_entry_chunks_to_file(
-    PackageReaderChunkCallback source, const std::filesystem::path& output_path)
+std::string expected_actual_crc32_message(
+    std::string_view entry_name, std::uint32_t expected_crc32, std::uint32_t actual_crc32)
+{
+    return "ZIP entry '" + std::string(entry_name)
+        + "' CRC mismatch: expected " + std::to_string(expected_crc32)
+        + ", actual " + std::to_string(actual_crc32);
+}
+
+void require_expected_entry_crc32(
+    std::string_view entry_name, std::uint32_t expected_crc32, std::uint32_t actual_crc32)
+{
+    if (actual_crc32 != expected_crc32) {
+        throw FastXlsxError(
+            expected_actual_crc32_message(entry_name, expected_crc32, actual_crc32));
+    }
+}
+
+std::string expected_actual_size_message(
+    std::string_view prefix, std::uint64_t expected_size, std::uint64_t actual_size)
+{
+    return std::string(prefix) + ": expected " + std::to_string(expected_size)
+        + " bytes, actual " + std::to_string(actual_size) + " bytes";
+}
+
+std::string expected_at_least_size_message(
+    std::string_view prefix, std::uint64_t expected_size, std::uint64_t actual_size)
+{
+    return std::string(prefix) + ": expected " + std::to_string(expected_size)
+        + " bytes, actual at least " + std::to_string(actual_size) + " bytes";
+}
+
+std::uint64_t checked_entry_chunk_size(
+    std::string_view chunk, std::uint64_t emitted_size, std::uint64_t expected_size)
+{
+    if (chunk.empty()) {
+        throw FastXlsxError("ZIP entry chunk source emitted an empty chunk");
+    }
+    const std::uint64_t chunk_size = static_cast<std::uint64_t>(chunk.size());
+    if (emitted_size > expected_size || chunk_size > expected_size - emitted_size) {
+        const std::uint64_t actual_size =
+            emitted_size > expected_size
+            ? emitted_size
+            : emitted_size + chunk_size;
+        throw FastXlsxError(expected_at_least_size_message(
+            "ZIP entry chunk source produced more bytes than expected",
+            expected_size, actual_size));
+    }
+    return chunk_size;
+}
+
+void require_expected_chunk_source_size(
+    std::uint64_t emitted_size, std::uint64_t expected_size)
+{
+    if (emitted_size != expected_size) {
+        throw FastXlsxError(expected_actual_size_message(
+            "ZIP entry chunk source ended before expected bytes",
+            expected_size, emitted_size));
+    }
+}
+
+struct ZipEntryChunkConsumerProgress {
+    std::string operation;
+    std::size_t read_attempts = 0;
+    std::size_t consumed_chunks = 0;
+    std::uint64_t consumed_bytes = 0;
+    std::uint64_t last_consumed_chunk_bytes = 0;
+    bool consumed_bytes_overflow = false;
+
+    [[nodiscard]] std::string description() const
+    {
+        std::string text = operation + " read attempt "
+            + std::to_string(read_attempts) + " after consuming "
+            + std::to_string(consumed_chunks) + " chunk";
+        if (consumed_chunks != 1) {
+            text += "s";
+        }
+        text += " and ";
+        if (consumed_bytes_overflow) {
+            text += "overflow";
+        } else {
+            text += std::to_string(consumed_bytes);
+        }
+        text += " bytes";
+        if (consumed_chunks > 0) {
+            text += "; last chunk ";
+            text += std::to_string(last_consumed_chunk_bytes);
+            text += " bytes";
+        }
+        return text;
+    }
+
+    void record_consumed_chunk(std::string_view chunk)
+    {
+        ++consumed_chunks;
+        last_consumed_chunk_bytes = static_cast<std::uint64_t>(chunk.size());
+        if (chunk.size()
+            > std::numeric_limits<std::uint64_t>::max() - consumed_bytes) {
+            consumed_bytes_overflow = true;
+        } else if (!consumed_bytes_overflow) {
+            consumed_bytes += static_cast<std::uint64_t>(chunk.size());
+        }
+    }
+};
+
+FastXlsxError chunk_consumer_error(
+    const ZipEntryChunkConsumerProgress& progress, const std::exception& error)
+{
+    return FastXlsxError(
+        std::string(error.what()) + " during " + progress.description());
+}
+
+void extract_entry_chunks_to_file(PackageReaderChunkCallback source,
+    const std::filesystem::path& output_path, std::uint64_t expected_size)
 {
     std::ofstream output(output_path, std::ios::binary);
     if (!output) {
@@ -961,17 +1153,239 @@ void extract_entry_chunks_to_file(
     }
 
     std::string chunk;
-    while (source(chunk)) {
+    std::uint64_t written_size = 0;
+    ZipEntryChunkConsumerProgress progress {
+        "ZIP entry file extraction chunk source"};
+    while (true) {
+        ++progress.read_attempts;
+        bool has_chunk = false;
+        try {
+            has_chunk = source(chunk);
+        } catch (const std::exception& error) {
+            throw chunk_consumer_error(progress, error);
+        }
+        if (!has_chunk) {
+            break;
+        }
+
+        std::uint64_t chunk_size = 0;
+        try {
+            chunk_size = checked_entry_chunk_size(chunk, written_size, expected_size);
+        } catch (const std::exception& error) {
+            throw chunk_consumer_error(progress, error);
+        }
         output.write(chunk.data(), checked_stream_size(chunk.size()));
         if (!output) {
-            throw FastXlsxError("failed to write package entry extraction output");
+            try {
+                throw FastXlsxError("failed to write package entry extraction output");
+            } catch (const std::exception& error) {
+                throw chunk_consumer_error(progress, error);
+            }
         }
+        written_size += chunk_size;
+        progress.record_consumed_chunk(chunk);
+    }
+    try {
+        require_expected_chunk_source_size(written_size, expected_size);
+    } catch (const std::exception& error) {
+        throw chunk_consumer_error(progress, error);
     }
 
     output.close();
     if (!output) {
         throw FastXlsxError("failed to finalize package entry extraction output");
     }
+}
+
+std::filesystem::path make_extraction_sibling_path(
+    const std::filesystem::path& output_path, std::string_view tag)
+{
+    if (output_path.empty()) {
+        throw FastXlsxError("package entry extraction output path cannot be empty");
+    }
+
+    for (std::uint32_t attempt = 0; attempt != 1024U; ++attempt) {
+        std::filesystem::path candidate = output_path;
+        candidate += ".fastxlsx-";
+        candidate += std::string(tag);
+        candidate += "-";
+        candidate += std::to_string(attempt);
+
+        std::error_code error;
+        const bool exists = std::filesystem::exists(candidate, error);
+        if (error) {
+            throw FastXlsxError(
+                "failed to inspect package entry extraction temporary path");
+        }
+        if (!exists) {
+            return candidate;
+        }
+    }
+
+    throw FastXlsxError("failed to allocate package entry extraction temporary path");
+}
+
+bool path_equivalent_noexcept(
+    const std::filesystem::path& left, const std::filesystem::path& right) noexcept
+{
+    std::error_code error;
+    const bool same = std::filesystem::equivalent(left, right, error);
+    return !error && same;
+}
+
+bool is_missing_path_error(const std::error_code& error) noexcept
+{
+    return error == std::errc::no_such_file_or_directory
+        || error == std::errc::not_a_directory;
+}
+
+std::filesystem::file_status inspect_path_allow_missing(
+    const std::filesystem::path& path, std::string_view failure_message)
+{
+    std::error_code error;
+    const std::filesystem::file_status status = std::filesystem::symlink_status(path, error);
+    if (!error) {
+        return status;
+    }
+    if (is_missing_path_error(error)) {
+        return std::filesystem::file_status(std::filesystem::file_type::not_found);
+    }
+    throw FastXlsxError(std::string(failure_message));
+}
+
+void validate_extraction_output_target(
+    const std::filesystem::path& package_path, const std::filesystem::path& output_path)
+{
+    if (output_path.empty()) {
+        throw FastXlsxError("package entry extraction output path cannot be empty");
+    }
+    if (path_equivalent_noexcept(package_path, output_path)) {
+        throw FastXlsxError(
+            "package entry extraction output path cannot overwrite the source package");
+    }
+
+    const std::filesystem::file_status output_status = inspect_path_allow_missing(
+        output_path, "failed to inspect package entry extraction output path");
+    if (std::filesystem::is_directory(output_status)) {
+        throw FastXlsxError("package entry extraction output path cannot be a directory");
+    }
+
+    const std::filesystem::path parent_path = output_path.parent_path();
+    if (!parent_path.empty()) {
+        const std::filesystem::file_status parent_status = inspect_path_allow_missing(
+            parent_path, "failed to inspect package entry extraction output parent path");
+        if (!std::filesystem::exists(parent_status)
+            || !std::filesystem::is_directory(parent_status)) {
+            throw FastXlsxError(
+                "package entry extraction output parent path must be an existing directory");
+        }
+    }
+}
+
+void remove_extraction_file_noexcept(const std::filesystem::path& path) noexcept
+{
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+void commit_extracted_file(
+    const std::filesystem::path& temporary_path, const std::filesystem::path& output_path)
+{
+    const std::filesystem::file_status output_status = inspect_path_allow_missing(
+        output_path, "failed to inspect package entry extraction output path");
+    const bool output_exists = std::filesystem::exists(output_status);
+
+    std::filesystem::path backup_path;
+    bool has_backup = false;
+    if (output_exists) {
+        backup_path = make_extraction_sibling_path(output_path, "backup");
+        std::error_code error;
+        std::filesystem::rename(output_path, backup_path, error);
+        if (error) {
+            throw FastXlsxError(
+                "failed to move existing package entry extraction output aside");
+        }
+        has_backup = true;
+    }
+
+    std::error_code error;
+    std::filesystem::rename(temporary_path, output_path, error);
+    if (error) {
+        if (has_backup) {
+            std::error_code restore_error;
+            std::filesystem::rename(backup_path, output_path, restore_error);
+            if (restore_error) {
+                throw FastXlsxError(
+                    "failed to commit package entry extraction output and failed to restore previous output");
+            }
+        }
+        throw FastXlsxError("failed to commit package entry extraction output");
+    }
+
+    if (has_backup) {
+        remove_extraction_file_noexcept(backup_path);
+    }
+}
+
+void extract_entry_chunks_to_committed_file(
+    const std::filesystem::path& package_path, PackageReaderChunkCallback source,
+    const std::filesystem::path& output_path, std::uint64_t expected_size)
+{
+    validate_extraction_output_target(package_path, output_path);
+
+    const std::filesystem::path temporary_path =
+        make_extraction_sibling_path(output_path, "extract");
+
+    try {
+        extract_entry_chunks_to_file(std::move(source), temporary_path, expected_size);
+        commit_extracted_file(temporary_path, output_path);
+    } catch (...) {
+        remove_extraction_file_noexcept(temporary_path);
+        throw;
+    }
+}
+
+std::string read_entry_chunks_to_string(
+    PackageReaderChunkCallback source, std::uint64_t expected_size)
+{
+    std::string data;
+    if (expected_size > static_cast<std::uint64_t>(data.max_size())) {
+        throw FastXlsxError("ZIP entry is too large to read into memory");
+    }
+    data.reserve(static_cast<std::size_t>(expected_size));
+
+    std::string chunk;
+    std::uint64_t emitted_size = 0;
+    ZipEntryChunkConsumerProgress progress {
+        "ZIP entry materialization chunk source"};
+    while (true) {
+        ++progress.read_attempts;
+        bool has_chunk = false;
+        try {
+            has_chunk = source(chunk);
+        } catch (const std::exception& error) {
+            throw chunk_consumer_error(progress, error);
+        }
+        if (!has_chunk) {
+            break;
+        }
+
+        std::uint64_t chunk_size = 0;
+        try {
+            chunk_size = checked_entry_chunk_size(chunk, emitted_size, expected_size);
+        } catch (const std::exception& error) {
+            throw chunk_consumer_error(progress, error);
+        }
+        data.append(chunk);
+        emitted_size += chunk_size;
+        progress.record_consumed_chunk(chunk);
+    }
+    try {
+        require_expected_chunk_source_size(emitted_size, expected_size);
+    } catch (const std::exception& error) {
+        throw chunk_consumer_error(progress, error);
+    }
+    return data;
 }
 
 #ifdef FASTXLSX_HAS_MINIZIP_NG
@@ -987,6 +1401,16 @@ void check_minizip_result(int result, const char* operation)
     if (result != MZ_OK) {
         throw FastXlsxError(std::string("minizip-ng failed to ") + operation
             + " (error " + std::to_string(result) + ")");
+    }
+}
+
+void check_minizip_entry_result(
+    int result, std::string_view entry_name, const char* operation)
+{
+    try {
+        check_minizip_result(result, operation);
+    } catch (const std::exception& error) {
+        throw FastXlsxError(zip_entry_io_context(entry_name, error.what()));
     }
 }
 
@@ -1039,10 +1463,11 @@ void close_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state)
     }
 
     if (entry_result == MZ_CRC_ERROR) {
-        throw FastXlsxError("ZIP entry CRC mismatch");
+        throw FastXlsxError(expected_actual_crc32_message(
+            state.entry.name, state.entry.crc32, state.crc.value()));
     }
-    check_minizip_result(entry_result, "close ZIP entry");
-    check_minizip_result(close_result, "close XLSX package");
+    check_minizip_entry_result(entry_result, state.entry.name, "close ZIP entry");
+    check_minizip_entry_result(close_result, state.entry.name, "close XLSX package");
 }
 
 void cleanup_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state) noexcept
@@ -1058,34 +1483,44 @@ void open_deflated_entry_chunk_source(DeflatedEntryChunkSourceState& state)
     }
 
     const std::string input_path = path_to_utf8(state.package_path);
-    check_minizip_result(
-        mz_zip_reader_open_file(state.reader.get(), input_path.c_str()), "open XLSX package");
+    check_minizip_entry_result(
+        mz_zip_reader_open_file(state.reader.get(), input_path.c_str()),
+        state.entry.name,
+        "open XLSX package");
     state.package_open = true;
 
-    check_minizip_result(
+    check_minizip_entry_result(
         mz_zip_reader_locate_entry(state.reader.get(), state.entry.name.c_str(), 0),
+        state.entry.name,
         "locate ZIP entry");
 
     mz_zip_file* file_info = nullptr;
-    check_minizip_result(
-        mz_zip_reader_entry_get_info(state.reader.get(), &file_info), "read ZIP entry info");
+    check_minizip_entry_result(
+        mz_zip_reader_entry_get_info(state.reader.get(), &file_info),
+        state.entry.name,
+        "read ZIP entry info");
     if (file_info == nullptr || file_info->filename == nullptr
         || state.entry.name != file_info->filename) {
-        throw FastXlsxError("minizip-ng located an unexpected ZIP entry");
+        throw FastXlsxError(zip_entry_io_context(
+            state.entry.name, "minizip-ng located an unexpected ZIP entry"));
     }
     if (file_info->compression_method != deflate_compression_method) {
-        throw FastXlsxError("minizip-ng located entry compression method mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            state.entry.name, "minizip-ng located entry compression method mismatch"));
     }
     if (file_info->uncompressed_size < 0
         || static_cast<std::uint64_t>(file_info->uncompressed_size)
             != state.entry.uncompressed_size) {
-        throw FastXlsxError("DEFLATE ZIP entry uncompressed size mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            state.entry.name, "DEFLATE ZIP entry uncompressed size mismatch"));
     }
     if (file_info->crc != state.entry.crc32) {
-        throw FastXlsxError("DEFLATE ZIP entry CRC metadata mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            state.entry.name, "DEFLATE ZIP entry CRC metadata mismatch"));
     }
 
-    check_minizip_result(mz_zip_reader_entry_open(state.reader.get()), "open ZIP entry");
+    check_minizip_entry_result(
+        mz_zip_reader_entry_open(state.reader.get()), state.entry.name, "open ZIP entry");
     state.entry_open = true;
 }
 
@@ -1124,35 +1559,23 @@ PackageReaderChunkCallback make_deflated_entry_chunk_source(
         output_chunk.clear();
         if (read_size < 0 && read_size != MZ_END_OF_STREAM) {
             cleanup_deflated_entry_chunk_source(*state);
-            check_minizip_result(read_size, "read ZIP entry data");
+            if (read_size == MZ_CRC_ERROR) {
+                throw FastXlsxError(expected_actual_crc32_message(
+                    state->entry.name, state->entry.crc32, state->crc.value()));
+            }
+            check_minizip_entry_result(read_size, state->entry.name, "read ZIP entry data");
         }
 
         close_deflated_entry_chunk_source(*state);
         if (state->emitted_bytes != state->entry.uncompressed_size) {
-            throw FastXlsxError("DEFLATE ZIP entry uncompressed size mismatch");
+            throw FastXlsxError(zip_entry_io_context(
+                state->entry.name, "DEFLATE ZIP entry uncompressed size mismatch"));
         }
-        if (state->crc.value() != state->entry.crc32) {
-            throw FastXlsxError("ZIP entry CRC mismatch");
-        }
+        require_expected_entry_crc32(
+            state->entry.name, state->entry.crc32, state->crc.value());
         state->complete = true;
         return false;
     };
-}
-
-std::string read_entry_chunks_to_string(
-    PackageReaderChunkCallback source, std::uint64_t expected_size)
-{
-    std::string data;
-    if (expected_size > static_cast<std::uint64_t>(data.max_size())) {
-        throw FastXlsxError("ZIP entry is too large to read into memory");
-    }
-    data.reserve(static_cast<std::size_t>(expected_size));
-
-    std::string chunk;
-    while (source(chunk)) {
-        data.append(chunk);
-    }
-    return data;
 }
 
 #endif
@@ -1174,6 +1597,54 @@ bool is_relationship_entry(std::string_view name) noexcept
 bool is_metadata_entry(std::string_view name) noexcept
 {
     return name == content_types_entry_name || is_relationship_entry(name);
+}
+
+std::string read_materialized_metadata_entry(
+    const PackageReader& reader, std::string_view name, std::string_view purpose)
+{
+    if (!is_metadata_entry(name)) {
+        throw FastXlsxError(
+            "PackageReader metadata materialization requested for non-metadata entry");
+    }
+    if (const PackageReaderEntry* entry = reader.find_entry(name);
+        entry != nullptr && entry->uncompressed_size > metadata_materialization_byte_limit) {
+        throw FastXlsxError(
+            "materialized package metadata entry exceeds small XML limit; "
+            "PackageReader metadata ingestion is a bounded metadata path, "
+            "not arbitrary package-entry materialization");
+    }
+
+    try {
+        return reader.read_entry(name);
+    } catch (const std::exception& error) {
+        throw FastXlsxError("failed to read package metadata entry '" + std::string(name)
+            + "' for " + std::string(purpose) + ": " + error.what());
+    }
+}
+
+std::string read_materialized_workbook_catalog_xml(
+    const PackageReader& reader, const PartName& workbook_part)
+{
+    if (workbook_part.zip_path() != "xl/workbook.xml") {
+        throw FastXlsxError(
+            "PackageReader workbook catalog materialization only supports xl/workbook.xml");
+    }
+
+    if (const PackageReaderEntry* entry = reader.find_entry(workbook_part.zip_path());
+        entry != nullptr && entry->uncompressed_size > workbook_catalog_materialization_byte_limit) {
+        throw FastXlsxError(
+            "materialized workbook sheet catalog XML exceeds small XML limit; "
+            "PackageReader workbook catalog lookup is a bounded metadata path, "
+            "not arbitrary package-entry materialization");
+    }
+
+    try {
+        return reader.read_entry(workbook_part.zip_path());
+    } catch (const std::exception& error) {
+        throw FastXlsxError(
+            "failed to read materialized workbook sheet catalog XML: "
+            + std::string(error.what()));
+    }
 }
 
 PartName source_part_for_relationship_entry(std::string_view name)
@@ -1289,25 +1760,30 @@ void validate_local_header(const std::filesystem::path& path, const PackageReade
     const std::string local_header =
         read_bytes_at(path, entry.local_header_offset, local_file_header_size);
     if (read_u32(local_header, 0) != local_file_header_signature) {
-        throw FastXlsxError("ZIP local file header signature mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP local file header signature mismatch"));
     }
 
     const std::uint16_t flags = read_u16(local_header, 6);
     if ((flags & encrypted_flag) != 0u) {
-        throw FastXlsxError("encrypted ZIP entries are not supported");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "encrypted ZIP entries are not supported"));
     }
     if ((flags & data_descriptor_flag) != 0u) {
-        throw FastXlsxError("ZIP data descriptors are not supported");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP data descriptors are not supported"));
     }
     const std::uint16_t local_compression_method = read_u16(local_header, 8);
     if (local_compression_method != entry.compression_method) {
-        throw FastXlsxError("ZIP local file header method mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP local file header method mismatch"));
     }
     if (!is_supported_compression_method(local_compression_method)) {
-        throw_unsupported_compression_method();
+        throw_unsupported_compression_method(local_compression_method, entry.name);
     }
     if (read_u32(local_header, 14) != entry.crc32) {
-        throw FastXlsxError("ZIP local file header CRC mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP local file header CRC mismatch"));
     }
 
     const std::uint16_t local_name_size = read_u16(local_header, 26);
@@ -1315,18 +1791,21 @@ void validate_local_header(const std::filesystem::path& path, const PackageReade
     const std::string local_name = read_bytes_at(
         path, entry.local_header_offset + local_file_header_size, local_name_size);
     if (local_name != entry.name) {
-        throw FastXlsxError("ZIP local file header name mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP local file header name mismatch"));
     }
 
     if (read_u32(local_header, 18) != entry.compressed_size
         || read_u32(local_header, 22) != entry.uncompressed_size) {
-        throw FastXlsxError("ZIP local file header size mismatch");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP local file header size mismatch"));
     }
 
     const std::uint64_t data_offset =
         entry.local_header_offset + local_file_header_size + local_name_size + local_extra_size;
     if (data_offset > file_size || entry.compressed_size > file_size - data_offset) {
-        throw FastXlsxError("ZIP entry data is outside the package bounds");
+        throw FastXlsxError(zip_entry_io_context(
+            entry.name, "ZIP entry data is outside the package bounds"));
     }
 }
 
@@ -1358,27 +1837,6 @@ std::vector<PackageReaderEntry> read_central_directory(
         const std::uint16_t disk_start = read_u16(central_directory, offset + 34);
         const std::uint32_t local_header_offset = read_u32(central_directory, offset + 42);
 
-        if ((flags & encrypted_flag) != 0u) {
-            throw FastXlsxError("encrypted ZIP entries are not supported");
-        }
-        if ((flags & data_descriptor_flag) != 0u) {
-            throw FastXlsxError("ZIP data descriptors are not supported");
-        }
-        if (!is_supported_compression_method(compression_method)) {
-            throw_unsupported_compression_method();
-        }
-        if (compression_method == stored_compression_method
-            && compressed_size != uncompressed_size) {
-            throw FastXlsxError("stored ZIP entry size mismatch");
-        }
-        if (disk_start != 0) {
-            throw FastXlsxError("multi-disk ZIP entries are not supported");
-        }
-        if (compressed_size == zip64_u32_sentinel || uncompressed_size == zip64_u32_sentinel
-            || local_header_offset == zip64_u32_sentinel) {
-            throw FastXlsxError("Zip64 entries are not supported by PackageReader yet");
-        }
-
         const std::size_t name_offset = offset + central_directory_header_size;
         const std::size_t record_size =
             central_directory_header_size + name_size + extra_size + comment_size;
@@ -1386,10 +1844,39 @@ std::vector<PackageReaderEntry> read_central_directory(
             "ZIP central directory record is truncated");
 
         std::string name = central_directory.substr(name_offset, name_size);
-        validate_zip_entry_name(name);
+        if ((flags & encrypted_flag) != 0u) {
+            throw FastXlsxError(zip_entry_io_context(
+                name, "encrypted ZIP entries are not supported"));
+        }
+        if ((flags & data_descriptor_flag) != 0u) {
+            throw FastXlsxError(zip_entry_io_context(
+                name, "ZIP data descriptors are not supported"));
+        }
+        if (!is_supported_compression_method(compression_method)) {
+            throw_unsupported_compression_method(compression_method, name);
+        }
+        if (compression_method == stored_compression_method
+            && compressed_size != uncompressed_size) {
+            throw FastXlsxError(zip_entry_io_context(
+                name, "stored ZIP entry size mismatch"));
+        }
+        if (disk_start != 0) {
+            throw FastXlsxError(zip_entry_io_context(
+                name, "multi-disk ZIP entries are not supported"));
+        }
+        if (compressed_size == zip64_u32_sentinel || uncompressed_size == zip64_u32_sentinel
+            || local_header_offset == zip64_u32_sentinel) {
+            throw FastXlsxError(zip_entry_io_context(
+                name, "Zip64 entries are not supported by PackageReader yet"));
+        }
+        try {
+            validate_zip_entry_name(name);
+        } catch (const std::exception& error) {
+            throw FastXlsxError(zip_entry_io_context(name, error.what()));
+        }
         if (std::any_of(entries.begin(), entries.end(),
                 [&name](const PackageReaderEntry& entry) { return entry.name == name; })) {
-            throw FastXlsxError("duplicate ZIP entry name");
+            throw FastXlsxError(zip_entry_io_context(name, "duplicate ZIP entry name"));
         }
 
         PackageReaderEntry entry {
@@ -1698,7 +2185,8 @@ ContentTypesManifest read_content_types(const PackageReader& reader)
     if (reader.find_entry(content_types_entry_name) == nullptr) {
         throw FastXlsxError("XLSX package is missing [Content_Types].xml");
     }
-    return parse_content_types(reader.read_entry(content_types_entry_name));
+    return parse_content_types(read_materialized_metadata_entry(
+        reader, content_types_entry_name, "content types ingestion"));
 }
 
 void copy_content_types_into_index(
@@ -1741,7 +2229,8 @@ ParsedRelationships read_relationships(const PackageReader& reader, const PartIn
             continue;
         }
 
-        RelationshipSet relationships = parse_relationships(reader.read_entry(entry.name));
+        RelationshipSet relationships = parse_relationships(read_materialized_metadata_entry(
+            reader, entry.name, "relationships ingestion"));
         if (entry.name == package_relationships_entry_name) {
             for (const Relationship& relationship : relationships.relationships()) {
                 parsed.package_relationships.add(relationship);
@@ -1761,6 +2250,22 @@ ParsedRelationships read_relationships(const PackageReader& reader, const PartIn
 }
 
 } // namespace
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+std::string testing_read_entry_chunks_to_string(
+    PackageReaderChunkCallback source, std::uint64_t expected_size)
+{
+    return read_entry_chunks_to_string(std::move(source), expected_size);
+}
+
+void testing_extract_entry_chunks_to_committed_file(
+    const std::filesystem::path& package_path, PackageReaderChunkCallback source,
+    const std::filesystem::path& output_path, std::uint64_t expected_size)
+{
+    extract_entry_chunks_to_committed_file(
+        package_path, std::move(source), output_path, expected_size);
+}
+#endif
 
 PackageReader PackageReader::open(std::filesystem::path path)
 {
@@ -1800,43 +2305,40 @@ std::string PackageReader::read_entry(std::string_view name) const
 {
     const auto* entry = find_entry(name);
     if (entry == nullptr) {
-        throw FastXlsxError("ZIP entry is not present in the package");
+        throw FastXlsxError(missing_zip_entry_message(name));
     }
 
-    std::string data;
-    if (entry->compression_method == stored_compression_method) {
-        data = read_bytes_at(path_, entry->data_offset, entry->compressed_size);
-#ifdef FASTXLSX_HAS_MINIZIP_NG
-    } else if (entry->compression_method == deflate_compression_method) {
-        data = read_entry_chunks_to_string(entry_chunk_source(name), entry->uncompressed_size);
-#endif
-    } else {
-        throw_unsupported_compression_method();
+    try {
+        return read_entry_chunks_to_string(
+            entry_chunk_source(entry->name), entry->uncompressed_size);
+    } catch (const std::exception& error) {
+        if (has_zip_entry_io_context(error.what())) {
+            throw;
+        }
+        throw FastXlsxError(zip_entry_io_context(entry->name, error.what()));
     }
-    if (crc32(data) != entry->crc32) {
-        throw FastXlsxError("ZIP entry CRC mismatch");
-    }
-    return data;
 }
 
 PackageReaderChunkCallback PackageReader::entry_chunk_source(std::string_view name) const
 {
     const auto* entry = find_entry(name);
     if (entry == nullptr) {
-        throw FastXlsxError("ZIP entry is not present in the package");
+        throw FastXlsxError(missing_zip_entry_message(name));
     }
 
     if (entry->compression_method == stored_compression_method) {
-        return make_stored_entry_chunk_source(path_, *entry);
+        return with_zip_entry_chunk_source_context(
+            entry->name, make_stored_entry_chunk_source(path_, *entry));
     }
 
 #ifdef FASTXLSX_HAS_MINIZIP_NG
     if (entry->compression_method == deflate_compression_method) {
-        return make_deflated_entry_chunk_source(path_, *entry);
+        return with_zip_entry_chunk_source_context(
+            entry->name, make_deflated_entry_chunk_source(path_, *entry));
     }
 #endif
 
-    throw_unsupported_compression_method();
+    throw_unsupported_compression_method(entry->compression_method, entry->name);
 }
 
 void PackageReader::extract_entry_to_file(
@@ -1844,22 +2346,18 @@ void PackageReader::extract_entry_to_file(
 {
     const auto* entry = find_entry(name);
     if (entry == nullptr) {
-        throw FastXlsxError("ZIP entry is not present in the package");
+        throw FastXlsxError(missing_zip_entry_message(name));
     }
 
-    if (entry->compression_method == stored_compression_method) {
-        extract_stored_entry_to_file(path_, *entry, output_path);
-        return;
+    try {
+        extract_entry_chunks_to_committed_file(
+            path_, entry_chunk_source(entry->name), output_path, entry->uncompressed_size);
+    } catch (const std::exception& error) {
+        if (has_zip_entry_io_context(error.what())) {
+            throw;
+        }
+        throw FastXlsxError(zip_entry_io_context(entry->name, error.what()));
     }
-
-#ifdef FASTXLSX_HAS_MINIZIP_NG
-    if (entry->compression_method == deflate_compression_method) {
-        extract_entry_chunks_to_file(entry_chunk_source(name), output_path);
-        return;
-    }
-#endif
-
-    throw_unsupported_compression_method();
 }
 
 const ContentTypesManifest& PackageReader::content_types() const noexcept
@@ -1912,8 +2410,8 @@ std::vector<WorkbookSheetReference> PackageReader::workbook_sheets() const
         throw FastXlsxError("workbook sheet catalog requires workbook relationships");
     }
 
-    return parse_workbook_sheets(
-        read_entry(workbook_part.zip_path()), *workbook_relationships, part_index_);
+    return parse_workbook_sheets(read_materialized_workbook_catalog_xml(*this, workbook_part),
+        *workbook_relationships, part_index_);
 }
 
 std::vector<WorkbookSheetReference> PackageReader::workbook_sheets_from_xml(

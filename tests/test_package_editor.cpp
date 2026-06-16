@@ -1,4 +1,4 @@
-#include "../src/package_editor.hpp"
+﻿#include "../src/package_editor.hpp"
 #include "../src/package_writer.hpp"
 #include "zip_test_utils.hpp"
 
@@ -12,6 +12,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -37,9 +38,105 @@ void check_contains(std::string_view haystack, std::string_view needle, const ch
     check(haystack.find(needle) != std::string_view::npos, message);
 }
 
+void check_staged_file_chunk_read_progress(std::string_view error,
+    std::size_t read_attempt,
+    std::uint64_t bytes_read,
+    const char* message)
+{
+    check_contains(error,
+        std::string("staged package-entry file chunk read attempt ")
+            + std::to_string(read_attempt),
+        message);
+    check_contains(error,
+        std::string("after reading ") + std::to_string(bytes_read) + " bytes",
+        message);
+}
+
+void check_staged_chunk_replay_progress(std::string_view error,
+    std::size_t read_attempt,
+    std::size_t emitted_chunks,
+    std::uint64_t emitted_bytes,
+    std::uint64_t last_chunk_bytes,
+    const char* message)
+{
+    check_contains(error,
+        std::string("staged package-entry chunk replay read attempt ")
+            + std::to_string(read_attempt),
+        message);
+    check_contains(error,
+        std::string("after emitting ") + std::to_string(emitted_chunks) + " chunk",
+        message);
+    check_contains(error,
+        std::to_string(emitted_bytes) + " bytes",
+        message);
+    if (emitted_chunks > 0) {
+        check_contains(error,
+            std::string("last chunk ") + std::to_string(last_chunk_bytes) + " bytes",
+            message);
+    }
+}
+
+void check_staged_chunk_expected_total(std::string_view error,
+    std::uint64_t expected_bytes,
+    const char* message)
+{
+    check_contains(error,
+        std::string("expected staged payload total ")
+            + std::to_string(expected_bytes) + " bytes",
+        message);
+}
+
+void check_staged_chunk_expected_remaining(std::string_view error,
+    std::uint64_t expected_bytes,
+    const char* message)
+{
+    check_contains(error,
+        std::string("expected staged payload remaining ")
+            + std::to_string(expected_bytes) + " bytes",
+        message);
+}
+
+void check_staged_chunk_expected_size(std::string_view error,
+    std::uint64_t expected_bytes,
+    const char* message)
+{
+    check_contains(error,
+        std::string("expected chunk ") + std::to_string(expected_bytes) + " bytes",
+        message);
+}
+
+void check_staged_chunk_replay_cursor(std::string_view error,
+    std::size_t chunk_index,
+    std::size_t chunk_count,
+    const char* message)
+{
+    check_contains(error,
+        std::string("staged package-entry chunk index ")
+            + std::to_string(chunk_index) + " of " + std::to_string(chunk_count),
+        message);
+}
+
 void check_not_contains(std::string_view haystack, std::string_view needle, const char* message)
 {
     check(haystack.find(needle) == std::string_view::npos, message);
+}
+
+fastxlsx::detail::WorksheetCellReplacement worksheet_cell_replacement(
+    std::string_view cell_reference, std::string_view materialized_xml)
+{
+    return fastxlsx::detail::WorksheetCellReplacement {
+        cell_reference,
+        fastxlsx::detail::WorksheetCellReplacementPayload::from_materialized_xml(materialized_xml),
+    };
+}
+
+fastxlsx::detail::WorksheetCellReplacement chunked_worksheet_cell_replacement(
+    std::string_view cell_reference, std::span<const std::string_view> chunks)
+{
+    return fastxlsx::detail::WorksheetCellReplacement {
+        cell_reference,
+        fastxlsx::detail::WorksheetCellReplacementPayload::from_chunks(chunks),
+    };
 }
 
 void check_entry_bytes(const fastxlsx::detail::PackageReader& reader,
@@ -222,6 +319,105 @@ void check_output_entry_part_context(
     check(plan->part_name == part_name, message);
 }
 
+void check_output_entry_staged_replacement_chunks(
+    const std::vector<fastxlsx::detail::PackageEditorOutputEntryPlan>& plans,
+    std::string_view entry_name,
+    bool expected,
+    const char* message)
+{
+    const fastxlsx::detail::PackageEditorOutputEntryPlan* plan =
+        find_output_entry_plan(plans, entry_name);
+    if (plan == nullptr) {
+        throw TestFailure(std::string(message) + ": missing " + std::string(entry_name));
+    }
+    check(plan->staged_replacement_chunks == expected, message);
+}
+
+void check_output_entry_materialized_replacement(
+    const std::vector<fastxlsx::detail::PackageEditorOutputEntryPlan>& plans,
+    std::string_view entry_name,
+    bool expected,
+    const char* message)
+{
+    const fastxlsx::detail::PackageEditorOutputEntryPlan* plan =
+        find_output_entry_plan(plans, entry_name);
+    if (plan == nullptr) {
+        throw TestFailure(std::string(message) + ": missing " + std::string(entry_name));
+    }
+    check(plan->materialized_replacement == expected, message);
+    if (expected) {
+        check_contains(plan->materialized_replacement_reason,
+            "materialized payload", message);
+    } else {
+        check(plan->materialized_replacement_reason.empty(), message);
+    }
+}
+
+void check_output_entry_materialized_replacement_reason(
+    const std::vector<fastxlsx::detail::PackageEditorOutputEntryPlan>& plans,
+    std::string_view entry_name,
+    std::string_view expected_reason_fragment,
+    const char* message)
+{
+    const fastxlsx::detail::PackageEditorOutputEntryPlan* plan =
+        find_output_entry_plan(plans, entry_name);
+    if (plan == nullptr) {
+        throw TestFailure(std::string(message) + ": missing " + std::string(entry_name));
+    }
+    check(plan->materialized_replacement, message);
+    check_contains(plan->materialized_replacement_reason,
+        expected_reason_fragment, message);
+}
+
+void check_source_package_parts_are_file_backed(
+    const fastxlsx::detail::PackageReader& reader,
+    const std::vector<fastxlsx::detail::PackageEditorOutputEntryPlan>& plans,
+    const char* message)
+{
+    for (const fastxlsx::detail::PackagePart& part : reader.part_index().parts()) {
+        const std::string entry_name = part.name.zip_path();
+        const fastxlsx::detail::PackageEditorOutputEntryPlan* plan =
+            find_output_entry_plan(plans, entry_name);
+        if (plan == nullptr) {
+            throw TestFailure(std::string(message) + ": missing " + entry_name);
+        }
+        check(plan->source_entry, message);
+        check(plan->copied_from_source, message);
+        check(!plan->omitted, message);
+        check(plan->package_part, message);
+        check(plan->part_name == part.name.value(), message);
+        check(plan->file_backed_source_copy, message);
+        check(!plan->file_backed_source_copy_reason.empty(), message);
+        check(!plan->staged_replacement_chunks, message);
+        check(!plan->materialized_replacement, message);
+        check(plan->materialized_replacement_reason.empty(), message);
+    }
+}
+
+void check_source_metadata_entry_is_file_backed(
+    const std::vector<fastxlsx::detail::PackageEditorOutputEntryPlan>& plans,
+    std::string_view entry_name,
+    std::string_view expected_reason_fragment,
+    const char* message)
+{
+    const fastxlsx::detail::PackageEditorOutputEntryPlan* plan =
+        find_output_entry_plan(plans, entry_name);
+    if (plan == nullptr) {
+        throw TestFailure(std::string(message) + ": missing " + std::string(entry_name));
+    }
+    check(plan->source_entry, message);
+    check(plan->copied_from_source, message);
+    check(!plan->omitted, message);
+    check(!plan->package_part, message);
+    check(plan->file_backed_source_copy, message);
+    check(!plan->file_backed_source_copy_reason.empty(), message);
+    check(!plan->staged_replacement_chunks, message);
+    check(!plan->materialized_replacement, message);
+    check(plan->materialized_replacement_reason.empty(), message);
+    check_contains(plan->file_backed_source_copy_reason,
+        expected_reason_fragment, message);
+}
+
 void check_output_plan_preserves_source_copy_original(
     const fastxlsx::detail::PackageEditor& editor,
     const fastxlsx::detail::PackageEditorOutputPlan& output_plan,
@@ -233,7 +429,12 @@ void check_output_plan_preserves_source_copy_original(
         check_output_entry_plan(output_plan.entries, entry.name,
             fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
             message);
+        const fastxlsx::detail::PackageEditorOutputEntryPlan* plan =
+            find_output_entry_plan(output_plan.entries, entry.name);
+        check(plan != nullptr && plan->file_backed_source_copy, message);
+        check(plan != nullptr && !plan->file_backed_source_copy_reason.empty(), message);
     }
+    check_source_package_parts_are_file_backed(editor.reader(), output_plan.entries, message);
 }
 
 void check_output_entry_relationship_context(
@@ -290,6 +491,41 @@ std::filesystem::path output_path(std::string_view name)
     return fastxlsx::test::artifact_path(name);
 }
 
+bool is_package_editor_shard(std::string_view shard)
+{
+    return shard == "all" || shard == "core" || shard == "preservation-core"
+        || shard == "preservation-removal" || shard == "preservation-resources"
+        || shard == "preservation-comments" || shard == "c5"
+        || shard == "preservation-linked" || shard == "cellstore" || shard == "sheetdata"
+        || shard == "sheetdata-catalog" || shard == "sheetdata-guards"
+        || shard == "sheetdata-linked" || shard == "policy";
+}
+
+std::string_view package_editor_shard_from_args(int argc, char* argv[])
+{
+    if (argc <= 1) {
+        return "all";
+    }
+    if (argc != 2) {
+        throw TestFailure("usage: fastxlsx_package_editor_tests [--shard=<name>]");
+    }
+
+    std::string_view shard = argv[1];
+    constexpr std::string_view prefix = "--shard=";
+    if (shard.starts_with(prefix)) {
+        shard.remove_prefix(prefix.size());
+    }
+    if (!is_package_editor_shard(shard)) {
+        throw TestFailure("unknown package_editor shard: " + std::string(shard));
+    }
+    return shard;
+}
+
+bool should_run_package_editor_shard(std::string_view selected, std::string_view shard)
+{
+    return selected == "all" || selected == shard;
+}
+
 std::vector<std::filesystem::path> package_editor_temp_files()
 {
     std::vector<std::filesystem::path> paths;
@@ -307,6 +543,33 @@ std::vector<std::filesystem::path> package_editor_temp_files()
         const std::string filename = path.filename().string();
         if (filename.rfind("fastxlsx-package-editor-", 0) == 0
             && path.extension() == ".xml") {
+            paths.push_back(path);
+        }
+        iterator.increment(error);
+    }
+    return paths;
+}
+
+std::vector<std::filesystem::path> package_editor_output_sibling_temp_files(
+    const std::filesystem::path& output)
+{
+    std::vector<std::filesystem::path> paths;
+    const std::filesystem::path parent = output.parent_path();
+    if (parent.empty()) {
+        return paths;
+    }
+
+    std::error_code error;
+    std::filesystem::directory_iterator iterator(
+        parent, std::filesystem::directory_options::skip_permission_denied, error);
+    const std::filesystem::directory_iterator end;
+    const std::string output_prefix = output.filename().string() + ".fastxlsx-output-";
+    const std::string backup_prefix = output.filename().string() + ".fastxlsx-backup-";
+    while (!error && iterator != end) {
+        const std::filesystem::path path = iterator->path();
+        const std::string filename = path.filename().string();
+        if (filename.rfind(output_prefix, 0) == 0
+            || filename.rfind(backup_prefix, 0) == 0) {
             paths.push_back(path);
         }
         iterator.increment(error);
@@ -332,15 +595,175 @@ void check_no_new_package_editor_temp_files(
     }
 }
 
+void check_no_new_package_editor_output_sibling_temp_files(
+    const std::vector<std::filesystem::path>& before,
+    const std::filesystem::path& output,
+    const char* message)
+{
+    const std::vector<std::filesystem::path> after =
+        package_editor_output_sibling_temp_files(output);
+    for (const std::filesystem::path& path : after) {
+        if (!contains_path(before, path)) {
+            throw TestFailure(std::string(message) + ": " + path.string());
+        }
+    }
+}
+
 void write_binary_file(const std::filesystem::path& path, std::string_view data)
 {
     std::ofstream stream(path, std::ios::binary);
     if (!stream) {
         throw TestFailure("failed to open test file for writing");
     }
-    stream.write(data.data(), static_cast<std::streamsize>(data.size()));
+    if (!data.empty()) {
+        stream.write(data.data(), static_cast<std::streamsize>(data.size()));
+    }
     if (!stream) {
         throw TestFailure("failed to write test file");
+    }
+}
+
+std::string same_size_different_payload(std::string_view original)
+{
+    const char replacement = original.find_first_not_of('X') == std::string_view::npos
+        ? 'Y'
+        : 'X';
+    return std::string(original.size(), replacement);
+}
+
+class ScopedPackageEditorSourceCopyTempFilesHook {
+public:
+    explicit ScopedPackageEditorSourceCopyTempFilesHook(
+        fastxlsx::detail::PackageEditorSourceCopyTempFilesHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_source_copy_temp_files_hook(hook);
+    }
+
+    ~ScopedPackageEditorSourceCopyTempFilesHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_source_copy_temp_files_hook(nullptr);
+    }
+
+    ScopedPackageEditorSourceCopyTempFilesHook(
+        const ScopedPackageEditorSourceCopyTempFilesHook&) = delete;
+    ScopedPackageEditorSourceCopyTempFilesHook& operator=(
+        const ScopedPackageEditorSourceCopyTempFilesHook&) = delete;
+};
+
+void truncate_package_editor_source_copy_temp_files(
+    std::span<const std::filesystem::path> temporary_source_files)
+{
+    for (const std::filesystem::path& temporary_source_file : temporary_source_files) {
+        write_binary_file(temporary_source_file, {});
+    }
+}
+
+void rewrite_package_editor_source_copy_temp_files_same_size(
+    std::span<const std::filesystem::path> temporary_source_files)
+{
+    for (const std::filesystem::path& temporary_source_file : temporary_source_files) {
+        const std::string original = fastxlsx::test::read_file(temporary_source_file);
+        if (original.empty()) {
+            continue;
+        }
+        write_binary_file(temporary_source_file, same_size_different_payload(original));
+    }
+}
+
+void delete_package_editor_source_copy_temp_files(
+    std::span<const std::filesystem::path> temporary_source_files)
+{
+    for (const std::filesystem::path& temporary_source_file : temporary_source_files) {
+        std::error_code error;
+        std::filesystem::remove(temporary_source_file, error);
+        if (error) {
+            throw TestFailure("failed to delete source-copy temporary file");
+        }
+    }
+}
+
+fastxlsx::detail::WorksheetInputChunkCallback make_test_chunk_source(
+    std::vector<std::string> chunks)
+{
+    return [chunks = std::move(chunks), index = std::size_t {0}](
+               std::string& output_chunk) mutable {
+        if (index >= chunks.size()) {
+            return false;
+        }
+        output_chunk = std::move(chunks[index]);
+        ++index;
+        return true;
+    };
+}
+
+void replace_worksheet_part_from_single_chunk_source(fastxlsx::detail::PackageEditor& editor,
+    fastxlsx::detail::PartName worksheet_part, std::string worksheet_xml,
+    const fastxlsx::detail::ReferencePolicy& policy = fastxlsx::detail::ReferencePolicy {},
+    std::string reason = {})
+{
+    editor.replace_worksheet_part_from_chunk_source(
+        std::move(worksheet_part),
+        make_test_chunk_source({std::move(worksheet_xml)}),
+        policy,
+        std::move(reason));
+}
+
+void replace_worksheet_part_by_name_from_single_chunk_source(fastxlsx::detail::PackageEditor& editor,
+    std::string_view sheet_name, std::string worksheet_xml,
+    const fastxlsx::detail::ReferencePolicy& policy = fastxlsx::detail::ReferencePolicy {},
+    std::string reason = {})
+{
+    editor.replace_worksheet_part_from_chunk_source_by_name(
+        sheet_name,
+        make_test_chunk_source({std::move(worksheet_xml)}),
+        policy,
+        std::move(reason));
+}
+
+void replace_worksheet_sheet_data_from_single_chunk_source(fastxlsx::detail::PackageEditor& editor,
+    fastxlsx::detail::PartName worksheet_part, std::string sheet_data_xml,
+    const fastxlsx::detail::ReferencePolicy& policy = fastxlsx::detail::ReferencePolicy {})
+{
+    editor.replace_worksheet_sheet_data_from_chunk_source(
+        std::move(worksheet_part),
+        make_test_chunk_source({std::move(sheet_data_xml)}),
+        policy);
+}
+
+void replace_worksheet_sheet_data_by_name_from_single_chunk_source(
+    fastxlsx::detail::PackageEditor& editor,
+    std::string_view sheet_name,
+    std::string sheet_data_xml,
+    const fastxlsx::detail::ReferencePolicy& policy = fastxlsx::detail::ReferencePolicy {})
+{
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        sheet_name,
+        make_test_chunk_source({std::move(sheet_data_xml)}),
+        policy);
+}
+
+void replace_part_with_memory_chunks(fastxlsx::detail::PackageEditor& editor,
+    fastxlsx::detail::PartName part_name, std::string chunk_payload,
+    std::string reason)
+{
+    editor.replace_part_chunks(std::move(part_name),
+        {fastxlsx::detail::PackageEntryChunk::memory(std::move(chunk_payload))},
+        std::move(reason));
+}
+
+void append_bounded_xml_comment_padding(
+    std::string& xml, std::size_t max_size, char fill)
+{
+    const std::string large_comment = std::string("<!--")
+        + std::string(512U * 1024U, fill) + "-->";
+    while (xml.size() + large_comment.size() <= max_size) {
+        xml += large_comment;
+    }
+
+    const std::string small_comment = std::string("<!--")
+        + std::string(32U, fill) + "-->";
+    while (xml.size() + small_comment.size() <= max_size) {
+        xml += small_comment;
     }
 }
 
@@ -485,6 +908,22 @@ SourcePackage write_source_package(std::string_view name)
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 
+    return source;
+}
+
+SourcePackage write_missing_worksheet_entry_source_package(std::string_view name)
+{
+    SourcePackage source = write_source_package(name);
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"docProps/core.xml", source.core_properties},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
     return source;
 }
 
@@ -894,6 +1333,23 @@ CalcSourcePackage write_calc_source_package(std::string_view name,
     return source;
 }
 
+void rewrite_calc_source_package(const CalcSourcePackage& source,
+    fastxlsx::detail::PackageWriterBackend backend =
+        fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap)
+{
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"xl/calcChain.xml", source.calc_chain},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {backend});
+}
+
 LinkedObjectSourcePackage write_linked_object_source_package(std::string_view name,
     fastxlsx::detail::PackageWriterBackend backend =
         fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap)
@@ -1189,17 +1645,62 @@ void test_package_editor_noop_save_preserves_all_source_entries()
             fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
             "no-op output plan should copy every source entry");
     }
+    check_source_package_parts_are_file_backed(editor.reader(), output_plan.entries,
+        "no-op output plan should file-back every source package part copy");
     check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
         "no-op output plan should classify content types as metadata entry");
+    check_source_metadata_entry_is_file_backed(output_plan.entries, "[Content_Types].xml",
+        "content types",
+        "no-op output plan should expose file-backed content-types metadata copy");
+    check_source_metadata_entry_is_file_backed(output_plan.entries, "_rels/.rels",
+        "package relationships",
+        "no-op output plan should expose file-backed package relationships metadata copy");
+    check_source_metadata_entry_is_file_backed(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        "relationships",
+        "no-op output plan should expose file-backed workbook relationships metadata copy");
     check_output_entry_part_context(output_plan.entries, "xl/workbook.xml", true,
         "/xl/workbook.xml",
         "no-op output plan should classify workbook XML as a package part");
+    const auto* workbook_output_plan =
+        find_output_entry_plan(output_plan.entries, "xl/workbook.xml");
+    check(workbook_output_plan != nullptr && workbook_output_plan->file_backed_source_copy,
+        "no-op output plan should copy workbook source entries through file-backed chunks");
+    check_contains(workbook_output_plan->file_backed_source_copy_reason, "package part",
+        "workbook file-backed source-copy plan should explain the package-part reason");
+    check_output_entry_part_context(output_plan.entries, "xl/worksheets/sheet1.xml", true,
+        "/xl/worksheets/sheet1.xml",
+        "no-op output plan should classify worksheet XML as a package part");
+    const auto* worksheet_output_plan =
+        find_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml");
+    check(worksheet_output_plan != nullptr && worksheet_output_plan->file_backed_source_copy,
+        "no-op output plan should copy worksheet source entries through file-backed chunks");
+    check_contains(worksheet_output_plan->file_backed_source_copy_reason, "worksheet",
+        "worksheet file-backed source-copy plan should explain the worksheet reason");
+    check_output_entry_part_context(output_plan.entries, "xl/sharedStrings.xml", true,
+        "/xl/sharedStrings.xml",
+        "no-op output plan should classify sharedStrings as a package part");
+    const auto* shared_strings_output_plan =
+        find_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml");
+    check(shared_strings_output_plan != nullptr
+            && shared_strings_output_plan->file_backed_source_copy,
+        "no-op output plan should copy sharedStrings source entries through file-backed chunks");
+    check_contains(shared_strings_output_plan->file_backed_source_copy_reason, "sharedStrings",
+        "sharedStrings file-backed source-copy plan should explain the sharedStrings reason");
     check_output_entry_part_context(output_plan.entries, "custom/opaque-extension.bin", true,
         "/custom/opaque-extension.bin",
         "no-op output plan should classify unknown extension as a package part");
+    const auto* opaque_output_plan =
+        find_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin");
+    check(opaque_output_plan != nullptr && opaque_output_plan->file_backed_source_copy,
+        "no-op output plan should copy unknown package parts through file-backed chunks");
+    check_contains(opaque_output_plan->file_backed_source_copy_reason, "package part",
+        "unknown package part file-backed source-copy plan should explain the generic reason");
     check_output_entry_part_context(output_plan.entries, "custom/_rels/opaque-extension.bin.rels",
         false, "",
         "no-op output plan should classify unknown owner relationships as metadata entry");
+    check_source_metadata_entry_is_file_backed(output_plan.entries,
+        "custom/_rels/opaque-extension.bin.rels", "relationships",
+        "no-op output plan should expose file-backed unknown owner relationships metadata copy");
 
     editor.save_as(output);
 
@@ -1231,6 +1732,69 @@ void test_package_editor_noop_save_preserves_all_source_entries()
     check_entry_bytes(output_reader, "xl/calcChain.xml", source.calc_chain);
     check_entry_bytes(output_reader, "custom/opaque-extension.bin",
         source.opaque_extension);
+    check_entry_bytes(output_reader, "custom/_rels/opaque-extension.bin.rels",
+        source.opaque_extension_relationships);
+}
+
+void test_package_editor_file_backs_copy_original_package_part_source_entries()
+{
+    LinkedObjectSourcePackage source =
+        write_linked_object_source_package("fastxlsx-package-editor-large-source-copy.xlsx");
+    source.opaque_extension.assign(70U * 1024U, 'L');
+    rewrite_linked_object_source_package(source);
+
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-large-source-copy-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_source_package_parts_are_file_backed(editor.reader(), output_plan.entries,
+        "large source-copy output plan should file-back every source package part copy");
+    check_output_entry_part_context(output_plan.entries, "custom/opaque-extension.bin", true,
+        "/custom/opaque-extension.bin",
+        "large source-copy output plan should classify unknown extension as a package part");
+    const auto* opaque_output_plan =
+        find_output_entry_plan(output_plan.entries, "custom/opaque-extension.bin");
+    check(opaque_output_plan != nullptr && opaque_output_plan->file_backed_source_copy,
+        "large copy-original package parts should use file-backed source copy");
+    check_contains(opaque_output_plan->file_backed_source_copy_reason, "package part",
+        "large source-copy output plan should explain the package-part reason");
+
+    const auto* media_output_plan =
+        find_output_entry_plan(output_plan.entries, "xl/media/image1.png");
+    check(media_output_plan != nullptr && media_output_plan->file_backed_source_copy,
+        "small package parts should also use file-backed source copy");
+    check_contains(media_output_plan->file_backed_source_copy_reason, "package part",
+        "small package parts should carry a generic file-backed reason");
+    const auto* workbook_output_plan =
+        find_output_entry_plan(output_plan.entries, "xl/workbook.xml");
+    check(workbook_output_plan != nullptr && workbook_output_plan->file_backed_source_copy,
+        "workbook XML source-copy output should use file-backed source copy");
+    check_contains(workbook_output_plan->file_backed_source_copy_reason, "package part",
+        "workbook XML source-copy output should carry a generic file-backed reason");
+    const auto* opaque_rels_output_plan =
+        find_output_entry_plan(output_plan.entries, "custom/_rels/opaque-extension.bin.rels");
+    check(opaque_rels_output_plan != nullptr
+            && opaque_rels_output_plan->file_backed_source_copy,
+        "metadata relationship entries should use file-backed source copy");
+    check(opaque_rels_output_plan != nullptr
+            && !opaque_rels_output_plan->file_backed_source_copy_reason.empty(),
+        "metadata relationship entries should carry a file-backed source-copy reason");
+    check_source_metadata_entry_is_file_backed(output_plan.entries,
+        "custom/_rels/opaque-extension.bin.rels", "relationships",
+        "metadata relationship entries should expose file-backed metadata source-copy reason");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader);
+    check_entry_bytes(output_reader, "custom/opaque-extension.bin",
+        source.opaque_extension);
+    check_entry_bytes(output_reader, "xl/media/image1.png", source.media);
+    check_entry_bytes(output_reader, "xl/workbook.xml", source.workbook);
     check_entry_bytes(output_reader, "custom/_rels/opaque-extension.bin.rels",
         source.opaque_extension_relationships);
 }
@@ -1283,6 +1847,21 @@ void test_package_editor_replaces_one_part_and_preserves_unknown_parts()
             && unknown_manifest_part->preserve_original && !unknown_manifest_part->dirty,
         "PackageEditor manifest should keep unknown part copy-original");
 
+    const fastxlsx::detail::PackageEditorOutputPlan replacement_output_plan =
+        editor.planned_output();
+    check_output_entry_materialized_replacement(replacement_output_plan.entries,
+        core_part.zip_path(), true,
+        "ordinary core properties replacement should expose materialized replacement output");
+    check_output_entry_materialized_replacement_reason(replacement_output_plan.entries,
+        core_part.zip_path(), "core properties package part",
+        "ordinary core properties replacement should explain materialized replacement boundary");
+    check_output_entry_staged_replacement_chunks(replacement_output_plan.entries,
+        core_part.zip_path(), false,
+        "ordinary core properties replacement should not expose staged chunks");
+    check_output_entry_materialized_replacement(replacement_output_plan.entries,
+        unknown_part.zip_path(), false,
+        "copy-original unknown part should not expose materialized replacement output");
+
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =
@@ -1317,66 +1896,688 @@ void test_package_editor_staged_chunk_part_replacement_writes_chunks()
         output_path("fastxlsx-package-editor-staged-chunks-output.xlsx");
     const std::filesystem::path final_output =
         output_path("fastxlsx-package-editor-staged-chunks-final-output.xlsx");
+    const std::filesystem::path restore_output =
+        output_path("fastxlsx-package-editor-staged-chunks-restore-output.xlsx");
     const std::filesystem::path body_path =
         output_path("fastxlsx-package-editor-staged-chunks-body.xml");
-    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string opaque_prefix = "chunked:";
+    const std::string opaque_body = "file-backed-body";
+    const std::string opaque_suffix = ":done";
+    const std::string expected_chunked_opaque =
+        opaque_prefix + opaque_body + opaque_suffix;
+    write_binary_file(body_path, opaque_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    editor.replace_part_chunks(opaque_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(opaque_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(opaque_suffix),
+        },
+        "staged opaque stream chunks");
+
+    const auto* opaque_plan = editor.edit_plan().find_part(opaque_part);
+    check(opaque_plan != nullptr,
+        "staged chunk replacement should record opaque edit-plan entry");
+    check(opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged chunk replacement should be a stream rewrite");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "generic non-worksheet staged chunks should not request recalculation");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged chunk replacement should update manifest write mode");
+    const fastxlsx::detail::PackageEditorOutputPlan chunk_plan = editor.planned_output();
+    check_output_entry_plan(chunk_plan.entries, opaque_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "staged chunk replacement should appear in planned output");
+    check_output_entry_staged_replacement_chunks(chunk_plan.entries, opaque_part.zip_path(),
+        true,
+        "staged chunk replacement output plan should expose active chunked replacement");
+    check_output_entry_materialized_replacement(chunk_plan.entries, opaque_part.zip_path(),
+        false,
+        "staged chunk replacement output plan should not expose materialized replacement");
+
+    editor.save_as(chunk_output);
+
+    const fastxlsx::detail::PackageReader chunk_output_reader =
+        fastxlsx::detail::PackageReader::open(chunk_output);
+    check_preserved_source_entries(editor.reader(), chunk_output_reader, opaque_part.zip_path());
+    check_entry_bytes(
+        chunk_output_reader, opaque_part.zip_path(), expected_chunked_opaque);
+    check_entry_bytes(chunk_output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
+
+    const std::string final_opaque = "final opaque bytes";
+    replace_part_with_memory_chunks(editor, opaque_part, final_opaque,
+        "final opaque staged rewrite");
+
+    const auto* final_opaque_plan = editor.edit_plan().find_part(opaque_part);
+    check(final_opaque_plan != nullptr,
+        "final string replacement should keep opaque edit-plan entry");
+    check(final_opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "final staged replacement should keep staged chunk write mode");
+    const fastxlsx::detail::PackageEditorOutputPlan final_plan = editor.planned_output();
+    check_output_entry_staged_replacement_chunks(final_plan.entries, opaque_part.zip_path(),
+        true,
+        "final staged replacement output plan should keep active chunked replacement marker");
+    check_output_entry_materialized_replacement(final_plan.entries, opaque_part.zip_path(),
+        false,
+        "final staged replacement output plan should not expose active materialized replacement");
+
+    editor.save_as(final_output);
+
+    const fastxlsx::detail::PackageReader final_output_reader =
+        fastxlsx::detail::PackageReader::open(final_output);
+    check_preserved_source_entries(editor.reader(), final_output_reader, opaque_part.zip_path());
+    check_entry_bytes(final_output_reader, opaque_part.zip_path(), final_opaque);
+
+    fastxlsx::detail::PackageEditor restore_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    restore_editor.remove_part(opaque_part, "temporary opaque removal before staged chunks");
+    restore_editor.replace_part_chunks(opaque_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(opaque_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(opaque_suffix),
+        },
+        "restored opaque staged stream chunks");
+
+    const auto* restored_opaque_plan = restore_editor.edit_plan().find_part(opaque_part);
+    check(restored_opaque_plan != nullptr,
+        "staged chunks after removal should restore the opaque edit-plan entry");
+    check(restored_opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged chunks after removal should keep stream rewrite mode");
+    check(restore_editor.edit_plan().find_removed_part(opaque_part) == nullptr,
+        "staged chunks after removal should clear stale removed-part audit");
+    check(restore_editor.edit_plan().removed_package_entries().empty(),
+        "staged chunks after removal should clear stale removed package entries");
+    check_manifest_write_mode(restore_editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "staged chunks after removal should restore manifest write mode");
+    const fastxlsx::detail::PackageEditorOutputPlan restore_plan =
+        restore_editor.planned_output();
+    check_output_entry_plan(restore_plan.entries,
+        opaque_part.zip_path(), fastxlsx::detail::PartWriteMode::StreamRewrite,
+        true, false, false, false,
+        "staged chunks after removal should appear as active staged output");
+    check_output_entry_staged_replacement_chunks(restore_plan.entries,
+        opaque_part.zip_path(), true,
+        "staged chunks after removal output plan should expose active chunked replacement");
+    check_output_entry_materialized_replacement(restore_plan.entries,
+        opaque_part.zip_path(), false,
+        "staged chunks after removal output plan should not expose materialized replacement");
+
+    restore_editor.save_as(restore_output);
+
+    const fastxlsx::detail::PackageReader restore_output_reader =
+        fastxlsx::detail::PackageReader::open(restore_output);
+    check_preserved_source_entries(
+        restore_editor.reader(), restore_output_reader, opaque_part.zip_path());
+    check_entry_bytes(
+        restore_output_reader, opaque_part.zip_path(), expected_chunked_opaque);
+}
+
+void test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes()
+{
+    struct ChunkMutationCase {
+        std::string_view name;
+        std::string_view mutated_body;
+    };
+
+    const std::array cases {
+        ChunkMutationCase {"truncated", "file"},
+        ChunkMutationCase {"extended", "file-backed-body-extended"},
+    };
+
+    for (const ChunkMutationCase& test_case : cases) {
+        const SourcePackage source = write_source_package(
+            "fastxlsx-package-editor-staged-size-" + std::string(test_case.name)
+            + "-source.xlsx");
+        const std::filesystem::path output =
+            output_path("fastxlsx-package-editor-staged-size-"
+                + std::string(test_case.name) + "-output.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-staged-size-"
+                + std::string(test_case.name) + "-body.bin");
+        const std::string output_sentinel =
+            "do not overwrite staged size failure output";
+        write_binary_file(output, output_sentinel);
+
+        const std::string opaque_prefix = "chunked:";
+        const std::string opaque_body = "file-backed-body";
+        const std::string opaque_suffix = ":done";
+        const std::string expected_chunked_opaque =
+            opaque_prefix + opaque_body + opaque_suffix;
+        write_binary_file(body_path, opaque_body);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+        editor.replace_part_chunks(opaque_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(opaque_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(opaque_suffix),
+            },
+            "staged opaque stream chunks with expected size");
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+        const std::vector<std::filesystem::path> output_temp_files_before =
+            package_editor_output_sibling_temp_files(output);
+
+        write_binary_file(body_path, test_case.mutated_body);
+
+        bool save_failed = false;
+        try {
+            editor.save_as(output);
+        } catch (const std::exception& error) {
+            save_failed = true;
+            check_contains(error.what(),
+                "ZIP entry chunk size changed after staging",
+                "save_as staged chunk size mutation should report the size contract");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(opaque_body.size()) + " bytes",
+                "save_as staged chunk size mutation should report expected bytes");
+            check_contains(error.what(),
+                std::string("actual ") + std::to_string(test_case.mutated_body.size()) + " bytes",
+                "save_as staged chunk size mutation should report actual bytes");
+            check_contains(error.what(), "ZIP entry 'custom/opaque.bin' chunk 1",
+                "save_as staged chunk size mutation should report entry/chunk context");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "save_as staged chunk size mutation should include the file-backed chunk path");
+        }
+
+        check(save_failed,
+            "save_as should reject staged file chunks whose size changed after validation");
+        check(fastxlsx::test::read_file(output) == output_sentinel,
+            "save_as staged chunk size failure should preserve existing output bytes");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "save_as staged chunk size failure should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "save_as staged chunk size failure should not append notes");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "save_as staged chunk size failure should preserve calc policy");
+        check_manifest_write_mode(editor, opaque_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "save_as staged chunk size failure should keep prior staged part plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "save_as staged chunk size failure should clean source-copy temp files");
+        check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+            "save_as staged chunk size failure should clean output sibling temp files");
+
+        write_binary_file(body_path, opaque_body);
+        editor.save_as(output);
+
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check_entry_bytes(output_reader, opaque_part.zip_path(), expected_chunked_opaque);
+        check_entry_bytes(output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
+    }
+}
+
+void test_package_editor_save_as_rejects_changed_staged_chunk_crc_without_state_changes()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-staged-crc-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-staged-crc-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-staged-crc-body.bin");
+    const std::string output_sentinel =
+        "do not overwrite staged crc failure output";
+    write_binary_file(output, output_sentinel);
+
+    const std::string opaque_prefix = "chunked:";
+    const std::string opaque_body = "file-backed-body";
+    const std::string opaque_suffix = ":done";
+    const std::string expected_chunked_opaque =
+        opaque_prefix + opaque_body + opaque_suffix;
+    write_binary_file(body_path, opaque_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    editor.replace_part_chunks(opaque_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(opaque_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(opaque_suffix),
+        },
+        "staged opaque stream chunks with expected CRC");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    const std::vector<std::filesystem::path> output_temp_files_before =
+        package_editor_output_sibling_temp_files(output);
+
+    write_binary_file(body_path, same_size_different_payload(opaque_body));
+
+    bool save_failed = false;
+    try {
+        editor.save_as(output);
+    } catch (const std::exception& error) {
+        save_failed = true;
+        check_contains(error.what(),
+            "ZIP entry chunk CRC32 changed after staging",
+            "save_as staged chunk CRC mutation should report the CRC contract");
+        check_contains(error.what(), "expected ",
+            "save_as staged chunk CRC mutation should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "save_as staged chunk CRC mutation should report actual CRC");
+        check_contains(error.what(), "ZIP entry 'custom/opaque.bin' chunk 1",
+            "save_as staged chunk CRC mutation should report entry/chunk context");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "save_as staged chunk CRC mutation should include the file-backed chunk path");
+    }
+
+    check(save_failed,
+        "save_as should reject staged file chunks whose CRC changed after validation");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "save_as staged chunk CRC failure should preserve existing output bytes");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "save_as staged chunk CRC failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "save_as staged chunk CRC failure should not append notes");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "save_as staged chunk CRC failure should preserve calc policy");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "save_as staged chunk CRC failure should keep prior staged part plan");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "save_as staged chunk CRC failure should clean source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+        "save_as staged chunk CRC failure should clean output sibling temp files");
+
+    write_binary_file(body_path, opaque_body);
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, opaque_part.zip_path(), expected_chunked_opaque);
+    check_entry_bytes(output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
+}
+
+void test_package_editor_rejects_invalid_generic_staged_chunks_without_state_changes()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-invalid-generic-staged-chunks-source.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const auto expect_invalid_chunk =
+        [&](fastxlsx::detail::PackageEntryChunk chunk,
+            std::string_view expected_error_fragment,
+            std::string_view output_name,
+            const char* scenario) {
+            fastxlsx::detail::PackageEditor editor =
+                fastxlsx::detail::PackageEditor::open(source.path);
+            const std::size_t initial_plan_size = editor.edit_plan().size();
+            const std::size_t initial_note_count = editor.edit_plan().notes().size();
+            const std::size_t initial_package_entry_count =
+                editor.edit_plan().package_entries().size();
+            const std::size_t initial_removed_package_entry_count =
+                editor.edit_plan().removed_package_entries().size();
+
+            bool failed = false;
+            try {
+                editor.replace_part_chunks(opaque_part, {std::move(chunk)},
+                    std::string(scenario));
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(),
+                    "generic package part staged replacement has invalid staged chunks",
+                    "invalid generic staged chunk should fail before commit");
+                check_contains(error.what(), "staged package-entry chunk 0",
+                    "invalid generic staged chunk should identify the failing chunk");
+                check_contains(error.what(), expected_error_fragment,
+                    "invalid generic staged chunk should preserve chunk validation detail");
+            }
+            check(failed, "PackageEditor should reject invalid generic staged chunks");
+            check(editor.edit_plan().size() == initial_plan_size,
+                "invalid generic staged chunk failure should not mutate edit-plan parts");
+            check(editor.edit_plan().notes().size() == initial_note_count,
+                "invalid generic staged chunk failure should not add notes");
+            check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+                "invalid generic staged chunk failure should not add package-entry audits");
+            check(editor.edit_plan().removed_package_entries().size()
+                    == initial_removed_package_entry_count,
+                "invalid generic staged chunk failure should not add removed package-entry audits");
+            check(editor.edit_plan().removed_parts().empty(),
+                "invalid generic staged chunk failure should not record removed parts");
+            check(!editor.edit_plan().full_calculation_on_load(),
+                "invalid generic staged chunk failure should not request recalculation");
+            check(editor.edit_plan().calc_chain_action()
+                    == fastxlsx::detail::CalcChainAction::Preserve,
+                "invalid generic staged chunk failure should not change calcChain policy");
+
+            check_manifest_write_mode(editor, opaque_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "invalid generic staged chunk failure should keep opaque copy-original");
+            check_manifest_write_mode(editor, workbook_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "invalid generic staged chunk failure should keep workbook copy-original");
+            check_manifest_write_mode(editor, worksheet_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "invalid generic staged chunk failure should keep worksheet copy-original");
+
+            const fastxlsx::detail::PackageEditorOutputPlan failed_plan =
+                editor.planned_output();
+            check_output_entry_plan(failed_plan.entries, opaque_part.zip_path(),
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "invalid generic staged chunk failure should preserve opaque source entry");
+            check_output_entry_staged_replacement_chunks(failed_plan.entries,
+                opaque_part.zip_path(), false,
+                "invalid generic staged chunk failure should not stage opaque chunks");
+            check_output_entry_materialized_replacement(failed_plan.entries,
+                opaque_part.zip_path(), false,
+                "invalid generic staged chunk failure should not mark materialized replacement");
+
+            const std::filesystem::path output = output_path(std::string(output_name));
+            editor.save_as(output);
+            const fastxlsx::detail::PackageReader output_reader =
+                fastxlsx::detail::PackageReader::open(output);
+            check_entry_bytes(output_reader, opaque_part.zip_path(), source.unknown);
+            check_entry_bytes(output_reader, worksheet_part.zip_path(), source.worksheet);
+        };
+
+    fastxlsx::detail::PackageEntryChunk mixed_chunk =
+        fastxlsx::detail::PackageEntryChunk::memory("invalid mixed payload");
+    mixed_chunk.path =
+        output_path("fastxlsx-package-editor-invalid-generic-staged-chunks-mixed.bin");
+    expect_invalid_chunk(std::move(mixed_chunk), "cannot mix memory and file sources",
+        "fastxlsx-package-editor-invalid-generic-staged-chunks-mixed-output.xlsx",
+        "mixed memory/file generic staged chunk");
+
+    fastxlsx::detail::PackageEntryChunk missing_file_chunk =
+        fastxlsx::detail::PackageEntryChunk::file(
+            output_path("fastxlsx-package-editor-invalid-generic-staged-chunks-missing.bin"));
+    expect_invalid_chunk(std::move(missing_file_chunk),
+        "failed to measure staged package-entry chunk file",
+        "fastxlsx-package-editor-invalid-generic-staged-chunks-missing-output.xlsx",
+        "missing file generic staged chunk");
+}
+
+void test_package_editor_rejects_invalid_worksheet_staged_chunks_without_state_changes()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-invalid-worksheet-staged-chunks-source.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const auto expect_invalid_chunk =
+        [&](fastxlsx::detail::PackageEntryChunk chunk,
+            std::string_view expected_error_fragment,
+            std::string_view output_name,
+            const char* scenario) {
+            fastxlsx::detail::PackageEditor editor =
+                fastxlsx::detail::PackageEditor::open(source.path);
+            const std::size_t initial_plan_size = editor.edit_plan().size();
+            const std::size_t initial_note_count = editor.edit_plan().notes().size();
+            const std::size_t initial_package_entry_count =
+                editor.edit_plan().package_entries().size();
+            const std::size_t initial_removed_package_entry_count =
+                editor.edit_plan().removed_package_entries().size();
+            const std::size_t initial_relationship_target_audit_count =
+                editor.edit_plan().relationship_target_audits().size();
+            const std::size_t initial_worksheet_relationship_audit_count =
+                editor.edit_plan().worksheet_relationship_reference_audits().size();
+            const std::size_t initial_worksheet_payload_audit_count =
+                editor.edit_plan().worksheet_payload_dependency_audits().size();
+
+            bool failed = false;
+            try {
+                editor.replace_worksheet_part_chunks(worksheet_part, {std::move(chunk)},
+                    {}, std::string(scenario));
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(),
+                    "worksheet staged replacement has invalid staged chunks",
+                    "invalid worksheet staged chunk should fail before worksheet scanning");
+                check_contains(error.what(), "staged package-entry chunk 0",
+                    "invalid worksheet staged chunk should identify the failing chunk");
+                check_contains(error.what(), expected_error_fragment,
+                    "invalid worksheet staged chunk should preserve chunk validation detail");
+            }
+            check(failed, "PackageEditor should reject invalid worksheet staged chunks");
+            check(editor.edit_plan().size() == initial_plan_size,
+                "invalid worksheet staged chunk failure should not mutate edit-plan parts");
+            check(editor.edit_plan().notes().size() == initial_note_count,
+                "invalid worksheet staged chunk failure should not add notes");
+            check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+                "invalid worksheet staged chunk failure should not add package-entry audits");
+            check(editor.edit_plan().removed_package_entries().size()
+                    == initial_removed_package_entry_count,
+                "invalid worksheet staged chunk failure should not add removed package-entry audits");
+            check(editor.edit_plan().relationship_target_audits().size()
+                    == initial_relationship_target_audit_count,
+                "invalid worksheet staged chunk failure should not add relationship target audits");
+            check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                    == initial_worksheet_relationship_audit_count,
+                "invalid worksheet staged chunk failure should not add worksheet relationship audits");
+            check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                    == initial_worksheet_payload_audit_count,
+                "invalid worksheet staged chunk failure should not add worksheet payload audits");
+            check(editor.edit_plan().removed_parts().empty(),
+                "invalid worksheet staged chunk failure should not record removed parts");
+            check(!editor.edit_plan().full_calculation_on_load(),
+                "invalid worksheet staged chunk failure should not request recalculation");
+            check(editor.edit_plan().calc_chain_action()
+                    == fastxlsx::detail::CalcChainAction::Preserve,
+                "invalid worksheet staged chunk failure should not change calcChain policy");
+
+            check_manifest_write_mode(editor, opaque_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "invalid worksheet staged chunk failure should keep opaque copy-original");
+            check_manifest_write_mode(editor, workbook_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "invalid worksheet staged chunk failure should keep workbook copy-original");
+            check_manifest_write_mode(editor, worksheet_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "invalid worksheet staged chunk failure should keep worksheet copy-original");
+
+            const fastxlsx::detail::PackageEditorOutputPlan failed_plan =
+                editor.planned_output();
+            check_output_entry_plan(failed_plan.entries, worksheet_part.zip_path(),
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "invalid worksheet staged chunk failure should preserve worksheet source entry");
+            check_output_entry_plan(failed_plan.entries, workbook_part.zip_path(),
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "invalid worksheet staged chunk failure should preserve workbook source entry");
+            check_output_entry_staged_replacement_chunks(failed_plan.entries,
+                worksheet_part.zip_path(), false,
+                "invalid worksheet staged chunk failure should not stage worksheet chunks");
+            check_output_entry_materialized_replacement(failed_plan.entries,
+                worksheet_part.zip_path(), false,
+                "invalid worksheet staged chunk failure should not mark materialized worksheet replacement");
+            check(failed_plan.worksheet_relationship_reference_audits.empty(),
+                "invalid worksheet staged chunk output plan should not add worksheet relationship audits");
+            check(failed_plan.worksheet_payload_dependency_audits.empty(),
+                "invalid worksheet staged chunk output plan should not add worksheet payload audits");
+
+            const std::filesystem::path output = output_path(std::string(output_name));
+            editor.save_as(output);
+            const fastxlsx::detail::PackageReader output_reader =
+                fastxlsx::detail::PackageReader::open(output);
+            check_entry_bytes(output_reader, opaque_part.zip_path(), source.unknown);
+            check_entry_bytes(output_reader, workbook_part.zip_path(), source.workbook);
+            check_entry_bytes(output_reader, worksheet_part.zip_path(), source.worksheet);
+        };
+
+    fastxlsx::detail::PackageEntryChunk mixed_chunk =
+        fastxlsx::detail::PackageEntryChunk::memory("<worksheet/>");
+    mixed_chunk.path =
+        output_path("fastxlsx-package-editor-invalid-worksheet-staged-chunks-mixed.bin");
+    expect_invalid_chunk(std::move(mixed_chunk), "cannot mix memory and file sources",
+        "fastxlsx-package-editor-invalid-worksheet-staged-chunks-mixed-output.xlsx",
+        "mixed memory/file worksheet staged chunk");
+
+    const std::filesystem::path missing_file_path =
+        output_path("fastxlsx-package-editor-invalid-worksheet-staged-chunks-missing.xml");
+    std::error_code ignored;
+    std::filesystem::remove(missing_file_path, ignored);
+    fastxlsx::detail::PackageEntryChunk missing_file_chunk =
+        fastxlsx::detail::PackageEntryChunk::file(missing_file_path);
+    expect_invalid_chunk(std::move(missing_file_chunk),
+        "failed to measure staged package-entry chunk file",
+        "fastxlsx-package-editor-invalid-worksheet-staged-chunks-missing-output.xlsx",
+        "missing file worksheet staged chunk");
+}
+
+void test_package_editor_rejects_materialized_stream_rewrite_part_without_state_changes()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-materialized-stream-rewrite-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-materialized-stream-rewrite-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    bool failed = false;
+    try {
+        editor.replace_part(opaque_part, "materialized bytes",
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "materialized stream rewrite should fail");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "materialized replace_part cannot use stream-rewrite write mode",
+            "materialized stream-rewrite replacement should report the staged-only boundary");
+        check_contains(error.what(), "replace_part_chunks",
+            "materialized stream-rewrite replacement should point to staged chunks");
+    }
+    check(failed,
+        "PackageEditor should reject materialized replace_part StreamRewrite");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "materialized StreamRewrite failure should not mutate the edit plan");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "materialized StreamRewrite failure should leave target copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan = editor.planned_output();
+    check_output_entry_plan(failed_plan.entries, opaque_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "materialized StreamRewrite failure should keep output copy-original");
+    check_output_entry_staged_replacement_chunks(failed_plan.entries, opaque_part.zip_path(),
+        false,
+        "materialized StreamRewrite failure should not queue staged chunks");
+    check_output_entry_materialized_replacement(failed_plan.entries, opaque_part.zip_path(),
+        false,
+        "materialized StreamRewrite failure should not queue materialized replacement bytes");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(editor.reader(), output_reader);
+    check_entry_bytes(output_reader, opaque_part.zip_path(), source.unknown);
+}
+
+void test_package_editor_generic_staged_chunks_route_worksheet_targets()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-generic-worksheet-staged-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-generic-worksheet-staged-chunks-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-generic-worksheet-staged-chunks-body.xml");
+    const std::string worksheet_prefix =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>)";
     const std::string worksheet_body =
-        R"(<row r="2"><c r="A2"><v>22</v></c></row>)";
-    const std::string worksheet_suffix = "</sheetData></worksheet>";
-    const std::string expected_chunked_worksheet =
+        R"(<row r="2"><c r="A2"><f>A1+1</f></c></row>)";
+    const std::string worksheet_suffix =
+        R"(</sheetData><drawing r:id="rIdMissing"/></worksheet>)";
+    const std::string replacement_worksheet =
         worksheet_prefix + worksheet_body + worksheet_suffix;
     write_binary_file(body_path, worksheet_body);
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
     editor.replace_part_chunks(worksheet_part,
         {
             fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
             fastxlsx::detail::PackageEntryChunk::file(body_path),
             fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
         },
-        "staged worksheet stream chunks");
+        "generic caller supplied worksheet chunks");
 
+    check(editor.edit_plan().full_calculation_on_load(),
+        "generic staged chunks targeting a worksheet should use worksheet calc policy");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"generic staged package part chunk replacement targeting a worksheet part",
+                  "worksheet-aware validation"}),
+        "generic worksheet chunks should report worksheet-aware routing");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"worksheet staged chunk replacement validates worksheet root/events",
+                  "one chunk-source audit reader"}),
+        "generic worksheet chunks should use combined chunk-source worksheet audit");
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
-        "staged chunk replacement should record worksheet edit-plan entry");
+        "generic worksheet chunks should record worksheet edit-plan entry");
     check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "staged chunk replacement should be a stream rewrite");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "staged chunk replacement should update manifest write mode");
-    check_output_entry_plan(editor.planned_output().entries, worksheet_part.zip_path(),
+        "generic worksheet chunks should keep worksheet stream rewrite mode");
+    check(worksheet_plan->reason.find("staged stream rewrite chunks") != std::string::npos,
+        "generic worksheet chunks should expose worksheet staged rewrite reason");
+
+    const auto output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
-        "staged chunk replacement should appear in planned output");
+        "generic worksheet chunks should appear as worksheet stream rewrite");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "generic worksheet chunks should still rewrite workbook calc metadata");
+    check(has_note_containing(output_plan.notes,
+              {"contains formulas", "calcChain policy"}),
+        "generic worksheet chunks should audit formulas from staged chunks");
 
-    editor.save_as(chunk_output);
+    editor.save_as(output);
 
-    const fastxlsx::detail::PackageReader chunk_output_reader =
-        fastxlsx::detail::PackageReader::open(chunk_output);
-    check_preserved_source_entries(editor.reader(), chunk_output_reader, worksheet_part.zip_path());
-    check_entry_bytes(
-        chunk_output_reader, worksheet_part.zip_path(), expected_chunked_worksheet);
-    check_entry_bytes(chunk_output_reader, "custom/opaque.bin", source.unknown);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), "fullCalcOnLoad=\"1\"",
+        "generic worksheet chunks should request full workbook recalculation");
+    check_entry_bytes(output_reader, "custom/opaque.bin", source.unknown);
 
-    const std::string final_worksheet =
-        R"(<worksheet><sheetData><row r="3"><c r="A3"><v>33</v></c></row></sheetData></worksheet>)";
-    editor.replace_part(worksheet_part, final_worksheet,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "final worksheet string rewrite");
-
-    const auto* final_worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(final_worksheet_plan != nullptr,
-        "final string replacement should keep worksheet edit-plan entry");
-    check(final_worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "final string replacement should override staged chunk write mode");
-
-    editor.save_as(final_output);
-
-    const fastxlsx::detail::PackageReader final_output_reader =
-        fastxlsx::detail::PackageReader::open(final_output);
-    check_preserved_source_entries(editor.reader(), final_output_reader, worksheet_part.zip_path());
-    check_entry_bytes(final_output_reader, worksheet_part.zip_path(), final_worksheet);
+    fastxlsx::detail::PackageEditor invalid_chunks_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    bool invalid_chunks_failed = false;
+    try {
+        invalid_chunks_editor.replace_part_chunks(
+            worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory("<!DOCTYPE worksheet><worksheet/>"),
+            },
+            "invalid generic worksheet chunks");
+    } catch (const std::exception&) {
+        invalid_chunks_failed = true;
+    }
+    check(invalid_chunks_failed, "invalid generic staged worksheet chunks should fail");
+    check(!invalid_chunks_editor.edit_plan().full_calculation_on_load(),
+        "invalid generic staged worksheet chunks should not request recalculation");
+    check(invalid_chunks_editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "invalid generic staged worksheet chunks should not change worksheet edit-plan state");
+    check_manifest_write_mode(invalid_chunks_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "invalid generic staged worksheet chunks should not change manifest state");
 }
 
 void test_package_editor_replaces_worksheet_with_staged_chunks()
@@ -1387,10 +2588,12 @@ void test_package_editor_replaces_worksheet_with_staged_chunks()
         output_path("fastxlsx-package-editor-worksheet-staged-chunks-output.xlsx");
     const std::filesystem::path body_path =
         output_path("fastxlsx-package-editor-worksheet-staged-chunks-body.xml");
-    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_prefix =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>)";
     const std::string worksheet_body =
         R"(<row r="2"><c r="A2"><f>A1+1</f></c></row>)";
-    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string worksheet_suffix =
+        R"(</sheetData><drawing r:id="rIdMissing"/></worksheet>)";
     const std::string replacement_worksheet =
         worksheet_prefix + worksheet_body + worksheet_suffix;
     write_binary_file(body_path, worksheet_body);
@@ -1400,7 +2603,7 @@ void test_package_editor_replaces_worksheet_with_staged_chunks()
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
 
-    editor.replace_worksheet_part_chunks(worksheet_part, replacement_worksheet,
+    editor.replace_worksheet_part_chunks(worksheet_part,
         {
             fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
             fastxlsx::detail::PackageEntryChunk::file(body_path),
@@ -1410,8 +2613,11 @@ void test_package_editor_replaces_worksheet_with_staged_chunks()
     check(editor.edit_plan().full_calculation_on_load(),
         "staged worksheet chunks should keep worksheet replacement calc policy");
     check(has_note_containing(editor.edit_plan().notes(),
-              {"staged chunk replacement", "materialized worksheet XML"}),
-        "staged worksheet chunks should report current materialized-audit boundary");
+              {"staged chunk replacement", "one chunk-source audit reader"}),
+        "staged worksheet chunks should report combined chunk-source validation/audit");
+    check(!has_note_containing(editor.edit_plan().notes(),
+              {"materialized worksheet XML"}),
+        "staged worksheet chunks should not retain the legacy materialized-audit note");
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
         "staged worksheet chunks should record worksheet edit-plan entry");
@@ -1426,6 +2632,23 @@ void test_package_editor_replaces_worksheet_with_staged_chunks()
     check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
         fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
         "staged worksheet chunks should still rewrite workbook calc metadata");
+    check(has_note_containing(output_plan.notes,
+              {"worksheet staged chunk replacement validates worksheet root/events",
+                  "one chunk-source audit reader"}),
+        "staged worksheet chunks should expose combined validation/audit chunk-source handoff");
+    check(has_note_containing(output_plan.notes,
+              {"contains formulas", "calcChain policy"}),
+        "staged worksheet chunks should audit formulas from the staged chunks");
+    check(has_note_containing(output_plan.notes,
+              {"worksheet drawing relationship metadata", "linked parts require caller review"}),
+        "staged worksheet chunks should audit relationship-bearing metadata from the combined audit reader");
+    check(has_note_containing(output_plan.notes,
+              {"relationship id rIdMissing", "<drawing>", "repair worksheet .rels"}),
+        "staged worksheet chunks should audit relationship ids from the combined audit reader");
+    check(!output_plan.worksheet_payload_dependency_audits.empty(),
+        "staged worksheet chunks should keep structured payload dependency audits");
+    check(!output_plan.worksheet_relationship_reference_audits.empty(),
+        "staged worksheet chunks should keep structured relationship-id audits");
 
     editor.save_as(output);
 
@@ -1439,24 +2662,547 @@ void test_package_editor_replaces_worksheet_with_staged_chunks()
     check_entry_bytes(output_reader, "_rels/.rels", source.package_relationships);
     check_entry_bytes(output_reader, "xl/_rels/workbook.xml.rels", source.workbook_relationships);
 
-    fastxlsx::detail::PackageEditor failed_editor =
+    fastxlsx::detail::PackageEditor empty_chunks_editor =
         fastxlsx::detail::PackageEditor::open(source.path);
-    bool failed = false;
+    bool empty_chunks_failed = false;
     try {
-        failed_editor.replace_worksheet_part_chunks(
-            worksheet_part, replacement_worksheet, {});
+        empty_chunks_editor.replace_worksheet_part_chunks(worksheet_part, {});
     } catch (const std::exception&) {
-        failed = true;
+        empty_chunks_failed = true;
     }
-    check(failed, "empty staged worksheet chunks should fail");
-    check(!failed_editor.edit_plan().full_calculation_on_load(),
+    check(empty_chunks_failed, "empty staged worksheet chunks should fail");
+    check(!empty_chunks_editor.edit_plan().full_calculation_on_load(),
         "empty staged worksheet chunks should not request recalculation");
-    check(failed_editor.edit_plan().find_part(worksheet_part)->write_mode
+    check(empty_chunks_editor.edit_plan().find_part(worksheet_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "empty staged worksheet chunks should not change worksheet edit-plan state");
-    check_manifest_write_mode(failed_editor, worksheet_part,
+    check_manifest_write_mode(empty_chunks_editor, worksheet_part,
         fastxlsx::detail::PartWriteMode::CopyOriginal,
         "empty staged worksheet chunks should not change manifest state");
+
+    fastxlsx::detail::PackageEditor invalid_chunks_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    bool invalid_chunks_failed = false;
+    try {
+        invalid_chunks_editor.replace_worksheet_part_chunks(
+            worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory("<!DOCTYPE worksheet><worksheet/>"),
+            });
+    } catch (const std::exception&) {
+        invalid_chunks_failed = true;
+    }
+    check(invalid_chunks_failed, "invalid staged worksheet chunks should fail");
+    check(!invalid_chunks_editor.edit_plan().full_calculation_on_load(),
+        "invalid staged worksheet chunks should not request recalculation");
+    check(invalid_chunks_editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "invalid staged worksheet chunks should not change worksheet edit-plan state");
+    check_manifest_write_mode(invalid_chunks_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "invalid staged worksheet chunks should not change manifest state");
+
+    fastxlsx::detail::PackageEditor invalid_event_chunks_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t invalid_event_initial_plan_size =
+        invalid_event_chunks_editor.edit_plan().size();
+    const std::size_t invalid_event_initial_note_count =
+        invalid_event_chunks_editor.edit_plan().notes().size();
+    bool invalid_event_chunks_failed = false;
+    try {
+        invalid_event_chunks_editor.replace_worksheet_part_chunks(
+            worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(
+                    R"(<worksheet><row r="1"/></worksheet>)"),
+            });
+    } catch (const std::exception& error) {
+        invalid_event_chunks_failed = true;
+        check_contains(error.what(), "row outside sheetData",
+            "event-validated staged worksheet chunks should reject row outside sheetData");
+    }
+    check(invalid_event_chunks_failed,
+        "staged worksheet chunks should fail when event validation rejects the worksheet");
+    check(invalid_event_chunks_editor.edit_plan().size() == invalid_event_initial_plan_size,
+        "event-invalid staged worksheet chunks should not change edit-plan parts");
+    check(invalid_event_chunks_editor.edit_plan().notes().size() == invalid_event_initial_note_count,
+        "event-invalid staged worksheet chunks should not add notes");
+    check(!invalid_event_chunks_editor.edit_plan().full_calculation_on_load(),
+        "event-invalid staged worksheet chunks should not request recalculation");
+    check(invalid_event_chunks_editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "event-invalid staged worksheet chunks should not change worksheet edit-plan state");
+    check_manifest_write_mode(invalid_event_chunks_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "event-invalid staged worksheet chunks should not change manifest state");
+}
+
+void test_package_editor_replaces_worksheet_by_name_with_staged_chunks()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-worksheet-by-name-staged-chunks-source.xlsx");
+    SourcePackage source_with_namespaced_catalog = source;
+    source_with_namespaced_catalog.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    fastxlsx::detail::write_package(source_with_namespaced_catalog.path,
+        {
+            {"[Content_Types].xml", source_with_namespaced_catalog.content_types},
+            {"_rels/.rels", source_with_namespaced_catalog.package_relationships},
+            {"xl/workbook.xml", source_with_namespaced_catalog.workbook},
+            {"xl/_rels/workbook.xml.rels", source_with_namespaced_catalog.workbook_relationships},
+            {"docProps/core.xml", source_with_namespaced_catalog.core_properties},
+            {"xl/worksheets/sheet1.xml", source_with_namespaced_catalog.worksheet},
+            {"custom/opaque.bin", source_with_namespaced_catalog.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-worksheet-by-name-staged-chunks-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-worksheet-by-name-staged-chunks-body.xml");
+    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_body =
+        R"(<row r="4"><c r="B4"><f>A1+3</f></c></row>)";
+    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string replacement_worksheet =
+        worksheet_prefix + worksheet_body + worksheet_suffix;
+    write_binary_file(body_path, worksheet_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_with_namespaced_catalog.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks_by_name("Sheet1",
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    check(editor.edit_plan().full_calculation_on_load(),
+        "by-name staged worksheet chunks should use worksheet replacement calc policy");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"by-name worksheet staged chunk replacement", "provided chunks"}),
+        "by-name staged worksheet chunks should report by-name staged handoff");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"worksheet staged chunk replacement validates worksheet root/events",
+                  "one chunk-source audit reader"}),
+        "by-name staged worksheet chunks should reuse combined chunk-source validation/audit");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "by-name staged worksheet chunks should resolve worksheet edit-plan entry");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "by-name staged worksheet chunks should keep worksheet stream rewrite mode");
+    check(worksheet_plan->reason.find("staged stream rewrite chunks") != std::string::npos,
+        "by-name staged worksheet chunks should expose staged rewrite reason");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "by-name staged worksheet chunks output plan should stream-rewrite worksheet");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "by-name staged worksheet chunks output plan should rewrite workbook calc metadata");
+    check(has_note_containing(output_plan.notes,
+              {"contains formulas", "calcChain policy"}),
+        "by-name staged worksheet chunks should audit formulas from staged chunks");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
+        "by-name staged worksheet chunks output should keep sheet catalog readable");
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), "fullCalcOnLoad=\"1\"",
+        "by-name staged worksheet chunks should request full workbook recalculation");
+    check_entry_bytes(output_reader, "custom/opaque.bin", source_with_namespaced_catalog.unknown);
+
+    fastxlsx::detail::PackageEditor missing_name_editor =
+        fastxlsx::detail::PackageEditor::open(source_with_namespaced_catalog.path);
+    bool missing_name_failed = false;
+    try {
+        missing_name_editor.replace_worksheet_part_chunks_by_name("Missing",
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+    } catch (const std::exception&) {
+        missing_name_failed = true;
+    }
+    check(missing_name_failed,
+        "missing sheet name should fail before by-name staged worksheet chunk state changes");
+    check(!missing_name_editor.edit_plan().full_calculation_on_load(),
+        "missing by-name staged worksheet chunks should not request recalculation");
+    check_manifest_write_mode(missing_name_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "missing by-name staged worksheet chunks should not change worksheet manifest state");
+}
+
+void test_package_editor_replaces_worksheet_by_planned_name_with_staged_chunks()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-worksheet-planned-name-staged-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-worksheet-planned-name-staged-chunks-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-worksheet-planned-name-staged-chunks-body.xml");
+    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_body =
+        R"(<row r="6"><c r="C6"><v>66</v></c></row>)";
+    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string replacement_worksheet =
+        worksheet_prefix + worksheet_body + worksheet_suffix;
+    write_binary_file(body_path, worksheet_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const std::string replacement_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="ChunkRenamed" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    editor.replace_part(workbook_part, replacement_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "ordinary workbook replacement before by-name staged chunks");
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    bool old_name_failed = false;
+    try {
+        editor.replace_worksheet_part_chunks_by_name("Sheet1",
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+    } catch (const std::exception& error) {
+        old_name_failed = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "planned by-name staged chunks should reject old source sheet name");
+    }
+    check(old_name_failed,
+        "planned by-name staged chunks should use planned workbook sheet names");
+    check(editor.edit_plan().size() == queued_plan_size,
+        "planned old-name staged chunk failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "planned old-name staged chunk failure should not append notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "planned old-name staged chunk failure should preserve package-entry audit count");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "planned old-name staged chunk failure should not request recalculation");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "planned old-name staged chunk failure should keep workbook rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "planned old-name staged chunk failure should leave worksheet copy-original");
+
+    editor.replace_worksheet_part_chunks_by_name("ChunkRenamed",
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "planned by-name staged chunks should resolve renamed worksheet part");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "planned by-name staged chunks should stream-rewrite worksheet");
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr
+            && workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "planned by-name staged chunks should keep workbook local-DOM rewrite");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "planned by-name staged chunks should request workbook recalculation");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "planned by-name staged chunks output plan should expose workbook rewrite");
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "planned by-name staged chunks output plan should expose worksheet stream rewrite");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("ChunkRenamed") == worksheet_part,
+        "planned by-name staged chunks output should expose renamed sheet catalog");
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    const std::string output_workbook = output_reader.read_entry(workbook_part.zip_path());
+    check_contains(output_workbook, R"(name="ChunkRenamed")",
+        "planned by-name staged chunks output should keep planned sheet name");
+    check_contains(output_workbook, R"(fullCalcOnLoad="1")",
+        "planned by-name staged chunks output should request workbook recalculation");
+}
+
+void test_package_editor_replaces_worksheet_from_chunk_source()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-worksheet-chunk-source-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-worksheet-chunk-source-output.xlsx");
+    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_body =
+        R"(<row r="8"><c r="D8"><f>A1+7</f></c></row>)";
+    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string replacement_worksheet =
+        worksheet_prefix + worksheet_body + worksheet_suffix;
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_from_chunk_source(worksheet_part,
+        make_test_chunk_source({worksheet_prefix, worksheet_body, worksheet_suffix}));
+
+    check(editor.edit_plan().full_calculation_on_load(),
+        "chunk-source worksheet replacement should request full calculation");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"pull-based chunk source", "file-backed staged chunk"}),
+        "chunk-source worksheet replacement should expose file-backed staged handoff");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"target/workbook/calc policy preflight", "pull-based chunk source"}),
+        "chunk-source worksheet replacement should document preflight before consuming chunks");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"writes the staged worksheet chunk in one caller chunk-source pass",
+                  "without reopening that staged chunk"}),
+        "chunk-source worksheet replacement should fuse staging with validation/audit");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "chunk-source worksheet replacement should record worksheet edit-plan entry");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "chunk-source worksheet replacement should stream-rewrite worksheet");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "chunk-source worksheet replacement output plan should stream-rewrite worksheet");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "chunk-source worksheet replacement output plan should expose staged chunks instead of string data");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "chunk-source worksheet replacement output plan should rewrite workbook calc metadata");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        workbook_part.zip_path(), false,
+        "workbook calc metadata rewrite remains small XML and should not be marked as staged chunks");
+    check(has_note_containing(output_plan.notes,
+              {"contains formulas", "calcChain policy"}),
+        "chunk-source worksheet replacement should audit formulas from streamed chunks");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), "fullCalcOnLoad=\"1\"",
+        "chunk-source worksheet replacement should request workbook recalculation in output");
+    check_entry_bytes(output_reader, "custom/opaque.bin", source.unknown);
+
+    fastxlsx::detail::PackageEditor invalid_source_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    bool invalid_source_failed = false;
+    try {
+        invalid_source_editor.replace_worksheet_part_from_chunk_source(
+            worksheet_part,
+            make_test_chunk_source({"<!DOCTYPE worksheet><worksheet/>"}));
+    } catch (const std::exception&) {
+        invalid_source_failed = true;
+    }
+    check(invalid_source_failed, "invalid worksheet chunk source should fail");
+    check(!invalid_source_editor.edit_plan().full_calculation_on_load(),
+        "invalid worksheet chunk source should not request recalculation");
+    check_manifest_write_mode(invalid_source_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "invalid worksheet chunk source should not change worksheet manifest state");
+
+    fastxlsx::detail::PackageEditor throwing_source_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t throwing_source_initial_plan_size =
+        throwing_source_editor.edit_plan().size();
+    const std::size_t throwing_source_initial_note_count =
+        throwing_source_editor.edit_plan().notes().size();
+    const std::vector<std::filesystem::path> throwing_source_temp_files_before =
+        package_editor_temp_files();
+    int throwing_source_reads = 0;
+    bool throwing_source_failed = false;
+    try {
+        throwing_source_editor.replace_worksheet_part_from_chunk_source(
+            worksheet_part,
+            [&](std::string& chunk) {
+                ++throwing_source_reads;
+                if (throwing_source_reads == 1) {
+                    chunk = "<worksheet><sheetData>";
+                    return true;
+                }
+                throw std::runtime_error("caller worksheet stream stopped");
+            });
+    } catch (const std::exception& error) {
+        throwing_source_failed = true;
+        check_contains(error.what(),
+            "failed while reading planned worksheet replacement chunk source",
+            "throwing worksheet chunk source should name the staging boundary");
+        check_contains(error.what(), "caller worksheet stream stopped",
+            "throwing worksheet chunk source should preserve the caller failure");
+    }
+    check(throwing_source_failed,
+        "throwing chunk-source worksheet replacement should fail");
+    check(throwing_source_reads == 2,
+        "throwing chunk-source worksheet replacement should stop at the throwing read");
+    check(throwing_source_editor.edit_plan().size() == throwing_source_initial_plan_size,
+        "throwing chunk-source worksheet replacement should not change edit-plan size");
+    check(throwing_source_editor.edit_plan().notes().size()
+            == throwing_source_initial_note_count,
+        "throwing chunk-source worksheet replacement should not add notes");
+    check(!throwing_source_editor.edit_plan().full_calculation_on_load(),
+        "throwing chunk-source worksheet replacement should not request recalculation");
+    check_manifest_write_mode(throwing_source_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "throwing chunk-source worksheet replacement should not change worksheet manifest state");
+    check_no_new_package_editor_temp_files(throwing_source_temp_files_before,
+        "throwing chunk-source worksheet replacement should not leak staged temp files");
+
+    fastxlsx::detail::PackageEditor missing_target_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    int missing_target_reads = 0;
+    bool missing_target_failed = false;
+    try {
+        missing_target_editor.replace_worksheet_part_from_chunk_source(
+            fastxlsx::detail::PartName("/xl/worksheets/missing.xml"),
+            [&](std::string& chunk) {
+                ++missing_target_reads;
+                chunk = "<worksheet/>";
+                return true;
+            });
+    } catch (const std::exception& error) {
+        missing_target_failed = true;
+        check_contains(error.what(), "worksheet replacement target is not present",
+            "missing target chunk-source failure should name the worksheet target");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/missing.xml'",
+            "missing target chunk-source failure should include the requested worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/missing.xml'",
+            "missing target chunk-source failure should include the requested worksheet entry");
+    }
+    check(missing_target_failed,
+        "missing target chunk-source worksheet replacement should fail");
+    check(missing_target_reads == 0,
+        "missing target chunk-source worksheet replacement should fail before consuming input");
+    check(!missing_target_editor.edit_plan().full_calculation_on_load(),
+        "missing target chunk-source failure should not request recalculation");
+
+    fastxlsx::detail::PackageEditor rebuild_policy_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    fastxlsx::detail::ReferencePolicy rebuild_policy;
+    rebuild_policy.calc_chain_action = fastxlsx::detail::CalcChainAction::Rebuild;
+    int rebuild_policy_reads = 0;
+    bool rebuild_policy_failed = false;
+    try {
+        rebuild_policy_editor.replace_worksheet_part_from_chunk_source(
+            worksheet_part,
+            [&](std::string& chunk) {
+                ++rebuild_policy_reads;
+                chunk = "<worksheet/>";
+                return true;
+            },
+            rebuild_policy);
+    } catch (const std::exception& error) {
+        rebuild_policy_failed = true;
+        check_contains(error.what(), "calcChain rebuild is not implemented",
+            "rebuild policy chunk-source failure should name calcChain rebuild");
+    }
+    check(rebuild_policy_failed,
+        "rebuild policy chunk-source worksheet replacement should fail");
+    check(rebuild_policy_reads == 0,
+        "rebuild policy chunk-source worksheet replacement should fail before consuming input");
+    check(!rebuild_policy_editor.edit_plan().full_calculation_on_load(),
+        "rebuild policy chunk-source failure should not request recalculation");
+}
+
+void test_package_editor_replaces_worksheet_by_name_from_chunk_source()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-worksheet-by-name-chunk-source-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-worksheet-by-name-chunk-source-output.xlsx");
+    const std::string worksheet_prefix = "<worksheet><sheetData>";
+    const std::string worksheet_body =
+        R"(<row r="11"><c r="E11"><v>111</v></c></row>)";
+    const std::string worksheet_suffix = "</sheetData></worksheet>";
+    const std::string replacement_worksheet =
+        worksheet_prefix + worksheet_body + worksheet_suffix;
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string replacement_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="ChunkSourceRenamed" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    editor.replace_part(workbook_part, replacement_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "ordinary workbook replacement before by-name chunk-source worksheet replacement");
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    bool old_name_failed = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name("Sheet1",
+            make_test_chunk_source({worksheet_prefix, worksheet_body, worksheet_suffix}));
+    } catch (const std::exception& error) {
+        old_name_failed = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "planned by-name chunk-source replacement should reject old source sheet name");
+    }
+    check(old_name_failed,
+        "planned by-name chunk-source replacement should use planned workbook sheet names");
+    check(editor.edit_plan().size() == queued_plan_size,
+        "old-name chunk-source failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "old-name chunk-source failure should not append notes");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "old-name chunk-source failure should not request recalculation");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "old-name chunk-source failure should leave worksheet copy-original");
+
+    editor.replace_worksheet_part_from_chunk_source_by_name("ChunkSourceRenamed",
+        make_test_chunk_source({worksheet_prefix, worksheet_body, worksheet_suffix}));
+
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"by-name worksheet chunk-source replacement", "planned/source workbook catalog"}),
+        "by-name chunk-source replacement should expose catalog-based handoff");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "by-name chunk-source replacement should stream-rewrite worksheet");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "by-name chunk-source replacement should request full calculation");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("ChunkSourceRenamed") == worksheet_part,
+        "by-name chunk-source output should expose planned sheet catalog");
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    const std::string output_workbook = output_reader.read_entry(workbook_part.zip_path());
+    check_contains(output_workbook, R"(name="ChunkSourceRenamed")",
+        "by-name chunk-source output should keep planned sheet name");
+    check_contains(output_workbook, R"(fullCalcOnLoad="1")",
+        "by-name chunk-source output should request workbook recalculation");
 }
 
 void test_package_editor_repeated_part_replacement_updates_final_state()
@@ -1476,8 +3222,8 @@ void test_package_editor_repeated_part_replacement_updates_final_state()
     const std::string final_workbook =
         R"(<workbook><sheets><sheet name="Final" sheetId="1" r:id="rId1"/></sheets></workbook>)";
     editor.replace_part(workbook_part, first_workbook,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "first workbook stream rewrite");
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "first workbook local-DOM rewrite");
     editor.replace_part(workbook_part, final_workbook,
         fastxlsx::detail::PartWriteMode::LocalDomRewrite,
         "final workbook local-DOM rewrite");
@@ -1577,15 +3323,14 @@ void test_package_editor_replacement_audits_preserved_root_relationships()
         fastxlsx::detail::PackageEditor::open(source_path);
     const fastxlsx::detail::PartName root_part("/root.xml");
     const std::string replacement_root = R"(<root updated="1"/>)";
-    editor.replace_part(root_part, replacement_root,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, root_part, replacement_root,
         "test root part rewrite");
 
     const auto* root_plan = editor.edit_plan().find_part(root_part);
     check(root_plan != nullptr,
         "root replacement should remain visible in the edit plan");
-    check(root_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "root replacement should be local-DOM-rewrite");
+    check(root_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "root replacement should be staged stream-rewrite");
     const auto* root_relationships_plan =
         editor.edit_plan().find_package_entry("_rels/root.xml.rels");
     check(root_relationships_plan != nullptr,
@@ -1734,12 +3479,22 @@ void test_package_editor_sets_document_properties_and_adds_missing_metadata_part
     check_output_entry_part_context(output_plan, "docProps/core.xml", true,
         "/docProps/core.xml",
         "document properties output plan should classify core properties as package part");
+    check_output_entry_materialized_replacement(output_plan, "docProps/core.xml", true,
+        "document properties output plan should expose core properties as materialized package-part replacement");
+    check_output_entry_materialized_replacement_reason(output_plan, "docProps/core.xml",
+        "generated small-XML package part",
+        "document properties output plan should explain core properties package-part materialization");
     check_output_entry_plan(output_plan, "docProps/app.xml",
         fastxlsx::detail::PartWriteMode::GenerateSmallXml, false, true, false, false,
         "document properties output plan should append generated app properties");
     check_output_entry_part_context(output_plan, "docProps/app.xml", true,
         "/docProps/app.xml",
         "document properties output plan should classify app properties as package part");
+    check_output_entry_materialized_replacement(output_plan, "docProps/app.xml", true,
+        "document properties output plan should expose app properties as materialized package-part replacement");
+    check_output_entry_materialized_replacement_reason(output_plan, "docProps/app.xml",
+        "generated small-XML package part",
+        "document properties output plan should explain app properties package-part materialization");
     check_output_entry_plan(output_plan, "custom/opaque.bin",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "document properties output plan should preserve unknown entry");
@@ -2565,7 +4320,7 @@ void test_package_editor_combines_document_properties_and_worksheet_rewrite()
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>123</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     check(editor.edit_plan().find_part(core_part)->write_mode
             == fastxlsx::detail::PartWriteMode::GenerateSmallXml,
@@ -2662,8 +4417,8 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1" t="inlineStr"><is><t>patched</t></is></c>)" },
+        worksheet_cell_replacement(
+            "A1", R"(<c r="A1" t="inlineStr"><is><t>patched</t></is></c>)"),
     };
 
     {
@@ -2710,6 +4465,18 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
             "cell replacement output plan should expose chunk-source root validation");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement output plan should expose dimension refresh note");
+        check(has_note_containing(output_plan.notes,
+                  {"one prevalidated non-owning replacement lookup plan",
+                      "dependency/dimension analysis pass",
+                      "dimension-refreshed output pass",
+                      "without reparsing replacement cell payloads",
+                      "rebuilding selector lookup"}),
+            "cell replacement output plan should expose replacement lookup plan reuse");
+        check(has_note_containing(output_plan.notes,
+                  {"explicit replacement payload chunks",
+                      "rather than raw string fields",
+                      "bounded single-cell XML limit"}),
+            "cell replacement output plan should expose explicit payload-chunk boundary");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
             fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "cell replacement output plan should stream-rewrite worksheet chunks");
@@ -2748,6 +4515,732 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
         "output reader should retain workbook part");
 }
 
+void test_package_editor_replaces_worksheet_cells_with_chunked_payload()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cell-replacement-chunked-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-chunked-output.xlsx");
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    const std::array<std::string_view, 3> replacement_chunks {
+        R"(<c r="A1" t="inlineStr">)",
+        R"(<is><t>chunked payload</t></is>)",
+        R"(</c>)",
+    };
+    const std::array replacements {
+        chunked_worksheet_cell_replacement("A1", replacement_chunks),
+    };
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+
+        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+        check(has_note_containing(output_plan.notes,
+                  {"replacement payload chunks",
+                      "bounded single-cell XML limit",
+                      "not streamed cell payload sources"}),
+            "chunked cell replacement output plan should expose bounded payload chunk boundary");
+
+        editor.save_as(output);
+    }
+
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "chunked cell replacement should clean PackageEditor-owned temporary XML files");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string expected_worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>chunked payload</t></is></c></row></sheetData></worksheet>)";
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+        "chunked cell replacement should replay payload chunks into transformed worksheet XML");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "chunked cell replacement should omit stale calcChain payload");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "chunked cell replacement should preserve unknown bytes");
+}
+
+void test_package_editor_contextualizes_current_worksheet_source_read_failure_without_state_changes()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-cell-replacement-source-read-failure.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(source.path, corrupted_source_bytes);
+
+    const std::array replacements {
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
+    };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "current worksheet input for worksheet cell replacement analysis",
+            "source worksheet read failure should identify the analysis input boundary");
+        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
+            "source worksheet read failure should identify the current input source entry");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "source worksheet read failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "source worksheet read failure should identify the worksheet ZIP entry");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(source.worksheet.size()) + " bytes",
+            "source worksheet read failure should report emitted current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "source worksheet read failure should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(source.worksheet.size()) + " bytes",
+            "source worksheet read failure should report the last emitted chunk size");
+        check_contains(error.what(), "CRC mismatch",
+            "source worksheet read failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml' CRC mismatch",
+            "source worksheet read failure should identify the corrupt worksheet entry");
+        check_contains(error.what(), "expected ",
+            "source worksheet read failure should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "source worksheet read failure should report actual CRC");
+    }
+
+    check(failed, "cell replacement should fail when source worksheet chunk read fails");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source worksheet read failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source worksheet read failure should not append edit-plan notes");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "source worksheet read failure should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "source worksheet read failure should not append relationship audits");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "source worksheet read failure should not change calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source worksheet read failure should leave worksheet manifest copy-original");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "source worksheet read failure should not leak PackageEditor temp files");
+
+    const CalcSourcePackage planned_name_source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-cell-replacement-planned-name-source-read-failure.xlsx");
+    fastxlsx::detail::PackageEditor planned_name_editor =
+        fastxlsx::detail::PackageEditor::open(planned_name_source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::string planned_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Renamed" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    planned_name_editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "ordinary workbook replacement before planned-name cell source-read failure");
+
+    const std::size_t planned_name_plan_size =
+        planned_name_editor.edit_plan().size();
+    const std::size_t planned_name_note_count =
+        planned_name_editor.edit_plan().notes().size();
+    const std::size_t planned_name_package_entry_count =
+        planned_name_editor.edit_plan().package_entries().size();
+    const std::size_t planned_name_removed_package_entry_count =
+        planned_name_editor.edit_plan().removed_package_entries().size();
+    const std::size_t planned_name_payload_audit_count =
+        planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t planned_name_relationship_audit_count =
+        planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool planned_name_full_calculation =
+        planned_name_editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction planned_name_calc_chain_action =
+        planned_name_editor.edit_plan().calc_chain_action();
+    const std::vector<std::filesystem::path> planned_name_temp_files_before =
+        package_editor_temp_files();
+
+    std::string planned_name_corrupted_source_bytes =
+        fastxlsx::test::read_file(planned_name_source.path);
+    corrupt_first_occurrence(planned_name_corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(planned_name_source.path, planned_name_corrupted_source_bytes);
+
+    failed = false;
+    try {
+        planned_name_editor.replace_worksheet_cells_by_name("Renamed", replacements);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "by-name worksheet cell replacement for sheet 'Renamed'",
+            "planned-name cell source read failure should identify the planned sheet name");
+        check_contains(error.what(),
+            "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
+            "planned-name cell source read failure should show the resolved worksheet part");
+        check_contains(error.what(),
+            "current worksheet input for worksheet cell replacement analysis",
+            "planned-name cell source read failure should keep the analysis input boundary");
+        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
+            "planned-name cell source read failure should identify the source worksheet entry");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "planned-name cell source read failure should identify the ZIP entry");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(planned_name_source.worksheet.size()) + " bytes",
+            "planned-name cell source read failure should report emitted current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "planned-name cell source read failure should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(planned_name_source.worksheet.size())
+                + " bytes",
+            "planned-name cell source read failure should report the last emitted chunk size");
+        check_contains(error.what(), "CRC mismatch",
+            "planned-name cell source read failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "expected ",
+            "planned-name cell source read failure should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "planned-name cell source read failure should report actual CRC");
+        check_not_contains(error.what(), "replacement payload",
+            "planned-name cell source read failure should not be mislabeled as replacement payload input");
+    }
+
+    check(failed,
+        "planned-name by-name cell replacement should fail when source worksheet read fails");
+    check(planned_name_editor.edit_plan().size() == planned_name_plan_size,
+        "planned-name cell source read failure should preserve queued edit-plan size");
+    check(planned_name_editor.edit_plan().notes().size() == planned_name_note_count,
+        "planned-name cell source read failure should not append notes");
+    check(planned_name_editor.edit_plan().package_entries().size()
+            == planned_name_package_entry_count,
+        "planned-name cell source read failure should not add package-entry audits");
+    check(planned_name_editor.edit_plan().removed_package_entries().size()
+            == planned_name_removed_package_entry_count,
+        "planned-name cell source read failure should not add removed package-entry audits");
+    check(planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == planned_name_payload_audit_count,
+        "planned-name cell source read failure should not append payload audits");
+    check(planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == planned_name_relationship_audit_count,
+        "planned-name cell source read failure should not append relationship audits");
+    check(planned_name_editor.edit_plan().full_calculation_on_load()
+            == planned_name_full_calculation,
+        "planned-name cell source read failure should not change calc policy");
+    check(planned_name_editor.edit_plan().calc_chain_action()
+            == planned_name_calc_chain_action,
+        "planned-name cell source read failure should not change calcChain policy");
+    check_manifest_write_mode(planned_name_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "planned-name cell source read failure should keep workbook local-DOM-rewrite");
+    check_manifest_write_mode(planned_name_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "planned-name cell source read failure should leave worksheet manifest copy-original");
+    check_manifest_write_mode(planned_name_editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "planned-name cell source read failure should leave calcChain manifest copy-original");
+    check_no_new_package_editor_temp_files(planned_name_temp_files_before,
+        "planned-name cell source read failure should not leak PackageEditor temp files");
+}
+
+void test_package_editor_contextualizes_missing_current_worksheet_entry_without_state_changes()
+{
+    const SourcePackage source =
+        write_missing_worksheet_entry_source_package(
+            "fastxlsx-package-editor-cell-replacement-missing-source-entry-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-missing-source-entry-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    const std::array replacements {
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
+    };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "worksheet cell replacement",
+            "missing current worksheet entry failure should identify the operation");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "missing current worksheet entry failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "missing current worksheet entry failure should identify the worksheet ZIP entry");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "missing current worksheet entry failure should not be mislabeled as replacement payload input");
+    }
+
+    check(failed,
+        "cell replacement should fail when the source worksheet entry is absent");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "missing current worksheet entry failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "missing current worksheet entry failure should not append edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "missing current worksheet entry failure should not add package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "missing current worksheet entry failure should not add removed package-entry audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "missing current worksheet entry failure should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "missing current worksheet entry failure should not append relationship audits");
+    check(editor.edit_plan().removed_parts().empty(),
+        "missing current worksheet entry failure should not record removed parts");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "missing current worksheet entry failure should not change calc policy");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "missing current worksheet entry failure should not change calcChain policy");
+    const auto* missing_entry_manifest_part = editor.manifest().find_part(worksheet_part);
+    check(missing_entry_manifest_part == nullptr
+            || missing_entry_manifest_part->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "missing current worksheet entry failure should not change worksheet manifest state");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "missing current worksheet entry failure should not leak PackageEditor temp files");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.find_entry("xl/worksheets/sheet1.xml") == nullptr,
+        "missing current worksheet entry failure output should not invent worksheet XML");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "missing current worksheet entry failure output should preserve workbook bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "missing current worksheet entry failure output should preserve unknown bytes");
+}
+
+void test_package_editor_rejects_malformed_current_worksheet_events_without_state_changes()
+{
+    struct MalformedWorksheetCase {
+        std::string_view name;
+        std::string_view worksheet_xml;
+        std::string_view expected_error;
+    };
+
+    const std::array cases {
+        MalformedWorksheetCase {
+            "mismatched-value-boundary",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</f></c></row></sheetData></worksheet>)",
+            "mismatched cell value boundary",
+        },
+        MalformedWorksheetCase {
+            "nested-cell",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><c r="B1"/></c></row></sheetData></worksheet>)",
+            "invalid cell boundary",
+        },
+    };
+
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::array replacements {
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
+    };
+
+    for (const MalformedWorksheetCase& test_case : cases) {
+        CalcSourcePackage source =
+            write_calc_source_package("fastxlsx-package-editor-cell-replacement-"
+                + std::string(test_case.name) + "-source.xlsx");
+        source.worksheet = std::string(test_case.worksheet_xml);
+        rewrite_calc_source_package(source);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        bool failed = false;
+        try {
+            editor.replace_worksheet_cells(worksheet_part, replacements);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "current worksheet input for worksheet cell replacement analysis",
+                "malformed source worksheet should identify the analysis input boundary");
+            check_contains(error.what(), test_case.expected_error,
+                "malformed source worksheet should preserve event-reader diagnostics");
+        }
+
+        check(failed,
+            "PackageEditor should reject malformed source worksheet events");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "malformed source worksheet failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "malformed source worksheet failure should not append edit-plan notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "malformed source worksheet failure should not add package-entry audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "malformed source worksheet failure should not add removed package-entry audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "malformed source worksheet failure should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "malformed source worksheet failure should not append relationship audits");
+        check(editor.edit_plan().removed_parts().empty(),
+            "malformed source worksheet failure should not record removed parts");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "malformed source worksheet failure should not change calc policy");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "malformed source worksheet failure should not change calcChain policy");
+        check(editor.manifest().find_part(calc_chain_part) != nullptr,
+            "malformed source worksheet failure should keep calcChain in the manifest");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "malformed source worksheet failure should leave worksheet manifest copy-original");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "malformed source worksheet failure should not leak PackageEditor temp files");
+    }
+}
+
+void test_package_editor_contextualizes_sheet_data_current_worksheet_source_read_failure_without_state_changes()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-sheetdata-source-read-failure.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(source.path, corrupted_source_bytes);
+
+    bool failed = false;
+    try {
+        replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part,
+            R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "sheetData source read failure should identify the output input boundary");
+        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
+            "sheetData source read failure should identify the current input source entry");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "sheetData source read failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "sheetData source read failure should identify the worksheet ZIP entry");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(source.worksheet.size()) + " bytes",
+            "sheetData source read failure should report emitted current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "sheetData source read failure should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(source.worksheet.size()) + " bytes",
+            "sheetData source read failure should report the last emitted chunk size");
+        check_contains(error.what(), "CRC mismatch",
+            "sheetData source read failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml' CRC mismatch",
+            "sheetData source read failure should identify the corrupt worksheet entry");
+        check_contains(error.what(), "expected ",
+            "sheetData source read failure should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "sheetData source read failure should report actual CRC");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "sheetData source read failure should not be mislabeled as replacement payload input");
+    }
+
+    check(failed, "sheetData replacement should fail when source worksheet chunk read fails");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "sheetData source read failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "sheetData source read failure should not append edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "sheetData source read failure should not add package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "sheetData source read failure should not add removed package-entry audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "sheetData source read failure should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "sheetData source read failure should not append relationship audits");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "sheetData source read failure should not change calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "sheetData source read failure should leave worksheet manifest copy-original");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "sheetData source read failure should not leak PackageEditor temp files");
+
+    const CalcSourcePackage by_name_source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-sheetdata-by-name-source-read-failure.xlsx");
+    fastxlsx::detail::PackageEditor by_name_editor =
+        fastxlsx::detail::PackageEditor::open(by_name_source.path);
+    const std::size_t by_name_initial_plan_size = by_name_editor.edit_plan().size();
+    const std::size_t by_name_initial_note_count = by_name_editor.edit_plan().notes().size();
+    const std::size_t by_name_initial_package_entry_count =
+        by_name_editor.edit_plan().package_entries().size();
+    const std::size_t by_name_initial_removed_package_entry_count =
+        by_name_editor.edit_plan().removed_package_entries().size();
+    const std::size_t by_name_initial_payload_audit_count =
+        by_name_editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t by_name_initial_relationship_audit_count =
+        by_name_editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool by_name_initial_full_calculation =
+        by_name_editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> by_name_temp_files_before =
+        package_editor_temp_files();
+
+    std::string by_name_corrupted_source_bytes =
+        fastxlsx::test::read_file(by_name_source.path);
+    corrupt_first_occurrence(by_name_corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(by_name_source.path, by_name_corrupted_source_bytes);
+
+    failed = false;
+    try {
+        by_name_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+            "Sheet1",
+            make_test_chunk_source({
+                R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)",
+            }));
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "by-name sheetData source read failure should identify the output input boundary");
+        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
+            "by-name sheetData source read failure should identify the current input source entry");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "by-name sheetData source read failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "by-name sheetData source read failure should identify the worksheet ZIP entry");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(by_name_source.worksheet.size()) + " bytes",
+            "by-name sheetData source read failure should report emitted current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "by-name sheetData source read failure should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(by_name_source.worksheet.size())
+                + " bytes",
+            "by-name sheetData source read failure should report the last emitted chunk size");
+        check_contains(error.what(), "CRC mismatch",
+            "by-name sheetData source read failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml' CRC mismatch",
+            "by-name sheetData source read failure should identify the corrupt worksheet entry");
+        check_contains(error.what(), "expected ",
+            "by-name sheetData source read failure should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "by-name sheetData source read failure should report actual CRC");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "by-name sheetData source read failure should not be mislabeled as replacement payload input");
+    }
+
+    check(failed,
+        "by-name sheetData replacement should fail when source worksheet chunk read fails");
+    check(by_name_editor.edit_plan().size() == by_name_initial_plan_size,
+        "by-name sheetData source read failure should not mutate edit-plan parts");
+    check(by_name_editor.edit_plan().notes().size() == by_name_initial_note_count,
+        "by-name sheetData source read failure should not append edit-plan notes");
+    check(by_name_editor.edit_plan().package_entries().size()
+            == by_name_initial_package_entry_count,
+        "by-name sheetData source read failure should not add package-entry audits");
+    check(by_name_editor.edit_plan().removed_package_entries().size()
+            == by_name_initial_removed_package_entry_count,
+        "by-name sheetData source read failure should not add removed package-entry audits");
+    check(by_name_editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == by_name_initial_payload_audit_count,
+        "by-name sheetData source read failure should not append payload audits");
+    check(by_name_editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == by_name_initial_relationship_audit_count,
+        "by-name sheetData source read failure should not append relationship audits");
+    check(by_name_editor.edit_plan().full_calculation_on_load()
+            == by_name_initial_full_calculation,
+        "by-name sheetData source read failure should not change calc policy");
+    check_manifest_write_mode(by_name_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "by-name sheetData source read failure should leave worksheet manifest copy-original");
+    check_no_new_package_editor_temp_files(by_name_temp_files_before,
+        "by-name sheetData source read failure should not leak PackageEditor temp files");
+
+    const CalcSourcePackage planned_name_source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-sheetdata-planned-name-source-read-failure.xlsx");
+    fastxlsx::detail::PackageEditor planned_name_editor =
+        fastxlsx::detail::PackageEditor::open(planned_name_source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::string planned_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Renamed" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    planned_name_editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "ordinary workbook replacement before planned-name source-read failure");
+
+    const std::size_t planned_name_plan_size =
+        planned_name_editor.edit_plan().size();
+    const std::size_t planned_name_note_count =
+        planned_name_editor.edit_plan().notes().size();
+    const std::size_t planned_name_package_entry_count =
+        planned_name_editor.edit_plan().package_entries().size();
+    const std::size_t planned_name_removed_package_entry_count =
+        planned_name_editor.edit_plan().removed_package_entries().size();
+    const std::size_t planned_name_payload_audit_count =
+        planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t planned_name_relationship_audit_count =
+        planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool planned_name_full_calculation =
+        planned_name_editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction planned_name_calc_chain_action =
+        planned_name_editor.edit_plan().calc_chain_action();
+    const std::vector<std::filesystem::path> planned_name_temp_files_before =
+        package_editor_temp_files();
+
+    std::string planned_name_corrupted_source_bytes =
+        fastxlsx::test::read_file(planned_name_source.path);
+    corrupt_first_occurrence(planned_name_corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(planned_name_source.path, planned_name_corrupted_source_bytes);
+
+    failed = false;
+    try {
+        planned_name_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+            "Renamed",
+            make_test_chunk_source({
+                R"(<sheetData><row r="1"><c r="A1"><v>84</v></c></row></sheetData>)",
+            }));
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "by-name sheetData replacement for sheet 'Renamed'",
+            "planned-name sheetData source read failure should identify the planned sheet name");
+        check_contains(error.what(),
+            "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
+            "planned-name sheetData source read failure should show the resolved worksheet part");
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "planned-name sheetData source read failure should keep the output input boundary");
+        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
+            "planned-name sheetData source read failure should identify the source worksheet entry");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "planned-name sheetData source read failure should identify the ZIP entry");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(planned_name_source.worksheet.size()) + " bytes",
+            "planned-name sheetData source read failure should report emitted current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "planned-name sheetData source read failure should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(planned_name_source.worksheet.size())
+                + " bytes",
+            "planned-name sheetData source read failure should report the last emitted chunk size");
+        check_contains(error.what(), "CRC mismatch",
+            "planned-name sheetData source read failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "expected ",
+            "planned-name sheetData source read failure should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "planned-name sheetData source read failure should report actual CRC");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "planned-name sheetData source read failure should not be mislabeled as replacement payload input");
+    }
+
+    check(failed,
+        "planned-name by-name sheetData replacement should fail when source worksheet read fails");
+    check(planned_name_editor.edit_plan().size() == planned_name_plan_size,
+        "planned-name sheetData source read failure should preserve queued edit-plan size");
+    check(planned_name_editor.edit_plan().notes().size() == planned_name_note_count,
+        "planned-name sheetData source read failure should not append notes");
+    check(planned_name_editor.edit_plan().package_entries().size()
+            == planned_name_package_entry_count,
+        "planned-name sheetData source read failure should not add package-entry audits");
+    check(planned_name_editor.edit_plan().removed_package_entries().size()
+            == planned_name_removed_package_entry_count,
+        "planned-name sheetData source read failure should not add removed package-entry audits");
+    check(planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == planned_name_payload_audit_count,
+        "planned-name sheetData source read failure should not append payload audits");
+    check(planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == planned_name_relationship_audit_count,
+        "planned-name sheetData source read failure should not append relationship audits");
+    check(planned_name_editor.edit_plan().full_calculation_on_load()
+            == planned_name_full_calculation,
+        "planned-name sheetData source read failure should not change calc policy");
+    check(planned_name_editor.edit_plan().calc_chain_action()
+            == planned_name_calc_chain_action,
+        "planned-name sheetData source read failure should not change calcChain policy");
+    check_manifest_write_mode(planned_name_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "planned-name sheetData source read failure should keep workbook local-DOM-rewrite");
+    check_manifest_write_mode(planned_name_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "planned-name sheetData source read failure should leave worksheet manifest copy-original");
+    check_manifest_write_mode(planned_name_editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "planned-name sheetData source read failure should leave calcChain manifest copy-original");
+    check_no_new_package_editor_temp_files(planned_name_temp_files_before,
+        "planned-name sheetData source read failure should not leak PackageEditor temp files");
+}
+
 void test_package_editor_worksheet_cell_replacement_preserves_linked_object_parts()
 {
     const LinkedObjectSourcePackage source =
@@ -2774,8 +5267,8 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
     const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
 
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1" t="inlineStr"><is><t>linked patch</t></is></c>)" },
+        worksheet_cell_replacement(
+            "A1", R"(<c r="A1" t="inlineStr"><is><t>linked patch</t></is></c>)"),
     };
 
     {
@@ -2876,6 +5369,13 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
             "cell replacement linked output plan should expose chunk-source root validation");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement linked output plan should expose dimension refresh note");
+        check(has_note_containing(output_plan.notes,
+                  {"one prevalidated non-owning replacement lookup plan",
+                      "dependency/dimension analysis pass",
+                      "dimension-refreshed output pass",
+                      "without reparsing replacement cell payloads",
+                      "rebuilding selector lookup"}),
+            "cell replacement linked output plan should expose replacement lookup plan reuse");
         check(has_note_containing(output_plan.notes,
                   {"worksheet relationships are preserved", "policy review"}),
             "cell replacement linked output plan should expose relationship preservation note");
@@ -3117,8 +5617,7 @@ void test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payloa
         fastxlsx::detail::PackageEditor::open(source.path);
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>9</v></c>)" },
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>9</v></c>)"),
     };
 
     editor.replace_worksheet_cells_by_name("Sheet1", replacements);
@@ -3166,8 +5665,9 @@ void test_package_editor_worksheet_cell_replacement_audits_replacement_payload_p
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1" t="s" s="1"><f>SUM(A1:A1)</f><v>0</v></c>)" },
+        worksheet_cell_replacement(
+            "A1",
+            R"(<c r="A1" t="s" s="1"><sheetViews/><f>SUM(A1:A1)</f><v>0</v></c>)"),
     };
 
     fastxlsx::detail::PackageEditor editor =
@@ -3190,6 +5690,10 @@ void test_package_editor_worksheet_cell_replacement_audits_replacement_payload_p
               PayloadAuditKind::Formula,
               PayloadAuditScope::WorksheetReplacement, "f", {"contains formulas"}),
         "cell replacement should audit replacement formulas");
+    check(!has_payload_audit(payload_audits, worksheet_part,
+              PayloadAuditKind::RangeMetadata,
+              PayloadAuditScope::WorksheetReplacement, "sheetViews"),
+        "cell replacement should not audit replacement cell payload as worksheet metadata");
 
     fastxlsx::detail::ReferencePolicy fail_policy;
     fail_policy.unsupported_linked_part_action =
@@ -3201,6 +5705,8 @@ void test_package_editor_worksheet_cell_replacement_audits_replacement_payload_p
     const std::size_t initial_note_count = fail_editor.edit_plan().notes().size();
     const std::size_t initial_payload_audit_count =
         fail_editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::vector<std::filesystem::path> payload_temp_files_before =
+        package_editor_temp_files();
 
     bool failed = false;
     try {
@@ -3230,6 +5736,482 @@ void test_package_editor_worksheet_cell_replacement_audits_replacement_payload_p
     check_manifest_write_mode(fail_editor, calc_chain_part,
         fastxlsx::detail::PartWriteMode::CopyOriginal,
         "cell replacement payload policy failure should keep calcChain copy-original");
+    check_no_new_package_editor_temp_files(payload_temp_files_before,
+        "cell replacement payload policy failure should clean staged output temp file immediately");
+
+    const std::array relationship_replacements {
+        worksheet_cell_replacement(
+            "A1",
+            R"(<c r="A1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><drawing r:id="rIdMissing"/></c>)"),
+    };
+    fastxlsx::detail::PackageEditor relationship_fail_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    const std::size_t initial_relationship_plan_size =
+        relationship_fail_editor.edit_plan().size();
+    const std::size_t initial_relationship_note_count =
+        relationship_fail_editor.edit_plan().notes().size();
+    const std::size_t initial_relationship_reference_audit_count =
+        relationship_fail_editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t initial_relationship_payload_audit_count =
+        relationship_fail_editor.edit_plan().worksheet_payload_dependency_audits().size();
+
+    bool relationship_failed = false;
+    try {
+        relationship_fail_editor.replace_worksheet_cells_by_name(
+            "Sheet1", relationship_replacements, fail_policy);
+    } catch (const std::exception& error) {
+        relationship_failed = true;
+        check_contains(error.what(), "relationship references blocked by reference policy",
+            "cell replacement relationship policy failure should name reference policy");
+    }
+    check(relationship_failed,
+        "ReferencePolicyAction::Fail should reject cell replacement relationship references");
+    check(relationship_fail_editor.edit_plan().size() == initial_relationship_plan_size,
+        "cell replacement relationship policy failure should not change edit plan size");
+    check(relationship_fail_editor.edit_plan().notes().size()
+            == initial_relationship_note_count,
+        "cell replacement relationship policy failure should not add notes");
+    check(relationship_fail_editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_reference_audit_count,
+        "cell replacement relationship policy failure should not add relationship audits");
+    check(relationship_fail_editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_relationship_payload_audit_count,
+        "cell replacement relationship policy failure should not add payload audits");
+    check(!relationship_fail_editor.edit_plan().full_calculation_on_load(),
+        "cell replacement relationship policy failure should not request recalculation");
+    check_manifest_write_mode(relationship_fail_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "cell replacement relationship policy failure should keep worksheet copy-original");
+    check_manifest_write_mode(relationship_fail_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "cell replacement relationship policy failure should keep workbook copy-original");
+    check_manifest_write_mode(relationship_fail_editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "cell replacement relationship policy failure should keep calcChain copy-original");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "cell replacement relationship policy failure should clean staged output temp file immediately");
+
+    const std::array<std::string_view, 2> relationship_scanner_split_chunks {
+        R"(<c r="A1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dra)",
+        R"(wing r:id="rIdMissing"/></c>)",
+    };
+    const std::array split_relationship_scan_replacements {
+        chunked_worksheet_cell_replacement("A1", relationship_scanner_split_chunks),
+    };
+    fastxlsx::detail::PackageEditor split_relationship_scan_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    split_relationship_scan_editor.replace_worksheet_cells_by_name(
+        "Sheet1", split_relationship_scan_replacements);
+    check(!has_note_containing(split_relationship_scan_editor.edit_plan().notes(),
+              {"relationship-id audit", "could not parse"}),
+        "cell replacement output-side relationship scanner should keep split tags parseable");
+    check(has_note_containing(split_relationship_scan_editor.edit_plan().notes(),
+              {"relationship id rIdMissing", "source worksheet relationships are missing"}),
+        "split replacement cell relationship should produce the specific missing-relationships audit");
+    const auto& split_relationship_audits =
+        split_relationship_scan_editor.edit_plan().worksheet_relationship_reference_audits();
+    check(std::any_of(split_relationship_audits.begin(), split_relationship_audits.end(),
+              [&](const fastxlsx::detail::WorksheetRelationshipReferenceAudit& audit) {
+                  return audit.worksheet_part == worksheet_part
+                      && audit.kind
+                          == fastxlsx::detail::WorksheetRelationshipReferenceAuditKind::MissingRelationships
+                      && audit.element == "drawing"
+                      && audit.relationship_id == "rIdMissing";
+              }),
+        "split replacement cell relationship should record structured missing-relationships audit");
+
+    const std::array<std::string_view, 3> cdata_relationship_text_chunks {
+        R"(<c r="A1" t="inlineStr" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><is><t><![CDATA[literal > )",
+        R"(<drawing r:id="rIdCdataText"/><f>not-a-formula</f>)",
+        R"(]]></t></is></c>)",
+    };
+    const std::array cdata_relationship_text_replacements {
+        chunked_worksheet_cell_replacement("A1", cdata_relationship_text_chunks),
+    };
+    fastxlsx::detail::PackageEditor cdata_relationship_text_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    cdata_relationship_text_editor.replace_worksheet_cells_by_name(
+        "Sheet1", cdata_relationship_text_replacements);
+    check(!has_note_containing(cdata_relationship_text_editor.edit_plan().notes(),
+              {"rIdCdataText"}),
+        "CDATA text inside replacement cell should not be scanned as a relationship reference");
+    check(!has_payload_audit(
+              cdata_relationship_text_editor.edit_plan().worksheet_payload_dependency_audits(),
+              worksheet_part,
+              PayloadAuditKind::Formula,
+              PayloadAuditScope::WorksheetReplacement,
+              "f"),
+        "CDATA text inside replacement cell should not be scanned as formula markup");
+    const auto& cdata_relationship_audits =
+        cdata_relationship_text_editor.edit_plan().worksheet_relationship_reference_audits();
+    check(std::none_of(cdata_relationship_audits.begin(), cdata_relationship_audits.end(),
+              [](const fastxlsx::detail::WorksheetRelationshipReferenceAudit& audit) {
+                  return audit.relationship_id == "rIdCdataText";
+              }),
+        "CDATA relationship-like text should not produce structured relationship audit");
+
+    const std::array<std::string_view, 3> pi_relationship_text_chunks {
+        R"(<c r="A1" t="inlineStr" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><is><?fastxlsx literal > )",
+        R"(<drawing r:id="rIdPiText"/><f>not-a-formula</f>)",
+        R"(?></is></c>)",
+    };
+    const std::array pi_relationship_text_replacements {
+        chunked_worksheet_cell_replacement("A1", pi_relationship_text_chunks),
+    };
+    fastxlsx::detail::PackageEditor pi_relationship_text_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    pi_relationship_text_editor.replace_worksheet_cells_by_name(
+        "Sheet1", pi_relationship_text_replacements);
+    check(!has_note_containing(pi_relationship_text_editor.edit_plan().notes(),
+              {"rIdPiText"}),
+        "processing instruction text inside replacement cell should not be scanned as a relationship reference");
+    check(!has_payload_audit(
+              pi_relationship_text_editor.edit_plan().worksheet_payload_dependency_audits(),
+              worksheet_part,
+              PayloadAuditKind::Formula,
+              PayloadAuditScope::WorksheetReplacement,
+              "f"),
+        "processing instruction text inside replacement cell should not be scanned as formula markup");
+    const auto& pi_relationship_audits =
+        pi_relationship_text_editor.edit_plan().worksheet_relationship_reference_audits();
+    check(std::none_of(pi_relationship_audits.begin(), pi_relationship_audits.end(),
+              [](const fastxlsx::detail::WorksheetRelationshipReferenceAudit& audit) {
+                  return audit.relationship_id == "rIdPiText";
+              }),
+        "processing instruction relationship-like text should not produce structured relationship audit");
+}
+
+void test_replacement_cell_payload_scanner_streams_long_ignored_markup_chunks()
+{
+    struct IgnoredMarkupCase {
+        std::string_view open;
+        std::string_view close;
+        const char* label;
+    };
+
+    const std::array<IgnoredMarkupCase, 3> cases {{
+        {"<!--", "-->", "comment"},
+        {"<![CDATA[", "]]>", "CDATA"},
+        {"<?fastxlsx ", "?>", "processing instruction"},
+    }};
+
+    for (const IgnoredMarkupCase& test_case : cases) {
+        std::string payload = R"(<c r="A1">)";
+        payload += test_case.open;
+        payload.append(
+            fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit
+                + 4096U,
+            'x');
+        payload += R"(<drawing r:id="rIdIgnored"/><f>ignored</f>)";
+        payload += test_case.close;
+        payload += R"(<f>real-formula</f></c>)";
+
+        const std::array<std::string_view, 1> chunks {payload};
+        const auto scan_result =
+            fastxlsx::detail::testing_scan_replacement_cell_payload_start_tags(
+                fastxlsx::detail::WorksheetCellReplacementPayload::from_chunks(chunks));
+
+        check(scan_result.start_tag_count == 2,
+            "long ignored markup scanner should resume after ignored payload");
+        check(scan_result.formula_tag_count == 1,
+            "long ignored markup scanner should only count real formula tags");
+        check(scan_result.relationship_reference_tag_count == 0,
+            "long ignored markup scanner should ignore fake relationship tags");
+        (void)test_case.label;
+    }
+}
+
+void test_sheet_data_start_tag_scanner_streams_long_ignored_markup_chunks()
+{
+    struct IgnoredMarkupCase {
+        std::string_view open;
+        std::string_view close;
+        const char* label;
+    };
+
+    const std::array<IgnoredMarkupCase, 3> cases {{
+        {"<!--", "-->", "comment"},
+        {"<![CDATA[", "]]>", "CDATA"},
+        {"<?fastxlsx ", "?>", "processing instruction"},
+    }};
+
+    for (const IgnoredMarkupCase& test_case : cases) {
+        std::string payload =
+            R"(<sheetData><row r="1"><c r="A1"><is><t>)";
+        payload += test_case.open;
+        payload.append(
+            fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit
+                + 4096U,
+            'x');
+        payload += R"(<c r="B1" t="s"/><f>ignored</f>)";
+        payload += test_case.close;
+        payload += R"(</t></is></c></row><row r="2"><c r="A2"><f>real-formula</f></c></row></sheetData>)";
+
+        const std::array<std::string_view, 1> chunks {payload};
+        const auto scan_result =
+            fastxlsx::detail::testing_scan_sheet_data_start_tags_from_chunks(
+                chunks,
+                fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit);
+
+        check(scan_result.start_tag_count == 8,
+            "long sheetData ignored markup scanner should resume after ignored payload");
+        check(scan_result.formula_tag_count == 1,
+            "long sheetData ignored markup scanner should only count real formula tags");
+        check(scan_result.shared_string_cell_tag_count == 0,
+            "long sheetData ignored markup scanner should ignore fake shared-string cells");
+        (void)test_case.label;
+    }
+}
+
+void test_relationship_reference_scanner_streams_retained_tag_before_long_ignored_markup()
+{
+    const std::string first_chunk =
+        R"(<c r="A1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dra)";
+    std::string second_chunk = R"(wing r:id="rIdLongSplit"/><!--)";
+    second_chunk.append(
+        fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit + 4096U,
+        'x');
+    second_chunk += R"(<drawing r:id="rIdIgnored"/><f>ignored</f>--></c>)";
+
+    const std::array<std::string_view, 2> chunks {first_chunk, second_chunk};
+    const auto scan_result =
+        fastxlsx::detail::testing_scan_worksheet_relationship_references_from_chunks(chunks);
+
+    check(scan_result.elements.size() == 1,
+        "relationship scanner should keep only the real retained split tag");
+    check(scan_result.relationship_ids.size() == 1,
+        "relationship scanner should emit one relationship id");
+    check(scan_result.elements.front() == "drawing",
+        "relationship scanner should preserve the retained split drawing tag");
+    check(scan_result.relationship_ids.front() == "rIdLongSplit",
+        "relationship scanner should skip fake ids inside following ignored markup");
+}
+
+void test_package_entry_chunk_reader_rejects_stale_memory_chunk_size()
+{
+    const std::string valid_payload = "memory-staged-payload";
+    std::vector<fastxlsx::detail::PackageEntryChunk> valid_chunks;
+    valid_chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory(valid_payload));
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(valid_chunks)
+            == valid_payload,
+        "test hook should replay a valid memory staged chunk");
+
+    std::vector<fastxlsx::detail::PackageEntryChunk> stale_chunks;
+    stale_chunks.push_back(
+        fastxlsx::detail::PackageEntryChunk::memory(valid_payload));
+    stale_chunks.front().expected_size = 1;
+    stale_chunks.front().has_expected_size = true;
+    stale_chunks.front().has_expected_crc32 = false;
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunks_to_string(stale_chunks);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "staged package-entry chunk 0 (memory)",
+            "stale memory chunk size failure should identify the memory chunk");
+        check_contains(error.what(),
+            "staged package-entry chunk size changed after validation",
+            "stale memory chunk size failure should name the size contract");
+        check_contains(error.what(), "expected 1 bytes",
+            "stale memory chunk size failure should report expected bytes");
+        check_contains(error.what(),
+            "actual " + std::to_string(valid_payload.size()) + " bytes",
+            "stale memory chunk size failure should report actual bytes");
+        check_staged_chunk_replay_cursor(error.what(), 0, 1,
+            "stale memory chunk size failure should report staged replay cursor");
+        check_staged_chunk_expected_size(error.what(), 1,
+            "stale memory chunk size failure should report current chunk expected bytes");
+        check_staged_chunk_expected_total(error.what(), 1,
+            "stale memory chunk size failure should report expected staged total");
+        check_staged_chunk_expected_remaining(error.what(), 1,
+            "stale memory chunk size failure should report expected staged remaining bytes");
+        check_staged_chunk_replay_progress(error.what(), 1, 0, 0, 0,
+            "stale memory chunk size failure should report staged replay progress");
+    }
+
+    check(failed,
+        "staged memory chunk reader should reject stale expected-size metadata");
+
+    const std::string prefix_payload = "prefix-memory-chunk";
+    std::vector<fastxlsx::detail::PackageEntryChunk> stale_second_chunks;
+    stale_second_chunks.push_back(
+        fastxlsx::detail::PackageEntryChunk::memory(prefix_payload));
+    stale_second_chunks.push_back(
+        fastxlsx::detail::PackageEntryChunk::memory(valid_payload));
+    stale_second_chunks.back().expected_size = 1;
+    stale_second_chunks.back().has_expected_size = true;
+    stale_second_chunks.back().has_expected_crc32 = false;
+
+    failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunks_to_string(
+            stale_second_chunks);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "staged package-entry chunk 1 (memory)",
+            "second stale memory chunk failure should identify the failing chunk");
+        check_staged_chunk_replay_cursor(error.what(), 1, 2,
+            "second stale memory chunk failure should report staged replay cursor");
+        check_staged_chunk_expected_size(error.what(), 1,
+            "second stale memory chunk failure should report current chunk expected bytes");
+        check_staged_chunk_expected_total(error.what(),
+            static_cast<std::uint64_t>(prefix_payload.size() + 1U),
+            "second stale memory chunk failure should report expected staged total");
+        check_staged_chunk_expected_remaining(error.what(), 1,
+            "second stale memory chunk failure should report expected staged remaining bytes");
+        check_staged_chunk_replay_progress(error.what(),
+            2,
+            1,
+            static_cast<std::uint64_t>(prefix_payload.size()),
+            static_cast<std::uint64_t>(prefix_payload.size()),
+            "second stale memory chunk failure should report prior staged replay progress");
+    }
+
+    check(failed,
+        "staged memory chunk reader should report progress after a prior emitted chunk");
+}
+
+void test_package_entry_chunk_reader_reports_replay_cursor_after_prior_chunks()
+{
+    const std::string first_payload = "first-memory-chunk";
+    const std::string second_payload = "second-memory-chunk";
+    const std::string third_payload = "third-memory-chunk";
+    std::vector<fastxlsx::detail::PackageEntryChunk> chunks;
+    chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory(first_payload));
+    chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory(second_payload));
+    chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory(third_payload));
+    chunks.back().expected_size = 1;
+    chunks.back().has_expected_size = true;
+    chunks.back().has_expected_crc32 = false;
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunks_to_string(chunks);
+    } catch (const std::exception& error) {
+        failed = true;
+        const std::uint64_t emitted_bytes = static_cast<std::uint64_t>(
+            first_payload.size() + second_payload.size());
+        check_contains(error.what(), "staged package-entry chunk 2 (memory)",
+            "third stale memory chunk failure should identify the memory chunk");
+        check_staged_chunk_replay_cursor(error.what(), 2, 3,
+            "third stale memory chunk failure should report staged replay cursor");
+        check_staged_chunk_expected_size(error.what(), 1,
+            "third stale memory chunk failure should report current chunk expected bytes");
+        check_staged_chunk_expected_total(error.what(),
+            static_cast<std::uint64_t>(
+                first_payload.size() + second_payload.size() + 1U),
+            "third stale memory chunk failure should report expected staged total");
+        check_staged_chunk_expected_remaining(error.what(), 1,
+            "third stale memory chunk failure should report expected staged remaining bytes");
+        check_staged_chunk_replay_progress(error.what(),
+            3,
+            2,
+            emitted_bytes,
+            static_cast<std::uint64_t>(second_payload.size()),
+            "third stale memory chunk failure should report prior replay progress");
+        check_contains(error.what(),
+            "staged package-entry chunk size changed after validation",
+            "third stale memory chunk failure should name the size contract");
+    }
+
+    check(failed,
+        "staged chunk reader should report replay cursor after prior emitted chunks");
+}
+
+void test_package_entry_chunk_reader_rejects_stale_empty_memory_chunk_crc()
+{
+    std::vector<fastxlsx::detail::PackageEntryChunk> valid_chunks;
+    valid_chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory(""));
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(valid_chunks).empty(),
+        "test hook should replay an empty memory staged chunk");
+
+    std::vector<fastxlsx::detail::PackageEntryChunk> stale_chunks;
+    stale_chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory(""));
+    stale_chunks.front().expected_crc32 = 123U;
+    stale_chunks.front().has_expected_crc32 = true;
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunks_to_string(stale_chunks);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "staged package-entry chunk 0 (memory)",
+            "stale empty memory chunk CRC failure should identify the memory chunk");
+        check_contains(error.what(),
+            "staged package-entry chunk CRC32 changed after validation",
+            "stale empty memory chunk CRC failure should name the CRC contract");
+        check_contains(error.what(), "expected 123",
+            "stale empty memory chunk CRC failure should report expected CRC");
+        check_contains(error.what(), "actual 0",
+            "stale empty memory chunk CRC failure should report actual CRC");
+        check_staged_chunk_replay_cursor(error.what(), 0, 1,
+            "stale empty memory chunk CRC failure should report staged replay cursor");
+        check_staged_chunk_expected_size(error.what(), 0,
+            "stale empty memory chunk CRC failure should report current chunk expected bytes");
+        check_staged_chunk_expected_total(error.what(), 0,
+            "stale empty memory chunk CRC failure should report expected staged total");
+        check_staged_chunk_expected_remaining(error.what(), 0,
+            "stale empty memory chunk CRC failure should report expected staged remaining bytes");
+        check_staged_chunk_replay_progress(error.what(), 1, 0, 0, 0,
+            "stale empty memory chunk CRC failure should report staged replay progress");
+    }
+
+    check(failed,
+        "staged empty memory chunk reader should reject stale expected-CRC metadata");
+}
+
+void test_package_entry_chunk_reader_reports_unknown_chunk_kind()
+{
+    std::vector<fastxlsx::detail::PackageEntryChunk> chunks;
+    chunks.push_back(fastxlsx::detail::PackageEntryChunk::memory("payload"));
+    chunks.front().kind = static_cast<fastxlsx::detail::PackageEntryChunk::Kind>(99);
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunks_to_string(chunks);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "staged package-entry chunk 0 (unknown)",
+            "unknown staged chunk kind failure should identify the chunk kind");
+        check_contains(error.what(), "unsupported staged package-entry chunk kind",
+            "unknown staged chunk kind failure should preserve the unsupported-kind detail");
+        check_staged_chunk_replay_cursor(error.what(), 0, 1,
+            "unknown staged chunk kind failure should report staged replay cursor");
+        check_staged_chunk_expected_size(error.what(), 0,
+            "unknown staged chunk kind failure should report current chunk expected bytes");
+        check_staged_chunk_expected_total(error.what(), 0,
+            "unknown staged chunk kind failure should report expected staged total");
+        check_staged_chunk_expected_remaining(error.what(), 0,
+            "unknown staged chunk kind failure should report expected staged remaining bytes");
+        check_staged_chunk_replay_progress(error.what(), 1, 0, 0, 0,
+            "unknown staged chunk kind failure should report staged replay progress");
+    }
+
+    check(failed, "staged chunk reader should reject unknown chunk kinds");
+}
+
+void test_package_entry_chunk_reader_closes_file_on_early_exit()
+{
+    const std::filesystem::path chunk_path =
+        output_path("fastxlsx-package-editor-staged-reader-early-exit.xml");
+    write_binary_file(chunk_path, std::string(100000, 'x'));
+
+    {
+        std::vector<fastxlsx::detail::PackageEntryChunk> chunks;
+        chunks.push_back(fastxlsx::detail::PackageEntryChunk::file(chunk_path));
+        const std::string first_chunk =
+            fastxlsx::detail::testing_read_first_package_entry_chunk_for_lifecycle(chunks);
+        check(!first_chunk.empty(),
+            "test hook should read one chunk from the staged file-backed chunk");
+    }
+
+    std::error_code error;
+    std::filesystem::remove(chunk_path, error);
+    check(!error && !std::filesystem::exists(chunk_path),
+        "staged chunk reader should close file handles when destroyed before EOF");
 }
 
 void test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension()
@@ -3258,14 +6240,16 @@ void test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension()
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>9</v></c>)" },
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>9</v></c>)"),
     };
 
     editor.replace_worksheet_cells_by_name("Sheet1", replacements);
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
         "dimension refresh handoff should record a review note");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        "xl/worksheets/sheet1.xml", true,
+        "cell replacement output plan should expose dimension-refreshed worksheet staged chunks");
 
     editor.save_as(output);
 
@@ -3294,11 +6278,10 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
 
     const std::string planned_worksheet =
         R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>11</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, planned_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, planned_worksheet);
 
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>12</v></c>)" },
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>12</v></c>)"),
     };
     editor.replace_worksheet_cells_by_name("Sheet1", replacements);
 
@@ -3312,12 +6295,19 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet replacement string", "chunk-source readers",
-                  "queued string source"}),
-        "planned-input cell replacement should report chunk-source queued string input");
+              {"pull-based chunk source", "file-backed staged chunk",
+                  "follow-up planned-input transforms"}),
+        "planned-input cell replacement should report file-backed planned worksheet handoff");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet queued string", "transformer chunk-source adapter"}),
-        "planned-input cell replacement should expose chunk-source transformer input");
+        {"writes the staged worksheet chunk in one caller chunk-source pass",
+            "without reopening that staged chunk"}),
+        "planned-input cell replacement should report fused caller chunk-source staging/audit handoff");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "without materializing"}),
+        "planned-input cell replacement should report non-materialized staged input");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
+        "planned-input cell replacement should expose staged chunk transformer input");
     check(has_note_containing(output_plan.notes,
               {"dependency and dimension analysis", "transformer chunk-source adapter"}),
         "planned-input cell replacement should expose chunked dependency/dimension analysis");
@@ -3330,9 +6320,6 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
     check(!has_note_containing(output_plan.notes,
               {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
         "planned-input cell replacement should not claim source-entry extraction");
-    check(!has_note_containing(output_plan.notes,
-              {"planned worksheet replacement string", "bounded materialized input limit"}),
-        "planned-input cell replacement should not expose planned string materialized guard");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "planned-input cell replacement output plan should stream-rewrite worksheet chunks");
@@ -3348,6 +6335,220 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
         "planned-input cell replacement output should consume the planned source cell");
     check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
         "planned-input cell replacement output should omit stale calcChain");
+}
+
+void test_package_editor_ordinary_worksheet_replace_part_rejects_without_state_change()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-cell-replacement-ordinary-staged-source.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    const std::string ordinary_worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>ordinary</v></c></row><row r="2"><c r="B2"><v>tail</v></c></row></sheetData></worksheet>)";
+    bool failed = false;
+    try {
+        editor.replace_part(worksheet_part,
+            ordinary_worksheet,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "ordinary worksheet replacement should be rejected");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "ordinary replace_part cannot target worksheet parts",
+            "ordinary worksheet replace_part should fail at the worksheet guardrail");
+    }
+    check(failed, "ordinary worksheet replace_part should fail");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "ordinary worksheet replace_part should not change edit-plan entries");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "ordinary worksheet replace_part should not add audit notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "ordinary worksheet replace_part should not add package-entry audit");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "ordinary worksheet replace_part should not remove parts");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "ordinary worksheet replace_part should not omit package entries");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "ordinary worksheet replace_part should not request recalculation");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Preserve,
+        "ordinary worksheet replace_part should not change calcChain policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "ordinary worksheet replace_part should keep worksheet manifest copy-original");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "ordinary worksheet replace_part should keep workbook manifest copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "ordinary worksheet replace_part output plan should not request recalculation");
+    check(output_plan.notes.size() == initial_note_count,
+        "ordinary worksheet replace_part output plan should not add notes");
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "ordinary worksheet replace_part should leave planned output copy-original");
+}
+
+void test_package_editor_empty_ordinary_worksheet_replace_part_fails_without_state_change()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-empty-ordinary-worksheet-source.xlsx");
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    bool failed = false;
+    try {
+        editor.replace_part(worksheet_part, {},
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "empty ordinary worksheet replacement");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "ordinary replace_part cannot target worksheet parts",
+            "empty ordinary worksheet replace_part should fail at the worksheet guardrail");
+    }
+    check(failed, "empty ordinary worksheet replace_part should fail");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "empty ordinary worksheet replace_part should not change edit-plan entries");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "empty ordinary worksheet replace_part should not add audit notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "empty ordinary worksheet replace_part should not add package-entry audit");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "empty ordinary worksheet replace_part should not remove parts");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "empty ordinary worksheet replace_part should not omit package entries");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "empty ordinary worksheet replace_part should not request recalculation");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Preserve,
+        "empty ordinary worksheet replace_part should not change calcChain policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "empty ordinary worksheet replace_part should keep worksheet manifest copy-original");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "empty ordinary worksheet replace_part should keep workbook manifest copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "empty ordinary worksheet replace_part output plan should not request recalculation");
+    check(output_plan.notes.size() == initial_note_count,
+        "empty ordinary worksheet replace_part output plan should not add notes");
+    check(output_plan.removed_parts.size() == initial_removed_part_count,
+        "empty ordinary worksheet replace_part output plan should not remove parts");
+    check(output_plan.removed_package_entries.size()
+            == initial_removed_package_entry_count,
+        "empty ordinary worksheet replace_part output plan should not omit entries");
+    check_output_plan_preserves_source_copy_original(editor, output_plan,
+        "empty ordinary worksheet replace_part should leave planned output copy-original");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "empty ordinary worksheet replace_part should clean failed staged temp file");
+}
+
+void test_package_editor_worksheet_cell_replacement_uses_sheet_data_staged_output()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package(
+            "fastxlsx-package-editor-cell-replacement-sheetdata-staged-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cell-replacement-sheetdata-staged-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string replacement_sheet_data =
+        R"(<sheetData><row r="1"><c r="A1"><v>sheetdata-staged</v></c></row><row r="3"><c r="B3"><v>tail</v></c></row></sheetData>)";
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "sheetData staged-output fixture should first record a local-DOM worksheet rewrite");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"bounded local worksheet XML rewrite", "file-backed staged chunk",
+                  "follow-up planned-input transforms"}),
+        "sheetData staged-output fixture should expose file-backed staged follow-up input");
+
+    const std::array replacements {
+        worksheet_cell_replacement(
+            "A1", R"(<c r="A1"><v>patched-after-sheetdata</v></c>)"),
+    };
+    editor.replace_worksheet_cells(worksheet_part, replacements);
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "without materializing"}),
+        "sheetData follow-up cell replacement should consume planned staged chunks without materializing");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
+        "sheetData follow-up cell replacement should expose staged chunk transformer input");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "event-reader chunk-source validator"}),
+        "sheetData follow-up cell replacement should expose staged chunk root validation");
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "sheetData follow-up cell replacement should stream-rewrite worksheet chunks");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "sheetData follow-up cell replacement should keep workbook metadata rewrite");
+    check_output_entry_plan(output_plan.entries, calc_chain_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "sheetData follow-up cell replacement should keep stale calcChain omitted");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml = output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(worksheet_xml, R"(<c r="A1"><v>patched-after-sheetdata</v></c>)",
+        "sheetData follow-up cell replacement output should include patched cell");
+    check_not_contains(worksheet_xml, "sheetdata-staged",
+        "sheetData follow-up cell replacement output should consume old staged target cell");
+    check_contains(worksheet_xml, R"(<c r="B3"><v>tail</v></c>)",
+        "sheetData follow-up cell replacement output should preserve non-target staged cell");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+        "sheetData follow-up cell replacement should refresh dimension from staged chunks");
+    check(output_reader.find_entry(calc_chain_part.zip_path()) == nullptr,
+        "sheetData follow-up cell replacement output should omit stale calcChain payload");
+    check_contains(output_reader.read_entry(workbook_part.zip_path()), R"(fullCalcOnLoad="1")",
+        "sheetData follow-up cell replacement output should keep fullCalcOnLoad");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "sheetData follow-up cell replacement output should preserve unknown bytes");
 }
 
 void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replacement()
@@ -3366,7 +6567,7 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
     std::uint32_t last_row = 1;
     const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
     while (worksheet_prefix.size() + worksheet_body.size() + worksheet_suffix.size()
-        <= fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit
+        <= fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit
             + 4096U) {
         ++last_row;
         worksheet_body += R"(<row r=")";
@@ -3378,8 +6579,8 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
     const std::size_t staged_worksheet_size =
         worksheet_prefix.size() + worksheet_body.size() + worksheet_suffix.size();
     check(staged_worksheet_size
-            > fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit,
-        "planned staged chunk fixture should exceed the materialized input guard");
+            > fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit,
+        "planned staged chunk fixture should exceed the event-reader window total size");
     write_binary_file(body_path, worksheet_body);
 
     fastxlsx::detail::PackageEditor editor =
@@ -3388,9 +6589,7 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
 
-    const std::string validation_worksheet =
-        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>validation-only</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part_chunks(worksheet_part, validation_worksheet,
+    editor.replace_worksheet_part_chunks(worksheet_part,
         {
             fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
             fastxlsx::detail::PackageEntryChunk::file(body_path),
@@ -3398,8 +6597,7 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
         });
 
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>patched-staged</v></c>)" },
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched-staged</v></c>)"),
     };
     editor.replace_worksheet_cells(worksheet_part, replacements);
 
@@ -3414,8 +6612,8 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
               {"planned worksheet staged chunks", "event-reader chunk-source validator"}),
         "planned staged chunks cell replacement should expose chunk-source root validation");
     check(!has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "bounded materialized input limit"}),
-        "planned staged chunks cell replacement should not expose staged materialized guard");
+              {"planned worksheet staged chunks", "whole worksheet string"}),
+        "planned staged chunks cell replacement should not expose old whole-string wording");
     check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "planned staged chunks cell replacement should stream-rewrite worksheet chunks");
@@ -3453,7 +6651,963 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
         "planned staged chunks cell replacement output should preserve unknown bytes");
 }
 
-void test_package_editor_streams_large_source_worksheet_cell_replacement_without_materialized_input_limit()
+void test_package_editor_rejects_changed_planned_staged_chunk_sizes_without_state_changes()
+{
+    struct ChunkMutationCase {
+        std::string_view name;
+        std::string_view mutated_body;
+    };
+
+    const std::array cases {
+        ChunkMutationCase {
+            "truncated",
+            R"(<row r="2"><c r="A2"><v>x</v></c></row>)",
+        },
+        ChunkMutationCase {
+            "extended",
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row><!--extended-->)",
+        },
+    };
+
+    for (const ChunkMutationCase& test_case : cases) {
+        const std::string source_name =
+            "fastxlsx-package-editor-planned-chunk-size-" + std::string(test_case.name)
+            + "-source.xlsx";
+        const CalcSourcePackage source = write_calc_source_package(source_name);
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-planned-chunk-size-"
+                + std::string(test_case.name) + "-body.xml");
+
+        const std::string worksheet_prefix =
+            R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+            R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+        const std::string original_body =
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+        const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+        const std::uint64_t planned_expected_bytes =
+            static_cast<std::uint64_t>(
+                worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+        write_binary_file(body_path, original_body);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, test_case.mutated_body);
+
+        const std::array replacements {
+            worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+        };
+
+        bool replacement_failed = false;
+        try {
+            editor.replace_worksheet_cells(worksheet_part, replacements);
+        } catch (const std::exception& error) {
+            replacement_failed = true;
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet cell replacement analysis",
+                "planned staged chunk size mutation should report the input read boundary");
+            check_contains(error.what(),
+                "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+                "planned staged chunk size mutation should identify the current input source");
+            check_contains(error.what(),
+                std::string("expected_bytes=") + std::to_string(planned_expected_bytes),
+                "planned staged chunk size mutation should summarize recorded expected bytes");
+            const std::size_t emitted_chunk_count =
+                test_case.mutated_body.size() < original_body.size() ? 1U : 2U;
+            const std::uint64_t emitted_byte_count =
+                static_cast<std::uint64_t>(worksheet_prefix.size()
+                    + (test_case.mutated_body.size() < original_body.size()
+                            ? 0U
+                            : original_body.size()));
+            check_contains(error.what(),
+                std::string("after emitting ") + std::to_string(emitted_chunk_count)
+                    + " current-input chunk"
+                    + (emitted_chunk_count == 1U ? "" : "s")
+                    + " and " + std::to_string(emitted_byte_count)
+                    + " bytes",
+                "planned staged chunk size mutation should report current-input progress");
+            const std::size_t read_attempt =
+                test_case.mutated_body.size() < original_body.size() ? 2U : 3U;
+            check_contains(error.what(),
+                std::string("current-input read attempt ") + std::to_string(read_attempt),
+                "planned staged chunk size mutation should report the failing read attempt");
+            const std::uint64_t last_emitted_chunk_bytes =
+                static_cast<std::uint64_t>(
+                    test_case.mutated_body.size() < original_body.size()
+                        ? worksheet_prefix.size()
+                        : original_body.size());
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(last_emitted_chunk_bytes)
+                    + " bytes",
+                "planned staged chunk size mutation should report last emitted chunk size");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+                "planned staged chunk size mutation should report expected bytes");
+            check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+                "planned staged chunk size mutation should report replay expected total");
+            const std::uint64_t remaining_expected_bytes =
+                test_case.mutated_body.size() < original_body.size()
+                    ? static_cast<std::uint64_t>(
+                          original_body.size() + worksheet_suffix.size())
+                    : static_cast<std::uint64_t>(worksheet_suffix.size());
+            check_staged_chunk_expected_remaining(error.what(), remaining_expected_bytes,
+                "planned staged chunk size mutation should report replay remaining bytes");
+            if (test_case.mutated_body.size() < original_body.size()) {
+                check_contains(error.what(),
+                    "staged package-entry chunk file ended before expected bytes",
+                    "planned staged chunk size mutation should report short read");
+                check_staged_file_chunk_read_progress(error.what(), 1, 0,
+                    "planned staged chunk short read should report staged file progress");
+                check_contains(error.what(),
+                    std::string("actual ") + std::to_string(test_case.mutated_body.size())
+                        + " bytes",
+                    "planned staged chunk size mutation should report actual bytes");
+            } else {
+                check_contains(error.what(),
+                    "staged package-entry chunk file produced more bytes than expected",
+                    "planned staged chunk size mutation should report overrun read");
+                check_staged_file_chunk_read_progress(error.what(), 2,
+                    static_cast<std::uint64_t>(original_body.size()),
+                    "planned staged chunk overrun should report staged file progress");
+                check_contains(error.what(),
+                    std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                        + " bytes",
+                    "planned staged chunk size mutation should report lower-bound bytes");
+            }
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "planned staged chunk size mutation should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "planned staged chunk size mutation should include the file-backed chunk path");
+        }
+
+        check(replacement_failed,
+            "planned staged chunk size mutation should fail before follow-up transform");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "planned staged chunk size mutation failure should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "planned staged chunk size mutation failure should not append notes");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "planned staged chunk size mutation failure should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "planned staged chunk size mutation failure should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "planned staged chunk size mutation failure should preserve calc policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "planned staged chunk size mutation failure should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "planned staged chunk size mutation failure should not leak temp files");
+    }
+}
+
+void test_package_editor_rejects_changed_planned_staged_chunk_crc_without_state_changes()
+{
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-planned-chunk-crc-source.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-planned-chunk-crc-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    const std::uint64_t planned_expected_bytes =
+        static_cast<std::uint64_t>(
+            worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+    write_binary_file(body_path, original_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    write_binary_file(body_path, same_size_different_payload(original_body));
+
+    const std::array replacements {
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+    };
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+    } catch (const std::exception& error) {
+        replacement_failed = true;
+        check_contains(error.what(),
+            "failed to read current worksheet input for worksheet cell replacement analysis",
+            "planned staged chunk CRC mutation should report the input read boundary");
+        check_contains(error.what(),
+            "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+            "planned staged chunk CRC mutation should identify the current input source");
+        check_contains(error.what(),
+            std::string("expected_bytes=") + std::to_string(planned_expected_bytes),
+            "planned staged chunk CRC mutation should summarize recorded expected bytes");
+        check_contains(error.what(),
+            std::string("after emitting 2 current-input chunks and ")
+                + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+            "planned staged chunk CRC mutation should report completed current-input progress");
+        check_contains(error.what(), "current-input read attempt 3",
+            "planned staged chunk CRC mutation should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+            "planned staged chunk CRC mutation should report last emitted chunk size");
+        check_contains(error.what(),
+            "staged package-entry chunk CRC32 changed after validation",
+            "planned staged chunk CRC mutation should report the CRC contract");
+        check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+            "planned staged chunk CRC mutation should report replay expected total");
+        check_staged_chunk_expected_remaining(error.what(),
+            static_cast<std::uint64_t>(worksheet_suffix.size()),
+            "planned staged chunk CRC mutation should report replay remaining bytes");
+        check_staged_file_chunk_read_progress(error.what(), 2,
+            static_cast<std::uint64_t>(original_body.size()),
+            "planned staged chunk CRC mutation should report staged file progress");
+        check_contains(error.what(), "expected ",
+            "planned staged chunk CRC mutation should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "planned staged chunk CRC mutation should report actual CRC");
+        check_contains(error.what(), "staged package-entry chunk 1",
+            "planned staged chunk CRC mutation should identify the file-backed chunk");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "planned staged chunk CRC mutation should include the file-backed chunk path");
+    }
+
+    check(replacement_failed,
+        "planned staged chunk CRC mutation should fail before follow-up transform");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "planned staged chunk CRC mutation failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "planned staged chunk CRC mutation failure should not append notes");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "planned staged chunk CRC mutation failure should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "planned staged chunk CRC mutation failure should not append relationship audits");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "planned staged chunk CRC mutation failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "planned staged chunk CRC mutation failure should keep prior staged worksheet plan");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "planned staged chunk CRC mutation failure should not leak temp files");
+}
+
+void test_package_editor_rejects_missing_planned_staged_chunk_file_at_read_boundary()
+{
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-planned-chunk-missing-file-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-planned-chunk-missing-file-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-planned-chunk-missing-file-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    const std::uint64_t planned_expected_bytes =
+        static_cast<std::uint64_t>(
+            worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+    write_binary_file(body_path, original_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    std::error_code remove_error;
+    const bool removed = std::filesystem::remove(body_path, remove_error);
+    check(removed && !remove_error,
+        "planned staged chunk missing-file fixture should delete the staged file");
+
+    const std::array replacements {
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+    };
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+    } catch (const std::exception& error) {
+        replacement_failed = true;
+        check_contains(error.what(),
+            "failed to read current worksheet input for worksheet cell replacement analysis",
+            "missing planned staged chunk should fail at the current worksheet read boundary");
+        check_contains(error.what(),
+            "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+            "missing planned staged chunk should identify the current input source");
+        check_contains(error.what(),
+            std::string("expected_bytes=") + std::to_string(planned_expected_bytes),
+            "missing planned staged chunk should summarize recorded expected bytes");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(worksheet_prefix.size()) + " bytes",
+            "missing planned staged chunk should report current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "missing planned staged chunk should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(worksheet_prefix.size()) + " bytes",
+            "missing planned staged chunk should report last emitted chunk size");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "missing planned staged chunk should identify the owning worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "missing planned staged chunk should identify the worksheet ZIP entry");
+        check_not_contains(error.what(), "failed to initialize current worksheet input",
+            "missing planned staged chunk should not fail during reader initialization");
+        check_contains(error.what(), "failed to open staged package-entry chunk file",
+            "missing planned staged chunk should report the read-time open failure");
+        check_staged_file_chunk_read_progress(error.what(), 0, 0,
+            "missing planned staged chunk should report staged file progress");
+        check_contains(error.what(),
+            std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+            "missing planned staged chunk should preserve recorded expected-size metadata");
+        check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+            "missing planned staged chunk should report replay expected total");
+        check_staged_chunk_expected_remaining(error.what(),
+            static_cast<std::uint64_t>(original_body.size() + worksheet_suffix.size()),
+            "missing planned staged chunk should report replay remaining bytes");
+        check_contains(error.what(), "staged package-entry chunk 1",
+            "missing planned staged chunk should identify the file-backed chunk");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "missing planned staged chunk should include the file-backed chunk path");
+    }
+
+    check(replacement_failed,
+        "PackageEditor should reject missing planned staged chunk files during follow-up transform");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "missing planned staged chunk failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "missing planned staged chunk failure should not append notes");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "missing planned staged chunk failure should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "missing planned staged chunk failure should not append relationship audits");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "missing planned staged chunk failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "missing planned staged chunk failure should keep prior staged worksheet plan");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "missing planned staged chunk failure should not leak PackageEditor temp files");
+
+    write_binary_file(body_path, original_body);
+    editor.replace_worksheet_cells(worksheet_part, replacements);
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml = output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(worksheet_xml, R"(<c r="A1"><v>patched</v></c>)",
+        "later safe follow-up transform should still consume the restored staged chunk");
+    check_not_contains(worksheet_xml, "old-staged",
+        "later safe follow-up transform should replace the old staged target cell");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe follow-up transform should preserve unknown bytes");
+}
+
+void test_package_editor_contextualizes_by_name_planned_staged_chunk_read_failures_without_state_changes()
+{
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string planned_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Renamed" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    const std::uint64_t planned_expected_bytes =
+        static_cast<std::uint64_t>(
+            worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+    const std::string planned_chunk_source_description =
+        "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml' "
+        "(3 chunks; memory=2, file=1, expected_bytes="
+        + std::to_string(planned_expected_bytes) + ")";
+
+    {
+        const CalcSourcePackage source = write_calc_source_package(
+            "fastxlsx-package-editor-by-name-planned-chunk-size-source.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-by-name-planned-chunk-size-body.xml");
+        write_binary_file(body_path, original_body);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part(workbook_part, planned_workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "ordinary workbook replacement before by-name planned chunk size failure");
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, original_body + "<!--extended-->");
+
+        const std::array replacements {
+            worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+        };
+
+        bool failed = false;
+        try {
+            editor.replace_worksheet_cells_by_name("Renamed", replacements);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "by-name worksheet cell replacement for sheet 'Renamed'",
+                "by-name planned chunk size failure should identify the planned sheet name");
+            check_contains(error.what(),
+                "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
+                "by-name planned chunk size failure should show the resolved worksheet part");
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet cell replacement analysis",
+                "by-name planned chunk size failure should keep the analysis input boundary");
+            check_contains(error.what(),
+                planned_chunk_source_description,
+                "by-name planned chunk size failure should identify the planned chunk source composition");
+            check_contains(error.what(),
+                std::string("after emitting 2 current-input chunks and ")
+                    + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+                "by-name planned chunk size failure should report current-input progress");
+            check_contains(error.what(), "current-input read attempt 3",
+                "by-name planned chunk size failure should report the failing read attempt");
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+                "by-name planned chunk size failure should report last emitted chunk size");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "by-name planned chunk size failure should identify the owning worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "by-name planned chunk size failure should identify the worksheet ZIP entry");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+                "by-name planned chunk size failure should report expected bytes");
+            check_contains(error.what(),
+                "staged package-entry chunk file produced more bytes than expected",
+                "by-name planned chunk size failure should report overrun read");
+            check_contains(error.what(),
+                std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                    + " bytes",
+                "by-name planned chunk size failure should report lower-bound bytes");
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "by-name planned chunk size failure should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "by-name planned chunk size failure should include the file-backed chunk path");
+        }
+
+        check(failed,
+            "by-name cell replacement should reject mutated planned staged chunk size");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "by-name planned chunk size failure should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "by-name planned chunk size failure should not append notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "by-name planned chunk size failure should not add package-entry audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "by-name planned chunk size failure should not add removed package-entry audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "by-name planned chunk size failure should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "by-name planned chunk size failure should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "by-name planned chunk size failure should preserve calc policy");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "by-name planned chunk size failure should preserve calcChain policy");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "by-name planned chunk size failure should keep planned workbook rewrite");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "by-name planned chunk size failure should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "by-name planned chunk size failure should not leak PackageEditor temp files");
+    }
+
+    {
+        const CalcSourcePackage source = write_calc_source_package(
+            "fastxlsx-package-editor-by-name-sheetdata-planned-chunk-crc-source.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-by-name-sheetdata-planned-chunk-crc-body.xml");
+        write_binary_file(body_path, original_body);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part(workbook_part, planned_workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "ordinary workbook replacement before by-name sheetData planned chunk CRC failure");
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, same_size_different_payload(original_body));
+
+        bool failed = false;
+        try {
+            replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor,
+                "Renamed",
+                R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "by-name sheetData replacement for sheet 'Renamed'",
+                "by-name sheetData planned chunk CRC failure should identify the planned sheet name");
+            check_contains(error.what(),
+                "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
+                "by-name sheetData planned chunk CRC failure should show the resolved worksheet part");
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet sheetData replacement output",
+                "by-name sheetData planned chunk CRC failure should keep the output input boundary");
+            check_contains(error.what(),
+                planned_chunk_source_description,
+                "by-name sheetData planned chunk CRC failure should identify the planned chunk source composition");
+            check_contains(error.what(),
+                std::string("after emitting 2 current-input chunks and ")
+                    + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+                "by-name sheetData planned chunk CRC failure should report completed current-input progress");
+            check_contains(error.what(), "current-input read attempt 3",
+                "by-name sheetData planned chunk CRC failure should report the failing read attempt");
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+                "by-name sheetData planned chunk CRC failure should report last emitted chunk size");
+            check_contains(error.what(),
+                "staged package-entry chunk CRC32 changed after validation",
+                "by-name sheetData planned chunk CRC failure should report the CRC contract");
+            check_contains(error.what(), "expected ",
+                "by-name sheetData planned chunk CRC failure should report expected CRC");
+            check_contains(error.what(), "actual ",
+                "by-name sheetData planned chunk CRC failure should report actual CRC");
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "by-name sheetData planned chunk CRC failure should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "by-name sheetData planned chunk CRC failure should include the file-backed chunk path");
+            check_not_contains(error.what(), "sheetData replacement XML",
+                "by-name sheetData planned chunk CRC failure should not be mislabeled as replacement payload input");
+        }
+
+        check(failed,
+            "by-name sheetData replacement should reject mutated planned staged chunk CRC");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "by-name sheetData planned chunk CRC failure should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "by-name sheetData planned chunk CRC failure should not append notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "by-name sheetData planned chunk CRC failure should not add package-entry audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "by-name sheetData planned chunk CRC failure should not add removed package-entry audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "by-name sheetData planned chunk CRC failure should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "by-name sheetData planned chunk CRC failure should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "by-name sheetData planned chunk CRC failure should preserve calc policy");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "by-name sheetData planned chunk CRC failure should preserve calcChain policy");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "by-name sheetData planned chunk CRC failure should keep planned workbook rewrite");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "by-name sheetData planned chunk CRC failure should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "by-name sheetData planned chunk CRC failure should not leak PackageEditor temp files");
+    }
+}
+
+void test_package_editor_rejects_changed_planned_staged_chunk_sizes_for_sheet_data_without_state_changes()
+{
+    struct ChunkMutationCase {
+        std::string_view name;
+        std::string_view mutated_body;
+    };
+
+    const std::array cases {
+        ChunkMutationCase {
+            "truncated",
+            R"(<row r="2"><c r="A2"><v>x</v></c></row>)",
+        },
+        ChunkMutationCase {
+            "extended",
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row><!--extended-->)",
+        },
+    };
+
+    for (const ChunkMutationCase& test_case : cases) {
+        const CalcSourcePackage source = write_calc_source_package(
+            "fastxlsx-package-editor-sheetdata-planned-chunk-size-"
+            + std::string(test_case.name) + "-source.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-sheetdata-planned-chunk-size-"
+                + std::string(test_case.name) + "-body.xml");
+
+        const std::string worksheet_prefix =
+            R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+            R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+        const std::string original_body =
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+        const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+        write_binary_file(body_path, original_body);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, test_case.mutated_body);
+
+        bool failed = false;
+        try {
+            replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part,
+                R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet "
+                "sheetData replacement output",
+                "sheetData planned staged chunk mutation should report the "
+                "input read boundary");
+            const std::size_t emitted_chunk_count =
+                test_case.mutated_body.size() < original_body.size() ? 1U : 2U;
+            const std::uint64_t emitted_byte_count =
+                static_cast<std::uint64_t>(worksheet_prefix.size()
+                    + (test_case.mutated_body.size() < original_body.size()
+                            ? 0U
+                            : original_body.size()));
+            check_contains(error.what(),
+                std::string("after emitting ") + std::to_string(emitted_chunk_count)
+                    + " current-input chunk"
+                    + (emitted_chunk_count == 1U ? "" : "s")
+                    + " and " + std::to_string(emitted_byte_count)
+                    + " bytes",
+                "sheetData planned staged chunk mutation should report current-input progress");
+            const std::size_t read_attempt =
+                test_case.mutated_body.size() < original_body.size() ? 2U : 3U;
+            check_contains(error.what(),
+                std::string("current-input read attempt ") + std::to_string(read_attempt),
+                "sheetData planned staged chunk mutation should report the failing read attempt");
+            const std::uint64_t last_emitted_chunk_bytes =
+                static_cast<std::uint64_t>(
+                    test_case.mutated_body.size() < original_body.size()
+                        ? worksheet_prefix.size()
+                        : original_body.size());
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(last_emitted_chunk_bytes)
+                    + " bytes",
+                "sheetData planned staged chunk mutation should report last emitted chunk size");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+                "sheetData planned staged chunk mutation should report expected bytes");
+            const std::uint64_t planned_expected_bytes =
+                static_cast<std::uint64_t>(
+                    worksheet_prefix.size() + original_body.size()
+                    + worksheet_suffix.size());
+            check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+                "sheetData planned staged chunk mutation should report replay expected total");
+            const std::uint64_t remaining_expected_bytes =
+                test_case.mutated_body.size() < original_body.size()
+                    ? static_cast<std::uint64_t>(
+                          original_body.size() + worksheet_suffix.size())
+                    : static_cast<std::uint64_t>(worksheet_suffix.size());
+            check_staged_chunk_expected_remaining(error.what(), remaining_expected_bytes,
+                "sheetData planned staged chunk mutation should report replay remaining bytes");
+            if (test_case.mutated_body.size() < original_body.size()) {
+                check_contains(error.what(),
+                    "staged package-entry chunk file ended before expected bytes",
+                    "sheetData planned staged chunk mutation should report short read");
+                check_staged_file_chunk_read_progress(error.what(), 1, 0,
+                    "sheetData planned staged short read should report staged file progress");
+                check_contains(error.what(),
+                    std::string("actual ") + std::to_string(test_case.mutated_body.size())
+                        + " bytes",
+                    "sheetData planned staged chunk mutation should report actual bytes");
+            } else {
+                check_contains(error.what(),
+                    "staged package-entry chunk file produced more bytes than expected",
+                    "sheetData planned staged chunk mutation should report overrun read");
+                check_staged_file_chunk_read_progress(error.what(), 2,
+                    static_cast<std::uint64_t>(original_body.size()),
+                    "sheetData planned staged overrun should report staged file progress");
+                check_contains(error.what(),
+                    std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                        + " bytes",
+                    "sheetData planned staged chunk mutation should report lower-bound bytes");
+            }
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "sheetData planned staged chunk mutation should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "sheetData planned staged chunk mutation should include the file-backed chunk path");
+        }
+
+        check(failed,
+            "sheetData replacement should reject planned staged chunks whose size changed");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "sheetData planned staged chunk mutation should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "sheetData planned staged chunk mutation should not append notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "sheetData planned staged chunk mutation should not add package-entry audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "sheetData planned staged chunk mutation should not add removed package-entry audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "sheetData planned staged chunk mutation should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "sheetData planned staged chunk mutation should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "sheetData planned staged chunk mutation should preserve calc policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "sheetData planned staged chunk mutation should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "sheetData planned staged chunk mutation should not leak PackageEditor temp files");
+    }
+}
+
+void test_package_editor_rejects_changed_planned_staged_chunk_crc_for_sheet_data_without_state_changes()
+{
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-sheetdata-planned-chunk-crc-source.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-sheetdata-planned-chunk-crc-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    write_binary_file(body_path, original_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    write_binary_file(body_path, same_size_different_payload(original_body));
+
+    bool failed = false;
+    try {
+        replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part,
+            R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "failed to read current worksheet input for worksheet "
+            "sheetData replacement output",
+            "sheetData planned staged chunk CRC mutation should report the "
+            "input read boundary");
+        check_contains(error.what(),
+            "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+            "sheetData planned staged chunk CRC mutation should identify the current input source");
+        check_contains(error.what(),
+            std::string("after emitting 2 current-input chunks and ")
+                + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+            "sheetData planned staged chunk CRC mutation should report completed current-input progress");
+        check_contains(error.what(), "current-input read attempt 3",
+            "sheetData planned staged chunk CRC mutation should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+            "sheetData planned staged chunk CRC mutation should report last emitted chunk size");
+        check_contains(error.what(),
+            "staged package-entry chunk CRC32 changed after validation",
+            "sheetData planned staged chunk CRC mutation should report the CRC contract");
+        const std::uint64_t planned_expected_bytes =
+            static_cast<std::uint64_t>(
+                worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+        check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+            "sheetData planned staged chunk CRC mutation should report replay expected total");
+        check_staged_chunk_expected_remaining(error.what(),
+            static_cast<std::uint64_t>(worksheet_suffix.size()),
+            "sheetData planned staged chunk CRC mutation should report replay remaining bytes");
+        check_staged_file_chunk_read_progress(error.what(), 2,
+            static_cast<std::uint64_t>(original_body.size()),
+            "sheetData planned staged CRC mutation should report staged file progress");
+        check_contains(error.what(), "expected ",
+            "sheetData planned staged chunk CRC mutation should report expected CRC");
+        check_contains(error.what(), "actual ",
+            "sheetData planned staged chunk CRC mutation should report actual CRC");
+        check_contains(error.what(), "staged package-entry chunk 1",
+            "sheetData planned staged chunk CRC mutation should identify the file-backed chunk");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "sheetData planned staged chunk CRC mutation should include the file-backed chunk path");
+    }
+
+    check(failed,
+        "sheetData replacement should reject planned staged chunks whose CRC changed");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "sheetData planned staged chunk CRC mutation should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "sheetData planned staged chunk CRC mutation should not append notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "sheetData planned staged chunk CRC mutation should not add package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "sheetData planned staged chunk CRC mutation should not add removed package-entry audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "sheetData planned staged chunk CRC mutation should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "sheetData planned staged chunk CRC mutation should not append relationship audits");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "sheetData planned staged chunk CRC mutation should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "sheetData planned staged chunk CRC mutation should keep prior staged worksheet plan");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "sheetData planned staged chunk CRC mutation should not leak PackageEditor temp files");
+}
+
+void test_package_editor_streams_large_source_worksheet_cell_replacement_beyond_event_window_total_size()
 {
     CalcSourcePackage source =
         write_calc_source_package(
@@ -3465,7 +7619,7 @@ void test_package_editor_streams_large_source_worksheet_cell_replacement_without
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old</v></c></row>)";
     std::uint32_t last_row = 1;
     while (source.worksheet.size()
-        <= fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit
+        <= fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit
             + 4096U) {
         ++last_row;
         source.worksheet += R"(<row r=")";
@@ -3476,8 +7630,8 @@ void test_package_editor_streams_large_source_worksheet_cell_replacement_without
     }
     source.worksheet += R"(</sheetData></worksheet>)";
     check(source.worksheet.size()
-            > fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit,
-        "large source worksheet fixture should exceed the materialized input guard");
+            > fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit,
+        "large source worksheet fixture should exceed the event-reader window total size");
     fastxlsx::detail::write_package(source.path,
         {
             {"[Content_Types].xml", source.content_types},
@@ -3496,8 +7650,7 @@ void test_package_editor_streams_large_source_worksheet_cell_replacement_without
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>patched</v></c>)" },
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
     };
 
     editor.replace_worksheet_cells(worksheet_part, replacements);
@@ -3513,8 +7666,8 @@ void test_package_editor_streams_large_source_worksheet_cell_replacement_without
               {"root validation", "event-reader chunk-source validator"}),
         "large source cell replacement should expose chunk-source root validation");
     check(!has_note_containing(output_plan.notes,
-              {"source package worksheet XML", "bounded materialized input limit"}),
-        "large source cell replacement should not expose source materialized guard");
+              {"source package worksheet XML", "whole worksheet string"}),
+        "large source cell replacement should not expose old whole-string wording");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "large source cell replacement should stream-rewrite worksheet chunks");
@@ -3550,7 +7703,7 @@ void test_package_editor_streams_large_source_worksheet_cell_replacement_without
         "large source cell replacement output should preserve unknown bytes");
 }
 
-void test_package_editor_streams_large_planned_worksheet_cell_replacement_without_materialized_input_limit()
+void test_package_editor_streams_large_planned_worksheet_cell_replacement_beyond_event_window_total_size()
 {
     const CalcSourcePackage source =
         write_calc_source_package(
@@ -3570,7 +7723,7 @@ void test_package_editor_streams_large_planned_worksheet_cell_replacement_withou
     std::uint32_t last_row = 1;
     const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
     while (worksheet_prefix.size() + worksheet_body.size() + worksheet_suffix.size()
-        <= fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit
+        <= fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit
             + 4096U) {
         ++last_row;
         worksheet_body += R"(<row r=")";
@@ -3582,13 +7735,12 @@ void test_package_editor_streams_large_planned_worksheet_cell_replacement_withou
     const std::string oversized_planned_worksheet =
         worksheet_prefix + worksheet_body + worksheet_suffix;
     check(oversized_planned_worksheet.size()
-            > fastxlsx::detail::package_editor_cell_replacement_materialized_input_byte_limit,
-        "large planned worksheet fixture should exceed the prior materialized input guard");
-    editor.replace_worksheet_part(worksheet_part, oversized_planned_worksheet);
+            > fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit,
+        "large planned worksheet fixture should exceed the event-reader window total size");
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, oversized_planned_worksheet);
 
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1"><v>43</v></c>)" },
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>43</v></c>)"),
     };
     check(editor.edit_plan().find_part(worksheet_part)->write_mode
             == fastxlsx::detail::PartWriteMode::StreamRewrite,
@@ -3614,18 +7766,22 @@ void test_package_editor_streams_large_planned_worksheet_cell_replacement_withou
     const fastxlsx::detail::PackageEditorOutputPlan output_plan =
         editor.planned_output();
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet replacement string", "chunk-source readers",
-                  "queued string source"}),
-        "large planned cell replacement should expose queued string chunk-source input");
+              {"pull-based chunk source", "file-backed staged chunk",
+                  "follow-up planned-input transforms"}),
+        "large planned cell replacement should report file-backed planned worksheet handoff");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet queued string", "transformer chunk-source adapter"}),
-        "large planned cell replacement should expose chunk-source transformer input");
+        {"writes the staged worksheet chunk in one caller chunk-source pass",
+            "without reopening that staged chunk"}),
+        "large planned cell replacement should report fused caller chunk-source staging/audit handoff");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "without materializing"}),
+        "large planned cell replacement should expose non-materialized staged input");
+    check(has_note_containing(output_plan.notes,
+              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
+        "large planned cell replacement should expose staged chunk transformer input");
     check(has_note_containing(output_plan.notes,
               {"root validation", "event-reader chunk-source validator"}),
         "large planned cell replacement should expose chunk-source root validation");
-    check(!has_note_containing(output_plan.notes,
-              {"planned worksheet replacement string", "bounded materialized input limit"}),
-        "large planned cell replacement should not expose planned string materialized guard");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "large planned cell replacement output plan should stream-rewrite worksheet chunks");
@@ -3648,7 +7804,7 @@ void test_package_editor_streams_large_planned_worksheet_cell_replacement_withou
     const std::string expected_dimension =
         R"(<dimension ref="A1:A)" + std::to_string(last_row) + R"("/>)";
     check_contains(worksheet_xml, expected_dimension,
-        "large planned cell replacement output should refresh dimension from queued string cells");
+        "large planned cell replacement output should refresh dimension from staged planned cells");
     check_contains(worksheet_xml,
         R"(<row r=")" + std::to_string(last_row) + R"("><c r="A)"
             + std::to_string(last_row) + R"("><v>1</v></c></row>)",
@@ -3669,8 +7825,7 @@ void test_package_editor_worksheet_cell_replacement_missing_target_fails_before_
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "C3", R"(<c r="C3"><v>missing</v></c>)" },
+        worksheet_cell_replacement("C3", R"(<c r="C3"><v>missing</v></c>)"),
     };
 
     bool failed = false;
@@ -3780,7 +7935,7 @@ void test_package_editor_rejects_invalid_cell_replacement_payload_without_state_
     };
 
     struct InvalidPayloadCase {
-        std::string_view replacement_cell_xml;
+        std::string_view materialized_replacement_cell_xml;
         std::string_view expected_error;
     };
     const std::array invalid_cases {
@@ -3806,8 +7961,8 @@ void test_package_editor_rejects_invalid_cell_replacement_payload_without_state_
         bool failed = false;
         try {
             const std::array replacements {
-                fastxlsx::detail::WorksheetCellReplacement {
-                    "A1", invalid_case.replacement_cell_xml },
+                worksheet_cell_replacement(
+                    "A1", invalid_case.materialized_replacement_cell_xml),
             };
             editor.replace_worksheet_cells_by_name("Sheet1", replacements);
         } catch (const std::exception& error) {
@@ -3818,6 +7973,90 @@ void test_package_editor_rejects_invalid_cell_replacement_payload_without_state_
                 "invalid cell replacement payload error should explain the preflight failure");
         }
         check(failed, "invalid cell replacement payload should fail before Patch state changes");
+        check_no_state_change();
+    }
+
+    std::string oversized_payload = R"(<c r="A1"><v>)";
+    oversized_payload.append(
+        fastxlsx::detail::worksheet_replacement_cell_xml_materialization_byte_limit, 'x');
+    oversized_payload += R"(</v></c>)";
+    bool oversized_failed = false;
+    try {
+        const std::array replacements {
+            worksheet_cell_replacement("A1", oversized_payload),
+        };
+        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+    } catch (const std::exception& error) {
+        oversized_failed = true;
+        check_contains(error.what(), "replacement cell XML",
+            "oversized cell replacement payload error should name replacement XML");
+        check_contains(error.what(), "single-cell materialized payload limit",
+            "oversized cell replacement payload error should name the materialization limit");
+    }
+    check(oversized_failed,
+        "oversized cell replacement payload should fail before Patch state changes");
+    check_no_state_change();
+
+    std::string oversized_chunk_prefix = R"(<c r="A1"><v>)";
+    std::string oversized_chunk_body(
+        fastxlsx::detail::worksheet_replacement_cell_xml_materialization_byte_limit, 'x');
+    std::string oversized_chunk_suffix = R"(</v></c>)";
+    const std::array<std::string_view, 3> oversized_chunks {
+        oversized_chunk_prefix,
+        oversized_chunk_body,
+        oversized_chunk_suffix,
+    };
+    bool chunked_oversized_failed = false;
+    try {
+        const std::array replacements {
+            chunked_worksheet_cell_replacement("A1", oversized_chunks),
+        };
+        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+    } catch (const std::exception& error) {
+        chunked_oversized_failed = true;
+        check_contains(error.what(), "replacement cell XML",
+            "oversized chunked cell replacement payload error should name replacement XML");
+        check_contains(error.what(), "single-cell materialized payload limit",
+            "oversized chunked cell replacement payload error should name the materialization limit");
+    }
+    check(chunked_oversized_failed,
+        "oversized chunked cell replacement payload should fail before Patch state changes");
+    check_no_state_change();
+
+    struct StructurallyInvalidChunkedPayloadCase {
+        std::array<std::string_view, 2> chunks;
+        std::string_view expected_error;
+        const char* message;
+    };
+    const std::array<StructurallyInvalidChunkedPayloadCase, 2> structurally_invalid_cases {{
+        StructurallyInvalidChunkedPayloadCase {
+            {R"(<c r="A1">)", "<v"},
+            "tag is truncated",
+            "truncated child tag",
+        },
+        StructurallyInvalidChunkedPayloadCase {
+            {R"(<c r="A1">)", "<!--"},
+            "comment is not closed",
+            "unclosed comment",
+        },
+    }};
+
+    for (const StructurallyInvalidChunkedPayloadCase& invalid_case :
+         structurally_invalid_cases) {
+        bool structure_failed = false;
+        try {
+            const std::array replacements {
+                chunked_worksheet_cell_replacement("A1", invalid_case.chunks),
+            };
+            editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+        } catch (const std::exception& error) {
+            structure_failed = true;
+            check_contains(error.what(), "replacement cell XML",
+                "invalid chunked cell replacement payload structure error should name XML");
+            check_contains(error.what(), invalid_case.expected_error,
+                "invalid chunked cell replacement payload structure error should explain failure");
+        }
+        check(structure_failed, invalid_case.message);
         check_no_state_change();
     }
 
@@ -3849,7 +8088,7 @@ void test_package_editor_replaces_worksheet_and_removes_stale_calc_chain()
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -4016,7 +8255,7 @@ void test_package_editor_source_overwrite_rejection_preserves_worksheet_rewrite_
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>77</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const std::size_t queued_plan_size = editor.edit_plan().size();
     const std::size_t queued_note_count = editor.edit_plan().notes().size();
@@ -4189,7 +8428,7 @@ void test_package_editor_cleans_stale_calc_chain_metadata_without_payload()
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>55</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
         "metadata-only calcChain cleanup should not invent a removed-part audit");
@@ -4262,13 +8501,12 @@ void test_package_editor_worksheet_rewrite_omits_prior_calc_chain_replacement()
 
     const std::string prior_calc_chain =
         R"(<calcChain><c r="Z99" i="2"/></calcChain>)";
-    editor.replace_part(calc_chain_part, prior_calc_chain,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, calc_chain_part, prior_calc_chain,
         "prior ordinary calcChain replacement");
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>77</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     check(editor.edit_plan().find_part(calc_chain_part) == nullptr,
         "worksheet rewrite should remove prior calcChain replacement from the edit plan");
@@ -4321,7 +8559,7 @@ void test_package_editor_worksheet_rewrite_preserves_prior_workbook_replacement(
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>88</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
     check(workbook_plan != nullptr,
@@ -4371,7 +8609,7 @@ void test_package_editor_workbook_replacement_after_worksheet_rewrite_keeps_calc
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>99</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const std::string later_workbook =
         R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
@@ -4464,7 +8702,7 @@ void test_package_editor_removes_stale_calc_chain_relationship_part()
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>44</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
     check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
         "calcChain relationship-part fixture should still record calcChain removal");
     const auto* removed_calc_chain_relationships_plan =
@@ -4529,7 +8767,7 @@ void test_package_editor_replaces_worksheet_and_preserves_calc_chain_when_reques
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>7</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet, policy);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet, policy);
 
     check(editor.edit_plan().full_calculation_on_load(),
         "calcChain preserve policy should still request full calculation by default");
@@ -4639,8 +8877,7 @@ void test_package_editor_worksheet_rewrite_preserves_prior_calc_chain_replacemen
 
     const std::string prior_calc_chain =
         R"(<calcChain><c r="Z99" i="8"/></calcChain>)";
-    editor.replace_part(calc_chain_part, prior_calc_chain,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, calc_chain_part, prior_calc_chain,
         "prior calcChain replacement before worksheet preserve rewrite");
 
     fastxlsx::detail::ReferencePolicy policy;
@@ -4648,7 +8885,7 @@ void test_package_editor_worksheet_rewrite_preserves_prior_calc_chain_replacemen
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>17</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet, policy);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet, policy);
 
     check(editor.edit_plan().full_calculation_on_load(),
         "prior preserve worksheet rewrite should request full calculation");
@@ -4660,8 +8897,8 @@ void test_package_editor_worksheet_rewrite_preserves_prior_calc_chain_replacemen
     check(calc_chain_plan != nullptr,
         "prior preserve worksheet rewrite should keep calcChain in the edit plan");
     check(calc_chain_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "prior preserve worksheet rewrite should keep prior calcChain replacement active");
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "prior preserve worksheet rewrite should keep prior staged calcChain replacement active");
     check(calc_chain_plan->reason.find("prior calcChain replacement") != std::string::npos,
         "prior preserve worksheet rewrite should keep prior calcChain replacement reason");
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
@@ -4679,8 +8916,8 @@ void test_package_editor_worksheet_rewrite_preserves_prior_calc_chain_replacemen
         fastxlsx::detail::PartWriteMode::LocalDomRewrite,
         "prior preserve worksheet rewrite should mirror workbook local-DOM-rewrite in manifest");
     check_manifest_write_mode(editor, calc_chain_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "prior preserve worksheet rewrite should keep calcChain local-DOM-rewrite in manifest");
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "prior preserve worksheet rewrite should keep calcChain stream-rewrite in manifest");
     check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
         "prior preserve worksheet rewrite should not rewrite content types");
 
@@ -4756,7 +8993,7 @@ void test_package_editor_preserve_calc_chain_does_not_audit_missing_relationship
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>77</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet, policy);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet, policy);
 
     check(editor.edit_plan().find_package_entry("xl/_rels/calcChain.xml.rels") == nullptr,
         "calcChain preserve should not audit a missing calcChain relationships entry");
@@ -4838,6 +9075,29 @@ void test_package_editor_request_full_calculation_removes_calc_chain_only()
             && workbook_relationships_entry->write_mode
                 == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
         "workbook calc helper should audit workbook relationships rewrite");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_materialized_replacement(output_plan.entries,
+        workbook_part.zip_path(), true,
+        "workbook calc helper output plan should mark workbook as active materialized replacement");
+    check_output_entry_materialized_replacement_reason(output_plan.entries,
+        workbook_part.zip_path(), "workbook small-XML package part",
+        "workbook calc helper output plan should explain workbook small-XML materialization");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        workbook_part.zip_path(), false,
+        "workbook calc helper output plan should not mark workbook as staged chunks");
+    check_output_entry_part_context(output_plan.entries,
+        workbook_part.zip_path(), true, workbook_part.value(),
+        "workbook calc helper output plan should preserve workbook package-part context");
+    check_output_entry_materialized_replacement(output_plan.entries,
+        "[Content_Types].xml", true,
+        "workbook calc helper output plan should mark content types metadata replacement");
+    check_output_entry_materialized_replacement_reason(output_plan.entries,
+        "[Content_Types].xml", "content types metadata",
+        "workbook calc helper output plan should explain content types metadata materialization");
+    check_output_entry_part_context(output_plan.entries,
+        "[Content_Types].xml", false, "",
+        "workbook calc helper output plan should keep content types as metadata entry");
 
     editor.save_as(output);
 
@@ -5120,8 +9380,7 @@ void test_package_editor_request_full_calculation_omits_prior_calc_chain_replace
 
     const std::string prior_calc_chain =
         R"(<calcChain><c r="Z99" i="9"/></calcChain>)";
-    editor.replace_part(calc_chain_part, prior_calc_chain,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, calc_chain_part, prior_calc_chain,
         "prior calcChain replacement before workbook calc helper");
 
     editor.request_full_calculation();
@@ -5445,8 +9704,7 @@ void test_package_editor_request_full_calculation_preserves_prior_calc_chain_rep
 
     const std::string prior_calc_chain =
         R"(<calcChain><c r="Z99" i="9"/></calcChain>)";
-    editor.replace_part(calc_chain_part, prior_calc_chain,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, calc_chain_part, prior_calc_chain,
         "prior calcChain replacement before workbook calc preserve helper");
 
     editor.request_full_calculation(fastxlsx::detail::CalcChainAction::Preserve);
@@ -5464,8 +9722,8 @@ void test_package_editor_request_full_calculation_preserves_prior_calc_chain_rep
     check(calc_chain_plan != nullptr,
         "prior preserve calcChain helper should keep calcChain in the edit plan");
     check(calc_chain_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "prior preserve calcChain helper should keep prior calcChain replacement active");
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "prior preserve calcChain helper should keep prior staged calcChain replacement active");
     check(calc_chain_plan->reason.find("prior calcChain replacement") != std::string::npos,
         "prior preserve calcChain helper should keep prior calcChain replacement reason");
     const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
@@ -5480,8 +9738,8 @@ void test_package_editor_request_full_calculation_preserves_prior_calc_chain_rep
         fastxlsx::detail::PartWriteMode::LocalDomRewrite,
         "prior preserve calcChain helper should mirror workbook local-DOM-rewrite in manifest");
     check_manifest_write_mode(editor, calc_chain_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "prior preserve calcChain helper should keep calcChain local-DOM-rewrite in manifest");
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "prior preserve calcChain helper should keep calcChain stream-rewrite in manifest");
     check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
         "prior preserve calcChain helper should not rewrite content types");
 
@@ -5953,8 +10211,8 @@ void test_package_editor_replaces_worksheet_cells_from_deflated_source_chunk_sou
         "DEFLATE cell replacement fixture should deflate worksheet entry");
 
     const std::array replacements {
-        fastxlsx::detail::WorksheetCellReplacement {
-            "A1", R"(<c r="A1" t="inlineStr"><is><t>deflated-patched</t></is></c>)" },
+        worksheet_cell_replacement(
+            "A1", R"(<c r="A1" t="inlineStr"><is><t>deflated-patched</t></is></c>)"),
     };
     editor.replace_worksheet_cells_by_name("Sheet1", replacements);
 
@@ -6115,9 +10373,8 @@ void test_package_editor_replaces_unknown_extension_from_deflated_source_and_pre
         "DEFLATE unknown replacement fixture should deflate unknown owner relationships");
 
     const std::string replacement_opaque("deflated-source opaque replacement bytes");
-    editor.replace_part(opaque_extension_part, replacement_opaque,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "DEFLATE source unknown extension stream rewrite");
+    replace_part_with_memory_chunks(editor, opaque_extension_part,
+        replacement_opaque, "DEFLATE source unknown extension stream rewrite");
 
     const auto* opaque_plan = editor.edit_plan().find_part(opaque_extension_part);
     check(opaque_plan != nullptr,
@@ -6385,7 +10642,7 @@ void test_package_editor_replaces_worksheet_from_deflated_source_and_preserves_l
         R"(<drawing r:id="rId1"/>)"
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     check(editor.edit_plan().full_calculation_on_load(),
         "DEFLATE worksheet rewrite should request full calculation");
@@ -6534,17 +10791,16 @@ void test_package_editor_replaces_drawing_and_preserves_linked_media_entries()
     const std::string replacement_drawing =
         R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" )"
         R"(xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>)";
-    editor.replace_part(drawing_part, replacement_drawing,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, drawing_part, replacement_drawing,
         "linked fixture drawing local-DOM rewrite");
 
     const auto* drawing_plan = editor.edit_plan().find_part(drawing_part);
     check(drawing_plan != nullptr,
         "linked fixture drawing replacement should be present in the edit plan");
-    check(drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture drawing replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture drawing replacement should mirror write mode into manifest");
     const auto* drawing_relationships_audit =
         editor.edit_plan().find_package_entry("xl/drawings/_rels/drawing1.xml.rels");
@@ -6580,7 +10836,7 @@ void test_package_editor_replaces_drawing_and_preserves_linked_media_entries()
     check(output_plan.removed_package_entries.empty(),
         "linked fixture drawing replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/drawings/drawing1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture drawing replacement output plan should rewrite drawing");
     check_output_entry_part_context(output_plan.entries, "xl/drawings/drawing1.xml",
         true, drawing_part.value(),
@@ -6717,9 +10973,8 @@ void test_package_editor_replaces_unknown_extension_and_preserves_owner_relation
     replacement_opaque += "opaque";
     replacement_opaque.append(1, '\0');
     replacement_opaque += "payload";
-    editor.replace_part(opaque_extension_part, replacement_opaque,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "linked fixture opaque extension stream rewrite");
+    replace_part_with_memory_chunks(editor, opaque_extension_part,
+        replacement_opaque, "linked fixture opaque extension stream rewrite");
 
     const auto* opaque_plan = editor.edit_plan().find_part(opaque_extension_part);
     check(opaque_plan != nullptr,
@@ -6907,24 +11162,22 @@ void test_package_editor_repeated_unknown_extension_replacement_upserts_owner_au
 
     const std::string first_replacement("first opaque replacement");
     const std::string final_replacement("final opaque replacement");
-    editor.replace_part(opaque_extension_part, first_replacement,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "first opaque extension stream rewrite");
+    replace_part_with_memory_chunks(editor, opaque_extension_part,
+        first_replacement, "first opaque extension stream rewrite");
     const std::size_t first_package_entry_count = editor.edit_plan().package_entries().size();
-    editor.replace_part(opaque_extension_part, final_replacement,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, opaque_extension_part, final_replacement,
         "final opaque extension local-DOM rewrite");
 
     const auto* opaque_plan = editor.edit_plan().find_part(opaque_extension_part);
     check(opaque_plan != nullptr,
         "repeated unknown extension replacement should keep the target in the edit plan");
-    check(opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated unknown extension replacement should keep the latest write mode");
     check(opaque_plan->reason.find("final opaque extension local-DOM rewrite")
             != std::string::npos,
         "repeated unknown extension replacement should keep the latest reason");
     check_manifest_write_mode(editor, opaque_extension_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated unknown extension replacement should mirror latest write mode into manifest");
     check(editor.edit_plan().package_entries().size() == first_package_entry_count,
         "repeated unknown extension replacement should upsert owner relationship audit");
@@ -7018,8 +11271,7 @@ void test_package_editor_unknown_extension_replacement_restores_prior_removal()
         "setup should not keep active owner relationships audit before replacement restore");
 
     const std::string restored_opaque("restored opaque extension bytes");
-    editor.replace_part(opaque_extension_part, restored_opaque,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, opaque_extension_part, restored_opaque,
         "restored opaque extension after removal");
 
     check(editor.edit_plan().find_removed_part(opaque_extension_part) == nullptr,
@@ -7027,12 +11279,12 @@ void test_package_editor_unknown_extension_replacement_restores_prior_removal()
     const auto* opaque_plan = editor.edit_plan().find_part(opaque_extension_part);
     check(opaque_plan != nullptr,
         "replacement after removal should restore active edit-plan part");
-    check(opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(opaque_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "replacement after removal should keep final write mode");
     check(opaque_plan->reason.find("after removal") != std::string::npos,
         "replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, opaque_extension_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "replacement after removal should restore manifest part write mode");
     check(editor.edit_plan().find_removed_package_entry("custom/_rels/opaque-extension.bin.rels")
             == nullptr,
@@ -7160,9 +11412,8 @@ void test_package_editor_unknown_extension_removal_overrides_prior_replacement()
     std::string stale_opaque("stale", 5);
     stale_opaque.append(1, '\0');
     stale_opaque += "opaque replacement";
-    editor.replace_part(opaque_extension_part, stale_opaque,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "prior opaque extension replacement before removal");
+    replace_part_with_memory_chunks(editor, opaque_extension_part,
+        stale_opaque, "prior opaque extension replacement before removal");
 
     const auto* prior_opaque_plan = editor.edit_plan().find_part(opaque_extension_part);
     check(prior_opaque_plan != nullptr,
@@ -7409,9 +11660,8 @@ void test_package_editor_media_replacement_restores_prior_removal()
 
     std::string restored_media("\x89PNG\r\n\x1A\n", 8);
     restored_media += "restored-media-bytes";
-    editor.replace_part(image_part, restored_media,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "restored media after removal");
+    replace_part_with_memory_chunks(
+        editor, image_part, restored_media, "restored media after removal");
 
     check(editor.edit_plan().find_removed_part(image_part) == nullptr,
         "media replacement after removal should clear stale removed-part audit");
@@ -7539,9 +11789,8 @@ void test_package_editor_media_removal_overrides_prior_replacement()
 
     std::string replacement_media("\x89PNG\r\n\x1A\n", 8);
     replacement_media += "stale-media-replacement";
-    editor.replace_part(image_part, replacement_media,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "prior media replacement before removal");
+    replace_part_with_memory_chunks(
+        editor, image_part, replacement_media, "prior media replacement before removal");
 
     const auto* prior_media_plan = editor.edit_plan().find_part(image_part);
     check(prior_media_plan != nullptr,
@@ -7790,9 +12039,8 @@ void test_package_editor_chart_replacement_restores_prior_removal()
         R"(<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">)"
         R"(<c:chart><c:title><c:tx><c:v>restored chart</c:v></c:tx></c:title></c:chart>)"
         R"(</c:chartSpace>)";
-    editor.replace_part(chart_part, restored_chart,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "restored chart after removal");
+    replace_part_with_memory_chunks(
+        editor, chart_part, restored_chart, "restored chart after removal");
 
     check(editor.edit_plan().find_removed_part(chart_part) == nullptr,
         "chart replacement after removal should clear stale removed-part audit");
@@ -8022,8 +12270,7 @@ void test_package_editor_table_replacement_restores_prior_removal()
         R"(<autoFilter ref="A1:B3"/>)"
         R"(<tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B"/></tableColumns>)"
         R"(</table>)";
-    editor.replace_part(table_part, restored_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, table_part, restored_table,
         "restored table after removal");
 
     check(editor.edit_plan().find_removed_part(table_part) == nullptr,
@@ -8031,12 +12278,12 @@ void test_package_editor_table_replacement_restores_prior_removal()
     const auto* table_plan = editor.edit_plan().find_part(table_part);
     check(table_plan != nullptr,
         "table replacement after removal should restore active edit-plan part");
-    check(table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(table_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "table replacement after removal should keep final write mode");
     check(table_plan->reason.find("after removal") != std::string::npos,
         "table replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, table_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "table replacement after removal should restore manifest part write mode");
     const auto* restored_content_types =
         editor.edit_plan().find_package_entry("[Content_Types].xml");
@@ -8158,14 +12405,13 @@ void test_package_editor_table_removal_overrides_prior_replacement()
         R"(<autoFilter ref="A1:B4"/>)"
         R"(<tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B"/></tableColumns>)"
         R"(</table>)";
-    editor.replace_part(table_part, replacement_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, table_part, replacement_table,
         "prior table replacement before removal");
 
     const auto* prior_table_plan = editor.edit_plan().find_part(table_part);
     check(prior_table_plan != nullptr,
         "setup should record active table replacement before removal override");
-    check(prior_table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_table_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup table replacement should be local-DOM-rewrite before removal override");
     check(editor.edit_plan().find_package_entry("xl/tables/_rels/table1.xml.rels") == nullptr,
         "setup table replacement should not invent owner relationships audit");
@@ -8397,8 +12643,7 @@ void test_package_editor_vml_drawing_replacement_restores_prior_removal()
         "setup should remove VML from manifest before replacement restore");
 
     const std::string restored_vml = R"(<xml><v:shape id="restored-shape"/></xml>)";
-    editor.replace_part(vml_drawing_part, restored_vml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, vml_drawing_part, restored_vml,
         "restored VML drawing after removal");
 
     check(editor.edit_plan().find_removed_part(vml_drawing_part) == nullptr,
@@ -8406,12 +12651,12 @@ void test_package_editor_vml_drawing_replacement_restores_prior_removal()
     const auto* vml_plan = editor.edit_plan().find_part(vml_drawing_part);
     check(vml_plan != nullptr,
         "VML replacement after removal should restore active edit-plan part");
-    check(vml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(vml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "VML replacement after removal should keep final write mode");
     check(vml_plan->reason.find("after removal") != std::string::npos,
         "VML replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, vml_drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "VML replacement after removal should restore manifest part write mode");
     const auto* restored_content_types =
         editor.edit_plan().find_package_entry("[Content_Types].xml");
@@ -8477,7 +12722,7 @@ void test_package_editor_vml_drawing_replacement_restores_prior_removal()
     check(output_plan.removed_package_entries.empty(),
         "VML replacement after removal output plan should clear stale removed package-entry audits");
     check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "VML replacement after removal output plan should rewrite VML drawing");
     check_output_entry_part_context(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
         true, vml_drawing_part.value(),
@@ -8667,8 +12912,7 @@ void test_package_editor_percent_decoded_drawing_replacement_restores_prior_remo
     const std::string restored_drawing =
         R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">)"
         R"(<xdr:absoluteAnchor/></xdr:wsDr>)";
-    editor.replace_part(percent_encoded_drawing_part, restored_drawing,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, percent_encoded_drawing_part, restored_drawing,
         "restored percent-decoded drawing after removal");
 
     check(editor.edit_plan().find_removed_part(percent_encoded_drawing_part) == nullptr,
@@ -8676,12 +12920,12 @@ void test_package_editor_percent_decoded_drawing_replacement_restores_prior_remo
     const auto* drawing_plan = editor.edit_plan().find_part(percent_encoded_drawing_part);
     check(drawing_plan != nullptr,
         "percent-decoded drawing replacement after removal should restore active edit-plan part");
-    check(drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "percent-decoded drawing replacement after removal should keep final write mode");
     check(drawing_plan->reason.find("after removal") != std::string::npos,
         "percent-decoded drawing replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, percent_encoded_drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "percent-decoded drawing replacement after removal should restore manifest part write mode");
     const auto* restored_content_types =
         editor.edit_plan().find_package_entry("[Content_Types].xml");
@@ -8747,7 +12991,7 @@ void test_package_editor_percent_decoded_drawing_replacement_restores_prior_remo
     check(output_plan.removed_package_entries.empty(),
         "percent-decoded drawing replacement after removal output plan should clear stale removed package-entry audits");
     check_output_entry_plan(output_plan.entries, "xl/drawings/drawing space.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "percent-decoded drawing replacement after removal output plan should rewrite drawing");
     check_output_entry_part_context(output_plan.entries, "xl/drawings/drawing space.xml",
         true, percent_encoded_drawing_part.value(),
@@ -8918,13 +13162,12 @@ void test_package_editor_vml_drawing_removal_overrides_prior_replacement()
     const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
 
     const std::string replacement_vml = R"(<xml><v:shape id="stale-shape"/></xml>)";
-    editor.replace_part(vml_drawing_part, replacement_vml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, vml_drawing_part, replacement_vml,
         "prior VML drawing replacement before removal");
     const auto* prior_vml_plan = editor.edit_plan().find_part(vml_drawing_part);
     check(prior_vml_plan != nullptr,
         "setup should record active VML replacement before removal override");
-    check(prior_vml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_vml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup VML replacement should be local-DOM-rewrite before removal override");
     check(editor.edit_plan().find_package_entry("xl/drawings/_rels/vmlDrawing1.vml.rels")
             == nullptr,
@@ -9175,14 +13418,13 @@ void test_package_editor_percent_decoded_drawing_removal_overrides_prior_replace
     const std::string replacement_drawing =
         R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">)"
         R"(<xdr:absoluteAnchor/></xdr:wsDr>)";
-    editor.replace_part(percent_encoded_drawing_part, replacement_drawing,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, percent_encoded_drawing_part, replacement_drawing,
         "prior percent-decoded drawing replacement before removal");
     const auto* prior_drawing_plan =
         editor.edit_plan().find_part(percent_encoded_drawing_part);
     check(prior_drawing_plan != nullptr,
         "setup should record active percent-decoded drawing replacement before removal override");
-    check(prior_drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup percent-decoded drawing replacement should be local-DOM-rewrite before removal override");
     check(editor.edit_plan().find_package_entry("xl/drawings/_rels/drawing space.xml.rels")
             == nullptr,
@@ -9786,6 +14028,7 @@ void test_package_editor_worksheet_replacement_restores_prior_removal()
     const fastxlsx::detail::PartName table_part("/xl/tables/table1.xml");
     const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
     const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
 
     editor.remove_part(worksheet_part, "temporary worksheet removal");
@@ -9809,9 +14052,8 @@ void test_package_editor_worksheet_replacement_restores_prior_removal()
         R"(<drawing r:id="rId1"/>)"
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
-    editor.replace_part(worksheet_part, restored_worksheet,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "restored worksheet after removal");
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, restored_worksheet,
+        fastxlsx::detail::ReferencePolicy {}, "restored worksheet after removal");
 
     check(editor.edit_plan().find_removed_part(worksheet_part) == nullptr,
         "worksheet replacement after removal should clear stale removed-part audit");
@@ -9825,12 +14067,19 @@ void test_package_editor_worksheet_replacement_restores_prior_removal()
     check_manifest_write_mode(editor, worksheet_part,
         fastxlsx::detail::PartWriteMode::StreamRewrite,
         "worksheet replacement after removal should restore manifest part write mode");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "worksheet replacement after removal should request workbook recalculation");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Remove,
+        "worksheet replacement after removal should use worksheet rewrite calcChain cleanup");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "worksheet replacement after removal should record stale calcChain removal");
     const auto* restored_content_types =
         editor.edit_plan().find_package_entry("[Content_Types].xml");
     check(restored_content_types != nullptr,
         "worksheet replacement after removal should keep content types audit");
-    check(restored_content_types->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "worksheet replacement after removal should restore source content types audit");
+    check(restored_content_types->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "worksheet replacement after removal should rewrite content types for calcChain cleanup");
     check(restored_content_types->audit_kind
             == fastxlsx::detail::PackageEntryAuditKind::ContentTypes,
         "worksheet replacement after removal should keep content types audit role");
@@ -9849,13 +14098,18 @@ void test_package_editor_worksheet_replacement_restores_prior_removal()
         "worksheet replacement after removal should keep source relationship audit role");
     check(worksheet_relationships_audit->owner_part == worksheet_part.value(),
         "worksheet replacement after removal should keep owner part on relationship audit");
-    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
-        "worksheet replacement after removal should not rewrite workbook relationships");
+    const auto* workbook_relationships_entry =
+        editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels");
+    check(workbook_relationships_entry != nullptr,
+        "worksheet replacement after removal should rewrite workbook relationships for calcChain cleanup");
+    check(workbook_relationships_entry->write_mode
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "worksheet replacement after removal workbook relationships should be local-DOM-rewrite");
     check(editor.edit_plan().find_package_entry("_rels/.rels") == nullptr,
         "worksheet replacement after removal should not rewrite package relationships");
     check(editor.edit_plan().find_part(workbook_part)->write_mode
-            == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "worksheet replacement after removal should keep workbook copy-original");
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "worksheet replacement after removal should update workbook calc metadata");
     check(editor.edit_plan().find_part(drawing_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "worksheet replacement after removal should keep drawing copy-original");
@@ -9882,19 +14136,26 @@ void test_package_editor_worksheet_replacement_restores_prior_removal()
 
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
-    check_preserved_source_entries(editor.reader(), output_reader, worksheet_part.zip_path());
     check(output_reader.read_entry("xl/worksheets/sheet1.xml") == restored_worksheet,
         "worksheet replacement after removal should write restored worksheet bytes");
     check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
             == source.worksheet_relationships,
         "worksheet replacement after removal should restore worksheet relationships bytes");
-    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
-        "worksheet replacement after removal should restore source content types bytes");
+    const std::string output_content_types = output_reader.read_entry("[Content_Types].xml");
+    check_not_contains(output_content_types, "calcChain+xml",
+        "worksheet replacement after removal should remove calcChain content type");
+    check(output_reader.content_types().override_for(calc_chain_part) == nullptr,
+        "worksheet replacement after removal should omit parsed calcChain content type");
     check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
         "worksheet replacement after removal should preserve package relationships bytes");
-    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
-            == source.workbook_relationships,
-        "worksheet replacement after removal should preserve workbook relationships bytes");
+    const std::string output_workbook_relationships =
+        output_reader.read_entry("xl/_rels/workbook.xml.rels");
+    check_not_contains(output_workbook_relationships, "relationships/calcChain",
+        "worksheet replacement after removal should remove calcChain workbook relationship");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "worksheet replacement after removal should write workbook fullCalcOnLoad");
+    check(output_reader.find_entry(calc_chain_part.zip_path()) == nullptr,
+        "worksheet replacement after removal should omit stale calcChain payload");
     const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
     check(workbook_relationships != nullptr,
         "worksheet replacement after removal should keep workbook relationships readable");
@@ -9903,6 +14164,8 @@ void test_package_editor_worksheet_replacement_restores_prior_removal()
         "worksheet replacement after removal should keep inbound worksheet relationship id");
     check(worksheet_link->target == "worksheets/sheet1.xml",
         "worksheet replacement after removal should not rewrite inbound worksheet target");
+    check(workbook_relationships->find_by_id("rId5") == nullptr,
+        "worksheet replacement after removal should remove calcChain relationship id");
     const auto* worksheet_relationships = output_reader.relationships_for(worksheet_part);
     check(worksheet_relationships != nullptr,
         "worksheet replacement after removal should make worksheet relationships readable again");
@@ -9943,14 +14206,18 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
         R"(<drawing r:id="rId1"/>)"
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
-    editor.replace_part(worksheet_part, stale_worksheet,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "stale worksheet replacement before removal");
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, stale_worksheet,
+        fastxlsx::detail::ReferencePolicy {}, "stale worksheet replacement before removal");
     check(editor.edit_plan().find_part(worksheet_part) != nullptr,
         "setup should record active worksheet replacement before removal");
     check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
             != nullptr,
         "setup should preserve owner relationships before final worksheet removal");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "setup worksheet replacement should request recalculation before final removal");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Remove,
+        "setup worksheet replacement should request calcChain cleanup before final removal");
 
     editor.remove_part(worksheet_part, "final worksheet removal after replacement");
 
@@ -10004,14 +14271,26 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
     check(editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels")
             == nullptr,
         "worksheet removal after replacement should clear active owner relationships audit");
-    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
-        "worksheet removal after replacement should not rewrite workbook relationships");
+    const auto* workbook_relationships_entry =
+        editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels");
+    check(workbook_relationships_entry != nullptr,
+        "worksheet removal after replacement should keep prior calcChain workbook relationships rewrite");
+    check(workbook_relationships_entry->write_mode
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "worksheet removal after replacement workbook relationships should remain local-DOM-rewrite");
     check(editor.edit_plan().find_package_entry("_rels/.rels") == nullptr,
         "worksheet removal after replacement should not rewrite package relationships");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "worksheet removal after replacement should keep prior recalculation request");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Remove,
+        "worksheet removal after replacement should keep prior calcChain cleanup policy");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "worksheet removal after replacement should keep stale calcChain removal audit");
 
     check(editor.edit_plan().find_part(workbook_part)->write_mode
-            == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "worksheet removal after replacement should keep workbook copy-original");
+            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "worksheet removal after replacement should keep workbook calc metadata rewrite");
     check(editor.edit_plan().find_part(drawing_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "worksheet removal after replacement should keep drawing copy-original");
@@ -10033,9 +14312,8 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
     check(editor.edit_plan().find_part(vba_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "worksheet removal after replacement should keep VBA copy-original");
-    check(editor.edit_plan().find_part(calc_chain_part)->write_mode
-            == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "worksheet removal after replacement should keep calcChain copy-original");
+    check(editor.edit_plan().find_part(calc_chain_part) == nullptr,
+        "worksheet removal after replacement should keep stale calcChain as removed");
     check(editor.edit_plan().find_part(opaque_extension_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
         "worksheet removal after replacement should keep unknown extension copy-original");
@@ -10065,8 +14343,14 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
         fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
         "worksheet removal after replacement output plan should rewrite content types");
     check_output_entry_plan(output_plan, "xl/_rels/workbook.xml.rels",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-        "worksheet removal after replacement output plan should preserve workbook relationships");
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "worksheet removal after replacement output plan should keep workbook relationships rewrite");
+    check_output_entry_plan(output_plan, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "worksheet removal after replacement output plan should keep workbook calc metadata rewrite");
+    check_output_entry_plan(output_plan, "xl/calcChain.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "worksheet removal after replacement output plan should omit stale calcChain");
     check_output_entry_plan(output_plan, "xl/drawings/drawing1.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
         "worksheet removal after replacement output plan should preserve drawing");
@@ -10086,13 +14370,18 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
     const std::string output_content_types = output_reader.read_entry("[Content_Types].xml");
     check_not_contains(output_content_types, "/xl/worksheets/sheet1.xml",
         "worksheet removal after replacement content types XML should omit worksheet override");
+    check_not_contains(output_content_types, "calcChain+xml",
+        "worksheet removal after replacement should keep calcChain content type removed");
+    check(output_reader.content_types().override_for(calc_chain_part) == nullptr,
+        "worksheet removal after replacement should remove parsed calcChain content type");
     check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
         "worksheet removal after replacement should preserve package relationships bytes");
-    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
-        "worksheet removal after replacement should preserve workbook bytes");
-    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
-            == source.workbook_relationships,
-        "worksheet removal after replacement should preserve workbook relationships bytes");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "worksheet removal after replacement should keep workbook recalculation metadata");
+    const std::string output_workbook_relationships =
+        output_reader.read_entry("xl/_rels/workbook.xml.rels");
+    check_not_contains(output_workbook_relationships, "relationships/calcChain",
+        "worksheet removal after replacement should keep calcChain relationship removed");
     check(output_reader.relationships_for(worksheet_part) == nullptr,
         "worksheet removal after replacement should not keep owner relationships for absent worksheet");
 
@@ -10106,6 +14395,10 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
         "worksheet removal after replacement should not rewrite inbound worksheet target");
     check(worksheet_link->target_mode == fastxlsx::detail::Relationship::TargetMode::Internal,
         "worksheet removal after replacement should keep inbound worksheet target mode");
+    check(workbook_relationships->find_by_id("rId5") == nullptr,
+        "worksheet removal after replacement should keep calcChain relationship id removed");
+    check(output_reader.find_entry(calc_chain_part.zip_path()) == nullptr,
+        "worksheet removal after replacement should omit stale calcChain payload");
 
     check(output_reader.read_entry("xl/drawings/drawing1.xml") == source.drawing,
         "worksheet removal after replacement should preserve drawing bytes");
@@ -10127,8 +14420,6 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
         "worksheet removal after replacement should preserve styles bytes");
     check(output_reader.read_entry("xl/vbaProject.bin") == source.vba_project,
         "worksheet removal after replacement should preserve VBA bytes");
-    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
-        "worksheet removal after replacement should preserve calcChain bytes");
     check(output_reader.read_entry("custom/opaque-extension.bin")
             == source.opaque_extension,
         "worksheet removal after replacement should preserve unknown extension bytes");
@@ -10148,8 +14439,6 @@ void test_package_editor_worksheet_removal_overrides_prior_replacement()
         "worksheet removal after replacement should keep styles content type override");
     check(output_reader.content_types().override_for(vba_part) != nullptr,
         "worksheet removal after replacement should keep VBA content type override");
-    check(output_reader.content_types().override_for(calc_chain_part) != nullptr,
-        "worksheet removal after replacement should keep calcChain content type override");
     check(output_reader.content_types().default_for("png") != nullptr,
         "worksheet removal after replacement should keep PNG default content type");
     check(output_reader.content_types().override_for(image_part) == nullptr,
@@ -10194,8 +14483,7 @@ void test_package_editor_drawing_replacement_restores_prior_removal()
         R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<xdr:twoCellAnchor><xdr:pic><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic></xdr:twoCellAnchor>)"
         R"(</xdr:wsDr>)";
-    editor.replace_part(drawing_part, restored_drawing,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, drawing_part, restored_drawing,
         "restored drawing after removal");
 
     check(editor.edit_plan().find_removed_part(drawing_part) == nullptr,
@@ -10203,12 +14491,12 @@ void test_package_editor_drawing_replacement_restores_prior_removal()
     const auto* drawing_plan = editor.edit_plan().find_part(drawing_part);
     check(drawing_plan != nullptr,
         "drawing replacement after removal should restore active edit-plan part");
-    check(drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "drawing replacement after removal should keep final write mode");
     check(drawing_plan->reason.find("after removal") != std::string::npos,
         "drawing replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "drawing replacement after removal should restore manifest part write mode");
     const auto* restored_content_types =
         editor.edit_plan().find_package_entry("[Content_Types].xml");
@@ -10348,17 +14636,16 @@ void test_package_editor_drawing_removal_overrides_prior_replacement()
         R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<xdr:twoCellAnchor><xdr:pic><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill></xdr:pic></xdr:twoCellAnchor>)"
         R"(</xdr:wsDr>)";
-    editor.replace_part(drawing_part, stale_drawing,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, drawing_part, stale_drawing,
         "prior drawing replacement before removal");
 
     const auto* prior_drawing_plan = editor.edit_plan().find_part(drawing_part);
     check(prior_drawing_plan != nullptr,
         "setup should record active drawing replacement before removal override");
-    check(prior_drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_drawing_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup drawing replacement should be local-DOM-rewrite before removal override");
     check_manifest_write_mode(editor, drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup drawing replacement should mirror write mode into manifest");
     const auto* prior_drawing_relationships =
         editor.edit_plan().find_package_entry("xl/drawings/_rels/drawing1.xml.rels");
@@ -10685,9 +14972,8 @@ void test_package_editor_shared_strings_replacement_restores_prior_removal()
         R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">)"
         R"(<si><t>Restored</t></si><si><t>Shared</t></si>)"
         R"(</sst>)";
-    editor.replace_part(shared_strings_part, restored_shared_strings,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "restored sharedStrings after removal");
+    replace_part_with_memory_chunks(editor, shared_strings_part,
+        restored_shared_strings, "restored sharedStrings after removal");
 
     check(editor.edit_plan().find_removed_part(shared_strings_part) == nullptr,
         "sharedStrings replacement after removal should clear stale removed-part audit");
@@ -10906,9 +15192,8 @@ void test_package_editor_shared_strings_removal_overrides_prior_replacement()
         R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
         R"(<si><t>Stale replacement</t></si>)"
         R"(</sst>)";
-    editor.replace_part(shared_strings_part, replacement_shared_strings,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "prior sharedStrings replacement before removal");
+    replace_part_with_memory_chunks(editor, shared_strings_part,
+        replacement_shared_strings, "prior sharedStrings replacement before removal");
 
     const auto* prior_shared_strings_plan =
         editor.edit_plan().find_part(shared_strings_part);
@@ -11201,8 +15486,7 @@ void test_package_editor_styles_replacement_restores_prior_removal()
         R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)"
         R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
         R"(</styleSheet>)";
-    editor.replace_part(styles_part, restored_styles,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, styles_part, restored_styles,
         "restored styles after removal");
 
     check(editor.edit_plan().find_removed_part(styles_part) == nullptr,
@@ -11210,12 +15494,12 @@ void test_package_editor_styles_replacement_restores_prior_removal()
     const auto* styles_plan = editor.edit_plan().find_part(styles_part);
     check(styles_plan != nullptr,
         "styles replacement after removal should restore active edit-plan part");
-    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "styles replacement after removal should keep final write mode");
+    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "styles replacement after removal should keep final staged write mode");
     check(styles_plan->reason.find("after removal") != std::string::npos,
         "styles replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, styles_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "styles replacement after removal should restore manifest part write mode");
     check(editor.manifest().content_types().override_for(styles_part) != nullptr,
         "styles replacement after removal should restore manifest content type override");
@@ -11265,7 +15549,7 @@ void test_package_editor_styles_replacement_restores_prior_removal()
     check(output_plan.removed_package_entries.empty(),
         "styles replacement after removal output plan should not omit metadata entries");
     check_output_entry_plan(output_plan.entries, "xl/styles.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "styles replacement after removal output plan should rewrite styles");
     check_output_entry_part_context(output_plan.entries, "xl/styles.xml",
         true, styles_part.value(),
@@ -11388,15 +15672,14 @@ void test_package_editor_styles_removal_overrides_prior_replacement()
         R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)"
         R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
         R"(</styleSheet>)";
-    editor.replace_part(styles_part, replacement_styles,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, styles_part, replacement_styles,
         "prior styles replacement before removal");
 
     const auto* prior_styles_plan = editor.edit_plan().find_part(styles_part);
     check(prior_styles_plan != nullptr,
         "setup should record active styles replacement before removal override");
-    check(prior_styles_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "setup styles replacement should be local-DOM-rewrite before removal override");
+    check(prior_styles_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "setup styles replacement should be staged before removal override");
     check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
         "setup styles replacement should not rewrite content types before removal override");
     check(editor.edit_plan().find_package_entry("xl/_rels/styles.xml.rels") == nullptr,
@@ -11655,9 +15938,8 @@ void test_package_editor_vba_project_replacement_restores_prior_removal()
     restored_vba += "PROJECT";
     restored_vba.push_back('\0');
     restored_vba += "restored";
-    editor.replace_part(vba_part, restored_vba,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "restored VBA project after removal");
+    replace_part_with_memory_chunks(
+        editor, vba_part, restored_vba, "restored VBA project after removal");
 
     check(editor.edit_plan().find_removed_part(vba_part) == nullptr,
         "VBA replacement after removal should clear stale removed-part audit");
@@ -11881,9 +16163,8 @@ void test_package_editor_vba_project_removal_overrides_prior_replacement()
     const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
 
     const std::string replacement_vba = std::string("VBA\0PROJECT\0stale", 18);
-    editor.replace_part(vba_part, replacement_vba,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "prior VBA project replacement before removal");
+    replace_part_with_memory_chunks(
+        editor, vba_part, replacement_vba, "prior VBA project replacement before removal");
     const auto* prior_vba_plan = editor.edit_plan().find_part(vba_part);
     check(prior_vba_plan != nullptr,
         "setup should record active VBA replacement before removal override");
@@ -14814,17 +19095,16 @@ void test_package_editor_chart_removal_overrides_prior_replacement()
         R"(<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">)"
         R"(<c:chart><c:title><c:tx><c:v>stale replacement</c:v></c:tx></c:title></c:chart>)"
         R"(</c:chartSpace>)";
-    editor.replace_part(chart_part, replacement_chart,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, chart_part, replacement_chart,
         "prior chart replacement before removal");
 
     const auto* prior_chart_plan = editor.edit_plan().find_part(chart_part);
     check(prior_chart_plan != nullptr,
         "setup should record active chart replacement before removal override");
-    check(prior_chart_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_chart_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup chart replacement should be local-DOM-rewrite before removal override");
     check_manifest_write_mode(editor, chart_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup chart replacement should mirror write mode into manifest");
     check(editor.manifest().content_types().override_for(chart_part) != nullptr,
         "setup chart replacement should keep chart content type override");
@@ -15112,9 +19392,8 @@ void test_package_editor_replaces_media_and_preserves_drawing_links()
 
     std::string replacement_media("\x89PNG\r\n\x1A\n", 8);
     replacement_media += "replacement-media-bytes";
-    editor.replace_part(image_part, replacement_media,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "linked fixture media stream rewrite");
+    replace_part_with_memory_chunks(
+        editor, image_part, replacement_media, "linked fixture media stream rewrite");
 
     const auto* media_plan = editor.edit_plan().find_part(image_part);
     check(media_plan != nullptr,
@@ -15315,17 +19594,16 @@ void test_package_editor_replaces_table_and_preserves_worksheet_links()
         R"(<autoFilter ref="A1:B3"/>)"
         R"(<tableColumns count="2"><tableColumn id="1" name="A"/><tableColumn id="2" name="B"/></tableColumns>)"
         R"(</table>)";
-    editor.replace_part(table_part, replacement_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, table_part, replacement_table,
         "linked fixture table local-DOM rewrite");
 
     const auto* table_plan = editor.edit_plan().find_part(table_part);
     check(table_plan != nullptr,
         "linked fixture table replacement should be present in the edit plan");
-    check(table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(table_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture table replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, table_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture table replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_part(workbook_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
@@ -15358,7 +19636,7 @@ void test_package_editor_replaces_table_and_preserves_worksheet_links()
     check(output_plan.removed_package_entries.empty(),
         "linked fixture table output plan should not omit metadata entries");
     check_output_entry_plan(output_plan.entries, "xl/tables/table1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture table output plan should local-DOM-rewrite table");
     check_output_entry_part_context(output_plan.entries, "xl/tables/table1.xml",
         true, table_part.value(),
@@ -15457,9 +19735,8 @@ void test_package_editor_replaces_shared_strings_and_preserves_workbook_links()
         R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">)"
         R"(<si><t>Gamma</t></si><si><t>Delta</t></si>)"
         R"(</sst>)";
-    editor.replace_part(shared_strings_part, replacement_shared_strings,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "linked fixture sharedStrings stream rewrite");
+    replace_part_with_memory_chunks(editor, shared_strings_part,
+        replacement_shared_strings, "linked fixture sharedStrings stream rewrite");
 
     const auto* shared_strings_plan = editor.edit_plan().find_part(shared_strings_part);
     check(shared_strings_plan != nullptr,
@@ -15663,12 +19940,10 @@ void test_package_editor_repeated_shared_strings_replacement_updates_final_state
         R"(<si><t>Final</t></si><si><t>Shared</t></si>)"
         R"(</sst>)";
 
-    editor.replace_part(shared_strings_part, stale_shared_strings,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "stale repeated sharedStrings stream rewrite");
-    editor.replace_part(shared_strings_part, final_shared_strings,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "final repeated sharedStrings stream rewrite");
+    replace_part_with_memory_chunks(editor, shared_strings_part,
+        stale_shared_strings, "stale repeated sharedStrings stream rewrite");
+    replace_part_with_memory_chunks(editor, shared_strings_part,
+        final_shared_strings, "final repeated sharedStrings stream rewrite");
 
     const auto* shared_strings_plan =
         editor.edit_plan().find_part(shared_strings_part);
@@ -15837,17 +20112,16 @@ void test_package_editor_replaces_styles_and_preserves_workbook_links()
         R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)"
         R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
         R"(</styleSheet>)";
-    editor.replace_part(styles_part, replacement_styles,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "linked fixture styles local-DOM rewrite");
+    replace_part_with_memory_chunks(editor, styles_part, replacement_styles,
+        "linked fixture styles staged rewrite");
 
     const auto* styles_plan = editor.edit_plan().find_part(styles_part);
     check(styles_plan != nullptr,
         "linked fixture styles replacement should be present in the edit plan");
-    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "linked fixture styles replacement should be local-DOM-rewrite");
+    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "linked fixture styles replacement should be staged rewrite");
     check_manifest_write_mode(editor, styles_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture styles replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry("xl/_rels/styles.xml.rels") == nullptr,
         "linked fixture styles replacement should not invent styles owner relationships audit");
@@ -15892,14 +20166,14 @@ void test_package_editor_replaces_styles_and_preserves_workbook_links()
     check(output_plan.removed_package_entries.empty(),
         "linked fixture styles replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/styles.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture styles replacement output plan should rewrite styles");
     check_output_entry_part_context(output_plan.entries, "xl/styles.xml",
         true, styles_part.value(),
         "linked fixture styles replacement output plan should classify styles");
     const auto* output_styles_plan =
         find_output_entry_plan(output_plan.entries, "xl/styles.xml");
-    check(output_styles_plan->reason.find("local-DOM rewrite") != std::string::npos,
+    check(output_styles_plan->reason.find("staged rewrite") != std::string::npos,
         "linked fixture styles replacement output plan should keep replacement reason");
     check(find_output_entry_plan(output_plan.entries, "xl/_rels/styles.xml.rels")
             == nullptr,
@@ -16059,24 +20333,22 @@ void test_package_editor_repeated_styles_replacement_updates_final_state()
         R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
         R"(</styleSheet>)";
 
-    editor.replace_part(styles_part, stale_styles,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "stale repeated styles local-DOM rewrite");
-    editor.replace_part(styles_part, final_styles,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "final repeated styles local-DOM rewrite");
+    replace_part_with_memory_chunks(editor, styles_part, stale_styles,
+        "stale repeated styles staged rewrite");
+    replace_part_with_memory_chunks(editor, styles_part, final_styles,
+        "final repeated styles staged rewrite");
 
     const auto* styles_plan = editor.edit_plan().find_part(styles_part);
     check(styles_plan != nullptr,
         "repeated styles replacement should keep an active edit-plan part");
-    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "repeated styles replacement should keep final local-DOM-rewrite mode");
+    check(styles_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated styles replacement should keep final staged write mode");
     check(styles_plan->reason.find("final repeated") != std::string::npos,
         "repeated styles replacement should keep final reason");
     check(styles_plan->reason.find("stale repeated") == std::string::npos,
         "repeated styles replacement should drop stale reason");
     check_manifest_write_mode(editor, styles_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated styles replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(styles_part) != nullptr,
         "repeated styles replacement should keep styles content type override");
@@ -16113,7 +20385,7 @@ void test_package_editor_repeated_styles_replacement_updates_final_state()
     check(output_plan.removed_package_entries.empty(),
         "repeated styles replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/styles.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated styles replacement output plan should rewrite styles");
     const auto* output_styles_plan =
         find_output_entry_plan(output_plan.entries, "xl/styles.xml");
@@ -16205,17 +20477,16 @@ void test_package_editor_replaces_chart_and_preserves_drawing_links()
         R"(<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">)"
         R"(<c:chart><c:title><c:tx><c:rich><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/></c:rich></c:tx></c:title></c:chart>)"
         R"(</c:chartSpace>)";
-    editor.replace_part(chart_part, replacement_chart,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, chart_part, replacement_chart,
         "linked fixture chart local-DOM rewrite");
 
     const auto* chart_plan = editor.edit_plan().find_part(chart_part);
     check(chart_plan != nullptr,
         "linked fixture chart replacement should be present in the edit plan");
-    check(chart_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(chart_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture chart replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, chart_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture chart replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry("xl/charts/_rels/chart1.xml.rels") == nullptr,
         "linked fixture chart replacement should not invent chart owner relationships audit");
@@ -16260,7 +20531,7 @@ void test_package_editor_replaces_chart_and_preserves_drawing_links()
     check(output_plan.removed_package_entries.empty(),
         "linked fixture chart replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/charts/chart1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture chart replacement output plan should rewrite chart");
     check_output_entry_part_context(output_plan.entries, "xl/charts/chart1.xml",
         true, chart_part.value(),
@@ -16432,9 +20703,8 @@ void test_package_editor_replaces_vba_project_and_preserves_workbook_links()
     const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
 
     const std::string replacement_vba = std::string("VBA\0PROJECT\0replacement", 23);
-    editor.replace_part(vba_part, replacement_vba,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "linked fixture VBA project stream rewrite");
+    replace_part_with_memory_chunks(
+        editor, vba_part, replacement_vba, "linked fixture VBA project stream rewrite");
 
     const auto* vba_plan = editor.edit_plan().find_part(vba_part);
     check(vba_plan != nullptr,
@@ -16680,12 +20950,10 @@ void test_package_editor_repeated_vba_project_replacement_updates_final_state()
     final_vba.push_back('\0');
     final_vba += "final";
 
-    editor.replace_part(vba_part, stale_vba,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "stale repeated VBA project stream rewrite");
-    editor.replace_part(vba_part, final_vba,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "final repeated VBA project stream rewrite");
+    replace_part_with_memory_chunks(
+        editor, vba_part, stale_vba, "stale repeated VBA project stream rewrite");
+    replace_part_with_memory_chunks(
+        editor, vba_part, final_vba, "final repeated VBA project stream rewrite");
 
     const auto* vba_plan = editor.edit_plan().find_part(vba_part);
     check(vba_plan != nullptr,
@@ -16873,17 +21141,16 @@ void test_package_editor_replaces_vml_drawing_and_preserves_worksheet_links()
     const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
 
     const std::string replacement_vml = R"(<xml><v:shape id="replacement-shape"/></xml>)";
-    editor.replace_part(vml_drawing_part, replacement_vml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, vml_drawing_part, replacement_vml,
         "linked fixture VML drawing local-DOM rewrite");
 
     const auto* vml_plan = editor.edit_plan().find_part(vml_drawing_part);
     check(vml_plan != nullptr,
         "linked fixture VML replacement should be present in the edit plan");
-    check(vml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(vml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture VML replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, vml_drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture VML replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry("xl/drawings/_rels/vmlDrawing1.vml.rels")
             == nullptr,
@@ -16941,7 +21208,7 @@ void test_package_editor_replaces_vml_drawing_and_preserves_worksheet_links()
     check(output_plan.removed_package_entries.empty(),
         "linked fixture VML replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture VML replacement output plan should rewrite VML drawing");
     check_output_entry_part_context(output_plan.entries, "xl/drawings/vmlDrawing1.vml",
         true, vml_drawing_part.value(),
@@ -17132,8 +21399,7 @@ void test_package_editor_replaces_percent_decoded_drawing_and_preserves_encoded_
     const std::string replacement_drawing =
         R"(<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">)"
         R"(<xdr:absoluteAnchor/></xdr:wsDr>)";
-    editor.replace_part(percent_encoded_drawing_part, replacement_drawing,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, percent_encoded_drawing_part, replacement_drawing,
         "linked fixture percent-decoded drawing local-DOM rewrite");
 
     const auto* percent_encoded_drawing_plan =
@@ -17141,10 +21407,10 @@ void test_package_editor_replaces_percent_decoded_drawing_and_preserves_encoded_
     check(percent_encoded_drawing_plan != nullptr,
         "linked fixture percent-decoded drawing replacement should be present in the edit plan");
     check(percent_encoded_drawing_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture percent-decoded drawing replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, percent_encoded_drawing_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture percent-decoded drawing replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry("xl/drawings/_rels/drawing space.xml.rels")
             == nullptr,
@@ -17202,7 +21468,7 @@ void test_package_editor_replaces_percent_decoded_drawing_and_preserves_encoded_
     check(output_plan.removed_package_entries.empty(),
         "linked fixture percent-decoded drawing replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/drawings/drawing space.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture percent-decoded drawing replacement output plan should rewrite drawing");
     check_output_entry_part_context(output_plan.entries, "xl/drawings/drawing space.xml",
         true, percent_encoded_drawing_part.value(),
@@ -17390,7 +21656,7 @@ void test_package_editor_worksheet_rewrite_preserves_registered_comments_part()
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* comments_plan = editor.edit_plan().find_part(comments_part);
     check(comments_plan != nullptr,
@@ -17495,7 +21761,7 @@ void test_package_editor_worksheet_rewrite_preserves_threaded_comments_and_perso
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="1"><c r="A1"><v>84</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* threaded_plan = editor.edit_plan().find_part(threaded_comments_part);
     check(threaded_plan != nullptr,
@@ -17634,7 +21900,7 @@ void test_package_editor_worksheet_rewrite_preserves_pivot_table_cache_chain()
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="1"><c r="A1"><v>128</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* pivot_table_plan = editor.edit_plan().find_part(pivot_table_part);
     check(pivot_table_plan != nullptr,
@@ -17973,17 +22239,16 @@ void test_package_editor_replaces_pivot_table_and_preserves_cache_chain()
         R"(<location ref="G3:H8" firstHeaderRow="1" firstDataRow="2" firstDataCol="1"/>)"
         R"(<pivotFields count="1"><pivotField axis="axisCol"/></pivotFields>)"
         R"(</pivotTableDefinition>)";
-    editor.replace_part(pivot_table_part, replacement_pivot_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_table_part, replacement_pivot_table,
         "pivot table local-DOM rewrite");
 
     const auto* pivot_table_plan = editor.edit_plan().find_part(pivot_table_part);
     check(pivot_table_plan != nullptr,
         "pivot table replacement should be present in the edit plan");
-    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "pivot table replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, pivot_table_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "pivot table replacement should mirror write mode into manifest");
     const auto* pivot_table_relationships_plan =
         editor.edit_plan().find_package_entry("xl/pivotTables/_rels/pivotTable1.xml.rels");
@@ -18124,24 +22389,22 @@ void test_package_editor_repeated_pivot_table_replacement_updates_final_state()
         R"(<pivotFields count="1"><pivotField axis="axisCol"/></pivotFields>)"
         R"(</pivotTableDefinition>)";
 
-    editor.replace_part(pivot_table_part, stale_pivot_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_table_part, stale_pivot_table,
         "stale repeated pivot table local-DOM rewrite");
-    editor.replace_part(pivot_table_part, final_pivot_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_table_part, final_pivot_table,
         "final repeated pivot table local-DOM rewrite");
 
     const auto* pivot_table_plan = editor.edit_plan().find_part(pivot_table_part);
     check(pivot_table_plan != nullptr,
         "repeated pivot table replacement should keep an active edit-plan part");
-    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated pivot table replacement should keep final local-DOM-rewrite mode");
     check(pivot_table_plan->reason.find("final repeated") != std::string::npos,
         "repeated pivot table replacement should keep final reason");
     check(pivot_table_plan->reason.find("stale repeated") == std::string::npos,
         "repeated pivot table replacement should drop stale reason");
     check_manifest_write_mode(editor, pivot_table_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated pivot table replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(pivot_table_part) != nullptr,
         "repeated pivot table replacement should keep pivot table content type override");
@@ -18194,7 +22457,7 @@ void test_package_editor_repeated_pivot_table_replacement_updates_final_state()
     check(output_plan.removed_package_entries.empty(),
         "repeated pivot table replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated pivot table replacement output plan should rewrite pivot table");
     const auto* output_pivot_table_plan =
         find_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml");
@@ -18499,8 +22762,7 @@ void test_package_editor_pivot_table_replacement_restores_prior_removal()
         R"(<location ref="F3:G8" firstHeaderRow="1" firstDataRow="2" firstDataCol="1"/>)"
         R"(<pivotFields count="1"><pivotField axis="axisRow"/></pivotFields>)"
         R"(</pivotTableDefinition>)";
-    editor.replace_part(pivot_table_part, restored_pivot_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_table_part, restored_pivot_table,
         "restored pivot table after removal");
 
     check(editor.edit_plan().find_removed_part(pivot_table_part) == nullptr,
@@ -18511,12 +22773,12 @@ void test_package_editor_pivot_table_replacement_restores_prior_removal()
     const auto* pivot_table_plan = editor.edit_plan().find_part(pivot_table_part);
     check(pivot_table_plan != nullptr,
         "pivot table replacement after removal should restore active edit-plan part");
-    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(pivot_table_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "pivot table replacement after removal should keep final write mode");
     check(pivot_table_plan->reason.find("after removal") != std::string::npos,
         "pivot table replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, pivot_table_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "pivot table replacement after removal should restore manifest write mode");
 
     const auto* pivot_table_relationships_audit =
@@ -18566,7 +22828,7 @@ void test_package_editor_pivot_table_replacement_restores_prior_removal()
     check(output_plan.relationship_target_audits.empty(),
         "pivot table replacement after removal output plan should not invent dependency audits");
     check_output_entry_plan(output_plan.entries, "xl/pivotTables/pivotTable1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "pivot table replacement after removal output plan should rewrite pivot table part");
     check_output_entry_part_context(output_plan.entries, "xl/pivotTables/pivotTable1.xml",
         true, pivot_table_part.value(),
@@ -18725,8 +22987,7 @@ void test_package_editor_pivot_table_removal_overrides_prior_replacement()
         R"(<location ref="H3:I8" firstHeaderRow="1" firstDataRow="2" firstDataCol="1"/>)"
         R"(<pivotFields count="1"><pivotField axis="axisCol"/></pivotFields>)"
         R"(</pivotTableDefinition>)";
-    editor.replace_part(pivot_table_part, stale_pivot_table,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_table_part, stale_pivot_table,
         "stale pivot table replacement before removal");
     check(editor.edit_plan().find_part(pivot_table_part) != nullptr,
         "setup should record active pivot table replacement before removal");
@@ -18987,8 +23248,7 @@ void test_package_editor_replaces_pivot_cache_definition_and_preserves_cache_rec
         R"(<cacheFields count="1"><cacheField name="PatchedValue" numFmtId="0"><sharedItems containsNumber="1"/></cacheField></cacheFields>)"
         R"(<cacheRecords r:id="rIdPivotRecords"/>)"
         R"(</pivotCacheDefinition>)";
-    editor.replace_part(pivot_cache_definition_part, replacement_cache_definition,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_cache_definition_part, replacement_cache_definition,
         "pivot cache definition local-DOM rewrite");
 
     const auto* cache_definition_plan =
@@ -18996,10 +23256,10 @@ void test_package_editor_replaces_pivot_cache_definition_and_preserves_cache_rec
     check(cache_definition_plan != nullptr,
         "pivot cache definition replacement should be present in the edit plan");
     check(cache_definition_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "pivot cache definition replacement should be local-DOM-rewrite");
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "pivot cache definition replacement should be staged stream-rewrite");
     check_manifest_write_mode(editor, pivot_cache_definition_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "pivot cache definition replacement should mirror write mode into manifest");
     const auto* cache_definition_relationships_plan =
         editor.edit_plan().find_package_entry(
@@ -19304,8 +23564,7 @@ void test_package_editor_pivot_cache_definition_replacement_restores_prior_remov
         R"(<cacheFields count="1"><cacheField name="RestoredValue" numFmtId="0"><sharedItems containsNumber="1"/></cacheField></cacheFields>)"
         R"(<cacheRecords r:id="rIdPivotRecords"/>)"
         R"(</pivotCacheDefinition>)";
-    editor.replace_part(pivot_cache_definition_part, restored_cache_definition,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_cache_definition_part, restored_cache_definition,
         "restored pivot cache definition after removal");
 
     check(editor.edit_plan().find_removed_part(pivot_cache_definition_part) == nullptr,
@@ -19318,12 +23577,12 @@ void test_package_editor_pivot_cache_definition_replacement_restores_prior_remov
     check(cache_definition_plan != nullptr,
         "pivot cache definition replacement after removal should restore active edit-plan part");
     check(cache_definition_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "pivot cache definition replacement after removal should keep final write mode");
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "pivot cache definition replacement after removal should keep final staged write mode");
     check(cache_definition_plan->reason.find("after removal") != std::string::npos,
         "pivot cache definition replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, pivot_cache_definition_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "pivot cache definition replacement after removal should restore manifest write mode");
 
     const auto* cache_relationships_audit =
@@ -19368,7 +23627,7 @@ void test_package_editor_pivot_cache_definition_replacement_restores_prior_remov
     check(output_plan.relationship_target_audits.empty(),
         "pivot cache definition replacement after removal output plan should not invent dependency audits");
     check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheDefinition1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "pivot cache definition replacement after removal output plan should rewrite cache definition");
     check_output_entry_part_context(output_plan.entries,
         "xl/pivotCache/pivotCacheDefinition1.xml", true,
@@ -19508,11 +23767,9 @@ void test_package_editor_repeated_pivot_cache_definition_replacement_updates_fin
         R"(<cacheRecords r:id="rIdPivotRecords"/>)"
         R"(</pivotCacheDefinition>)";
 
-    editor.replace_part(pivot_cache_definition_part, stale_cache_definition,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_cache_definition_part, stale_cache_definition,
         "stale repeated pivot cache definition local-DOM rewrite");
-    editor.replace_part(pivot_cache_definition_part, final_cache_definition,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_cache_definition_part, final_cache_definition,
         "final repeated pivot cache definition local-DOM rewrite");
 
     const auto* cache_definition_plan =
@@ -19520,14 +23777,14 @@ void test_package_editor_repeated_pivot_cache_definition_replacement_updates_fin
     check(cache_definition_plan != nullptr,
         "repeated pivot cache definition replacement should keep an active edit-plan part");
     check(cache_definition_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "repeated pivot cache definition replacement should keep final local-DOM-rewrite mode");
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated pivot cache definition replacement should keep final stream-rewrite mode");
     check(cache_definition_plan->reason.find("final repeated") != std::string::npos,
         "repeated pivot cache definition replacement should keep final reason");
     check(cache_definition_plan->reason.find("stale repeated") == std::string::npos,
         "repeated pivot cache definition replacement should drop stale reason");
     check_manifest_write_mode(editor, pivot_cache_definition_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated pivot cache definition replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(pivot_cache_definition_part) != nullptr,
         "repeated pivot cache definition replacement should keep cache definition content type override");
@@ -19580,7 +23837,7 @@ void test_package_editor_repeated_pivot_cache_definition_replacement_updates_fin
     check(output_plan.removed_package_entries.empty(),
         "repeated pivot cache definition replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/pivotCache/pivotCacheDefinition1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated pivot cache definition replacement output plan should rewrite cache definition");
     const auto* output_cache_definition_plan =
         find_output_entry_plan(output_plan.entries,
@@ -19708,8 +23965,7 @@ void test_package_editor_pivot_cache_definition_removal_overrides_prior_replacem
         R"(<cacheFields count="1"><cacheField name="StaleValue" numFmtId="0"><sharedItems containsNumber="1"/></cacheField></cacheFields>)"
         R"(<cacheRecords r:id="rIdPivotRecords"/>)"
         R"(</pivotCacheDefinition>)";
-    editor.replace_part(pivot_cache_definition_part, stale_cache_definition,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, pivot_cache_definition_part, stale_cache_definition,
         "stale pivot cache definition replacement before removal");
     check(editor.edit_plan().find_part(pivot_cache_definition_part) != nullptr,
         "setup should record active pivot cache definition replacement before removal");
@@ -19928,9 +24184,8 @@ void test_package_editor_replaces_pivot_cache_records_and_preserves_cache_defini
         R"(<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2">)"
         R"(<r><n v="64"/></r><r><n v="128"/></r>)"
         R"(</pivotCacheRecords>)";
-    editor.replace_part(pivot_cache_records_part, replacement_cache_records,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "pivot cache records stream rewrite");
+    replace_part_with_memory_chunks(editor, pivot_cache_records_part,
+        replacement_cache_records, "pivot cache records stream rewrite");
 
     const auto* cache_records_plan =
         editor.edit_plan().find_part(pivot_cache_records_part);
@@ -20197,9 +24452,8 @@ void test_package_editor_pivot_cache_records_replacement_restores_prior_removal(
         R"(<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3">)"
         R"(<r><n v="256"/></r><r><n v="512"/></r><r><n v="1024"/></r>)"
         R"(</pivotCacheRecords>)";
-    editor.replace_part(pivot_cache_records_part, restored_cache_records,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "restored pivot cache records after removal");
+    replace_part_with_memory_chunks(editor, pivot_cache_records_part,
+        restored_cache_records, "restored pivot cache records after removal");
 
     check(editor.edit_plan().find_removed_part(pivot_cache_records_part) == nullptr,
         "pivot cache records replacement after removal should clear stale removed-part audit");
@@ -20377,12 +24631,10 @@ void test_package_editor_repeated_pivot_cache_records_replacement_updates_final_
         R"(<r><n v="128"/></r><r><n v="256"/></r><r><n v="512"/></r><r><n v="1024"/></r>)"
         R"(</pivotCacheRecords>)";
 
-    editor.replace_part(pivot_cache_records_part, stale_cache_records,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "stale repeated pivot cache records stream rewrite");
-    editor.replace_part(pivot_cache_records_part, final_cache_records,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "final repeated pivot cache records stream rewrite");
+    replace_part_with_memory_chunks(editor, pivot_cache_records_part,
+        stale_cache_records, "stale repeated pivot cache records stream rewrite");
+    replace_part_with_memory_chunks(editor, pivot_cache_records_part,
+        final_cache_records, "final repeated pivot cache records stream rewrite");
 
     const auto* cache_records_plan = editor.edit_plan().find_part(pivot_cache_records_part);
     check(cache_records_plan != nullptr,
@@ -20554,9 +24806,8 @@ void test_package_editor_pivot_cache_records_removal_overrides_prior_replacement
         R"(<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2">)"
         R"(<r><n v="2048"/></r><r><n v="4096"/></r>)"
         R"(</pivotCacheRecords>)";
-    editor.replace_part(pivot_cache_records_part, stale_cache_records,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "stale pivot cache records replacement before removal");
+    replace_part_with_memory_chunks(editor, pivot_cache_records_part,
+        stale_cache_records, "stale pivot cache records replacement before removal");
     check(editor.edit_plan().find_part(pivot_cache_records_part) != nullptr,
         "setup should record active pivot cache records replacement before removal");
     check(editor.edit_plan().find_package_entry(pivot_cache_records_relationships_entry)
@@ -20783,7 +25034,7 @@ void test_package_editor_worksheet_rewrite_preserves_external_links()
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="1"><c r="A1"><v>512</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
     check(external_link_plan != nullptr,
@@ -20983,17 +25234,16 @@ void test_package_editor_replaces_external_link_and_preserves_workbook_links()
         R"(<sheetNames><sheetName val="PatchedExternalSheet"/></sheetNames>)"
         R"(</externalBook>)"
         R"(</externalLink>)";
-    editor.replace_part(external_link_part, replacement_external_link,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, external_link_part, replacement_external_link,
         "externalLink local-DOM rewrite");
 
     const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
     check(external_link_plan != nullptr,
         "externalLink replacement should be present in the edit plan");
-    check(external_link_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(external_link_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "externalLink replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, external_link_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "externalLink replacement should mirror write mode into manifest");
     const auto* external_link_relationships_plan =
         editor.edit_plan().find_package_entry(
@@ -21115,25 +25365,23 @@ void test_package_editor_repeated_external_link_replacement_updates_final_state(
         R"(</externalBook>)"
         R"(</externalLink>)";
 
-    editor.replace_part(external_link_part, stale_external_link,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, external_link_part, stale_external_link,
         "stale repeated externalLink local-DOM rewrite");
-    editor.replace_part(external_link_part, final_external_link,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, external_link_part, final_external_link,
         "final repeated externalLink local-DOM rewrite");
 
     const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
     check(external_link_plan != nullptr,
         "repeated externalLink replacement should keep an active edit-plan part");
     check(external_link_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated externalLink replacement should keep final local-DOM-rewrite mode");
     check(external_link_plan->reason.find("final repeated") != std::string::npos,
         "repeated externalLink replacement should keep final reason");
     check(external_link_plan->reason.find("stale repeated") == std::string::npos,
         "repeated externalLink replacement should drop stale reason");
     check_manifest_write_mode(editor, external_link_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated externalLink replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(external_link_part) != nullptr,
         "repeated externalLink replacement should keep externalLink content type override");
@@ -21180,7 +25428,7 @@ void test_package_editor_repeated_external_link_replacement_updates_final_state(
     check(output_plan.removed_package_entries.empty(),
         "repeated externalLink replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated externalLink replacement output plan should rewrite externalLink");
     const auto* output_external_link_plan =
         find_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml");
@@ -21415,8 +25663,7 @@ void test_package_editor_external_link_replacement_restores_prior_removal()
         R"(<sheetNames><sheetName val="RestoredExternalSheet"/></sheetNames>)"
         R"(</externalBook>)"
         R"(</externalLink>)";
-    editor.replace_part(external_link_part, restored_external_link,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, external_link_part, restored_external_link,
         "restored externalLink after removal");
 
     check(editor.edit_plan().find_removed_part(external_link_part) == nullptr,
@@ -21429,12 +25676,12 @@ void test_package_editor_external_link_replacement_restores_prior_removal()
     check(external_link_plan != nullptr,
         "externalLink replacement after removal should restore active edit-plan part");
     check(external_link_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "externalLink replacement after removal should keep final write mode");
     check(external_link_plan->reason.find("after removal") != std::string::npos,
         "externalLink replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, external_link_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "externalLink replacement after removal should restore manifest part write mode");
     const auto* external_link_relationships_audit =
         editor.edit_plan().find_package_entry(
@@ -21477,7 +25724,7 @@ void test_package_editor_external_link_replacement_restores_prior_removal()
     check(output_plan.removed_package_entries.empty(),
         "externalLink replacement after removal output plan should clear stale omitted entries");
     check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "externalLink replacement after removal output plan should rewrite externalLink part");
     check_output_entry_part_context(output_plan.entries,
         "xl/externalLinks/externalLink1.xml", true, external_link_part.value(),
@@ -21597,8 +25844,7 @@ void test_package_editor_external_link_removal_overrides_prior_replacement()
         R"(<sheetNames><sheetName val="StaleExternalSheet"/></sheetNames>)"
         R"(</externalBook>)"
         R"(</externalLink>)";
-    editor.replace_part(external_link_part, stale_external_link,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, external_link_part, stale_external_link,
         "stale externalLink replacement before removal");
     check(editor.edit_plan().find_part(external_link_part) != nullptr,
         "setup should record active externalLink replacement before removal");
@@ -21786,7 +26032,7 @@ void test_package_editor_worksheet_rewrite_preserves_custom_xml_parts()
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="1"><c r="A1"><v>2048</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
     check(custom_xml_plan != nullptr,
@@ -21970,19 +26216,18 @@ void test_package_editor_replaces_custom_xml_and_preserves_package_links()
         R"(<fx:payload xmlns:fx="urn:fastxlsx:test-custom-xml">)"
         R"(<fx:value>Replacement custom XML payload</fx:value>)"
         R"(</fx:payload>)";
-    editor.replace_part(custom_xml_part, replacement_custom_xml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_part, replacement_custom_xml,
         "custom XML item replacement");
 
     const auto* custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
     check(custom_xml_plan != nullptr,
         "custom XML replacement should keep target part in edit plan");
-    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML replacement should record final write mode");
     check(custom_xml_plan->reason.find("custom XML") != std::string::npos,
         "custom XML replacement should keep readable replacement reason");
     check_manifest_write_mode(editor, custom_xml_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML replacement should update manifest write mode");
     const auto* custom_xml_relationships_audit =
         editor.edit_plan().find_package_entry("customXml/_rels/item1.xml.rels");
@@ -22025,7 +26270,7 @@ void test_package_editor_replaces_custom_xml_and_preserves_package_links()
     check(output_plan.removed_package_entries.empty(),
         "custom XML replacement output plan should not expose removed package entries");
     check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "custom XML replacement output plan should rewrite custom XML item");
     check_output_entry_part_context(output_plan.entries, "customXml/item1.xml",
         true, custom_xml_part.value(),
@@ -22167,24 +26412,22 @@ void test_package_editor_repeated_custom_xml_replacement_updates_final_state()
         R"(<fx:value>Final custom XML payload</fx:value>)"
         R"(</fx:payload>)";
 
-    editor.replace_part(custom_xml_part, stale_custom_xml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_part, stale_custom_xml,
         "stale repeated custom XML item replacement");
-    editor.replace_part(custom_xml_part, final_custom_xml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_part, final_custom_xml,
         "final repeated custom XML item replacement");
 
     const auto* custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
     check(custom_xml_plan != nullptr,
         "repeated custom XML replacement should keep an active edit-plan part");
-    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated custom XML replacement should keep final local-DOM-rewrite mode");
     check(custom_xml_plan->reason.find("final repeated") != std::string::npos,
         "repeated custom XML replacement should keep final reason");
     check(custom_xml_plan->reason.find("stale repeated") == std::string::npos,
         "repeated custom XML replacement should drop stale reason");
     check_manifest_write_mode(editor, custom_xml_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated custom XML replacement should mirror final write mode into manifest");
     const auto* custom_xml_content_type =
         editor.manifest().content_types().content_type_for(custom_xml_part);
@@ -22236,7 +26479,7 @@ void test_package_editor_repeated_custom_xml_replacement_updates_final_state()
     check(output_plan.removed_package_entries.empty(),
         "repeated custom XML replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated custom XML replacement output plan should rewrite custom XML item");
     const auto* output_custom_xml_plan =
         find_output_entry_plan(output_plan.entries, "customXml/item1.xml");
@@ -22558,8 +26801,7 @@ void test_package_editor_custom_xml_replacement_restores_prior_removal()
         R"(<fx:payload xmlns:fx="urn:fastxlsx:test-custom-xml">)"
         R"(<fx:value>Restored custom XML payload</fx:value>)"
         R"(</fx:payload>)";
-    editor.replace_part(custom_xml_part, restored_custom_xml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_part, restored_custom_xml,
         "restored custom XML after removal");
 
     check(editor.edit_plan().find_removed_part(custom_xml_part) == nullptr,
@@ -22570,12 +26812,12 @@ void test_package_editor_custom_xml_replacement_restores_prior_removal()
     const auto* custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
     check(custom_xml_plan != nullptr,
         "custom XML replacement after removal should restore active edit-plan part");
-    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML replacement after removal should keep final write mode");
     check(custom_xml_plan->reason.find("after removal") != std::string::npos,
         "custom XML replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, custom_xml_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML replacement after removal should restore manifest part write mode");
     const auto* custom_xml_relationships_audit =
         editor.edit_plan().find_package_entry("customXml/_rels/item1.xml.rels");
@@ -22618,7 +26860,7 @@ void test_package_editor_custom_xml_replacement_restores_prior_removal()
     check(output_plan.removed_package_entries.empty(),
         "custom XML replacement after removal output plan should clear stale removed package-entry audits");
     check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "custom XML replacement after removal output plan should rewrite custom XML item");
     check_output_entry_part_context(output_plan.entries, "customXml/item1.xml",
         true, custom_xml_part.value(),
@@ -22739,13 +26981,12 @@ void test_package_editor_custom_xml_removal_overrides_prior_replacement()
         R"(<fx:payload xmlns:fx="urn:fastxlsx:test-custom-xml">)"
         R"(<fx:value>Stale custom XML payload</fx:value>)"
         R"(</fx:payload>)";
-    editor.replace_part(custom_xml_part, stale_custom_xml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_part, stale_custom_xml,
         "prior custom XML replacement before removal");
     const auto* prior_custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
     check(prior_custom_xml_plan != nullptr,
         "setup should record active custom XML replacement before removal override");
-    check(prior_custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup custom XML replacement should be local-DOM-rewrite before removal override");
     check(editor.edit_plan().find_package_entry("customXml/_rels/item1.xml.rels")
             != nullptr,
@@ -22930,8 +27171,7 @@ void test_package_editor_replaces_custom_xml_properties_and_preserves_owner_link
         R"(<ds:datastoreItem ds:itemID="{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">)"
         R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:replacement"/></ds:schemaRefs>)"
         R"(</ds:datastoreItem>)";
-    editor.replace_part(custom_xml_props_part, replacement_properties,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_props_part, replacement_properties,
         "custom XML properties replacement");
 
     const auto* custom_xml_props_plan =
@@ -22939,12 +27179,12 @@ void test_package_editor_replaces_custom_xml_properties_and_preserves_owner_link
     check(custom_xml_props_plan != nullptr,
         "custom XML properties replacement should keep target part in edit plan");
     check(custom_xml_props_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML properties replacement should record final write mode");
     check(custom_xml_props_plan->reason.find("properties") != std::string::npos,
         "custom XML properties replacement should keep readable reason");
     check_manifest_write_mode(editor, custom_xml_props_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML properties replacement should update manifest write mode");
     check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
         "custom XML properties replacement should not rewrite content types");
@@ -22979,7 +27219,7 @@ void test_package_editor_replaces_custom_xml_properties_and_preserves_owner_link
     check(output_plan.removed_package_entries.empty(),
         "custom XML properties replacement output plan should not expose removed package entries");
     check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "custom XML properties replacement output plan should rewrite properties part");
     check_output_entry_part_context(output_plan.entries, "customXml/itemProps1.xml",
         true, custom_xml_props_part.value(),
@@ -23095,11 +27335,9 @@ void test_package_editor_repeated_custom_xml_properties_replacement_updates_fina
         R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:final"/></ds:schemaRefs>)"
         R"(</ds:datastoreItem>)";
 
-    editor.replace_part(custom_xml_props_part, stale_properties,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_props_part, stale_properties,
         "stale repeated custom XML properties replacement");
-    editor.replace_part(custom_xml_props_part, final_properties,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_props_part, final_properties,
         "final repeated custom XML properties replacement");
 
     const auto* custom_xml_props_plan =
@@ -23107,14 +27345,14 @@ void test_package_editor_repeated_custom_xml_properties_replacement_updates_fina
     check(custom_xml_props_plan != nullptr,
         "repeated custom XML properties replacement should keep an active edit-plan part");
     check(custom_xml_props_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated custom XML properties replacement should keep final local-DOM-rewrite mode");
     check(custom_xml_props_plan->reason.find("final repeated") != std::string::npos,
         "repeated custom XML properties replacement should keep final reason");
     check(custom_xml_props_plan->reason.find("stale repeated") == std::string::npos,
         "repeated custom XML properties replacement should drop stale reason");
     check_manifest_write_mode(editor, custom_xml_props_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated custom XML properties replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(custom_xml_props_part) != nullptr,
         "repeated custom XML properties replacement should keep properties content type override");
@@ -23158,7 +27396,7 @@ void test_package_editor_repeated_custom_xml_properties_replacement_updates_fina
     check(output_plan.removed_package_entries.empty(),
         "repeated custom XML properties replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated custom XML properties replacement output plan should rewrite properties part");
     const auto* output_props_plan =
         find_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml");
@@ -23397,8 +27635,7 @@ void test_package_editor_custom_xml_properties_replacement_restores_prior_remova
         R"(<ds:datastoreItem ds:itemID="{bbbbbbbb-cccc-dddd-eeee-ffffffffffff}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">)"
         R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:restored"/></ds:schemaRefs>)"
         R"(</ds:datastoreItem>)";
-    editor.replace_part(custom_xml_props_part, restored_properties,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_props_part, restored_properties,
         "restored custom XML properties after removal");
 
     check(editor.edit_plan().find_removed_part(custom_xml_props_part) == nullptr,
@@ -23408,12 +27645,12 @@ void test_package_editor_custom_xml_properties_replacement_restores_prior_remova
     check(custom_xml_props_plan != nullptr,
         "custom XML properties replacement after removal should restore active part");
     check(custom_xml_props_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML properties replacement after removal should keep final write mode");
     check(custom_xml_props_plan->reason.find("after removal") != std::string::npos,
         "custom XML properties replacement after removal should keep final reason");
     check_manifest_write_mode(editor, custom_xml_props_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "custom XML properties replacement after removal should restore manifest write mode");
     check(editor.manifest().content_types().override_for(custom_xml_props_part) != nullptr,
         "custom XML properties replacement after removal should restore manifest content type override");
@@ -23452,7 +27689,7 @@ void test_package_editor_custom_xml_properties_replacement_restores_prior_remova
     check(output_plan.relationship_target_audits.empty(),
         "custom XML properties replacement after removal output plan should not invent dependency audits");
     check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "custom XML properties replacement after removal output plan should rewrite properties part");
     check_output_entry_part_context(output_plan.entries, "customXml/itemProps1.xml",
         true, custom_xml_props_part.value(),
@@ -23556,15 +27793,14 @@ void test_package_editor_custom_xml_properties_removal_overrides_prior_replaceme
         R"(<ds:datastoreItem ds:itemID="{cccccccc-dddd-eeee-ffff-111111111111}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">)"
         R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:stale"/></ds:schemaRefs>)"
         R"(</ds:datastoreItem>)";
-    editor.replace_part(custom_xml_props_part, stale_properties,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_props_part, stale_properties,
         "prior custom XML properties replacement before removal");
     const auto* prior_props_plan =
         editor.edit_plan().find_part(custom_xml_props_part);
     check(prior_props_plan != nullptr,
         "setup should record active custom XML properties replacement before removal");
-    check(prior_props_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "setup custom XML properties replacement should be local-DOM-rewrite before removal");
+    check(prior_props_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "setup custom XML properties replacement should be stream-rewrite before removal");
 
     editor.remove_part(custom_xml_props_part,
         "explicit custom XML properties removal after replacement");
@@ -23736,8 +27972,7 @@ void test_package_editor_custom_xml_item_removal_then_properties_replacement_kee
         R"(<ds:datastoreItem ds:itemID="{dddddddd-eeee-ffff-1111-222222222222}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml">)"
         R"(<ds:schemaRefs><ds:schemaRef ds:uri="urn:fastxlsx:properties-after-item-removal"/></ds:schemaRefs>)"
         R"(</ds:datastoreItem>)";
-    editor.replace_part(custom_xml_props_part, replacement_properties,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_props_part, replacement_properties,
         "custom XML properties replacement after item removal");
 
     check(editor.edit_plan().find_removed_part(custom_xml_part) != nullptr,
@@ -23751,14 +27986,14 @@ void test_package_editor_custom_xml_item_removal_then_properties_replacement_kee
         editor.edit_plan().find_part(custom_xml_props_part);
     check(properties_plan != nullptr,
         "properties replacement after item removal should keep active properties part");
-    check(properties_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "properties replacement after item removal should keep final properties write mode");
+    check(properties_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "properties replacement after item removal should keep final properties stream-rewrite mode");
     check(properties_plan->reason.find("after item removal") != std::string::npos,
         "properties replacement after item removal should keep final reason");
     check(editor.manifest().find_part(custom_xml_part) == nullptr,
         "properties replacement after item removal should keep custom XML item removed");
     check_manifest_write_mode(editor, custom_xml_props_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "properties replacement after item removal should mark properties part rewritten");
     check(editor.manifest().content_types().override_for(custom_xml_props_part) != nullptr,
         "properties replacement after item removal should keep properties content type override");
@@ -23833,7 +28068,7 @@ void test_package_editor_custom_xml_item_removal_then_properties_replacement_kee
     check(output_custom_xml_relationships_plan->owner_part == custom_xml_part.value(),
         "properties replacement after item removal output plan should keep owner relationship context");
     check_output_entry_plan(output_plan.entries, "customXml/itemProps1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "properties replacement after item removal output plan should rewrite properties part");
     check_output_entry_part_context(output_plan.entries, "customXml/itemProps1.xml",
         true, custom_xml_props_part.value(),
@@ -23942,8 +28177,7 @@ void test_package_editor_custom_xml_properties_removal_then_item_replacement_kee
         R"(<fx:payload xmlns:fx="urn:fastxlsx:test-custom-xml">)"
         R"(<fx:value>Custom XML replacement after properties removal</fx:value>)"
         R"(</fx:payload>)";
-    editor.replace_part(custom_xml_part, replacement_custom_xml,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, custom_xml_part, replacement_custom_xml,
         "custom XML item replacement after properties removal");
 
     check(editor.edit_plan().find_removed_part(custom_xml_props_part) != nullptr,
@@ -23957,12 +28191,12 @@ void test_package_editor_custom_xml_properties_removal_then_item_replacement_kee
     const auto* custom_xml_plan = editor.edit_plan().find_part(custom_xml_part);
     check(custom_xml_plan != nullptr,
         "item replacement after properties removal should keep active custom XML item");
-    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(custom_xml_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "item replacement after properties removal should keep final item write mode");
     check(custom_xml_plan->reason.find("after properties removal") != std::string::npos,
         "item replacement after properties removal should keep final reason");
     check_manifest_write_mode(editor, custom_xml_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "item replacement after properties removal should mark item rewritten");
     const auto* owner_relationships_entry =
         editor.edit_plan().find_package_entry("customXml/_rels/item1.xml.rels");
@@ -24043,7 +28277,7 @@ void test_package_editor_custom_xml_properties_removal_then_item_replacement_kee
             == fastxlsx::detail::PackageEntryAuditKind::ContentTypes,
         "item replacement after properties removal output plan should classify content types metadata");
     check_output_entry_plan(output_plan.entries, "customXml/item1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "item replacement after properties removal output plan should rewrite custom XML item");
     check_output_entry_part_context(output_plan.entries, "customXml/item1.xml",
         true, custom_xml_part.value(),
@@ -24157,17 +28391,16 @@ void test_package_editor_replaces_comments_and_preserves_worksheet_links()
         R"(<authors><author>Patch</author></authors>)"
         R"(<commentList><comment ref="A1" authorId="0"><text><t>patched comment</t></text></comment></commentList>)"
         R"(</comments>)";
-    editor.replace_part(comments_part, replacement_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, comments_part, replacement_comments,
         "linked fixture comments local-DOM rewrite");
 
     const auto* comments_plan = editor.edit_plan().find_part(comments_part);
     check(comments_plan != nullptr,
         "linked fixture comments replacement should be present in the edit plan");
-    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture comments replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, comments_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "linked fixture comments replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry("xl/comments/_rels/comment1.xml.rels")
             == nullptr,
@@ -24196,7 +28429,7 @@ void test_package_editor_replaces_comments_and_preserves_worksheet_links()
     check(output_plan.removed_package_entries.empty(),
         "linked fixture comments replacement output plan should not expose removed package entries");
     check_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "linked fixture comments replacement output plan should rewrite comments part");
     check_output_entry_part_context(output_plan.entries, "xl/comments/comment1.xml",
         true, comments_part.value(),
@@ -24299,24 +28532,22 @@ void test_package_editor_repeated_comments_replacement_updates_final_state()
         R"(<commentList><comment ref="A1" authorId="0"><text><t>final comment</t></text></comment></commentList>)"
         R"(</comments>)";
 
-    editor.replace_part(comments_part, stale_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, comments_part, stale_comments,
         "stale repeated comments local-DOM rewrite");
-    editor.replace_part(comments_part, final_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, comments_part, final_comments,
         "final repeated comments local-DOM rewrite");
 
     const auto* comments_plan = editor.edit_plan().find_part(comments_part);
     check(comments_plan != nullptr,
         "repeated comments replacement should keep an active edit-plan part");
-    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated comments replacement should keep final local-DOM-rewrite mode");
     check(comments_plan->reason.find("final repeated") != std::string::npos,
         "repeated comments replacement should keep final reason");
     check(comments_plan->reason.find("stale repeated") == std::string::npos,
         "repeated comments replacement should drop stale reason");
     check_manifest_write_mode(editor, comments_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated comments replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(comments_part) != nullptr,
         "repeated comments replacement should keep comments content type override");
@@ -24357,7 +28588,7 @@ void test_package_editor_repeated_comments_replacement_updates_final_state()
     check(output_plan.removed_package_entries.empty(),
         "repeated comments replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated comments replacement output plan should rewrite comments");
     const auto* output_comments_plan =
         find_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml");
@@ -24587,8 +28818,7 @@ void test_package_editor_comments_replacement_restores_prior_removal()
         R"(<authors><author>Restored</author></authors>)"
         R"(<commentList><comment ref="A1" authorId="0"><text><t>restored comment</t></text></comment></commentList>)"
         R"(</comments>)";
-    editor.replace_part(comments_part, restored_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, comments_part, restored_comments,
         "restored comments after removal");
 
     check(editor.edit_plan().find_removed_part(comments_part) == nullptr,
@@ -24596,12 +28826,12 @@ void test_package_editor_comments_replacement_restores_prior_removal()
     const auto* comments_plan = editor.edit_plan().find_part(comments_part);
     check(comments_plan != nullptr,
         "comments replacement after removal should restore active edit-plan part");
-    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "comments replacement after removal should keep final write mode");
     check(comments_plan->reason.find("after removal") != std::string::npos,
         "comments replacement after removal should keep final replacement reason");
     check_manifest_write_mode(editor, comments_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "comments replacement after removal should restore manifest part write mode");
     check(editor.manifest().content_types().override_for(comments_part) != nullptr,
         "comments replacement after removal should restore manifest content type override");
@@ -24645,7 +28875,7 @@ void test_package_editor_comments_replacement_restores_prior_removal()
     check(output_plan.removed_package_entries.empty(),
         "comments replacement after removal output plan should clear removed package entries");
     check_output_entry_plan(output_plan.entries, "xl/comments/comment1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "comments replacement after removal output plan should rewrite comments part");
     check_output_entry_part_context(output_plan.entries, "xl/comments/comment1.xml",
         true, comments_part.value(),
@@ -24755,13 +28985,12 @@ void test_package_editor_comments_removal_overrides_prior_replacement()
         R"(<authors><author>Stale</author></authors>)"
         R"(<commentList><comment ref="A1" authorId="0"><text><t>stale comment</t></text></comment></commentList>)"
         R"(</comments>)";
-    editor.replace_part(comments_part, replacement_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, comments_part, replacement_comments,
         "prior comments replacement before removal");
     const auto* prior_comments_plan = editor.edit_plan().find_part(comments_part);
     check(prior_comments_plan != nullptr,
         "setup should record active comments replacement before removal override");
-    check(prior_comments_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(prior_comments_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "setup comments replacement should be local-DOM-rewrite before removal override");
     check(editor.edit_plan().find_package_entry("xl/comments/_rels/comment1.xml.rels")
             == nullptr,
@@ -24943,17 +29172,16 @@ void test_package_editor_replaces_threaded_comments_and_preserves_person_links()
         R"(<text>Patched threaded comment</text>)"
         R"(</threadedComment>)"
         R"(</ThreadedComments>)";
-    editor.replace_part(threaded_comments_part, replacement_threaded_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, threaded_comments_part, replacement_threaded_comments,
         "threaded comments local-DOM rewrite");
 
     const auto* threaded_plan = editor.edit_plan().find_part(threaded_comments_part);
     check(threaded_plan != nullptr,
         "threaded comments replacement should be present in the edit plan");
-    check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "threaded comments replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, threaded_comments_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "threaded comments replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry(
               "xl/threadedComments/_rels/threadedComment1.xml.rels")
@@ -24989,7 +29217,7 @@ void test_package_editor_replaces_threaded_comments_and_preserves_person_links()
     check(output_plan.removed_package_entries.empty(),
         "threaded comments replacement output plan should not expose removed package entries");
     check_output_entry_plan(output_plan.entries, "xl/threadedComments/threadedComment1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "threaded comments replacement output plan should rewrite threaded comments part");
     check_output_entry_part_context(output_plan.entries,
         "xl/threadedComments/threadedComment1.xml", true, threaded_comments_part.value(),
@@ -25287,24 +29515,22 @@ void test_package_editor_repeated_threaded_comments_replacement_updates_final_st
         R"(</threadedComment>)"
         R"(</ThreadedComments>)";
 
-    editor.replace_part(threaded_comments_part, stale_threaded_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, threaded_comments_part, stale_threaded_comments,
         "stale repeated threaded comments local-DOM rewrite");
-    editor.replace_part(threaded_comments_part, final_threaded_comments,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, threaded_comments_part, final_threaded_comments,
         "final repeated threaded comments local-DOM rewrite");
 
     const auto* threaded_plan = editor.edit_plan().find_part(threaded_comments_part);
     check(threaded_plan != nullptr,
         "repeated threaded comments replacement should keep an active edit-plan part");
-    check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated threaded comments replacement should keep final local-DOM-rewrite mode");
     check(threaded_plan->reason.find("final repeated") != std::string::npos,
         "repeated threaded comments replacement should keep final reason");
     check(threaded_plan->reason.find("stale repeated") == std::string::npos,
         "repeated threaded comments replacement should drop stale reason");
     check_manifest_write_mode(editor, threaded_comments_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated threaded comments replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(threaded_comments_part) != nullptr,
         "repeated threaded comments replacement should keep content type override");
@@ -25353,7 +29579,7 @@ void test_package_editor_repeated_threaded_comments_replacement_updates_final_st
     check(output_plan.removed_package_entries.empty(),
         "repeated threaded comments replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/threadedComments/threadedComment1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated threaded comments replacement output plan should rewrite threaded comments");
     const auto* output_threaded_plan =
         find_output_entry_plan(output_plan.entries, "xl/threadedComments/threadedComment1.xml");
@@ -25465,17 +29691,16 @@ void test_package_editor_replaces_persons_and_preserves_threaded_comments_links(
         R"(<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
         R"(<person displayName="Patched Person" id="{22222222-2222-2222-2222-222222222222}" providerId="None" userId="patched@example.invalid"/>)"
         R"(</personList>)";
-    editor.replace_part(persons_part, replacement_persons,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, persons_part, replacement_persons,
         "persons local-DOM rewrite");
 
     const auto* persons_plan = editor.edit_plan().find_part(persons_part);
     check(persons_plan != nullptr,
         "persons replacement should be present in the edit plan");
-    check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "persons replacement should be local-DOM-rewrite");
     check_manifest_write_mode(editor, persons_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "persons replacement should mirror write mode into manifest");
     check(editor.edit_plan().find_package_entry("xl/persons/_rels/person.xml.rels")
             == nullptr,
@@ -25729,24 +29954,22 @@ void test_package_editor_repeated_persons_replacement_updates_final_state()
         R"(<person displayName="Final Person" id="{22222222-2222-2222-2222-222222222222}" providerId="None" userId="final@example.invalid"/>)"
         R"(</personList>)";
 
-    editor.replace_part(persons_part, stale_persons,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, persons_part, stale_persons,
         "stale repeated persons local-DOM rewrite");
-    editor.replace_part(persons_part, final_persons,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    replace_part_with_memory_chunks(editor, persons_part, final_persons,
         "final repeated persons local-DOM rewrite");
 
     const auto* persons_plan = editor.edit_plan().find_part(persons_part);
     check(persons_plan != nullptr,
         "repeated persons replacement should keep an active edit-plan part");
-    check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+    check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated persons replacement should keep final local-DOM-rewrite mode");
     check(persons_plan->reason.find("final repeated") != std::string::npos,
         "repeated persons replacement should keep final reason");
     check(persons_plan->reason.find("stale repeated") == std::string::npos,
         "repeated persons replacement should drop stale reason");
     check_manifest_write_mode(editor, persons_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
         "repeated persons replacement should mirror final write mode into manifest");
     check(editor.manifest().content_types().override_for(persons_part) != nullptr,
         "repeated persons replacement should keep content type override");
@@ -25792,7 +30015,7 @@ void test_package_editor_repeated_persons_replacement_updates_final_state()
     check(output_plan.removed_package_entries.empty(),
         "repeated persons replacement output plan should not omit package entries");
     check_output_entry_plan(output_plan.entries, "xl/persons/person.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "repeated persons replacement output plan should rewrite persons");
     const auto* output_persons_plan =
         find_output_entry_plan(output_plan.entries, "xl/persons/person.xml");
@@ -25916,8 +30139,7 @@ void test_package_editor_threaded_comments_same_path_ordering()
             R"(<text>Restored threaded comment</text>)"
             R"(</threadedComment>)"
             R"(</ThreadedComments>)";
-        editor.replace_part(threaded_comments_part, restored_threaded_comments,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, threaded_comments_part, restored_threaded_comments,
             "restored threaded comments after removal");
 
         check(editor.edit_plan().find_removed_part(threaded_comments_part) == nullptr,
@@ -25925,12 +30147,12 @@ void test_package_editor_threaded_comments_same_path_ordering()
         const auto* threaded_plan = editor.edit_plan().find_part(threaded_comments_part);
         check(threaded_plan != nullptr,
             "threaded comments replacement after removal should restore active edit-plan part");
-        check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "threaded comments replacement after removal should keep final write mode");
         check(threaded_plan->reason.find("after removal") != std::string::npos,
             "threaded comments replacement after removal should keep final replacement reason");
         check_manifest_write_mode(editor, threaded_comments_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "threaded comments replacement after removal should restore manifest write mode");
         check(editor.manifest().content_types().override_for(threaded_comments_part) != nullptr,
             "threaded comments replacement after removal should restore content type override");
@@ -25980,7 +30202,7 @@ void test_package_editor_threaded_comments_same_path_ordering()
             "threaded comments replacement after removal output plan should clear removed package entries");
         check_output_entry_plan(output_plan.entries,
             "xl/threadedComments/threadedComment1.xml",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "threaded comments replacement after removal output plan should rewrite threaded comments");
         check_output_entry_part_context(output_plan.entries,
             "xl/threadedComments/threadedComment1.xml", true, threaded_comments_part.value(),
@@ -26092,8 +30314,7 @@ void test_package_editor_threaded_comments_same_path_ordering()
             R"(<text>Stale threaded comment</text>)"
             R"(</threadedComment>)"
             R"(</ThreadedComments>)";
-        editor.replace_part(threaded_comments_part, stale_threaded_comments,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, threaded_comments_part, stale_threaded_comments,
             "stale threaded comments replacement before removal");
         check(editor.edit_plan().find_part(threaded_comments_part) != nullptr,
             "setup should record active threaded comments replacement before removal");
@@ -26294,8 +30515,7 @@ void test_package_editor_persons_same_path_ordering()
             R"(<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
             R"(<person displayName="Restored Person" id="{22222222-2222-2222-2222-222222222222}" providerId="None" userId="restored@example.invalid"/>)"
             R"(</personList>)";
-        editor.replace_part(persons_part, restored_persons,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, persons_part, restored_persons,
             "restored persons after removal");
 
         check(editor.edit_plan().find_removed_part(persons_part) == nullptr,
@@ -26303,12 +30523,12 @@ void test_package_editor_persons_same_path_ordering()
         const auto* persons_plan = editor.edit_plan().find_part(persons_part);
         check(persons_plan != nullptr,
             "persons replacement after removal should restore active edit-plan part");
-        check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        check(persons_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "persons replacement after removal should keep final write mode");
         check(persons_plan->reason.find("after removal") != std::string::npos,
             "persons replacement after removal should keep final replacement reason");
         check_manifest_write_mode(editor, persons_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "persons replacement after removal should restore manifest write mode");
         check(editor.manifest().content_types().override_for(persons_part) != nullptr,
             "persons replacement after removal should restore content type override");
@@ -26354,7 +30574,7 @@ void test_package_editor_persons_same_path_ordering()
         check(output_plan.removed_package_entries.empty(),
             "persons replacement after removal output plan should clear removed package entries");
         check_output_entry_plan(output_plan.entries, "xl/persons/person.xml",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "persons replacement after removal output plan should rewrite persons");
         check_output_entry_part_context(output_plan.entries, "xl/persons/person.xml",
             true, persons_part.value(),
@@ -26462,8 +30682,7 @@ void test_package_editor_persons_same_path_ordering()
             R"(<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">)"
             R"(<person displayName="Stale Person" id="{22222222-2222-2222-2222-222222222222}" providerId="None" userId="stale@example.invalid"/>)"
             R"(</personList>)";
-        editor.replace_part(persons_part, stale_persons,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, persons_part, stale_persons,
             "stale persons replacement before removal");
         check(editor.edit_plan().find_part(persons_part) != nullptr,
             "setup should record active persons replacement before removal");
@@ -26644,7 +30863,7 @@ void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" s="1"><f>SUM(A1:A1)</f><v>777</v></c></row><row r="2"/></sheetData>)";
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -27244,6 +31463,290 @@ void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
         "sheetData replacement should request full calculation in workbook XML");
 }
 
+void test_package_editor_replaces_worksheet_sheet_data_from_chunk_source()
+{
+    const LinkedObjectSourcePackage source =
+        write_sheet_data_patch_source_package(
+            "fastxlsx-package-editor-sheetdata-chunk-source-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-sheetdata-chunk-source-output.xlsx");
+    const std::filesystem::path by_name_output =
+        output_path("fastxlsx-package-editor-sheetdata-by-name-chunk-source-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const std::string sheet_data_prefix = "<sheetData>";
+    const std::string sheet_data_body =
+        R"(<row r="6"><c r="A6" t="s"><v>0</v></c><c r="B6" s="1"><f>A6</f></c></row>)";
+    const std::string sheet_data_suffix = "</sheetData>";
+    const std::string replacement_sheet_data =
+        sheet_data_prefix + sheet_data_body + sheet_data_suffix;
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_worksheet_sheet_data_from_chunk_source(worksheet_part,
+        make_test_chunk_source({sheet_data_prefix, sheet_data_body, sheet_data_suffix}));
+
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"sheetData replacement", "chunk-source replacement/output",
+                  "consumed directly", "file-backed staged chunk"}),
+        "chunk-source sheetData replacement should expose file-backed handoff");
+    const auto& payload_audits = editor.edit_plan().worksheet_payload_dependency_audits();
+    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
+    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
+    check(has_payload_audit(payload_audits, worksheet_part,
+              PayloadAuditKind::SharedStrings,
+              PayloadAuditScope::SheetDataReplacement, "c",
+              {"shared string indexes", "xl/sharedStrings.xml"}),
+        "chunk-source sheetData replacement should audit shared string references");
+    check(has_payload_audit(payload_audits, worksheet_part,
+              PayloadAuditKind::Styles,
+              PayloadAuditScope::SheetDataReplacement, "c",
+              {"style id references", "xl/styles.xml"}),
+        "chunk-source sheetData replacement should audit style references");
+    check(has_payload_audit(payload_audits, worksheet_part,
+              PayloadAuditKind::Formula,
+              PayloadAuditScope::SheetDataReplacement, "f",
+              {"formulas", "calcChain policy"}),
+        "chunk-source sheetData replacement should audit formulas");
+    const fastxlsx::detail::PackageEditorOutputPlan sheet_data_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(sheet_data_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "chunk-source sheetData replacement output plan should expose rewritten worksheet staged chunks");
+    check(has_note_containing(sheet_data_output_plan.notes,
+              {"validates replacement sheetData root",
+                  "replacement payload dependency audit",
+                  "without staging or replaying a separate replacement sheetData chunk"}),
+        "chunk-source sheetData replacement should expose direct payload insert validation/audit");
+    check(has_note_containing(sheet_data_output_plan.notes,
+              {"sheetData replacement output writer", "relationship-id audit",
+                  "without a separate post-output worksheet validation or audit reread"}),
+        "chunk-source sheetData replacement should expose fused output relationship audit");
+    check(has_note_containing(sheet_data_output_plan.notes,
+              {"sheetData replacement output writer", "preserved worksheet metadata audit",
+                  "without a separate preservation-only worksheet reread"}),
+        "chunk-source sheetData replacement should expose fused preservation audit");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_contains(output_reader.read_entry(worksheet_part.zip_path()),
+        replacement_sheet_data,
+        "chunk-source sheetData replacement output should contain replacement payload");
+
+    fastxlsx::detail::PackageEditor by_name_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    by_name_editor.replace_worksheet_sheet_data_from_chunk_source_by_name("Sheet1",
+        make_test_chunk_source({sheet_data_prefix, sheet_data_body, sheet_data_suffix}));
+    check(has_note_containing(by_name_editor.edit_plan().notes(),
+              {"by-name sheetData chunk-source replacement",
+                  "planned/source workbook catalog"}),
+        "by-name chunk-source sheetData replacement should expose catalog handoff");
+    by_name_editor.save_as(by_name_output);
+    const fastxlsx::detail::PackageReader by_name_output_reader =
+        fastxlsx::detail::PackageReader::open(by_name_output);
+    check_contains(by_name_output_reader.read_entry(worksheet_part.zip_path()),
+        replacement_sheet_data,
+        "by-name chunk-source sheetData replacement output should contain replacement payload");
+
+    const std::vector<std::string> cdata_sheet_data_chunks {
+        R"(<sheetData><row r="7"><c r="A7" t="inlineStr"><is><t><![CDATA[literal > )",
+        R"(<c r="Z99" t="s"><f>not-a-formula</f></c>)",
+        R"(]]></t></is></c></row>)",
+        R"(</sheetData>)",
+    };
+    fastxlsx::detail::PackageEditor cdata_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    cdata_editor.replace_worksheet_sheet_data_from_chunk_source(
+        worksheet_part, make_test_chunk_source(cdata_sheet_data_chunks));
+    const auto& cdata_payload_audits =
+        cdata_editor.edit_plan().worksheet_payload_dependency_audits();
+    check(!has_payload_audit(cdata_payload_audits, worksheet_part,
+              PayloadAuditKind::SharedStrings,
+              PayloadAuditScope::SheetDataReplacement, "c"),
+        "sheetData CDATA text should not be scanned as shared string cell markup");
+    check(!has_payload_audit(cdata_payload_audits, worksheet_part,
+              PayloadAuditKind::Formula,
+              PayloadAuditScope::SheetDataReplacement, "f"),
+        "sheetData CDATA text should not be scanned as formula markup");
+
+    std::vector<std::string> long_cdata_sheet_data_chunks {
+        R"(<sheetData><row r="8"><c r="A8" t="inlineStr"><is><t><![CDATA[)",
+    };
+    const std::string cdata_padding_chunk(1024, 'y');
+    const std::size_t cdata_padding_chunk_count =
+        fastxlsx::detail::package_editor_sheet_data_replacement_payload_byte_limit
+        / cdata_padding_chunk.size() - 8U;
+    for (std::size_t index = 0; index < cdata_padding_chunk_count; ++index) {
+        long_cdata_sheet_data_chunks.push_back(cdata_padding_chunk);
+    }
+    long_cdata_sheet_data_chunks.push_back(
+        R"(<drawing r:id="rIdLongCdataText"/><f>not-a-formula</f>]]>ok</t></is></c></row></sheetData>)");
+    fastxlsx::detail::PackageEditor long_cdata_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    long_cdata_editor.replace_worksheet_sheet_data_from_chunk_source(
+        worksheet_part, make_test_chunk_source(long_cdata_sheet_data_chunks));
+    check(!has_note_containing(long_cdata_editor.edit_plan().notes(),
+              {"relationship-id audit", "could not parse"}),
+        "long sheetData CDATA text should not trip the relationship scanner retained window");
+    check(!has_note_containing(long_cdata_editor.edit_plan().notes(),
+              {"rIdLongCdataText"}),
+        "long sheetData CDATA text should not be scanned as a relationship reference");
+
+    std::vector<std::string> pi_sheet_data_chunks {
+        R"(<sheetData><row r="9"><c r="A9" t="inlineStr"><is><?fastxlsx )",
+    };
+    const std::string pi_padding_chunk(1024, 'x');
+    const std::size_t pi_padding_chunk_count =
+        fastxlsx::detail::package_editor_sheet_data_replacement_payload_byte_limit
+        / pi_padding_chunk.size() - 8U;
+    for (std::size_t index = 0; index < pi_padding_chunk_count; ++index) {
+        pi_sheet_data_chunks.push_back(pi_padding_chunk);
+    }
+    pi_sheet_data_chunks.push_back(
+        R"(<drawing r:id="rIdLongPiText"/><c r="Z99" t="s"><f>not-a-formula</f></c> ?><t>ok</t></is></c></row></sheetData>)");
+    fastxlsx::detail::PackageEditor pi_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    pi_editor.replace_worksheet_sheet_data_from_chunk_source(
+        worksheet_part, make_test_chunk_source(pi_sheet_data_chunks));
+    const auto& pi_payload_audits =
+        pi_editor.edit_plan().worksheet_payload_dependency_audits();
+    check(!has_payload_audit(pi_payload_audits, worksheet_part,
+              PayloadAuditKind::SharedStrings,
+              PayloadAuditScope::SheetDataReplacement, "c"),
+        "sheetData processing instruction text should not be scanned as shared string cell markup");
+    check(!has_payload_audit(pi_payload_audits, worksheet_part,
+              PayloadAuditKind::Formula,
+              PayloadAuditScope::SheetDataReplacement, "f"),
+        "sheetData processing instruction text should not be scanned as formula markup");
+    check(!has_note_containing(pi_editor.edit_plan().notes(),
+              {"relationship-id audit", "could not parse"}),
+        "long sheetData processing instruction should not trip the relationship scanner retained window");
+    check(!has_note_containing(pi_editor.edit_plan().notes(),
+              {"rIdLongPiText"}),
+        "long sheetData processing instruction text should not be scanned as a relationship reference");
+
+    fastxlsx::detail::PackageEditor invalid_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_plan_size = invalid_editor.edit_plan().size();
+    const std::size_t initial_note_count = invalid_editor.edit_plan().notes().size();
+    bool invalid_failed = false;
+    try {
+        invalid_editor.replace_worksheet_sheet_data_from_chunk_source(worksheet_part,
+            make_test_chunk_source({"<row/>"}));
+    } catch (const std::exception& error) {
+        invalid_failed = true;
+        check_contains(error.what(), "sheetData",
+            "invalid chunk-source sheetData replacement should name sheetData");
+        check_not_contains(error.what(), "current worksheet input",
+            "invalid replacement sheetData should not be mislabeled as source worksheet input");
+    }
+    check(invalid_failed,
+        "invalid chunk-source sheetData replacement should fail");
+    check(invalid_editor.edit_plan().size() == initial_plan_size,
+        "invalid chunk-source sheetData replacement should not change edit-plan size");
+    check(invalid_editor.edit_plan().notes().size() == initial_note_count,
+        "invalid chunk-source sheetData replacement should not add notes");
+    check(!invalid_editor.edit_plan().full_calculation_on_load(),
+        "invalid chunk-source sheetData replacement should not request recalculation");
+
+    fastxlsx::detail::PackageEditor throwing_sheet_data_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t throwing_sheet_data_initial_plan_size =
+        throwing_sheet_data_editor.edit_plan().size();
+    const std::size_t throwing_sheet_data_initial_note_count =
+        throwing_sheet_data_editor.edit_plan().notes().size();
+    const std::vector<std::filesystem::path> throwing_sheet_data_temp_files_before =
+        package_editor_temp_files();
+    int throwing_sheet_data_reads = 0;
+    bool throwing_sheet_data_failed = false;
+    try {
+        throwing_sheet_data_editor.replace_worksheet_sheet_data_from_chunk_source(
+            worksheet_part,
+            [&](std::string& chunk) {
+                ++throwing_sheet_data_reads;
+                if (throwing_sheet_data_reads == 1) {
+                    chunk = "<sheetData>";
+                    return true;
+                }
+                throw std::runtime_error("caller sheetData stream stopped");
+            });
+    } catch (const std::exception& error) {
+        throwing_sheet_data_failed = true;
+        check_contains(error.what(), "failed while reading sheetData replacement XML",
+            "throwing sheetData chunk source should name the replacement read boundary");
+        check_contains(error.what(), "caller sheetData stream stopped",
+            "throwing sheetData chunk source should preserve the caller failure");
+        check_not_contains(error.what(), "current worksheet input",
+            "throwing replacement sheetData source should not be mislabeled as current worksheet input");
+    }
+    check(throwing_sheet_data_failed,
+        "throwing chunk-source sheetData replacement should fail");
+    check(throwing_sheet_data_reads == 2,
+        "throwing chunk-source sheetData replacement should stop at the throwing read");
+    check(throwing_sheet_data_editor.edit_plan().size()
+            == throwing_sheet_data_initial_plan_size,
+        "throwing chunk-source sheetData replacement should not change edit-plan size");
+    check(throwing_sheet_data_editor.edit_plan().notes().size()
+            == throwing_sheet_data_initial_note_count,
+        "throwing chunk-source sheetData replacement should not add notes");
+    check(!throwing_sheet_data_editor.edit_plan().full_calculation_on_load(),
+        "throwing chunk-source sheetData replacement should not request recalculation");
+    check_manifest_write_mode(throwing_sheet_data_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "throwing chunk-source sheetData replacement should not change worksheet manifest state");
+    check_no_new_package_editor_temp_files(throwing_sheet_data_temp_files_before,
+        "throwing chunk-source sheetData replacement should not leak staged temp files");
+
+    const SourcePackage missing_entry_source =
+        write_missing_worksheet_entry_source_package(
+            "fastxlsx-package-editor-sheetdata-missing-source-entry-source.xlsx");
+    fastxlsx::detail::PackageEditor missing_entry_editor =
+        fastxlsx::detail::PackageEditor::open(missing_entry_source.path);
+    const std::size_t missing_entry_initial_plan_size =
+        missing_entry_editor.edit_plan().size();
+    const std::size_t missing_entry_initial_note_count =
+        missing_entry_editor.edit_plan().notes().size();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    int missing_entry_reads = 0;
+    bool missing_entry_failed = false;
+    try {
+        missing_entry_editor.replace_worksheet_sheet_data_from_chunk_source(worksheet_part,
+            [&](std::string& chunk) {
+                ++missing_entry_reads;
+                chunk = "<sheetData/>";
+                return true;
+            });
+    } catch (const std::exception& error) {
+        missing_entry_failed = true;
+        check_contains(error.what(), "worksheet sheetData replacement target",
+            "missing worksheet-entry sheetData failure should explain the target preflight");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "missing worksheet-entry sheetData failure should include the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "missing worksheet-entry sheetData failure should include the worksheet entry");
+    }
+    check(missing_entry_failed,
+        "missing worksheet-entry sheetData replacement should fail");
+    check(missing_entry_reads == 0,
+        "missing worksheet-entry sheetData replacement should fail before consuming input");
+    check(missing_entry_editor.edit_plan().size() == missing_entry_initial_plan_size,
+        "missing worksheet-entry sheetData replacement should not change edit-plan size");
+    check(missing_entry_editor.edit_plan().notes().size() == missing_entry_initial_note_count,
+        "missing worksheet-entry sheetData replacement should not add notes");
+    check(!missing_entry_editor.edit_plan().full_calculation_on_load(),
+        "missing worksheet-entry sheetData replacement should not request recalculation");
+    const auto* missing_entry_manifest_part =
+        missing_entry_editor.manifest().find_part(worksheet_part);
+    check(missing_entry_manifest_part == nullptr
+            || missing_entry_manifest_part->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "missing worksheet-entry sheetData replacement should not change worksheet manifest state");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "missing worksheet-entry sheetData replacement should not create staged temp files");
+}
+
 void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name()
 {
     LinkedObjectSourcePackage source =
@@ -27268,7 +31771,7 @@ void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name()
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="4"><c r="A4"><v>44</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -27371,7 +31874,7 @@ void test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", replacement_sheet_data);
 
     check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
         "no-calcChain sheetData patch should not record calcChain removal");
@@ -27486,7 +31989,7 @@ void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolu
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="6"><c r="A6"><v>66</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -27579,7 +32082,7 @@ void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_se
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="7"><c r="A7"><v>77</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -27735,7 +32238,7 @@ void test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip()
         fastxlsx::detail::PackageEditor::open(source_path);
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="1"><c r="A1" s="1" t="s"><v>0</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Patch Source", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Patch Source", replacement_sheet_data);
 
     using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
     using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
@@ -27954,7 +32457,7 @@ void test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_dat
         fastxlsx::detail::PackageEditor::open(source_path);
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="1"><c r="A1" s="1" t="inlineStr"><is><t>Acme Corp</t></is></c><c r="B1"><v>1234</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Template Fill", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Template Fill", replacement_sheet_data);
 
     using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
     using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
@@ -28057,8 +32560,8 @@ void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
     store.set_cell(2, 1, fastxlsx::CellValue::formula("SUM(A1:A1)&\"<done>\""));
     store.set_cell(3, 3, fastxlsx::CellValue::boolean(false));
     store.set_cell(4, 1, fastxlsx::CellValue::blank());
-    const std::string replacement_sheet_data =
-        fastxlsx::detail::cell_store_to_sheet_data_xml(store);
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
@@ -28066,7 +32569,8 @@ void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
 
-    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", replacement_sheet_data_source);
 
     using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
     using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
@@ -28095,6 +32599,10 @@ void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
     check(has_note_containing(editor.edit_plan().notes(),
               {"bounded local worksheet XML rewrite", "not the large-file streaming"}),
         "CellStore sheetData handoff should retain bounded local rewrite audit note");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"by-name sheetData chunk-source replacement", "without routing through",
+                  "materialized sheetData string"}),
+        "CellStore sheetData handoff should not route through a materialized sheetData string");
     check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
               worksheet_part, PayloadAuditKind::Formula,
               PayloadAuditScope::SheetDataReplacement, "f",
@@ -28135,8 +32643,10 @@ void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
 
     const std::string worksheet_xml =
         output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, replacement_sheet_data,
-        "CellStore sheetData output should write generated sheetData payload");
+    check_contains(worksheet_xml, R"(<sheetData><row r="1"><c r="A1"><v>42.25</v></c>)",
+        "CellStore sheetData output should write generated first row payload");
+    check_contains(worksheet_xml, R"(</row><row r="2"><c r="A2"><f>)",
+        "CellStore sheetData output should group generated sparse rows");
     check_contains(worksheet_xml,
         R"(<t xml:space="preserve"> &lt;cell &amp; value&gt; </t>)",
         "CellStore sheetData output should preserve and escape inline text");
@@ -28159,6 +32669,4040 @@ void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
         "CellStore sheetData output should remove calcChain relationship");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
         "CellStore sheetData output should preserve unknown bytes");
+}
+
+void test_package_editor_patches_cell_store_sheet_data_with_writer_style()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-cellstore-styled-sheetdata-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cellstore-styled-sheetdata-output.xlsx");
+
+    fastxlsx::StyleId text_style;
+    {
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path);
+        text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+        auto sheet = workbook.add_worksheet("Styled");
+        sheet.append_row({fastxlsx::CellView::text("old plain")});
+        workbook.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    check(source_entries.find("xl/styles.xml") != source_entries.end(),
+        "styled CellStore source should contain styles.xml");
+    const std::string styles_before = source_entries.at("xl/styles.xml");
+
+    fastxlsx::detail::CellStore store;
+    store.set_cell(1, 1, fastxlsx::CellValue::text("styled replacement").with_style(text_style));
+    store.set_cell(1, 2,
+        fastxlsx::CellValue::text("explicit default").with_style(fastxlsx::StyleId {}));
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Styled", replacement_sheet_data_source);
+
+    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
+    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
+
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
+              worksheet_part, PayloadAuditKind::Styles,
+              PayloadAuditScope::SheetDataReplacement, "c",
+              {"style id references", "xl/styles.xml"}),
+        "CellStore styled sheetData handoff should audit style id references");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "CellStore styled sheetData output plan should preserve styles");
+    check(has_payload_audit(output_plan.worksheet_payload_dependency_audits,
+              worksheet_part, PayloadAuditKind::Styles,
+              PayloadAuditScope::SheetDataReplacement, "c",
+              {"style id references", "xl/styles.xml"}),
+        "CellStore styled sheetData output plan should keep style dependency audit");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" s="1" t="inlineStr"><is><t>styled replacement</t></is></c>)",
+        "CellStore styled sheetData output should write caller-supplied StyleId");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>explicit default</t></is></c>)",
+        "CellStore styled sheetData output should omit explicit default StyleId");
+    check_not_contains(worksheet_xml, R"(s="0")",
+        "CellStore styled sheetData output should not write default style attributes");
+    check(output_reader.read_entry("xl/styles.xml") == styles_before,
+        "CellStore styled sheetData output should preserve styles.xml bytes");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "CellStore styled sheetData output should preserve styles content type");
+}
+
+void test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheetdata-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-sheetdata-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    check(store.cell_count() == 1,
+        "source-backed CellStore handoff should load the source worksheet cells");
+    const fastxlsx::detail::CellRecord* source_formula = store.try_cell(1, 1);
+    check(source_formula != nullptr && source_formula->kind == fastxlsx::CellValueKind::Formula,
+        "source-backed CellStore handoff should load source formula cells");
+    check(source_formula->text_value == "SUM(B1:C1)",
+        "source-backed CellStore handoff formula payload mismatch");
+
+    store.erase_cell(1, 1);
+    store.set_cell(1, 2, fastxlsx::CellValue::text("loaded & patched"));
+    store.set_cell(1, 3, fastxlsx::CellValue::blank());
+    check(store.try_cell(1, 1) == nullptr,
+        "source-backed CellStore mutation should remove erased records");
+    check(store.try_cell(1, 3) != nullptr
+            && store.try_cell(1, 3)->kind == fastxlsx::CellValueKind::Blank,
+        "source-backed CellStore mutation should keep explicit blank records");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", replacement_sheet_data_source);
+
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "source-backed CellStore handoff should plan the worksheet rewrite");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore handoff should use bounded sheetData rewrite");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore handoff should remove stale calcChain by default");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore handoff should request workbook recalculation");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "source-backed CellStore output should omit stale calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
+        "source-backed CellStore output should keep sheet lookup readable");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="1"><c r="B1" t="inlineStr"><is><t>loaded &amp; patched</t></is></c><c r="C1"/></row></sheetData>)",
+        "source-backed CellStore output should write mutated sparse sheetData");
+    check_not_contains(worksheet_xml, R"(r="A1")",
+        "source-backed CellStore output should omit erased source records");
+    check_not_contains(worksheet_xml, "SUM(B1:C1)",
+        "source-backed CellStore output should remove old source formula payload");
+
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "source-backed CellStore output should request workbook recalculation");
+    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
+        "source-backed CellStore output should remove calcChain content type");
+    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/calcChain",
+        "source-backed CellStore output should remove calcChain relationship");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-planned-rename-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-planned-rename-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    check(store.try_cell(1, 1) != nullptr
+            && store.try_cell(1, 1)->kind == fastxlsx::CellValueKind::Formula,
+        "source-backed CellStore planned-name test should load source formula");
+    store.set_cell(2, 2, fastxlsx::CellValue::text("planned-name handoff"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    editor.rename_sheet_catalog_entry("Sheet1", "Loaded Data");
+
+    const std::size_t renamed_plan_size = editor.edit_plan().size();
+    const std::size_t renamed_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction renamed_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t sheet_data_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_sheet_data_source =
+        [&sheet_data_source, &sheet_data_chunk_reads](std::string& output_chunk) {
+            ++sheet_data_chunk_reads;
+            return sheet_data_source(output_chunk);
+        };
+
+    bool failed_old_name = false;
+    try {
+        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+            "Sheet1", counted_sheet_data_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_old_name = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "source-backed CellStore old-name handoff should use planned catalog");
+    }
+    check(failed_old_name,
+        "PackageEditor should reject source name after queued rename for CellStore handoff");
+
+    check(editor.edit_plan().size() == renamed_plan_size,
+        "source-backed CellStore old-name failure should preserve queued rename plan size");
+    check(editor.edit_plan().notes().size() == renamed_note_count,
+        "source-backed CellStore old-name failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore old-name failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore old-name failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == renamed_calc_chain_action,
+        "source-backed CellStore old-name failure should not change calcChain policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore old-name failure should preserve workbook rename rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore old-name failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore old-name failure should leave calcChain copy-original");
+    check(sheet_data_chunk_reads == 0,
+        "source-backed CellStore old-name failure should not consume sheetData chunks");
+
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Loaded Data", counted_sheet_data_source);
+    check(sheet_data_chunk_reads > 0,
+        "source-backed CellStore planned-name handoff should consume sheetData chunks");
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore planned-name handoff should rewrite the worksheet");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore planned-name handoff should remove stale calcChain");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore planned-name handoff should request recalculation");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "source-backed CellStore planned-name output should omit stale calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Loaded Data") == worksheet_part,
+        "source-backed CellStore planned-name output should expose renamed sheet");
+
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Loaded Data")",
+        "source-backed CellStore planned-name output should preserve renamed catalog");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "source-backed CellStore planned-name output should request workbook recalculation");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<f>SUM(B1:C1)</f>)",
+        "source-backed CellStore planned-name output should retain loaded source formula");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>planned-name handoff</t></is></c>)",
+        "source-backed CellStore planned-name output should write the mutated cell");
+    check_not_contains(worksheet_xml, "<v>3</v>",
+        "source-backed CellStore planned-name output should drop old cached formula value");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore planned-name output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-queued-worksheet-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-queued-worksheet-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    check(store.try_cell(1, 1) != nullptr
+            && store.try_cell(1, 1)->kind == fastxlsx::CellValueKind::Formula,
+        "source-backed CellStore queued-worksheet test should load source formula");
+    store.erase_cell(1, 1);
+    store.set_cell(2, 2, fastxlsx::CellValue::text("queued CellStore patch"));
+    store.set_cell(4, 1, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string queued_worksheet =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheetViews><sheetView workbookViewId="24"/></sheetViews>)"
+        R"(<sheetData><row r="9"><c r="C9"><v>999</v></c></row></sheetData>)"
+        R"(<autoFilter ref="B2:C4"/>)"
+        R"(<extLst><ext uri="{cellstore-queued-wrapper}"/></extLst>)"
+        R"(</worksheet>)";
+    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", queued_worksheet);
+
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", replacement_sheet_data_source);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "source-backed CellStore queued worksheet patch should keep worksheet in the edit plan");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore queued worksheet patch should finish as local-DOM rewrite");
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr
+            && workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore queued worksheet patch should keep workbook calc rewrite");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore queued worksheet patch should keep stale calcChain removed");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore queued worksheet patch should keep full calculation request");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"pull-based chunk source", "file-backed staged chunk",
+                  "follow-up planned-input transforms"}),
+        "source-backed CellStore queued worksheet patch should preserve staged-input evidence");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"sheetData replacement", "view metadata", "caller review"}),
+        "source-backed CellStore queued worksheet patch should audit queued view metadata");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"sheetData replacement", "autoFilter metadata", "caller review"}),
+        "source-backed CellStore queued worksheet patch should audit queued autoFilter metadata");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"sheetData replacement", "extension metadata", "caller review"}),
+        "source-backed CellStore queued worksheet patch should audit queued extension metadata");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetViews><sheetView workbookViewId="24"/></sheetViews>)",
+        "source-backed CellStore queued worksheet output should preserve queued sheetViews");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>queued CellStore patch</t></is></c></row><row r="4"><c r="A4"/></row></sheetData>)",
+        "source-backed CellStore queued worksheet output should write CellStore sheetData");
+    check_contains(worksheet_xml, R"(<autoFilter ref="B2:C4"/>)",
+        "source-backed CellStore queued worksheet output should preserve queued autoFilter");
+    check_contains(worksheet_xml, R"(<extLst><ext uri="{cellstore-queued-wrapper}"/></extLst>)",
+        "source-backed CellStore queued worksheet output should preserve queued extLst");
+    check_not_contains(worksheet_xml, R"(<v>999</v>)",
+        "source-backed CellStore queued worksheet output should remove queued old rows");
+    check_not_contains(worksheet_xml, "SUM(B1:C1)",
+        "source-backed CellStore queued worksheet output should not resurrect erased source formula");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "source-backed CellStore queued worksheet output should keep stale calcChain omitted");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "source-backed CellStore queued worksheet output should keep workbook recalculation request");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore queued worksheet output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.erase_cell(1, 1);
+    store.set_cell(2, 2, fastxlsx::CellValue::text("renamed queued CellStore patch"));
+    store.set_cell(3, 3, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    editor.rename_sheet_catalog_entry("Sheet1", "Renamed Queued");
+    const std::string queued_worksheet =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheetViews><sheetView workbookViewId="52"/></sheetViews>)"
+        R"(<sheetData><row r="8"><c r="D8"><v>888</v></c></row></sheetData>)"
+        R"(<autoFilter ref="B2:D8"/>)"
+        R"(<extLst><ext uri="{renamed-queued-wrapper}"/></extLst>)"
+        R"(</worksheet>)";
+    replace_worksheet_part_by_name_from_single_chunk_source(
+        editor, "Renamed Queued", queued_worksheet);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t sheet_data_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_sheet_data_source =
+        [&sheet_data_source, &sheet_data_chunk_reads](std::string& output_chunk) {
+            ++sheet_data_chunk_reads;
+            return sheet_data_source(output_chunk);
+        };
+
+    bool failed_old_name = false;
+    try {
+        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+            "Sheet1", counted_sheet_data_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_old_name = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "source-backed CellStore rename+queued worksheet old-name failure should use planned catalog");
+    }
+    check(failed_old_name,
+        "PackageEditor should reject source name after queued rename and worksheet replacement");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-backed CellStore rename+queued worksheet old-name failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-backed CellStore rename+queued worksheet old-name failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet old-name failure should preserve calc policy");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore rename+queued worksheet old-name failure should keep stale calcChain removed");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore rename+queued worksheet old-name failure should keep recalculation request");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore rename+queued worksheet old-name failure should keep workbook rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet old-name failure should keep queued worksheet rewrite");
+    check(editor.manifest().find_part(calc_chain_part) == nullptr,
+        "source-backed CellStore rename+queued worksheet old-name failure should keep calcChain omitted");
+    check(sheet_data_chunk_reads == 0,
+        "source-backed CellStore rename+queued worksheet old-name failure should not consume chunks");
+
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Renamed Queued", counted_sheet_data_source);
+    check(sheet_data_chunk_reads > 0,
+        "source-backed CellStore rename+queued worksheet planned-name handoff should consume chunks");
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore rename+queued worksheet planned-name handoff should local-DOM-rewrite worksheet");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore rename+queued worksheet planned-name handoff should keep stale calcChain removed");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore rename+queued worksheet planned-name handoff should keep recalculation request");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Renamed Queued") == worksheet_part,
+        "source-backed CellStore rename+queued worksheet output should expose planned sheet name");
+    bool old_name_failed = false;
+    try {
+        (void)output_reader.worksheet_part_by_sheet_name("Sheet1");
+    } catch (const std::exception&) {
+        old_name_failed = true;
+    }
+    check(old_name_failed,
+        "source-backed CellStore rename+queued worksheet output should not expose old sheet name");
+
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed Queued")",
+        "source-backed CellStore rename+queued worksheet output should preserve renamed catalog");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "source-backed CellStore rename+queued worksheet output should keep recalculation request");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetViews><sheetView workbookViewId="52"/></sheetViews>)",
+        "source-backed CellStore rename+queued worksheet output should preserve queued sheetViews");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>renamed queued CellStore patch</t></is></c></row><row r="3"><c r="C3"/></row></sheetData>)",
+        "source-backed CellStore rename+queued worksheet output should write planned-name CellStore sheetData");
+    check_contains(worksheet_xml, R"(<autoFilter ref="B2:D8"/>)",
+        "source-backed CellStore rename+queued worksheet output should preserve queued autoFilter");
+    check_contains(worksheet_xml, R"(<extLst><ext uri="{renamed-queued-wrapper}"/></extLst>)",
+        "source-backed CellStore rename+queued worksheet output should preserve queued extLst");
+    check_not_contains(worksheet_xml, R"(<v>888</v>)",
+        "source-backed CellStore rename+queued worksheet output should remove queued old rows");
+    check_not_contains(worksheet_xml, "SUM(B1:C1)",
+        "source-backed CellStore rename+queued worksheet output should not resurrect erased source formula");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "source-backed CellStore rename+queued worksheet output should keep stale calcChain omitted");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore rename+queued worksheet output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_name_after_queued_rename_and_worksheet()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-chunks-output.xlsx");
+    const std::filesystem::path second_output =
+        output_path("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-chunks-output-2.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(6, 6, fastxlsx::CellValue::text("renamed queued full projection"));
+    store.set_cell(7, 7, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    editor.rename_sheet_catalog_entry("Sheet1", "Renamed Projection");
+    const std::string queued_worksheet =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheetViews><sheetView workbookViewId="53"/></sheetViews>)"
+        R"(<sheetData><row r="9"><c r="E9"><v>999</v></c></row></sheetData>)"
+        R"(<autoFilter ref="E9:F9"/>)"
+        R"(<extLst><ext uri="{renamed-queued-before-full-projection}"/></extLst>)"
+        R"(</worksheet>)";
+    replace_worksheet_part_by_name_from_single_chunk_source(
+        editor, "Renamed Projection", queued_worksheet);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed_old_name = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "Sheet1", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_old_name = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "source-backed CellStore rename+queued worksheet full-projection old-name failure should use planned catalog");
+    }
+    check(failed_old_name,
+        "PackageEditor should reject source name before full projection after queued rename and worksheet replacement");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should preserve calc policy");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should keep stale calcChain removed");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should keep recalculation request");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should keep workbook rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should keep queued worksheet rewrite");
+    check(editor.manifest().find_part(calc_chain_part) == nullptr,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should keep calcChain omitted");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore rename+queued worksheet full-projection old-name failure should not consume chunks");
+
+    editor.replace_worksheet_part_from_chunk_source_by_name(
+        "Renamed Projection", counted_worksheet_source);
+    check(worksheet_chunk_reads > 0,
+        "source-backed CellStore rename+queued worksheet full-projection planned-name handoff should consume chunks");
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection planned-name handoff should stage stream rewrite");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore rename+queued worksheet full-projection planned-name handoff should keep stale calcChain removed");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore rename+queued worksheet full-projection planned-name handoff should keep recalculation request");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"pull-based chunk source", "file-backed staged chunk"}),
+        "source-backed CellStore rename+queued worksheet full-projection should expose staged chunk-source evidence");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "source-backed CellStore rename+queued worksheet full-projection output plan should stream-rewrite worksheet");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection output plan should expose staged chunks");
+
+    const std::size_t planned_plan_size = editor.edit_plan().size();
+    const std::size_t planned_note_count = editor.edit_plan().notes().size();
+    const std::size_t planned_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t planned_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const fastxlsx::detail::CalcChainAction planned_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed_source_overwrite = false;
+    try {
+        editor.save_as(source.path);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_source_overwrite = true;
+        check_contains(error.what(), "cannot save over the source package",
+            "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should explain the output path guard");
+    }
+    check(failed_source_overwrite,
+        "source-backed CellStore rename+queued worksheet full-projection should reject saving over the source package");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should not append notes");
+    check(editor.edit_plan().package_entries().size() == planned_package_entry_count,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == planned_removed_part_count,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should preserve removed-part audits");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should preserve calc policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should keep workbook rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection source-overwrite failure should preserve staged chunks");
+
+    const std::filesystem::path equivalent_source_path =
+        source.path.parent_path() / "." / source.path.filename();
+    bool failed_equivalent_source_overwrite = false;
+    try {
+        editor.save_as(equivalent_source_path);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_equivalent_source_overwrite = true;
+        check_contains(error.what(), "cannot save over the source package",
+            "source-backed CellStore rename+queued worksheet full-projection path-equivalent source-overwrite failure should explain the output path guard");
+    }
+    check(failed_equivalent_source_overwrite,
+        "source-backed CellStore rename+queued worksheet full-projection should reject path-equivalent source overwrite");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection path-equivalent source-overwrite failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection path-equivalent source-overwrite failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection path-equivalent source-overwrite failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection path-equivalent source-overwrite failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_equivalent_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_equivalent_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection path-equivalent source-overwrite failure should preserve staged chunks");
+
+    bool failed_empty_output_path = false;
+    try {
+        editor.save_as(std::filesystem::path());
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_empty_output_path = true;
+        check_contains(error.what(), "output path cannot be empty",
+            "source-backed CellStore rename+queued worksheet full-projection empty-output failure should explain the output path guard");
+    }
+    check(failed_empty_output_path,
+        "source-backed CellStore rename+queued worksheet full-projection should reject empty output path");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection empty-output failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection empty-output failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection empty-output failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection empty-output failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_empty_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_empty_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection empty-output failure should preserve staged chunks");
+
+    const std::filesystem::path missing_parent_output =
+        output_path("fastxlsx-package-editor-source-cellstore-combined-missing-parent-output") / "out.xlsx";
+    bool failed_missing_parent_output = false;
+    try {
+        editor.save_as(missing_parent_output);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_missing_parent_output = true;
+        check_contains(error.what(), "output parent path is not an existing directory",
+            "source-backed CellStore rename+queued worksheet full-projection missing-parent failure should explain the output path guard");
+    }
+    check(failed_missing_parent_output,
+        "source-backed CellStore rename+queued worksheet full-projection should reject missing output parent");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection missing-parent failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection missing-parent failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection missing-parent failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection missing-parent failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_missing_parent_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_missing_parent_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection missing-parent failure should preserve staged chunks");
+
+    const std::filesystem::path parent_file_output =
+        output_path("fastxlsx-package-editor-source-cellstore-combined-parent-file-output");
+    {
+        std::ofstream parent_file(parent_file_output, std::ios::binary);
+        parent_file << "not a directory";
+        check(parent_file.good(),
+            "source-backed CellStore save-as guard test should create non-directory output parent");
+    }
+    bool failed_non_directory_parent_output = false;
+    try {
+        editor.save_as(parent_file_output / "out.xlsx");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_non_directory_parent_output = true;
+        check_contains(error.what(), "output parent path is not an existing directory",
+            "source-backed CellStore rename+queued worksheet full-projection non-directory-parent failure should explain the output path guard");
+    }
+    check(failed_non_directory_parent_output,
+        "source-backed CellStore rename+queued worksheet full-projection should reject non-directory output parent");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection non-directory-parent failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection non-directory-parent failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection non-directory-parent failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection non-directory-parent failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_non_directory_parent_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_non_directory_parent_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection non-directory-parent failure should preserve staged chunks");
+
+    const std::filesystem::path existing_directory_output =
+        output_path("fastxlsx-package-editor-source-cellstore-combined-existing-directory-output");
+    std::error_code create_directory_error;
+    const bool created_directory =
+        std::filesystem::create_directories(existing_directory_output, create_directory_error);
+    check(!create_directory_error
+            && (created_directory || std::filesystem::is_directory(existing_directory_output)),
+        "source-backed CellStore save-as guard test should create existing output directory");
+
+    bool failed_existing_directory_output = false;
+    try {
+        editor.save_as(existing_directory_output);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_existing_directory_output = true;
+        check_contains(error.what(), "output path is an existing directory",
+            "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should explain the output path guard");
+    }
+    check(failed_existing_directory_output,
+        "source-backed CellStore rename+queued worksheet full-projection should reject existing directory output path");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_existing_directory_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_existing_directory_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should preserve staged chunks");
+
+    const std::vector<std::filesystem::path> temp_files_before_source_copy_failure =
+        package_editor_temp_files();
+    const std::string source_copy_failure_output_sentinel =
+        "do not overwrite this combined CellStore source-copy temp failure output";
+    write_binary_file(output, source_copy_failure_output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before_source_copy_failure =
+        package_editor_output_sibling_temp_files(output);
+
+    bool failed_source_copy_temp_size = false;
+    {
+        ScopedPackageEditorSourceCopyTempFilesHook hook(
+            truncate_package_editor_source_copy_temp_files);
+        try {
+            editor.save_as(output);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed_source_copy_temp_size = true;
+            check_contains(error.what(), "failed to write PackageEditor output package",
+                "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should include PackageEditor context");
+            check_contains(error.what(), "ZIP entry chunk size changed after staging",
+                "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should enforce size metadata");
+        }
+    }
+    check(failed_source_copy_temp_size,
+        "source-backed CellStore rename+queued worksheet full-projection should reject changed source-copy temp size");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_source_copy_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_source_copy_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should preserve staged chunks");
+    check(fastxlsx::test::read_file(output) == source_copy_failure_output_sentinel,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should not overwrite existing output");
+    check_no_new_package_editor_temp_files(temp_files_before_source_copy_failure,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should clean source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(
+        output_temp_files_before_source_copy_failure, output,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should clean output sibling temp files");
+
+    const std::vector<std::filesystem::path> temp_files_before_missing_source_copy =
+        package_editor_temp_files();
+    const std::string missing_source_copy_output_sentinel =
+        "do not overwrite this combined CellStore missing source-copy temp failure output";
+    write_binary_file(output, missing_source_copy_output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before_missing_source_copy =
+        package_editor_output_sibling_temp_files(output);
+
+    bool failed_missing_source_copy_temp = false;
+    {
+        ScopedPackageEditorSourceCopyTempFilesHook hook(
+            delete_package_editor_source_copy_temp_files);
+        try {
+            editor.save_as(output);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed_missing_source_copy_temp = true;
+            check_contains(error.what(), "failed to write PackageEditor output package",
+                "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should include PackageEditor context");
+            check_contains(error.what(), "failed to stat file-backed ZIP entry chunk",
+                "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should report stat failure");
+        }
+    }
+    check(failed_missing_source_copy_temp,
+        "source-backed CellStore rename+queued worksheet full-projection should reject missing source-copy temp file");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_missing_source_copy_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(
+        after_missing_source_copy_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should preserve staged chunks");
+    check(fastxlsx::test::read_file(output) == missing_source_copy_output_sentinel,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should not overwrite existing output");
+    check_no_new_package_editor_temp_files(temp_files_before_missing_source_copy,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should clean source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(
+        output_temp_files_before_missing_source_copy, output,
+        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should clean output sibling temp files");
+
+    const std::vector<std::filesystem::path> temp_files_before_source_copy_crc_failure =
+        package_editor_temp_files();
+    const std::string source_copy_crc_failure_output_sentinel =
+        "do not overwrite this combined CellStore source-copy CRC failure output";
+    write_binary_file(output, source_copy_crc_failure_output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before_source_copy_crc_failure =
+        package_editor_output_sibling_temp_files(output);
+
+    bool failed_source_copy_temp_crc = false;
+    {
+        ScopedPackageEditorSourceCopyTempFilesHook hook(
+            rewrite_package_editor_source_copy_temp_files_same_size);
+        try {
+            editor.save_as(output);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed_source_copy_temp_crc = true;
+            check_contains(error.what(), "failed to write PackageEditor output package",
+                "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should include PackageEditor context");
+            check_contains(error.what(), "ZIP entry chunk CRC32 changed after staging",
+                "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should enforce CRC metadata");
+        }
+    }
+    check(failed_source_copy_temp_crc,
+        "source-backed CellStore rename+queued worksheet full-projection should reject changed source-copy temp CRC");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_source_copy_crc_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(
+        after_source_copy_crc_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should preserve staged chunks");
+    check(fastxlsx::test::read_file(output) == source_copy_crc_failure_output_sentinel,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should not overwrite existing output");
+    check_no_new_package_editor_temp_files(temp_files_before_source_copy_crc_failure,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should clean source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(
+        output_temp_files_before_source_copy_crc_failure, output,
+        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should clean output sibling temp files");
+
+    const std::vector<std::filesystem::path> temp_files_before_writer_failure =
+        package_editor_temp_files();
+    const std::string writer_failure_output_sentinel =
+        "do not overwrite this combined CellStore writer failure output";
+    write_binary_file(output, writer_failure_output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before_writer_failure =
+        package_editor_output_sibling_temp_files(output);
+
+    fastxlsx::detail::PackageWriterOptions writer_failure_options;
+    writer_failure_options.backend =
+        static_cast<fastxlsx::detail::PackageWriterBackend>(999);
+
+    bool failed_writer_output = false;
+    try {
+        editor.save_as(output, writer_failure_options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_writer_output = true;
+        check_contains(error.what(), "failed to write PackageEditor output package",
+            "source-backed CellStore rename+queued worksheet full-projection writer failure should include PackageEditor context");
+        check_contains(error.what(), "unsupported package writer backend",
+            "source-backed CellStore rename+queued worksheet full-projection writer failure should preserve backend reason");
+    }
+    check(failed_writer_output,
+        "source-backed CellStore rename+queued worksheet full-projection should reject writer backend failure");
+
+    check(editor.edit_plan().size() == planned_plan_size,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == planned_note_count,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should not append notes");
+    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_writer_failed_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_writer_failed_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should preserve staged chunks");
+    check(fastxlsx::test::read_file(output) == writer_failure_output_sentinel,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should not overwrite existing output");
+    check_no_new_package_editor_temp_files(temp_files_before_writer_failure,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should clean source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(
+        output_temp_files_before_writer_failure, output,
+        "source-backed CellStore rename+queued worksheet full-projection writer failure should clean output sibling temp files");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Renamed Projection") == worksheet_part,
+        "source-backed CellStore rename+queued worksheet full-projection output should expose planned sheet name");
+    bool old_name_failed = false;
+    try {
+        (void)output_reader.worksheet_part_by_sheet_name("Sheet1");
+    } catch (const std::exception&) {
+        old_name_failed = true;
+    }
+    check(old_name_failed,
+        "source-backed CellStore rename+queued worksheet full-projection output should not expose old sheet name");
+
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed Projection")",
+        "source-backed CellStore rename+queued worksheet full-projection output should preserve renamed catalog");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "source-backed CellStore rename+queued worksheet full-projection output should keep recalculation request");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:G7"/>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should refresh dimension");
+    check_contains(worksheet_xml, R"(<f>SUM(B1:C1)</f>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should retain loaded source formula");
+    check_contains(worksheet_xml,
+        R"(<c r="F6" t="inlineStr"><is><t>renamed queued full projection</t></is></c>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should write new text cell");
+    check_contains(worksheet_xml, R"(<c r="G7"/>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should write explicit blank extent");
+    check_not_contains(worksheet_xml, R"(<sheetView workbookViewId="53"/>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should not preserve queued sheetViews");
+    check_not_contains(worksheet_xml, R"(<autoFilter ref="E9:F9"/>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should not preserve queued autoFilter");
+    check_not_contains(worksheet_xml, R"(<v>999</v>)",
+        "source-backed CellStore rename+queued worksheet full-projection output should remove queued rows");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "source-backed CellStore rename+queued worksheet full-projection output should keep stale calcChain omitted");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore rename+queued worksheet full-projection output should preserve unknown bytes");
+
+    const fastxlsx::detail::PackageEditorOutputPlan after_successful_save_output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(after_successful_save_output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore rename+queued worksheet full-projection successful save should preserve staged chunks");
+
+    editor.save_as(second_output);
+
+    const fastxlsx::detail::PackageReader second_output_reader =
+        fastxlsx::detail::PackageReader::open(second_output);
+    check(second_output_reader.worksheet_part_by_sheet_name("Renamed Projection") == worksheet_part,
+        "source-backed CellStore rename+queued worksheet full-projection second output should expose planned sheet name");
+    check(second_output_reader.read_entry("xl/workbook.xml") == workbook_xml,
+        "source-backed CellStore rename+queued worksheet full-projection second output should reuse workbook bytes");
+    check(second_output_reader.read_entry("xl/worksheets/sheet1.xml") == worksheet_xml,
+        "source-backed CellStore rename+queued worksheet full-projection second output should reuse worksheet staged chunks");
+    check(second_output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "source-backed CellStore rename+queued worksheet full-projection second output should keep stale calcChain omitted");
+    check(second_output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore rename+queued worksheet full-projection second output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_after_workbook_removal()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-workbook-removal-chunks-source.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(4, 4, fastxlsx::CellValue::text("should not be consumed"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    editor.remove_part(workbook_part,
+        "explicit workbook removal before CellStore chunk handoff");
+
+    const std::size_t removal_plan_size = editor.edit_plan().size();
+    const std::size_t removal_note_count = editor.edit_plan().notes().size();
+    const std::size_t removal_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t removal_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t removal_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const fastxlsx::detail::CalcChainAction removal_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "Sheet1", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "workbook sheet catalog",
+            "source-backed CellStore workbook-removal failure should name the catalog");
+        check_contains(error.what(), "removed",
+            "source-backed CellStore workbook-removal failure should name planned removal");
+    }
+    check(failed,
+        "PackageEditor should reject source-loaded CellStore full projection after planned workbook removal");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore workbook-removal failure should not consume chunk source");
+
+    check(editor.edit_plan().size() == removal_plan_size,
+        "source-backed CellStore workbook-removal failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == removal_note_count,
+        "source-backed CellStore workbook-removal failure should preserve note count");
+    check(editor.edit_plan().package_entries().size() == removal_package_entry_count,
+        "source-backed CellStore workbook-removal failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == removal_removed_package_entry_count,
+        "source-backed CellStore workbook-removal failure should preserve removed package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == removal_removed_part_count,
+        "source-backed CellStore workbook-removal failure should preserve removed-part audits");
+    check(editor.edit_plan().calc_chain_action() == removal_calc_chain_action,
+        "source-backed CellStore workbook-removal failure should preserve calc policy");
+    check(editor.edit_plan().find_removed_part(workbook_part) != nullptr,
+        "source-backed CellStore workbook-removal failure should keep workbook removed");
+    check(editor.edit_plan().find_removed_package_entry("xl/_rels/workbook.xml.rels")
+            != nullptr,
+        "source-backed CellStore workbook-removal failure should keep workbook relationships omitted");
+    check(editor.manifest().find_part(workbook_part) == nullptr,
+        "source-backed CellStore workbook-removal failure should keep workbook absent from manifest");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore workbook-removal failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore workbook-removal failure should leave calcChain copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), false,
+        "source-backed CellStore workbook-removal failure should not stage worksheet chunks");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_invalid_planned_catalog()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-invalid-planned-catalog-chunks-source.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(5, 5, fastxlsx::CellValue::text("invalid catalog should not consume this"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string planned_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Broken" sheetId="1" r:id="missingRel"/></sheets>)"
+        R"(</workbook>)";
+    editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "invalid planned workbook catalog before CellStore chunk handoff");
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "Broken", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "relationship id is not present",
+            "source-backed CellStore invalid planned catalog failure should explain missing relationship id");
+    }
+    check(failed,
+        "PackageEditor should reject source-loaded CellStore full projection with invalid planned catalog");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore invalid planned catalog failure should not consume chunk source");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-backed CellStore invalid planned catalog failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-backed CellStore invalid planned catalog failure should not append notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "source-backed CellStore invalid planned catalog failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "source-backed CellStore invalid planned catalog failure should preserve removed package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "source-backed CellStore invalid planned catalog failure should preserve removed-part audits");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore invalid planned catalog failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-backed CellStore invalid planned catalog failure should preserve calc policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore invalid planned catalog failure should keep workbook replacement");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore invalid planned catalog failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore invalid planned catalog failure should leave calcChain copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), false,
+        "source-backed CellStore invalid planned catalog failure should not stage worksheet chunks");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_wrong_namespace_planned_catalog_id()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-wrong-namespace-planned-catalog-chunks-source.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(5, 5, fastxlsx::CellValue::text("wrong namespace should not consume this"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string planned_workbook =
+        R"(<workbook xmlns:x="urn:fastxlsx:not-relationships">)"
+        R"(<sheets><sheet name="WrongNs" sheetId="1" x:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "wrong-namespace planned workbook catalog before CellStore chunk handoff");
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "WrongNs", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "missing relationship id",
+            "source-backed CellStore wrong-namespace planned catalog failure should explain missing relationship id");
+    }
+    check(failed,
+        "PackageEditor should reject source-loaded CellStore full projection with wrong-namespace planned catalog id");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore wrong-namespace planned catalog failure should not consume chunk source");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-backed CellStore wrong-namespace planned catalog failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-backed CellStore wrong-namespace planned catalog failure should not append notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "source-backed CellStore wrong-namespace planned catalog failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "source-backed CellStore wrong-namespace planned catalog failure should preserve removed package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "source-backed CellStore wrong-namespace planned catalog failure should preserve removed-part audits");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore wrong-namespace planned catalog failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-backed CellStore wrong-namespace planned catalog failure should preserve calc policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore wrong-namespace planned catalog failure should keep workbook replacement");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore wrong-namespace planned catalog failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore wrong-namespace planned catalog failure should leave calcChain copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), false,
+        "source-backed CellStore wrong-namespace planned catalog failure should not stage worksheet chunks");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_unqualified_planned_catalog_id()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-unqualified-planned-catalog-chunks-source.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(5, 5, fastxlsx::CellValue::text("plain id should not consume this"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string planned_workbook =
+        R"(<workbook><sheets><sheet name="PlainId" sheetId="1" id="rId1"/></sheets></workbook>)";
+    editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "plain-id planned workbook catalog before CellStore chunk handoff");
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "PlainId", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "missing relationship id",
+            "source-backed CellStore unqualified planned catalog failure should explain missing relationship id");
+    }
+    check(failed,
+        "PackageEditor should reject source-loaded CellStore full projection with unqualified planned catalog id");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore unqualified planned catalog failure should not consume chunk source");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-backed CellStore unqualified planned catalog failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-backed CellStore unqualified planned catalog failure should not append notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "source-backed CellStore unqualified planned catalog failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "source-backed CellStore unqualified planned catalog failure should preserve removed package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "source-backed CellStore unqualified planned catalog failure should preserve removed-part audits");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore unqualified planned catalog failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-backed CellStore unqualified planned catalog failure should preserve calc policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore unqualified planned catalog failure should keep workbook replacement");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore unqualified planned catalog failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore unqualified planned catalog failure should leave calcChain copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), false,
+        "source-backed CellStore unqualified planned catalog failure should not stage worksheet chunks");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_unregistered_planned_catalog_target()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-unregistered-planned-catalog-chunks-source.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(5, 5, fastxlsx::CellValue::text("unregistered target should not consume this"));
+
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/missing.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    rewrite_calc_source_package(source);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string planned_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="BrokenTarget" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "unregistered-target planned workbook catalog before CellStore chunk handoff");
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "BrokenTarget", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "unknown part",
+            "source-backed CellStore unregistered planned catalog target failure should explain the missing part");
+    }
+    check(failed,
+        "PackageEditor should reject source-loaded CellStore full projection with unregistered planned catalog target");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore unregistered planned catalog target failure should not consume chunk source");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-backed CellStore unregistered planned catalog target failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-backed CellStore unregistered planned catalog target failure should not append notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "source-backed CellStore unregistered planned catalog target failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "source-backed CellStore unregistered planned catalog target failure should preserve removed package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "source-backed CellStore unregistered planned catalog target failure should preserve removed-part audits");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore unregistered planned catalog target failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-backed CellStore unregistered planned catalog target failure should preserve calc policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore unregistered planned catalog target failure should keep workbook replacement");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore unregistered planned catalog target failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore unregistered planned catalog target failure should leave calcChain copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        editor.planned_output();
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), false,
+        "source-backed CellStore unregistered planned catalog target failure should not stage worksheet chunks");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_replace_queued_worksheet()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-queued-worksheet-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-queued-worksheet-chunks-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(6, 4, fastxlsx::CellValue::text("full worksheet projection"));
+    store.set_cell(7, 5, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    const std::string queued_worksheet =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheetViews><sheetView workbookViewId="31"/></sheetViews>)"
+        R"(<sheetData><row r="3"><c r="A3"><v>333</v></c></row></sheetData>)"
+        R"(<autoFilter ref="A3:B3"/>)"
+        R"(<extLst><ext uri="{queued-before-full-projection}"/></extLst>)"
+        R"(</worksheet>)";
+    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", queued_worksheet);
+
+    const fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    editor.replace_worksheet_part_from_chunk_source_by_name("Sheet1", worksheet_source);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "source-backed CellStore full projection should keep worksheet in the edit plan");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore full projection should end as stream rewrite");
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr
+            && workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore full projection should keep workbook calc rewrite");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore full projection should keep stale calcChain removed");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore full projection should keep full calculation request");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"pull-based chunk source", "file-backed staged chunk"}),
+        "source-backed CellStore full projection should expose staged chunk-source evidence");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "source-backed CellStore full projection output plan should stream-rewrite worksheet");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "source-backed CellStore full projection output plan should expose staged chunks");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E7"/>)",
+        "source-backed CellStore full projection output should refresh dimension");
+    check_contains(worksheet_xml, R"(<f>SUM(B1:C1)</f>)",
+        "source-backed CellStore full projection output should retain loaded source formula");
+    check_contains(worksheet_xml,
+        R"(<c r="D6" t="inlineStr"><is><t>full worksheet projection</t></is></c>)",
+        "source-backed CellStore full projection output should write new text cell");
+    check_contains(worksheet_xml, R"(<c r="E7"/>)",
+        "source-backed CellStore full projection output should write explicit blank extent");
+    check_not_contains(worksheet_xml, R"(<sheetView workbookViewId="31"/>)",
+        "source-backed CellStore full projection output should not preserve prior queued wrapper");
+    check_not_contains(worksheet_xml, R"(<autoFilter ref="A3:B3"/>)",
+        "source-backed CellStore full projection output should not preserve prior queued autoFilter");
+    check_not_contains(worksheet_xml, R"(<v>333</v>)",
+        "source-backed CellStore full projection output should remove prior queued rows");
+    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "source-backed CellStore full projection output should keep stale calcChain omitted");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "source-backed CellStore full projection output should keep workbook recalculation request");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore full projection output should preserve unknown bytes");
+}
+
+void test_package_editor_replaces_worksheet_from_cell_store_worksheet_chunks_by_name()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-cellstore-worksheet-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-cellstore-worksheet-chunks-output.xlsx");
+
+    fastxlsx::detail::CellStore store;
+    store.set_cell(2, 2, fastxlsx::CellValue::text("projected & escaped"));
+    store.set_cell(4, 1, fastxlsx::CellValue::formula("LEN(B2)&\"<ok>\""));
+    store.set_cell(5, 5, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    editor.replace_worksheet_part_from_chunk_source_by_name("Sheet1", worksheet_source);
+
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "CellStore worksheet chunk handoff should plan the worksheet replacement");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "CellStore worksheet chunk handoff should use staged stream rewrite");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"pull-based chunk source", "file-backed staged chunk"}),
+        "CellStore worksheet chunk handoff should expose chunk-source staging");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "CellStore worksheet chunk handoff should remove stale calcChain by default");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "CellStore worksheet chunk handoff should request workbook recalculation");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "CellStore worksheet chunk output plan should expose staged worksheet rewrite");
+    check_output_entry_staged_replacement_chunks(output_plan.entries,
+        worksheet_part.zip_path(), true,
+        "CellStore worksheet chunk output plan should expose staged chunks");
+    check_output_entry_plan(output_plan.entries, workbook_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "CellStore worksheet chunk output plan should rewrite workbook calc metadata");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "CellStore worksheet chunk output should omit stale calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A2:E5"/>)",
+        "CellStore worksheet chunk output should refresh worksheet dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>projected &amp; escaped</t></is></c>)",
+        "CellStore worksheet chunk output should write projected inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="A4"><f>LEN(B2)&amp;"&lt;ok&gt;"</f></c>)",
+        "CellStore worksheet chunk output should write projected formula text");
+    check_contains(worksheet_xml, R"(<c r="E5"/>)",
+        "CellStore worksheet chunk output should write explicit blank extent records");
+    check_not_contains(worksheet_xml, "SUM(B1:C1)",
+        "CellStore worksheet chunk output should remove old source formula payload");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "CellStore worksheet chunk output should request workbook recalculation");
+    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
+        "CellStore worksheet chunk output should remove calcChain content type");
+    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/calcChain",
+        "CellStore worksheet chunk output should remove calcChain relationship");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "CellStore worksheet chunk output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_name_after_rename()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-worksheet-planned-rename-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-worksheet-planned-rename-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    store.set_cell(5, 5, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    editor.rename_sheet_catalog_entry("Sheet1", "Projected Data");
+
+    const std::size_t renamed_plan_size = editor.edit_plan().size();
+    const std::size_t renamed_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction renamed_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    std::size_t worksheet_chunk_reads = 0;
+    fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    fastxlsx::detail::WorksheetInputChunkCallback counted_worksheet_source =
+        [&worksheet_source, &worksheet_chunk_reads](std::string& output_chunk) {
+            ++worksheet_chunk_reads;
+            return worksheet_source(output_chunk);
+        };
+
+    bool failed_old_name = false;
+    try {
+        editor.replace_worksheet_part_from_chunk_source_by_name(
+            "Sheet1", counted_worksheet_source);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_old_name = true;
+        check_contains(error.what(), "workbook sheet name is not present",
+            "source-backed CellStore worksheet old-name handoff should use planned catalog");
+    }
+    check(failed_old_name,
+        "PackageEditor should reject source name after queued rename for CellStore worksheet handoff");
+
+    check(editor.edit_plan().size() == renamed_plan_size,
+        "source-backed CellStore worksheet old-name failure should preserve queued rename plan size");
+    check(editor.edit_plan().notes().size() == renamed_note_count,
+        "source-backed CellStore worksheet old-name failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore worksheet old-name failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore worksheet old-name failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == renamed_calc_chain_action,
+        "source-backed CellStore worksheet old-name failure should not change calcChain policy");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-backed CellStore worksheet old-name failure should preserve workbook rename rewrite");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore worksheet old-name failure should leave worksheet copy-original");
+    check_manifest_write_mode(editor, calc_chain_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore worksheet old-name failure should leave calcChain copy-original");
+    check(worksheet_chunk_reads == 0,
+        "source-backed CellStore worksheet old-name failure should not consume worksheet chunks");
+
+    editor.replace_worksheet_part_from_chunk_source_by_name(
+        "Projected Data", counted_worksheet_source);
+    check(worksheet_chunk_reads > 0,
+        "source-backed CellStore worksheet planned-name handoff should consume worksheet chunks");
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "source-backed CellStore worksheet planned-name handoff should stage stream rewrite");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
+        "source-backed CellStore worksheet planned-name handoff should remove stale calcChain");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore worksheet planned-name handoff should request recalculation");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "source-backed CellStore worksheet planned-name output should omit stale calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.worksheet_part_by_sheet_name("Projected Data") == worksheet_part,
+        "source-backed CellStore worksheet planned-name output should expose renamed sheet");
+
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Projected Data")",
+        "source-backed CellStore worksheet planned-name output should preserve renamed catalog");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "source-backed CellStore worksheet planned-name output should request workbook recalculation");
+
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E5"/>)",
+        "source-backed CellStore worksheet planned-name output should refresh dimension");
+    check_contains(worksheet_xml, R"(<f>SUM(B1:C1)</f>)",
+        "source-backed CellStore worksheet planned-name output should retain loaded source formula");
+    check_contains(worksheet_xml, R"(<c r="E5"/>)",
+        "source-backed CellStore worksheet planned-name output should write explicit blank extent");
+    check_not_contains(worksheet_xml, "<v>3</v>",
+        "source-backed CellStore worksheet planned-name output should drop old cached formula value");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore worksheet planned-name output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-semantic-source.xlsx");
+    source.worksheet =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>12.5</v></c>)"
+        R"(<c r="B1" t="b"><v>1</v></c>)"
+        R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)"
+        R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f><v>999</v></c>)"
+        R"(<c r="E1"/>)"
+        R"(</row><row r="2"><c r="A2"><v>0</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-semantic-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    const fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+
+    check(store.cell_count() == 6,
+        "package-backed CellStore semantic loader should materialize explicit source cells");
+    const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
+    check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number,
+        "package-backed CellStore semantic loader should load numeric cells");
+    check(number->number_value == 12.5,
+        "package-backed CellStore semantic loader numeric payload mismatch");
+    const fastxlsx::detail::CellRecord* boolean = store.find_cell(1, 2);
+    check(boolean != nullptr && boolean->kind == fastxlsx::CellValueKind::Boolean,
+        "package-backed CellStore semantic loader should load boolean cells");
+    check(boolean->boolean_value,
+        "package-backed CellStore semantic loader boolean payload mismatch");
+    const fastxlsx::detail::CellRecord* text = store.find_cell(1, 3);
+    check(text != nullptr && text->kind == fastxlsx::CellValueKind::Text,
+        "package-backed CellStore semantic loader should load inline string cells");
+    check(text->text_value == " hello & raw ",
+        "package-backed CellStore semantic loader should decode inline string text");
+    const fastxlsx::detail::CellRecord* formula = store.find_cell(1, 4);
+    check(formula != nullptr && formula->kind == fastxlsx::CellValueKind::Formula,
+        "package-backed CellStore semantic loader should load formula cells");
+    check(formula->text_value == "SUM(A1:B1)&\"<ok>\"",
+        "package-backed CellStore semantic loader should decode formula text and ignore cached values");
+    const fastxlsx::detail::CellRecord* blank = store.find_cell(1, 5);
+    check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
+        "package-backed CellStore semantic loader should keep explicit blank cells");
+    const fastxlsx::detail::CellRecord* zero = store.find_cell(2, 1);
+    check(zero != nullptr && zero->kind == fastxlsx::CellValueKind::Number
+            && zero->number_value == 0.0,
+        "package-backed CellStore semantic loader should preserve zero numeric values");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", replacement_sheet_data_source);
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>12.5</v></c>)",
+        "package-backed CellStore semantic output should write numeric cells");
+    check_contains(worksheet_xml, R"(<c r="B1" t="b"><v>1</v></c>)",
+        "package-backed CellStore semantic output should write boolean cells");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)",
+        "package-backed CellStore semantic output should re-escape inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f></c>)",
+        "package-backed CellStore semantic output should write semantic formula text without cached value");
+    check_contains(worksheet_xml, R"(<c r="E1"/>)",
+        "package-backed CellStore semantic output should preserve explicit blank cells");
+    check_contains(worksheet_xml, R"(<c r="A2"><v>0</v></c>)",
+        "package-backed CellStore semantic output should preserve zero numeric cells");
+    check_not_contains(worksheet_xml, "<v>999</v>",
+        "package-backed CellStore semantic output should drop old cached formula values");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "package-backed CellStore semantic output should omit stale calcChain");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "package-backed CellStore semantic output should request workbook recalculation");
+    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
+        "package-backed CellStore semantic output should remove calcChain content type");
+    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/calcChain",
+        "package-backed CellStore semantic output should remove calcChain relationship");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "package-backed CellStore semantic output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_preserves_unreferenced_styles()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-styles-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-styles-output.xlsx");
+
+    {
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path);
+        const auto text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+        auto plain = workbook.add_worksheet("Plain");
+        auto style_owner = workbook.add_worksheet("StyleOwner");
+        plain.append_row({fastxlsx::CellView::text("unstyled source")});
+        style_owner.append_row({fastxlsx::CellView::text("styled keeper").with_style(text_style)});
+        workbook.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    check(source_entries.find("xl/styles.xml") != source_entries.end(),
+        "source-loaded CellStore unreferenced-style fixture should contain styles.xml");
+    const std::string styles_before = source_entries.at("xl/styles.xml");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Plain");
+    const fastxlsx::detail::CellRecord* source_cell = store.try_cell(1, 1);
+    check(source_cell != nullptr && source_cell->kind == fastxlsx::CellValueKind::Text,
+        "source-loaded CellStore should load unstyled cells even when styles.xml exists");
+    check(!source_cell->style_id.has_value(),
+        "source-loaded CellStore should not invent style handles for unstyled source cells");
+    store.set_cell(1, 2, fastxlsx::CellValue::text("patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Plain", replacement_sheet_data_source);
+
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "source-loaded CellStore output plan should preserve unreferenced styles");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>unstyled source</t></is></c><c r="B1" t="inlineStr"><is><t>patched</t></is></c></row></sheetData>)",
+        "source-loaded CellStore should rewrite unstyled source cells without style attributes");
+    check_not_contains(worksheet_xml, R"(<c r="A1" s=)",
+        "source-loaded CellStore should not invent style references for unstyled source cells");
+    check_not_contains(worksheet_xml, R"(<c r="B1" s=)",
+        "source-loaded CellStore should not invent style references for new unstyled cells");
+    check(output_reader.read_entry("xl/styles.xml") == styles_before,
+        "source-loaded CellStore output should preserve unreferenced styles.xml bytes");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "source-loaded CellStore output should preserve styles content type");
+    check_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/styles",
+        "source-loaded CellStore output should preserve unreferenced styles relationship");
+    const fastxlsx::detail::RelationshipGraph graph = output_reader.relationship_graph();
+    const fastxlsx::detail::RelationshipSet* workbook_relationships =
+        graph.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "source-loaded CellStore output graph should preserve workbook relationships");
+    check(std::any_of(workbook_relationships->relationships().begin(),
+              workbook_relationships->relationships().end(),
+              [](const fastxlsx::detail::Relationship& relationship) {
+                  return relationship.type
+                          == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+                      && relationship.target == "styles.xml"
+                      && relationship.target_mode
+                          == fastxlsx::detail::Relationship::TargetMode::Internal;
+              }),
+        "source-loaded CellStore output graph should re-read the styles relationship");
+}
+
+void test_package_editor_source_loaded_cell_store_preserves_unreferenced_shared_strings()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-sharedstrings-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-sharedstrings-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        auto plain = workbook.add_worksheet("Plain");
+        auto shared_owner = workbook.add_worksheet("SharedOwner");
+        plain.append_row({fastxlsx::CellView::number(123.0)});
+        shared_owner.append_row({fastxlsx::CellView::text("shared keeper")});
+        workbook.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    check(source_entries.find("xl/sharedStrings.xml") != source_entries.end(),
+        "source-loaded CellStore unreferenced-sharedStrings fixture should contain sharedStrings.xml");
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Plain");
+    const fastxlsx::detail::CellRecord* source_cell = store.try_cell(1, 1);
+    check(source_cell != nullptr && source_cell->kind == fastxlsx::CellValueKind::Number,
+        "source-loaded CellStore should load non-shared cells even when sharedStrings.xml exists");
+    store.set_cell(1, 2, fastxlsx::CellValue::text("patched inline"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Plain", replacement_sheet_data_source);
+
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "source-loaded CellStore output plan should preserve unreferenced sharedStrings");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="1"><c r="A1"><v>123</v></c><c r="B1" t="inlineStr"><is><t>patched inline</t></is></c></row></sheetData>)",
+        "source-loaded CellStore should rewrite non-shared source cells without shared string indexes");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "source-loaded CellStore should not invent shared string references");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == shared_strings_before,
+        "source-loaded CellStore output should preserve unreferenced sharedStrings bytes");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "source-loaded CellStore output should preserve sharedStrings content type");
+    check_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/sharedStrings",
+        "source-loaded CellStore output should preserve unreferenced sharedStrings relationship");
+    const fastxlsx::detail::RelationshipGraph graph = output_reader.relationship_graph();
+    const fastxlsx::detail::RelationshipSet* workbook_relationships =
+        graph.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "source-loaded CellStore output graph should preserve workbook relationships");
+    check(std::any_of(workbook_relationships->relationships().begin(),
+              workbook_relationships->relationships().end(),
+              [](const fastxlsx::detail::Relationship& relationship) {
+                  return relationship.type
+                          == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"
+                      && relationship.target == "sharedStrings.xml"
+                      && relationship.target_mode
+                          == fastxlsx::detail::Relationship::TargetMode::Internal;
+              }),
+        "source-loaded CellStore output graph should re-read the sharedStrings relationship");
+}
+
+void test_package_editor_source_loaded_cell_store_distinguishes_blank_and_erase()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-blank-erase-source.xlsx");
+    source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1"><v>22</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-blank-erase-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    check(store.cell_count() == 2,
+        "blank-vs-erase source-backed CellStore should load source cells");
+    check(store.try_cell(1, 1) != nullptr && store.try_cell(1, 2) != nullptr,
+        "blank-vs-erase source-backed CellStore should expose both source cells");
+
+    store.set_cell(1, 1, fastxlsx::CellValue::blank());
+    store.erase_cell(1, 2);
+    const fastxlsx::detail::CellRecord* blank = store.try_cell(1, 1);
+    check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
+        "blank-vs-erase CellStore should keep explicit blank overwrite records");
+    check(store.try_cell(1, 2) == nullptr,
+        "blank-vs-erase CellStore should remove erased source records");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/calcChain.xml") == entries.end(),
+        "blank-vs-erase source-backed CellStore output should omit stale calcChain");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="1"><c r="A1"/></row></sheetData>)",
+        "blank-vs-erase output should write explicit blank source overwrite");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "blank-vs-erase output should omit erased source cells");
+    check_not_contains(worksheet_xml, R"(<v>11</v>)",
+        "blank-vs-erase output should remove the old blanked source value");
+    check_not_contains(worksheet_xml, R"(<v>22</v>)",
+        "blank-vs-erase output should remove the old erased source value");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "blank-vs-erase source-backed CellStore output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_preserves_loader_options()
+{
+    CalcSourcePackage max_source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-option-max-source.xlsx");
+    max_source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1"><v>22</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(max_source);
+
+    const fastxlsx::detail::PackageReader max_source_reader =
+        fastxlsx::detail::PackageReader::open(max_source.path);
+    fastxlsx::detail::CellStoreOptions max_options;
+    max_options.max_cells = 2;
+    fastxlsx::detail::CellStore max_guarded_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            max_source_reader, "Sheet1", max_options);
+    check(max_guarded_store.options().max_cells == 2,
+        "package-backed CellStore loader should preserve max_cells options");
+
+    bool max_failed = false;
+    try {
+        max_guarded_store.set_cell(1, 3, fastxlsx::CellValue::number(33.0));
+    } catch (const fastxlsx::FastXlsxError&) {
+        max_failed = true;
+    }
+    check(max_failed,
+        "package-backed CellStore loader returned store should keep enforcing max_cells");
+    check(max_guarded_store.cell_count() == 2,
+        "package-backed CellStore max_cells failure should preserve source-loaded records");
+    check(max_guarded_store.find_cell(1, 3) == nullptr,
+        "package-backed CellStore max_cells failure should not leave rejected records");
+
+    CalcSourcePackage memory_source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-option-memory-source.xlsx");
+    memory_source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(memory_source);
+
+    fastxlsx::detail::CellStore memory_sizing_store;
+    memory_sizing_store.set_cell(1, 1, fastxlsx::CellValue::text("a"));
+    fastxlsx::detail::CellStoreOptions memory_options;
+    memory_options.memory_budget_bytes = memory_sizing_store.estimated_memory_usage();
+
+    const fastxlsx::detail::PackageReader memory_source_reader =
+        fastxlsx::detail::PackageReader::open(memory_source.path);
+    fastxlsx::detail::CellStore memory_guarded_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            memory_source_reader, "Sheet1", memory_options);
+    check(memory_guarded_store.options().memory_budget_bytes
+            == memory_sizing_store.estimated_memory_usage(),
+        "package-backed CellStore loader should preserve memory budget options");
+
+    bool memory_failed = false;
+    try {
+        memory_guarded_store.set_cell(
+            1, 1, fastxlsx::CellValue::text(std::string(1024, 'x')));
+    } catch (const fastxlsx::FastXlsxError&) {
+        memory_failed = true;
+    }
+    check(memory_failed,
+        "package-backed CellStore loader returned store should keep enforcing memory budget");
+    const fastxlsx::detail::CellRecord* memory_guarded_cell =
+        memory_guarded_store.find_cell(1, 1);
+    check(memory_guarded_cell != nullptr,
+        "package-backed CellStore memory failure should preserve the source-loaded cell");
+    check(memory_guarded_cell->text_value == "a",
+        "package-backed CellStore memory failure should preserve the source-loaded payload");
+}
+
+void test_package_editor_source_loaded_cell_store_option_failure_preserves_editor_state()
+{
+    const auto run_guardrail_failure_case =
+        [](const char* source_name, const char* worksheet_xml,
+            const fastxlsx::detail::CellStoreOptions& options,
+            std::string_view expected_diagnostic) {
+            CalcSourcePackage source = write_calc_source_package(source_name);
+            source.worksheet = worksheet_xml;
+            rewrite_calc_source_package(source);
+
+            const fastxlsx::detail::PackageReader source_reader =
+                fastxlsx::detail::PackageReader::open(source.path);
+            fastxlsx::detail::PackageEditor editor =
+                fastxlsx::detail::PackageEditor::open(source.path);
+            const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+            const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+            const std::size_t initial_plan_size = editor.edit_plan().size();
+            const std::size_t initial_note_count = editor.edit_plan().notes().size();
+            const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+                editor.edit_plan().calc_chain_action();
+
+            bool failed = false;
+            try {
+                (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                    source_reader, "Sheet1", options);
+            } catch (const fastxlsx::FastXlsxError& error) {
+                failed = true;
+                check_contains(error.what(),
+                    "failed to load CellStore from workbook sheet 'Sheet1'",
+                    "package-backed CellStore option failure should identify the workbook sheet");
+                check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                    "package-backed CellStore option failure should identify the worksheet part");
+                check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                    "package-backed CellStore option failure should identify the worksheet ZIP entry");
+                check_contains(error.what(), expected_diagnostic,
+                    "package-backed CellStore option failure should preserve the guardrail diagnostic");
+            }
+            check(failed,
+                "package-backed CellStore load should fail on load-time option guardrails");
+
+            check(editor.edit_plan().size() == initial_plan_size,
+                "package-backed CellStore option failure should not mutate edit-plan parts");
+            check(editor.edit_plan().notes().size() == initial_note_count,
+                "package-backed CellStore option failure should not append notes");
+            check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+                "package-backed CellStore option failure should not queue calcChain removal");
+            check(!editor.edit_plan().full_calculation_on_load(),
+                "package-backed CellStore option failure should not request recalculation");
+            check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+                "package-backed CellStore option failure should not change calcChain policy");
+            check_manifest_write_mode(editor, worksheet_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "package-backed CellStore option failure should keep worksheet copy-original");
+            check_manifest_write_mode(editor, calc_chain_part,
+                fastxlsx::detail::PartWriteMode::CopyOriginal,
+                "package-backed CellStore option failure should keep calcChain copy-original");
+
+            const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+                editor.planned_output();
+            check(output_plan.full_calculation_on_load == false,
+                "package-backed CellStore option output plan should not request recalculation");
+            check(output_plan.calc_chain_action == initial_calc_chain_action,
+                "package-backed CellStore option output plan should preserve calcChain policy");
+            check(output_plan.notes.size() == initial_note_count,
+                "package-backed CellStore option output plan should not add notes");
+            check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "package-backed CellStore option output plan should preserve workbook");
+            check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "package-backed CellStore option output plan should preserve workbook rels");
+            check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "package-backed CellStore option output plan should preserve worksheet");
+            check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "package-backed CellStore option output plan should preserve calcChain");
+            check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+                fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+                "package-backed CellStore option output plan should preserve unknown bytes");
+        };
+
+    fastxlsx::detail::CellStoreOptions max_cell_options;
+    max_cell_options.max_cells = 1;
+    run_guardrail_failure_case(
+        "fastxlsx-package-editor-source-cellstore-option-max-failure-source.xlsx",
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row></sheetData></worksheet>)",
+        max_cell_options, "CellStore max_cells guardrail exceeded");
+
+    fastxlsx::detail::CellStore memory_sizing_store;
+    memory_sizing_store.set_cell(1, 1, fastxlsx::CellValue::text("a"));
+    fastxlsx::detail::CellStoreOptions memory_options;
+    memory_options.memory_budget_bytes = memory_sizing_store.estimated_memory_usage();
+    run_guardrail_failure_case(
+        "fastxlsx-package-editor-source-cellstore-option-memory-failure-source.xlsx",
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c><c r="B1" t="inlineStr"><is><t>oversized materialized text</t></is></c></row></sheetData></worksheet>)",
+        memory_options, "CellStore memory_budget_bytes guardrail exceeded");
+}
+
+void test_package_editor_source_loaded_cell_store_source_shape_failure_preserves_editor_state()
+{
+    struct SourceShapeFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const SourceShapeFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="A1"><v>2</v></c></row></sheetData></worksheet>)",
+            "out-of-order cell references",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-row-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-row-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="1"><c r="B1"><v>2</v></c></row></sheetData></worksheet>)",
+            "duplicate row numbers",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-out-of-order-row-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-out-of-order-row-output.xlsx",
+            R"(<worksheet><sheetData><row r="2"><c r="A2"><v>2</v></c></row><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            "out-of-order row numbers",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-out-of-order-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-out-of-order-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="B1"><v>2</v></c><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            "out-of-order cell references",
+        },
+    };
+
+    for (const SourceShapeFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore source-shape failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore source-shape failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore source-shape failure should identify the worksheet ZIP entry");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "package-backed CellStore source-shape failure should preserve the loader diagnostic");
+        }
+        check(failed,
+            "package-backed CellStore load should fail on unsupported source worksheet shape");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore source-shape failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore source-shape failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore source-shape failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore source-shape failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore source-shape failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore source-shape failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore source-shape failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore source-shape output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore source-shape output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore source-shape output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore source-shape output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore source-shape output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_metadata_shape_failure_preserves_editor_state()
+{
+    struct MetadataShapeFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const MetadataShapeFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-row-metadata-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-row-metadata-output.xlsx",
+            R"(<worksheet><sheetData><row r="1" ht="20"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            "row metadata attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-cell-metadata-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-cell-metadata-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" cm="1"><v>1</v></c></row></sheetData></worksheet>)",
+            "cell metadata attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-scalar-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-scalar-attr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v foo="1">1</v></c></row></sheetData></worksheet>)",
+            "scalar value attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-formula-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-formula-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><f>1</f><f>2</f></c></row></sheetData></worksheet>)",
+            "duplicate formula elements",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-empty-formula-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-empty-formula-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><f/></c></row></sheetData></worksheet>)",
+            "empty formula text",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-formula-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-formula-attr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="0"/></c></row></sheetData></worksheet>)",
+            "formula attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-text-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-text-attr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t foo="1">a</t></is></c></row></sheetData></worksheet>)",
+            "inline text attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-rich-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-rich-text-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><t>rich</t></r></is></c></row></sheetData></worksheet>)",
+            "inline rich text or phonetic metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-phonetic-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-phonetic-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t><phoneticPr fontId="1"/></is></c></row></sheetData></worksheet>)",
+            "inline rich text or phonetic metadata",
+        },
+    };
+
+    for (const MetadataShapeFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore metadata-shape failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore metadata-shape failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore metadata-shape failure should identify the worksheet ZIP entry");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "package-backed CellStore metadata-shape failure should preserve the loader diagnostic");
+        }
+        check(failed,
+            "package-backed CellStore load should fail on unsupported source worksheet metadata shape");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore metadata-shape failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore metadata-shape failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore metadata-shape failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore metadata-shape failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore metadata-shape failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore metadata-shape failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore metadata-shape failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore metadata-shape output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore metadata-shape output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore metadata-shape output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore metadata-shape output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore metadata-shape output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_payload_failure_preserves_editor_state()
+{
+    struct PayloadFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const PayloadFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-shared-string-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-shared-string-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>)",
+            "shared string indexes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-unsupported-type-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unsupported-type-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="str"><v>1</v></c></row></sheetData></worksheet>)",
+            "unsupported cell type",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-invalid-boolean-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-invalid-boolean-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><v>2</v></c></row></sheetData></worksheet>)",
+            "invalid boolean cell value",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-scalar-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-scalar-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v><v>2</v></c></row></sheetData></worksheet>)",
+            "duplicate scalar value elements",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-inline-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-inline-text-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t><t>b</t></is></c></row></sheetData></worksheet>)",
+            "duplicate inline text elements",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-cell-comment-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-cell-comment-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<!--hidden-->b</t></is></c></row></sheetData></worksheet>)",
+            "cell comments, processing instructions, or unsupported markup",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-cell-pi-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-cell-pi-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<?fx hidden?>b</t></is></c></row></sheetData></worksheet>)",
+            "cell comments, processing instructions, or unsupported markup",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-cell-cdata-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-cell-cdata-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t><![CDATA[hidden]]></t></is></c></row></sheetData></worksheet>)",
+            "cell comments, processing instructions, or unsupported markup",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-nested-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-nested-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><c r="B1"><v>1</v></c></c></row></sheetData></worksheet>)",
+            "invalid cell boundary",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-cell-outside-row-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-cell-outside-row-output.xlsx",
+            R"(<worksheet><sheetData><c r="A1"><v>1</v></c></sheetData></worksheet>)",
+            "cell outside row",
+        },
+    };
+
+    for (const PayloadFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore payload failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore payload failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore payload failure should identify the worksheet ZIP entry");
+            if (std::string_view(error.what()).find(test_case.expected_diagnostic)
+                == std::string_view::npos) {
+                throw TestFailure(std::string(
+                                      "package-backed CellStore payload failure diagnostic mismatch for ")
+                    + test_case.source_name + ": " + error.what());
+            }
+        }
+        check(failed,
+            "package-backed CellStore load should fail on unsupported source cell payloads");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore payload failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore payload failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore payload failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore payload failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore payload failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore payload failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore payload failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore payload output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore payload output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore payload output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore payload output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore payload output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_reference_failure_preserves_editor_state()
+{
+    struct ReferenceFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const ReferenceFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-missing-cell-ref-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-missing-cell-ref-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c><v>1</v></c></row></sheetData></worksheet>)",
+            "requires explicit cell references",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-column-overflow-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-column-overflow-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="XFE1"><v>1</v></c></row></sheetData></worksheet>)",
+            "cell column exceeds Excel limits",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-zero-cell-row-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-zero-cell-row-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A0"><v>1</v></c></row></sheetData></worksheet>)",
+            "invalid cell reference",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-cell-row-overflow-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-cell-row-overflow-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1048577"><v>1</v></c></row></sheetData></worksheet>)",
+            "cell row exceeds Excel limits",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-invalid-cell-ref-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-invalid-cell-ref-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="1A"><v>1</v></c></row></sheetData></worksheet>)",
+            "invalid cell reference",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-row-cell-mismatch-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-row-cell-mismatch-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="B2"><v>2</v></c></row></sheetData></worksheet>)",
+            "row and cell reference do not match",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-zero-row-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-zero-row-output.xlsx",
+            R"(<worksheet><sheetData><row r="0"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            "row must be one-based",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-row-overflow-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-row-overflow-output.xlsx",
+            R"(<worksheet><sheetData><row r="1048577"><c r="A1048577"><v>1</v></c></row></sheetData></worksheet>)",
+            "row exceeds Excel limits",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-invalid-row-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-invalid-row-output.xlsx",
+            R"(<worksheet><sheetData><row r="bad"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            "invalid row number",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-formula-bool-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-formula-bool-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><f>1</f></c></row></sheetData></worksheet>)",
+            "formula in a non-numeric cell",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-nonfinite-number-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-nonfinite-number-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1e999</v></c></row></sheetData></worksheet>)",
+            "invalid numeric cell value",
+        },
+    };
+
+    for (const ReferenceFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore reference failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore reference failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore reference failure should identify the worksheet ZIP entry");
+            if (std::string_view(error.what()).find(test_case.expected_diagnostic)
+                == std::string_view::npos) {
+                throw TestFailure(std::string(
+                                      "package-backed CellStore reference failure diagnostic mismatch for ")
+                    + test_case.source_name + ": " + error.what());
+            }
+        }
+        check(failed,
+            "package-backed CellStore load should fail on invalid source coordinates or numeric semantics");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore reference failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore reference failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore reference failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore reference failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore reference failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore reference failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore reference failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore reference output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore reference output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore reference output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore reference output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore reference output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_attribute_failure_preserves_editor_state()
+{
+    struct AttributeFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const AttributeFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-unquoted-cell-ref-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unquoted-cell-ref-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r=A1><v>1</v></c></row></sheetData></worksheet>)",
+            "unquoted attribute value",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-unterminated-cell-ref-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unterminated-cell-ref-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1><v>1</v></c></row></sheetData></worksheet>)",
+            "unterminated markup",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-cell-ref-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-cell-ref-attr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" r="B1"><v>1</v></c></row></sheetData></worksheet>)",
+            "duplicate attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-row-ref-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-row-ref-attr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1" r="2"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            "duplicate attributes",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-cell-type-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-cell-type-attr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="n" t="b"><v>1</v></c></row></sheetData></worksheet>)",
+            "duplicate attributes",
+        },
+    };
+
+    for (const AttributeFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore attribute failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore attribute failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore attribute failure should identify the worksheet ZIP entry");
+            if (std::string_view(error.what()).find(test_case.expected_diagnostic)
+                == std::string_view::npos) {
+                throw TestFailure(std::string(
+                                      "package-backed CellStore attribute failure diagnostic mismatch for ")
+                    + test_case.source_name + ": " + error.what());
+            }
+        }
+        check(failed,
+            "package-backed CellStore load should fail on malformed or duplicate source attributes");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore attribute failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore attribute failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore attribute failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore attribute failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore attribute failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore attribute failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore attribute failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore attribute output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore attribute output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore attribute output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore attribute output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore attribute output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_entity_failure_preserves_editor_state()
+{
+    struct EntityFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const EntityFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-unknown-entity-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unknown-entity-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &unknown;</t></is></c></row></sheetData></worksheet>)",
+            "unknown XML entity reference",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-unterminated-entity-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unterminated-entity-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &amp</t></is></c></row></sheetData></worksheet>)",
+            "unterminated XML entity",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-invalid-char-ref-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-invalid-char-ref-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &#xZZ;</t></is></c></row></sheetData></worksheet>)",
+            "invalid XML character reference",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-out-of-range-char-ref-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-out-of-range-char-ref-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &#x110000;</t></is></c></row></sheetData></worksheet>)",
+            "XML character reference exceeds Unicode range",
+        },
+    };
+
+    for (const EntityFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore entity failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore entity failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore entity failure should identify the worksheet ZIP entry");
+            if (std::string_view(error.what()).find(test_case.expected_diagnostic)
+                == std::string_view::npos) {
+                throw TestFailure(std::string(
+                                      "package-backed CellStore entity failure diagnostic mismatch for ")
+                    + test_case.source_name + ": " + error.what());
+            }
+        }
+        check(failed,
+            "package-backed CellStore load should fail on unsupported source XML entity text");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore entity failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore entity failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore entity failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore entity failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore entity failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore entity failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore entity failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore entity output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore entity output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore entity output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore entity output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore entity output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_cell_type_shape_failure_preserves_editor_state()
+{
+    struct CellTypeShapeFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* worksheet_xml;
+        const char* expected_diagnostic;
+    };
+
+    const CellTypeShapeFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-error-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-error-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"><v>#DIV/0!</v></c></row></sheetData></worksheet>)",
+            "unsupported cell type",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-date-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-date-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="d"><v>2026-06-16T00:00:00Z</v></c></row></sheetData></worksheet>)",
+            "unsupported cell type",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-in-non-inline-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-in-non-inline-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><is><t>bad</t></is></c></row></sheetData></worksheet>)",
+            "inline-string metadata in a non-inline string cell",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-value-in-inline-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-value-in-inline-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><v>bad</v></c></row></sheetData></worksheet>)",
+            "non-inline value in an inline string cell",
+        },
+    };
+
+    for (const CellTypeShapeFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.worksheet = test_case.worksheet_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+                "package-backed CellStore cell-type failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed CellStore cell-type failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed CellStore cell-type failure should identify the worksheet ZIP entry");
+            if (std::string_view(error.what()).find(test_case.expected_diagnostic)
+                == std::string_view::npos) {
+                throw TestFailure(std::string(
+                                      "package-backed CellStore cell-type failure diagnostic mismatch for ")
+                    + test_case.source_name + ": " + error.what());
+            }
+        }
+        check(failed,
+            "package-backed CellStore load should fail on unsupported cell type or inline-string shapes");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed CellStore cell-type failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed CellStore cell-type failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "package-backed CellStore cell-type failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed CellStore cell-type failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed CellStore cell-type failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore cell-type failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, calc_chain_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed CellStore cell-type failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "package-backed CellStore cell-type output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "package-backed CellStore cell-type output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "package-backed CellStore cell-type output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "package-backed CellStore cell-type output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "package-backed CellStore cell-type output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_failure_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-failure-source.xlsx");
+    source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1" s="0"><v>22</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(source);
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+            "source-backed CellStore load failure should identify the workbook sheet");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "source-backed CellStore load failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "source-backed CellStore load failure should identify the worksheet ZIP entry");
+        check_contains(error.what(), "style id references",
+            "source-backed CellStore load failure should report the unsupported source semantic");
+    }
+    check(failed, "source-backed CellStore load should fail on unsupported source semantics");
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "source-backed CellStore load failure should leave the worksheet plan visible");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore load failure should not stage a worksheet rewrite");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore load failure should not dirty the worksheet manifest");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore load failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore load failure should not request workbook recalculation");
+    check(editor.edit_plan().notes().empty(),
+        "source-backed CellStore load failure should not add audit notes");
+    check_entry_bytes(source_reader, "xl/worksheets/sheet1.xml", source.worksheet);
+    check_entry_bytes(source_reader, "xl/calcChain.xml", source.calc_chain);
+    check_entry_bytes(source_reader, "custom/opaque.bin", source.unknown);
+}
+
+void test_package_editor_source_loaded_cell_store_missing_entry_failure_preserves_editor_state()
+{
+    SourcePackage source = write_missing_worksheet_entry_source_package(
+        "fastxlsx-package-editor-source-cellstore-missing-entry-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"docProps/core.xml", source.core_properties},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-missing-entry-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore missing entry failure should identify the workbook sheet");
+        check_contains(error.what(), "workbook sheet relationship targets an unknown part",
+            "source-backed CellStore missing entry failure should report the catalog target gap");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the target worksheet entry is missing");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore missing entry failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore missing entry failure should not append notes");
+    check(editor.edit_plan().find_removed_part(worksheet_part) == nullptr,
+        "source-backed CellStore missing entry failure should not queue worksheet removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore missing entry failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore missing entry failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part) == nullptr,
+        "source-backed CellStore missing entry failure should not invent the missing worksheet part");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.find_entry("xl/worksheets/sheet1.xml") == nullptr,
+        "source-backed CellStore missing entry output should not invent worksheet XML");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore missing entry output should preserve workbook bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore missing entry output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_crc_failure_preserves_editor_state()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-crc-source.xlsx");
+    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(source.path, corrupted_source_bytes);
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+            "source-backed CellStore CRC failure should identify the workbook sheet");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "source-backed CellStore CRC failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "source-backed CellStore CRC failure should identify the worksheet ZIP entry");
+        check_contains(error.what(), "CRC mismatch",
+            "source-backed CellStore CRC failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "expected",
+            "source-backed CellStore CRC failure should report expected CRC");
+        check_contains(error.what(), "actual",
+            "source-backed CellStore CRC failure should report actual CRC");
+    }
+    check(failed, "source-backed CellStore load should fail on corrupt worksheet bytes");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore CRC failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore CRC failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore CRC failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore CRC failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore CRC failure should not change calcChain policy");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore CRC failure should keep worksheet copy-original");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore CRC failure should not dirty the worksheet manifest");
+}
+
+void test_package_editor_source_loaded_cell_store_corrupt_workbook_catalog_preserves_editor_state()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-workbook-crc-source.xlsx");
+    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(corrupted_source_bytes, "Sheet1");
+    write_binary_file(source.path, corrupted_source_bytes);
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore workbook CRC failure should identify the requested sheet");
+        check_contains(error.what(), "failed to read materialized workbook sheet catalog XML",
+            "source-backed CellStore workbook CRC failure should identify catalog materialization");
+        check_contains(error.what(), "ZIP entry 'xl/workbook.xml'",
+            "source-backed CellStore workbook CRC failure should identify the workbook ZIP entry");
+        check_contains(error.what(), "CRC mismatch",
+            "source-backed CellStore workbook CRC failure should preserve the ZIP error");
+        check_contains(error.what(), "expected",
+            "source-backed CellStore workbook CRC failure should report expected CRC");
+        check_contains(error.what(), "actual",
+            "source-backed CellStore workbook CRC failure should report actual CRC");
+    }
+    check(failed, "source-backed CellStore load should fail on corrupt workbook catalog bytes");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore workbook CRC failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore workbook CRC failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore workbook CRC failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore workbook CRC failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore workbook CRC failure should not change calcChain policy");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore workbook CRC failure should keep worksheet copy-original");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore workbook CRC failure should not dirty the worksheet manifest");
+}
+
+void test_package_editor_source_loaded_cell_store_duplicate_sheet_name_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-duplicate-sheet-source.xlsx");
+    source.content_types =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(<Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>)"
+        R"(</Types>)";
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>)"
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets>)"
+        R"(<sheet name="Sheet1" sheetId="1" r:id="rId1"/>)"
+        R"(<sheet name="Sheet1" sheetId="2" r:id="rId2"/>)"
+        R"(</sheets>)"
+        R"(<calcPr calcId="1" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+    const std::string second_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>222</v></c></row></sheetData></worksheet>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"xl/worksheets/sheet2.xml", second_worksheet},
+            {"xl/calcChain.xml", source.calc_chain},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-duplicate-sheet-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName second_worksheet_part("/xl/worksheets/sheet2.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore duplicate sheet failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet name is ambiguous",
+            "source-backed CellStore duplicate sheet failure should preserve the catalog diagnostic");
+    }
+    check(failed, "source-backed CellStore load should fail on duplicate sheet names");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore duplicate sheet failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore duplicate sheet failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore duplicate sheet failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore duplicate sheet failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore duplicate sheet failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore duplicate sheet failure should keep first worksheet copy-original");
+    check(editor.manifest().find_part(second_worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore duplicate sheet failure should keep second worksheet copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore duplicate sheet output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore duplicate sheet output should preserve first worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml") == second_worksheet,
+        "source-backed CellStore duplicate sheet output should preserve second worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore duplicate sheet output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore duplicate sheet output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_missing_sheet_relationship_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-missing-sheet-rel-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="missingRel"/></sheets>)"
+        R"(<calcPr calcId="1" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-missing-sheet-rel-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore missing sheet relationship failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet relationship id is not present in workbook .rels",
+            "source-backed CellStore missing sheet relationship failure should preserve the catalog diagnostic");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the sheet relationship id is absent");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore missing sheet relationship failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore missing sheet relationship failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore missing sheet relationship failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore missing sheet relationship failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore missing sheet relationship failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore missing sheet relationship failure should keep worksheet copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore missing sheet relationship output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+        "source-backed CellStore missing sheet relationship output should preserve workbook rels bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore missing sheet relationship output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore missing sheet relationship output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore missing sheet relationship output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_catalog_attribute_preserves_editor_state()
+{
+    struct SheetCatalogAttributeFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* workbook_xml;
+        const char* expected_diagnostic;
+    };
+
+    const SheetCatalogAttributeFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-missing-sheet-rel-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-missing-sheet-rel-attr-output.xlsx",
+            R"(<workbook><sheets><sheet name="Sheet1" sheetId="1"/></sheets></workbook>)",
+            "workbook sheet is missing relationship id",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-wrong-sheet-rel-ns-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-wrong-sheet-rel-ns-output.xlsx",
+            R"(<workbook xmlns:x="urn:fastxlsx:not-relationships"><sheets><sheet name="Sheet1" sheetId="1" x:id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing relationship id",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-unqualified-sheet-rel-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unqualified-sheet-rel-output.xlsx",
+            R"(<workbook><sheets><sheet name="Sheet1" sheetId="1" id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing relationship id",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-name-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-name-output.xlsx",
+            R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:fastxlsx:not-workbook"><sheets><sheet x:name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing name",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-id-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-id-output.xlsx",
+            R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:fastxlsx:not-workbook"><sheets><sheet name="Sheet1" x:sheetId="1" r:id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing sheetId",
+        },
+    };
+
+    for (const SheetCatalogAttributeFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.workbook = test_case.workbook_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+                "source-backed CellStore sheet catalog attribute failure should identify the requested sheet");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "source-backed CellStore sheet catalog attribute failure should preserve the catalog diagnostic");
+        }
+        check(failed,
+            "source-backed CellStore load should fail for invalid workbook sheet catalog attributes");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "source-backed CellStore sheet catalog attribute failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "source-backed CellStore sheet catalog attribute failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "source-backed CellStore sheet catalog attribute failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "source-backed CellStore sheet catalog attribute failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "source-backed CellStore sheet catalog attribute failure should not change calcChain policy");
+        check(editor.manifest().find_part(worksheet_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet catalog attribute failure should keep worksheet copy-original");
+        check(editor.manifest().find_part(calc_chain_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet catalog attribute failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "source-backed CellStore sheet catalog attribute output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "source-backed CellStore sheet catalog attribute output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "source-backed CellStore sheet catalog attribute output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "source-backed CellStore sheet catalog attribute output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "source-backed CellStore sheet catalog attribute output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_relationship_type_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheet-rel-type-source.xlsx");
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="worksheets/sheet1.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-sheet-rel-type-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore sheet relationship type failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet relationship is not a worksheet relationship",
+            "source-backed CellStore sheet relationship type failure should preserve the catalog diagnostic");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the sheet relationship type is not worksheet");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore sheet relationship type failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore sheet relationship type failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore sheet relationship type failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore sheet relationship type failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore sheet relationship type failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore sheet relationship type failure should keep worksheet copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore sheet relationship type output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+        "source-backed CellStore sheet relationship type output should preserve workbook rels bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore sheet relationship type output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore sheet relationship type output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore sheet relationship type output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_relationship_target_type_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheet-target-type-source.xlsx");
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="calcChain.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-sheet-target-type-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore sheet target type failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet relationship target is not a worksheet part",
+            "source-backed CellStore sheet target type failure should preserve the catalog diagnostic");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the sheet relationship target is not a worksheet part");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore sheet target type failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore sheet target type failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore sheet target type failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore sheet target type failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore sheet target type failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore sheet target type failure should keep worksheet copy-original");
+    check(editor.manifest().find_part(calc_chain_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore sheet target type failure should keep calcChain copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore sheet target type output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+        "source-backed CellStore sheet target type output should preserve workbook rels bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore sheet target type output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore sheet target type output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore sheet target type output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_relationship_target_uri_preserves_editor_state()
+{
+    struct TargetFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* workbook_relationships;
+        const char* expected_diagnostic;
+    };
+
+    const TargetFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-external-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-external-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="https://example.invalid/sheet1.xml" TargetMode="External"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet relationship target cannot be external",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-uri-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-uri-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml?version=1"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet relationship target must be a package part",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-incomplete-percent-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-incomplete-percent-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml%"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is incomplete",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-invalid-percent-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-invalid-percent-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet%GG.xml"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is invalid",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-null-percent-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-null-percent-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet%00.xml"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target cannot contain null bytes",
+        },
+    };
+
+    for (const TargetFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.workbook_relationships = test_case.workbook_relationships;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+                "source-backed CellStore sheet target URI failure should identify the requested sheet");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "source-backed CellStore sheet target URI failure should preserve the catalog diagnostic");
+        }
+        check(failed,
+            "source-backed CellStore load should fail for external or URI-qualified sheet relationship targets");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "source-backed CellStore sheet target URI failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "source-backed CellStore sheet target URI failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "source-backed CellStore sheet target URI failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "source-backed CellStore sheet target URI failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "source-backed CellStore sheet target URI failure should not change calcChain policy");
+        check(editor.manifest().find_part(worksheet_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet target URI failure should keep worksheet copy-original");
+        check(editor.manifest().find_part(calc_chain_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet target URI failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "source-backed CellStore sheet target URI output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "source-backed CellStore sheet target URI output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "source-backed CellStore sheet target URI output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "source-backed CellStore sheet target URI output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "source-backed CellStore sheet target URI output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_office_document_catalog_preserves_editor_state()
+{
+    struct OfficeDocumentFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* package_relationships;
+        const char* expected_diagnostic;
+    };
+
+    const OfficeDocumentFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-missing-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-missing-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="custom/opaque.bin"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog requires package officeDocument relationship",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog has multiple officeDocument relationships",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-external-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-external-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="https://example.invalid/workbook.xml" TargetMode="External"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog officeDocument target cannot be external",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-uri-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-uri-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml?version=1"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog officeDocument target must be a package part",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-alternate-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-alternate-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/altWorkbook.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog only supports officeDocument target xl/workbook.xml",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-invalid-percent-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-invalid-percent-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook%GG.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is invalid",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-incomplete-percent-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-incomplete-percent-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml%"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is incomplete",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-null-percent-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-null-percent-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook%00.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target cannot contain null bytes",
+        },
+    };
+
+    for (const OfficeDocumentFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.package_relationships = test_case.package_relationships;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+                "source-backed CellStore officeDocument catalog failure should identify the requested sheet");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "source-backed CellStore officeDocument catalog failure should preserve the catalog diagnostic");
+        }
+        check(failed,
+            "source-backed CellStore load should fail for invalid package officeDocument catalogs");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "source-backed CellStore officeDocument catalog failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "source-backed CellStore officeDocument catalog failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "source-backed CellStore officeDocument catalog failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "source-backed CellStore officeDocument catalog failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "source-backed CellStore officeDocument catalog failure should not change calcChain policy");
+        check(editor.manifest().find_part(workbook_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore officeDocument catalog failure should keep workbook copy-original");
+        check(editor.manifest().find_part(worksheet_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore officeDocument catalog failure should keep worksheet copy-original");
+        check(editor.manifest().find_part(calc_chain_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore officeDocument catalog failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+            "source-backed CellStore officeDocument catalog output should preserve package rels bytes");
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "source-backed CellStore officeDocument catalog output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "source-backed CellStore officeDocument catalog output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "source-backed CellStore officeDocument catalog output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "source-backed CellStore officeDocument catalog output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "source-backed CellStore officeDocument catalog output should preserve unknown bytes");
+    }
 }
 
 void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
@@ -28265,7 +36809,7 @@ void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
         fastxlsx::detail::PackageEditor::open(source_path);
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="1"><c r="A1" s="1" t="s"><v>0</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Patch Source", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Patch Source", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr
@@ -28396,7 +36940,7 @@ void test_package_editor_replaces_worksheet_by_sheet_name()
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="5"><c r="B5"><v>55</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part_by_name("Sheet1", replacement_worksheet);
+    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", replacement_worksheet);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -28526,7 +37070,7 @@ void test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part_by_name(
+        replace_worksheet_part_by_name_from_single_chunk_source(editor,
             "Sheet1", "<worksheet><sheetData/></worksheet>");
     } catch (const std::exception& error) {
         failed = true;
@@ -28581,7 +37125,7 @@ void test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name()
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheetData><row r="8"><c r="A8"><v>88</v></c></row></sheetData>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part_by_name("Renamed", replacement_worksheet);
+    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Renamed", replacement_worksheet);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -28701,7 +37245,7 @@ void test_package_editor_replaces_sheet_data_by_planned_workbook_sheet_name()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", "<sheetData/>");
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", "<sheetData/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "workbook sheet name is not present",
@@ -28753,7 +37297,7 @@ void test_package_editor_replaces_sheet_data_by_planned_workbook_sheet_name()
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="9"><c r="A9"><v>99</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Renamed", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Renamed", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -28855,7 +37399,7 @@ void test_package_editor_planned_workbook_catalog_respects_relationship_namespac
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="10"><c r="A10"><v>100</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("AltPlanned", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "AltPlanned", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr
@@ -28958,7 +37502,7 @@ void test_package_editor_planned_workbook_catalog_respects_relationship_namespac
 
             bool failed = false;
             try {
-                invalid_editor.replace_worksheet_sheet_data_by_name(
+                replace_worksheet_sheet_data_by_name_from_single_chunk_source(invalid_editor,
                     sheet_name, "<sheetData/>");
             } catch (const std::exception& error) {
                 failed = true;
@@ -29044,6 +37588,596 @@ void test_package_editor_planned_workbook_catalog_respects_relationship_namespac
     expect_invalid_planned_catalog_id(unqualified_id_workbook, "PlainId",
         "fastxlsx-package-editor-planned-catalog-plain-id-output.xlsx",
         "plain-id planned workbook catalog before by-name patch");
+}
+
+void test_package_editor_rejects_staged_small_xml_replacements_without_state_changes()
+{
+    SourcePackage source =
+        write_source_package("fastxlsx-package-editor-staged-small-xml-source.xlsx");
+    const std::string app_properties =
+        "<Properties><Application>FastXLSX</Application></Properties>";
+    source.content_types = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>)"
+        R"(<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)";
+    source.package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>)"
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>)"
+        R"(</Relationships>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"docProps/core.xml", source.core_properties},
+            {"docProps/app.xml", app_properties},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-staged-small-xml-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName app_part("/docProps/app.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t initial_worksheet_relationship_reference_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t initial_worksheet_payload_dependency_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_workbook_payload_dependency_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    const std::string workbook_prefix =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets>)";
+    const std::string workbook_suffix =
+        R"(<sheet name="Renamed" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+
+    const auto expect_staged_small_xml_rejection =
+        [&](const fastxlsx::detail::PartName& part_name,
+            std::vector<fastxlsx::detail::PackageEntryChunk> chunks,
+            const char* expected_failure_message) {
+            bool failed = false;
+            try {
+                editor.replace_part_chunks(
+                    part_name, std::move(chunks), "staged small-XML chunks");
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(), "staged replacement is not allowed",
+                    "staged small-XML replacement failure should explain the rejected staged path");
+                check_contains(error.what(), "workbook/core/app small XML",
+                    "staged small-XML replacement failure should identify the metadata boundary");
+                check_contains(error.what(), "replace_part()",
+                    "staged small-XML replacement failure should point to materialized small-XML API");
+            }
+            check(failed, expected_failure_message);
+        };
+
+    expect_staged_small_xml_rejection(workbook_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(workbook_prefix),
+            fastxlsx::detail::PackageEntryChunk::memory(workbook_suffix),
+        },
+        "PackageEditor should reject staged replacement for workbook small XML");
+    expect_staged_small_xml_rejection(core_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(
+            "<cp:coreProperties><dc:creator>Staged</dc:creator></cp:coreProperties>")},
+        "PackageEditor should reject staged replacement for core properties small XML");
+    expect_staged_small_xml_rejection(app_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(
+            "<Properties><Application>Staged</Application></Properties>")},
+        "PackageEditor should reject staged replacement for app properties small XML");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "staged small-XML rejection should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "staged small-XML rejection should not append notes");
+    check(editor.edit_plan().relationship_target_audits().size()
+            == initial_relationship_target_audit_count,
+        "staged small-XML rejection should not append relationship target audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_worksheet_relationship_reference_audit_count,
+        "staged small-XML rejection should not append worksheet relationship audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_worksheet_payload_dependency_audit_count,
+        "staged small-XML rejection should not append worksheet payload audits");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == initial_workbook_payload_dependency_audit_count,
+        "staged small-XML rejection should not append workbook payload audits");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "staged small-XML rejection should preserve package-entry audit count");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "staged small-XML rejection should preserve removed package-entry audit count");
+    check(editor.edit_plan().removed_parts().empty(),
+        "staged small-XML rejection should not record removed parts");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "staged small-XML rejection should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == fastxlsx::detail::CalcChainAction::Preserve,
+        "staged small-XML rejection should not change calcChain policy");
+
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "staged small-XML rejection should leave workbook copy-original");
+    check_manifest_write_mode(editor, core_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "staged small-XML rejection should leave core properties copy-original");
+    check_manifest_write_mode(editor, app_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "staged small-XML rejection should leave app properties copy-original");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "staged small-XML rejection should leave worksheet copy-original");
+    check_manifest_write_mode(editor, unknown_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "staged small-XML rejection should leave unknown part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "staged small-XML rejection output plan should not request recalculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "staged small-XML rejection output plan should preserve calcChain policy");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "staged small-XML rejection output plan should preserve workbook bytes");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "staged small-XML rejection output plan should preserve core properties bytes");
+    check_output_entry_plan(output_plan.entries, "docProps/app.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "staged small-XML rejection output plan should preserve app properties bytes");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "staged small-XML rejection output plan should preserve worksheet bytes");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "staged small-XML rejection output plan should preserve unknown bytes");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "staged small-XML rejection output should preserve source workbook bytes");
+    check(output_reader.read_entry("docProps/core.xml") == source.core_properties,
+        "staged small-XML rejection output should preserve source core properties bytes");
+    check(output_reader.read_entry("docProps/app.xml") == app_properties,
+        "staged small-XML rejection output should preserve source app properties bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "staged small-XML rejection output should preserve source worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "staged small-XML rejection output should preserve unknown bytes");
+}
+
+void test_package_editor_rejects_oversized_workbook_xml_materialization_without_state_changes()
+{
+    SourcePackage source =
+        write_source_package("fastxlsx-package-editor-oversized-workbook-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<definedNames><definedName name="Huge">)"
+        + std::string(
+            fastxlsx::detail::package_editor_workbook_xml_materialization_byte_limit + 1U, 'A')
+        + R"(</definedName></definedNames></workbook>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"docProps/core.xml", source.core_properties},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    fastxlsx::detail::PackageEditor replacement_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_replacement_plan_size =
+        replacement_editor.edit_plan().size();
+    bool replacement_failed = false;
+    try {
+        replacement_editor.replace_part(workbook_part, source.workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "oversized workbook package-part replacement");
+    } catch (const std::exception& error) {
+        replacement_failed = true;
+        check_contains(error.what(), "materialized workbook XML exceeds small XML limit",
+            "oversized workbook replacement should report the small XML boundary");
+        check_contains(error.what(), "workbook package-part replacement",
+            "oversized workbook replacement should report the materialization purpose");
+    }
+    check(replacement_failed,
+        "PackageEditor should reject oversized materialized workbook replacement");
+    check(replacement_editor.edit_plan().size() == initial_replacement_plan_size,
+        "oversized workbook replacement failure should not mutate the edit plan");
+    check_manifest_write_mode(replacement_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized workbook replacement failure should leave workbook copy-original");
+
+    fastxlsx::detail::PackageEditor by_name_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_by_name_plan_size = by_name_editor.edit_plan().size();
+    bool worksheet_source_consumed = false;
+    const fastxlsx::detail::WorksheetInputChunkCallback worksheet_source =
+        [&](std::string& chunk) {
+            worksheet_source_consumed = true;
+            chunk = "<worksheet><sheetData/></worksheet>";
+            return true;
+        };
+
+    bool by_name_failed = false;
+    try {
+        by_name_editor.replace_worksheet_part_from_chunk_source_by_name(
+            "Sheet1", worksheet_source);
+    } catch (const std::exception& error) {
+        by_name_failed = true;
+        check_contains(error.what(), "materialized workbook sheet catalog XML exceeds small XML limit",
+            "oversized source workbook catalog should report the small XML boundary");
+    }
+    check(by_name_failed,
+        "PackageEditor should reject oversized source workbook catalog materialization");
+    check(!worksheet_source_consumed,
+        "oversized source workbook catalog failure should not consume worksheet chunks");
+    check(by_name_editor.edit_plan().size() == initial_by_name_plan_size,
+        "oversized source workbook catalog failure should not mutate the edit plan");
+    check_manifest_write_mode(by_name_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized source workbook catalog failure should leave workbook copy-original");
+    check_manifest_write_mode(by_name_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized source workbook catalog failure should leave worksheet copy-original");
+}
+
+void test_package_editor_rejects_shared_strings_materialized_replacement_without_state_changes()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package(
+            "fastxlsx-package-editor-shared-strings-materialized-source.xlsx");
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const std::string replacement_shared_strings =
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>staged only</t></si></sst>)";
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    bool failed = false;
+    try {
+        editor.replace_part(shared_strings_part, replacement_shared_strings,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "sharedStrings materialized replacement");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "materialized source package part replacement is not allowed",
+            "sharedStrings materialized replacement should report staged-only boundary");
+        check_contains(error.what(), "replace_part_chunks",
+            "sharedStrings materialized replacement should point to staged chunks");
+    }
+    check(failed,
+        "PackageEditor should reject source sharedStrings materialized replacement");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "sharedStrings materialized replacement failure should not mutate edit plan");
+    check_manifest_write_mode(editor, shared_strings_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "sharedStrings materialized replacement failure should keep sharedStrings copy-original");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "sharedStrings materialized replacement failure should keep workbook copy-original");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "sharedStrings materialized replacement failure should keep worksheet copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan = editor.planned_output();
+    check_output_entry_plan(failed_plan.entries, shared_strings_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "sharedStrings materialized replacement failure should preserve sharedStrings");
+    check_output_entry_staged_replacement_chunks(failed_plan.entries,
+        shared_strings_part.zip_path(), false,
+        "sharedStrings materialized replacement failure should not stage sharedStrings chunks");
+    check_output_entry_materialized_replacement(failed_plan.entries,
+        shared_strings_part.zip_path(), false,
+        "sharedStrings materialized replacement failure should not mark materialized replacement");
+
+    editor.replace_part_chunks(shared_strings_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(replacement_shared_strings)},
+        "sharedStrings staged chunk replacement");
+    const fastxlsx::detail::PackageEditorOutputPlan staged_plan = editor.planned_output();
+    check_output_entry_plan(staged_plan.entries, shared_strings_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "sharedStrings staged replacement should appear in planned output");
+    check_output_entry_staged_replacement_chunks(staged_plan.entries,
+        shared_strings_part.zip_path(), true,
+        "sharedStrings staged replacement should expose staged chunks");
+    check_output_entry_materialized_replacement(staged_plan.entries,
+        shared_strings_part.zip_path(), false,
+        "sharedStrings staged replacement should not expose materialized replacement");
+}
+
+void test_package_editor_rejects_styles_materialized_replacement_without_state_changes()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package(
+            "fastxlsx-package-editor-styles-materialized-source.xlsx");
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const std::string replacement_styles =
+        R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<fonts count="1"><font><b/></font></fonts>)"
+        R"(<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>)"
+        R"(<borders count="1"><border/></borders>)"
+        R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)"
+        R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>)"
+        R"(</styleSheet>)";
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    bool failed = false;
+    try {
+        editor.replace_part(styles_part, replacement_styles,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "styles materialized replacement");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "materialized source package part replacement is not allowed",
+            "styles materialized replacement should report staged-only boundary");
+        check_contains(error.what(), "replace_part_chunks",
+            "styles materialized replacement should point to staged chunks");
+    }
+    check(failed,
+        "PackageEditor should reject source styles materialized replacement");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "styles materialized replacement failure should not mutate edit plan");
+    check_manifest_write_mode(editor, styles_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "styles materialized replacement failure should keep styles copy-original");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "styles materialized replacement failure should keep workbook copy-original");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "styles materialized replacement failure should keep worksheet copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan = editor.planned_output();
+    check_output_entry_plan(failed_plan.entries, styles_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "styles materialized replacement failure should preserve styles");
+    check_output_entry_staged_replacement_chunks(failed_plan.entries,
+        styles_part.zip_path(), false,
+        "styles materialized replacement failure should not stage styles chunks");
+    check_output_entry_materialized_replacement(failed_plan.entries,
+        styles_part.zip_path(), false,
+        "styles materialized replacement failure should not mark materialized replacement");
+
+    editor.replace_part_chunks(styles_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(replacement_styles)},
+        "styles staged chunk replacement");
+    const fastxlsx::detail::PackageEditorOutputPlan staged_plan = editor.planned_output();
+    check_output_entry_plan(staged_plan.entries, styles_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "styles staged replacement should appear in planned output");
+    check_output_entry_staged_replacement_chunks(staged_plan.entries,
+        styles_part.zip_path(), true,
+        "styles staged replacement should expose staged chunks");
+    check_output_entry_materialized_replacement(staged_plan.entries,
+        styles_part.zip_path(), false,
+        "styles staged replacement should not expose materialized replacement");
+}
+
+void test_package_editor_rejects_generic_source_part_materialized_replacement_without_state_changes()
+{
+    const LinkedObjectSourcePackage source =
+        write_linked_object_source_package(
+            "fastxlsx-package-editor-generic-source-part-materialized-source.xlsx");
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName opaque_extension_part("/custom/opaque-extension.bin");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const std::string replacement_opaque_payload = "opaque extension materialized payload";
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    bool failed = false;
+    try {
+        editor.replace_part(opaque_extension_part, replacement_opaque_payload,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "opaque extension materialized replacement");
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "materialized source package part replacement is not allowed",
+            "generic source part materialized replacement should report staged-only boundary");
+        check_contains(error.what(), "replace_part_chunks",
+            "generic source part materialized replacement should point to staged chunks");
+    }
+    check(failed,
+        "PackageEditor should reject generic source package part materialized replacement");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "generic source part materialized replacement failure should not mutate edit plan");
+    check_manifest_write_mode(editor, opaque_extension_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "generic source part materialized replacement failure should keep opaque copy-original");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "generic source part materialized replacement failure should keep workbook copy-original");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "generic source part materialized replacement failure should keep worksheet copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan = editor.planned_output();
+    check_output_entry_plan(failed_plan.entries, opaque_extension_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "generic source part materialized replacement failure should preserve opaque part");
+    check_output_entry_staged_replacement_chunks(failed_plan.entries,
+        opaque_extension_part.zip_path(), false,
+        "generic source part materialized replacement failure should not stage chunks");
+    check_output_entry_materialized_replacement(failed_plan.entries,
+        opaque_extension_part.zip_path(), false,
+        "generic source part materialized replacement failure should not mark materialized replacement");
+
+    editor.replace_part_chunks(opaque_extension_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(replacement_opaque_payload)},
+        "opaque extension staged chunk replacement");
+    const fastxlsx::detail::PackageEditorOutputPlan staged_plan = editor.planned_output();
+    check_output_entry_plan(staged_plan.entries, opaque_extension_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "generic source part staged replacement should appear in planned output");
+    check_output_entry_staged_replacement_chunks(staged_plan.entries,
+        opaque_extension_part.zip_path(), true,
+        "generic source part staged replacement should expose staged chunks");
+    check_output_entry_materialized_replacement(staged_plan.entries,
+        opaque_extension_part.zip_path(), false,
+        "generic source part staged replacement should not expose materialized replacement");
+}
+
+void test_package_editor_rejects_oversized_metadata_xml_materialization_without_state_changes()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-oversized-metadata-xml-source.xlsx");
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName app_part("/docProps/app.xml");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    const std::string oversized_core_properties =
+        "<cp:coreProperties><dc:creator>"
+        + std::string(
+            fastxlsx::detail::package_editor_metadata_xml_materialization_byte_limit + 1U,
+            'M')
+        + "</dc:creator></cp:coreProperties>";
+
+    fastxlsx::detail::PackageEditor part_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_part_plan_size = part_editor.edit_plan().size();
+    const std::size_t initial_part_package_entry_count =
+        part_editor.edit_plan().package_entries().size();
+
+    bool part_failed = false;
+    try {
+        part_editor.replace_part(core_part, oversized_core_properties,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "oversized core properties materialized replacement");
+    } catch (const std::exception& error) {
+        part_failed = true;
+        check_contains(error.what(), "materialized metadata XML exceeds small XML limit",
+            "oversized core properties replacement should report metadata XML limit");
+        check_contains(error.what(), "package-part replacement",
+            "oversized core properties replacement should report the replacement boundary");
+    }
+    check(part_failed,
+        "PackageEditor should reject oversized materialized metadata part replacement");
+    check(part_editor.edit_plan().size() == initial_part_plan_size,
+        "oversized metadata part replacement failure should not mutate edit plan");
+    check(part_editor.edit_plan().package_entries().size()
+            == initial_part_package_entry_count,
+        "oversized metadata part replacement failure should not add package-entry audit");
+    check_manifest_write_mode(part_editor, core_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized metadata part replacement failure should keep core properties copy-original");
+    check_manifest_write_mode(part_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized metadata part replacement failure should keep workbook copy-original");
+    check_manifest_write_mode(part_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized metadata part replacement failure should keep worksheet copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_part_plan =
+        part_editor.planned_output();
+    check_output_entry_plan(failed_part_plan.entries, core_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "oversized metadata part replacement failure should preserve core properties");
+    check_output_entry_materialized_replacement(failed_part_plan.entries,
+        core_part.zip_path(), false,
+        "oversized metadata part replacement failure should not mark materialized replacement");
+
+    fastxlsx::detail::PackageEditor properties_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::size_t initial_properties_plan_size =
+        properties_editor.edit_plan().size();
+    const std::size_t initial_properties_note_count =
+        properties_editor.edit_plan().notes().size();
+    const std::size_t initial_properties_package_entry_count =
+        properties_editor.edit_plan().package_entries().size();
+    const std::size_t initial_properties_removed_part_count =
+        properties_editor.edit_plan().removed_parts().size();
+    const std::size_t initial_properties_removed_package_entry_count =
+        properties_editor.edit_plan().removed_package_entries().size();
+
+    fastxlsx::DocumentProperties properties;
+    properties.creator = std::string(
+        fastxlsx::detail::package_editor_metadata_xml_materialization_byte_limit + 1U,
+        'C');
+
+    bool properties_failed = false;
+    try {
+        properties_editor.set_document_properties(properties);
+    } catch (const std::exception& error) {
+        properties_failed = true;
+        check_contains(error.what(), "materialized metadata XML exceeds small XML limit",
+            "oversized generated document properties should report metadata XML limit");
+        check_contains(error.what(), "core document properties replacement",
+            "oversized generated document properties should report the generated part boundary");
+    }
+    check(properties_failed,
+        "PackageEditor should reject oversized generated document properties XML");
+    check(properties_editor.edit_plan().size() == initial_properties_plan_size,
+        "oversized generated metadata failure should not mutate edit plan");
+    check(properties_editor.edit_plan().notes().size() == initial_properties_note_count,
+        "oversized generated metadata failure should not add notes");
+    check(properties_editor.edit_plan().package_entries().size()
+            == initial_properties_package_entry_count,
+        "oversized generated metadata failure should not add package-entry audit");
+    check(properties_editor.edit_plan().removed_parts().size()
+            == initial_properties_removed_part_count,
+        "oversized generated metadata failure should not record removed parts");
+    check(properties_editor.edit_plan().removed_package_entries().size()
+            == initial_properties_removed_package_entry_count,
+        "oversized generated metadata failure should not record removed package entries");
+    check(properties_editor.manifest().find_part(app_part) == nullptr,
+        "oversized generated metadata failure should not add missing app properties part");
+    check_manifest_write_mode(properties_editor, core_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized generated metadata failure should keep core properties copy-original");
+    check_manifest_write_mode(properties_editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized generated metadata failure should keep workbook copy-original");
+    check_manifest_write_mode(properties_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "oversized generated metadata failure should keep worksheet copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_properties_plan =
+        properties_editor.planned_output();
+    check_output_plan_preserves_source_copy_original(properties_editor,
+        failed_properties_plan,
+        "oversized generated metadata failure should preserve source copy-original output");
 }
 
 void test_package_editor_renames_sheet_catalog_entry_preserving_parts()
@@ -29626,7 +38760,7 @@ void test_package_editor_rejects_invalid_planned_workbook_catalog_by_name_withou
 
             bool failed = false;
             try {
-                editor.replace_worksheet_part_by_name("Broken", "<worksheet/>");
+                replace_worksheet_part_by_name_from_single_chunk_source(editor, "Broken", "<worksheet/>");
             } catch (const std::exception& error) {
                 failed = true;
                 check_contains(error.what(), expected_error,
@@ -29637,7 +38771,7 @@ void test_package_editor_rejects_invalid_planned_workbook_catalog_by_name_withou
 
             failed = false;
             try {
-                editor.replace_worksheet_sheet_data_by_name("Broken", "<sheetData/>");
+                replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Broken", "<sheetData/>");
             } catch (const std::exception& error) {
                 failed = true;
                 check_contains(error.what(), expected_error,
@@ -29723,11 +38857,11 @@ void test_package_editor_by_name_helpers_allow_workbook_metadata_rewrite()
         R"(<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>)"
         R"(<autoFilter ref="A1:A1"/>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part_by_name("Sheet1", queued_worksheet);
+    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", queued_worksheet);
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="7"><c r="A7"><v>77</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", replacement_sheet_data);
 
     const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
     check(workbook_plan != nullptr
@@ -29840,7 +38974,7 @@ void test_package_editor_by_name_helpers_use_planned_catalog_after_workbook_meta
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part_by_name(
+        replace_worksheet_part_by_name_from_single_chunk_source(editor,
             "Sheet1", "<worksheet><sheetData/></worksheet>");
     } catch (const std::exception& error) {
         failed = true;
@@ -29888,11 +39022,11 @@ void test_package_editor_by_name_helpers_use_planned_catalog_after_workbook_meta
         R"(<sheetData><row r="3"><c r="C3"><v>33</v></c></row></sheetData>)"
         R"(<autoFilter ref="C3:C3"/>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part_by_name("RenamedAfterCalc", queued_worksheet);
+    replace_worksheet_part_by_name_from_single_chunk_source(editor, "RenamedAfterCalc", queued_worksheet);
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="9"><c r="A9"><v>99</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data_by_name(
+    replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor,
         "RenamedAfterCalc", replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
@@ -30050,7 +39184,7 @@ void test_package_editor_by_name_helpers_reject_after_workbook_removal_without_s
 
     bool worksheet_failed = false;
     try {
-        editor.replace_worksheet_part_by_name(
+        replace_worksheet_part_by_name_from_single_chunk_source(editor,
             "Sheet1", "<worksheet><sheetData/></worksheet>");
     } catch (const std::exception& error) {
         worksheet_failed = true;
@@ -30065,7 +39199,7 @@ void test_package_editor_by_name_helpers_reject_after_workbook_removal_without_s
 
     bool sheet_data_failed = false;
     try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", "<sheetData/>");
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", "<sheetData/>");
     } catch (const std::exception& error) {
         sheet_data_failed = true;
         check_contains(error.what(), "workbook sheet catalog",
@@ -30154,7 +39288,7 @@ void test_package_editor_rejects_worksheet_by_sheet_name_without_state_changes()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part_by_name("Missing", "<worksheet/>");
+        replace_worksheet_part_by_name_from_single_chunk_source(editor, "Missing", "<worksheet/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "sheet name",
@@ -30249,16 +39383,19 @@ void test_package_editor_rejects_invalid_worksheet_replacement_xml_without_state
     };
 
     for (std::string_view invalid_xml : {
-             std::string_view(""),
-             std::string_view("   \r\n\t"),
-             std::string_view("<sheetData/>"),
-             std::string_view("<ignored/><worksheet/>"),
-             std::string_view("<worksheet><sheetData/></worksheet><worksheet/>"),
-             std::string_view("<worksheet><sheetData/>"),
+            std::string_view(""),
+            std::string_view("   \r\n\t"),
+            std::string_view("<sheetData/>"),
+            std::string_view("<!DOCTYPE worksheet><worksheet/>"),
+            std::string_view("<ignored/><worksheet/>"),
+            std::string_view("<worksheet/> <!-- trailing comment -->"),
+            std::string_view("<worksheet/><?trailing instruction?>"),
+            std::string_view("<worksheet><sheetData/></worksheet><worksheet/>"),
+            std::string_view("<worksheet><sheetData/>"),
           }) {
         bool failed = false;
         try {
-            editor.replace_worksheet_part(worksheet_part, std::string(invalid_xml));
+            replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, std::string(invalid_xml));
         } catch (const std::exception& error) {
             failed = true;
             check_contains(error.what(), "worksheet",
@@ -30271,7 +39408,7 @@ void test_package_editor_rejects_invalid_worksheet_replacement_xml_without_state
 
     bool by_name_failed = false;
     try {
-        editor.replace_worksheet_part_by_name("Sheet1", "<notWorksheet/>");
+        replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", "<notWorksheet/>");
     } catch (const std::exception& error) {
         by_name_failed = true;
         check_contains(error.what(), "worksheet",
@@ -30336,7 +39473,7 @@ void test_package_editor_replaces_worksheet_with_payload_audit_notes()
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
 
-    editor.replace_worksheet_part(worksheet_part, replacement_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet);
 
     check(has_note_containing(editor.edit_plan().notes(),
               {"worksheet replacement", "shared string indexes", "xl/sharedStrings.xml"}),
@@ -30615,7 +39752,7 @@ void test_package_editor_worksheet_replacement_audits_relationship_id_mismatch()
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
 
-    editor.replace_worksheet_part(worksheet_part, replacement_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet);
 
     check(has_note_containing(editor.edit_plan().notes(),
               {"worksheet replacement", "relationship id rIdMissing", "<drawing>",
@@ -30784,7 +39921,7 @@ void test_package_editor_worksheet_relationship_id_audit_respects_relationship_n
         R"(<drawing r:id="rIdMissing"/>)"
         R"(</worksheet>)";
 
-    editor.replace_worksheet_part(worksheet_part, replacement_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet);
 
     using WorksheetReferenceAuditKind =
         fastxlsx::detail::WorksheetRelationshipReferenceAuditKind;
@@ -30879,7 +40016,7 @@ void test_package_editor_worksheet_replacement_audits_missing_relationships_entr
         R"(<drawing r:id="rId1"/>)"
         R"(</worksheet>)";
 
-    editor.replace_worksheet_part(worksheet_part, replacement_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet);
 
     check(has_note_containing(editor.edit_plan().notes(),
               {"worksheet replacement", "relationship id rId1", "<drawing>",
@@ -30971,7 +40108,7 @@ void test_package_editor_reference_policy_fail_blocks_missing_relationship_refer
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, replacement_worksheet, fail_policy);
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet, fail_policy);
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "relationship references blocked by reference policy",
@@ -31065,7 +40202,7 @@ void test_package_editor_reference_policy_fail_blocks_payload_dependencies_witho
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, replacement_worksheet, fail_policy);
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet, fail_policy);
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "payload dependencies blocked by reference policy",
@@ -31174,7 +40311,7 @@ void test_package_editor_reference_policy_fail_blocks_sheet_data_payload_depende
 
     bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data(
+        replace_worksheet_sheet_data_from_single_chunk_source(editor,
             worksheet_part, replacement_sheet_data, fail_policy);
     } catch (const std::exception& error) {
         failed = true;
@@ -31305,7 +40442,7 @@ void test_package_editor_rejects_sheet_name_lookup_with_invalid_office_document_
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part_by_name("Sheet1", "<worksheet/>");
+        replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", "<worksheet/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "officeDocument",
@@ -31317,7 +40454,7 @@ void test_package_editor_rejects_sheet_name_lookup_with_invalid_office_document_
 
     failed = false;
     try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", "<sheetData/>");
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", "<sheetData/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "officeDocument",
@@ -31404,7 +40541,7 @@ void test_package_editor_rejects_invalid_source_workbook_sheet_catalog_without_s
 
             bool failed = false;
             try {
-                editor.replace_worksheet_part_by_name("Sheet1", "<worksheet/>");
+                replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", "<worksheet/>");
             } catch (const std::exception& error) {
                 failed = true;
                 check_contains(error.what(), expected_error,
@@ -31415,7 +40552,7 @@ void test_package_editor_rejects_invalid_source_workbook_sheet_catalog_without_s
 
             failed = false;
             try {
-                editor.replace_worksheet_sheet_data_by_name("Sheet1", "<sheetData/>");
+                replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", "<sheetData/>");
             } catch (const std::exception& error) {
                 failed = true;
                 check_contains(error.what(), expected_error,
@@ -31498,7 +40635,7 @@ void test_package_editor_replaces_self_closing_source_sheet_data()
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="1"><c r="A1"><v>11</v></c><c r="C3"><f>A1*2</f><v>22</v></c></row></sheetData>)";
 
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     check(editor.edit_plan().find_part(worksheet_part)->write_mode
             == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
@@ -31588,7 +40725,7 @@ void test_package_editor_replaces_prefixed_sheet_data()
     const std::string replacement_sheet_data =
         R"(<x:sheetData><x:row r="2"><x:c r="B2"><x:v>22</x:v></x:c></x:row></x:sheetData>)";
 
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     check(editor.edit_plan().find_part(worksheet_part)->write_mode
             == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
@@ -31674,7 +40811,7 @@ void test_package_editor_replaces_with_self_closing_sheet_data_payload()
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::string replacement_sheet_data = R"(<sheetData/>)";
 
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     check(editor.edit_plan().find_part(worksheet_part)->write_mode
             == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
@@ -31761,11 +40898,11 @@ void test_package_editor_sheet_data_patch_uses_queued_worksheet_replacement()
         R"(<autoFilter ref="C1:D2"/>)"
         R"(<extLst><ext uri="{queued-wrapper}"/></extLst>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, queued_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, queued_worksheet);
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="1"><c r="C1"><v>303</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -31781,6 +40918,10 @@ void test_package_editor_sheet_data_patch_uses_queued_worksheet_replacement()
         "queued sheetData patch should keep stale calcChain removed-part audit");
     check(editor.edit_plan().full_calculation_on_load(),
         "queued sheetData patch should keep full calculation request");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"pull-based chunk source", "file-backed staged chunk",
+                  "follow-up planned-input transforms"}),
+        "queued sheetData patch should preserve evidence that prior worksheet replacement was staged");
     check(has_note_containing(editor.edit_plan().notes(),
               {"sheetData replacement", "view metadata", "caller review"}),
         "queued sheetData patch should audit queued worksheet view metadata");
@@ -31851,11 +40992,11 @@ void test_package_editor_sheet_data_patch_replaces_self_closing_queued_worksheet
         R"(<autoFilter ref="D1:E2"/>)"
         R"(<extLst><ext uri="{queued-self-closing-wrapper}"/></extLst>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, queued_worksheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, queued_worksheet);
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="4"><c r="D4"><v>404</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -31938,7 +41079,7 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
 
     bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data_by_name("Missing", "<sheetData/>");
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Missing", "<sheetData/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "sheet name",
@@ -31972,7 +41113,7 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
 
     failed = false;
     try {
-        editor.replace_worksheet_sheet_data(worksheet_part, "<row/>");
+        replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, "<row/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "sheetData",
@@ -32006,7 +41147,7 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
 
     failed = false;
     try {
-        editor.replace_worksheet_sheet_data(worksheet_part,
+        replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part,
             R"(<sheetData><row r="1"><c r="A1"><v>2</v></c></row>)");
     } catch (const std::exception& error) {
         failed = true;
@@ -32057,15 +41198,28 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
         missing_editor.edit_plan().worksheet_relationship_reference_audits().size();
 
     failed = false;
+    int missing_source_replacement_reads = 0;
     try {
-        missing_editor.replace_worksheet_sheet_data(worksheet_part, "<sheetData/>");
+        missing_editor.replace_worksheet_sheet_data_from_chunk_source(worksheet_part,
+            [&](std::string& chunk) {
+                ++missing_source_replacement_reads;
+                chunk = "<sheetData/>";
+                return true;
+            });
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "sheetData",
             "missing source sheetData failure should name sheetData");
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "missing source sheetData failure should identify the source worksheet input boundary");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "missing source sheetData failure should not be mislabeled as replacement payload input");
     }
     check(failed,
         "PackageEditor should reject sheetData replacement when the source worksheet has no sheetData");
+    check(missing_source_replacement_reads == 0,
+        "missing source sheetData failure should not consume replacement sheetData chunks");
     check(missing_editor.edit_plan().size() == missing_initial_plan_size,
         "missing source sheetData failure should not change edit plan size");
     check(missing_editor.edit_plan().notes().empty(),
@@ -32088,6 +41242,151 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
     const fastxlsx::detail::PackageReader missing_output_reader =
         fastxlsx::detail::PackageReader::open(missing_output);
     check_preserved_source_entries(missing_editor.reader(), missing_output_reader);
+
+    CalcSourcePackage invalid_root_source =
+        write_calc_source_package("fastxlsx-package-editor-sheetdata-invalid-root-source.xlsx");
+    invalid_root_source.worksheet =
+        R"(<notWorksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></notWorksheet>)";
+    fastxlsx::detail::write_package(invalid_root_source.path,
+        {
+            {"[Content_Types].xml", invalid_root_source.content_types},
+            {"_rels/.rels", invalid_root_source.package_relationships},
+            {"xl/workbook.xml", invalid_root_source.workbook},
+            {"xl/_rels/workbook.xml.rels", invalid_root_source.workbook_relationships},
+            {"xl/worksheets/sheet1.xml", invalid_root_source.worksheet},
+            {"xl/calcChain.xml", invalid_root_source.calc_chain},
+            {"custom/opaque.bin", invalid_root_source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const std::filesystem::path invalid_root_output =
+        output_path("fastxlsx-package-editor-sheetdata-invalid-root-output.xlsx");
+    fastxlsx::detail::PackageEditor invalid_root_editor =
+        fastxlsx::detail::PackageEditor::open(invalid_root_source.path);
+    const std::size_t invalid_root_initial_plan_size =
+        invalid_root_editor.edit_plan().size();
+    const std::size_t invalid_root_initial_note_count =
+        invalid_root_editor.edit_plan().notes().size();
+    const std::vector<std::filesystem::path> invalid_root_temp_files_before =
+        package_editor_temp_files();
+    int invalid_root_replacement_reads = 0;
+
+    failed = false;
+    try {
+        invalid_root_editor.replace_worksheet_sheet_data_from_chunk_source(worksheet_part,
+            [&](std::string& chunk) {
+                ++invalid_root_replacement_reads;
+                chunk = "<sheetData/>";
+                return true;
+            });
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "invalid source worksheet root failure should identify the source worksheet input boundary");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "invalid source worksheet root failure should not be mislabeled as replacement payload input");
+    }
+    check(failed,
+        "PackageEditor should reject sheetData replacement when the source root is not worksheet");
+    check(invalid_root_replacement_reads == 0,
+        "invalid source worksheet root should fail before consuming replacement sheetData chunks");
+    check(invalid_root_editor.edit_plan().size() == invalid_root_initial_plan_size,
+        "invalid source worksheet root failure should not change edit plan size");
+    check(invalid_root_editor.edit_plan().notes().size() == invalid_root_initial_note_count,
+        "invalid source worksheet root failure should not add audit notes");
+    check_no_new_package_editor_temp_files(invalid_root_temp_files_before,
+        "invalid source worksheet root failure should not leak PackageEditor temp files");
+
+    invalid_root_editor.save_as(invalid_root_output);
+    const fastxlsx::detail::PackageReader invalid_root_output_reader =
+        fastxlsx::detail::PackageReader::open(invalid_root_output);
+    check_preserved_source_entries(invalid_root_editor.reader(), invalid_root_output_reader);
+
+    const std::filesystem::path by_name_invalid_root_output =
+        output_path("fastxlsx-package-editor-sheetdata-by-name-invalid-root-output.xlsx");
+    fastxlsx::detail::PackageEditor by_name_invalid_root_editor =
+        fastxlsx::detail::PackageEditor::open(invalid_root_source.path);
+    const std::size_t by_name_invalid_root_initial_plan_size =
+        by_name_invalid_root_editor.edit_plan().size();
+    const std::size_t by_name_invalid_root_initial_note_count =
+        by_name_invalid_root_editor.edit_plan().notes().size();
+    const std::size_t by_name_invalid_root_initial_package_entry_count =
+        by_name_invalid_root_editor.edit_plan().package_entries().size();
+    const std::size_t by_name_invalid_root_initial_removed_package_entry_count =
+        by_name_invalid_root_editor.edit_plan().removed_package_entries().size();
+    const std::size_t by_name_invalid_root_initial_relationship_target_audit_count =
+        by_name_invalid_root_editor.edit_plan().relationship_target_audits().size();
+    const std::size_t by_name_invalid_root_initial_worksheet_relationship_reference_audit_count =
+        by_name_invalid_root_editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool by_name_invalid_root_initial_full_calculation =
+        by_name_invalid_root_editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction by_name_invalid_root_initial_calc_chain_action =
+        by_name_invalid_root_editor.edit_plan().calc_chain_action();
+    const std::vector<std::filesystem::path> by_name_invalid_root_temp_files_before =
+        package_editor_temp_files();
+    int by_name_invalid_root_replacement_reads = 0;
+
+    failed = false;
+    try {
+        by_name_invalid_root_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+            "Sheet1",
+            [&](std::string& chunk) {
+                ++by_name_invalid_root_replacement_reads;
+                chunk = "<sheetData/>";
+                return true;
+            });
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "by-name invalid source worksheet root should identify the source worksheet input boundary");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "by-name invalid source worksheet root should not be mislabeled as replacement payload input");
+    }
+    check(failed,
+        "by-name PackageEditor should reject sheetData replacement when the source root is not worksheet");
+    check(by_name_invalid_root_replacement_reads == 0,
+        "by-name invalid source worksheet root should fail before consuming replacement sheetData chunks");
+    check(by_name_invalid_root_editor.edit_plan().size()
+            == by_name_invalid_root_initial_plan_size,
+        "by-name invalid source worksheet root failure should not change edit plan size");
+    check(by_name_invalid_root_editor.edit_plan().notes().size()
+            == by_name_invalid_root_initial_note_count,
+        "by-name invalid source worksheet root failure should not add audit notes");
+    check(by_name_invalid_root_editor.edit_plan().package_entries().size()
+            == by_name_invalid_root_initial_package_entry_count,
+        "by-name invalid source worksheet root failure should not add package-entry audit");
+    check(by_name_invalid_root_editor.edit_plan().removed_package_entries().size()
+            == by_name_invalid_root_initial_removed_package_entry_count,
+        "by-name invalid source worksheet root failure should not add removed package-entry audit");
+    check(by_name_invalid_root_editor.edit_plan().relationship_target_audits().size()
+            == by_name_invalid_root_initial_relationship_target_audit_count,
+        "by-name invalid source worksheet root failure should not add relationship target audits");
+    check(by_name_invalid_root_editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == by_name_invalid_root_initial_worksheet_relationship_reference_audit_count,
+        "by-name invalid source worksheet root failure should not add worksheet relationship reference audits");
+    check(by_name_invalid_root_editor.edit_plan().removed_parts().empty(),
+        "by-name invalid source worksheet root failure should not record removed parts");
+    check(by_name_invalid_root_editor.edit_plan().full_calculation_on_load()
+            == by_name_invalid_root_initial_full_calculation,
+        "by-name invalid source worksheet root failure should not request recalculation");
+    check(by_name_invalid_root_editor.edit_plan().calc_chain_action()
+            == by_name_invalid_root_initial_calc_chain_action,
+        "by-name invalid source worksheet root failure should not change calcChain policy");
+    check(by_name_invalid_root_editor.manifest().find_part(calc_chain_part) != nullptr,
+        "by-name invalid source worksheet root failure should keep calcChain in the manifest");
+    check_manifest_write_mode(by_name_invalid_root_editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "by-name invalid source worksheet root failure should keep worksheet copy-original");
+    check_no_new_package_editor_temp_files(by_name_invalid_root_temp_files_before,
+        "by-name invalid source worksheet root failure should not leak PackageEditor temp files");
+
+    by_name_invalid_root_editor.save_as(by_name_invalid_root_output);
+    const fastxlsx::detail::PackageReader by_name_invalid_root_output_reader =
+        fastxlsx::detail::PackageReader::open(by_name_invalid_root_output);
+    check_preserved_source_entries(
+        by_name_invalid_root_editor.reader(), by_name_invalid_root_output_reader);
 
     CalcSourcePackage malformed_source =
         write_calc_source_package("fastxlsx-package-editor-sheetdata-malformed-source.xlsx");
@@ -32124,13 +41423,18 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
 
     failed = false;
     try {
-        malformed_editor.replace_worksheet_sheet_data(
+        replace_worksheet_sheet_data_from_single_chunk_source(malformed_editor,
             worksheet_part,
             R"(<sheetData><row r="1"><c r="A1"><v>2</v></c></row></sheetData>)");
     } catch (const std::exception& error) {
         failed = true;
-        check_contains(error.what(), "sheetData",
-            "malformed source sheetData failure should name sheetData");
+        check_contains(error.what(),
+            "current worksheet input for worksheet sheetData replacement output",
+            "malformed source sheetData failure should identify the source worksheet input boundary");
+        check_contains(error.what(), "worksheet event reader found an invalid worksheet boundary",
+            "malformed source sheetData failure should name the event-reader boundary error");
+        check_not_contains(error.what(), "sheetData replacement XML",
+            "malformed source sheetData failure should not be mislabeled as replacement payload input");
     }
     check(failed,
         "PackageEditor should reject sheetData replacement when source sheetData is not closed");
@@ -32166,12 +41470,12 @@ void test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_
     check_preserved_source_entries(malformed_editor.reader(), malformed_output_reader);
 }
 
-void test_package_editor_rejects_sheet_data_local_rewrite_over_limit_without_state_changes()
+void test_package_editor_rejects_sheet_data_input_event_window_over_limit_without_state_changes()
 {
     LinkedObjectSourcePackage source = write_sheet_data_patch_source_package(
         "fastxlsx-package-editor-sheetdata-over-limit-source.xlsx");
     const std::string oversized_comment(
-        fastxlsx::detail::package_editor_sheet_data_local_rewrite_byte_limit + 1U,
+        fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit + 1U,
         'x');
     source.worksheet = std::string(R"(<worksheet><!--)")
         + oversized_comment
@@ -32254,30 +41558,26 @@ void test_package_editor_rejects_sheet_data_local_rewrite_over_limit_without_sta
 
     bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data(worksheet_part, "<sheetData/>");
+        replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, "<sheetData/>");
     } catch (const std::exception& error) {
         failed = true;
-        check_contains(error.what(), "sheetData",
-            "over-limit sheetData failure should name sheetData");
-        check_contains(error.what(), "bounded local rewrite limit",
-            "over-limit sheetData failure should name the bounded local rewrite limit");
-        check_contains(error.what(), "current planned worksheet XML",
-            "over-limit sheetData failure should identify the oversized worksheet XML");
+        check_contains(error.what(), "worksheet event reader exceeded bounded input window",
+            "over-limit sheetData failure should name the event-reader window");
     }
     check(failed,
-        "PackageEditor should reject sheetData replacement when worksheet XML is too large for local rewrite");
+        "PackageEditor should reject sheetData replacement when worksheet XML exceeds the event-reader window");
     check_no_state_change();
 
     failed = false;
     try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", "<sheetData/>");
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", "<sheetData/>");
     } catch (const std::exception& error) {
         failed = true;
-        check_contains(error.what(), "bounded local rewrite limit",
-            "by-name over-limit sheetData failure should share the local rewrite limit");
+        check_contains(error.what(), "worksheet event reader exceeded bounded input window",
+            "by-name over-limit sheetData failure should share the event-reader window");
     }
     check(failed,
-        "PackageEditor by-name helper should reject over-limit sheetData replacement");
+        "PackageEditor by-name helper should reject sheetData replacement over the event-reader window");
     check_no_state_change();
 
     editor.save_as(output);
@@ -32306,7 +41606,7 @@ void test_package_editor_rejects_sheet_data_payload_over_limit_without_state_cha
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::string oversized_payload = std::string("<sheetData><!--")
         + std::string(
-            fastxlsx::detail::package_editor_sheet_data_local_rewrite_byte_limit + 1U,
+            fastxlsx::detail::package_editor_sheet_data_replacement_payload_byte_limit + 1U,
             'y')
         + "--></sheetData>";
     const std::size_t initial_plan_size = editor.edit_plan().size();
@@ -32373,23 +41673,23 @@ void test_package_editor_rejects_sheet_data_payload_over_limit_without_state_cha
 
     bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data(worksheet_part, oversized_payload);
+        replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, oversized_payload);
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "sheetData",
             "over-limit replacement payload failure should name sheetData");
-        check_contains(error.what(), "bounded local rewrite limit",
-            "over-limit replacement payload failure should name the bounded local rewrite limit");
+        check_contains(error.what(), "bounded payload limit",
+            "over-limit replacement payload failure should name the bounded payload limit");
         check_contains(error.what(), "replacement sheetData XML",
             "over-limit replacement payload failure should identify the oversized payload");
     }
     check(failed,
-        "PackageEditor should reject sheetData replacement payloads that exceed the local rewrite limit");
+        "PackageEditor should reject sheetData replacement payloads that exceed the payload limit");
     check_no_state_change();
 
     failed = false;
     try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", oversized_payload);
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor, "Sheet1", oversized_payload);
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "replacement sheetData XML",
@@ -32411,15 +41711,19 @@ void test_package_editor_rejects_sheet_data_payload_over_limit_without_state_cha
         "over-limit payload failure output should preserve unknown extension bytes");
 }
 
-void test_package_editor_rejects_rewritten_sheet_data_local_rewrite_over_limit_without_state_changes()
+void test_package_editor_allows_rewritten_sheet_data_output_over_payload_limit()
 {
     LinkedObjectSourcePackage source = write_sheet_data_patch_source_package(
         "fastxlsx-package-editor-sheetdata-rewritten-over-limit-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-sheetdata-rewritten-over-limit-output.xlsx");
+    const std::filesystem::path direct_output =
+        output_path("fastxlsx-package-editor-sheetdata-rewritten-over-limit-direct-output.xlsx");
+    const std::filesystem::path by_name_output =
+        output_path("fastxlsx-package-editor-sheetdata-rewritten-over-limit-by-name-output.xlsx");
 
     const std::size_t limit =
-        fastxlsx::detail::package_editor_sheet_data_local_rewrite_byte_limit;
+        fastxlsx::detail::package_editor_sheet_data_replacement_payload_byte_limit;
+    const std::size_t event_window_limit =
+        fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit;
     const std::string old_sheet_data =
         R"(<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>)";
     const std::string source_prefix = R"(<worksheet><!--)";
@@ -32431,440 +41735,307 @@ void test_package_editor_rejects_rewritten_sheet_data_local_rewrite_over_limit_w
     const std::string replacement_sheet_data = std::string("<sheetData><!--")
         + std::string(old_sheet_data.size() + 32U, 'r') + "--></sheetData>";
     check(source.worksheet.size() < limit,
-        "rewritten-over-limit fixture source worksheet should stay within the local rewrite limit");
+        "rewritten-over-limit fixture source worksheet should stay within the payload-limit-sized fixture");
+    check(source.worksheet.size() < event_window_limit,
+        "rewritten-over-limit fixture source worksheet should stay within the event-reader window");
     check(replacement_sheet_data.size() < limit,
-        "rewritten-over-limit fixture replacement payload should stay within the local rewrite limit");
+        "rewritten-over-limit fixture replacement payload should stay within the payload limit");
     check(source.worksheet.size() - old_sheet_data.size() + replacement_sheet_data.size()
             > limit,
         "rewritten-over-limit fixture should exceed the limit only after sheetData replacement");
     rewrite_linked_object_source_package(source);
 
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const std::size_t initial_plan_size = editor.edit_plan().size();
-    const std::size_t initial_note_count = editor.edit_plan().notes().size();
-    const std::size_t initial_relationship_target_audit_count =
-        editor.edit_plan().relationship_target_audits().size();
-    const std::size_t initial_worksheet_relationship_reference_audit_count =
-        editor.edit_plan().worksheet_relationship_reference_audits().size();
 
-    const auto check_no_state_change = [&]() {
-        check(editor.edit_plan().size() == initial_plan_size,
-            "rewritten-over-limit sheetData patch should not change edit plan size");
-        check(editor.edit_plan().notes().size() == initial_note_count,
-            "rewritten-over-limit sheetData patch should not add audit notes");
-        check(editor.edit_plan().relationship_target_audits().size()
-                == initial_relationship_target_audit_count,
-            "rewritten-over-limit sheetData patch should not add relationship target audits");
-        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
-                == initial_worksheet_relationship_reference_audit_count,
-            "rewritten-over-limit sheetData patch should not add worksheet relationship audits");
-        check(editor.edit_plan().removed_parts().empty(),
-            "rewritten-over-limit sheetData patch should not record removed parts");
-        check(editor.edit_plan().package_entries().empty(),
-            "rewritten-over-limit sheetData patch should not record package-entry audit");
-        check(editor.edit_plan().removed_package_entries().empty(),
-            "rewritten-over-limit sheetData patch should not record removed package-entry audit");
-        check(!editor.edit_plan().full_calculation_on_load(),
-            "rewritten-over-limit sheetData patch should not request recalculation");
-        check(editor.edit_plan().calc_chain_action()
-                == fastxlsx::detail::CalcChainAction::Preserve,
-            "rewritten-over-limit sheetData patch should not change calcChain policy");
-        check_manifest_write_mode(editor, worksheet_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "rewritten-over-limit sheetData patch should keep worksheet copy-original");
-        check_manifest_write_mode(editor, workbook_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "rewritten-over-limit sheetData patch should keep workbook copy-original");
-        check_manifest_write_mode(editor, calc_chain_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "rewritten-over-limit sheetData patch should keep calcChain copy-original");
+    const std::string expected_worksheet =
+        source_prefix + std::string(source_padding_size, 'w') + "-->"
+        + replacement_sheet_data + "</worksheet>";
+    check(expected_worksheet.size() > limit,
+        "rewritten-over-limit expected worksheet should exceed the former output-size guard");
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        replace_worksheet_sheet_data_from_single_chunk_source(
+            editor, worksheet_part, replacement_sheet_data);
 
         const fastxlsx::detail::PackageEditorOutputPlan output_plan =
             editor.planned_output();
-        check(output_plan.notes.empty(),
-            "rewritten-over-limit planned output should leave notes empty");
-        check(!output_plan.full_calculation_on_load,
-            "rewritten-over-limit planned output should not request full calculation");
-        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
-            "rewritten-over-limit planned output should preserve calcChain policy");
-        check(output_plan.removed_parts.empty(),
-            "rewritten-over-limit planned output should not expose removed parts");
-        check(output_plan.removed_package_entries.empty(),
-            "rewritten-over-limit planned output should not expose removed package entries");
-        check(output_plan.relationship_target_audits.empty(),
-            "rewritten-over-limit planned output should not expose relationship target audits");
-        check(output_plan.worksheet_relationship_reference_audits.empty(),
-            "rewritten-over-limit planned output should not expose worksheet reference audits");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-            "rewritten-over-limit planned output should keep worksheet copy-original");
-        check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-            "rewritten-over-limit planned output should keep workbook copy-original");
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "rewritten-over-limit direct output should rewrite worksheet");
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "rewritten-over-limit direct output should stay file-backed staged");
+        check_output_entry_materialized_replacement(output_plan.entries,
+            "xl/worksheets/sheet1.xml", false,
+            "rewritten-over-limit direct output should not use materialized worksheet replacement");
+        check(output_plan.full_calculation_on_load,
+            "rewritten-over-limit direct output should still request recalculation");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+            "rewritten-over-limit direct output should still remove calcChain");
+
+        editor.save_as(direct_output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(direct_output);
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+            "rewritten-over-limit direct output should contain the large rewritten worksheet");
+        check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+            "rewritten-over-limit direct output should omit stale calcChain");
+        check(output_reader.read_entry("custom/opaque-extension.bin")
+                == source.opaque_extension,
+            "rewritten-over-limit direct output should preserve unknown extension bytes");
+    }
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(
+            editor, "Sheet1", replacement_sheet_data);
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "rewritten-over-limit by-name output should stay file-backed staged");
         check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-            "rewritten-over-limit planned output should keep calcChain copy-original");
-    };
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+            "rewritten-over-limit by-name output should omit calcChain");
 
-    bool failed = false;
-    try {
-        editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "sheetData",
-            "rewritten-over-limit failure should name sheetData");
-        check_contains(error.what(), "bounded local rewrite limit",
-            "rewritten-over-limit failure should name the bounded local rewrite limit");
-        check_contains(error.what(), "rewritten worksheet XML",
-            "rewritten-over-limit failure should identify the oversized rewritten worksheet XML");
+        editor.save_as(by_name_output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(by_name_output);
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+            "rewritten-over-limit by-name output should contain the large rewritten worksheet");
+        check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+            "rewritten-over-limit by-name output should omit stale calcChain");
+        check(output_reader.read_entry("custom/opaque-extension.bin")
+                == source.opaque_extension,
+            "rewritten-over-limit by-name output should preserve unknown extension bytes");
     }
-    check(failed,
-        "PackageEditor should reject sheetData patches whose rewritten worksheet XML exceeds the local rewrite limit");
-    check_no_state_change();
-
-    failed = false;
-    try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "rewritten worksheet XML",
-            "by-name rewritten-over-limit failure should identify the rewritten worksheet XML");
-    }
-    check(failed,
-        "PackageEditor by-name helper should reject rewritten worksheet XML above the local rewrite limit");
-    check_no_state_change();
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check_preserved_source_entries(editor.reader(), output_reader);
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
-        "rewritten-over-limit failure output should preserve worksheet bytes");
-    check(output_reader.read_entry("custom/opaque-extension.bin")
-            == source.opaque_extension,
-        "rewritten-over-limit failure output should preserve unknown extension bytes");
 }
 
-void test_package_editor_rejects_queued_sheet_data_local_rewrite_over_limit_without_state_changes()
+void test_package_editor_allows_queued_sheet_data_output_over_payload_limit()
 {
     const LinkedObjectSourcePackage source = write_sheet_data_patch_source_package(
         "fastxlsx-package-editor-sheetdata-queued-over-limit-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-sheetdata-queued-over-limit-output.xlsx");
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::filesystem::path direct_output =
+        output_path("fastxlsx-package-editor-sheetdata-queued-over-limit-direct-output.xlsx");
+    const std::filesystem::path by_name_output =
+        output_path("fastxlsx-package-editor-sheetdata-queued-over-limit-by-name-output.xlsx");
 
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const std::string oversized_queued_worksheet = std::string("<worksheet><!--")
-        + std::string(
-            fastxlsx::detail::package_editor_sheet_data_local_rewrite_byte_limit + 1U,
-            'z')
-        + "--><sheetData><row r=\"1\"><c r=\"A1\"><v>42</v></c></row></sheetData></worksheet>";
+    const std::size_t limit =
+        fastxlsx::detail::package_editor_sheet_data_replacement_payload_byte_limit;
+    const std::size_t event_window_limit =
+        fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit;
+    const std::string old_sheet_data =
+        R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)";
+    const std::string replacement_sheet_data = "<sheetData/>";
+    constexpr std::string_view worksheet_close = "</worksheet>";
+    std::string oversized_queued_worksheet = "<worksheet>";
+    append_bounded_xml_comment_padding(oversized_queued_worksheet,
+        limit - replacement_sheet_data.size() - worksheet_close.size(), 'z');
+    oversized_queued_worksheet += "<!--";
+    oversized_queued_worksheet += std::string(32U, 'z');
+    oversized_queued_worksheet += "-->";
+    oversized_queued_worksheet += old_sheet_data;
+    oversized_queued_worksheet += worksheet_close;
+    check(oversized_queued_worksheet.size() > limit,
+        "queued over-limit fixture worksheet should exceed the former payload-size output guard");
+    check(oversized_queued_worksheet.size() > event_window_limit,
+        "queued over-limit fixture worksheet should also exceed the event-window-sized total input");
+    check(oversized_queued_worksheet.size() - old_sheet_data.size()
+            + replacement_sheet_data.size() > limit,
+        "queued over-limit fixture should still exceed the limit after sheetData replacement");
 
-    editor.replace_worksheet_part(worksheet_part, oversized_queued_worksheet);
+    std::string expected_worksheet = oversized_queued_worksheet;
+    const std::size_t old_sheet_data_position = expected_worksheet.find(old_sheet_data);
+    check(old_sheet_data_position != std::string::npos,
+        "queued over-limit fixture should contain old sheetData");
+    expected_worksheet.replace(
+        old_sheet_data_position, old_sheet_data.size(), replacement_sheet_data);
+    check(expected_worksheet.size() > limit,
+        "queued over-limit expected worksheet should exceed the former output-size guard");
 
-    const std::size_t queued_plan_size = editor.edit_plan().size();
-    const std::size_t queued_note_count = editor.edit_plan().notes().size();
-    const std::size_t queued_relationship_target_audit_count =
-        editor.edit_plan().relationship_target_audits().size();
-    const std::size_t queued_worksheet_relationship_reference_audit_count =
-        editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const std::size_t queued_worksheet_payload_dependency_audit_count =
-        editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t queued_workbook_payload_dependency_audit_count =
-        editor.edit_plan().workbook_payload_dependency_audits().size();
-    const std::size_t queued_package_entry_count =
-        editor.edit_plan().package_entries().size();
-    const std::size_t queued_removed_package_entry_count =
-        editor.edit_plan().removed_package_entries().size();
-    check(editor.edit_plan().find_part(worksheet_part)->write_mode
-            == fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "queued over-limit fixture should start with a worksheet stream rewrite");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "queued over-limit fixture should request full calculation before failure");
-    check(editor.edit_plan().calc_chain_action()
-            == fastxlsx::detail::CalcChainAction::Remove,
-        "queued over-limit fixture should request calcChain removal before failure");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "queued over-limit fixture should remove calcChain before failure");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "queued over-limit fixture should mark worksheet stream-rewrite before failure");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "queued over-limit fixture should mark workbook metadata rewrite before failure");
-    check(editor.manifest().find_part(calc_chain_part) == nullptr,
-        "queued over-limit fixture should omit calcChain from manifest before failure");
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        replace_worksheet_part_from_single_chunk_source(
+            editor, worksheet_part, oversized_queued_worksheet);
+        replace_worksheet_sheet_data_from_single_chunk_source(
+            editor, worksheet_part, replacement_sheet_data);
 
-    bool failed = false;
-    try {
-        editor.replace_worksheet_sheet_data(worksheet_part, "<sheetData/>");
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "current planned worksheet XML",
-            "queued over-limit failure should identify the queued worksheet XML");
-        check_contains(error.what(), "bounded local rewrite limit",
-            "queued over-limit failure should name the bounded local rewrite limit");
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "queued over-limit direct output should local-DOM-rewrite worksheet");
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "queued over-limit direct output should stay file-backed staged");
+        check_output_entry_materialized_replacement(output_plan.entries,
+            "xl/worksheets/sheet1.xml", false,
+            "queued over-limit direct output should not use materialized worksheet replacement");
+        check(output_plan.full_calculation_on_load,
+            "queued over-limit direct output should preserve recalculation request");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+            "queued over-limit direct output should preserve calcChain removal policy");
+
+        editor.save_as(direct_output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(direct_output);
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+            "queued over-limit direct output should contain rewritten staged worksheet");
+        check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+            "queued over-limit direct output should keep calcChain omitted");
+        check(output_reader.read_entry("custom/opaque-extension.bin")
+                == source.opaque_extension,
+            "queued over-limit direct output should preserve unknown extension bytes");
     }
-    check(failed,
-        "PackageEditor should reject sheetData patch when queued worksheet XML exceeds local rewrite limit");
 
-    check(editor.edit_plan().size() == queued_plan_size,
-        "queued over-limit failure should preserve queued edit plan size");
-    check(editor.edit_plan().notes().size() == queued_note_count,
-        "queued over-limit failure should not append audit notes");
-    check(editor.edit_plan().relationship_target_audits().size()
-            == queued_relationship_target_audit_count,
-        "queued over-limit failure should not append relationship target audits");
-    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
-            == queued_worksheet_relationship_reference_audit_count,
-        "queued over-limit failure should not append worksheet relationship audits");
-    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
-        "queued over-limit failure should preserve package-entry audit count");
-    check(editor.edit_plan().removed_package_entries().size()
-            == queued_removed_package_entry_count,
-        "queued over-limit failure should preserve removed package-entry audit count");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "queued over-limit failure should preserve full calculation request");
-    check(editor.edit_plan().calc_chain_action()
-            == fastxlsx::detail::CalcChainAction::Remove,
-        "queued over-limit failure should preserve calcChain removal policy");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "queued over-limit failure should preserve calcChain removed-part audit");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "queued over-limit failure should keep worksheet stream-rewrite");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "queued over-limit failure should keep workbook metadata rewrite");
-    check(editor.manifest().find_part(calc_chain_part) == nullptr,
-        "queued over-limit failure should keep calcChain omitted from manifest");
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        replace_worksheet_part_from_single_chunk_source(
+            editor, worksheet_part, oversized_queued_worksheet);
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(
+            editor, "Sheet1", replacement_sheet_data);
 
-    failed = false;
-    try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", "<sheetData/>");
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "current planned worksheet XML",
-            "queued by-name over-limit failure should identify the queued worksheet XML");
-        check_contains(error.what(), "bounded local rewrite limit",
-            "queued by-name over-limit failure should name the bounded local rewrite limit");
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "queued over-limit by-name output should stay file-backed staged");
+        check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+            "queued over-limit by-name output should omit calcChain");
+
+        editor.save_as(by_name_output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(by_name_output);
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+            "queued over-limit by-name output should contain rewritten staged worksheet");
+        check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+            "queued over-limit by-name output should keep calcChain omitted");
+        check(output_reader.read_entry("custom/opaque-extension.bin")
+                == source.opaque_extension,
+            "queued over-limit by-name output should preserve unknown extension bytes");
     }
-    check(failed,
-        "PackageEditor by-name helper should reject queued worksheet XML above the local rewrite limit");
-    check(editor.edit_plan().size() == queued_plan_size,
-        "queued by-name over-limit failure should preserve queued edit plan size");
-    check(editor.edit_plan().notes().size() == queued_note_count,
-        "queued by-name over-limit failure should not append audit notes");
-    check(editor.edit_plan().relationship_target_audits().size()
-            == queued_relationship_target_audit_count,
-        "queued by-name over-limit failure should not append relationship target audits");
-    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
-            == queued_worksheet_relationship_reference_audit_count,
-        "queued by-name over-limit failure should not append worksheet relationship audits");
-    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
-        "queued by-name over-limit failure should preserve package-entry audit count");
-    check(editor.edit_plan().removed_package_entries().size()
-            == queued_removed_package_entry_count,
-        "queued by-name over-limit failure should preserve removed package-entry audit count");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "queued by-name over-limit failure should preserve full calculation request");
-    check(editor.edit_plan().calc_chain_action()
-            == fastxlsx::detail::CalcChainAction::Remove,
-        "queued by-name over-limit failure should preserve calcChain removal policy");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "queued by-name over-limit failure should preserve calcChain removed-part audit");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "queued by-name over-limit failure should keep worksheet stream-rewrite");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "queued by-name over-limit failure should keep workbook metadata rewrite");
-    check(editor.manifest().find_part(calc_chain_part) == nullptr,
-        "queued by-name over-limit failure should keep calcChain omitted from manifest");
-
-    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
-        editor.planned_output();
-    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
-        "queued over-limit planned output should keep queued worksheet rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "queued over-limit planned output should keep workbook metadata rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
-        "queued over-limit planned output should keep calcChain omitted");
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == oversized_queued_worksheet,
-        "queued over-limit failure output should keep prior queued worksheet replacement");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "queued over-limit failure output should keep calcChain omitted");
-    check(output_reader.read_entry("custom/opaque-extension.bin")
-            == source.opaque_extension,
-        "queued over-limit failure output should preserve unknown extension bytes");
 }
 
-void test_package_editor_rejects_rewritten_queued_sheet_data_local_rewrite_over_limit_without_state_changes()
+void test_package_editor_allows_rewritten_queued_sheet_data_output_over_payload_limit()
 {
     const LinkedObjectSourcePackage source = write_sheet_data_patch_source_package(
         "fastxlsx-package-editor-sheetdata-queued-rewritten-over-limit-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-sheetdata-queued-rewritten-over-limit-output.xlsx");
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::filesystem::path direct_output =
+        output_path("fastxlsx-package-editor-sheetdata-queued-rewritten-over-limit-direct-output.xlsx");
+    const std::filesystem::path by_name_output =
+        output_path("fastxlsx-package-editor-sheetdata-queued-rewritten-over-limit-by-name-output.xlsx");
 
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
     const std::size_t limit =
-        fastxlsx::detail::package_editor_sheet_data_local_rewrite_byte_limit;
+        fastxlsx::detail::package_editor_sheet_data_replacement_payload_byte_limit;
+    const std::size_t event_window_limit =
+        fastxlsx::detail::package_editor_cell_replacement_event_window_byte_limit;
     const std::string old_sheet_data =
         R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)";
-    const std::string queued_prefix = R"(<worksheet><!--)";
-    const std::string queued_suffix = std::string("-->") + old_sheet_data + "</worksheet>";
-    const std::size_t queued_padding_size =
-        limit - queued_prefix.size() - queued_suffix.size() - 8U;
-    const std::string queued_worksheet = queued_prefix
-        + std::string(queued_padding_size, 'q') + queued_suffix;
+    constexpr std::string_view worksheet_close = "</worksheet>";
+    std::string queued_worksheet = "<worksheet>";
+    append_bounded_xml_comment_padding(queued_worksheet,
+        limit - old_sheet_data.size() - worksheet_close.size() - 8U, 'q');
+    queued_worksheet += old_sheet_data;
+    queued_worksheet += worksheet_close;
     const std::string replacement_sheet_data = std::string("<sheetData><!--")
         + std::string(old_sheet_data.size() + 32U, 's') + "--></sheetData>";
     check(queued_worksheet.size() < limit,
-        "queued rewritten-over-limit fixture worksheet should stay within the local rewrite limit");
+        "queued rewritten-over-limit fixture worksheet should stay within the payload-limit-sized fixture");
+    check(queued_worksheet.size() < event_window_limit,
+        "queued rewritten-over-limit fixture worksheet should stay within the event-reader window");
     check(replacement_sheet_data.size() < limit,
-        "queued rewritten-over-limit fixture payload should stay within the local rewrite limit");
+        "queued rewritten-over-limit fixture payload should stay within the payload limit");
     check(queued_worksheet.size() - old_sheet_data.size() + replacement_sheet_data.size()
             > limit,
         "queued rewritten-over-limit fixture should exceed the limit only after sheetData replacement");
 
-    editor.replace_worksheet_part(worksheet_part, queued_worksheet);
+    std::string expected_worksheet = queued_worksheet;
+    const std::size_t old_sheet_data_position = expected_worksheet.find(old_sheet_data);
+    check(old_sheet_data_position != std::string::npos,
+        "queued rewritten-over-limit fixture should contain old sheetData");
+    expected_worksheet.replace(
+        old_sheet_data_position, old_sheet_data.size(), replacement_sheet_data);
+    check(expected_worksheet.size() > limit,
+        "queued rewritten-over-limit expected worksheet should exceed the former output-size guard");
 
-    const std::size_t queued_plan_size = editor.edit_plan().size();
-    const std::size_t queued_note_count = editor.edit_plan().notes().size();
-    const std::size_t queued_relationship_target_audit_count =
-        editor.edit_plan().relationship_target_audits().size();
-    const std::size_t queued_worksheet_relationship_reference_audit_count =
-        editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const std::size_t queued_worksheet_payload_dependency_audit_count =
-        editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t queued_workbook_payload_dependency_audit_count =
-        editor.edit_plan().workbook_payload_dependency_audits().size();
-    const std::size_t queued_package_entry_count =
-        editor.edit_plan().package_entries().size();
-    const std::size_t queued_removed_package_entry_count =
-        editor.edit_plan().removed_package_entries().size();
-    check(editor.edit_plan().find_part(worksheet_part)->write_mode
-            == fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "queued rewritten-over-limit fixture should start with a worksheet stream rewrite");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "queued rewritten-over-limit fixture should request full calculation before failure");
-    check(editor.edit_plan().calc_chain_action()
-            == fastxlsx::detail::CalcChainAction::Remove,
-        "queued rewritten-over-limit fixture should request calcChain removal before failure");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "queued rewritten-over-limit fixture should remove calcChain before failure");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "queued rewritten-over-limit fixture should mark worksheet stream-rewrite before failure");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "queued rewritten-over-limit fixture should mark workbook metadata rewrite before failure");
-    check(editor.manifest().find_part(calc_chain_part) == nullptr,
-        "queued rewritten-over-limit fixture should omit calcChain from manifest before failure");
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        replace_worksheet_part_from_single_chunk_source(
+            editor, worksheet_part, queued_worksheet);
+        replace_worksheet_sheet_data_from_single_chunk_source(
+            editor, worksheet_part, replacement_sheet_data);
 
-    const auto check_queued_state_preserved = [&]() {
-        check(editor.edit_plan().size() == queued_plan_size,
-            "queued rewritten-over-limit failure should preserve queued edit plan size");
-        check(editor.edit_plan().notes().size() == queued_note_count,
-            "queued rewritten-over-limit failure should not append audit notes");
-        check(editor.edit_plan().relationship_target_audits().size()
-                == queued_relationship_target_audit_count,
-            "queued rewritten-over-limit failure should not append relationship target audits");
-        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
-                == queued_worksheet_relationship_reference_audit_count,
-            "queued rewritten-over-limit failure should not append worksheet relationship audits");
-        check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
-            "queued rewritten-over-limit failure should preserve package-entry audit count");
-        check(editor.edit_plan().removed_package_entries().size()
-                == queued_removed_package_entry_count,
-            "queued rewritten-over-limit failure should preserve removed package-entry audit count");
-        check(editor.edit_plan().full_calculation_on_load(),
-            "queued rewritten-over-limit failure should preserve full calculation request");
-        check(editor.edit_plan().calc_chain_action()
-                == fastxlsx::detail::CalcChainAction::Remove,
-            "queued rewritten-over-limit failure should preserve calcChain removal policy");
-        check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-            "queued rewritten-over-limit failure should preserve calcChain removed-part audit");
-        check_manifest_write_mode(editor, worksheet_part,
-            fastxlsx::detail::PartWriteMode::StreamRewrite,
-            "queued rewritten-over-limit failure should keep worksheet stream-rewrite");
-        check_manifest_write_mode(editor, workbook_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-            "queued rewritten-over-limit failure should keep workbook metadata rewrite");
-        check(editor.manifest().find_part(calc_chain_part) == nullptr,
-            "queued rewritten-over-limit failure should keep calcChain omitted from manifest");
-    };
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "queued rewritten-over-limit direct output should local-DOM-rewrite worksheet");
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "queued rewritten-over-limit direct output should stay file-backed staged");
+        check_output_entry_materialized_replacement(output_plan.entries,
+            "xl/worksheets/sheet1.xml", false,
+            "queued rewritten-over-limit direct output should not use materialized worksheet replacement");
+        check(output_plan.full_calculation_on_load,
+            "queued rewritten-over-limit direct output should preserve recalculation request");
+        check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+            "queued rewritten-over-limit direct output should preserve calcChain removal policy");
 
-    bool failed = false;
-    try {
-        editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "rewritten worksheet XML",
-            "queued rewritten-over-limit failure should identify the rewritten worksheet XML");
-        check_contains(error.what(), "bounded local rewrite limit",
-            "queued rewritten-over-limit failure should name the bounded local rewrite limit");
+        editor.save_as(direct_output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(direct_output);
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+            "queued rewritten-over-limit direct output should contain the large rewritten worksheet");
+        check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+            "queued rewritten-over-limit direct output should keep calcChain omitted");
+        check(output_reader.read_entry("custom/opaque-extension.bin")
+                == source.opaque_extension,
+            "queued rewritten-over-limit direct output should preserve unknown extension bytes");
     }
-    check(failed,
-        "PackageEditor should reject queued sheetData patches whose rewritten worksheet XML exceeds the local rewrite limit");
-    check_queued_state_preserved();
 
-    failed = false;
-    try {
-        editor.replace_worksheet_sheet_data_by_name("Sheet1", replacement_sheet_data);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "rewritten worksheet XML",
-            "queued by-name rewritten-over-limit failure should identify the rewritten worksheet XML");
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        replace_worksheet_part_from_single_chunk_source(
+            editor, worksheet_part, queued_worksheet);
+        replace_worksheet_sheet_data_by_name_from_single_chunk_source(
+            editor, "Sheet1", replacement_sheet_data);
+
+        const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+            editor.planned_output();
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "queued rewritten-over-limit by-name output should stay file-backed staged");
+        check_output_entry_materialized_replacement(output_plan.entries,
+            "xl/worksheets/sheet1.xml", false,
+            "queued rewritten-over-limit by-name output should not use materialized worksheet replacement");
+        check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
+            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+            "queued rewritten-over-limit by-name output should omit calcChain");
+
+        editor.save_as(by_name_output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(by_name_output);
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
+            "queued rewritten-over-limit by-name output should contain the large rewritten worksheet");
+        check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
+            "queued rewritten-over-limit by-name output should keep calcChain omitted");
+        check(output_reader.read_entry("custom/opaque-extension.bin")
+                == source.opaque_extension,
+            "queued rewritten-over-limit by-name output should preserve unknown extension bytes");
     }
-    check(failed,
-        "PackageEditor by-name helper should reject queued rewritten worksheet XML above the local rewrite limit");
-    check_queued_state_preserved();
-
-    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
-        editor.planned_output();
-    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
-        "queued rewritten-over-limit planned output should keep queued worksheet rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "queued rewritten-over-limit planned output should keep workbook metadata rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
-        "queued rewritten-over-limit planned output should keep calcChain omitted");
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == queued_worksheet,
-        "queued rewritten-over-limit failure output should keep prior queued worksheet replacement");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "queued rewritten-over-limit failure output should keep calcChain omitted");
-    check(output_reader.read_entry("custom/opaque-extension.bin")
-            == source.opaque_extension,
-        "queued rewritten-over-limit failure output should preserve unknown extension bytes");
 }
 
 void test_package_editor_sheet_data_patch_preserves_worksheet_owned_object_parts()
@@ -32935,7 +42106,7 @@ void test_package_editor_sheet_data_patch_preserves_worksheet_owned_object_parts
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -33535,8 +42706,7 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
             "worksheet-owned OLE restore setup should remove the content type override");
 
         const std::string restored_ole = std::string("RESTORED\0OLE", 12);
-        editor.replace_part(ole_part, restored_ole,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, ole_part, restored_ole,
             "restored worksheet-owned OLE after removal");
 
         check(editor.edit_plan().find_removed_part(ole_part) == nullptr,
@@ -33549,12 +42719,12 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
         const auto* ole_plan = editor.edit_plan().find_part(ole_part);
         check(ole_plan != nullptr,
             "worksheet-owned OLE replacement after removal should restore active edit-plan part");
-        check(ole_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        check(ole_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "worksheet-owned OLE replacement after removal should keep final write mode");
         check(ole_plan->reason.find("after removal") != std::string::npos,
             "worksheet-owned OLE replacement after removal should keep final reason");
         check_manifest_write_mode(editor, ole_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "worksheet-owned OLE replacement after removal should restore manifest write mode");
         check(editor.manifest().content_types().override_for(ole_part) != nullptr,
             "worksheet-owned OLE replacement after removal should restore the OLE content type override");
@@ -33582,7 +42752,7 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
         check(output_plan.removed_package_entries.empty(),
             "worksheet-owned OLE replacement after removal output plan should clear removed package entries");
         check_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "worksheet-owned OLE replacement after removal output plan should rewrite OLE part");
         check_output_entry_part_context(output_plan.entries,
             "xl/embeddings/oleObject1.bin", true, ole_part.value(),
@@ -33642,14 +42812,13 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
 
         const std::string replacement_control =
             R"(<controlPr xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" shapeId="2"/>)";
-        editor.replace_part(control_part, replacement_control,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, control_part, replacement_control,
             "queued worksheet-owned control replacement");
         const auto* prior_control_plan = editor.edit_plan().find_part(control_part);
         check(prior_control_plan != nullptr,
             "worksheet-owned control removal-after-replacement setup should queue replacement");
         check(prior_control_plan->write_mode
-                == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+                == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "worksheet-owned control removal-after-replacement setup should local-DOM-rewrite control");
         check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
             "worksheet-owned control replacement setup should not rewrite content types");
@@ -33801,24 +42970,22 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
 
         const std::string stale_ole = std::string("STALE\0OLE", 9);
         const std::string final_ole = std::string("FINAL\0OLE", 9);
-        editor.replace_part(ole_part, stale_ole,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, ole_part, stale_ole,
             "stale repeated worksheet-owned OLE replacement");
-        editor.replace_part(ole_part, final_ole,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, ole_part, final_ole,
             "final repeated worksheet-owned OLE replacement");
 
         const auto* ole_plan = editor.edit_plan().find_part(ole_part);
         check(ole_plan != nullptr,
             "repeated worksheet-owned OLE replacement should keep an active edit-plan part");
-        check(ole_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        check(ole_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "repeated worksheet-owned OLE replacement should keep final write mode");
         check(ole_plan->reason.find("final repeated") != std::string::npos,
             "repeated worksheet-owned OLE replacement should keep final reason");
         check(ole_plan->reason.find("stale repeated") == std::string::npos,
             "repeated worksheet-owned OLE replacement should drop stale reason");
         check_manifest_write_mode(editor, ole_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "repeated worksheet-owned OLE replacement should mirror final write mode into manifest");
         check(editor.manifest().content_types().override_for(ole_part) != nullptr,
             "repeated worksheet-owned OLE replacement should keep OLE content type override");
@@ -33852,7 +43019,7 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
         check(output_plan.removed_package_entries.empty(),
             "repeated worksheet-owned OLE replacement output plan should not omit metadata entries");
         check_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "repeated worksheet-owned OLE replacement output plan should rewrite OLE part");
         const auto* output_ole_plan =
             find_output_entry_plan(output_plan.entries, "xl/embeddings/oleObject1.bin");
@@ -33912,24 +43079,22 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
             R"(<controlPr xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" shapeId="2"/>)";
         const std::string final_control =
             R"(<controlPr xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" shapeId="3"/>)";
-        editor.replace_part(control_part, stale_control,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, control_part, stale_control,
             "stale repeated worksheet-owned control replacement");
-        editor.replace_part(control_part, final_control,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, control_part, final_control,
             "final repeated worksheet-owned control replacement");
 
         const auto* control_plan = editor.edit_plan().find_part(control_part);
         check(control_plan != nullptr,
             "repeated worksheet-owned control replacement should keep an active edit-plan part");
-        check(control_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        check(control_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "repeated worksheet-owned control replacement should keep final write mode");
         check(control_plan->reason.find("final repeated") != std::string::npos,
             "repeated worksheet-owned control replacement should keep final reason");
         check(control_plan->reason.find("stale repeated") == std::string::npos,
             "repeated worksheet-owned control replacement should drop stale reason");
         check_manifest_write_mode(editor, control_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "repeated worksheet-owned control replacement should mirror final write mode into manifest");
         check(editor.manifest().content_types().override_for(control_part) != nullptr,
             "repeated worksheet-owned control replacement should keep control content type override");
@@ -33963,7 +43128,7 @@ void test_package_editor_worksheet_owned_object_part_same_path_ordering()
         check(output_plan.removed_package_entries.empty(),
             "repeated worksheet-owned control replacement output plan should not omit metadata entries");
         check_output_entry_plan(output_plan.entries, "xl/ctrlProps/control1.xml",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "repeated worksheet-owned control replacement output plan should rewrite control part");
         const auto* output_control_plan =
             find_output_entry_plan(output_plan.entries, "xl/ctrlProps/control1.xml");
@@ -34083,7 +43248,7 @@ void test_package_editor_sheet_data_patch_preserves_background_picture_and_heade
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -34350,7 +43515,7 @@ void test_package_editor_sheet_data_patch_preserves_page_setup_printer_settings(
 
     const std::string replacement_sheet_data =
         R"(<sheetData><row r="2"><c r="A2"><v>2</v></c></row></sheetData>)";
-    editor.replace_worksheet_sheet_data(worksheet_part, replacement_sheet_data);
+    replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part, replacement_sheet_data);
 
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr,
@@ -34936,8 +44101,7 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
             "background picture restore setup should not create a media override");
 
         const std::string restored_picture = "restored-background-image-bytes";
-        editor.replace_part(background_picture_part, restored_picture,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, background_picture_part, restored_picture,
             "restored worksheet-owned background picture after removal");
 
         check(editor.edit_plan().find_removed_part(background_picture_part) == nullptr,
@@ -34952,12 +44116,12 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
         check(picture_plan != nullptr,
             "background picture replacement after removal should restore active edit-plan part");
         check(picture_plan->write_mode
-                == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+                == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "background picture replacement after removal should keep final write mode");
         check(picture_plan->reason.find("after removal") != std::string::npos,
             "background picture replacement after removal should keep final reason");
         check_manifest_write_mode(editor, background_picture_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "background picture replacement after removal should restore manifest write mode");
         check(editor.manifest().content_types().default_for("png") != nullptr,
             "background picture replacement after removal should retain PNG default");
@@ -34978,7 +44142,7 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
         check(output_plan.removed_package_entries.empty(),
             "background picture replacement after removal output plan should clear removed package entries");
         check_output_entry_plan(output_plan.entries, "xl/media/background.png",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "background picture replacement after removal output plan should rewrite picture part");
         check_output_entry_part_context(output_plan.entries, "xl/media/background.png",
             true, background_picture_part.value(),
@@ -35051,15 +44215,14 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
 
         const std::string replacement_vml =
             R"(<xml><v:shape id="queuedHeaderPicture"/></xml>)";
-        editor.replace_part(header_footer_vml_part, replacement_vml,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, header_footer_vml_part, replacement_vml,
             "queued worksheet-owned header/footer VML replacement");
         const auto* prior_vml_plan =
             editor.edit_plan().find_part(header_footer_vml_part);
         check(prior_vml_plan != nullptr,
             "header/footer VML removal-after-replacement setup should queue replacement");
         check(prior_vml_plan->write_mode
-                == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+                == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "header/footer VML removal-after-replacement setup should local-DOM-rewrite VML");
         check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
             "header/footer VML replacement setup should not rewrite content types");
@@ -35236,25 +44399,23 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
 
         const std::string stale_picture = "stale-background-image-bytes";
         const std::string final_picture = "final-background-image-bytes";
-        editor.replace_part(background_picture_part, stale_picture,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, background_picture_part, stale_picture,
             "stale repeated worksheet-owned background picture replacement");
-        editor.replace_part(background_picture_part, final_picture,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        replace_part_with_memory_chunks(editor, background_picture_part, final_picture,
             "final repeated worksheet-owned background picture replacement");
 
         const auto* picture_plan =
             editor.edit_plan().find_part(background_picture_part);
         check(picture_plan != nullptr,
             "repeated background picture replacement should keep an active edit-plan part");
-        check(picture_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        check(picture_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "repeated background picture replacement should keep final write mode");
         check(picture_plan->reason.find("final repeated") != std::string::npos,
             "repeated background picture replacement should keep final reason");
         check(picture_plan->reason.find("stale repeated") == std::string::npos,
             "repeated background picture replacement should drop stale reason");
         check_manifest_write_mode(editor, background_picture_part,
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
             "repeated background picture replacement should mirror final write mode into manifest");
         check(editor.manifest().content_types().default_for("png") != nullptr,
             "repeated background picture replacement should keep PNG default");
@@ -35291,7 +44452,7 @@ void test_package_editor_background_picture_and_header_footer_vml_same_path_orde
         check(output_plan.removed_package_entries.empty(),
             "repeated background picture replacement output plan should not omit metadata entries");
         check_output_entry_plan(output_plan.entries, "xl/media/background.png",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "repeated background picture replacement output plan should rewrite picture part");
         const auto* output_picture_plan =
             find_output_entry_plan(output_plan.entries, "xl/media/background.png");
@@ -35388,7 +44549,7 @@ void test_package_editor_replaces_worksheet_and_preserves_linked_object_parts()
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(<extLst><ext uri="{fastxlsx-test}"/></extLst>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* drawing_plan = editor.edit_plan().find_part(drawing_part);
     check(drawing_plan != nullptr,
@@ -35929,7 +45090,7 @@ void test_package_editor_repeated_worksheet_rewrite_upserts_relationship_target_
         R"(<drawing r:id="rId1"/>)"
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, first_replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, first_replacement_sheet);
 
     const std::size_t first_note_count = editor.edit_plan().notes().size();
     const std::size_t first_relationship_target_audit_count =
@@ -35949,7 +45110,7 @@ void test_package_editor_repeated_worksheet_rewrite_upserts_relationship_target_
         R"(<drawing r:id="rId1"/>)"
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, second_replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, second_replacement_sheet);
 
     check(editor.edit_plan().notes().size() == first_note_count,
         "repeated linked worksheet rewrite should not duplicate identical audit notes");
@@ -36006,7 +45167,7 @@ void test_package_editor_preserves_source_relationship_parts_when_replacement_om
 
     const std::string replacement_sheet =
         R"(<worksheet><sheetData><row r="1"><c r="A1"><v>123</v></c></row></sheetData></worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
     const auto* drawing_plan = editor.edit_plan().find_part(drawing_part);
     check(drawing_plan != nullptr,
@@ -36248,7 +45409,7 @@ void test_package_editor_reference_policy_fail_preserves_state()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, replacement_worksheet, fail_policy);
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_worksheet, fail_policy);
     } catch (const std::exception&) {
         failed = true;
     }
@@ -36495,7 +45656,7 @@ void test_package_editor_reference_policy_fail_preserves_prior_replacement()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, "<worksheet/>", fail_policy);
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, "<worksheet/>", fail_policy);
     } catch (const std::exception&) {
         failed = true;
     }
@@ -36690,7 +45851,7 @@ void test_package_editor_reference_policy_fail_preserves_prior_document_properti
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, "<worksheet/>", fail_policy);
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, "<worksheet/>", fail_policy);
     } catch (const std::exception&) {
         failed = true;
     }
@@ -36868,7 +46029,7 @@ void test_package_editor_reference_policy_request_recalculation_updates_workbook
         R"(<drawing r:id="rId1"/>)"
         R"(<tableParts count="1"><tablePart r:id="rId3"/></tableParts>)"
         R"(</worksheet>)";
-    editor.replace_worksheet_part(worksheet_part, replacement_sheet, policy);
+    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet, policy);
 
     check(editor.edit_plan().full_calculation_on_load(),
         "request-recalculation policy should request full calculation for linked worksheet rewrite");
@@ -36973,7 +46134,7 @@ void test_package_editor_rejects_calc_chain_rebuild_without_state_changes()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, "<worksheet/>", policy);
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, "<worksheet/>", policy);
     } catch (const std::exception&) {
         failed = true;
     }
@@ -37067,7 +46228,7 @@ void test_package_editor_rejects_malformed_workbook_metadata_without_state_chang
         editor.edit_plan().worksheet_relationship_reference_audits().size();
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, "<worksheet/>");
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, "<worksheet/>");
     } catch (const std::exception&) {
         failed = true;
     }
@@ -37150,6 +46311,66 @@ void test_package_editor_rejects_malformed_workbook_metadata_without_state_chang
         calc_chain_part.value(),
         "malformed workbook failure output plan should classify calcChain as a package part");
 
+    {
+        fastxlsx::detail::PackageEditor cell_editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+        const std::array replacements {
+            worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
+        };
+
+        bool cell_replacement_failed = false;
+        try {
+            cell_editor.replace_worksheet_cells(worksheet_part, replacements);
+        } catch (const std::exception& error) {
+            cell_replacement_failed = true;
+            check_contains(error.what(), "workbook XML closing tag",
+                "malformed workbook cell replacement failure should report workbook XML preflight");
+        }
+        check(cell_replacement_failed,
+            "cell replacement should reject malformed workbook metadata after output staging");
+        check(cell_editor.edit_plan().size() == initial_plan_size,
+            "malformed workbook cell replacement failure should not change edit plan size");
+        check(!cell_editor.edit_plan().full_calculation_on_load(),
+            "malformed workbook cell replacement failure should not request full calculation");
+        check_manifest_write_mode(cell_editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "malformed workbook cell replacement failure should leave worksheet manifest copy-original");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "malformed workbook cell replacement failure should clean staged output temp file immediately");
+    }
+
+    {
+        fastxlsx::detail::PackageEditor sheet_data_editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        bool sheet_data_failed = false;
+        try {
+            replace_worksheet_sheet_data_from_single_chunk_source(sheet_data_editor, worksheet_part,
+                R"(<sheetData><row r="1"><c r="A1"><v>9</v></c></row></sheetData>)");
+        } catch (const std::exception& error) {
+            sheet_data_failed = true;
+            check_contains(error.what(), "workbook XML closing tag",
+                "malformed workbook sheetData failure should report workbook XML preflight");
+        }
+        check(sheet_data_failed,
+            "sheetData replacement should reject malformed workbook metadata after output staging");
+        check(sheet_data_editor.edit_plan().size() == initial_plan_size,
+            "malformed workbook sheetData failure should not change edit plan size");
+        check(sheet_data_editor.edit_plan().notes().size() == initial_note_count,
+            "malformed workbook sheetData failure should not change edit plan notes");
+        check(!sheet_data_editor.edit_plan().full_calculation_on_load(),
+            "malformed workbook sheetData failure should not request full calculation");
+        check_manifest_write_mode(sheet_data_editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "malformed workbook sheetData failure should leave worksheet manifest copy-original");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "malformed workbook sheetData failure should clean staged temp files immediately");
+    }
+
     editor.save_as(output);
 
     const fastxlsx::detail::PackageReader output_reader =
@@ -37211,7 +46432,7 @@ void test_package_editor_rejects_worksheet_rewrite_without_workbook_metadata()
 
     bool failed = false;
     try {
-        editor.replace_worksheet_part(worksheet_part, "<worksheet/>");
+        replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, "<worksheet/>");
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(), "xl/workbook.xml",
@@ -37458,17 +46679,22 @@ void test_package_editor_rejects_saving_over_source_package()
 
 void test_package_editor_save_as_copy_original_read_failure_preserves_state_and_output()
 {
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
     const SourcePackage source =
         write_source_package("fastxlsx-package-editor-copy-failure-source.xlsx");
     const std::filesystem::path output =
         output_path("fastxlsx-package-editor-copy-failure-output.xlsx");
     const std::string output_sentinel = "do not overwrite this failed output";
     write_binary_file(output, output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before =
+        package_editor_output_sibling_temp_files(output);
 
-    std::string source_bytes = fastxlsx::test::read_file(source.path);
-    corrupt_first_occurrence(
-        source_bytes, std::string_view(source.unknown.data(), source.unknown.size()));
-    write_binary_file(source.path, source_bytes);
+    const std::string original_source_bytes = fastxlsx::test::read_file(source.path);
+    std::string corrupted_source_bytes = original_source_bytes;
+    corrupt_first_occurrence(corrupted_source_bytes,
+        std::string_view(source.unknown.data(), source.unknown.size()));
+    write_binary_file(source.path, corrupted_source_bytes);
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
@@ -37507,6 +46733,9 @@ void test_package_editor_save_as_copy_original_read_failure_preserves_state_and_
         editor.save_as(output);
     } catch (const std::exception& error) {
         failed = true;
+        check_contains(error.what(),
+            "failed to materialize planned output source-copy entry 'custom/opaque.bin'",
+            "copy-original failure should include planned output entry materialization context");
         check_contains(error.what(), "failed to copy source package entry",
             "copy-original failure should include copy context");
         check_contains(error.what(), "custom/opaque.bin",
@@ -37587,16 +46816,465 @@ void test_package_editor_save_as_copy_original_read_failure_preserves_state_and_
         "copy-original read failure should keep planned opaque copy-original");
     check(fastxlsx::test::read_file(output) == output_sentinel,
         "copy-original read failure should not overwrite an existing output file");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "copy-original read failure should clean staged source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+        "copy-original read failure should clean committed-output sibling temp files");
+
+    write_binary_file(source.path, original_source_bytes);
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("docProps/core.xml") == replacement_core,
+        "later safe output should write queued core replacement after copy-original failure");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe output should preserve copied unknown bytes after copy-original failure");
+}
+
+void test_package_editor_save_as_rejects_mutated_source_copy_temp_size_without_state_changes()
+{
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-source-copy-temp-size-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-copy-temp-size-output.xlsx");
+    const std::string output_sentinel = "do not overwrite this source-copy temp failure output";
+    write_binary_file(output, output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before =
+        package_editor_output_sibling_temp_files(output);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const std::string replacement_core =
+        "<cp:coreProperties><dc:creator>TempContract</dc:creator></cp:coreProperties>";
+    editor.replace_part(core_part, replacement_core,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t queued_worksheet_relationship_reference_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t queued_worksheet_payload_dependency_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t queued_workbook_payload_dependency_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+    const bool queued_full_calculation_on_load =
+        editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+    const fastxlsx::detail::PackageEditorOutputPlan queued_output_plan =
+        editor.planned_output();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorSourceCopyTempFilesHook hook(
+            truncate_package_editor_source_copy_temp_files);
+        try {
+            editor.save_as(output);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "failed to write PackageEditor output package",
+                "source-copy temp size failure should include PackageEditor write context");
+            check_contains(error.what(), "ZIP entry '",
+                "source-copy temp size failure should include ZIP entry context");
+            check_contains(error.what(), "chunk 0",
+                "source-copy temp size failure should include chunk index context");
+            check_contains(error.what(), "ZIP entry chunk size changed after staging",
+                "source-copy temp size failure should enforce expected-size metadata");
+            check_contains(error.what(), "actual 0 bytes",
+                "source-copy temp size failure should report the truncated temp size");
+            check_contains(error.what(), "fastxlsx-package-editor-",
+                "source-copy temp size failure should include the file-backed temp path");
+        }
+    }
+    check(failed,
+        "PackageEditor should reject source-copy temp files whose size changes before write");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-copy temp size failure should not change queued edit-plan entries");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-copy temp size failure should not add edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "source-copy temp size failure should not change package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "source-copy temp size failure should not change removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "source-copy temp size failure should not change removed package-entry audits");
+    check(editor.edit_plan().relationship_target_audits().size()
+            == queued_relationship_target_audit_count,
+        "source-copy temp size failure should not change relationship target audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == queued_worksheet_relationship_reference_audit_count,
+        "source-copy temp size failure should not change worksheet reference audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == queued_worksheet_payload_dependency_audit_count,
+        "source-copy temp size failure should not change worksheet payload audits");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == queued_workbook_payload_dependency_audit_count,
+        "source-copy temp size failure should not change workbook payload audits");
+    check(editor.edit_plan().full_calculation_on_load()
+            == queued_full_calculation_on_load,
+        "source-copy temp size failure should not change fullCalcOnLoad intent");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-copy temp size failure should not change calcChain policy");
+    check_manifest_write_mode(editor, core_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-copy temp size failure should keep queued core replacement active");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-copy temp size failure should keep opaque part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.entries.size() == queued_output_plan.entries.size(),
+        "source-copy temp size failure should keep output-plan entry count stable");
+    check(output_plan.notes.size() == queued_output_plan.notes.size(),
+        "source-copy temp size failure should keep output-plan notes stable");
+    check(output_plan.removed_parts.size() == queued_output_plan.removed_parts.size(),
+        "source-copy temp size failure should keep output-plan removed parts stable");
+    check(output_plan.removed_package_entries.size()
+            == queued_output_plan.removed_package_entries.size(),
+        "source-copy temp size failure should keep output-plan package-entry omissions stable");
+    check(output_plan.relationship_target_audits.size()
+            == queued_output_plan.relationship_target_audits.size(),
+        "source-copy temp size failure should keep output-plan relationship audits stable");
+    check(output_plan.worksheet_relationship_reference_audits.size()
+            == queued_output_plan.worksheet_relationship_reference_audits.size(),
+        "source-copy temp size failure should keep output-plan worksheet audits stable");
+    check(output_plan.worksheet_payload_dependency_audits.size()
+            == queued_output_plan.worksheet_payload_dependency_audits.size(),
+        "source-copy temp size failure should keep output-plan worksheet payload audits stable");
+    check(output_plan.workbook_payload_dependency_audits.size()
+            == queued_output_plan.workbook_payload_dependency_audits.size(),
+        "source-copy temp size failure should keep output-plan workbook payload audits stable");
+    check(output_plan.full_calculation_on_load
+            == queued_output_plan.full_calculation_on_load,
+        "source-copy temp size failure should keep output-plan fullCalcOnLoad stable");
+    check(output_plan.calc_chain_action == queued_output_plan.calc_chain_action,
+        "source-copy temp size failure should keep output-plan calcChain policy stable");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "source-copy temp size failure should keep planned core rewrite");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "source-copy temp size failure should keep planned opaque copy-original");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "source-copy temp size failure should not overwrite an existing output file");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "source-copy temp size failure should clean staged source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+        "source-copy temp size failure should clean committed-output sibling temp files");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("docProps/core.xml") == replacement_core,
+        "later safe output should write queued core replacement after temp size failure");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe output should preserve copied unknown bytes after temp size failure");
+}
+
+void test_package_editor_save_as_rejects_missing_source_copy_temp_with_expected_size()
+{
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-source-copy-temp-missing-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-copy-temp-missing-output.xlsx");
+    const std::string output_sentinel =
+        "do not overwrite this missing source-copy temp failure output";
+    write_binary_file(output, output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before =
+        package_editor_output_sibling_temp_files(output);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const std::string replacement_core =
+        "<cp:coreProperties><dc:creator>MissingTemp</dc:creator></cp:coreProperties>";
+    editor.replace_part(core_part, replacement_core,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const bool queued_full_calculation_on_load =
+        editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+    const fastxlsx::detail::PackageEditorOutputPlan queued_output_plan =
+        editor.planned_output();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorSourceCopyTempFilesHook hook(
+            delete_package_editor_source_copy_temp_files);
+        try {
+            editor.save_as(output);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "failed to write PackageEditor output package",
+                "missing source-copy temp failure should include PackageEditor write context");
+            check_contains(error.what(), "ZIP entry '",
+                "missing source-copy temp failure should include ZIP entry context");
+            check_contains(error.what(), "chunk 0",
+                "missing source-copy temp failure should include chunk index context");
+            check_contains(error.what(), "failed to stat file-backed ZIP entry chunk",
+                "missing source-copy temp failure should report preflight stat failure");
+            check_contains(error.what(), "expected ",
+                "missing source-copy temp failure should report expected-size metadata");
+            check_contains(error.what(), " bytes",
+                "missing source-copy temp failure should keep expected byte units");
+            check_contains(error.what(), "fastxlsx-package-editor-",
+                "missing source-copy temp failure should include the file-backed temp path");
+        }
+    }
+    check(failed,
+        "PackageEditor should reject deleted source-copy temp files before output commit");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "missing source-copy temp failure should not change queued edit-plan entries");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "missing source-copy temp failure should not add edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "missing source-copy temp failure should not change package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "missing source-copy temp failure should not change removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "missing source-copy temp failure should not change removed package-entry audits");
+    check(editor.edit_plan().full_calculation_on_load()
+            == queued_full_calculation_on_load,
+        "missing source-copy temp failure should not change fullCalcOnLoad intent");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "missing source-copy temp failure should not change calcChain policy");
+    check_manifest_write_mode(editor, core_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "missing source-copy temp failure should keep queued core replacement active");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "missing source-copy temp failure should keep opaque part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.entries.size() == queued_output_plan.entries.size(),
+        "missing source-copy temp failure should keep output-plan entry count stable");
+    check(output_plan.notes.size() == queued_output_plan.notes.size(),
+        "missing source-copy temp failure should keep output-plan notes stable");
+    check(output_plan.full_calculation_on_load
+            == queued_output_plan.full_calculation_on_load,
+        "missing source-copy temp failure should keep output-plan fullCalcOnLoad stable");
+    check(output_plan.calc_chain_action == queued_output_plan.calc_chain_action,
+        "missing source-copy temp failure should keep output-plan calcChain policy stable");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "missing source-copy temp failure should keep planned core rewrite");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "missing source-copy temp failure should keep planned opaque copy-original");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "missing source-copy temp failure should not overwrite an existing output file");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "missing source-copy temp failure should clean staged source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+        "missing source-copy temp failure should clean committed-output sibling temp files");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("docProps/core.xml") == replacement_core,
+        "later safe output should write queued core replacement after missing temp failure");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe output should preserve copied unknown bytes after missing temp failure");
+}
+
+void test_package_editor_save_as_rejects_mutated_source_copy_temp_crc_without_state_changes()
+{
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-source-copy-temp-crc-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-copy-temp-crc-output.xlsx");
+    const std::string output_sentinel = "do not overwrite this source-copy crc failure output";
+    write_binary_file(output, output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before =
+        package_editor_output_sibling_temp_files(output);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const std::string replacement_core =
+        "<cp:coreProperties><dc:creator>TempCrcContract</dc:creator></cp:coreProperties>";
+    editor.replace_part(core_part, replacement_core,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite);
+
+    const std::size_t queued_plan_size = editor.edit_plan().size();
+    const std::size_t queued_note_count = editor.edit_plan().notes().size();
+    const std::size_t queued_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t queued_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t queued_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t queued_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t queued_worksheet_relationship_reference_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t queued_worksheet_payload_dependency_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t queued_workbook_payload_dependency_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+    const bool queued_full_calculation_on_load =
+        editor.edit_plan().full_calculation_on_load();
+    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+    const fastxlsx::detail::PackageEditorOutputPlan queued_output_plan =
+        editor.planned_output();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorSourceCopyTempFilesHook hook(
+            rewrite_package_editor_source_copy_temp_files_same_size);
+        try {
+            editor.save_as(output);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "failed to write PackageEditor output package",
+                "source-copy temp CRC failure should include PackageEditor write context");
+            check_contains(error.what(), "ZIP entry '",
+                "source-copy temp CRC failure should include ZIP entry context");
+            check_contains(error.what(), "chunk 0",
+                "source-copy temp CRC failure should include chunk index context");
+            check_contains(error.what(), "ZIP entry chunk CRC32 changed after staging",
+                "source-copy temp CRC failure should enforce expected-CRC metadata");
+            check_contains(error.what(), "actual ",
+                "source-copy temp CRC failure should report actual CRC");
+            check_contains(error.what(), "fastxlsx-package-editor-",
+                "source-copy temp CRC failure should include the file-backed temp path");
+        }
+    }
+    check(failed,
+        "PackageEditor should reject source-copy temp files whose CRC changes before write");
+
+    check(editor.edit_plan().size() == queued_plan_size,
+        "source-copy temp CRC failure should not change queued edit-plan entries");
+    check(editor.edit_plan().notes().size() == queued_note_count,
+        "source-copy temp CRC failure should not add edit-plan notes");
+    check(editor.edit_plan().package_entries().size() == queued_package_entry_count,
+        "source-copy temp CRC failure should not change package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == queued_removed_part_count,
+        "source-copy temp CRC failure should not change removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == queued_removed_package_entry_count,
+        "source-copy temp CRC failure should not change removed package-entry audits");
+    check(editor.edit_plan().relationship_target_audits().size()
+            == queued_relationship_target_audit_count,
+        "source-copy temp CRC failure should not change relationship target audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == queued_worksheet_relationship_reference_audit_count,
+        "source-copy temp CRC failure should not change worksheet reference audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == queued_worksheet_payload_dependency_audit_count,
+        "source-copy temp CRC failure should not change worksheet payload audits");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == queued_workbook_payload_dependency_audit_count,
+        "source-copy temp CRC failure should not change workbook payload audits");
+    check(editor.edit_plan().full_calculation_on_load()
+            == queued_full_calculation_on_load,
+        "source-copy temp CRC failure should not change fullCalcOnLoad intent");
+    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
+        "source-copy temp CRC failure should not change calcChain policy");
+    check_manifest_write_mode(editor, core_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "source-copy temp CRC failure should keep queued core replacement active");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-copy temp CRC failure should keep opaque part copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.entries.size() == queued_output_plan.entries.size(),
+        "source-copy temp CRC failure should keep output-plan entry count stable");
+    check(output_plan.notes.size() == queued_output_plan.notes.size(),
+        "source-copy temp CRC failure should keep output-plan notes stable");
+    check(output_plan.removed_parts.size() == queued_output_plan.removed_parts.size(),
+        "source-copy temp CRC failure should keep output-plan removed parts stable");
+    check(output_plan.removed_package_entries.size()
+            == queued_output_plan.removed_package_entries.size(),
+        "source-copy temp CRC failure should keep output-plan package-entry omissions stable");
+    check(output_plan.relationship_target_audits.size()
+            == queued_output_plan.relationship_target_audits.size(),
+        "source-copy temp CRC failure should keep output-plan relationship audits stable");
+    check(output_plan.worksheet_relationship_reference_audits.size()
+            == queued_output_plan.worksheet_relationship_reference_audits.size(),
+        "source-copy temp CRC failure should keep output-plan worksheet audits stable");
+    check(output_plan.worksheet_payload_dependency_audits.size()
+            == queued_output_plan.worksheet_payload_dependency_audits.size(),
+        "source-copy temp CRC failure should keep output-plan worksheet payload audits stable");
+    check(output_plan.workbook_payload_dependency_audits.size()
+            == queued_output_plan.workbook_payload_dependency_audits.size(),
+        "source-copy temp CRC failure should keep output-plan workbook payload audits stable");
+    check(output_plan.full_calculation_on_load
+            == queued_output_plan.full_calculation_on_load,
+        "source-copy temp CRC failure should keep output-plan fullCalcOnLoad stable");
+    check(output_plan.calc_chain_action == queued_output_plan.calc_chain_action,
+        "source-copy temp CRC failure should keep output-plan calcChain policy stable");
+    check_output_entry_plan(output_plan.entries, "docProps/core.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "source-copy temp CRC failure should keep planned core rewrite");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "source-copy temp CRC failure should keep planned opaque copy-original");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "source-copy temp CRC failure should not overwrite an existing output file");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "source-copy temp CRC failure should clean staged source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+        "source-copy temp CRC failure should clean committed-output sibling temp files");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("docProps/core.xml") == replacement_core,
+        "later safe output should write queued core replacement after temp CRC failure");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe output should preserve copied unknown bytes after temp CRC failure");
 }
 
 void test_package_editor_save_as_writer_failure_preserves_state_and_output()
 {
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
     const SourcePackage source =
         write_source_package("fastxlsx-package-editor-writer-failure-source.xlsx");
     const std::filesystem::path output =
         output_path("fastxlsx-package-editor-writer-failure-output.xlsx");
     const std::string output_sentinel = "do not overwrite this writer failure output";
     write_binary_file(output, output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before =
+        package_editor_output_sibling_temp_files(output);
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
@@ -37718,6 +47396,10 @@ void test_package_editor_save_as_writer_failure_preserves_state_and_output()
         "writer failure should keep planned opaque copy-original");
     check(fastxlsx::test::read_file(output) == output_sentinel,
         "writer failure should not overwrite an existing output file");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "writer failure should clean staged source-copy temp files");
+    check_no_new_package_editor_output_sibling_temp_files(output_temp_files_before, output,
+        "writer failure should clean committed-output sibling temp files");
 
     editor.save_as(output);
 
@@ -37768,7 +47450,7 @@ void test_package_editor_rejects_invalid_replacements()
         "PackageEditor should reject copy-original replacement mode");
     bool worksheet_failed = false;
     try {
-        editor.replace_worksheet_part(core_part, "<worksheet/>");
+        replace_worksheet_part_from_single_chunk_source(editor, core_part, "<worksheet/>");
     } catch (const std::exception&) {
         worksheet_failed = true;
     }
@@ -38220,13 +47902,28 @@ void test_package_editor_rejects_invalid_removals_without_state_changes()
 
 } // namespace
 
-int main()
+int main(int argc, char* argv[])
 {
     try {
+        const std::string_view shard = package_editor_shard_from_args(argc, argv);
+        std::cout << "fastxlsx.package_editor shard: " << shard << '\n';
+
+        if (should_run_package_editor_shard(shard, "core")) {
         test_package_editor_noop_save_preserves_all_source_entries();
+        test_package_editor_file_backs_copy_original_package_part_source_entries();
         test_package_editor_replaces_one_part_and_preserves_unknown_parts();
         test_package_editor_staged_chunk_part_replacement_writes_chunks();
+        test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes();
+        test_package_editor_save_as_rejects_changed_staged_chunk_crc_without_state_changes();
+        test_package_editor_rejects_invalid_generic_staged_chunks_without_state_changes();
+        test_package_editor_rejects_invalid_worksheet_staged_chunks_without_state_changes();
+        test_package_editor_rejects_materialized_stream_rewrite_part_without_state_changes();
+        test_package_editor_generic_staged_chunks_route_worksheet_targets();
         test_package_editor_replaces_worksheet_with_staged_chunks();
+        test_package_editor_replaces_worksheet_by_name_with_staged_chunks();
+        test_package_editor_replaces_worksheet_by_planned_name_with_staged_chunks();
+        test_package_editor_replaces_worksheet_from_chunk_source();
+        test_package_editor_replaces_worksheet_by_name_from_chunk_source();
         test_package_editor_repeated_part_replacement_updates_final_state();
         test_package_editor_replacement_audits_preserved_root_relationships();
         test_package_editor_sets_document_properties_and_adds_missing_metadata_parts();
@@ -38238,17 +47935,6 @@ int main()
         test_package_editor_document_properties_failure_preserves_state();
         test_package_editor_document_properties_app_relationship_failure_preserves_state();
         test_package_editor_combines_document_properties_and_worksheet_rewrite();
-        test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff();
-        test_package_editor_worksheet_cell_replacement_preserves_linked_object_parts();
-        test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payload_audit();
-        test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
-        test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
-        test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input();
-        test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replacement();
-        test_package_editor_streams_large_source_worksheet_cell_replacement_without_materialized_input_limit();
-        test_package_editor_streams_large_planned_worksheet_cell_replacement_without_materialized_input_limit();
-        test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
-        test_package_editor_rejects_invalid_cell_replacement_payload_without_state_changes();
         test_package_editor_replaces_worksheet_and_removes_stale_calc_chain();
         test_package_editor_source_overwrite_rejection_preserves_worksheet_rewrite_plan();
         test_package_editor_cleans_stale_calc_chain_metadata_without_payload();
@@ -38277,6 +47963,45 @@ int main()
         test_package_editor_request_full_calculation_from_deflated_source_preserves_linked_payloads();
         test_package_editor_replaces_worksheet_from_deflated_source_and_preserves_linked_payloads();
 #endif
+        }
+
+        if (should_run_package_editor_shard(shard, "c5")) {
+        test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff();
+        test_package_editor_replaces_worksheet_cells_with_chunked_payload();
+        test_package_editor_contextualizes_current_worksheet_source_read_failure_without_state_changes();
+        test_package_editor_contextualizes_missing_current_worksheet_entry_without_state_changes();
+        test_package_editor_rejects_malformed_current_worksheet_events_without_state_changes();
+        test_package_editor_contextualizes_sheet_data_current_worksheet_source_read_failure_without_state_changes();
+        test_package_editor_worksheet_cell_replacement_preserves_linked_object_parts();
+        test_package_editor_worksheet_cell_replacement_skips_old_target_cell_payload_audit();
+        test_package_editor_worksheet_cell_replacement_audits_replacement_payload_policy();
+        test_replacement_cell_payload_scanner_streams_long_ignored_markup_chunks();
+        test_sheet_data_start_tag_scanner_streams_long_ignored_markup_chunks();
+        test_relationship_reference_scanner_streams_retained_tag_before_long_ignored_markup();
+        test_package_entry_chunk_reader_rejects_stale_memory_chunk_size();
+        test_package_entry_chunk_reader_reports_replay_cursor_after_prior_chunks();
+        test_package_entry_chunk_reader_rejects_stale_empty_memory_chunk_crc();
+        test_package_entry_chunk_reader_reports_unknown_chunk_kind();
+        test_package_entry_chunk_reader_closes_file_on_early_exit();
+        test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension();
+        test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input();
+        test_package_editor_ordinary_worksheet_replace_part_rejects_without_state_change();
+        test_package_editor_empty_ordinary_worksheet_replace_part_fails_without_state_change();
+        test_package_editor_worksheet_cell_replacement_uses_sheet_data_staged_output();
+        test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replacement();
+        test_package_editor_rejects_changed_planned_staged_chunk_sizes_without_state_changes();
+        test_package_editor_rejects_changed_planned_staged_chunk_sizes_for_sheet_data_without_state_changes();
+        test_package_editor_rejects_changed_planned_staged_chunk_crc_without_state_changes();
+        test_package_editor_rejects_missing_planned_staged_chunk_file_at_read_boundary();
+        test_package_editor_contextualizes_by_name_planned_staged_chunk_read_failures_without_state_changes();
+        test_package_editor_rejects_changed_planned_staged_chunk_crc_for_sheet_data_without_state_changes();
+        test_package_editor_streams_large_source_worksheet_cell_replacement_beyond_event_window_total_size();
+        test_package_editor_streams_large_planned_worksheet_cell_replacement_beyond_event_window_total_size();
+        test_package_editor_worksheet_cell_replacement_missing_target_fails_before_state_change();
+        test_package_editor_rejects_invalid_cell_replacement_payload_without_state_changes();
+        }
+
+        if (should_run_package_editor_shard(shard, "preservation-core")) {
         test_package_editor_replaces_drawing_and_preserves_linked_media_entries();
         test_package_editor_replaces_unknown_extension_and_preserves_owner_relationships();
         test_package_editor_repeated_unknown_extension_replacement_upserts_owner_audit();
@@ -38303,6 +48028,9 @@ int main()
         test_package_editor_styles_removal_overrides_prior_replacement();
         test_package_editor_vba_project_replacement_restores_prior_removal();
         test_package_editor_vba_project_removal_overrides_prior_replacement();
+        }
+
+        if (should_run_package_editor_shard(shard, "preservation-removal")) {
         test_package_editor_removes_unknown_extension_and_omits_owner_relationships();
         test_package_editor_removes_workbook_and_preserves_package_links();
         test_package_editor_removes_worksheet_and_preserves_workbook_links();
@@ -38319,6 +48047,9 @@ int main()
         test_package_editor_removes_vml_drawing_and_preserves_worksheet_links();
         test_package_editor_removes_percent_decoded_drawing_and_preserves_encoded_link();
         test_package_editor_chart_removal_overrides_prior_replacement();
+        }
+
+        if (should_run_package_editor_shard(shard, "preservation-resources")) {
         test_package_editor_replaces_media_and_preserves_drawing_links();
         test_package_editor_replaces_table_and_preserves_worksheet_links();
         test_package_editor_replaces_shared_strings_and_preserves_workbook_links();
@@ -38330,6 +48061,9 @@ int main()
         test_package_editor_repeated_vba_project_replacement_updates_final_state();
         test_package_editor_replaces_vml_drawing_and_preserves_worksheet_links();
         test_package_editor_replaces_percent_decoded_drawing_and_preserves_encoded_link();
+        }
+
+        if (should_run_package_editor_shard(shard, "preservation-comments")) {
         test_package_editor_replaces_comments_and_preserves_worksheet_links();
         test_package_editor_repeated_comments_replacement_updates_final_state();
         test_package_editor_removes_comments_and_preserves_worksheet_links();
@@ -38343,6 +48077,9 @@ int main()
         test_package_editor_removes_persons_and_preserves_threaded_comments_links();
         test_package_editor_threaded_comments_same_path_ordering();
         test_package_editor_persons_same_path_ordering();
+        }
+
+        if (should_run_package_editor_shard(shard, "preservation-linked")) {
         test_package_editor_worksheet_rewrite_preserves_registered_comments_part();
         test_package_editor_worksheet_rewrite_preserves_threaded_comments_and_persons();
         test_package_editor_worksheet_rewrite_preserves_pivot_table_cache_chain();
@@ -38380,19 +48117,31 @@ int main()
         test_package_editor_custom_xml_properties_removal_overrides_prior_replacement();
         test_package_editor_custom_xml_item_removal_then_properties_replacement_keeps_owner_omitted();
         test_package_editor_custom_xml_properties_removal_then_item_replacement_keeps_properties_omitted();
+        }
+
+        if (should_run_package_editor_shard(shard, "sheetdata")) {
         test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata();
+        test_package_editor_replaces_worksheet_sheet_data_from_chunk_source();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name();
         test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_metadata_copy_original();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets();
         test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_segment_targets();
         test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();
         test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch();
-        test_package_editor_patches_cell_store_sheet_data_by_sheet_name();
         test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry();
         test_package_editor_replaces_worksheet_by_sheet_name();
         test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name();
         test_package_editor_replaces_sheet_data_by_planned_workbook_sheet_name();
         test_package_editor_planned_workbook_catalog_respects_relationship_namespace();
+        }
+
+        if (should_run_package_editor_shard(shard, "sheetdata-catalog")) {
+        test_package_editor_rejects_staged_small_xml_replacements_without_state_changes();
+        test_package_editor_rejects_oversized_workbook_xml_materialization_without_state_changes();
+        test_package_editor_rejects_shared_strings_materialized_replacement_without_state_changes();
+        test_package_editor_rejects_styles_materialized_replacement_without_state_changes();
+        test_package_editor_rejects_generic_source_part_materialized_replacement_without_state_changes();
+        test_package_editor_rejects_oversized_metadata_xml_materialization_without_state_changes();
         test_package_editor_renames_sheet_catalog_entry_preserving_parts();
         test_package_editor_sheet_catalog_rename_uses_planned_workbook_xml();
         test_package_editor_rejects_sheet_catalog_rename_without_state_changes();
@@ -38411,17 +48160,23 @@ int main()
         test_package_editor_reference_policy_fail_blocks_sheet_data_payload_dependencies_without_state_changes();
         test_package_editor_rejects_sheet_name_lookup_with_invalid_office_document_without_state_changes();
         test_package_editor_rejects_invalid_source_workbook_sheet_catalog_without_state_changes();
+        }
+
+        if (should_run_package_editor_shard(shard, "sheetdata-guards")) {
         test_package_editor_replaces_self_closing_source_sheet_data();
         test_package_editor_replaces_prefixed_sheet_data();
         test_package_editor_replaces_with_self_closing_sheet_data_payload();
         test_package_editor_sheet_data_patch_uses_queued_worksheet_replacement();
         test_package_editor_sheet_data_patch_replaces_self_closing_queued_worksheet();
         test_package_editor_rejects_worksheet_sheet_data_replacement_without_state_changes();
-        test_package_editor_rejects_sheet_data_local_rewrite_over_limit_without_state_changes();
+        test_package_editor_rejects_sheet_data_input_event_window_over_limit_without_state_changes();
         test_package_editor_rejects_sheet_data_payload_over_limit_without_state_changes();
-        test_package_editor_rejects_rewritten_sheet_data_local_rewrite_over_limit_without_state_changes();
-        test_package_editor_rejects_queued_sheet_data_local_rewrite_over_limit_without_state_changes();
-        test_package_editor_rejects_rewritten_queued_sheet_data_local_rewrite_over_limit_without_state_changes();
+        test_package_editor_allows_rewritten_sheet_data_output_over_payload_limit();
+        test_package_editor_allows_queued_sheet_data_output_over_payload_limit();
+        test_package_editor_allows_rewritten_queued_sheet_data_output_over_payload_limit();
+        }
+
+        if (should_run_package_editor_shard(shard, "sheetdata-linked")) {
         test_package_editor_replaces_worksheet_and_preserves_linked_object_parts();
         test_package_editor_sheet_data_patch_preserves_worksheet_owned_object_parts();
         test_package_editor_removes_worksheet_owned_object_parts_with_inbound_audit();
@@ -38430,6 +48185,51 @@ int main()
         test_package_editor_sheet_data_patch_preserves_page_setup_printer_settings();
         test_package_editor_removes_background_picture_and_header_footer_vml_with_inbound_audit();
         test_package_editor_background_picture_and_header_footer_vml_same_path_ordering();
+        }
+
+        if (should_run_package_editor_shard(shard, "cellstore")) {
+        test_package_editor_patches_cell_store_sheet_data_by_sheet_name();
+        test_package_editor_patches_cell_store_sheet_data_with_writer_style();
+        test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name();
+        test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename();
+        test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement();
+        test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_name_after_queued_rename_and_worksheet();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_after_workbook_removal();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_invalid_planned_catalog();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_wrong_namespace_planned_catalog_id();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_unqualified_planned_catalog_id();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_unregistered_planned_catalog_target();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_replace_queued_worksheet();
+        test_package_editor_replaces_worksheet_from_cell_store_worksheet_chunks_by_name();
+        test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_name_after_rename();
+        test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name();
+        test_package_editor_source_loaded_cell_store_preserves_unreferenced_styles();
+        test_package_editor_source_loaded_cell_store_preserves_unreferenced_shared_strings();
+        test_package_editor_source_loaded_cell_store_distinguishes_blank_and_erase();
+        test_package_editor_source_loaded_cell_store_preserves_loader_options();
+        test_package_editor_source_loaded_cell_store_option_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_source_shape_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_metadata_shape_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_payload_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_reference_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_attribute_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_entity_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_cell_type_shape_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_missing_entry_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_crc_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_corrupt_workbook_catalog_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_duplicate_sheet_name_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_missing_sheet_relationship_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_sheet_catalog_attribute_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_sheet_relationship_type_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_sheet_relationship_target_type_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_sheet_relationship_target_uri_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_office_document_catalog_preserves_editor_state();
+        }
+
+        if (should_run_package_editor_shard(shard, "policy")) {
         test_package_editor_repeated_worksheet_rewrite_upserts_relationship_target_audits();
         test_package_editor_preserves_source_relationship_parts_when_replacement_omits_references();
         test_package_editor_reference_policy_fail_preserves_state();
@@ -38441,10 +48241,14 @@ int main()
         test_package_editor_rejects_worksheet_rewrite_without_workbook_metadata();
         test_package_editor_rejects_saving_over_source_package();
         test_package_editor_save_as_copy_original_read_failure_preserves_state_and_output();
+        test_package_editor_save_as_rejects_mutated_source_copy_temp_size_without_state_changes();
+        test_package_editor_save_as_rejects_missing_source_copy_temp_with_expected_size();
+        test_package_editor_save_as_rejects_mutated_source_copy_temp_crc_without_state_changes();
         test_package_editor_save_as_writer_failure_preserves_state_and_output();
         test_package_editor_rejects_invalid_replacements();
         test_package_editor_rejects_metadata_entry_replacements_without_state_changes();
         test_package_editor_rejects_invalid_removals_without_state_changes();
+        }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';
         return 1;

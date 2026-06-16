@@ -1,4 +1,5 @@
 #include <fastxlsx/detail/cell_store.hpp>
+#include <fastxlsx/detail/materialized_worksheet_session.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/fastxlsx.hpp>
 
@@ -12,6 +13,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -240,11 +242,12 @@ void test_internal_cell_store_sparse_boundary()
         "empty CellStore memory estimate should include the store object");
 
     store.set_cell(3, 3, fastxlsx::CellValue::number(3.25));
-    const fastxlsx::detail::CellRecord* number = store.find_cell(3, 3);
+    const fastxlsx::detail::CellRecord* number = store.try_cell(3, 3);
     check(number != nullptr, "CellStore should find an inserted numeric cell");
     check(number->kind == fastxlsx::CellValueKind::Number,
         "CellStore numeric record kind mismatch");
     check(number->number_value == 3.25, "CellStore numeric record payload mismatch");
+    check(store.find_cell(3, 3) == number, "CellStore find_cell should alias try_cell");
 
     std::string text_payload = "stored text";
     store.set_cell(1, 2, fastxlsx::CellValue::text(text_payload));
@@ -288,16 +291,19 @@ void test_internal_cell_store_sparse_boundary()
         "CellStore records should keep deterministic sparse ordering");
 
     store.set_cell(4, 1, fastxlsx::CellValue::blank());
-    const fastxlsx::detail::CellRecord* blank = store.find_cell(4, 1);
+    const fastxlsx::detail::CellRecord* missing = store.try_cell(4, 2);
+    check(missing == nullptr, "CellStore try_cell should return null for missing cells");
+    const fastxlsx::detail::CellRecord* blank = store.try_cell(4, 1);
     check(blank != nullptr, "CellStore should keep explicit blank records");
     check(blank->kind == fastxlsx::CellValueKind::Blank,
         "CellStore blank record kind mismatch");
+    check(blank != missing, "CellStore explicit blank should differ from missing cells");
     check(!blank->to_value().to_cell().has_value(),
         "CellStore blank record should round trip without a Cell representation");
     check(store.cell_count() == 4, "CellStore blank record should count as an active record");
 
     store.erase_cell(4, 1);
-    check(store.find_cell(4, 1) == nullptr, "CellStore erase should remove the sparse record");
+    check(store.try_cell(4, 1) == nullptr, "CellStore erase should remove the sparse record");
     check(store.cell_count() == 3, "CellStore erase should reduce the active record count");
 
     store.set_cell(5, 1, fastxlsx::CellValue::text(std::string(128, 'x')));
@@ -307,10 +313,20 @@ void test_internal_cell_store_sparse_boundary()
     check_fastxlsx_error(
         [&store] { store.set_cell(0, 1, fastxlsx::CellValue::number(1.0)); },
         "CellStore should reject zero row coordinates");
-    check_fastxlsx_error([&store] { (void)store.find_cell(1, 16385); },
+    check_fastxlsx_error([&store] { (void)store.try_cell(1, 16385); },
         "CellStore should reject columns beyond Excel's limit");
     check_fastxlsx_error([&store] { store.erase_cell(1048577, 1); },
         "CellStore should reject rows beyond Excel's limit");
+    check(store.cell_count() == 4,
+        "CellStore coordinate validation failures should not change the sparse index");
+    const fastxlsx::detail::CellRecord* preserved_after_invalid_coordinate =
+        store.try_cell(5, 1);
+    check(preserved_after_invalid_coordinate != nullptr,
+        "CellStore coordinate validation failures should preserve existing records");
+    check(preserved_after_invalid_coordinate->kind == fastxlsx::CellValueKind::Text,
+        "CellStore coordinate validation failures should preserve existing record kind");
+    check(preserved_after_invalid_coordinate->text_value == std::string(128, 'x'),
+        "CellStore coordinate validation failures should preserve existing record payload");
 }
 
 void test_internal_cell_store_guardrails()
@@ -371,31 +387,837 @@ void test_internal_cell_store_guardrails()
         "CellStore memory budget insert failure should leave the store empty");
 }
 
+void test_internal_materialized_worksheet_session()
+{
+    fastxlsx::detail::CellStoreOptions options;
+    options.max_cells = 2;
+
+    fastxlsx::detail::CellStore source_store(options);
+    source_store.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+    source_store.set_cell(2, 1, fastxlsx::CellValue::blank());
+
+    fastxlsx::detail::MaterializedWorksheetSession session(
+        "Data", std::move(source_store));
+    check(session.planned_name() == "Data",
+        "materialized worksheet session should keep the planned sheet name");
+    check(!session.dirty(), "loaded materialized worksheet session should start clean");
+    check(session.options_match(options),
+        "materialized worksheet session should preserve materialization options");
+    check(session.cell_count() == 2,
+        "materialized worksheet session should expose source-loaded cell count");
+
+    session.erase_cell(3, 1);
+    check(!session.dirty(),
+        "erasing a missing materialized cell should remain a clean no-op");
+    check(session.cell_count() == 2,
+        "erasing a missing materialized cell should not change cell count");
+
+    session.erase_cell(2, 1);
+    check(session.dirty(),
+        "erasing an existing materialized cell should mark the session dirty");
+    check(session.try_cell(2, 1) == nullptr,
+        "erasing an existing materialized cell should remove the sparse record");
+    check(session.cell_count() == 1,
+        "erasing an existing materialized cell should reduce cell count");
+
+    session.clear_dirty();
+    check(!session.dirty(), "clear_dirty should reset the internal dirty marker");
+    session.set_cell(1, 2, fastxlsx::CellValue::text("new"));
+    check(session.dirty(),
+        "setting a materialized cell should mark the session dirty after success");
+    check(session.cell_count() == 2,
+        "setting a new materialized cell within max_cells should grow the store");
+    auto session_projection = session.worksheet_chunk_source();
+    std::string session_projection_xml;
+    std::string session_projection_chunk;
+    while (session_projection(session_projection_chunk)) {
+        session_projection_xml += session_projection_chunk;
+    }
+    check(session_projection_xml.find(R"(<dimension ref="A1:B1"/>)") != std::string::npos,
+        "materialized worksheet session projection should refresh dimension from dirty store");
+    check(session_projection_xml.find(R"(<c r="B1" t="inlineStr"><is><t>new</t></is></c>)")
+            != std::string::npos,
+        "materialized worksheet session projection should include dirty set_cell payload");
+    check(session_projection_xml.find(R"(<c r="A2")") == std::string::npos,
+        "materialized worksheet session projection should omit erased sparse records");
+
+    session.clear_dirty();
+    check_fastxlsx_error(
+        [&session] { session.set_cell(1, 3, fastxlsx::CellValue::text("blocked")); },
+        "materialized worksheet session should propagate CellStore guardrail failures");
+    check(!session.dirty(),
+        "failed materialized set_cell should not mark the session dirty");
+    check(session.cell_count() == 2,
+        "failed materialized set_cell should not change the sparse store");
+    check(session.try_cell(1, 3) == nullptr,
+        "failed materialized set_cell should not leave a rejected record");
+
+    check_fastxlsx_error(
+        [&session] { session.erase_cell(0, 1); },
+        "materialized worksheet session should propagate coordinate validation failures");
+    check(!session.dirty(),
+        "failed materialized erase_cell should not mark the session dirty");
+
+    fastxlsx::detail::CellStoreOptions mismatched_options;
+    mismatched_options.max_cells = 3;
+    check(!session.options_match(mismatched_options),
+        "materialized worksheet session should detect mismatched rematerialization options");
+}
+
+void test_internal_materialized_worksheet_session_registry()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    check(registry.empty(), "materialized worksheet session registry should start empty");
+    check(registry.session_count() == 0,
+        "materialized worksheet session registry should expose empty count");
+    check(registry.try_session("Data") == nullptr,
+        "materialized worksheet session registry should return nullptr for missing sheet");
+
+    fastxlsx::detail::CellStoreOptions options;
+    options.max_cells = 3;
+    registry.preflight_materialization("Data", options);
+    check(registry.session_count() == 0,
+        "materialized worksheet session preflight should not mutate registry state");
+
+    fastxlsx::detail::CellStore data_store(options);
+    data_store.set_cell(1, 1, fastxlsx::CellValue::number(10.0));
+    auto& data_session = registry.materialize("Data", std::move(data_store));
+    check(!registry.empty(), "materialized worksheet session registry should become non-empty");
+    check(registry.session_count() == 1,
+        "materialized worksheet session registry should count inserted sessions");
+    check(registry.contains("Data"),
+        "materialized worksheet session registry should find inserted sheet name");
+    check(registry.try_session("Data") == &data_session,
+        "materialized worksheet session registry should return the inserted session");
+    check(data_session.planned_name() == "Data",
+        "materialized worksheet session registry should preserve planned sheet name");
+    check(data_session.cell_count() == 1,
+        "materialized worksheet session registry should preserve source-loaded store");
+    check(registry.dirty_session_count() == 0,
+        "newly materialized worksheet sessions should start clean");
+
+    data_session.set_cell(1, 2, fastxlsx::CellValue::text("dirty"));
+    check(registry.dirty_session_count() == 1,
+        "dirty materialized worksheet session should be counted by registry");
+    const std::vector<std::string_view> dirty_names = registry.dirty_session_names();
+    check(dirty_names.size() == 1 && dirty_names.front() == "Data",
+        "dirty materialized worksheet session registry should expose dirty planned names");
+
+    fastxlsx::detail::CellStore repeated_store(options);
+    repeated_store.set_cell(3, 3, fastxlsx::CellValue::text("ignored"));
+    auto& repeated_session = registry.materialize("Data", std::move(repeated_store));
+    check(&repeated_session == &data_session,
+        "repeated matching materialization should reuse the existing session");
+    check(data_session.cell_count() == 2,
+        "repeated matching materialization should not replace dirty session state");
+    check(data_session.try_cell(3, 3) == nullptr,
+        "repeated matching materialization should not import a replacement store");
+    check(registry.dirty_session_count() == 1,
+        "repeated matching materialization should preserve dirty bookkeeping");
+
+    fastxlsx::detail::CellStoreOptions mismatched_options;
+    mismatched_options.max_cells = 4;
+    check_fastxlsx_error(
+        [&registry, &mismatched_options] {
+            registry.preflight_materialization("Data", mismatched_options);
+        },
+        "materialized worksheet session registry should reject mismatched options");
+    check(registry.session_count() == 1,
+        "mismatched materialization preflight should not insert a new session");
+    check(registry.try_session("Data") == &data_session,
+        "mismatched materialization preflight should preserve the existing session");
+
+    fastxlsx::detail::CellStore mismatched_store(mismatched_options);
+    check_fastxlsx_error(
+        [&registry, &mismatched_store] {
+            registry.materialize("Data", std::move(mismatched_store));
+        },
+        "materialized worksheet session registry should reject mismatched repeated materialization");
+    check(registry.session_count() == 1,
+        "failed mismatched materialization should not mutate registry count");
+    check(registry.try_session("Data") == &data_session,
+        "failed mismatched materialization should not replace the existing session");
+    check(data_session.dirty(),
+        "failed mismatched materialization should preserve dirty session state");
+
+    registry.preflight_no_materialized_session("Missing", "replace sheet data");
+    check(registry.session_count() == 1,
+        "operation-mixing preflight for a non-materialized sheet should not mutate registry");
+    check_fastxlsx_error(
+        [&registry] {
+            registry.preflight_no_materialized_session("Data", "replace sheet data");
+        },
+        "operation-mixing preflight should reject edits after materialization");
+    check(registry.session_count() == 1,
+        "failed operation-mixing preflight should preserve registry count");
+    check(registry.try_session("Data") == &data_session,
+        "failed operation-mixing preflight should preserve the materialized session");
+    check(data_session.dirty(),
+        "failed operation-mixing preflight should preserve dirty session state");
+
+    fastxlsx::detail::CellStore other_store(options);
+    auto& other_session = registry.materialize("Other", std::move(other_store));
+    check(registry.session_count() == 2,
+        "materialized worksheet session registry should track multiple sheets");
+    check(registry.try_session("Other") == &other_session,
+        "materialized worksheet session registry should find a second sheet");
+    check(other_session.planned_name() == "Other",
+        "second materialized worksheet session should keep its planned sheet name");
+    check(registry.dirty_session_count() == 1,
+        "clean second materialized session should not change dirty count");
+
+    fastxlsx::detail::CellStore alpha_store(options);
+    auto& alpha_session = registry.materialize("Alpha", std::move(alpha_store));
+    alpha_session.set_cell(2, 1, fastxlsx::CellValue::boolean(true));
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection> projections =
+        registry.dirty_worksheet_chunk_sources();
+    check(projections.size() == 2,
+        "dirty worksheet projections should include only dirty materialized sessions");
+    check(projections[0].planned_name == "Alpha" && projections[1].planned_name == "Data",
+        "dirty worksheet projections should follow registry planned-name order");
+
+    std::string alpha_projection_xml;
+    std::string projection_chunk;
+    while (projections[0].read_next_chunk(projection_chunk)) {
+        alpha_projection_xml += projection_chunk;
+    }
+    check(alpha_projection_xml.find(R"(<dimension ref="A2"/>)") != std::string::npos,
+        "dirty worksheet projection should refresh dimension for each dirty session");
+    check(alpha_projection_xml.find(R"(<c r="A2" t="b"><v>1</v></c>)")
+            != std::string::npos,
+        "dirty worksheet projection should emit each dirty session's sparse payload");
+
+    std::string data_projection_xml;
+    while (projections[1].read_next_chunk(projection_chunk)) {
+        data_projection_xml += projection_chunk;
+    }
+    check(data_projection_xml.find(R"(<c r="B1" t="inlineStr"><is><t>dirty</t></is></c>)")
+            != std::string::npos,
+        "dirty worksheet projection should preserve prior dirty session payload");
+    check(data_projection_xml.find("Other") == std::string::npos,
+        "dirty worksheet projections should not include clean session data");
+}
+
 void test_internal_cell_store_sheet_data_serialization()
 {
     fastxlsx::detail::CellStore store;
-    check(fastxlsx::detail::cell_store_to_sheet_data_xml(store) == "<sheetData></sheetData>",
-        "empty CellStore sheetData serialization mismatch");
+    auto empty_read_next_chunk = fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    std::string empty_xml;
+    std::string chunk;
+    while (empty_read_next_chunk(chunk)) {
+        empty_xml += chunk;
+    }
+    check(empty_xml == "<sheetData></sheetData>",
+        "empty CellStore sheetData chunk-source serialization mismatch");
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1",
+        "empty CellStore dimension reference should be A1");
+    auto empty_worksheet_read_next_chunk =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    std::string empty_worksheet_xml;
+    while (empty_worksheet_read_next_chunk(chunk)) {
+        empty_worksheet_xml += chunk;
+    }
+    check(empty_worksheet_xml
+            == R"(<?xml version="1.0" encoding="UTF-8"?>)"
+               R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+               R"(<dimension ref="A1"/><sheetData></sheetData></worksheet>)",
+        "empty CellStore worksheet chunk-source projection mismatch");
 
     store.set_cell(2, 2, fastxlsx::CellValue::text(" text & <tag> "));
     store.set_cell(1, 1, fastxlsx::CellValue::number(12.5));
     store.set_cell(1, 3, fastxlsx::CellValue::boolean(true));
     store.set_cell(3, 1, fastxlsx::CellValue::formula("SUM(A1:C1)&\"<ok>\""));
     store.set_cell(3, 2, fastxlsx::CellValue::blank().with_style(fastxlsx::StyleId {}));
+    auto style_owner = fastxlsx::WorkbookWriter::create(
+        fastxlsx::test::artifact_dir() / "fastxlsx-cell-store-style-owner-unused.xlsx");
+    const fastxlsx::StyleId caller_style = style_owner.add_style(fastxlsx::CellStyle {"0.0"});
+    check(caller_style.value() == 1, "first caller-owned style id should be 1");
+    store.set_cell(4, 2, fastxlsx::CellValue::text("styled").with_style(caller_style));
 
-    const std::string xml = fastxlsx::detail::cell_store_to_sheet_data_xml(store);
+    auto read_next_chunk = fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    std::vector<std::string> chunks;
+    std::string xml;
+    chunk.clear();
+    while (read_next_chunk(chunk)) {
+        chunks.push_back(chunk);
+        xml += chunk;
+    }
     check(xml
             == "<sheetData><row r=\"1\"><c r=\"A1\"><v>12.5</v></c>"
                "<c r=\"C1\" t=\"b\"><v>1</v></c></row><row r=\"2\">"
                "<c r=\"B2\" t=\"inlineStr\"><is><t xml:space=\"preserve\">"
                " text &amp; &lt;tag&gt; </t></is></c></row><row r=\"3\">"
-               "<c r=\"A3\"><f>SUM(A1:C1)&amp;\"&lt;ok&gt;\"</f></c>"
-               "<c r=\"B3\"/></row></sheetData>",
+                "<c r=\"A3\"><f>SUM(A1:C1)&amp;\"&lt;ok&gt;\"</f></c>"
+                "<c r=\"B3\"/></row><row r=\"4\"><c r=\"B4\" s=\"1\" t=\"inlineStr\">"
+                "<is><t>styled</t></is></c></row></sheetData>",
         "CellStore sheetData serialization should group sparse rows and escape payloads");
     check(xml.find("s=\"0\"") == std::string::npos,
         "CellStore sheetData should omit explicit default style attributes");
     check(xml.find("sharedStrings") == std::string::npos,
         "CellStore sheetData serialization should not imply sharedStrings migration");
+    check(chunks.size() > store.cell_count(),
+        "CellStore sheetData chunk source should expose row/cell chunks instead of one full payload");
+    check(chunks.front() == "<sheetData>" && chunks.back() == "</sheetData>",
+        "CellStore sheetData chunk source should expose standalone sheetData boundaries");
+    check(std::find(chunks.begin(), chunks.end(),
+              "<c r=\"B4\" s=\"1\" t=\"inlineStr\"><is><t>styled</t></is></c>")
+            != chunks.end(),
+        "CellStore sheetData chunk source should emit styled cells as individual cell chunks");
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:C4",
+        "CellStore dimension reference should cover emitted sparse record extents");
+
+    store.erase_cell(1, 1);
+    store.erase_cell(1, 3);
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A2:B4",
+        "CellStore dimension reference should shrink after erasing edge records");
+
+    store.set_cell(5, 5, fastxlsx::CellValue::blank());
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A2:E5",
+        "CellStore dimension reference should include explicit blank records");
+
+    auto worksheet_read_next_chunk =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(store);
+    std::vector<std::string> worksheet_chunks;
+    std::string worksheet_xml;
+    chunk.clear();
+    while (worksheet_read_next_chunk(chunk)) {
+        worksheet_chunks.push_back(chunk);
+        worksheet_xml += chunk;
+    }
+    check(worksheet_chunks.size() > store.cell_count(),
+        "CellStore worksheet chunk source should remain chunked around sheetData");
+    check(worksheet_chunks.front() == R"(<?xml version="1.0" encoding="UTF-8"?>)",
+        "CellStore worksheet chunk source should start with an XML declaration");
+    check(worksheet_xml.find(R"(<dimension ref="A2:E5"/>)") != std::string::npos,
+        "CellStore worksheet chunk source should refresh top-level dimension");
+    check(worksheet_xml.find("<sheetData><row r=\"2\">") != std::string::npos,
+        "CellStore worksheet chunk source should embed standalone sheetData chunks");
+    check(worksheet_xml.find("<c r=\"B4\" s=\"1\" t=\"inlineStr\">") != std::string::npos,
+        "CellStore worksheet chunk source should preserve existing style id attributes");
+    check(worksheet_xml.find("sharedStrings") == std::string::npos,
+        "CellStore worksheet chunk source should not imply sharedStrings migration");
+
+    fastxlsx::detail::CellStore roundtrip_store;
+    roundtrip_store.set_cell(2, 1, fastxlsx::CellValue::number(7.0));
+    roundtrip_store.set_cell(5, 5, fastxlsx::CellValue::blank());
+    auto roundtrip_read_next_chunk =
+        fastxlsx::detail::cell_store_worksheet_chunk_source(roundtrip_store);
+    std::string roundtrip_xml;
+    chunk.clear();
+    while (roundtrip_read_next_chunk(chunk)) {
+        roundtrip_xml += chunk;
+    }
+    const fastxlsx::detail::CellStore reloaded_projection =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(roundtrip_xml);
+    check(reloaded_projection.cell_count() == roundtrip_store.cell_count(),
+        "CellStore worksheet projection should round-trip through the internal loader");
+    const fastxlsx::detail::CellRecord* projected_blank =
+        reloaded_projection.find_cell(5, 5);
+    check(projected_blank != nullptr && projected_blank->kind == fastxlsx::CellValueKind::Blank,
+        "CellStore worksheet projection should preserve explicit blank extent records");
+    check(fastxlsx::detail::cell_store_dimension_reference(reloaded_projection) == "A2:E5",
+        "CellStore worksheet projection should reload with the refreshed dimension extent");
+}
+
+void test_internal_cell_store_worksheet_loader()
+{
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData>)"
+        R"(<row r="1">)"
+        R"(<c r="A1"><v>12.5</v></c>)"
+        R"(<c r="B1" t="b"><v>1</v></c>)"
+        R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)"
+        R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f><v>999</v></c>)"
+        R"(<c r="E1"/>)"
+        R"(</row>)"
+        R"(<row r="2">)"
+        R"(<c r="A2"><v>0</v></c>)"
+        R"(</row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+
+    const fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(worksheet_xml);
+
+    check(store.cell_count() == 6, "worksheet loader should materialize explicit cells");
+    const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
+    check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number,
+        "worksheet loader should load numeric cells");
+    check(number->number_value == 12.5, "worksheet loader numeric payload mismatch");
+
+    const fastxlsx::detail::CellRecord* boolean = store.find_cell(1, 2);
+    check(boolean != nullptr && boolean->kind == fastxlsx::CellValueKind::Boolean,
+        "worksheet loader should load boolean cells");
+    check(boolean->boolean_value, "worksheet loader boolean payload mismatch");
+
+    const fastxlsx::detail::CellRecord* text = store.find_cell(1, 3);
+    check(text != nullptr && text->kind == fastxlsx::CellValueKind::Text,
+        "worksheet loader should load inline string cells");
+    check(text->text_value == " hello & raw ",
+        "worksheet loader should decode inline string text");
+
+    const fastxlsx::detail::CellRecord* formula = store.find_cell(1, 4);
+    check(formula != nullptr && formula->kind == fastxlsx::CellValueKind::Formula,
+        "worksheet loader should load formula cells");
+    check(formula->text_value == "SUM(A1:B1)&\"<ok>\"",
+        "worksheet loader should decode formula text and ignore cached values");
+
+    const fastxlsx::detail::CellRecord* blank = store.find_cell(1, 5);
+    check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
+        "worksheet loader should keep explicit blank cells");
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:E2",
+        "source-loaded CellStore dimension reference should cover source cell extents");
+
+    fastxlsx::detail::CellStore edited_store = store;
+    edited_store.erase_cell(1, 1);
+    edited_store.erase_cell(1, 2);
+    edited_store.erase_cell(1, 3);
+    edited_store.set_cell(3, 4, fastxlsx::CellValue::text("new extent"));
+    check(fastxlsx::detail::cell_store_dimension_reference(edited_store) == "A1:E3",
+        "mutated source-loaded CellStore dimension reference should cover edited extents");
+
+    const fastxlsx::detail::CellRecord* second_row = store.find_cell(2, 1);
+    check(second_row != nullptr && second_row->kind == fastxlsx::CellValueKind::Number,
+        "worksheet loader should load later rows");
+    check(second_row->number_value == 0.0, "worksheet loader should preserve zero numeric value");
+
+    auto chunk_source = fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    std::string rebuilt_sheet_data;
+    std::string chunk;
+    while (chunk_source(chunk)) {
+        rebuilt_sheet_data += chunk;
+    }
+    check(rebuilt_sheet_data.find("<c r=\"D1\"><f>SUM(A1:B1)&amp;\"&lt;ok&gt;\"</f></c>")
+            != std::string::npos,
+        "worksheet loader round-trip should preserve semantic formula text");
+
+    std::size_t chunk_position = 0;
+    const fastxlsx::detail::CellStore chunked_store =
+        fastxlsx::detail::load_cell_store_from_worksheet_chunks(
+            [&](std::string& output_chunk) {
+                if (chunk_position >= worksheet_xml.size()) {
+                    output_chunk.clear();
+                    return false;
+                }
+                const std::size_t bytes =
+                    std::min<std::size_t>(7, worksheet_xml.size() - chunk_position);
+                output_chunk.assign(worksheet_xml.data() + chunk_position, bytes);
+                chunk_position += bytes;
+                return true;
+            });
+    check(chunked_store.cell_count() == store.cell_count(),
+        "worksheet loader chunk-source path should match string loading");
+    const fastxlsx::detail::CellRecord* chunked_formula = chunked_store.find_cell(1, 4);
+    check(chunked_formula != nullptr && chunked_formula->text_value == "SUM(A1:B1)&\"<ok>\"",
+        "worksheet loader chunk-source path should preserve formula text");
+
+    fastxlsx::detail::CellStoreOptions loader_max_cell_options;
+    loader_max_cell_options.max_cells = 1;
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row></sheetData></worksheet>)",
+                loader_max_cell_options);
+        },
+        "worksheet loader should enforce max_cells guardrails");
+
+    fastxlsx::detail::CellStoreOptions loader_persistent_max_cell_options;
+    loader_persistent_max_cell_options.max_cells = 2;
+    fastxlsx::detail::CellStore max_guarded_loaded_store =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row></sheetData></worksheet>)",
+            loader_persistent_max_cell_options);
+    check(max_guarded_loaded_store.options().max_cells == 2,
+        "worksheet loader should preserve max_cells options on returned CellStore");
+    check_fastxlsx_error(
+        [&max_guarded_loaded_store] {
+            max_guarded_loaded_store.set_cell(1, 3, fastxlsx::CellValue::number(3.0));
+        },
+        "worksheet loader returned CellStore should keep enforcing max_cells");
+    check(max_guarded_loaded_store.cell_count() == 2,
+        "worksheet loader returned CellStore max_cells failure should not add records");
+    check(max_guarded_loaded_store.find_cell(1, 3) == nullptr,
+        "worksheet loader returned CellStore max_cells failure should not leave rejected cells");
+
+    fastxlsx::detail::CellStoreOptions loader_memory_options;
+    loader_memory_options.memory_budget_bytes = sizeof(fastxlsx::detail::CellStore);
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+                loader_memory_options);
+        },
+        "worksheet loader should enforce memory budget guardrails");
+
+    fastxlsx::detail::CellStore loaded_memory_sizing_store;
+    loaded_memory_sizing_store.set_cell(1, 1, fastxlsx::CellValue::text("a"));
+    fastxlsx::detail::CellStoreOptions loader_persistent_memory_options;
+    loader_persistent_memory_options.memory_budget_bytes =
+        loaded_memory_sizing_store.estimated_memory_usage();
+    fastxlsx::detail::CellStore memory_guarded_loaded_store =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row></sheetData></worksheet>)",
+            loader_persistent_memory_options);
+    check(memory_guarded_loaded_store.options().memory_budget_bytes
+            == loaded_memory_sizing_store.estimated_memory_usage(),
+        "worksheet loader should preserve memory budget options on returned CellStore");
+    check_fastxlsx_error(
+        [&memory_guarded_loaded_store] {
+            memory_guarded_loaded_store.set_cell(
+                1, 1, fastxlsx::CellValue::text(std::string(1024, 'x')));
+        },
+        "worksheet loader returned CellStore should keep enforcing memory budget");
+    const fastxlsx::detail::CellRecord* memory_guarded_cell =
+        memory_guarded_loaded_store.find_cell(1, 1);
+    check(memory_guarded_cell != nullptr,
+        "worksheet loader returned CellStore memory failure should preserve the existing cell");
+    check(memory_guarded_cell->text_value == "a",
+        "worksheet loader returned CellStore memory failure should preserve the existing payload");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &unknown;</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unknown XML entity references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &amp</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unterminated XML entities");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &#xZZ;</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject invalid XML character references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &#x110000;</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject out-of-range XML character references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject shared string indexes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" s="1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject style references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" s="0"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject explicit default style references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1" ht="20"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unsupported row metadata attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" cm="1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unsupported cell metadata attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="A1"><v>2</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate cell references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="1"><c r="B1"><v>2</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate row numbers");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="2"><c r="A2"><v>2</v></c></row><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject out-of-order row numbers");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="B1"><v>2</v></c><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject out-of-order cell references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="str"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unsupported cell types");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"><v>#DIV/0!</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject error cell payloads");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="d"><v>2026-06-16T00:00:00Z</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject date-like cell payloads");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><is><t>bad</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject inline text in non-inline string cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><v>bad</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject value text in inline string cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v><v>2</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate scalar value elements");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v foo="1">1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unsupported scalar value attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f>1</f><f>2</f></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate formula elements");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f/></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject empty formula text");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="0"/></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject formula attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t><t>b</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate inline text elements");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t foo="1">a</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unsupported inline text attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><t>rich</t></r></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject inline rich text runs");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t><phoneticPr fontId="1"/></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject inline phonetic metadata");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<!--hidden-->b</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject comments inside source cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<?fx hidden?>b</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject processing instructions inside source cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t><![CDATA[hidden]]></t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unsupported markup inside source cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><c r="B1"><v>1</v></c></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject nested cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><c r="A1"><v>1</v></c></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject cells outside row elements");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject cells without explicit references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="XFE1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject cell references beyond Excel limits");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A0"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject zero row cell references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1048577"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject cell references beyond the last Excel row");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="1A"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject non-column-first cell references");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r=A1><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unquoted cell reference attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unterminated cell reference attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" r="B1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate cell reference attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1" r="2"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate row reference attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="n" t="b"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject duplicate cell type attributes");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B2"><v>2</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject row / cell reference mismatches");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="0"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject zero row numbers");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1048577"><c r="A1048577"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject row numbers beyond Excel limits");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="bad"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject non-numeric row numbers");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><f>1</f></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject formulas in non-numeric cells");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1e999</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject non-finite numeric values");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><v>2</v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject invalid boolean payloads");
 }
 
 void test_minimal_xlsx_package()
@@ -732,7 +1554,10 @@ int main()
         test_cell_value_public_boundary();
         test_internal_cell_store_sparse_boundary();
         test_internal_cell_store_guardrails();
+        test_internal_materialized_worksheet_session();
+        test_internal_materialized_worksheet_session_registry();
         test_internal_cell_store_sheet_data_serialization();
+        test_internal_cell_store_worksheet_loader();
         test_minimal_xlsx_package();
         test_workbook_document_properties();
         test_workbook_formula_and_row_height_metadata();

@@ -14,13 +14,14 @@ This file gives ordering; the breakdown file gives the per-task input, output,
 parallelism, touched files, acceptance checks, and explicit non-goals.
 
 Current execution order is `C0 -> C7`. Treat `P*` labels only as historical
-indexes or capability slices. The current lane has advanced through the C5
-guarded first slices: C2 only reopens for new preservation gaps, C3/C4 keep
-their public-editor decision and guardrail boundaries, and the next actionable
-lane is C5 direct PackageReader ZIP-entry chunk source on top of the new
-event-reader, transformer, PackageEditor validation, analysis, audit,
-output-pass, source-entry, planned staged-chunk, and queued planned-string
-chunk foundations.
+indexes or capability slices. The current lane has now opened the first C4/F2
+public `WorksheetEditor` slice under `WorkbookEditor`: small-file
+existing-workbook random cell edits are explicit In-memory mode, and dirty
+materialized worksheet sessions flush through `WorkbookEditor::save_as()`.
+The next editor work should harden this first slice before adding
+`try_worksheet()`, `get_cell()`, style migration, sharedStrings migration, or
+large-file random editing. C5 direct PackageReader ZIP-entry chunk work remains
+the large-worksheet low-memory line.
 
 ## Current Verified Baseline
 
@@ -39,7 +40,19 @@ chunk foundations.
   - `fastxlsx.worksheet_event_reader`
   - `fastxlsx.worksheet_transformer`
   - `fastxlsx.package_reader`
-  - `fastxlsx.package_editor`
+  - `fastxlsx.package_editor.core`
+  - `fastxlsx.package_editor.c5`
+  - `fastxlsx.package_editor.preservation-core`
+  - `fastxlsx.package_editor.preservation-removal`
+  - `fastxlsx.package_editor.preservation-resources`
+  - `fastxlsx.package_editor.preservation-comments`
+  - `fastxlsx.package_editor.preservation-linked`
+  - `fastxlsx.package_editor.cellstore`
+  - `fastxlsx.package_editor.sheetdata`
+  - `fastxlsx.package_editor.sheetdata-catalog`
+  - `fastxlsx.package_editor.sheetdata-guards`
+  - `fastxlsx.package_editor.sheetdata-linked`
+  - `fastxlsx.package_editor.policy`
   - `fastxlsx.workbook_editor`
   - `fastxlsx.image`
 - Current public API:
@@ -110,9 +123,25 @@ chunk foundations.
   - `WorkbookEditor::has_pending_changes()`
   - `WorkbookEditor::pending_change_count()`
   - `WorkbookEditor::pending_replacement_cell_count()`
+  - `WorkbookEditor::pending_replacement_worksheet_names()`
+  - `WorkbookEditor::has_pending_replacement()`
   - `WorkbookEditor::estimated_pending_replacement_memory_usage()`
+  - `WorkbookEditor::last_edit_error()`
+  - `WorkbookEditorWorksheetCatalogEntry`
+  - `WorkbookEditor::worksheet_catalog()`
+  - `WorkbookEditorWorksheetEditSummary`
+  - `WorkbookEditor::pending_worksheet_edits()`
   - `WorkbookEditor::replace_sheet_data()`
   - `WorkbookEditor::rename_sheet()`
+  - `WorksheetEditorOptions`
+  - `WorkbookEditor::worksheet()`
+  - `WorksheetEditor`
+  - `WorksheetEditor::name()`
+  - `WorksheetEditor::try_cell()`
+  - `WorksheetEditor::set_cell()`
+  - `WorksheetEditor::erase_cell()`
+  - `WorksheetEditor::cell_count()`
+  - `WorksheetEditor::estimated_memory_usage()`
   - `WorkbookEditor::save_as()`
   - `FastXlsxError`
 - Current internal foundations:
@@ -523,6 +552,11 @@ feature completion.
    - The active next-task queue is `C0 -> C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7`.
    - `P*` labels remain historical indices only; they are not the default
      execution order.
+   - Current execution focus is API / feature design first: pick the smallest
+     F0-F4 functional lane from `TASK_BREAKDOWN.md` before adding more code.
+     Treat C6 performance / benchmark work as a support and validation line
+     unless a selected feature changes the streaming hot path, resource
+     boundary, ZIP backend, or release performance wording.
    - C0 validates the current code/docs baseline, C1 hardens the current
      `WorkbookEditor` Patch facade, C2 now reopens only for new preservation /
      dependency-audit gaps, C3 keeps the public editor decision gate, C4 has
@@ -558,11 +592,430 @@ feature completion.
    - Define the `CellView` / `Cell` / `CellValue` split before adding
      random cell APIs.
 
-4. In-memory small-file editing - 计划.
-   - Add a separate random editing surface for small workbooks after the Patch
-     save contract is clear.
-   - It may use cell maps or local DOM where appropriate, but must document
-     memory growth and must not become the large-data default path.
+4. In-memory small-file editing - 进行中 / internal foundations.
+   - Keep this behind the F2 design gate until load/materialization guardrails,
+     cell-store ownership, mutation semantics, and save-as handoff are explicit.
+   - F2.1 internal source-backed worksheet-to-`CellStore` materialization has
+     landed for bounded worksheet XML chunks/strings and `PackageReader`
+     sheet-name lookup; F2.2 now has internal `try_cell()` semantics for
+     missing vs explicit blank; F2.3 now has a first internal source-loaded
+     `CellStore` -> by-name `sheetData` Patch handoff smoke, plus a focused
+     blank-vs-erase projection smoke; F2.4 now has the first loader dependency
+      guardrail regressions rejecting source style ids, including explicit
+      default `s="0"` after an earlier loadable source cell, shared string
+       indexes, unsupported cell types, and invalid boolean payloads. These
+       source dependency/shape failures all avoid exposing a partial `CellStore`.
+       The package-backed by-name success path now also has a mixed semantic
+       smoke for number, boolean, inline text entity decoding, formula text,
+       explicit blank, and zero numeric cells flowing through the existing
+       `CellStore` chunk-source `sheetData` handoff.
+       Error cells (`t="e"`) and date-like cells (`t="d"`) are now pinned as
+       unsupported cell type failures, not loaded values.
+      The source-backed package path now also has a state-hygiene regression:
+      if a loadable source cell is followed by unsupported source semantics,
+      loading fails before any caller-visible `CellStore` is returned and a
+      separately opened `PackageEditor` remains copy-original with no calc
+      policy, note, manifest, or output-plan pollution.
+      The same package-path state-hygiene coverage now includes workbook sheet
+      catalog targets whose worksheet ZIP entry is missing: loading fails
+      before inventing a worksheet part or mutating `PackageEditor` state.
+      Package-backed `CellStore` loader failures are now contextualized with the
+      workbook sheet name, and when a worksheet part resolves successfully, the
+      worksheet part and ZIP entry as well.
+       A corrupt worksheet ZIP payload / CRC failure in the package-backed loader
+       now preserves that context and leaves separately opened `PackageEditor`
+       state copy-original.
+       A corrupt workbook catalog payload / CRC failure during package-backed
+       sheet lookup now preserves the requested sheet, materialized catalog
+       read failure, `xl/workbook.xml` ZIP entry, and underlying CRC diagnostics
+       without dirtying separately opened `PackageEditor` state.
+       Duplicate sheet-name lookup diagnostics now have focused reader coverage
+       for both the requested sheet name and the underlying ambiguous catalog
+       error.
+       The same duplicate sheet-name package path now has `PackageEditor`
+       state-hygiene coverage: failed `CellStore` loading does not dirty edit
+       state and a no-op save preserves both worksheet parts, calcChain, and
+       unknown bytes.
+       Missing sheet relationship ids in the workbook catalog now have the same
+       package-path state-hygiene coverage: failed `CellStore` loading preserves
+       the requested sheet diagnostic and leaves workbook `.rels`, worksheet,
+       calcChain, and unknown bytes copy-original.
+       Non-worksheet sheet relationship types now have matching package-path
+       state-hygiene coverage: failed `CellStore` loading preserves the
+       requested sheet diagnostic and leaves workbook `.rels`, worksheet,
+       calcChain, and unknown bytes copy-original.
+       Sheet relationships that resolve to a registered non-worksheet part now
+       have the same package-path state-hygiene coverage, including preserving
+       calcChain copy-original state instead of attempting content-type repair.
+       External or URI-qualified sheet relationship targets now also have the
+       same package-path state-hygiene coverage; the loader preserves the
+       catalog diagnostics and does not materialize external/URI targets.
+       The matching `PackageReader` workbook sheet catalog tests now pin the
+       exact diagnostics for external targets, URI-qualified targets,
+       non-worksheet relationship types, and registered non-worksheet targets.
+       Malformed percent-encoded sheet relationship targets are now pinned on
+       both `PackageReader` and package-backed `CellStore` loader paths:
+       incomplete escapes, invalid escapes, and decoded null bytes fail before
+       materialization and preserve separately opened editor state.
+       Package root `officeDocument` catalog failures now have matching
+       package-backed loader state-hygiene coverage for missing, duplicate,
+       external, URI-qualified, non-fixed, and malformed-percent workbook
+       entrypoint relationships.
+       The matching `PackageReader` workbook catalog tests now pin exact
+       diagnostics for those package root `officeDocument` failures, and the
+       package-backed loader matrix covers incomplete percent escapes and
+       decoded null bytes as well as invalid escapes.
+       Workbook `<sheet>` catalog attribute failures now also have precise
+       `PackageReader` diagnostics and matching package-backed loader
+       state-hygiene coverage for missing/wrong-namespace relationship ids,
+       unqualified `id`, namespaced `name`, and namespaced `sheetId`.
+       Workbook sheet relationship resolution now also has precise reader
+       diagnostics for sheet ids absent from workbook `.rels` and relationships
+       targeting unregistered package parts, including planned workbook XML and
+       planned sheet-name lookup paths.
+       Planned workbook XML catalog failures now also pin exact diagnostics for
+       wrong-namespace relationship ids, unqualified `id`, missing workbook
+       relationships, and ignored non-catalog / nested decoy sheet-name lookups.
+       Direct workbook sheet-name lookup now also pins exact missing-sheet and
+       ambiguous duplicate-sheet diagnostics, including decoy / nested sheet
+       tags that must remain ignored.
+       Direct `CellStore` sheetData chunk-source emission now also pins
+       caller-supplied non-default `StyleId` serialization as `s="N"` and
+       continues to omit explicit default `StyleId{}`; this is not source style
+       preservation, migration, merge, or validation. The same coverage now
+       verifies styled cells still flow as individual row/cell chunks, not a
+       reintroduced full `<sheetData>` string helper.
+       The internal `PackageEditor` by-name `CellStore` handoff now also covers
+       a writer-owned style handle end-to-end: replacement sheetData writes the
+       caller-supplied `s="1"`, explicit default `StyleId{}` is omitted,
+       `xl/styles.xml` stays byte-preserved, and style dependency audit reaches
+       both `EditPlan` and `planned_output()`.
+       Source-loaded `CellStore` now also distinguishes unreferenced styles
+       preservation from unsupported source cell style references: a package may
+       contain `xl/styles.xml` and styled unrelated sheets, while unstyled target
+       sheet cells load without invented style handles and save-as preserves
+       styles bytes copy-original.
+       The same distinction now exists for unreferenced sharedStrings: a package
+       may contain `xl/sharedStrings.xml` from unrelated sheets, while a target
+       sheet with no `t="s"` cells loads into `CellStore`, emits inline text for
+       new string values, and preserves sharedStrings bytes copy-original.
+       These unreferenced styles/sharedStrings fixtures now also pin workbook
+       `.rels` preservation for the existing styles/sharedStrings relationships;
+       this is copy-original preservation, not relationship synthesis or repair.
+       The same fixtures now also pin OPC metadata re-read visibility: output
+       `PackageReader` keeps the relevant content type override and
+       `RelationshipGraph` can re-read the workbook styles/sharedStrings
+       relationships after save-as.
+       Internal `CellStore` mutation guardrails also cover coordinate-validation
+       failures preserving existing sparse records.
+      Loader XML entity decoding guardrails now reject unknown entities,
+      unterminated entities, invalid character references, and out-of-range
+      character references before returning a `CellStore`.
+      Loader materialization now also has focused coverage for enforcing
+      `CellStoreOptions::max_cells` and `memory_budget_bytes` while loading
+      source worksheet XML.
+      Returned source-loaded `CellStore` instances now also preserve those
+      guardrails for later sparse-store mutations: exact `max_cells` rejects a
+      subsequent insert, and exact `memory_budget_bytes` rejects an oversized
+      overwrite without changing the loaded payload.
+      Package-backed by-name loading now has the same guardrail-persistence
+      coverage, proving `load_cell_store_from_workbook_sheet()` does not drop
+      the supplied `CellStoreOptions` after resolving and streaming the source
+      worksheet part.
+      Package-backed by-name loading now also has source-shape failure
+      state-hygiene coverage for duplicate same-cell-reference input rejected
+      by the current source-order guardrail, duplicate explicit rows,
+      out-of-order explicit rows, and out-of-order cells; these failures keep
+      `PackageEditor` plans, calc policy, manifest modes, and saved output bytes
+      copy-original.
+      Package-backed by-name loading now also has metadata/formula failure
+      state-hygiene coverage for unsupported row/cell metadata attributes,
+      scalar/inline-text value-wrapper attributes, duplicate/empty/attributed
+      formula elements, and inline rich-text / phonetic metadata; these remain
+      rejection paths rather than preservation or migration claims.
+      Package-backed by-name loading now also has payload/state-machine failure
+      state-hygiene coverage for shared string indexes, unsupported cell type
+      tokens, invalid boolean payloads, duplicate scalar/inline-text wrappers,
+      cell-contained comments / processing instructions / CDATA, nested cell
+      input rejected at the event-reader boundary, and cells outside rows; these
+      remain failure-before-edit-state guardrails.
+      Package-backed by-name loading now also has coordinate/numeric failure
+      state-hygiene coverage for missing or malformed cell references, row/column
+      overflow, row/cell mismatches, invalid explicit row numbers, formula
+      elements in boolean cells, and non-finite numeric payloads.
+      Package-backed by-name loading now also has attribute/parser failure
+      state-hygiene coverage for unquoted or unterminated cell reference
+      attributes and duplicate row/cell key attributes.
+      Package-backed by-name loading now also has XML entity failure
+      state-hygiene coverage for unknown entities, unterminated entities,
+      invalid character references, and Unicode range overflow.
+      Package-backed by-name loading now also has cell-type/inline-shape failure
+      state-hygiene coverage for error cells, date-like cells, inline payloads
+      in non-inline cells, and ordinary values in inline-string cells.
+      Duplicate source cell references now also fail before returning a
+      `CellStore`, instead of letting sparse-store insertion silently overwrite
+      the earlier source XML payload.
+      Duplicate explicit row `r` values now also fail before returning a
+      `CellStore`, instead of merging ambiguous source row elements.
+      Out-of-order explicit row `r` values now fail before materialization
+      instead of relying on sparse-store sorted emission to rewrite source order.
+      Out-of-order source cell references now also fail before materialization
+      instead of relying on sparse-store sorted emission to rewrite source cell
+      order.
+      Duplicate inspected key attributes such as row/cell `r` and cell `t` now
+      fail before materialization instead of silently using the first attribute
+      value.
+      Duplicate value wrappers inside one source cell now also fail for scalar
+      `<v>`, formula `<f>`, and inline text `<t>` shapes instead of being
+      concatenated into ambiguous materialized values.
+      Source formula attributes and empty formula text now also fail before
+      materialization, keeping the loader limited to plain formula text rather
+      than shared/metadata formula migration.
+      Cells outside row elements now also fail before materialization, keeping
+      source-backed loading scoped to row-contained cells.
+      Unsupported source row/cell metadata attributes now also fail before
+      materialization instead of being silently dropped from the sparse
+      `CellStore`.
+      Unsupported scalar `<v>` and inline text `<t>` value-wrapper attributes
+      now also fail before materialization; inline text `xml:space` remains
+      loadable as plain semantic text only.
+      Unsupported inline-string rich text runs and phonetic metadata now also
+      fail before materialization instead of being flattened into plain text.
+      Cell-contained comments, processing instructions, and unsupported markup
+      such as CDATA now also fail before materialization instead of being
+      silently dropped from inline text or other source cell payloads.
+      Focused loader coverage now also pins invalid boolean payload rejection.
+      Malformed cell reference guardrails now also cover missing `r`,
+      out-of-range `r`, zero-row refs, last-row overflow refs,
+      non-column-first refs, unquoted attributes, unterminated attributes, and
+      invalid row `r` values.
+      Inline-string shape guardrails now reject `<is><t>` payloads on non-inline
+      cells and ordinary `<v>` payloads on `t="inlineStr"` cells.
+      Loader state-machine guardrails now reject nested cells.
+      Tombstone / style-preservation policy is now explicitly frozen for the
+      next gate: `erase_cell()` removes the sparse record, `CellValue::blank()`
+      is the explicit blank replacement cell, and source style ids still fail
+      instead of being preserved, migrated, or merged. The focused loader test
+      also rejects explicit default source style references (`s="0"`). The
+      internal loader declaration now mirrors these source materialization
+      guardrails, including cached formula value omission, entity/attribute
+      failures, duplicate references/wrappers, and load-time options.
+      Package-backed load-time `CellStoreOptions` failures now also have
+      state-hygiene coverage: `max_cells` and `memory_budget_bytes` overflows
+      after an earlier loadable source cell fail with sheet/part/ZIP context,
+      leave `PackageEditor` plans and calc policy unchanged, and keep aggregate
+      output-plan decisions copy-original.
+      P8.285 gate audit now treats this as enough internal evidence for public
+      API design drafting, not enough evidence for a public `WorksheetEditor`
+      header.
+      P8.286 now drafts the first public `WorksheetEditor` slice as
+      In-memory / existing-workbook small-file editing, with explicit
+      worksheet-only materialization, draft load options, narrow
+      `try_cell()` / `set_cell()` / `erase_cell()` semantics, source dependency
+      failure policy, save-as handoff blockers, and operation mixing rules.
+      P8.287 adds the acceptance matrix and open-decision checklist, including
+      row/column-first coordinates, `try_cell()` before `get_cell()`,
+      non-default `StyleId` rejection as the recommended first style policy, and
+      rejection of ambiguous rename / whole-sheet replacement mixing on
+      materialized sheets.
+      P8.288 adds future Doxygen and README wording drafts in the API design
+      document, explicitly marked as unavailable in current public headers.
+      P8.289 adds the save-as public facade acceptance design: dirty tracking
+      starts at successful cell mutations, materialization alone is not pending
+      edit state, public tests must cover set/blank/erase projection, package
+      preservation, calc policy, dimension policy, output path guards,
+      operation mixing, and staged diagnostics before a header is added.
+      P8.290 adds the implementation preflight checklist for naming, handle
+      ownership, first-slice scope, style/source dependency policy,
+      dimension/calc policy, diagnostics, public facade tests, test-shard
+      budget, and validation gates.
+      P8.291 splits package-editor F2 CellStore coverage into
+      `fastxlsx.package_editor.cellstore` and sheetData catalog / guardrail /
+      linked-object coverage into `fastxlsx.package_editor.sheetdata-catalog`,
+      `fastxlsx.package_editor.sheetdata-guards`, and
+      `fastxlsx.package_editor.sheetdata-linked`, keeping `sheetdata` focused
+      on base sheetData / by-name coverage and leaving room for targeted future
+      public facade tests.
+      P8.292 records the review-only public-header diff: current public headers
+      still expose the landed `WorkbookEditor` Patch facade only; no public
+      `WorksheetEditor`, `WorksheetEditorOptions`, `try_worksheet()`, or random
+      cell-editing facade exists yet.
+      P8.294 splits the formerly heavy package-editor `preservation-core`
+      coverage into `fastxlsx.package_editor.preservation-removal`,
+      `fastxlsx.package_editor.preservation-resources`, and
+      `fastxlsx.package_editor.preservation-comments`, keeping preservation
+      coverage aligned with the 60s CTest shard budget before more public-editor
+      gate work is added.
+      P8.295 extends the no-op `WorkbookEditor::save_as()` failed-edit
+      diagnostic regression to failed `rename_sheet()` as the other current
+      public edit path; no-op output stays a source-entry copy, the failed
+      rename diagnostic is preserved, and a later valid rename remains usable.
+      P8.296 syncs the README with that state: package-editor tests are described
+      as split `fastxlsx.package_editor.*` shards, and no-op `save_as()` is
+      documented as preserving prior failed `replace_sheet_data()` or
+      `rename_sheet()` diagnostics until the next successful public edit.
+      P8.297 finishes the moved-from `WorkbookEditor` public diagnostics
+      boundary by checking false/zero/empty results for pending-state methods
+      that are specified not to throw.
+      P8.298 covers the complementary moved-to `WorkbookEditor` boundary:
+      queued replacement, queued rename, failed-edit diagnostic, edit summaries,
+      and save-as output all survive move construction without turning move into
+      commit/close semantics.
+      P8.299 covers the matching move-assignment boundary: assigned queued
+      replacement, queued rename, failed-edit diagnostic, and save-as output
+      replace the target editor's previous queued state without merging,
+      committing, or leaking discarded edits.
+      P8.300 covers the clean-source move-assignment boundary: assigning a
+      clean opened editor over a dirty target clears the target's queued
+      replacement, rename, edit summaries, and `last_edit_error()`, and no-op
+      `save_as()` copies the assigned source package.
+      P8.301 syncs the public `WorkbookEditor` move constructor and move
+      assignment Doxygen plus the API design public-header audit with those
+      regressions, explicitly documenting ownership transfer, target-state
+      replacement, moved-from diagnostics, and non-commit semantics.
+      P8.302 covers clean move construction: a moved-to editor with no queued
+      public edits keeps source/planned catalog inspection, empty diagnostics,
+      and no-op `save_as()` source-package roundtrip behavior.
+      P8.303 covers move assignment into a moved-from target: the target can
+      receive an assigned editor session with queued edits and diagnostics, then
+      save the assigned state, instead of remaining permanently moved-from.
+      P8.304 covers move construction with `WorkbookEditorOptions`: replacement
+      guardrails such as `max_replacement_cells` survive ownership transfer and
+      remain part of the documented editor session state.
+      P8.305 covers move assignment with `WorkbookEditorOptions`: the assigned
+      source editor's replacement guardrails replace the target's previous
+      guardrails instead of being merged or retained.
+      P8.306 / P8.307 extend the same move-construction and move-assignment
+      coverage to `replacement_memory_budget_bytes`, including no-op save-as
+      state hygiene after guarded replacement failures.
+      P8.308 covers assignment from a default-options source editor over a
+      strict-options target, proving target-side replacement guardrails are
+      cleared rather than retained.
+      P8.309 covers assignment from an already moved-from source editor over a
+      dirty target: the target becomes moved-from / not open, stale target
+      queued edits, diagnostics, and options are discarded, and `save_as()`
+      throws instead of leaking the discarded target state.
+      P8.310 records the future `WorksheetEditor` implementation gate checklist:
+      before any public header is added, the task must explicitly decide the
+      separate worksheet materialization options type, handle lifetime /
+      invalidation behavior, diagnostics surface, operation mixing policy, and
+      save-as handoff tests.
+      P8.311 resolves the first diagnostics decision: future worksheet
+      materialization failures should throw `FastXlsxError` and must not update
+      current edit-only `last_edit_error()`; `try_worksheet()`, if added, may
+      return empty only for missing sheet names.
+      P8.312 resolves the options naming and call-site decision:
+      `WorksheetEditorOptions` is the future per-materialization options type
+      for `worksheet(name, options)` / `try_worksheet(name, options)`, with
+      `max_cells` and `memory_budget_bytes` separate from current
+      `WorkbookEditorOptions` replacement-payload guardrails.
+      P8.313 resolves the first handle lifetime and operation-mixing decision:
+      `WorkbookEditor` owns materialized worksheet state, returned handles are
+      borrowed and must be reacquired after moving the owner, repeated
+      materialization requires matching options, and ambiguous rename /
+      whole-sheet replacement mixing is rejected before state changes.
+      P8.314 resolves the save-as handoff behavior decision: materialization
+      alone is not pending edit state, dirty sparse stores persist only through
+      `WorkbookEditor::save_as()`, top-level worksheet `<dimension>` must be
+      refreshed for emitted cell extents before any public header, and other
+      range metadata remains audit / fail / preserve only.
+      P8.315 adds the first implementation evidence for that dimension rule:
+      internal `cell_store_dimension_reference()` computes sparse-store emitted
+      extents, including erase-driven shrink and explicit blank records, without
+      changing current Patch facade `replace_sheet_data()` semantics.
+      P8.316 connects that dimension projection to an internal
+      `cell_store_worksheet_chunk_source()` that emits a minimal full worksheet
+      XML chunk stream for future in-memory save-as handoff evidence, still
+      without changing current Patch facade wrapper preservation semantics; the
+      helper is also covered through an internal package-editor by-name full
+      worksheet replacement smoke.
+      P8.317 adds one focused current-facade operation-mixing regression:
+      replacement + rename to a temporary planned name + rename back to the
+      source name restores the planned catalog mapping, migrates pending
+      replacement diagnostics back to the source name, clears the public
+      `renamed` flag in summaries, and does not leak the transient name into
+      saved output.
+      P8.318 adds the complementary rename-only chain regression:
+      `Data -> TemporaryA -> TemporaryB -> Data` restores the source-to-planned
+      catalog mapping, leaves `pending_worksheet_edits()` empty because there is
+      no final planned-state edit, keeps replacement diagnostics empty, and does
+      not leak transient planned names into saved output.
+      P8.319 verifies the same restored planned name remains usable after a
+      later failed duplicate rename: a follow-up `replace_sheet_data("Data",
+      ...)` clears the prior edit diagnostic, reports replacement diagnostics
+      under the restored source name, and saves only the final replacement
+      payload.
+      P8.320 closes the wording-only review gate: README / API docs / task docs
+      now agree that the implemented public surface remains the narrow
+      `WorkbookEditor` Patch facade, while `WorksheetEditorOptions`,
+      `worksheet()` / `try_worksheet()`, `get_cell()` / `set_cell()` /
+      `erase_cell()` remain future draft names absent from public headers.
+      P8.321 adds the first concrete post-wording internal evidence: a
+      source-loaded `CellStore` handed to by-name `<sheetData>` Patch after a
+      queued sheet-catalog rename rejects the old source name without mutating
+      the rename state, then succeeds when called with the planned new name.
+      P8.322 adds the same planned-name guardrail for the full worksheet
+      `CellStore` chunk projection path, including staged `StreamRewrite` and
+      refreshed top-level worksheet `<dimension>` evidence.
+      P8.323 verifies both old-name failure paths reject before consuming their
+      prepared `CellStore` chunk sources, so the same source can still be used
+      by the planned-name retry.
+      P8.324 adds the next operation-mixing guardrail: a source-loaded
+      `CellStore` follow-up `<sheetData>` patch after a queued whole-worksheet
+      replacement uses the planned worksheet wrapper, preserves queued wrapper
+      metadata, and does not resurrect source-only payload.
+      P8.325 adds the paired full worksheet projection rule: a later full
+      worksheet `CellStore` handoff supersedes the prior queued worksheet
+      wrapper, stages `StreamRewrite`, and refreshes `<dimension>`.
+      P8.326 adds the combined rename + queued-worksheet case: source-loaded
+      `CellStore` `<sheetData>` handoff must use the planned sheet name, old
+      source-name failure must not consume chunks, and the successful planned
+      name path still patches the queued wrapper.
+      P8.327 adds the paired full worksheet projection case for that same
+      combined setup: old source-name failure still consumes zero chunks, while
+      the planned-name path stages `StreamRewrite`, replaces the queued wrapper,
+      preserves the renamed catalog, and refreshes `<dimension>`.
+      P8.328 adds save-as failure hygiene on that combined staged state:
+      source-overwrite rejection preserves the staged chunks / pending edits and
+      a later safe output path still saves.
+      P8.329 extends that guard to path-equivalent source overwrite attempts,
+      proving non-identical path strings that resolve to the source package also
+      preserve the same staged state before a safe retry.
+      P8.330 adds the same combined staged-state save-as hygiene for empty
+      output paths: the guard fails before staged chunks / pending rewrite state
+      are dropped, and a later safe retry still saves.
+      P8.331 adds the same guard for missing output parent paths.
+      P8.332 / P8.333 add the same guard for non-directory output parents and
+      existing-directory output paths.
+      P8.334 adds writer/backend failure hygiene for the same combined staged
+      state: failed output writing preserves staged chunks, existing output
+      bytes, and temp-file cleanup before a safe retry.
+      P8.335 proves a successful safe `save_as()` also keeps staged chunks
+      reusable for a second safe output path.
+      P8.336 adds source-copy temp-size failure hygiene for the same combined
+      staged state: changed save-time copy-original temp files do not overwrite
+      output or drop staged chunks before a safe retry. P8.337 adds the matching
+      missing source-copy temp-file failure hygiene. P8.338 adds the matching
+      source-copy temp CRC failure hygiene. P8.339 adds a workbook planned-removal
+      preflight guard for source-loaded full worksheet chunks. P8.340 adds an
+      invalid planned workbook catalog preflight guard for the same chunk
+      handoff. P8.341 adds the matching wrong-namespace planned catalog id
+      guard. P8.342 adds the matching plain unqualified planned catalog id
+      guard. P8.343 adds the matching unregistered planned worksheet target
+      guard. P8.344 refreshes the F2 gate: do not keep adding same-family
+      planned-catalog negative tests by default; the next useful action is the
+      first public `WorksheetEditor` implementation task plan and public tests,
+      while keeping the header closed.
+   - The next narrow candidate should stay behind the same F2 gate and add
+     only a newly evidenced internal guardrail gap, or deliberately open the
+     public header implementation task with tests for missing/materialization
+     failures, handle lifetime, option matching, rename / whole-sheet
+     replacement mixing rejection, dimension refresh, save-as persistence, and
+     diagnostics. Do not add a public `WorksheetEditor` header as a wording-only
+     change.
+   - It may use sparse cell storage or local DOM where appropriate for small
+     workbooks, but must document memory growth and must not become the
+     large-data default path.
 
 5. Writer/backend hardening - 进行中 / 基础.
    - sharedStrings remains 进行中: keep `inlineStr` as the low-memory default,
@@ -624,10 +1077,73 @@ commit or short series with its own tests and docs update.
      safe existing-file editing.
 
 6. In-memory small-file editor.
-   - Add random cell/sheet editing for small workbooks after the Patch save
-     contract is clear.
-   - Document memory growth, size limits, and when callers should choose
-     Streaming or Patch instead.
+   - F2.1 internal source-backed worksheet materialization and F2.2
+     `try_cell()` missing-vs-blank semantics are now the baseline; F2.3 first
+     source-loaded `CellStore` handoff smoke proves the existing by-name
+     `sheetData` Patch helper can consume mutated source-backed sparse cells;
+     focused blank-vs-erase coverage now fixes current projection behavior:
+     explicit blank writes an empty cell, erase omits the cell. F2.4 first
+      guardrail coverage now rejects source worksheet style ids, including
+      explicit default `s="0"` after an earlier loadable source cell, shared
+      string indexes, unsupported cell types, and invalid boolean payloads before
+      pretending migration, repair, or preservation exists; these failure paths
+      do not expose a partial `CellStore`, and `CellStore` coordinate validation
+      failures now also have no-state-pollution coverage.
+      Error cells (`t="e"`) and date-like cells (`t="d"`) remain explicit
+      unsupported cell type failures.
+      The package/source-backed loader path now also proves an unsupported
+      semantic after an earlier loadable cell does not expose a partial
+      `CellStore` or mutate `PackageEditor` state.
+      It also covers missing worksheet package entries resolved through the
+      workbook sheet catalog, keeping no-op `PackageEditor` output copy-original.
+      Loader diagnostics now carry sheet-name context and, after successful
+      catalog resolution, worksheet part / ZIP-entry context for package-backed
+      source loading failures.
+      Missing sheet-name lookup diagnostics now have focused reader coverage for
+      both the requested sheet name and the underlying workbook catalog miss.
+      Corrupt worksheet entry CRC failures are covered on that same path and do
+      not dirty `PackageEditor` state.
+      XML entity decoding failures now also fail before returning a `CellStore`.
+      Loader option guardrails now cover `max_cells` and memory-budget failures
+      during source worksheet materialization.
+      Duplicate source cell references now fail before returning a `CellStore`,
+      rather than using last-write-wins sparse-store overwrite behavior.
+      Duplicate explicit row numbers now fail as source-shape guardrails.
+      Out-of-order explicit row numbers now fail as source-shape guardrails.
+      Out-of-order source cell references now fail as source-shape guardrails.
+      Duplicate inspected row/cell reference and cell type attributes now fail
+      as key-attribute guardrails.
+      Duplicate scalar/formula/inline-text wrappers inside one source cell now
+      fail as source-shape guardrails.
+      Source formula attributes and empty formula text now fail as formula-shape
+      guardrails.
+      Cells outside row elements now fail as row-scope guardrails.
+      Unsupported source row/cell metadata attributes now fail as metadata
+      guardrails.
+      Unsupported scalar and inline-text value-wrapper attributes now fail as
+      value-wrapper guardrails, with `xml:space` still accepted for plain text.
+      Unsupported inline rich text runs and phonetic metadata now fail as
+      inline-string child-markup guardrails.
+      Cell-contained comments, processing instructions, and unsupported markup
+      now fail as source cell markup guardrails.
+      Invalid boolean payload rejection is covered by the focused loader test as
+      well as the broader source dependency/shape policy wording.
+      Malformed cell reference, attribute, and row-coordinate failures are now
+      covered by the same focused loader test.
+      Inline-string/cell-type mismatch failures are covered as shape guardrails.
+      Nested-cell failures are now covered as loader state-machine guardrails.
+      Tombstone / style-preservation policy wording now keeps delete-vs-blank
+      and source style handling explicit before any public editor API is added.
+      Explicit default source style references (`s="0"`) are covered as loader
+      failures, not as preserved or migrated default style metadata. The
+      internal loader comment now matches the covered source materialization
+      guardrails.
+     Keep this internal and do not widen public API yet.
+   - Next add only focused source materialization/state-hygiene or save-as
+     handoff coverage before adding `WorkbookEditor::worksheet()` or
+     `WorksheetEditor`.
+   - Document memory growth, size limits, failure-before-state-change, and when
+     callers should choose Streaming or Patch instead.
 
 7. Sheet-local dependency handling.
    - Add conservative policies for tables, hyperlinks, validations, merged
@@ -807,11 +1323,388 @@ Patch-mode slice. `WorkbookEditor` now exists as a public facade
 (`include/fastxlsx/workbook_editor.hpp`, `src/workbook_editor.cpp`,
 `tests/test_workbook_editor.cpp`, CTest `fastxlsx.workbook_editor`) exposing
 `open()`, `worksheet_names()`, `has_worksheet()`, `replace_sheet_data()`,
-`rename_sheet()`, and `save_as()` over the internal by-name `<sheetData>` Patch
-path plus narrow sheet-catalog rename. This is the narrow whole-sheet-data /
-catalog-name slice only; `WorksheetEditor`, `get_cell()` / `set_cell()`, random
+`rename_sheet()`, `save_as()`, and coarse diagnostics such as
+`last_edit_error()`, `worksheet_catalog()`, and `pending_worksheet_edits()` over
+the internal by-name `<sheetData>` Patch path plus narrow sheet-catalog rename.
+Recent facade hardening also pins failed `rename_sheet()` state hygiene:
+duplicate / invalid rename failures update `last_edit_error()` for the current
+failure while preserving pending replacement diagnostics, catalog mapping, and
+edit summaries. Failed `save_as()` now has the same public facade state hygiene:
+source-overwrite, empty output path, missing-parent output, non-directory-parent
+output, and existing-directory output rejection do not clear queued
+replacement/rename state, do not change catalog/edit-summary diagnostics, and
+do not overwrite or create `last_edit_error()`.
+No-op `save_as()` is now covered as a reader-backed roundtrip copy with no
+queued public edits: decompressed package entries remain equal to the source and
+the facade does not create pending diagnostics. Follow-up coverage also verifies
+that a no-op save preserves a prior failed `replace_sheet_data()` or
+`rename_sheet()` `last_edit_error()` without creating pending state, and does
+not close or commit the editor; callers can still queue a later replacement /
+rename and save to another output path.
+The `last_edit_error()` contract is also pinned across all current public
+inspection / pending diagnostic methods: these calls do not clear, replace, or
+create the last failed edit diagnostic.
+Successful `save_as()` is now also covered as a reusable output operation, not a
+commit: pending replacement / rename diagnostics, catalog summaries, and
+`last_edit_error()` remain visible so the same planned state can be saved again.
+Pending replacement names and worksheet edit summaries are also covered across
+two renamed sheets: replacement names follow the current planned catalog order,
+while edit summaries keep source workbook sheet-catalog order.
+README / API-facing docs now mirror the same ordering and `last_edit_error()`
+inspection-invariance contract, so the public example matches the tested facade
+semantics without exposing internal `EditPlan` or package output details.
+Styled replacement payloads are also fixed at the public
+facade boundary: caller-supplied non-default `StyleId` values are serialized as
+`s="N"` as-is, explicit default `StyleId{}` omits `s="0"`, and source
+`xl/styles.xml` is byte-preserved rather than migrated or merged. Explicit
+`CellValue::blank()` replacement cells write empty `<c/>` cells, while empty row
+vectors remain missing rows rather than explicit blank rows. This is the narrow
+whole-sheet-data / catalog-name slice only;
+`WorksheetEditor`, `get_cell()` / `set_cell()`, random
 cell editing, caller-supplied worksheet XML, and sharedStrings/style migration
 remain future design targets, and `PackageEditor` stays internal/test-only.
+The P8.320 wording gate keeps README / API docs / task docs aligned with that
+boundary: no public `WorksheetEditor` symbols should be added until the next
+task supplies implementation and tests for materialization failure hygiene,
+handle lifetime, option matching, operation-mixing rejection, refreshed
+dimension output, and `save_as()` persistence.
+P8.321 adds one internal planned-catalog handoff regression for that path:
+source-loaded `CellStore` data must be handed off by current planned sheet name
+after a queued rename, and an old-name failure must preserve the queued rename
+state. This remains internal evidence, not public `WorksheetEditor` support.
+P8.322 extends the same rule to the full worksheet projection handoff, proving
+the planned-name path still refreshes worksheet `<dimension>` while preserving
+the same no-public-header boundary.
+P8.323 tightens failure hygiene: old-source-name preflight failures must not
+drain prepared sheetData or full-worksheet projection chunk sources before the
+caller retries with the planned name.
+P8.324 adds the follow-up planned-input transform case: source-loaded
+`CellStore` data can patch `<sheetData>` after a queued whole-worksheet
+replacement while preserving the queued worksheet wrapper and avoiding
+source-only payload resurrection. This is still internal `PackageEditor` /
+`CellStore` evidence, not public `WorksheetEditor` support.
+P8.325 adds the paired full worksheet projection case: source-loaded
+`CellStore` full worksheet chunks after a queued whole-worksheet replacement
+replace the prior planned wrapper, stage `StreamRewrite`, refresh
+`<dimension>`, and preserve calc cleanup / unknown bytes.
+P8.326 adds the combined planned-name case: after queued rename plus queued
+whole-worksheet replacement, source-loaded `CellStore` `<sheetData>` handoff
+rejects the old source name before chunk consumption and succeeds by planned
+name while preserving the queued wrapper.
+P8.327 adds the paired full worksheet projection case for the same combined
+setup: old source-name failure still drains no prepared chunks, and the planned
+name success path replaces the queued wrapper, preserves the renamed workbook
+catalog, stages `StreamRewrite`, refreshes `<dimension>`, and keeps calc cleanup
+/ unknown bytes.
+P8.328 adds save-as failure hygiene for that combined staged state:
+source-overwrite rejection does not drop staged chunks, calc policy, notes, or
+pending rewrite state, and a later safe output path still persists the workbook.
+P8.329 extends the same save-as hygiene to path-equivalent source overwrite
+attempts: a non-identical output path that resolves to the source package is
+rejected without dropping staged chunks or pending rewrite state, and a later
+safe output path still persists the workbook.
+P8.330 adds empty-output-path save-as hygiene for the same combined staged
+state: the guard rejects before dropping staged chunks or pending rewrite state,
+and a later safe output path still persists the workbook.
+P8.331 adds missing-parent output-path save-as hygiene for the same combined
+staged state, again preserving staged chunks and pending rewrite state before a
+safe retry.
+P8.332 and P8.333 add the same save-as hygiene for non-directory output parents
+and existing-directory output paths.
+P8.334 adds writer/backend failure hygiene for the same combined staged state:
+the failed writer path preserves staged chunks, existing output bytes, and
+temporary-file cleanup, and a later safe output path still persists the workbook.
+P8.335 adds successful-save persistence evidence: after one safe `save_as()`,
+the same staged full worksheet chunks can be reused for a second safe output
+path with the same workbook / worksheet semantics.
+P8.336 adds source-copy temp-size failure hygiene for the same combined staged
+state: changed save-time copy-original temp files preserve staged chunks,
+existing output bytes, and temporary-file cleanup before a later safe retry.
+P8.337 adds the matching missing source-copy temp-file failure hygiene, with the
+same staged chunk, existing output, and temp cleanup guarantees.
+P8.338 adds source-copy temp CRC failure hygiene for the same combined staged
+state: same-size payload mutation is rejected without dropping staged chunks,
+overwriting existing output bytes, or leaking temporary files.
+P8.339 adds a workbook planned-removal operation-mixing guard: source-loaded full
+worksheet chunks fail by-name catalog preflight before chunk consumption when
+`/xl/workbook.xml` has already been explicitly removed.
+P8.340 adds the paired invalid planned-catalog guard: source-loaded full
+worksheet chunks fail by-name catalog preflight before chunk consumption when
+the planned workbook sheet relationship id is missing from workbook `.rels`.
+P8.341 adds the namespace-filter companion guard: source-loaded full worksheet
+chunks fail by-name catalog preflight before chunk consumption when the planned
+sheet id attribute is present only in the wrong XML namespace.
+P8.342 adds the unqualified-id companion guard: source-loaded full worksheet
+chunks fail by-name catalog preflight before chunk consumption when the planned
+sheet id attribute is present only as a plain unqualified `id`.
+P8.343 adds the unregistered-target companion guard: source-loaded full
+worksheet chunks fail by-name catalog preflight before chunk consumption when
+the planned workbook relationship resolves to a worksheet part absent from the
+package manifest.
+
+P8.344 refreshes the F2 public-header implementation gate: P8.321-P8.343 are
+now treated as enough same-family internal catalog / operation-mixing evidence
+for the next task to become a focused public `WorksheetEditor` implementation
+plan and test list. More internal negative tests should be added only for a new
+behavior gap. This still does not expose `WorksheetEditor`,
+`WorksheetEditorOptions`, `worksheet()`, `try_worksheet()`, random cell editing,
+relationship repair, sharedStrings/style migration, or in-place save.
+
+P8.345 splits that first implementation task: start with private
+`WorkbookEditor`-owned materialized worksheet state and internal materialization
+/ mutation / save-as projection helpers, then add operation-mixing guards, and
+only then expose `WorksheetEditorOptions`, borrowed `WorksheetEditor` handles,
+`worksheet()`, and optional `try_worksheet()` with public tests. The required
+tests are missing-vs-unsupported materialization failures, option matching,
+move invalidation/reacquire behavior, operation-mixing rejection, set / blank /
+erase projection, dimension refresh, output guard hygiene, and diagnostics
+stage separation.
+
+P8.346 adds the first private state holder for that sequence:
+`detail::MaterializedWorksheetSession` owns one planned sheet name, one
+`CellStore`, the materialization options snapshot exposed by the store, and a
+dirty flag. Unit coverage proves successful set / existing erase mark dirty,
+missing erase is a clean no-op, failed mutations preserve dirty state and sparse
+records, and repeated materialization can compare options. This remains
+internal-only and does not expose public random editing or save-as handoff.
+
+P8.347 adds the session-level projection bridge: the private materialized
+session can now create a full worksheet chunk source from its current
+`CellStore`. Unit coverage verifies refreshed dimension, dirty set-cell payload
+output, and erased-record omission. This is still only an internal save-as
+handoff building block and does not wire public persistence.
+
+P8.348 adds the private materialized session registry foundation:
+`detail::MaterializedWorksheetSessionRegistry` owns multiple internal sessions
+by planned sheet name, provides mutation-free materialization preflight,
+reuses matching repeated materialization without replacing dirty state, rejects
+mismatched options before registry mutation, and exposes dirty-session
+bookkeeping for a later save-as projection task. This is still not public
+`WorksheetEditor` support, not package loading, and not `WorkbookEditor::save_as()`
+wiring.
+
+P8.349 adds the registry-level dirty projection enumeration:
+`dirty_worksheet_chunk_sources()` returns planned sheet names and full worksheet
+chunk callbacks for dirty materialized sessions only. Unit coverage verifies
+clean sessions are skipped, dirty projections follow planned-name registry
+order, and each callback emits refreshed dimension plus sparse payload. This is
+still not a package edit queue and not public random-edit persistence.
+
+P8.350 adds the private operation-mixing preflight foundation:
+`preflight_no_materialized_session(planned_name, operation_name)` rejects a
+future whole-sheet operation once that planned sheet has an internal
+materialized session, while allowing non-materialized sheets and preserving
+registry / dirty state on failure. This helper is not yet wired into current
+`WorkbookEditor` public methods and does not expose public operation-mixing
+semantics.
+
+P8.351 adds the package-backed one-sheet materialization handoff:
+`materialize_from_workbook_sheet()` loads exactly one source worksheet through
+the existing `load_cell_store_from_workbook_sheet()` path into a clean internal
+session keyed by planned sheet name. Matching repeated materialization reuses
+the existing session without re-reading the package, while mismatched options,
+missing source sheets, and load guardrail failures leave registry state
+unchanged. This is still internal-only and not public `WorksheetEditor`
+persistence.
+
+P8.352 wires that private registry into `WorkbookEditor::Impl` without opening
+the public header. `fastxlsx.workbook_editor` test hooks now verify source-backed
+private materialization, dirty session state, move construction / move
+assignment transfer with `Impl`, and same-sheet whole-`<sheetData>`
+operation-mixing rejection while another sheet remains editable. The public API
+still has no `WorksheetEditor`, `WorksheetEditorOptions`, `worksheet()`,
+`try_worksheet()`, public `get_cell()`, `set_cell()`, or `erase_cell()`;
+dirty materialized sessions still do not persist through public `save_as()`.
+
+P8.353 adds a test-hook-only dirty materialized-session flush smoke. The helper
+explicitly projects dirty private materialized sessions through the existing
+by-name full worksheet chunk-source Patch helper, then clears private dirty
+state after successful staged handoff. Coverage proves clean materialization
+flush stays a no-op source roundtrip, while dirty flush followed by current
+`save_as()` writes the projected worksheet with refreshed sparse-store dimension
+and preserves an untouched worksheet byte-for-byte. This is still not automatic
+public `save_as()` persistence and not public `WorksheetEditor` support.
+
+P8.354 wires the same private operation-mixing policy into
+`WorkbookEditor::rename_sheet()`: once a planned sheet has been internally
+materialized, same-sheet catalog rename is rejected before catalog mutation,
+pending public edit mutation, or dirty-session changes. Coverage also proves a
+different sheet can still be renamed and saved. This remains test-hook-only
+internal evidence; no public materialized worksheet handle is exposed.
+
+P8.355 adds repeated flush hygiene for the same internal handoff: a dirty
+materialized session can flush, become clean, be modified again, and flush
+again. The final saved worksheet contains the second projection, omits the stale
+first projection, and keeps refreshed sparse-store dimension. This is still
+internal evidence only and not public automatic materialized-session
+persistence.
+
+P8.356 adds failure hygiene for that same internal handoff. Dirty materialized
+flush now preflights all dirty projection planned names before staging any
+worksheet rewrite. Coverage proves a dirty valid session plus a dirty orphan
+planned-name session fails without clearing dirty state, without incrementing
+public pending-change diagnostics, and without partially staging the earlier
+valid worksheet projection. This remains test-hook-only evidence, not public
+`WorksheetEditor` persistence.
+
+P8.357 adds the matching planned-catalog positive path. After public
+`rename_sheet("Data", "RenamedData")`, a test-hook-only materialized session
+keyed by `RenamedData` can flush through the by-name worksheet chunk-source
+Patch helper. The saved workbook keeps the renamed catalog entry and writes the
+projected worksheet part with refreshed dimension. This is still not semantic
+sheet rename synchronization or public materialized editing.
+
+P8.358 adds internal blank-vs-erase projection evidence. A test-hook-only
+materialized erase hook verifies that erasing a missing cell keeps a clean
+session clean, while setting source `A1` to explicit blank and erasing source
+`A2` flushes as an empty `A1` cell, preserves source `B1`, removes row 2, and
+refreshes dimension. This is still not public `set_cell()` / `erase_cell()`,
+not tombstones, and not row deletion semantics.
+
+P8.359 adds repeated-materialization hygiene. Calling the test-hook-only source
+materialization twice for the same planned sheet now has WorkbookEditor-level
+coverage proving the existing dirty private session is reused instead of
+reloaded from source, so dirty `A1` survives the second materialization and
+flushes to output. This is still only future handle-reacquire evidence.
+
+P8.360 adds guarded materialized source-load failure hygiene. A test-hook-only
+load rejected by the internal `CellStoreOptions` guard leaves the private
+registry empty, dirty state clean, public pending diagnostics unchanged, and
+`last_edit_error()` unset; the same editor can still perform a later valid
+public `replace_sheet_data()` and `save_as()`. Current `WorkbookEditorOptions`
+are still public replacement-payload guardrails, not future
+`WorksheetEditorOptions`.
+
+P8.361 adds the matching memory-budget failure hygiene. A test-hook-only source
+load rejected by the internal `memory_budget_bytes` guard leaves the same clean
+state and the editor remains usable for a later catalog-only rename/save. This
+budget is still an internal CellStore estimate, not a public RSS guarantee.
+
+P8.362 adds missing-source load failure hygiene. A test-hook-only source
+materialization for an absent source sheet fails without registering an orphan
+planned session, dirtying private state, changing public pending diagnostics, or
+setting public `last_edit_error()`; the same editor can still perform a later
+valid public replacement/save. This does not expose public `WorksheetEditor` or
+turn arbitrary planned names into public random-edit targets.
+
+P8.363 adds the reverse operation-mixing guard for queued public replacements:
+after `replace_sheet_data()` has staged payload for a planned sheet, the
+test-hook-only materialization path rejects materializing that same sheet instead
+of reloading source bytes and making future dirty flushes ambiguous. The failure
+does not create private state or public diagnostics, preserves the queued
+replacement, and still allows materializing a different sheet.
+
+P8.364 extends that guard across planned catalog rename. After
+`replace_sheet_data("Data", ...)` followed by `rename_sheet("Data",
+"QueuedData")`, pending replacement diagnostics migrate to `QueuedData`, and
+test-hook-only materialization of `QueuedData` is rejected before private state
+mutation. The queued replacement/rename still saves correctly, and a different
+sheet can still be materialized cleanly.
+
+P8.365 covers the opposite public operation order: `rename_sheet()` first, then
+`replace_sheet_data()` against the renamed planned sheet. Test-hook-only
+materialization of that renamed planned name is still rejected before private
+state mutation, preserving the queued public replacement and keeping the
+reject-first policy independent of public operation order.
+
+P8.366 adds rejected-public-operation flush hygiene. After a dirty
+test-hook-only materialized session rejects same-sheet `replace_sheet_data()`
+and `rename_sheet()` before public state mutation, the dirty private session can
+still be explicitly flushed through the internal materialized-session handoff.
+The final output contains the materialized payload, keeps the original sheet
+name, and does not leak the rejected replacement payload or rejected rename.
+
+P8.367 adds the post-flush version of that guard. After an explicit
+materialized-session flush has already staged a worksheet projection, later
+same-sheet public `replace_sheet_data()` and `rename_sheet()` calls remain
+reject-first because the private materialized session still exists. The staged
+projection survives, the clean private session stays clean, and rejected
+payload/name data does not leak into output.
+
+P8.368 adds cross-sheet public edit hygiene after rejected same-sheet
+operations. A successful `replace_sheet_data()` on a different sheet clears the
+prior public `last_edit_error()`, preserves the dirty materialized session, and
+can be followed by the explicit internal materialized flush so both sheet
+changes save without leaking rejected same-sheet payload/name data.
+
+P8.369 adds the catalog-only cross-sheet variant. A successful
+`rename_sheet()` on a different sheet after rejected same-sheet materialized
+operations clears the prior public error, preserves the dirty materialized
+session, and can be followed by explicit flush so the other-sheet rename and
+materialized payload both save.
+
+P8.370 is the next API/documentation gate slice: keep the public header closed,
+publish the current public/internal/future API status matrix, and use the
+post-P8.369 `WorksheetEditor` preflight checklist before any public
+random-cell editing symbols are added. This is review-only unless a follow-up
+implementation task adds public symbols together with public tests.
+
+P8.371 returns to implementation evidence behind that gate. A dirty
+test-hook-only materialized session plus a queued cross-sheet public
+replacement now survive `WorkbookEditor` move construction and move assignment,
+can be explicitly flushed after assignment, and save the assigned source state
+without leaking the discarded target editor's materialized session or queued
+public replacement. This is still internal state-hygiene evidence, not public
+`WorksheetEditor` handle lifetime support or automatic dirty-session
+persistence.
+
+P8.372 adds the matching save-as failure hygiene for private materialized
+state. Failed `save_as()` before explicit flush preserves the dirty
+materialized session and does not queue a projection; failed `save_as()` after
+explicit flush preserves the staged projection and clean private session. A
+later valid `save_as()` still writes the materialized payload. This remains
+internal recovery evidence and does not add automatic public materialized
+session persistence.
+
+P8.373 covers retry mutation after a failed save. Once a materialized session
+has been explicitly flushed and `save_as()` fails on an invalid output path, the
+same private session can be mutated again, re-flushed, and saved; the later
+projection replaces the earlier staged worksheet payload. This is still
+test-hook-only recovery evidence, not public handle transaction semantics.
+
+P8.374 combines the ownership-transfer and retry paths. A dirty private
+materialized session plus a queued cross-sheet public replacement can move into
+another `WorkbookEditor`, be explicitly flushed, survive a failed `save_as()`,
+then be mutated and re-flushed again. The final output keeps the assigned
+cross-sheet public edit, writes the later materialized projection, and does not
+leak discarded target-editor state. This remains internal state-hygiene
+evidence, not public `WorksheetEditor` move or transaction semantics.
+
+P8.375 adds the successful-save reuse sibling. After an explicitly flushed
+private materialized projection is saved successfully, the same editor/session
+can be modified again, re-flushed, and saved to a second output path. The second
+output uses the later projection while the first output artifact remains the
+earlier saved package. This is internal reuse evidence, not public commit,
+close, undo, or automatic flush semantics.
+
+P8.376 combines ownership transfer with that successful-save reuse path. A
+moved / move-assigned private materialized session plus assigned cross-sheet
+public replacement can flush, save, mutate again, re-flush, and save a second
+output. The second output carries the later materialized projection and the
+assigned public replacement, the first output remains unchanged, and discarded
+target-editor state does not leak. This remains internal lifecycle evidence,
+not public `WorksheetEditor` move/reacquire or transaction semantics.
+
+P8.377 adds the moved-from assignment cleanup negative for the same private
+state family. Assigning from an already moved-from `WorkbookEditor` clears the
+target editor's materialized sessions, dirty materialized state, queued public
+edits, replacement diagnostics, and `last_edit_error()` instead of leaving stale
+target state saveable. The prior moved-to holder remains valid and can still
+flush/save its materialized payload. This is internal cleanup evidence, not
+public materialized handle invalidation semantics.
+
+P8.378 opens the first public `WorksheetEditor` slice. Public headers now expose
+`WorksheetEditorOptions`, `WorkbookEditor::worksheet(name, options)`, and a
+borrowed `WorksheetEditor` handle with `name()`, `try_cell()`, `set_cell()`,
+`erase_cell()`, `cell_count()`, and `estimated_memory_usage()`. The mode is
+explicit In-memory / existing-workbook small-file editing. `save_as()` now first
+preflights output paths, then auto-flushes dirty materialized sessions into the
+Patch plan before writing. Public tests cover source cell reads, set/erase
+roundtrip through save-as, per-materialization max-cells guard failure hygiene,
+same-sheet operation-mixing rejection, and cross-sheet Patch coexistence. This
+does not add `try_worksheet()`, `get_cell()`, non-default style id support,
+sharedStrings/style migration, semantic metadata sync, relationship repair, or
+large-file low-memory random editing.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.
@@ -988,6 +1881,11 @@ Accept when:
   parsing, string distribution expectations, expected cell values, and matrix
   report shape without invoking a benchmark executable or writing workbook
   artifacts.
+- Current `tools/summarize_benchmark_results.py --self-test` covers summary-only
+  collection from schema-v4 result / matrix report inputs, directory summary JSON
+  skip, non-benchmark JSON warnings, conservative warning generation, Markdown
+  rendering, and Markdown / JSON output writes. It does not invoke a benchmark
+  executable, generate workbooks, or replace Office/openpyxl validation.
 
 Do not claim:
 - sharedStrings as the best default for large data.
@@ -1005,6 +1903,9 @@ Do:
 - Run `py tools/run_benchmark_matrix.py --self-test` as a quick runner guard
   when changing benchmark matrix logic. It does not replace actual benchmark,
   openpyxl, or Office validation.
+- Run `py tools/summarize_benchmark_results.py --self-test` when changing the
+  benchmark summary helper. It only checks summary parsing/rendering/output
+  guardrails and does not count as performance evidence.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
 - Record data scale, string strategy, compression setting, package entry source
   mode, string pattern, input string distribution counts, temporary worksheet

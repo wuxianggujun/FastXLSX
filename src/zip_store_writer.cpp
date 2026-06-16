@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <exception>
 #include <fstream>
 #include <limits>
+#include <string>
 #include <string_view>
 
 #include <fastxlsx/workbook.hpp>
@@ -91,28 +93,139 @@ private:
     std::uint32_t value_ = 0xffffffffu;
 };
 
-void update_stats_from_file(ZipEntryStats& stats, Crc32Accumulator& crc,
-    const std::filesystem::path& path)
+void require_expected_chunk_size(const PackageEntryChunk& chunk, std::uint64_t actual_size)
 {
-    std::ifstream stream(path, std::ios::binary);
+    if (chunk.has_expected_size && chunk.expected_size != actual_size) {
+        throw FastXlsxError("ZIP entry chunk size changed after staging: expected "
+            + std::to_string(chunk.expected_size) + " bytes, actual "
+            + std::to_string(actual_size) + " bytes");
+    }
+}
+
+void require_expected_chunk_crc32(const PackageEntryChunk& chunk, std::uint32_t actual_crc32)
+{
+    if (chunk.has_expected_crc32 && chunk.expected_crc32 != actual_crc32) {
+        throw FastXlsxError("ZIP entry chunk CRC32 changed after staging: expected "
+            + std::to_string(chunk.expected_crc32) + ", actual "
+            + std::to_string(actual_crc32));
+    }
+}
+
+std::string expected_at_least_size_message(
+    std::string_view prefix, std::uint64_t expected_size)
+{
+    const std::string actual_size =
+        expected_size == std::numeric_limits<std::uint64_t>::max()
+        ? "more than " + std::to_string(expected_size)
+        : "at least " + std::to_string(expected_size + 1U);
+    return std::string(prefix) + ": expected " + std::to_string(expected_size)
+        + " bytes, read " + actual_size + " bytes";
+}
+
+std::string expected_actual_size_message(
+    std::string_view prefix, std::uint64_t expected_size, std::uint64_t actual_size)
+{
+    return std::string(prefix) + ": expected " + std::to_string(expected_size)
+        + " bytes, actual " + std::to_string(actual_size) + " bytes";
+}
+
+std::string chunk_file_failure_message(std::string_view prefix, const PackageEntryChunk& chunk)
+{
+    std::string message(prefix);
+    if (chunk.has_expected_size) {
+        message += "; expected ";
+        message += std::to_string(chunk.expected_size);
+        message += " bytes";
+    }
+    return message;
+}
+
+std::string zip_entry_chunk_context(
+    std::string_view entry_name, const PackageEntryChunk& chunk, std::size_t chunk_index)
+{
+    std::string context = "ZIP entry '";
+    context += entry_name;
+    context += "' chunk ";
+    context += std::to_string(chunk_index);
+    switch (chunk.kind) {
+    case PackageEntryChunk::Kind::Memory:
+        context += " (memory)";
+        break;
+    case PackageEntryChunk::Kind::File:
+        context += " (file '";
+        context += chunk.path.generic_string();
+        context += "')";
+        break;
+    default:
+        context += " (unknown)";
+        break;
+    }
+    return context;
+}
+
+void wrap_zip_entry_chunk_error(
+    std::string_view entry_name,
+    const PackageEntryChunk& chunk,
+    std::size_t chunk_index,
+    const std::exception& error)
+{
+    throw FastXlsxError(zip_entry_chunk_context(entry_name, chunk, chunk_index)
+        + ": " + error.what());
+}
+
+void update_stats_from_file(ZipEntryStats& stats, Crc32Accumulator& crc,
+    const PackageEntryChunk& chunk)
+{
+    std::ifstream stream(chunk.path, std::ios::binary);
     if (!stream) {
-        throw FastXlsxError("failed to open file-backed ZIP entry chunk");
+        throw FastXlsxError(chunk_file_failure_message(
+            "failed to open file-backed ZIP entry chunk", chunk));
     }
 
     std::array<char, io_buffer_size> buffer {};
-    while (stream) {
-        stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    Crc32Accumulator chunk_crc;
+    std::uint64_t read_total = 0;
+    while (true) {
+        if (chunk.has_expected_size && read_total == chunk.expected_size) {
+            const int next = stream.peek();
+            if (next != std::char_traits<char>::eof()) {
+                throw FastXlsxError(expected_at_least_size_message(
+                    "file-backed ZIP entry chunk produced more bytes than expected",
+                    chunk.expected_size));
+            }
+            break;
+        }
+
+        std::size_t requested = buffer.size();
+        if (chunk.has_expected_size) {
+            requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(chunk.expected_size - read_total,
+                    static_cast<std::uint64_t>(buffer.size())));
+        }
+        stream.read(buffer.data(), static_cast<std::streamsize>(requested));
         const std::streamsize read_size = stream.gcount();
+        if (stream.bad()) {
+            throw FastXlsxError("failed to read file-backed ZIP entry chunk");
+        }
+        if (read_size <= 0) {
+            if (chunk.has_expected_size) {
+                throw FastXlsxError(expected_actual_size_message(
+                    "file-backed ZIP entry chunk ended before expected bytes",
+                    chunk.expected_size, read_total));
+            }
+            break;
+        }
         if (read_size > 0) {
             const auto chunk_size = static_cast<std::size_t>(read_size);
-            crc.update(std::string_view(buffer.data(), chunk_size));
+            const std::string_view data(buffer.data(), chunk_size);
+            crc.update(data);
+            chunk_crc.update(data);
             stats.size += chunk_size;
+            read_total += static_cast<std::uint64_t>(chunk_size);
         }
     }
-
-    if (stream.bad()) {
-        throw FastXlsxError("failed to read file-backed ZIP entry chunk");
-    }
+    require_expected_chunk_size(chunk, read_total);
+    require_expected_chunk_crc32(chunk, chunk_crc.value());
 }
 
 ZipEntryStats compute_entry_stats(const PackageEntry& entry)
@@ -127,15 +240,25 @@ ZipEntryStats compute_entry_stats(const PackageEntry& entry)
         return stats;
     }
 
-    for (const PackageEntryChunk& chunk : entry.chunks) {
-        switch (chunk.kind) {
-        case PackageEntryChunk::Kind::Memory:
-            crc.update(chunk.data);
-            stats.size += chunk.data.size();
-            break;
-        case PackageEntryChunk::Kind::File:
-            update_stats_from_file(stats, crc, chunk.path);
-            break;
+    for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
+        const PackageEntryChunk& chunk = entry.chunks[chunk_index];
+        try {
+            switch (chunk.kind) {
+            case PackageEntryChunk::Kind::Memory:
+                require_expected_chunk_size(chunk,
+                    static_cast<std::uint64_t>(chunk.data.size()));
+                require_expected_chunk_crc32(chunk, crc32(chunk.data));
+                crc.update(chunk.data);
+                stats.size += chunk.data.size();
+                break;
+            case PackageEntryChunk::Kind::File:
+                update_stats_from_file(stats, crc, chunk);
+                break;
+            default:
+                throw FastXlsxError("unsupported ZIP entry chunk kind");
+            }
+        } catch (const std::exception& error) {
+            wrap_zip_entry_chunk_error(entry.name, chunk, chunk_index, error);
         }
     }
 
@@ -159,29 +282,59 @@ void write_bytes(std::ofstream& stream, std::string_view data, std::uint64_t& of
     }
 }
 
-void write_file_bytes(std::ofstream& output, const std::filesystem::path& path, std::uint64_t& offset)
+void write_file_bytes(std::ofstream& output, const PackageEntryChunk& chunk, std::uint64_t& offset)
 {
-    std::ifstream input(path, std::ios::binary);
+    std::ifstream input(chunk.path, std::ios::binary);
     if (!input) {
-        throw FastXlsxError("failed to open file-backed ZIP entry chunk");
+        throw FastXlsxError(chunk_file_failure_message(
+            "failed to open file-backed ZIP entry chunk", chunk));
     }
 
     std::array<char, io_buffer_size> buffer {};
-    while (input) {
-        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    Crc32Accumulator chunk_crc;
+    std::uint64_t read_total = 0;
+    while (true) {
+        if (chunk.has_expected_size && read_total == chunk.expected_size) {
+            const int next = input.peek();
+            if (next != std::char_traits<char>::eof()) {
+                throw FastXlsxError(expected_at_least_size_message(
+                    "file-backed ZIP entry chunk produced more bytes than expected",
+                    chunk.expected_size));
+            }
+            break;
+        }
+
+        std::size_t requested = buffer.size();
+        if (chunk.has_expected_size) {
+            requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(chunk.expected_size - read_total,
+                    static_cast<std::uint64_t>(buffer.size())));
+        }
+        input.read(buffer.data(), static_cast<std::streamsize>(requested));
         const std::streamsize read_size = input.gcount();
+        if (input.bad()) {
+            throw FastXlsxError("failed to read file-backed ZIP entry chunk");
+        }
+        if (read_size <= 0) {
+            if (chunk.has_expected_size) {
+                throw FastXlsxError(expected_actual_size_message(
+                    "file-backed ZIP entry chunk ended before expected bytes",
+                    chunk.expected_size, read_total));
+            }
+            break;
+        }
         if (read_size > 0) {
             output.write(buffer.data(), read_size);
             if (!output) {
                 throw FastXlsxError("failed to write file-backed ZIP entry data");
             }
+            chunk_crc.update(std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
             offset += static_cast<std::uint64_t>(read_size);
+            read_total += static_cast<std::uint64_t>(read_size);
         }
     }
-
-    if (input.bad()) {
-        throw FastXlsxError("failed to read file-backed ZIP entry chunk");
-    }
+    require_expected_chunk_size(chunk, read_total);
+    require_expected_chunk_crc32(chunk, chunk_crc.value());
 }
 
 void write_entry_data(std::ofstream& stream, const PackageEntry& entry, std::uint64_t& offset)
@@ -191,14 +344,24 @@ void write_entry_data(std::ofstream& stream, const PackageEntry& entry, std::uin
         return;
     }
 
-    for (const PackageEntryChunk& chunk : entry.chunks) {
-        switch (chunk.kind) {
-        case PackageEntryChunk::Kind::Memory:
-            write_bytes(stream, chunk.data, offset);
-            break;
-        case PackageEntryChunk::Kind::File:
-            write_file_bytes(stream, chunk.path, offset);
-            break;
+    for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
+        const PackageEntryChunk& chunk = entry.chunks[chunk_index];
+        try {
+            switch (chunk.kind) {
+            case PackageEntryChunk::Kind::Memory:
+                require_expected_chunk_size(chunk,
+                    static_cast<std::uint64_t>(chunk.data.size()));
+                require_expected_chunk_crc32(chunk, crc32(chunk.data));
+                write_bytes(stream, chunk.data, offset);
+                break;
+            case PackageEntryChunk::Kind::File:
+                write_file_bytes(stream, chunk, offset);
+                break;
+            default:
+                throw FastXlsxError("unsupported ZIP entry chunk kind");
+            }
+        } catch (const std::exception& error) {
+            wrap_zip_entry_chunk_error(entry.name, chunk, chunk_index, error);
         }
     }
 }

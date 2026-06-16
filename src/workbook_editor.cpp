@@ -415,9 +415,24 @@ WorkbookEditor::WorkbookEditor() = default;
 
 WorkbookEditor::~WorkbookEditor() = default;
 
-WorkbookEditor::WorkbookEditor(WorkbookEditor&& other) noexcept = default;
+WorkbookEditor::WorkbookEditor(WorkbookEditor&& other) noexcept
+    : impl_(std::move(other.impl_))
+    , handle_generation_(other.handle_generation_)
+{
+    ++other.handle_generation_;
+}
 
-WorkbookEditor& WorkbookEditor::operator=(WorkbookEditor&& other) noexcept = default;
+WorkbookEditor& WorkbookEditor::operator=(WorkbookEditor&& other) noexcept
+{
+    if (this == &other) {
+        return *this;
+    }
+
+    impl_ = std::move(other.impl_);
+    ++handle_generation_;
+    ++other.handle_generation_;
+    return *this;
+}
 
 WorkbookEditor WorkbookEditor::open(const std::filesystem::path& path)
 {
@@ -567,7 +582,7 @@ WorksheetEditor WorkbookEditor::worksheet(
         cell_store_options_from_worksheet_options(options);
     impl_->materialized_sessions.materialize_from_workbook_sheet(
         impl_->editor.reader(), std::string(sheet_name), *source_name, store_options);
-    return WorksheetEditor(this, std::string(sheet_name));
+    return WorksheetEditor(this, std::string(sheet_name), handle_generation_);
 }
 
 std::optional<WorksheetEditor> WorkbookEditor::try_worksheet(
@@ -670,9 +685,11 @@ void WorkbookEditor::save_as(const std::filesystem::path& path)
     impl_->editor.save_as(path);
 }
 
-WorksheetEditor::WorksheetEditor(WorkbookEditor* owner, std::string planned_name)
+WorksheetEditor::WorksheetEditor(
+    WorkbookEditor* owner, std::string planned_name, std::uint64_t owner_generation)
     : owner_(owner)
     , planned_name_(std::move(planned_name))
+    , owner_generation_(owner_generation)
 {
 }
 
@@ -683,7 +700,10 @@ std::string_view WorksheetEditor::name() const noexcept
 
 const WorkbookEditor& WorksheetEditor::owner() const
 {
-    if (owner_ == nullptr || owner_->impl_ == nullptr) {
+    if (owner_ == nullptr || owner_->handle_generation_ != owner_generation_) {
+        throw FastXlsxError("WorksheetEditor is no longer attached to the current WorkbookEditor state");
+    }
+    if (owner_->impl_ == nullptr) {
         throw FastXlsxError("WorksheetEditor is not attached to an open WorkbookEditor");
     }
     if (owner_->impl_->materialized_sessions.try_session(planned_name_) == nullptr) {
@@ -694,7 +714,10 @@ const WorkbookEditor& WorksheetEditor::owner() const
 
 WorkbookEditor& WorksheetEditor::owner()
 {
-    if (owner_ == nullptr || owner_->impl_ == nullptr) {
+    if (owner_ == nullptr || owner_->handle_generation_ != owner_generation_) {
+        throw FastXlsxError("WorksheetEditor is no longer attached to the current WorkbookEditor state");
+    }
+    if (owner_->impl_ == nullptr) {
         throw FastXlsxError("WorksheetEditor is not attached to an open WorkbookEditor");
     }
     if (owner_->impl_->materialized_sessions.try_session(planned_name_) == nullptr) {

@@ -119,9 +119,13 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   throws, and explicit blank distinction. P8.383 adds
   `WorksheetEditor::has_pending_changes()` as worksheet-local dirty-state
   inspection; it does not flush, increment `WorkbookEditor::pending_change_count()`,
-  expose internal Patch state, or update `last_edit_error()`. This still does not add non-default
-  `StyleId` support, sharedStrings/style migration, semantic metadata sync,
-  relationship repair, or large-file low-memory random editing.
+  expose internal Patch state, or update `last_edit_error()`. P8.384 adds an
+  owner-generation guard and public regressions so WorksheetEditor handles
+  borrowed before `WorkbookEditor` move construction / move assignment are
+  invalidated and must be reacquired from the moved-to / assigned-to editor.
+  This still does not add non-default `StyleId` support, sharedStrings/style
+  migration, semantic metadata sync, relationship repair, or large-file
+  low-memory random editing.
 
   Historical context:
   P8.285 gate audit froze the next step as public API design docs only, and
@@ -193,7 +197,9 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   materialized worksheet state, public calls return borrowed handles, moving the
   owner invalidates previously obtained references, repeated materialization
   requires matching options, and ambiguous rename / whole-sheet replacement
-  mixing is rejected before state changes. P8.314 freezes the save-as handoff
+  mixing is rejected before state changes. P8.384 locks this down in the public
+  by-value handle implementation with generation-based invalidation after move
+  construction and move assignment. P8.314 freezes the save-as handoff
   behavior decision: materialization alone is not pending edit state, dirty
   sparse stores persist only through `WorkbookEditor::save_as()`, top-level
   worksheet `<dimension>` must be refreshed for emitted cell extents before any
@@ -18529,6 +18535,44 @@ Acceptance:
 - `fastxlsx.workbook_editor` passes.
 - Public-header grep finds `WorksheetEditor::has_pending_changes()` without
   adding Patch-plan inspection APIs.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.384 - Invalidate WorksheetEditor handles after owner move
+
+Status: done.
+
+Type: public handle lifetime regression, small implementation guard, Doxygen /
+README / task-doc sync; no new public API symbol and no package format change.
+
+Goal: make the P8.313 borrowed-handle rule enforceable for the current by-value
+`WorksheetEditor` implementation, including the move-assignment edge where an
+old target-side handle might otherwise find a new same-name materialized session.
+
+Output:
+- Added a `WorkbookEditor` handle generation counter and stored it in each
+  borrowed `WorksheetEditor` handle at creation.
+- `WorkbookEditor` move construction invalidates handles borrowed from the
+  moved-from editor; callers must reacquire from the moved-to editor.
+- `WorkbookEditor` move assignment invalidates handles borrowed from both the
+  move-assigned source and the overwritten target editor; callers must reacquire
+  from the assigned-to editor.
+- Public regressions cover old-handle failures, reacquired-handle reads /
+  mutations, save-as roundtrip of assigned materialized state, and the
+  same-sheet target-handle case that must not attach to the assigned source
+  session.
+
+Non-goals / boundary:
+- No shared ownership, reference counting, detached worksheet model, automatic
+  handle retargeting, thread-safety contract, commit / close semantics, or
+  transaction model.
+- `WorksheetEditor::name()` remains a local planned-name label; session access
+  methods are the invalidation boundary.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public docs state that handles must be reacquired after owner move or
+  move-assignment.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

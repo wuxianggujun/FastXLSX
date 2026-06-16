@@ -1437,6 +1437,96 @@ void test_internal_materialized_sessions_move_with_workbook_editor_impl()
         "move assignment should not leak discarded target materialized session");
 }
 
+void test_public_worksheet_editor_handles_invalidate_after_owner_move()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-move-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor old_handle = editor.worksheet("Data");
+    old_handle.set_cell(1, 1, fastxlsx::CellValue::text("moved-handle-before"));
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+
+    check(threw_fastxlsx_error([&] { (void)old_handle.has_pending_changes(); }),
+        "WorksheetEditor handle borrowed before owner move construction should be invalid");
+    check(threw_fastxlsx_error([&] {
+        old_handle.set_cell(1, 1, fastxlsx::CellValue::text("stale-handle-write"));
+    }), "invalidated WorksheetEditor handle should reject writes after owner move");
+
+    fastxlsx::WorksheetEditor reacquired = moved.worksheet("Data");
+    check(reacquired.has_pending_changes(),
+        "reacquired handle should see the moved dirty materialized session");
+    const fastxlsx::CellValue moved_value = reacquired.get_cell(1, 1);
+    check(moved_value.kind() == fastxlsx::CellValueKind::Text &&
+            moved_value.text_value() == "moved-handle-before",
+        "reacquired handle should read the moved materialized cell state");
+    reacquired.set_cell(2, 1, fastxlsx::CellValue::text("moved-handle-after"));
+
+    moved.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "moved-handle-before",
+        "moved-to editor should save state written before owner move");
+    check_contains(worksheet_xml, "moved-handle-after",
+        "moved-to editor should save state written through reacquired handle");
+    check_not_contains(worksheet_xml, "stale-handle-write",
+        "invalidated pre-move handle should not mutate moved-to state");
+}
+
+void test_public_worksheet_editor_handles_invalidate_after_move_assignment()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-assign-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-assign-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-assign-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_handle = editor.worksheet("Data");
+    source_handle.set_cell(1, 1, fastxlsx::CellValue::text("assigned-source-before"));
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_handle = target.worksheet("Data");
+    target_handle.set_cell(1, 1, fastxlsx::CellValue::text("discarded-target-before"));
+
+    target = std::move(editor);
+
+    check(threw_fastxlsx_error([&] { (void)source_handle.has_pending_changes(); }),
+        "source WorksheetEditor handle should be invalid after move assignment");
+    check(threw_fastxlsx_error([&] { (void)target_handle.has_pending_changes(); }),
+        "overwritten target WorksheetEditor handle should be invalid after move assignment");
+    check(threw_fastxlsx_error([&] {
+        target_handle.set_cell(1, 1, fastxlsx::CellValue::text("stale-target-write"));
+    }), "invalidated target handle should not attach to the assigned source session");
+
+    fastxlsx::WorksheetEditor reacquired = target.worksheet("Data");
+    check(reacquired.has_pending_changes(),
+        "reacquired assigned handle should see the assigned dirty source session");
+    const fastxlsx::CellValue assigned_value = reacquired.get_cell(1, 1);
+    check(assigned_value.kind() == fastxlsx::CellValueKind::Text &&
+            assigned_value.text_value() == "assigned-source-before",
+        "reacquired assigned handle should read the source materialized state");
+    reacquired.set_cell(2, 1, fastxlsx::CellValue::text("assigned-source-after"));
+
+    target.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "assigned-source-before",
+        "move-assigned editor should save source handle edits made before assignment");
+    check_contains(worksheet_xml, "assigned-source-after",
+        "move-assigned editor should save edits made through a reacquired handle");
+    check_not_contains(worksheet_xml, "discarded-target-before",
+        "move assignment should discard overwritten target materialized edits");
+    check_not_contains(worksheet_xml, "stale-target-write",
+        "invalidated target handle should not mutate the assigned source state");
+}
+
 void test_public_worksheet_editor_set_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -5044,6 +5134,8 @@ int main()
         test_move_assignment_clears_target_replacement_options_when_source_is_default();
         test_move_assignment_from_moved_from_source_clears_dirty_target_state();
         test_internal_materialized_sessions_move_with_workbook_editor_impl();
+        test_public_worksheet_editor_handles_invalidate_after_owner_move();
+        test_public_worksheet_editor_handles_invalidate_after_move_assignment();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();

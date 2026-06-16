@@ -2122,7 +2122,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       large-file random access; P8.383 adds worksheet-local
       `WorksheetEditor::has_pending_changes()` dirty-state inspection without
       flushing, counting a Patch handoff, exposing internal Patch state, or
-      updating `last_edit_error()`.
+      updating `last_edit_error()`; P8.384 enforces owner-move invalidation for
+      borrowed handles so callers must reacquire from the moved-to /
+      assigned-to `WorkbookEditor`.
    - Keep limits explicit: this path can hold a workbook or worksheet model in
      memory and is not the large-file low-memory path. `WorksheetEditorOptions`
      are per-materialization guardrails; current `WorkbookEditorOptions`

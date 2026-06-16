@@ -1752,6 +1752,13 @@ the session has sparse cell edits waiting for `WorkbookEditor::save_as()`
 auto-flush, without flushing, incrementing `WorkbookEditor::pending_change_count()`,
 exposing internal Patch state, or updating `last_edit_error()`.
 
+P8.384 locks down borrowed handle lifetime after `WorkbookEditor` ownership
+transfer. Existing `WorksheetEditor` handles fail on later session access after
+owner move construction or move assignment; callers must reacquire from the
+moved-to / assigned-to editor. Reacquired handles can continue editing the
+transferred materialized session. This does not add detached worksheet ownership,
+automatic handle retargeting, reference counting, or thread-safety guarantees.
+
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.
 

@@ -23,11 +23,15 @@ Patch 切片：`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp
 `PackageEditor::rename_sheet_catalog_entry()`，只改写 `/xl/workbook.xml` 里
 `<sheets><sheet name="...">` 这个 catalog 名，保留 worksheet parts / relationships /
 content types / unknown entries，不动 defined names / formulas / tables / drawings /
-rel targets（窄 catalog-name 改写，不是语义 rename）。这仍**不**表示完整
-existing-file editing、public `PackageEditor`、随机 cell 读写（`get_cell` /
-`set_cell`）或 `WorksheetEditor` 已实现。
+rel targets（窄 catalog-name 改写，不是语义 rename）。当前还已有 small-file
+In-memory `WorksheetEditor` 首片：`worksheet()` / `try_worksheet()` 返回 borrowed
+handle，支持 source-backed `try_cell()` / `get_cell()`、`set_cell()`、`erase_cell()`、
+strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
+`save_as()` auto-flush。它仍**不**表示完整 existing-file editing、public
+`PackageEditor`、semantic metadata sync、sharedStrings/style migration、relationship
+repair 或 large-file low-memory random editing。
 `CellValue` 作为 public value type 已实现，internal `CellStore` 首个稀疏存储、guardrail
-和 standalone `<sheetData>` emission 切片也已实现，但 random editing 仍未 ready。
+和 standalone `<sheetData>` / worksheet projection 切片也已实现。
 
 ## 编辑策略
 
@@ -900,6 +904,11 @@ auto has_sheet_edits = sheet.has_pending_changes(); // dirty-state inspection on
 editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
 ```
+
+`WorksheetEditor` 是 borrowed handle，不是 detached worksheet owner。移动或
+move-assign owning `WorkbookEditor` 后，旧 handle 的 session access 会失败；调用方
+必须从 moved-to / assigned-to editor 重新获取 handle。当前实现用 owner generation
+guard 防止旧 target-side handle 在 move assignment 后误连到同名新 session。
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("small.xlsx", options);

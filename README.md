@@ -323,6 +323,10 @@ commit 或 undo/redo history。
 一个已有 worksheet 的小文件随机 cell edits。dirty edits 通过
 `WorkbookEditor::save_as()` 自动 flush 到 Patch plan。这个路径不会迁移
 sharedStrings/style ids，不修复 relationships，也不是大 worksheet 低内存 random access。
+移动或 move-assign owning `WorkbookEditor` 后，之前取得的 `WorksheetEditor`
+handle 不会自动跟随新 owner；除 `name()` 这个本地 planned-name label 外，
+继续读写/检查 session 会抛 `FastXlsxError`，调用方必须从 moved-to / assigned-to
+editor 重新 `worksheet()` 或 `try_worksheet()`。
 
 ```cpp
 #include <fastxlsx/workbook_editor.hpp>

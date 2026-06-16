@@ -392,6 +392,13 @@ Current F2 gate audit:
   sparse cell edits still need `WorkbookEditor::save_as()` auto-flush, does not
   flush, does not increment `WorkbookEditor::pending_change_count()`, does not
   expose internal Patch state, and does not update `last_edit_error()`.
+- P8.384 locks down public borrowed-handle invalidation after `WorkbookEditor`
+  ownership transfer. Handles acquired before move construction or move
+  assignment are rejected on later session access; callers must reacquire from
+  the moved-to / assigned-to editor. Reacquired handles can read and mutate the
+  transferred materialized session. This is enforced with an owner generation
+  guard so an overwritten target handle cannot accidentally attach to a new
+  same-name assigned session.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being
@@ -686,9 +693,11 @@ P8.313 handle lifetime and operation-mixing decision:
 - A returned `WorksheetEditor&` remains valid only while the owning
   `WorkbookEditor` object remains alive and unmoved. Moving or move-assigning
   the owning `WorkbookEditor` invalidates previously obtained references; callers
-  must reacquire handles from the moved-to editor. The moved-to editor may carry
-  materialized state as part of the editor session, but old references must not
-  be used.
+  must reacquire handles from the moved-to / assigned-to editor. The moved-to
+  editor may carry materialized state as part of the editor session, but old
+  references must not be used. P8.384 implements this with an owner generation
+  guard so overwritten target handles also fail instead of attaching to an
+  assigned same-name session.
 - Repeated `worksheet(name, options)` for the same current-planned worksheet may
   return the existing materialized editor only when the requested options match
   the first materialization options. Different options must fail before state

@@ -293,13 +293,15 @@ public:
 private:
     friend class WorkbookEditor;
 
-    WorksheetEditor(WorkbookEditor* owner, std::string planned_name);
+    WorksheetEditor(
+        WorkbookEditor* owner, std::string planned_name, std::uint64_t owner_generation);
 
     [[nodiscard]] const WorkbookEditor& owner() const;
     [[nodiscard]] WorkbookEditor& owner();
 
     WorkbookEditor* owner_ = nullptr;
     std::string planned_name_;
+    std::uint64_t owner_generation_ = 0;
 };
 
 /// Edits an existing XLSX workbook by replacing whole-sheet data, then writes a
@@ -402,7 +404,9 @@ public:
     /// save, commit, close, merge package state, or clear queued edits in the
     /// moved-to editor. The moved-from editor is left with no pending changes
     /// or last_edit_error(); inspection and edit/save operations that require
-    /// an opened workbook throw FastXlsxError.
+    /// an opened workbook throw FastXlsxError. Existing WorksheetEditor handles
+    /// borrowed from the moved-from editor are invalidated; callers must
+    /// reacquire handles from the moved-to editor.
     WorkbookEditor(WorkbookEditor&& other) noexcept;
 
     /// Move-assigns an editor, replacing this editor's opened source package,
@@ -418,6 +422,9 @@ public:
     /// not save, commit, close, or repair package state. The moved-from editor
     /// is left with no pending changes or last_edit_error(); inspection and
     /// edit/save operations that require an opened workbook throw FastXlsxError.
+    /// Existing WorksheetEditor handles borrowed from either the source editor
+    /// or the overwritten target editor are invalidated; callers must reacquire
+    /// handles from the assigned-to editor.
     WorkbookEditor& operator=(WorkbookEditor&& other) noexcept;
 
     WorkbookEditor(const WorkbookEditor&) = delete;
@@ -704,6 +711,7 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    std::uint64_t handle_generation_ = 0;
 };
 
 } // namespace fastxlsx

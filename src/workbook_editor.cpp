@@ -801,6 +801,28 @@ std::size_t WorksheetEditor::cell_count() const
     return session->cell_count();
 }
 
+std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells() const
+{
+    const WorkbookEditor::Impl& state = *owner().impl_;
+    const detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name_);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+    }
+
+    const std::vector<detail::MaterializedCellSnapshot> internal_snapshots =
+        session->sparse_cell_snapshots();
+    std::vector<WorksheetCellSnapshot> snapshots;
+    snapshots.reserve(internal_snapshots.size());
+    for (const detail::MaterializedCellSnapshot& snapshot : internal_snapshots) {
+        snapshots.push_back(WorksheetCellSnapshot {
+            WorksheetCellReference {snapshot.position.row, snapshot.position.column},
+            snapshot.value,
+        });
+    }
+    return snapshots;
+}
+
 std::size_t WorksheetEditor::estimated_memory_usage() const
 {
     const WorkbookEditor::Impl& state = *owner().impl_;

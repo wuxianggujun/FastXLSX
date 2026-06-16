@@ -18411,6 +18411,44 @@ Acceptance:
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 
+## P8.381 - Add WorksheetEditor sparse cell snapshot
+
+Status: done.
+
+Type: public API inspection convenience, Doxygen update, public regression
+tests, and task-doc sync; no CMake membership change and no package format
+expansion.
+
+Goal: add a narrow owning snapshot API for the current materialized sparse
+`WorksheetEditor` state so callers can inspect small worksheets without
+borrowing internal `CellStore` iterators or changing dirty state.
+
+Output:
+- Added `WorksheetCellReference` and `WorksheetCellSnapshot` public value types.
+- Added `WorksheetEditor::sparse_cells()`, returning an owning row-major
+  `std::vector<WorksheetCellSnapshot>` copied from active sparse records.
+- Public tests cover row-major order, source-backed values, edited cells,
+  explicit blank records, erased source-cell omission, owning-copy behavior,
+  no `last_edit_error()` update on snapshot reads, and save-as compatibility
+  through the existing dirty materialized-session handoff.
+
+Non-goals / boundary:
+- No internal iterator exposure, borrowed lifetime handles, range filtering,
+  streaming sparse iterator, row insertion/deletion, non-default `StyleId`
+  support, sharedStrings/style migration, relationship repair/pruning, formula
+  evaluation, calcChain rebuild, range/table/drawing metadata sync,
+  workbook-level in-memory guardrails, or large-file low-memory random editing.
+- The snapshot copies `CellValue` payloads and coordinates only; it does not
+  expose worksheet metadata, relationships, source XML offsets, or Patch
+  `EditPlan` state.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public-header grep finds `WorksheetCellReference`, `WorksheetCellSnapshot`,
+  and `WorksheetEditor::sparse_cells()` without adding range iterator APIs.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

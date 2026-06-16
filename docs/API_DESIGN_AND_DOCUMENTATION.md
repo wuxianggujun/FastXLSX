@@ -141,7 +141,7 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 | New workbook streaming | 已公开，继续低风险打磨 | `WorkbookWriter`, `WorksheetWriter`, `CellView`, styles, validations, hyperlinks, tables, conditional formatting, images | 不支持随机回写历史行；不把 convenience API 放进 row hot path |
 | Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::save()` | 不承诺大文件低内存；不作为 existing-file editor |
 | Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `replace_sheet_data()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；不做 relationship repair、sharedStrings/style migration |
-| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict uppercase A1 overloads, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id、sharedStrings/style migration、semantic metadata sync 或 large-file low-memory random editing |
+| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict uppercase A1 overloads, `WorksheetCellReference`, `WorksheetCellSnapshot`, `sparse_cells()`, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id、sharedStrings/style migration、semantic metadata sync、range iteration 或 large-file low-memory random editing |
 | Materialized worksheet foundation | internal + public handoff 底座 | `CellStore`, materialized-session registry, chunked projection, `WorkbookEditor::save_as()` dirty-session auto-flush | internal test hooks 仍不是 public API；不公开 source chunk lifetimes、EditPlan 或 PackageEditor |
 | Existing-file semantic objects | preserve/audit/fail 为主 | internal preservation and audit coverage for drawings, media, tables, comments, VBA, custom XML, pivot/external links, unknown entries | 不做语义编辑、range/table/chart sync、orphan cleanup、relationship pruning/repair |
 | Formula / calculation | 写入和重算请求基础 | formula cell XML, `fullCalcOnLoad`, calcChain cleanup policy in Patch paths | 不计算公式、不写 cached values、不 rebuild `calcChain.xml` |
@@ -279,12 +279,15 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 - `WorksheetEditor`：当前 public 首片提供 `name()`、`try_cell(row, column)`、
   `get_cell(row, column)`、`set_cell(row, column, CellValue)`、
   `erase_cell(row, column)`、这些 cell API 的 strict uppercase A1 string overload、
-  `cell_count()` 和 `estimated_memory_usage()`。
+  `sparse_cells()`、`cell_count()` 和 `estimated_memory_usage()`。
   `try_cell()` 对 missing sparse record 返回 empty；`get_cell()` 对 missing sparse
   record 抛 `FastXlsxError`；explicit blank 返回 `CellValue::blank()`。
   A1 overload 只接受单个 uppercase cell reference，例如 `A1` 或
   `XFD1048576`；lowercase、range、zero 或 leading-zero row、zero column
   和超出 Excel 上限的引用会被拒绝。
+  `sparse_cells()` 返回 owning row-major `WorksheetCellSnapshot` vector，包含
+  explicit blank records；它不暴露内部 iterator/lifetime，不是 range iteration，
+  不修改 dirty state，也不更新 `last_edit_error()`。
   `erase_cell()` 删除 sparse record；
   `CellValue::blank()` 表示 explicit blank replacement cell。`set_cell()` 允许默认
   style / no-style value，拒绝 non-default `StyleId`，因为 existing-workbook styles
@@ -311,8 +314,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 
 - 当前：`name()`、`try_cell(row, column)`、`get_cell(row, column)`、
   `set_cell(row, column, CellValue)`、`erase_cell(row, column)`、strict uppercase
-  A1 overload、`cell_count()`、`estimated_memory_usage()`。
-- 候选：range iteration / sparse record iteration。
+  A1 overload、`sparse_cells()` owning snapshot、`cell_count()`、
+  `estimated_memory_usage()`。
+- 候选：range iteration / streaming sparse record iterator。
 - `append_row(...)`、`insert_rows(...)`、`delete_rows(...)`：只作为后续小文件能力候选；
   需要先证明 dimension/range metadata/operation mixing，不写成 ready API。
 
@@ -361,6 +365,12 @@ Current F2 gate audit:
   They parse only single-cell references and then reuse row/column semantics;
   they do not add ranges, sparse iteration, metadata repair, or large-file
   random access.
+- P8.381 adds `WorksheetEditor::sparse_cells()` plus
+  `WorksheetCellReference` / `WorksheetCellSnapshot` as an owning row-major
+  snapshot of active sparse records. This is read-only inspection for small
+  materialized worksheets; it does not expose internal iterators, borrow store
+  lifetime, add range iteration, mutate dirty state, update `last_edit_error()`,
+  or synchronize worksheet metadata.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being

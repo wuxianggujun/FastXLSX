@@ -818,8 +818,9 @@ public/full transformer boundary 仍是后续任务。
 - API 最方便。
 - 适合小数据量。
 - 不承诺大文件低内存。
-- 可以提供真正随机编辑，例如 `get_cell()`、`set_cell()`、`erase_cell()`、局部样式修改。
-- public `Cell` 可以作为输入/返回值；当前 internal `CellStore` 首片已使用 sparse
+- 可以提供真正随机编辑，例如 `get_cell()`、`set_cell()`、`erase_cell()`、只读 sparse
+  snapshot、局部样式修改。
+- public `CellValue` 可以作为输入/返回值；当前 internal `CellStore` 首片已使用 sparse
   record 保存 value kind、payload 和 style id 引用，但后续仍需要字符串/公式池、
   guardrails 和 save-as handoff，不能把每个单元格都长期保存为 owning `Cell` 对象。
   当前 internal `CellStore` sheetData emitter 只生成 standalone `<sheetData>` payload，
@@ -893,6 +894,7 @@ document properties editing、row/column structural edits、semantic metadata sy
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);
 auto sheet = editor.worksheet("Data");
 sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
+auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
 editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
 ```

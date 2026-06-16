@@ -1679,6 +1679,61 @@ void test_public_worksheet_editor_a1_overloads_reject_invalid_references()
         "invalid A1 erase_cell should update last_edit_error");
 }
 
+void test_public_worksheet_editor_sparse_cells_snapshot()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-cells-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-sparse-cells-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("snapshot-new"));
+    sheet.set_cell(3, 2, fastxlsx::CellValue::blank());
+    sheet.erase_cell(2, 1);
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells = sheet.sparse_cells();
+    check(cells.size() == sheet.cell_count(),
+        "sparse_cells should return one snapshot per active sparse record");
+    check(cells.size() == 4,
+        "sparse_cells should include source-backed, edited, and explicit blank records");
+
+    check(cells[0].reference.row == 1 && cells[0].reference.column == 1,
+        "sparse_cells should be row-major by row then column");
+    check(cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[0].value.text_value() == "placeholder-a1",
+        "sparse_cells should copy source-backed text values");
+    check(cells[1].reference.row == 1 && cells[1].reference.column == 2,
+        "sparse_cells should keep same-row cells ordered by column");
+    check(cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            cells[1].value.number_value() == 1.0,
+        "sparse_cells should copy source-backed numeric values");
+    check(cells[2].reference.row == 3 && cells[2].reference.column == 2 &&
+            cells[2].value.kind() == fastxlsx::CellValueKind::Blank,
+        "sparse_cells should include explicit blank records");
+    check(cells[3].reference.row == 4 && cells[3].reference.column == 4 &&
+            cells[3].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[3].value.text_value() == "snapshot-new",
+        "sparse_cells should include edited cells");
+
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("changed-after-snapshot"));
+    check(cells[0].value.text_value() == "placeholder-a1",
+        "sparse_cells should return owning snapshots, not borrowed store references");
+    check(!editor.last_edit_error().has_value(),
+        "sparse_cells read should not update last_edit_error");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "sparse_cells should not interfere with dirty-session save_as");
+    check_contains(worksheet_xml, "changed-after-snapshot",
+        "subsequent edits after sparse_cells should still persist");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "sparse_cells should not revive erased source cells");
+}
+
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -4836,6 +4891,7 @@ int main()
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();
+        test_public_worksheet_editor_sparse_cells_snapshot();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();

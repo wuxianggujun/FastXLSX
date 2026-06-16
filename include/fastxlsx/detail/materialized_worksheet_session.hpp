@@ -13,6 +13,11 @@
 
 namespace fastxlsx::detail {
 
+struct MaterializedCellSnapshot {
+    CellPosition position;
+    CellValue value;
+};
+
 /// Internal state holder for one explicitly materialized worksheet.
 ///
 /// This is a private building block for a future WorkbookEditor-owned
@@ -80,6 +85,16 @@ public:
     [[nodiscard]] std::size_t estimated_memory_usage() const noexcept
     {
         return store_.estimated_memory_usage();
+    }
+
+    [[nodiscard]] std::vector<MaterializedCellSnapshot> sparse_cell_snapshots() const
+    {
+        std::vector<MaterializedCellSnapshot> snapshots;
+        snapshots.reserve(store_.cell_count());
+        for (const auto& [position, record] : store_.records()) {
+            snapshots.push_back(MaterializedCellSnapshot {position, record.to_value()});
+        }
+        return snapshots;
     }
 
     [[nodiscard]] const CellStore& store() const noexcept

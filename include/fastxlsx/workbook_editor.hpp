@@ -146,6 +146,29 @@ struct WorkbookEditorWorksheetCatalogEntry {
     bool renamed = false;
 };
 
+/// Public coordinate for a sparse WorksheetEditor cell snapshot.
+///
+/// API mode: In-memory / existing-workbook small-file inspection. Coordinates
+/// are 1-based Excel worksheet row/column indexes. This value is an owning copy
+/// returned from WorksheetEditor::sparse_cells(); it does not borrow internal
+/// CellStore state and is not an iterator handle.
+struct WorksheetCellReference {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+};
+
+/// Public value snapshot for one sparse WorksheetEditor cell.
+///
+/// API mode: In-memory / existing-workbook small-file inspection. The value is
+/// copied out of the materialized sparse store. Explicit blank cells are
+/// represented by CellValue::blank(). This snapshot does not expose styles,
+/// formulas beyond their CellValue payload, relationships, or worksheet
+/// metadata.
+struct WorksheetCellSnapshot {
+    WorksheetCellReference reference;
+    CellValue value;
+};
+
 /// Borrowed random cell editor for one WorkbookEditor-owned materialized sheet.
 ///
 /// API mode: In-memory / existing-workbook small-file editing. WorksheetEditor
@@ -227,6 +250,17 @@ public:
     /// Returns the number of active sparse cell records in this materialized
     /// worksheet, including explicit blank records.
     [[nodiscard]] std::size_t cell_count() const;
+
+    /// Returns an owning row-major snapshot of all active sparse cell records.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. This
+    /// copies coordinates and CellValue payloads out of the materialized sparse
+    /// store, including explicit blank records. It does not expose iterators or
+    /// references into the WorkbookEditor session, does not mutate dirty state,
+    /// does not update WorkbookEditor::last_edit_error(), and does not add range
+    /// iteration, metadata synchronization, or large-file low-memory random
+    /// access semantics.
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells() const;
 
     /// Returns the current CellStore memory estimate for this materialized
     /// worksheet. This is not process RSS and excludes package/write buffers.

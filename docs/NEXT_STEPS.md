@@ -143,6 +143,9 @@ the large-worksheet low-memory line.
   - `WorksheetEditor::set_cell()`
   - `WorksheetEditor::erase_cell()`
   - `WorksheetEditor` strict uppercase A1 cell overloads
+  - `WorksheetCellReference`
+  - `WorksheetCellSnapshot`
+  - `WorksheetEditor::sparse_cells()`
   - `WorksheetEditor::cell_count()`
   - `WorksheetEditor::estimated_memory_usage()`
   - `WorkbookEditor::save_as()`
@@ -1726,6 +1729,13 @@ row/column semantics, and reject lowercase references, ranges, zero or
 leading-zero rows, zero columns, and out-of-limit coordinates. This is a
 convenience API only; range iteration and broad metadata editing remain out of
 scope.
+
+P8.381 adds `WorksheetCellReference`, `WorksheetCellSnapshot`, and
+`WorksheetEditor::sparse_cells()` as a read-only owning row-major snapshot of
+the active materialized sparse records, including explicit blank cells. It does
+not expose internal iterators, borrow CellStore lifetime, add range iteration,
+mutate dirty state, update `last_edit_error()`, or synchronize worksheet
+metadata.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

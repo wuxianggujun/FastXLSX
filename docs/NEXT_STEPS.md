@@ -18,8 +18,8 @@ indexes or capability slices. The current lane has now opened the first C4/F2
 public `WorksheetEditor` slice under `WorkbookEditor`: small-file
 existing-workbook random cell edits are explicit In-memory mode, and dirty
 materialized worksheet sessions flush through `WorkbookEditor::save_as()`.
-The next editor work should harden this first slice before adding
-`try_worksheet()`, `get_cell()`, style migration, sharedStrings migration, or
+The next editor work should harden this first slice before adding style
+migration, sharedStrings migration, broader workbook-level guardrails, or
 large-file random editing. C5 direct PackageReader ZIP-entry chunk work remains
 the large-worksheet low-memory line.
 
@@ -135,9 +135,11 @@ the large-worksheet low-memory line.
   - `WorkbookEditor::rename_sheet()`
   - `WorksheetEditorOptions`
   - `WorkbookEditor::worksheet()`
+  - `WorkbookEditor::try_worksheet()`
   - `WorksheetEditor`
   - `WorksheetEditor::name()`
   - `WorksheetEditor::try_cell()`
+  - `WorksheetEditor::get_cell()`
   - `WorksheetEditor::set_cell()`
   - `WorksheetEditor::erase_cell()`
   - `WorksheetEditor::cell_count()`
@@ -946,10 +948,14 @@ feature completion.
       under the restored source name, and saves only the final replacement
       payload.
       P8.320 closes the wording-only review gate: README / API docs / task docs
-      now agree that the implemented public surface remains the narrow
-      `WorkbookEditor` Patch facade, while `WorksheetEditorOptions`,
+      agreed at that point that the implemented public surface remained the
+      narrow `WorkbookEditor` Patch facade, while `WorksheetEditorOptions`,
       `worksheet()` / `try_worksheet()`, `get_cell()` / `set_cell()` /
-      `erase_cell()` remain future draft names absent from public headers.
+      `erase_cell()` were not yet public header symbols.
+      P8.378 later supersedes that historical boundary for
+      `WorksheetEditorOptions`, `worksheet()`, `try_cell()`, `set_cell()`, and
+      `erase_cell()`; P8.379 supersedes it for `try_worksheet()` and
+      `get_cell()`.
       P8.321 adds the first concrete post-wording internal evidence: a
       source-loaded `CellStore` handed to by-name `<sheetData>` Patch after a
       queued sheet-catalog rename rejects the old source name without mutating
@@ -1701,10 +1707,16 @@ explicit In-memory / existing-workbook small-file editing. `save_as()` now first
 preflights output paths, then auto-flushes dirty materialized sessions into the
 Patch plan before writing. Public tests cover source cell reads, set/erase
 roundtrip through save-as, per-materialization max-cells guard failure hygiene,
-same-sheet operation-mixing rejection, and cross-sheet Patch coexistence. This
-does not add `try_worksheet()`, `get_cell()`, non-default style id support,
-sharedStrings/style migration, semantic metadata sync, relationship repair, or
-large-file low-memory random editing.
+same-sheet operation-mixing rejection, and cross-sheet Patch coexistence.
+
+P8.379 extends that narrow public slice with
+`WorkbookEditor::try_worksheet(name, options)` and `WorksheetEditor::get_cell()`.
+`try_worksheet()` returns `std::nullopt` only for a missing current-planned sheet;
+other materialization failures still throw and do not update `last_edit_error()`.
+`get_cell()` throws on a missing sparse record so missing cells stay distinct
+from explicit `CellValue::blank()` records. This still does not add non-default
+style id support, sharedStrings/style migration, semantic metadata sync,
+relationship repair, or large-file low-memory random editing.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

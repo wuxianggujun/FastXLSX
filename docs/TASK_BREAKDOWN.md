@@ -113,10 +113,12 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   paths before automatically flushing dirty materialized sessions into the
   Patch plan. Public tests cover source reads, set/erase save-as roundtrip,
   materialization max-cells guard failure hygiene, same-sheet operation mixing,
-  and cross-sheet Patch coexistence. This still does not add `try_worksheet()`,
-  `get_cell()`, non-default `StyleId` support, sharedStrings/style migration,
-  semantic metadata sync, relationship repair, or large-file low-memory random
-  editing.
+  and cross-sheet Patch coexistence. P8.379 adds `WorkbookEditor::try_worksheet()`
+  and `WorksheetEditor::get_cell()` with public tests for missing-sheet optional
+  lookup, non-missing materialization failures, existing-cell reads, missing-cell
+  throws, and explicit blank distinction. This still does not add non-default
+  `StyleId` support, sharedStrings/style migration, semantic metadata sync,
+  relationship repair, or large-file low-memory random editing.
 
   Historical context:
   P8.285 gate audit froze the next step as public API design docs only, and
@@ -18327,6 +18329,45 @@ Acceptance:
   (`WorksheetEditorOptions`, `WorkbookEditor::worksheet()`,
   `WorksheetEditor::try_cell()`, `set_cell()`, `erase_cell()`) and still does
   not find `try_worksheet()` or `get_cell()`.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.379 - Add try_worksheet and get_cell public slice
+
+Status: done.
+
+Type: public API implementation, Doxygen update, public regression tests, and
+task-doc sync; no CMake membership change and no package format expansion.
+
+Goal: complete the next narrow `WorksheetEditor` convenience slice without
+widening existing-workbook editing semantics into style/sharedStrings migration,
+relationship repair, or large-file random access.
+
+Output:
+- Added `WorkbookEditor::try_worksheet(name, options)` returning
+  `std::optional<WorksheetEditor>`. Missing current-planned sheet names return
+  `std::nullopt`; option mismatch, queued same-sheet `replace_sheet_data()`,
+  unsupported source worksheet payloads, and malformed source worksheet XML
+  still throw `FastXlsxError`.
+- Added `WorksheetEditor::get_cell(row, column)`. Missing sparse records throw
+  `FastXlsxError`; explicit blank records return `CellValue::blank()`.
+- Public tests cover missing-sheet optional lookup without diagnostics
+  pollution, existing-sheet read/mutate/save, option mismatch and queued
+  replacement mixing failures, missing-cell throw without store mutation, and
+  explicit blank distinction.
+
+Non-goals / boundary:
+- No non-default `StyleId` support, sharedStrings/style migration, relationship
+  repair/pruning, formula evaluation, calcChain rebuild, range/table/drawing
+  metadata sync, workbook-level in-memory guardrails, add/delete worksheet, or
+  large-file low-memory random editing.
+- `get_cell()` is a strict read helper, not a blank-default convenience API;
+  callers expecting missing sparse cells should use `try_cell()`.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public-header grep now finds the intended new symbols
+  (`WorkbookEditor::try_worksheet()` and `WorksheetEditor::get_cell()`).
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

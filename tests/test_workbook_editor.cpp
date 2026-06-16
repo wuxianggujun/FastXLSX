@@ -1474,6 +1474,120 @@ void test_public_worksheet_editor_set_cell_auto_flushes_on_save_as()
         "public WorksheetEditor save_as should refresh the sparse worksheet dimension");
 }
 
+void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-try-worksheet-missing-source.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] {
+        editor.replace_sheet_data("Missing", {{fastxlsx::CellValue::number(1.0)}});
+    }), "precondition failed replacement should record a public diagnostic");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "precondition failed replacement should leave last_edit_error populated");
+
+    const std::optional<fastxlsx::WorksheetEditor> missing =
+        editor.try_worksheet("Missing");
+    check(!missing.has_value(),
+        "try_worksheet should return empty for a missing planned worksheet");
+    check(editor.last_edit_error() == prior_error,
+        "try_worksheet missing-sheet lookup should not update last_edit_error");
+    check(!editor.has_pending_changes(),
+        "try_worksheet missing-sheet lookup should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "try_worksheet missing-sheet lookup should not queue public edits");
+}
+
+void test_public_try_worksheet_existing_handle_reads_mutates_and_saves()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-try-worksheet-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-try-worksheet-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    std::optional<fastxlsx::WorksheetEditor> maybe_sheet = editor.try_worksheet("Data");
+    check(maybe_sheet.has_value(),
+        "try_worksheet should return a handle for an existing planned worksheet");
+    if (!maybe_sheet.has_value()) {
+        return;
+    }
+
+    fastxlsx::WorksheetEditor& sheet = *maybe_sheet;
+    const fastxlsx::CellValue old_a1 = sheet.get_cell(1, 1);
+    check(old_a1.kind() == fastxlsx::CellValueKind::Text &&
+            old_a1.text_value() == "placeholder-a1",
+        "get_cell should read an existing source-backed cell");
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("try-worksheet-updated"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "try-worksheet-updated",
+        "try_worksheet handle mutation should persist through save_as");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "try_worksheet handle mutation should replace the old value");
+}
+
+void test_public_try_worksheet_reuses_options_and_blocks_replacement_mix()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-try-worksheet-options-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        std::optional<fastxlsx::WorksheetEditor> first = editor.try_worksheet("Data");
+        check(first.has_value(),
+            "try_worksheet should materialize the first matching worksheet session");
+
+        fastxlsx::WorksheetEditorOptions mismatched_options;
+        mismatched_options.max_cells = 100;
+        check(threw_fastxlsx_error([&] {
+            (void)editor.try_worksheet("Data", mismatched_options);
+        }), "try_worksheet should reject option mismatch for an existing session");
+        check(!editor.last_edit_error().has_value(),
+            "try_worksheet option mismatch should not update last_edit_error");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("queued")}});
+        check(threw_fastxlsx_error([&] {
+            (void)editor.try_worksheet("Data");
+        }), "try_worksheet should reject a worksheet with queued sheetData replacement");
+        check(!editor.last_edit_error().has_value(),
+            "try_worksheet replacement-mix rejection should not update last_edit_error");
+        check(editor.pending_change_count() == 1,
+            "try_worksheet replacement-mix rejection should preserve queued edits");
+    }
+}
+
+void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-get-cell-source.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before_missing_read = sheet.cell_count();
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(4, 4); }),
+        "get_cell should throw for a missing sparse cell");
+    check(sheet.cell_count() == cell_count_before_missing_read,
+        "failed get_cell should not mutate the sparse store");
+    check(!editor.last_edit_error().has_value(),
+        "failed get_cell missing-cell read should not update last_edit_error");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::blank());
+    const fastxlsx::CellValue explicit_blank = sheet.get_cell(4, 4);
+    check(explicit_blank.kind() == fastxlsx::CellValueKind::Blank,
+        "get_cell should return explicit blank records distinctly from missing cells");
+    check(sheet.try_cell(5, 5) == std::nullopt,
+        "try_cell should continue to report unrelated missing cells as nullopt");
+}
+
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -4625,6 +4739,10 @@ int main()
         test_move_assignment_from_moved_from_source_clears_dirty_target_state();
         test_internal_materialized_sessions_move_with_workbook_editor_impl();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
+        test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
+        test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
+        test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
+        test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();

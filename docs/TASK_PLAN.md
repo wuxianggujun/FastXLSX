@@ -1858,15 +1858,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
      projection evidence now backs a public first slice:
      `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, and borrowed
      `WorksheetEditor` handles with `try_cell()`, `set_cell()`, `erase_cell()`,
-     `cell_count()`, and `estimated_memory_usage()`.
+     `cell_count()`, and `estimated_memory_usage()`. P8.379 extends this with
+     `WorkbookEditor::try_worksheet()` and `WorksheetEditor::get_cell()`.
    - P8.310 records the implementation gate checklist: separate worksheet
      materialization options, handle lifetime / invalidation, diagnostics,
      operation mixing, and save-as handoff tests must be decided before a public
      header is added.
-   - P8.311 resolves the first diagnostics rule: future worksheet
+   - P8.311 resolves the first diagnostics rule: worksheet
      materialization failures throw `FastXlsxError` and do not update current
-     edit-only `last_edit_error()`; `try_worksheet()`, if added, returns empty
-     only for missing sheet names.
+     edit-only `last_edit_error()`; `try_worksheet()` returns empty only for
+     missing sheet names.
    - P8.312 resolves the options naming and passing rule:
      `WorksheetEditorOptions` is the future per-materialization options type
      for `worksheet(name, options)` / `try_worksheet(name, options)`, with
@@ -1911,7 +1912,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       them deliberately. P8.378 now supersedes that gate for the first public
       slice: `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`,
       `WorksheetEditor::try_cell()`, `set_cell()`, and `erase_cell()` are current
-      public API; `try_worksheet()` and `get_cell()` remain future draft names.
+      public API. P8.379 supersedes it for `WorkbookEditor::try_worksheet()` and
+      `WorksheetEditor::get_cell()`.
     - P8.321 adds internal planned-catalog handoff evidence: source-loaded
       `CellStore` data used with by-name `<sheetData>` Patch after a queued
       sheet-catalog rename must use the current planned name; the old source name

@@ -491,7 +491,21 @@ WorksheetEditor WorkbookEditor::worksheet(
         cell_store_options_from_worksheet_options(options);
     impl_->materialized_sessions.materialize_from_workbook_sheet(
         impl_->editor.reader(), std::string(sheet_name), *source_name, store_options);
-    return WorksheetEditor(impl_.get(), std::string(sheet_name));
+    return WorksheetEditor(this, std::string(sheet_name));
+}
+
+std::optional<WorksheetEditor> WorkbookEditor::try_worksheet(
+    std::string_view sheet_name, WorksheetEditorOptions options)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    if (!impl_->has_current_worksheet(sheet_name)) {
+        return std::nullopt;
+    }
+
+    return std::optional<WorksheetEditor>(worksheet(sheet_name, std::move(options)));
 }
 
 void WorkbookEditor::replace_sheet_data(
@@ -580,8 +594,8 @@ void WorkbookEditor::save_as(const std::filesystem::path& path)
     impl_->editor.save_as(path);
 }
 
-WorksheetEditor::WorksheetEditor(WorkbookEditor::Impl* impl, std::string planned_name)
-    : impl_(impl)
+WorksheetEditor::WorksheetEditor(WorkbookEditor* owner, std::string planned_name)
+    : owner_(owner)
     , planned_name_(std::move(planned_name))
 {
 }
@@ -591,32 +605,32 @@ std::string_view WorksheetEditor::name() const noexcept
     return planned_name_;
 }
 
-const WorkbookEditor::Impl& WorksheetEditor::impl() const
+const WorkbookEditor& WorksheetEditor::owner() const
 {
-    if (impl_ == nullptr) {
+    if (owner_ == nullptr || owner_->impl_ == nullptr) {
         throw FastXlsxError("WorksheetEditor is not attached to an open WorkbookEditor");
     }
-    if (impl_->materialized_sessions.try_session(planned_name_) == nullptr) {
+    if (owner_->impl_->materialized_sessions.try_session(planned_name_) == nullptr) {
         throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
     }
-    return *impl_;
+    return *owner_;
 }
 
-WorkbookEditor::Impl& WorksheetEditor::impl()
+WorkbookEditor& WorksheetEditor::owner()
 {
-    if (impl_ == nullptr) {
+    if (owner_ == nullptr || owner_->impl_ == nullptr) {
         throw FastXlsxError("WorksheetEditor is not attached to an open WorkbookEditor");
     }
-    if (impl_->materialized_sessions.try_session(planned_name_) == nullptr) {
+    if (owner_->impl_->materialized_sessions.try_session(planned_name_) == nullptr) {
         throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
     }
-    return *impl_;
+    return *owner_;
 }
 
 std::optional<CellValue> WorksheetEditor::try_cell(
     std::uint32_t row, std::uint32_t column) const
 {
-    const WorkbookEditor::Impl& state = impl();
+    const WorkbookEditor::Impl& state = *owner().impl_;
     const detail::MaterializedWorksheetSession* session =
         state.materialized_sessions.try_session(planned_name_);
     if (session == nullptr) {
@@ -630,9 +644,18 @@ std::optional<CellValue> WorksheetEditor::try_cell(
     return record->to_value();
 }
 
+CellValue WorksheetEditor::get_cell(std::uint32_t row, std::uint32_t column) const
+{
+    std::optional<CellValue> value = try_cell(row, column);
+    if (!value.has_value()) {
+        throw FastXlsxError("WorksheetEditor cell is not present in materialized worksheet");
+    }
+    return *value;
+}
+
 void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
 {
-    WorkbookEditor::Impl& state = impl();
+    WorkbookEditor::Impl& state = *owner().impl_;
     if (value.has_style() && value.style_id().value() != 0) {
         FastXlsxError error(
             "WorksheetEditor::set_cell() does not support non-default StyleId values");
@@ -656,7 +679,7 @@ void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const Ce
 
 void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 {
-    WorkbookEditor::Impl& state = impl();
+    WorkbookEditor::Impl& state = *owner().impl_;
     try {
         detail::MaterializedWorksheetSession* session =
             state.materialized_sessions.try_session(planned_name_);
@@ -673,7 +696,7 @@ void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 
 std::size_t WorksheetEditor::cell_count() const
 {
-    const WorkbookEditor::Impl& state = impl();
+    const WorkbookEditor::Impl& state = *owner().impl_;
     const detail::MaterializedWorksheetSession* session =
         state.materialized_sessions.try_session(planned_name_);
     if (session == nullptr) {
@@ -684,7 +707,7 @@ std::size_t WorksheetEditor::cell_count() const
 
 std::size_t WorksheetEditor::estimated_memory_usage() const
 {
-    const WorkbookEditor::Impl& state = impl();
+    const WorkbookEditor::Impl& state = *owner().impl_;
     const detail::MaterializedWorksheetSession* session =
         state.materialized_sessions.try_session(planned_name_);
     if (session == nullptr) {

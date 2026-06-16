@@ -54,7 +54,7 @@ void testing_workbook_editor_flush_materialized_sessions_to_patch_plan(
 /// API mode: Patch. These limits apply only to replacement rows passed to
 /// WorkbookEditor::replace_sheet_data(). They do not materialize source
 /// worksheet cells, do not enable random editing, and are not workbook-level
-/// memory limits for a future WorksheetEditor.
+/// memory limits for materialized WorksheetEditor sessions.
 struct WorkbookEditorOptions {
     /// Maximum number of explicit CellValue records accepted by one
     /// replace_sheet_data() call.
@@ -144,6 +144,72 @@ struct WorkbookEditorWorksheetCatalogEntry {
     /// True when source_name differs from planned_name because rename_sheet()
     /// has queued a sheet-catalog rename.
     bool renamed = false;
+};
+
+/// Borrowed random cell editor for one WorkbookEditor-owned materialized sheet.
+///
+/// API mode: In-memory / existing-workbook small-file editing. WorksheetEditor
+/// is not a standalone owner; it references the open WorkbookEditor session that
+/// produced it. It allows supported cells to be read, set, and erased in a
+/// sparse store. Dirty edits are persisted only when the owning
+/// WorkbookEditor::save_as() flushes the store into the Patch plan.
+///
+/// This first slice writes text as inline strings, formulas as formula text, and
+/// booleans/numbers as scalar cells. It does not migrate sharedStrings indexes,
+/// validate or merge non-default style ids, evaluate formulas, rebuild
+/// calcChain, update tables/drawings/defined names/range metadata, or repair
+/// relationships. Non-default StyleId values are rejected by set_cell() until a
+/// public existing-workbook style policy exists.
+class WorksheetEditor {
+public:
+    /// Returns the planned worksheet name for this borrowed handle.
+    [[nodiscard]] std::string_view name() const noexcept;
+
+    /// Returns the sparse-store value for a cell, or std::nullopt if the cell is
+    /// not currently represented by the materialized worksheet state.
+    ///
+    /// An explicit blank cell is returned as CellValue::blank().
+    [[nodiscard]] std::optional<CellValue> try_cell(
+        std::uint32_t row, std::uint32_t column) const;
+
+    /// Returns the sparse-store value for a cell.
+    ///
+    /// Missing sparse cells throw FastXlsxError so callers cannot accidentally
+    /// conflate "not represented" with an explicit CellValue::blank() record.
+    /// Use try_cell() when missing cells are expected. This read does not mutate
+    /// the session and does not update WorkbookEditor::last_edit_error().
+    [[nodiscard]] CellValue get_cell(std::uint32_t row, std::uint32_t column) const;
+
+    /// Sets or replaces one sparse-store cell value.
+    ///
+    /// Non-default StyleId handles are rejected because the first public slice
+    /// has no existing-workbook style registry or migration policy. A rejected
+    /// call does not mutate the sparse store.
+    void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
+
+    /// Removes one sparse-store cell record.
+    ///
+    /// Erasing a missing cell is a no-op and does not dirty the session.
+    void erase_cell(std::uint32_t row, std::uint32_t column);
+
+    /// Returns the number of active sparse cell records in this materialized
+    /// worksheet, including explicit blank records.
+    [[nodiscard]] std::size_t cell_count() const;
+
+    /// Returns the current CellStore memory estimate for this materialized
+    /// worksheet. This is not process RSS and excludes package/write buffers.
+    [[nodiscard]] std::size_t estimated_memory_usage() const;
+
+private:
+    friend class WorkbookEditor;
+
+    WorksheetEditor(WorkbookEditor* owner, std::string planned_name);
+
+    [[nodiscard]] const WorkbookEditor& owner() const;
+    [[nodiscard]] WorkbookEditor& owner();
+
+    WorkbookEditor* owner_ = nullptr;
+    std::string planned_name_;
 };
 
 /// Edits an existing XLSX workbook by replacing whole-sheet data, then writes a
@@ -426,6 +492,25 @@ public:
     [[nodiscard]] WorksheetEditor worksheet(
         std::string_view sheet_name, WorksheetEditorOptions options = {});
 
+    /// Tries to materialize an existing worksheet for small-file random cell
+    /// editing.
+    ///
+    /// API mode: In-memory over an existing workbook. This has the same
+    /// borrowed-handle and guardrail semantics as worksheet(), except a missing
+    /// current-planned worksheet name returns std::nullopt instead of throwing.
+    /// Other failures still throw FastXlsxError, including queued same-sheet
+    /// replace_sheet_data() payloads, option mismatches with an existing
+    /// materialized session, unsupported source worksheet cell shapes, or
+    /// malformed worksheet XML. Missing-sheet and materialization failures do
+    /// not update last_edit_error().
+    ///
+    /// @param sheet_name Existing worksheet name in the current planned catalog.
+    /// @param options Per-materialization sparse-store guardrails.
+    /// @throws FastXlsxError if the workbook is not open or if a non-missing
+    /// materialization failure occurs.
+    [[nodiscard]] std::optional<WorksheetEditor> try_worksheet(
+        std::string_view sheet_name, WorksheetEditorOptions options = {});
+
     /// Replaces the entire `<sheetData>` of an existing worksheet from rows of
     /// CellValue.
     ///
@@ -529,64 +614,6 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> impl_;
-};
-
-/// Borrowed random cell editor for one WorkbookEditor-owned materialized sheet.
-///
-/// API mode: In-memory / existing-workbook small-file editing. WorksheetEditor
-/// is not a standalone owner; it references the open WorkbookEditor session that
-/// produced it. It allows supported cells to be read, set, and erased in a
-/// sparse store. Dirty edits are persisted only when the owning
-/// WorkbookEditor::save_as() flushes the store into the Patch plan.
-///
-/// This first slice writes text as inline strings, formulas as formula text, and
-/// booleans/numbers as scalar cells. It does not migrate sharedStrings indexes,
-/// validate or merge non-default style ids, evaluate formulas, rebuild
-/// calcChain, update tables/drawings/defined names/range metadata, or repair
-/// relationships. Non-default StyleId values are rejected by set_cell() until a
-/// public existing-workbook style policy exists.
-class WorksheetEditor {
-public:
-    /// Returns the planned worksheet name for this borrowed handle.
-    [[nodiscard]] std::string_view name() const noexcept;
-
-    /// Returns the sparse-store value for a cell, or std::nullopt if the cell is
-    /// not currently represented by the materialized worksheet state.
-    ///
-    /// An explicit blank cell is returned as CellValue::blank().
-    [[nodiscard]] std::optional<CellValue> try_cell(
-        std::uint32_t row, std::uint32_t column) const;
-
-    /// Sets or replaces one sparse-store cell value.
-    ///
-    /// Non-default StyleId handles are rejected because the first public slice
-    /// has no existing-workbook style registry or migration policy. A rejected
-    /// call does not mutate the sparse store.
-    void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
-
-    /// Removes one sparse-store cell record.
-    ///
-    /// Erasing a missing cell is a no-op and does not dirty the session.
-    void erase_cell(std::uint32_t row, std::uint32_t column);
-
-    /// Returns the number of active sparse cell records in this materialized
-    /// worksheet, including explicit blank records.
-    [[nodiscard]] std::size_t cell_count() const;
-
-    /// Returns the current CellStore memory estimate for this materialized
-    /// worksheet. This is not process RSS and excludes package/write buffers.
-    [[nodiscard]] std::size_t estimated_memory_usage() const;
-
-private:
-    friend class WorkbookEditor;
-
-    WorksheetEditor(WorkbookEditor::Impl* impl, std::string planned_name);
-
-    [[nodiscard]] const WorkbookEditor::Impl& impl() const;
-    [[nodiscard]] WorkbookEditor::Impl& impl();
-
-    WorkbookEditor::Impl* impl_ = nullptr;
-    std::string planned_name_;
 };
 
 } // namespace fastxlsx

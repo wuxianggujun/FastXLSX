@@ -116,7 +116,10 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   and cross-sheet Patch coexistence. P8.379 adds `WorkbookEditor::try_worksheet()`
   and `WorksheetEditor::get_cell()` with public tests for missing-sheet optional
   lookup, non-missing materialization failures, existing-cell reads, missing-cell
-  throws, and explicit blank distinction. This still does not add non-default
+  throws, and explicit blank distinction. P8.383 adds
+  `WorksheetEditor::has_pending_changes()` as worksheet-local dirty-state
+  inspection; it does not flush, increment `WorkbookEditor::pending_change_count()`,
+  expose internal Patch state, or update `last_edit_error()`. This still does not add non-default
   `StyleId` support, sharedStrings/style migration, semantic metadata sync,
   relationship repair, or large-file low-memory random editing.
 
@@ -18489,6 +18492,43 @@ Acceptance:
 - `fastxlsx.workbook_editor` passes.
 - Public-header grep finds the intended `WorksheetEditor::sparse_cells(CellRange)`
   overload without adding dense range read or iterator APIs.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.383 - Add WorksheetEditor dirty state inspection
+
+Status: done.
+
+Type: public API inspection convenience, Doxygen update, public regression
+tests, and task-doc sync; no CMake membership change and no package format
+expansion.
+
+Goal: expose a worksheet-local dirty-state probe for the current materialized
+`WorksheetEditor` session so callers can tell whether this borrowed handle still
+has sparse cell edits waiting for `WorkbookEditor::save_as()` auto-flush.
+
+Output:
+- Added `WorksheetEditor::has_pending_changes()`, returning the current
+  materialized session dirty flag.
+- Public tests cover freshly materialized clean state, read-only inspection not
+  dirtying the session, failed mutation preserving clean state, missing-cell
+  erase staying clean, existing-record erase becoming dirty, save-as path
+  preflight failure preserving dirty state, successful save-as clearing dirty
+  state, and a later mutation dirtying / saving again.
+- The API does not update `WorkbookEditor::last_edit_error()` and does not add
+  a pending Patch handoff count until `WorkbookEditor::save_as()` flushes the
+  dirty session.
+
+Non-goals / boundary:
+- No flush/commit operation, dirty count, workbook-level unsaved-change model,
+  internal `EditPlan` exposure, dense range read, sparse iterator, metadata
+  recalculation, non-default `StyleId` support, sharedStrings/style migration,
+  relationship repair/pruning, or large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public-header grep finds `WorksheetEditor::has_pending_changes()` without
+  adding Patch-plan inspection APIs.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

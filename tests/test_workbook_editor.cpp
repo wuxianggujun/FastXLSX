@@ -1564,6 +1564,97 @@ void test_public_try_worksheet_reuses_options_and_blocks_replacement_mix()
     }
 }
 
+void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-dirty-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-dirty-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-dirty-second.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(!sheet.has_pending_changes(),
+        "freshly materialized public WorksheetEditor should start clean");
+    check(!editor.has_pending_changes(),
+        "clean materialized WorksheetEditor should not make save_as pending");
+
+    (void)sheet.try_cell(1, 1);
+    (void)sheet.get_cell(1, 1);
+    (void)sheet.cell_count();
+    (void)sheet.estimated_memory_usage();
+    (void)sheet.sparse_cells();
+    (void)sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    check(!sheet.has_pending_changes(),
+        "read-only WorksheetEditor APIs should not dirty the materialized session");
+    check(!editor.last_edit_error().has_value(),
+        "read-only WorksheetEditor APIs should not update last_edit_error");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-reference"));
+    }), "invalid A1 mutation should fail before dirtying the worksheet");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "failed WorksheetEditor mutation should set last_edit_error");
+
+    check(!sheet.has_pending_changes(),
+        "failed WorksheetEditor mutation should preserve clean dirty state");
+    (void)sheet.has_pending_changes();
+    (void)sheet.try_cell(1, 1);
+    (void)sheet.get_cell(1, 1);
+    (void)sheet.cell_count();
+    (void)sheet.estimated_memory_usage();
+    (void)sheet.sparse_cells();
+    (void)sheet.sparse_cells(fastxlsx::CellRange {1, 1, 1, 2});
+    check(editor.last_edit_error() == prior_error,
+        "WorksheetEditor dirty/read inspection should not update last_edit_error");
+
+    sheet.erase_cell(5, 5);
+    check(!sheet.has_pending_changes(),
+        "erasing a missing sparse record should keep a clean worksheet clean");
+    check(!editor.has_pending_changes(),
+        "missing-cell erase should not make the WorkbookEditor save_as pending");
+    check(!editor.last_edit_error().has_value(),
+        "successful missing-cell erase should clear prior mutation diagnostics");
+
+    sheet.erase_cell(2, 1);
+    check(sheet.has_pending_changes(),
+        "erasing an existing sparse record should dirty the worksheet session");
+    check(editor.has_pending_changes(),
+        "dirty WorksheetEditor should make WorkbookEditor save_as pending");
+    check(editor.pending_change_count() == 0,
+        "dirty WorksheetEditor should not count as a queued Patch handoff before flush");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "save_as path preflight failure should run before dirty-session flush");
+    check(sheet.has_pending_changes(),
+        "save_as path preflight failure should preserve dirty WorksheetEditor state");
+    check(editor.pending_change_count() == 0,
+        "save_as path preflight failure should not queue a materialized handoff");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "successful save_as should clear the flushed WorksheetEditor dirty state");
+    check(editor.pending_change_count() == 1,
+        "successful save_as should count one materialized Patch handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(first_xml, "placeholder-a2",
+        "flushed dirty WorksheetEditor state should persist erased source cells");
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-again"));
+    check(sheet.has_pending_changes(),
+        "WorksheetEditor should become dirty again after a post-save mutation");
+    editor.save_as(second_output);
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "dirty-again",
+        "post-save dirty WorksheetEditor mutation should persist on a later save_as");
+}
+
 void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
 {
     const std::filesystem::path source =
@@ -4957,6 +5048,7 @@ int main()
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
         test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
+        test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();

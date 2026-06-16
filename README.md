@@ -205,8 +205,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
   `set_cell()`、`erase_cell()`、这些 cell API 的 strict uppercase A1 string
   overload、`WorksheetCellReference`、`WorksheetCellSnapshot`、
-  `sparse_cells()`、`sparse_cells(CellRange)`、`cell_count()` 和
-  `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
+  `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
+  `cell_count()` 和 `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；不支持 non-default `StyleId`、
   sharedStrings/style migration、semantic metadata sync、relationship repair 或
   large-file low-memory random editing。
@@ -345,6 +345,7 @@ sheet.set_cell("D4", fastxlsx::CellValue::text("strict A1 ref"));
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
+const bool sheet_dirty = sheet.has_pending_changes();
 
 editor.save_as("edited.xlsx");
 ```
@@ -357,6 +358,9 @@ editor.save_as("edited.xlsx");
 range 内已经存在的 active sparse records，不补齐 missing cells。两者都不暴露内部
 iterator/lifetime，不是 dense range read 或 streaming sparse iterator，也不会同步
 worksheet metadata。
+`WorksheetEditor::has_pending_changes()` 只检查该 borrowed handle 对应的
+materialized session 是否 dirty；它不触发 flush、不增加
+`WorkbookEditor::pending_change_count()`，也不更新 `last_edit_error()`。
 
 当前仍未完成：
 

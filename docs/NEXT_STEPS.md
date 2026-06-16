@@ -145,6 +145,7 @@ the large-worksheet low-memory line.
   - `WorksheetEditor` strict uppercase A1 cell overloads
   - `WorksheetCellReference`
   - `WorksheetCellSnapshot`
+  - `WorksheetEditor::has_pending_changes()`
   - `WorksheetEditor::sparse_cells()`
   - `WorksheetEditor::sparse_cells(CellRange)`
   - `WorksheetEditor::cell_count()`
@@ -1744,6 +1745,12 @@ It reuses existing `CellRange` validation, does not synthesize missing cells as
 blank snapshots, and does not mutate dirty state or update `last_edit_error()`.
 This is not a dense range read, broader range iterator, streaming sparse
 iterator, metadata recalculation, or large-file low-memory random access API.
+
+P8.383 adds `WorksheetEditor::has_pending_changes()` as worksheet-local
+dirty-state inspection for the borrowed materialized session. It reports whether
+the session has sparse cell edits waiting for `WorkbookEditor::save_as()`
+auto-flush, without flushing, incrementing `WorkbookEditor::pending_change_count()`,
+exposing internal Patch state, or updating `last_edit_error()`.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

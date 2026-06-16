@@ -896,6 +896,7 @@ auto sheet = editor.worksheet("Data");
 sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
 auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
 auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
+auto has_sheet_edits = sheet.has_pending_changes(); // dirty-state inspection only
 editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
 ```

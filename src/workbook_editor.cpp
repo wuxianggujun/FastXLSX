@@ -810,6 +810,17 @@ void WorksheetEditor::erase_cell(std::string_view cell_reference)
     }
 }
 
+bool WorksheetEditor::has_pending_changes() const
+{
+    const WorkbookEditor::Impl& state = *owner().impl_;
+    const detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name_);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+    }
+    return session->dirty();
+}
+
 std::size_t WorksheetEditor::cell_count() const
 {
     const WorkbookEditor::Impl& state = *owner().impl_;

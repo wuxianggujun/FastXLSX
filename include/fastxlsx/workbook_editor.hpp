@@ -248,6 +248,16 @@ public:
     /// the sparse store and update the owning WorkbookEditor::last_edit_error().
     void erase_cell(std::string_view cell_reference);
 
+    /// Returns whether this materialized worksheet session has dirty sparse
+    /// cell edits waiting for WorkbookEditor::save_as() auto-flush.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. This is a
+    /// worksheet-local dirty-state probe only: it does not flush the session,
+    /// does not increment WorkbookEditor::pending_change_count(), does not
+    /// expose Patch EditPlan state, and does not update
+    /// WorkbookEditor::last_edit_error().
+    [[nodiscard]] bool has_pending_changes() const;
+
     /// Returns the number of active sparse cell records in this materialized
     /// worksheet, including explicit blank records.
     [[nodiscard]] std::size_t cell_count() const;

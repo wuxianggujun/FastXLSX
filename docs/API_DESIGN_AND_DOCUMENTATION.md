@@ -127,7 +127,7 @@ In-memory `WorksheetEditor` 切片：`WorksheetEditorOptions`、
 `WorkbookEditor::worksheet(name, options)`、
 `WorkbookEditor::try_worksheet(name, options)`、
 `WorksheetEditor::try_cell()` / `get_cell()` / `set_cell()` / `erase_cell()`、
-`cell_count()` 和 `estimated_memory_usage()`。尚未落地的更宽能力 —— 添加 / 删除
+`has_pending_changes()`、`cell_count()` 和 `estimated_memory_usage()`。尚未落地的更宽能力 —— 添加 / 删除
 worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship repair 和
 大 worksheet 低内存 random edit —— 仍必须标明为未来 public design target。
 
@@ -141,7 +141,7 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 | New workbook streaming | 已公开，继续低风险打磨 | `WorkbookWriter`, `WorksheetWriter`, `CellView`, styles, validations, hyperlinks, tables, conditional formatting, images | 不支持随机回写历史行；不把 convenience API 放进 row hot path |
 | Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::save()` | 不承诺大文件低内存；不作为 existing-file editor |
 | Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `replace_sheet_data()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；不做 relationship repair、sharedStrings/style migration |
-| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict uppercase A1 overloads, `WorksheetCellReference`, `WorksheetCellSnapshot`, `sparse_cells()`, `sparse_cells(CellRange)`, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id、sharedStrings/style migration、semantic metadata sync、dense range reads、streaming sparse iterators 或 large-file low-memory random editing |
+| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict uppercase A1 overloads, `WorksheetCellReference`, `WorksheetCellSnapshot`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id、sharedStrings/style migration、semantic metadata sync、dense range reads、streaming sparse iterators 或 large-file low-memory random editing |
 | Materialized worksheet foundation | internal + public handoff 底座 | `CellStore`, materialized-session registry, chunked projection, `WorkbookEditor::save_as()` dirty-session auto-flush | internal test hooks 仍不是 public API；不公开 source chunk lifetimes、EditPlan 或 PackageEditor |
 | Existing-file semantic objects | preserve/audit/fail 为主 | internal preservation and audit coverage for drawings, media, tables, comments, VBA, custom XML, pivot/external links, unknown entries | 不做语义编辑、range/table/chart sync、orphan cleanup、relationship pruning/repair |
 | Formula / calculation | 写入和重算请求基础 | formula cell XML, `fullCalcOnLoad`, calcChain cleanup policy in Patch paths | 不计算公式、不写 cached values、不 rebuild `calcChain.xml` |
@@ -279,8 +279,8 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 - `WorksheetEditor`：当前 public 首片提供 `name()`、`try_cell(row, column)`、
   `get_cell(row, column)`、`set_cell(row, column, CellValue)`、
   `erase_cell(row, column)`、这些 cell API 的 strict uppercase A1 string overload、
-  `sparse_cells()`、`sparse_cells(CellRange)`、`cell_count()` 和
-  `estimated_memory_usage()`。
+  `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
+  `cell_count()` 和 `estimated_memory_usage()`。
   `try_cell()` 对 missing sparse record 返回 empty；`get_cell()` 对 missing sparse
   record 抛 `FastXlsxError`；explicit blank 返回 `CellValue::blank()`。
   A1 overload 只接受单个 uppercase cell reference，例如 `A1` 或
@@ -291,6 +291,10 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   range 内已经存在的 active sparse records，不合成 missing cells。两者都不暴露
   内部 iterator/lifetime，不是 dense range read 或 streaming sparse iterator，
   不修改 dirty state，也不更新 `last_edit_error()`。
+  `has_pending_changes()` 是 worksheet-local dirty-state inspection：它只报告当前
+  materialized session 是否等待 `WorkbookEditor::save_as()` auto-flush，不触发 flush，
+  不增加 `pending_change_count()`，不暴露 internal Patch `EditPlan`，也不更新
+  `last_edit_error()`。
   `erase_cell()` 删除 sparse record；
   `CellValue::blank()` 表示 explicit blank replacement cell。`set_cell()` 允许默认
   style / no-style value，拒绝 non-default `StyleId`，因为 existing-workbook styles
@@ -317,8 +321,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 
 - 当前：`name()`、`try_cell(row, column)`、`get_cell(row, column)`、
   `set_cell(row, column, CellValue)`、`erase_cell(row, column)`、strict uppercase
-  A1 overload、`sparse_cells()` owning snapshot、`sparse_cells(CellRange)`
-  filtered owning snapshot、`cell_count()`、`estimated_memory_usage()`。
+  A1 overload、`has_pending_changes()` dirty-state inspection、
+  `sparse_cells()` owning snapshot、`sparse_cells(CellRange)` filtered owning
+  snapshot、`cell_count()`、`estimated_memory_usage()`。
 - 候选：broader range iteration / streaming sparse record iterator / dense
   range read。
 - `append_row(...)`、`insert_rows(...)`、`delete_rows(...)`：只作为后续小文件能力候选；
@@ -382,6 +387,11 @@ Current F2 gate audit:
   mutation and no `last_edit_error()` update. It is not a dense matrix read,
   broader range iterator, streaming sparse iterator, metadata recalculation, or
   large-file random access path.
+- P8.383 adds `WorksheetEditor::has_pending_changes()` as a worksheet-local
+  dirty-state probe for the borrowed materialized session. It reports whether
+  sparse cell edits still need `WorkbookEditor::save_as()` auto-flush, does not
+  flush, does not increment `WorkbookEditor::pending_change_count()`, does not
+  expose internal Patch state, and does not update `last_edit_error()`.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being

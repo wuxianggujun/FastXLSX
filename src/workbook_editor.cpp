@@ -42,6 +42,11 @@ struct PendingSheetDataPayloadDiagnostic {
     std::size_t estimated_memory_usage = 0;
 };
 
+struct WorksheetEditorCellCoordinate {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+};
+
 void migrate_pending_sheet_data_payload_diagnostic(
     std::map<std::string, PendingSheetDataPayloadDiagnostic>& pending_payloads,
     const std::string& old_name,
@@ -86,6 +91,57 @@ bool path_is_existing_directory(const std::filesystem::path& path) noexcept
     std::error_code error;
     const bool directory = std::filesystem::is_directory(path, error);
     return !error && directory;
+}
+
+bool is_ascii_digit(char ch) noexcept
+{
+    return ch >= '0' && ch <= '9';
+}
+
+WorksheetEditorCellCoordinate parse_strict_a1_cell_reference(
+    std::string_view cell_reference)
+{
+    constexpr std::uint32_t max_excel_rows = 1048576;
+    constexpr std::uint32_t max_excel_columns = 16384;
+
+    if (cell_reference.empty()) {
+        throw FastXlsxError("WorksheetEditor cell reference is empty");
+    }
+
+    std::uint64_t column = 0;
+    std::size_t position = 0;
+    while (position < cell_reference.size()) {
+        const char ch = cell_reference[position];
+        if (ch < 'A' || ch > 'Z') {
+            break;
+        }
+        column = column * 26U + static_cast<std::uint32_t>(ch - 'A' + 1);
+        if (column > max_excel_columns) {
+            throw FastXlsxError("WorksheetEditor cell reference column exceeds Excel limits");
+        }
+        ++position;
+    }
+    if (position == 0 || position >= cell_reference.size()) {
+        throw FastXlsxError("WorksheetEditor cell reference is invalid");
+    }
+    if (cell_reference[position] == '0') {
+        throw FastXlsxError("WorksheetEditor cell reference is invalid");
+    }
+
+    std::uint64_t row = 0;
+    while (position < cell_reference.size() && is_ascii_digit(cell_reference[position])) {
+        row = row * 10U + static_cast<std::uint32_t>(cell_reference[position] - '0');
+        if (row > max_excel_rows) {
+            throw FastXlsxError("WorksheetEditor cell reference row exceeds Excel limits");
+        }
+        ++position;
+    }
+    if (position != cell_reference.size() || row == 0 || column == 0) {
+        throw FastXlsxError("WorksheetEditor cell reference is invalid");
+    }
+
+    return WorksheetEditorCellCoordinate {
+        static_cast<std::uint32_t>(row), static_cast<std::uint32_t>(column)};
 }
 
 bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
@@ -644,6 +700,13 @@ std::optional<CellValue> WorksheetEditor::try_cell(
     return record->to_value();
 }
 
+std::optional<CellValue> WorksheetEditor::try_cell(std::string_view cell_reference) const
+{
+    const WorksheetEditorCellCoordinate coordinate =
+        parse_strict_a1_cell_reference(cell_reference);
+    return try_cell(coordinate.row, coordinate.column);
+}
+
 CellValue WorksheetEditor::get_cell(std::uint32_t row, std::uint32_t column) const
 {
     std::optional<CellValue> value = try_cell(row, column);
@@ -651,6 +714,13 @@ CellValue WorksheetEditor::get_cell(std::uint32_t row, std::uint32_t column) con
         throw FastXlsxError("WorksheetEditor cell is not present in materialized worksheet");
     }
     return *value;
+}
+
+CellValue WorksheetEditor::get_cell(std::string_view cell_reference) const
+{
+    const WorksheetEditorCellCoordinate coordinate =
+        parse_strict_a1_cell_reference(cell_reference);
+    return get_cell(coordinate.row, coordinate.column);
 }
 
 void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
@@ -677,6 +747,19 @@ void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const Ce
     }
 }
 
+void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue& value)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        const WorksheetEditorCellCoordinate coordinate =
+            parse_strict_a1_cell_reference(cell_reference);
+        set_cell(coordinate.row, coordinate.column, value);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -688,6 +771,19 @@ void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
         }
         session->erase_cell(row, column);
         state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::erase_cell(std::string_view cell_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        const WorksheetEditorCellCoordinate coordinate =
+            parse_strict_a1_cell_reference(cell_reference);
+        erase_cell(coordinate.row, coordinate.column);
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
         throw;

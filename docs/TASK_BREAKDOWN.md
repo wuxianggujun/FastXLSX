@@ -18371,6 +18371,46 @@ Acceptance:
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 
+## P8.380 - Add WorksheetEditor A1 cell-reference overloads
+
+Status: done.
+
+Type: public API convenience implementation, Doxygen update, public regression
+tests, and task-doc sync; no CMake membership change and no package format
+expansion.
+
+Goal: add a narrow single-cell A1 string convenience layer to the existing
+small-file In-memory `WorksheetEditor` public slice while keeping row/column
+overloads as the primary contract and without broadening existing-workbook
+editing semantics.
+
+Output:
+- Added strict uppercase A1 overloads for `WorksheetEditor::try_cell()`,
+  `get_cell()`, `set_cell()`, and `erase_cell()`.
+- The parser accepts only one cell reference such as `A1` or `XFD1048576`.
+  Lowercase references, ranges, zero or leading-zero rows, zero columns, and
+  coordinates outside Excel limits are rejected before calling the row/column
+  overloads.
+- Public tests cover A1 read/mutate/erase/save-as persistence, dimension refresh
+  through the existing materialized-session handoff, invalid read references
+  without store mutation or `last_edit_error()` updates, and invalid mutation
+  references with no store mutation plus `last_edit_error()` updates.
+
+Non-goals / boundary:
+- No range parsing/iteration, sparse record iteration, row insertion/deletion,
+  add/delete worksheet, non-default `StyleId` support, sharedStrings/style
+  migration, relationship repair/pruning, formula evaluation, calcChain rebuild,
+  range/table/drawing metadata sync, workbook-level in-memory guardrails, or
+  large-file low-memory random editing.
+- A1 overloads are strict convenience wrappers over row/column semantics; they
+  do not introduce a new coordinate model.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Public-header grep finds the intended A1 overloads without adding range APIs.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

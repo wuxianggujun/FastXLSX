@@ -142,6 +142,7 @@ the large-worksheet low-memory line.
   - `WorksheetEditor::get_cell()`
   - `WorksheetEditor::set_cell()`
   - `WorksheetEditor::erase_cell()`
+  - `WorksheetEditor` strict uppercase A1 cell overloads
   - `WorksheetEditor::cell_count()`
   - `WorksheetEditor::estimated_memory_usage()`
   - `WorkbookEditor::save_as()`
@@ -1717,6 +1718,14 @@ other materialization failures still throw and do not update `last_edit_error()`
 from explicit `CellValue::blank()` records. This still does not add non-default
 style id support, sharedStrings/style migration, semantic metadata sync,
 relationship repair, or large-file low-memory random editing.
+
+P8.380 adds strict uppercase A1 cell-reference overloads for
+`WorksheetEditor::try_cell()`, `get_cell()`, `set_cell()`, and `erase_cell()`.
+They accept only single-cell references such as `A1` and `XFD1048576`, reuse the
+row/column semantics, and reject lowercase references, ranges, zero or
+leading-zero rows, zero columns, and out-of-limit coordinates. This is a
+convenience API only; range iteration and broad metadata editing remain out of
+scope.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

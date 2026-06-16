@@ -885,20 +885,22 @@ workbook 视图。
 下面是规划中的更宽 Patch public API 形态伪代码，不是当前已暴露的
 `include/fastxlsx` API；当前 `PackageEditor` 仍是 internal test-only 基础，
 `WorkbookEditor` 只暴露 whole-`<sheetData>` 替换、窄 sheet catalog 改名和
-`save_as()`，尚未暴露 document properties editing、random cell editing 等更宽能力。
+`save_as()`，并已有 small-file `WorksheetEditor` 随机 cell 编辑首片；尚未暴露
+document properties editing、row/column structural edits、semantic metadata sync
+等更宽能力。
 
 ```cpp
-auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options); // future
-auto sheet = editor.worksheet("Data");                                  // future
-sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));               // future
-editor.set_document_properties(properties);                             // future
+auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);
+auto sheet = editor.worksheet("Data");
+sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
+editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
 ```
 
 ```cpp
-auto editor = fastxlsx::WorkbookEditor::open("small.xlsx", options); // future
-auto sheet = editor.worksheet("Data");                               // future
-sheet.set_cell(10, 3, fastxlsx::CellValue::text("hello"));           // future
+auto editor = fastxlsx::WorkbookEditor::open("small.xlsx", options);
+auto sheet = editor.worksheet("Data");
+sheet.set_cell(10, 3, fastxlsx::CellValue::text("hello"));
 editor.save_as("output.xlsx");
 ```
 

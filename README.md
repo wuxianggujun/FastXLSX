@@ -203,7 +203,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`erase_cell()`、`cell_count()` 和
+  `set_cell()`、`erase_cell()`、这些 cell API 的 strict uppercase A1 string
+  overload、`cell_count()` 和
   `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；不支持 non-default `StyleId`、
   sharedStrings/style migration、semantic metadata sync、relationship repair 或
@@ -339,10 +340,15 @@ auto& sheet = *maybe_sheet;
 auto maybe_a1 = sheet.try_cell(1, 1);
 auto required_a1 = sheet.get_cell(1, 1); // Throws if the sparse cell is missing.
 sheet.set_cell(1, 1, fastxlsx::CellValue::text("updated"));
+sheet.set_cell("D4", fastxlsx::CellValue::text("strict A1 ref"));
 sheet.erase_cell(2, 1);
 
 editor.save_as("edited.xlsx");
 ```
+
+`WorksheetEditor` 的 A1 overload 只接受单个 uppercase cell reference，例如
+`A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
+行列上限的引用会被拒绝。
 
 当前仍未完成：
 

@@ -157,8 +157,13 @@ own `fastxlsx.package_editor.c5` shard to keep the 60s CTest boundary stable.
   `WorkbookEditor::pending_replacement_cell_count()`,
   `WorkbookEditor::pending_replacement_worksheet_names()`,
   `WorkbookEditor::has_pending_replacement()`,
-  `WorkbookEditor::estimated_pending_replacement_memory_usage()`, and
-  `FastXlsxError`.
+  `WorkbookEditor::estimated_pending_replacement_memory_usage()`,
+  `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`,
+  `WorkbookEditor::try_worksheet()`, `WorksheetEditor`,
+  `WorksheetEditor::try_cell()` / `get_cell()` / `set_cell()` /
+  `erase_cell()` with row/column and strict uppercase A1 single-cell overloads,
+  `WorksheetEditor::cell_count()`, `WorksheetEditor::estimated_memory_usage()`,
+  and `FastXlsxError`.
 - Current internal In-memory foundation includes
   `include/fastxlsx/detail/cell_store.hpp` and `src/cell_store.cpp` with
   `CellPosition`, `CellRecord`, worksheet-local sparse `CellStore`, and internal

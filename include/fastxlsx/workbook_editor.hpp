@@ -172,6 +172,17 @@ public:
     [[nodiscard]] std::optional<CellValue> try_cell(
         std::uint32_t row, std::uint32_t column) const;
 
+    /// Returns the sparse-store value for a strict uppercase A1 cell reference.
+    ///
+    /// The reference must name exactly one cell, such as `A1` or
+    /// `XFD1048576`. Lowercase references, ranges, zero or leading-zero rows,
+    /// and coordinates outside Excel limits throw FastXlsxError. This
+    /// convenience overload parses the reference and then uses the row/column
+    /// overload; it does not add range iteration or large-file random access
+    /// semantics.
+    [[nodiscard]] std::optional<CellValue> try_cell(
+        std::string_view cell_reference) const;
+
     /// Returns the sparse-store value for a cell.
     ///
     /// Missing sparse cells throw FastXlsxError so callers cannot accidentally
@@ -180,6 +191,13 @@ public:
     /// the session and does not update WorkbookEditor::last_edit_error().
     [[nodiscard]] CellValue get_cell(std::uint32_t row, std::uint32_t column) const;
 
+    /// Returns the sparse-store value for a strict uppercase A1 cell reference.
+    ///
+    /// Missing sparse cells and invalid references throw FastXlsxError. Like the
+    /// row/column read overload, this read does not mutate the session and does
+    /// not update WorkbookEditor::last_edit_error().
+    [[nodiscard]] CellValue get_cell(std::string_view cell_reference) const;
+
     /// Sets or replaces one sparse-store cell value.
     ///
     /// Non-default StyleId handles are rejected because the first public slice
@@ -187,10 +205,24 @@ public:
     /// call does not mutate the sparse store.
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
 
+    /// Sets or replaces one sparse-store cell value by strict uppercase A1
+    /// reference.
+    ///
+    /// The reference must name exactly one cell. Invalid references are treated
+    /// as mutation failures: they do not mutate the sparse store and update the
+    /// owning WorkbookEditor::last_edit_error().
+    void set_cell(std::string_view cell_reference, const CellValue& value);
+
     /// Removes one sparse-store cell record.
     ///
     /// Erasing a missing cell is a no-op and does not dirty the session.
     void erase_cell(std::uint32_t row, std::uint32_t column);
+
+    /// Removes one sparse-store cell record by strict uppercase A1 reference.
+    ///
+    /// Invalid references are treated as mutation failures: they do not mutate
+    /// the sparse store and update the owning WorkbookEditor::last_edit_error().
+    void erase_cell(std::string_view cell_reference);
 
     /// Returns the number of active sparse cell records in this materialized
     /// worksheet, including explicit blank records.

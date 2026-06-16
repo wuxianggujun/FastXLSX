@@ -1588,6 +1588,97 @@ void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
         "try_cell should continue to report unrelated missing cells as nullopt");
 }
 
+void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-a1-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-a1-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> maybe_a1 = sheet.try_cell("A1");
+    check(maybe_a1.has_value() && maybe_a1->kind() == fastxlsx::CellValueKind::Text &&
+            maybe_a1->text_value() == "placeholder-a1",
+        "A1 try_cell overload should read source-backed text");
+
+    const fastxlsx::CellValue b1 = sheet.get_cell("B1");
+    check(b1.kind() == fastxlsx::CellValueKind::Number && b1.number_value() == 1.0,
+        "A1 get_cell overload should read source-backed numbers");
+
+    sheet.set_cell("D4", fastxlsx::CellValue::text("a1-overload-new"));
+    const fastxlsx::CellValue d4 = sheet.get_cell("D4");
+    check(d4.kind() == fastxlsx::CellValueKind::Text &&
+            d4.text_value() == "a1-overload-new",
+        "A1 set_cell overload should update the materialized sparse store");
+
+    sheet.erase_cell("A2");
+    check(sheet.try_cell("A2") == std::nullopt,
+        "A1 erase_cell overload should remove the sparse record");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "A1 overload save_as should refresh dimension through the existing handoff");
+    check_contains(worksheet_xml, R"(<c r="D4" t="inlineStr">)",
+        "A1 overload set_cell should persist the target cell reference");
+    check_contains(worksheet_xml, "a1-overload-new",
+        "A1 overload set_cell should persist the target text");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "A1 overload erase_cell should persist the erased source cell");
+}
+
+void test_public_worksheet_editor_a1_overloads_reject_invalid_references()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-a1-invalid-source.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before_reads = sheet.cell_count();
+    const std::array<std::string_view, 8> invalid_references {
+        "", "a1", "1A", "A0", "A01", "XFE1", "A1048577", "A1:B2"};
+
+    for (const std::string_view reference : invalid_references) {
+        check(threw_fastxlsx_error([&] { (void)sheet.try_cell(reference); }),
+            "A1 try_cell overload should reject invalid references");
+        check(threw_fastxlsx_error([&] { (void)sheet.get_cell(reference); }),
+            "A1 get_cell overload should reject invalid references");
+    }
+
+    check(sheet.cell_count() == cell_count_before_reads,
+        "invalid A1 read overloads should not mutate the sparse store");
+    check(!sheet.try_cell("XFD1048576").has_value(),
+        "A1 try_cell overload should accept the last legal Excel cell reference");
+    check(!editor.last_edit_error().has_value(),
+        "invalid A1 read overloads should not update last_edit_error");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "invalid A1 read overloads should preserve existing cells");
+
+    const std::size_t cell_count_before_mutation = sheet.cell_count();
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("should-not-write"));
+    }), "A1 set_cell overload should reject lowercase references");
+    check(sheet.cell_count() == cell_count_before_mutation,
+        "invalid A1 set_cell should not mutate sparse cell count");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "invalid A1 set_cell should not overwrite source cells");
+    check(editor.last_edit_error().has_value(),
+        "invalid A1 set_cell should update last_edit_error");
+
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "A1 erase_cell overload should reject range references");
+    check(sheet.cell_count() == cell_count_before_mutation,
+        "invalid A1 erase_cell should not mutate sparse cell count");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "invalid A1 erase_cell should not remove source cells");
+    check(editor.last_edit_error().has_value(),
+        "invalid A1 erase_cell should update last_edit_error");
+}
+
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -4743,6 +4834,8 @@ int main()
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
         test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
+        test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
+        test_public_worksheet_editor_a1_overloads_reject_invalid_references();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();

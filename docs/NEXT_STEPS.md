@@ -1792,6 +1792,14 @@ and clear after successful `save_as()` auto-flush. They do not flush, increment
 `pending_change_count()`, expose `EditPlan`, update `last_edit_error()`, or
 change whole-sheet replacement diagnostics.
 
+P8.388 pins `WorksheetEditor` borrowed-handle lifetime around
+`WorkbookEditor::save_as()`: successful or failed `save_as()` does not delete or
+invalidate an existing handle while the owning `WorkbookEditor` object is
+unchanged. The same handle may continue reading, become dirty again after a
+post-save mutation, and reflush on a later `save_as()`. Owner move construction
+and move assignment remain the invalidation boundary that requires callers to
+reacquire handles.
+
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.
 

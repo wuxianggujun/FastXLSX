@@ -1759,6 +1759,54 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
         "post-save dirty WorksheetEditor mutation should persist on a later save_as");
 }
 
+void test_public_worksheet_editor_handle_remains_valid_after_save_as()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-handle-save-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-second.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("same-handle-first-save"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "failed save_as path guard should not invalidate a borrowed WorksheetEditor handle");
+    check(sheet.has_pending_changes(),
+        "failed save_as should keep the same WorksheetEditor handle dirty and valid");
+    check(editor.pending_change_count() == 0,
+        "failed save_as should not flush the dirty materialized session");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "successful save_as should keep the same WorksheetEditor handle valid and clean");
+    const fastxlsx::CellValue saved_value = sheet.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "same-handle-first-save",
+        "same WorksheetEditor handle should still read materialized cells after save_as");
+
+    sheet.set_cell(1, 2, fastxlsx::CellValue::text("same-handle-second-save"));
+    check(sheet.has_pending_changes(),
+        "same WorksheetEditor handle should be reusable for post-save edits");
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 2,
+        "second save_as should record a second materialized Patch handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "same-handle-first-save",
+        "first output should contain the first same-handle materialized edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
+        "later same-handle edits should not mutate an earlier output artifact");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-first-save",
+        "second output should retain prior materialized sparse state");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
+        "second output should contain the post-save same-handle edit");
+}
+
 void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
 {
     const std::filesystem::path source =
@@ -5546,6 +5594,7 @@ int main()
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
         test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
         test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
+        test_public_worksheet_editor_handle_remains_valid_after_save_as();
         test_public_workbook_editor_pending_materialized_names_track_dirty_state();
         test_public_workbook_editor_pending_materialized_names_move_with_owner();
         test_public_workbook_editor_pending_materialized_aggregate_diagnostics();

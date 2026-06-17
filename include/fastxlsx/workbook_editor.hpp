@@ -624,9 +624,12 @@ public:
     /// WorksheetEditor is a borrowed handle into WorkbookEditor-owned sparse
     /// worksheet state. It is valid only while this WorkbookEditor object
     /// remains alive and is not moved or move-assigned; callers should reacquire
-    /// a handle after ownership transfer. Repeated worksheet() calls for the
-    /// same planned sheet reuse the same materialized session when options
-    /// match, preserving dirty edits.
+    /// a handle after ownership transfer. Successful or failed save_as() does
+    /// not invalidate the handle; the same borrowed worksheet can continue to be
+    /// used for later mutations and reflushes as long as the owning
+    /// WorkbookEditor itself is still the same object. Repeated worksheet()
+    /// calls for the same planned sheet reuse the same materialized session
+    /// when options match, preserving dirty edits.
     ///
     /// Source worksheet cells are loaded through the internal event reader into
     /// a sparse CellStore; this does not build a full worksheet matrix. The

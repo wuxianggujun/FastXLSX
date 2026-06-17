@@ -913,6 +913,10 @@ editor.save_as("output.xlsx");
 move-assign owning `WorkbookEditor` 后，旧 handle 的 session access 会失败；调用方
 必须从 moved-to / assigned-to editor 重新获取 handle。当前实现用 owner generation
 guard 防止旧 target-side handle 在 move assignment 后误连到同名新 session。
+`WorkbookEditor::save_as()` 不属于 handle invalidation 边界：成功或失败的
+`save_as()` 都不会删除或失效同一个 owner 下已有的 `WorksheetEditor` handle。
+成功 `save_as()` 只把 dirty materialized session auto-flush 到 Patch plan 并清 dirty
+flag；同一 handle 仍可继续读取、再次 mutation，并在下一次 `save_as()` reflush。
 `WorkbookEditor::pending_materialized_worksheet_names()` 是 workbook-level
 dirty materialized-session 诊断，只返回等待 `save_as()` auto-flush 的 planned
 sheet names；它不触发 flush、不增加 pending Patch handoff count，也不暴露

@@ -326,8 +326,10 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   undo 或自动清空 pending state。成功 `save_as()` 也不会消费 queued public edit
   diagnostics，调用方可把同一 planned state 另存到第二个输出路径。`save_as()` 会先做
   output path guard preflight，再把 dirty `WorksheetEditor` sessions flush 到 Patch plan；
-  path guard 失败不清 dirty state。flush 成功后 dirty session 会变 clean，后续 mutation
-  可再次 dirty 并由下一次 `save_as()` reflush。输出路径被拒绝或写出失败时，不清空
+  path guard 失败不清 dirty state。flush 成功后 dirty session 会变 clean，但同一
+  owner 下已有的 `WorksheetEditor` borrowed handle 不会被删除或失效；后续 mutation
+  可通过同一 handle 再次 dirty，并由下一次 `save_as()` reflush。只有 owner move /
+  move assignment 会使旧 handle 失效并要求 caller reacquire。输出路径被拒绝或写出失败时，不清空
   queued replacement / rename，不改变 `worksheet_catalog()` / `pending_worksheet_edits()`，
   也不创建或覆盖 `last_edit_error()`。
 
@@ -438,6 +440,11 @@ Current F2 gate audit:
   after successful `save_as()` auto-flush, survive failed `save_as()`, and do
   not flush, increment `pending_change_count()`, expose `EditPlan`, or update
   `last_edit_error()`.
+- P8.388 pins public borrowed-handle lifetime around `save_as()`: successful or
+  failed `WorkbookEditor::save_as()` does not invalidate an existing
+  `WorksheetEditor` handle while the owning `WorkbookEditor` object is unchanged.
+  The same handle can be reused for post-save small-file edits and later
+  reflushes; owner move / move assignment remains the invalidation boundary.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being

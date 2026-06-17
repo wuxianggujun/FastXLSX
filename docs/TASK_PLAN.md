@@ -2136,7 +2136,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `materialized_dirty`, materialized sparse cell count, and materialized
       memory estimate fields, still without flushing, changing
       `pending_change_count()`, exposing `EditPlan`, or widening random editing
-      semantics.
+      semantics; P8.387 adds workbook-level dirty materialized aggregate
+      diagnostics; P8.388 pins that `WorkbookEditor::save_as()` does not
+      invalidate same-owner `WorksheetEditor` borrowed handles, while owner
+      move / move assignment remains the reacquire boundary.
    - Keep limits explicit: this path can hold a workbook or worksheet model in
      memory and is not the large-file low-memory path. `WorksheetEditorOptions`
      are per-materialization guardrails; current `WorkbookEditorOptions`

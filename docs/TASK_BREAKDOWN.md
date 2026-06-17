@@ -134,7 +134,10 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   Patch-count semantics. P8.387 adds workbook-level aggregate dirty
   materialized cell count and memory-estimate diagnostics without forcing flush,
   changing Patch-count semantics, exposing internal Patch state, or including
-  queued whole-`<sheetData>` replacement payloads.
+  queued whole-`<sheetData>` replacement payloads. P8.388 pins public borrowed
+  handle lifetime around `save_as()`: successful or failed `WorkbookEditor::save_as()`
+  does not delete or invalidate same-owner `WorksheetEditor` handles; owner move
+  / move assignment remains the invalidation boundary.
   This still does not add non-default `StyleId` support, sharedStrings/style
   migration, semantic metadata sync, relationship repair, or large-file
   low-memory random editing.
@@ -18715,6 +18718,46 @@ Acceptance:
 - Public docs state that aggregate inspection does not flush, increment
   `pending_change_count()`, expose internal Patch state, include replacement
   payloads, or update `last_edit_error()`.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.388 - Pin WorksheetEditor handle lifetime across save_as
+
+Status: done.
+
+Type: public behavior regression, Doxygen/docs clarification, and task-doc sync;
+no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: answer whether old `WorksheetEditor` handles should be deleted after
+`WorkbookEditor::save_as()` and pin the safer public contract: they are
+same-owner borrowed handles, not detachable worksheet owners, and `save_as()` is
+not a handle invalidation boundary.
+
+Output:
+- Added public regression coverage proving a same-owner `WorksheetEditor` handle
+  remains valid after failed output-path preflight and after successful
+  `save_as()`.
+- The same handle can read the materialized sparse store after save, become dirty
+  again after a post-save mutation, and reflush on a later `save_as()`.
+- A later output file receives the post-save edit while the earlier output file
+  remains unchanged.
+- Public docs now state that owner move construction / move assignment remains
+  the invalidation boundary; callers only need to reacquire handles after owner
+  transfer, not after ordinary `save_as()`.
+
+Non-goals / boundary:
+- No explicit handle close/delete API, no detached worksheet owner, no commit /
+  transaction model, no automatic session pruning, no public `EditPlan`, and no
+  large-file low-memory random editing.
+- This does not change queued public edit diagnostics, replacement diagnostics,
+  or the existing reusable-output `save_as()` contract.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public docs clearly answer that old handles should not be deleted after
+  `save_as()`; they stay valid while the owner is unchanged.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

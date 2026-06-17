@@ -526,6 +526,33 @@ public:
     /// last_edit_error(). It returns an empty vector for a moved-from editor.
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const;
 
+    /// Returns the total active sparse cell records in dirty materialized
+    /// WorksheetEditor sessions waiting for save_as() auto-flush.
+    ///
+    /// API mode: In-memory / existing-workbook small-file diagnostics. This is
+    /// a workbook-level aggregate over dirty materialized sessions only. Clean
+    /// materialized sessions and queued whole-<sheetData> replacements are not
+    /// counted. The value includes explicit blank records, matches the sum of
+    /// the dirty sessions' WorksheetEditor::cell_count() values, and returns 0
+    /// for a moved-from editor. This method does not flush, increment
+    /// pending_change_count(), expose internal EditPlan state, or update
+    /// last_edit_error().
+    [[nodiscard]] std::size_t pending_materialized_cell_count() const noexcept;
+
+    /// Returns the total CellStore memory estimate for dirty materialized
+    /// WorksheetEditor sessions waiting for save_as() auto-flush.
+    ///
+    /// The estimate matches the sum of dirty sessions'
+    /// WorksheetEditor::estimated_memory_usage() values. It is not process RSS
+    /// and excludes source package bytes, generated XML chunks, PackageEditor
+    /// staging files, ZIP writer buffers, and save-time package assembly costs.
+    /// Clean materialized sessions and queued whole-<sheetData> replacements
+    /// are not counted. This method does not flush, increment
+    /// pending_change_count(), expose internal EditPlan state, or update
+    /// last_edit_error().
+    [[nodiscard]] std::size_t estimated_pending_materialized_memory_usage()
+        const noexcept;
+
     /// Returns whether the current planned worksheet name has a queued
     /// replace_sheet_data() payload.
     ///

@@ -125,6 +125,8 @@ the large-worksheet low-memory line.
   - `WorkbookEditor::pending_replacement_cell_count()`
   - `WorkbookEditor::pending_replacement_worksheet_names()`
   - `WorkbookEditor::pending_materialized_worksheet_names()`
+  - `WorkbookEditor::pending_materialized_cell_count()`
+  - `WorkbookEditor::estimated_pending_materialized_memory_usage()`
   - `WorkbookEditor::has_pending_replacement()`
   - `WorkbookEditor::estimated_pending_replacement_memory_usage()`
   - `WorkbookEditor::last_edit_error()`
@@ -1779,6 +1781,16 @@ still has a queued rename or whole-`<sheetData>` replacement. This remains a
 diagnostic surface only: it does not trigger flush, increment
 `pending_change_count()`, expose `EditPlan`, or add sharedStrings/styles
 migration, relationship repair, or large-file random editing.
+
+P8.387 adds `WorkbookEditor::pending_materialized_cell_count()` and
+`WorkbookEditor::estimated_pending_materialized_memory_usage()` as workbook-level
+aggregate diagnostics over dirty materialized `WorksheetEditor` sessions. They
+sum the dirty sessions' active sparse cell records and `CellStore` memory
+estimates, omit clean materialized sessions and queued whole-`<sheetData>`
+replacement payloads, preserve dirty aggregate state across failed `save_as()`,
+and clear after successful `save_as()` auto-flush. They do not flush, increment
+`pending_change_count()`, expose `EditPlan`, update `last_edit_error()`, or
+change whole-sheet replacement diagnostics.
 
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.

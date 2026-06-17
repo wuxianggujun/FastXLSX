@@ -233,6 +233,15 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   names；clean materialized sessions 不返回，successful `save_as()` auto-flush 后清空。
   它不触发 flush、不增加 `pending_change_count()`、不包含 whole-`<sheetData>`
   replacement payloads、不暴露 internal `EditPlan`，也不更新 `last_edit_error()`。
+- `pending_materialized_cell_count()` /
+  `estimated_pending_materialized_memory_usage()`：同样只聚合 dirty materialized
+  `WorksheetEditor` sessions。前者返回 active sparse cell record 总数，包含
+  explicit blank records；后者返回 dirty sessions 的 `CellStore` memory estimate
+  总和，不是进程 RSS，也不包含 source package bytes、generated XML chunks、
+  `PackageEditor` staging files、ZIP writer buffers 或 save-time package assembly
+  costs。clean materialized sessions 和 queued whole-`<sheetData>` replacements 不计入。
+  这两个方法不触发 flush、不增加 `pending_change_count()`、不暴露 internal
+  `EditPlan`，也不更新 `last_edit_error()`。
 - `last_edit_error()`：返回最近一次失败的 public edit（当前包括
   `replace_sheet_data()`、`rename_sheet()` 和 `WorksheetEditor::set_cell()` /
   `erase_cell()` mutation failure）的可读诊断；成功 public edit 会清空它，
@@ -422,6 +431,13 @@ Current F2 gate audit:
   sparse cell count, and materialized memory estimate for dirty
   `WorksheetEditor` sessions, while preserving source catalog order and the
   existing Patch-count semantics.
+- P8.387 adds `WorkbookEditor::pending_materialized_cell_count()` and
+  `WorkbookEditor::estimated_pending_materialized_memory_usage()` as
+  workbook-level aggregate diagnostics over dirty materialized sessions only.
+  They omit clean sessions and whole-`<sheetData>` replacement payloads, clear
+  after successful `save_as()` auto-flush, survive failed `save_as()`, and do
+  not flush, increment `pending_change_count()`, expose `EditPlan`, or update
+  `last_edit_error()`.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being

@@ -274,6 +274,28 @@ public:
         return count;
     }
 
+    [[nodiscard]] std::size_t dirty_cell_count() const noexcept
+    {
+        std::size_t count = 0;
+        for (const auto& [_, session] : sessions_) {
+            if (session.dirty()) {
+                count += session.cell_count();
+            }
+        }
+        return count;
+    }
+
+    [[nodiscard]] std::size_t estimated_dirty_memory_usage() const noexcept
+    {
+        std::size_t total = 0;
+        for (const auto& [_, session] : sessions_) {
+            if (session.dirty()) {
+                total += session.estimated_memory_usage();
+            }
+        }
+        return total;
+    }
+
     [[nodiscard]] std::vector<std::string_view> dirty_session_names() const
     {
         std::vector<std::string_view> names;

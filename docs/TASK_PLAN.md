@@ -157,6 +157,8 @@ own `fastxlsx.package_editor.c5` shard to keep the 60s CTest boundary stable.
   `WorkbookEditor::pending_replacement_cell_count()`,
   `WorkbookEditor::pending_replacement_worksheet_names()`,
   `WorkbookEditor::pending_materialized_worksheet_names()`,
+  `WorkbookEditor::pending_materialized_cell_count()`,
+  `WorkbookEditor::estimated_pending_materialized_memory_usage()`,
   `WorkbookEditor::has_pending_replacement()`,
   `WorkbookEditor::estimated_pending_replacement_memory_usage()`,
   `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`,

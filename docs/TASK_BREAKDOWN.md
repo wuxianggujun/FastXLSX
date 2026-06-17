@@ -131,7 +131,10 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   dirty materialized sessions into `WorkbookEditor::pending_worksheet_edits()`
   via `materialized_dirty`, materialized sparse cell count, and materialized
   memory estimate fields, while preserving source-order summaries and existing
-  Patch-count semantics.
+  Patch-count semantics. P8.387 adds workbook-level aggregate dirty
+  materialized cell count and memory-estimate diagnostics without forcing flush,
+  changing Patch-count semantics, exposing internal Patch state, or including
+  queued whole-`<sheetData>` replacement payloads.
   This still does not add non-default `StyleId` support, sharedStrings/style
   migration, semantic metadata sync, relationship repair, or large-file
   low-memory random editing.
@@ -18667,6 +18670,51 @@ Acceptance:
 - Public docs state that summary inspection does not flush, increment
   `pending_change_count()`, expose internal Patch state, or update
   `last_edit_error()`.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.387 - Add workbook-level dirty materialized aggregate diagnostics
+
+Status: done.
+
+Type: public API diagnostic refinement, Doxygen update, public regression tests,
+and task-doc sync; no CMake membership change and no package format expansion.
+
+Goal: let callers inspect aggregate dirty materialized `WorksheetEditor` sparse
+cell count and memory estimate at workbook level without retaining every
+borrowed worksheet handle or joining per-sheet summaries.
+
+Output:
+- Added `WorkbookEditor::pending_materialized_cell_count()` and
+  `WorkbookEditor::estimated_pending_materialized_memory_usage()`.
+- The aggregate includes only dirty materialized sessions waiting for
+  `WorkbookEditor::save_as()` auto-flush. Clean materialized sessions and queued
+  whole-`<sheetData>` replacement payloads are omitted.
+- Cell count aggregation matches the sum of dirty sessions'
+  `WorksheetEditor::cell_count()` values and includes explicit blank records.
+  Memory aggregation matches the sum of dirty sessions'
+  `WorksheetEditor::estimated_memory_usage()` values; it is not process RSS and
+  excludes source package bytes, generated XML chunks, `PackageEditor` staging
+  files, ZIP writer buffers, and save-time package assembly costs.
+- Public regressions cover clean-session omission, failed mutation hygiene,
+  single- and multi-session aggregation, replacement-only exclusion, failed
+  `save_as()` preservation, successful `save_as()` clearing, moved-from
+  emptiness, and move construction / move assignment state transfer.
+
+Non-goals / boundary:
+- No explicit flush/commit API, dense snapshot, public `EditPlan`, dependency
+  audit exposure, sharedStrings/style migration, relationship repair,
+  transaction model, or large-file low-memory random editing.
+- This does not change `pending_change_count()` semantics and does not report
+  materialized auto-flush handoffs as whole-`<sheetData>` replacement
+  diagnostics.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public docs state that aggregate inspection does not flush, increment
+  `pending_change_count()`, expose internal Patch state, include replacement
+  payloads, or update `last_edit_error()`.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

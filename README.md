@@ -194,6 +194,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `pending_change_count()`、
   `pending_replacement_cell_count()`、`pending_replacement_worksheet_names()`、
   `pending_materialized_worksheet_names()`、
+  `pending_materialized_cell_count()`、
+  `estimated_pending_materialized_memory_usage()`、
   `has_pending_replacement()`、`estimated_pending_replacement_memory_usage()`、
   `last_edit_error()`、
   `WorkbookEditorWorksheetCatalogEntry`、`worksheet_catalog()`、
@@ -352,6 +354,9 @@ const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
 const bool sheet_dirty = sheet.has_pending_changes();
 const auto dirty_materialized_sheets = editor.pending_materialized_worksheet_names();
+const auto dirty_materialized_cells = editor.pending_materialized_cell_count();
+const auto dirty_materialized_memory =
+    editor.estimated_pending_materialized_memory_usage();
 const auto pending_summaries = editor.pending_worksheet_edits();
 
 editor.save_as("edited.xlsx");
@@ -371,6 +376,11 @@ materialized session 是否 dirty；它不触发 flush、不增加
 `WorkbookEditor::pending_materialized_worksheet_names()` 返回当前 dirty
 materialized sessions 的 planned sheet names，按 planned catalog order 排列；
 它同样不触发 flush、不增加 pending change count，也不更新
+`last_edit_error()`。`WorkbookEditor::pending_materialized_cell_count()` 和
+`estimated_pending_materialized_memory_usage()` 是同一 dirty materialized session
+集合的 workbook-level 聚合诊断：只统计 dirty sessions，不统计 clean
+materialized sessions 或 queued whole-`<sheetData>` replacement payloads，不触发
+flush、不增加 `pending_change_count()`、不暴露 internal `EditPlan`，也不更新
 `last_edit_error()`。`WorkbookEditor::pending_worksheet_edits()` 也会把 dirty
 materialized sessions 合并进同一组 source-order summary，设置
 `materialized_dirty`、`materialized_cell_count` 和

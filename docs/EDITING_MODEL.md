@@ -902,6 +902,8 @@ auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
 auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 auto has_sheet_edits = sheet.has_pending_changes(); // dirty-state inspection only
 auto dirty_sheets = editor.pending_materialized_worksheet_names(); // no flush
+auto dirty_cells = editor.pending_materialized_cell_count(); // no flush
+auto dirty_memory = editor.estimated_pending_materialized_memory_usage(); // no flush
 auto pending_summaries = editor.pending_worksheet_edits(); // includes dirty materialized sessions
 editor.set_document_properties(properties); // future
 editor.save_as("output.xlsx");
@@ -914,7 +916,12 @@ guard 防止旧 target-side handle 在 move assignment 后误连到同名新 ses
 `WorkbookEditor::pending_materialized_worksheet_names()` 是 workbook-level
 dirty materialized-session 诊断，只返回等待 `save_as()` auto-flush 的 planned
 sheet names；它不触发 flush、不增加 pending Patch handoff count，也不暴露
-`EditPlan`。`WorkbookEditor::pending_worksheet_edits()` 会把 dirty materialized
+`EditPlan`。`WorkbookEditor::pending_materialized_cell_count()` 和
+`estimated_pending_materialized_memory_usage()` 是同一 dirty materialized session
+集合的 workbook-level aggregate 诊断，只统计 dirty sparse stores，不统计 clean
+materialized sessions 或 queued whole-`<sheetData>` replacement payloads；它们同样
+不触发 flush、不增加 pending Patch handoff count、不暴露 `EditPlan`，也不是
+replacement payload 诊断。`WorkbookEditor::pending_worksheet_edits()` 会把 dirty materialized
 sessions 合并进 source-order worksheet summary，暴露 `materialized_dirty`、
 materialized cell count 和 materialized memory estimate；这仍只是 public diagnostic，
 不是 `EditPlan`、package diff、sharedStrings/styles migration 或 relationship repair。

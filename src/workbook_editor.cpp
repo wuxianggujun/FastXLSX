@@ -355,6 +355,16 @@ struct WorkbookEditor::Impl {
         return names;
     }
 
+    [[nodiscard]] std::size_t pending_materialized_cell_count() const noexcept
+    {
+        return materialized_sessions.dirty_cell_count();
+    }
+
+    [[nodiscard]] std::size_t estimated_pending_materialized_memory_usage() const noexcept
+    {
+        return materialized_sessions.estimated_dirty_memory_usage();
+    }
+
     [[nodiscard]] std::vector<WorkbookEditorWorksheetEditSummary> pending_worksheet_edits()
         const
     {
@@ -543,6 +553,16 @@ std::vector<std::string> WorkbookEditor::pending_materialized_worksheet_names() 
         return {};
     }
     return impl_->pending_materialized_worksheet_names();
+}
+
+std::size_t WorkbookEditor::pending_materialized_cell_count() const noexcept
+{
+    return impl_ == nullptr ? 0 : impl_->pending_materialized_cell_count();
+}
+
+std::size_t WorkbookEditor::estimated_pending_materialized_memory_usage() const noexcept
+{
+    return impl_ == nullptr ? 0 : impl_->estimated_pending_materialized_memory_usage();
 }
 
 bool WorkbookEditor::has_pending_replacement(std::string_view sheet_name) const noexcept

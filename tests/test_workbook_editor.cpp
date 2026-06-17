@@ -108,6 +108,14 @@ void check_public_inspection_preserves_last_edit_error(
     check(editor.last_edit_error() == expected,
         "pending_materialized_worksheet_names should not update last_edit_error");
 
+    (void)editor.pending_materialized_cell_count();
+    check(editor.last_edit_error() == expected,
+        "pending_materialized_cell_count should not update last_edit_error");
+
+    (void)editor.estimated_pending_materialized_memory_usage();
+    check(editor.last_edit_error() == expected,
+        "estimated_pending_materialized_memory_usage should not update last_edit_error");
+
     (void)editor.has_pending_replacement("Data");
     check(editor.last_edit_error() == expected,
         "has_pending_replacement should not update last_edit_error");
@@ -1870,6 +1878,127 @@ void test_public_workbook_editor_pending_materialized_names_move_with_owner()
         "move-assigned editor should save assigned dirty materialized payload");
     check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-target-dirty",
         "move assignment should not leak discarded target dirty materialized payload");
+}
+
+void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean materialized sessions should not contribute to pending materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialized sessions should not contribute to pending materialized memory");
+
+    check(threw_fastxlsx_error([&] {
+        data.set_cell("a1", fastxlsx::CellValue::text("invalid-reference"));
+    }), "failed mutation should throw before materialized aggregate diagnostics change");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed mutation should not add pending materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed mutation should not add pending materialized memory");
+    check(editor.last_edit_error() == prior_error,
+        "materialized aggregate diagnostics should not update last_edit_error");
+
+    const std::size_t data_clean_memory = data.estimated_memory_usage();
+    data.set_cell(1, 1, fastxlsx::CellValue::text("aggregate-dirty-data"));
+    data.set_cell(3, 3, fastxlsx::CellValue::blank());
+    check(data.cell_count() == 4,
+        "dirty data worksheet should include source cells plus explicit blank record");
+    check(editor.pending_materialized_cell_count() == data.cell_count(),
+        "one dirty materialized session should contribute its sparse cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == data.estimated_memory_usage(),
+        "one dirty materialized session should contribute its memory estimate");
+    check(editor.estimated_pending_materialized_memory_usage() >= data_clean_memory,
+        "dirty materialized memory estimate should stay non-zero after mutation");
+    check(editor.pending_change_count() == 0,
+        "materialized aggregate diagnostics should not increment Patch handoff count");
+
+    untouched.set_cell(1, 2, fastxlsx::CellValue::text("aggregate-dirty-untouched"));
+    const std::size_t expected_dirty_cells = data.cell_count() + untouched.cell_count();
+    const std::size_t expected_dirty_memory =
+        data.estimated_memory_usage() + untouched.estimated_memory_usage();
+    check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+        "two dirty materialized sessions should aggregate sparse cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_dirty_memory,
+        "two dirty materialized sessions should aggregate memory estimates");
+
+    const std::filesystem::path replacement_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-replacement-source.xlsx");
+    fastxlsx::WorkbookEditor replacement_editor =
+        fastxlsx::WorkbookEditor::open(replacement_source);
+    replacement_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("ignored")}});
+    check(replacement_editor.pending_replacement_cell_count() == 1,
+        "replacement-only editor should expose queued replacement diagnostics");
+    check(replacement_editor.pending_materialized_cell_count() == 0,
+        "queued replacement diagnostics should not contribute materialized cells");
+    check(replacement_editor.estimated_pending_materialized_memory_usage() == 0,
+        "queued replacement diagnostics should not contribute materialized memory");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "failed save_as should preserve dirty materialized aggregate diagnostics");
+    check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+        "failed save_as should preserve materialized cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_dirty_memory,
+        "failed save_as should preserve materialized memory aggregate");
+
+    editor.save_as(output);
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful save_as should clear dirty materialized cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful save_as should clear dirty materialized memory aggregate");
+    check(editor.pending_replacement_cell_count() == 0,
+        "materialized auto-flush should not be reported as whole-sheetData replacements");
+    check(editor.pending_change_count() == 2,
+        "successful save_as should count both materialized Patch handoffs");
+}
+
+void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-move-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-move-target.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
+    source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-aggregate-dirty"));
+    const std::size_t moved_cells = editor.pending_materialized_cell_count();
+    const std::size_t moved_memory = editor.estimated_pending_materialized_memory_usage();
+    check(moved_cells == source_sheet.cell_count() && moved_memory > 0,
+        "source editor should expose aggregate diagnostics before move");
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(editor.pending_materialized_cell_count() == 0,
+        "moved-from editor should expose zero pending materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "moved-from editor should expose zero pending materialized memory");
+    check(moved.pending_materialized_cell_count() == moved_cells,
+        "move construction should preserve materialized cell aggregate");
+    check(moved.estimated_pending_materialized_memory_usage() == moved_memory,
+        "move construction should preserve materialized memory aggregate");
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_sheet = target.worksheet("Untouched");
+    target_sheet.set_cell(1, 1, fastxlsx::CellValue::text("discarded-aggregate-dirty"));
+    check(target.pending_materialized_cell_count() == target_sheet.cell_count(),
+        "target should start with its own materialized aggregate");
+
+    target = std::move(moved);
+    check(moved.pending_materialized_cell_count() == 0,
+        "move-assigned-from editor should expose zero pending materialized cells");
+    check(moved.estimated_pending_materialized_memory_usage() == 0,
+        "move-assigned-from editor should expose zero pending materialized memory");
+    check(target.pending_materialized_cell_count() == moved_cells,
+        "move assignment should replace target materialized cell aggregate");
+    check(target.estimated_pending_materialized_memory_usage() == moved_memory,
+        "move assignment should replace target materialized memory aggregate");
 }
 
 void test_public_workbook_editor_pending_summaries_include_materialized_dirty_state()
@@ -5419,6 +5548,8 @@ int main()
         test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
         test_public_workbook_editor_pending_materialized_names_track_dirty_state();
         test_public_workbook_editor_pending_materialized_names_move_with_owner();
+        test_public_workbook_editor_pending_materialized_aggregate_diagnostics();
+        test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner();
         test_public_workbook_editor_pending_summaries_include_materialized_dirty_state();
         test_public_workbook_editor_pending_materialized_summaries_move_with_owner();
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();

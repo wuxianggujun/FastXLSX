@@ -367,10 +367,14 @@ struct WorkbookEditor::Impl {
                 ? sheet.name
                 : planned_name->second;
             const auto pending_payload = pending_sheet_data_payloads.find(current_name);
+            const detail::MaterializedWorksheetSession* materialized_session =
+                materialized_sessions.try_session(current_name);
             const bool renamed = current_name != sheet.name;
             const bool sheet_data_replaced =
                 pending_payload != pending_sheet_data_payloads.end();
-            if (!renamed && !sheet_data_replaced) {
+            const bool materialized_dirty =
+                materialized_session != nullptr && materialized_session->dirty();
+            if (!renamed && !sheet_data_replaced && !materialized_dirty) {
                 continue;
             }
 
@@ -379,10 +383,16 @@ struct WorkbookEditor::Impl {
             summary.planned_name = current_name;
             summary.renamed = renamed;
             summary.sheet_data_replaced = sheet_data_replaced;
+            summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {
                 summary.replacement_cell_count = pending_payload->second.cell_count;
                 summary.estimated_replacement_memory_usage =
                     pending_payload->second.estimated_memory_usage;
+            }
+            if (materialized_dirty) {
+                summary.materialized_cell_count = materialized_session->cell_count();
+                summary.estimated_materialized_memory_usage =
+                    materialized_session->estimated_memory_usage();
             }
             summaries.push_back(std::move(summary));
         }

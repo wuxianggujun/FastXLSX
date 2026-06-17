@@ -1768,6 +1768,18 @@ auto-flush, and does not itself flush, increment `pending_change_count()`,
 expose internal Patch state, include whole-`<sheetData>` replacements, or update
 `last_edit_error()`.
 
+P8.386 extends `WorkbookEditorWorksheetEditSummary` and
+`WorkbookEditor::pending_worksheet_edits()` so the same source-order summary can
+also report dirty materialized `WorksheetEditor` sessions. The new summary
+fields are `materialized_dirty`, `materialized_cell_count`, and
+`estimated_materialized_memory_usage`. Clean materialized sessions remain
+omitted, failed `save_as()` preserves the dirty materialized summary, and
+successful `save_as()` removes it after auto-flush unless the same worksheet
+still has a queued rename or whole-`<sheetData>` replacement. This remains a
+diagnostic surface only: it does not trigger flush, increment
+`pending_change_count()`, expose `EditPlan`, or add sharedStrings/styles
+migration, relationship repair, or large-file random editing.
+
 The detailed sections below keep their historical labels for traceability. Use
 the authoritative execution order above for actual next-task selection.
 

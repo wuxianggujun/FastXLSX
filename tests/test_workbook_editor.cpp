@@ -1872,6 +1872,155 @@ void test_public_workbook_editor_pending_materialized_names_move_with_owner()
         "move assignment should not leak discarded target dirty materialized payload");
 }
 
+void test_public_workbook_editor_pending_summaries_include_materialized_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    check(editor.pending_worksheet_edits().empty(),
+        "clean materialized session should not create pending worksheet summaries");
+
+    const std::optional<std::string> no_error_before_dirty = editor.last_edit_error();
+    data.set_cell(1, 1, fastxlsx::CellValue::text("summary-dirty-data"));
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "one dirty materialized session should create one worksheet summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data",
+                "materialized summary should report the source sheet name");
+            check(summary.planned_name == "Data",
+                "materialized summary should report the current planned sheet name");
+            check(!summary.renamed,
+                "materialized-only summary should not be marked as renamed");
+            check(!summary.sheet_data_replaced,
+                "materialized-only summary should not report sheetData replacement");
+            check(summary.materialized_dirty,
+                "materialized-only summary should report dirty materialized state");
+            check(summary.replacement_cell_count == 0,
+                "materialized-only summary should report zero replacement cells");
+            check(summary.estimated_replacement_memory_usage == 0,
+                "materialized-only summary should report zero replacement memory");
+            check(summary.materialized_cell_count == 3,
+                "materialized summary should report active sparse materialized cells");
+            check(summary.estimated_materialized_memory_usage > 0,
+                "materialized summary should report materialized memory estimate");
+        }
+    }
+    check(editor.pending_change_count() == 0,
+        "dirty materialized summaries should not increment pending_change_count before save");
+    check(editor.last_edit_error() == no_error_before_dirty,
+        "pending materialized summary inspection should not update last_edit_error");
+
+    editor.replace_sheet_data("Untouched", {{fastxlsx::CellValue::text("replacement")}});
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "dirty materialized and cross-sheet replacement summaries should coexist");
+        if (summaries.size() == 2) {
+            check(summaries[0].source_name == "Data" && summaries[0].materialized_dirty,
+                "dirty materialized summary should stay in source order");
+            check(!summaries[0].sheet_data_replaced,
+                "dirty materialized summary should not be marked as replacement");
+            check(summaries[1].source_name == "Untouched" &&
+                    summaries[1].sheet_data_replaced,
+                "cross-sheet replacement summary should follow in source order");
+            check(!summaries[1].materialized_dirty,
+                "replacement-only summary should not be marked materialized dirty");
+            check(summaries[1].materialized_cell_count == 0,
+                "replacement-only summary should report zero materialized cell count");
+            check(summaries[1].estimated_materialized_memory_usage == 0,
+                "replacement-only summary should report zero materialized memory");
+        }
+    }
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "failed save_as should preserve dirty materialized summaries");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "failed save_as should preserve materialized and replacement summary count");
+        if (summaries.size() == 2) {
+            check(summaries[0].materialized_dirty,
+                "failed save_as should preserve materialized dirty flag");
+            check(summaries[1].sheet_data_replaced,
+                "failed save_as should preserve replacement summary flag");
+        }
+    }
+
+    editor.save_as(output);
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "successful save_as should remove dirty materialized summary after auto-flush");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Untouched",
+                "remaining summary should be the queued cross-sheet replacement");
+            check(summaries[0].sheet_data_replaced,
+                "remaining summary should preserve replacement flag");
+            check(!summaries[0].materialized_dirty,
+                "successful save_as should clear materialized dirty flag from summaries");
+        }
+    }
+}
+
+void test_public_workbook_editor_pending_materialized_summaries_move_with_owner()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-target.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
+    source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-summary-dirty"));
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(editor.pending_worksheet_edits().empty(),
+        "moved-from editor should expose no pending materialized summaries");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            moved.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].planned_name == "Data",
+            "move construction should preserve materialized dirty summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].materialized_dirty,
+                "move construction should preserve materialized dirty flag");
+            check(summaries[0].materialized_cell_count == 3,
+                "move construction should preserve materialized cell count");
+        }
+    }
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_sheet = target.worksheet("Untouched");
+    target_sheet.set_cell(1, 1, fastxlsx::CellValue::text("discarded-summary-dirty"));
+
+    target = std::move(moved);
+    check(moved.pending_worksheet_edits().empty(),
+        "move-assigned-from editor should expose no pending materialized summaries");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            target.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].planned_name == "Data",
+            "move assignment should replace target materialized summaries");
+        if (summaries.size() == 1) {
+            check(summaries[0].materialized_dirty,
+                "move assignment should preserve assigned materialized dirty flag");
+            check(summaries[0].materialized_cell_count == 3,
+                "move assignment should discard old target materialized summary");
+        }
+    }
+}
+
 void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
 {
     const std::filesystem::path source =
@@ -5270,6 +5419,8 @@ int main()
         test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
         test_public_workbook_editor_pending_materialized_names_track_dirty_state();
         test_public_workbook_editor_pending_materialized_names_move_with_owner();
+        test_public_workbook_editor_pending_summaries_include_materialized_dirty_state();
+        test_public_workbook_editor_pending_materialized_summaries_move_with_owner();
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();

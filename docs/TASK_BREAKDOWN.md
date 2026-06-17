@@ -51,9 +51,11 @@ F1 public edit diagnostics 窄扩展：
 - 目标：让调用方在 `save_as()` 前能解释当前 queued public edits 的粗粒度状态。
 - 首片已落地：`WorkbookEditorWorksheetEditSummary` 和
   `WorkbookEditor::pending_worksheet_edits()`，按 source workbook sheet-catalog order
-  汇总 queued public worksheet-level edits，只包含 source name、planned name、
-  rename flag、whole-`<sheetData>` replacement flag、final queued replacement cell count
-  和 replacement memory estimate。
+  汇总 queued public worksheet-level edits 和 dirty materialized `WorksheetEditor`
+  sessions，包含 source name、planned name、rename flag、whole-`<sheetData>`
+  replacement flag、final queued replacement cell count / memory estimate，以及
+  `materialized_dirty`、materialized sparse cell count 和 materialized memory
+  estimate；inspection 不触发 flush、不改变 `pending_change_count()`。
 - 第二片已落地：`WorkbookEditorWorksheetCatalogEntry` 和
   `WorkbookEditor::worksheet_catalog()`，按 source workbook sheet-catalog order 暴露
   source name 到 current planned name 的 public facade 映射，并标记 rename flag。
@@ -125,7 +127,11 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   invalidated and must be reacquired from the moved-to / assigned-to editor.
   P8.385 adds `WorkbookEditor::pending_materialized_worksheet_names()` so
   callers can inspect dirty materialized sessions by planned sheet name without
-  forcing a `save_as()` flush or exposing internal Patch state.
+  forcing a `save_as()` flush or exposing internal Patch state. P8.386 folds
+  dirty materialized sessions into `WorkbookEditor::pending_worksheet_edits()`
+  via `materialized_dirty`, materialized sparse cell count, and materialized
+  memory estimate fields, while preserving source-order summaries and existing
+  Patch-count semantics.
   This still does not add non-default `StyleId` support, sharedStrings/style
   migration, semantic metadata sync, relationship repair, or large-file
   low-memory random editing.
@@ -18615,6 +18621,52 @@ Acceptance:
 - Public docs state that the method does not flush, increment
   `pending_change_count()`, expose internal Patch state, include replacement
   payloads, or update `last_edit_error()`.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.386 - Include dirty materialized sessions in pending worksheet summaries
+
+Status: done.
+
+Type: public API diagnostic refinement, Doxygen update, public regression tests,
+and task-doc sync; no CMake membership change and no package format expansion.
+
+Goal: let `WorkbookEditor::pending_worksheet_edits()` be the single coarse
+worksheet-level summary surface for queued Patch edits and dirty materialized
+`WorksheetEditor` sessions, without forcing callers to separately join
+`pending_materialized_worksheet_names()`.
+
+Output:
+- Extended `WorkbookEditorWorksheetEditSummary` with `materialized_dirty`,
+  `materialized_cell_count`, and `estimated_materialized_memory_usage`.
+- `pending_worksheet_edits()` now includes dirty materialized sessions in source
+  workbook sheet-catalog order, alongside queued rename / whole-`<sheetData>`
+  replacements.
+- Clean materialized sessions are omitted; replacement-only summaries are not
+  marked materialized dirty; dirty materialized summaries coexist with
+  cross-sheet replacements.
+- Failed `save_as()` preserves dirty materialized summaries; successful
+  `save_as()` clears dirty materialized summary state after auto-flush unless
+  the same worksheet still has a queued rename or replacement.
+- Public regressions cover clean session omission, dirty materialized summary
+  fields, cross-sheet replacement coexistence, failed / successful save-as
+  behavior, moved-from emptiness, and move construction / move assignment state
+  transfer.
+
+Non-goals / boundary:
+- No explicit flush/commit API, dense snapshot, public `EditPlan`, dependency
+  audit exposure, sharedStrings/style migration, relationship repair,
+  transaction model, or large-file low-memory random editing.
+- This does not change `pending_change_count()` semantics: dirty materialized
+  sessions are still not counted as Patch handoffs until `save_as()` auto-flush
+  queues their projections.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public docs state that summary inspection does not flush, increment
+  `pending_change_count()`, expose internal Patch state, or update
+  `last_edit_error()`.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
 

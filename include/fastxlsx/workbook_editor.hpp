@@ -98,9 +98,10 @@ struct WorksheetEditorOptions {
 /// Coarse public summary of a worksheet-level edit queued in WorkbookEditor.
 ///
 /// API mode: Patch. This value describes only public facade state that will be
-/// visible through worksheet_names(), pending replacement diagnostics, and
-/// save_as(). It is not an internal EditPlan entry, package part diff,
-/// dependency audit, relationship audit, or semantic workbook diff.
+/// visible through worksheet_names(), pending replacement diagnostics,
+/// materialized WorksheetEditor dirty-state diagnostics, and save_as(). It is
+/// not an internal EditPlan entry, package part diff, dependency audit,
+/// relationship audit, or semantic workbook diff.
 struct WorkbookEditorWorksheetEditSummary {
     /// Worksheet name in the opened source workbook catalog.
     std::string source_name;
@@ -116,6 +117,10 @@ struct WorkbookEditorWorksheetEditSummary {
     /// replacement for this planned worksheet name.
     bool sheet_data_replaced = false;
 
+    /// True when the materialized WorksheetEditor session for this planned
+    /// worksheet name is dirty and waiting for save_as() auto-flush.
+    bool materialized_dirty = false;
+
     /// Explicit replacement cells represented by the final queued
     /// replace_sheet_data() payload for this worksheet. Zero when
     /// sheet_data_replaced is false.
@@ -126,6 +131,16 @@ struct WorkbookEditorWorksheetEditSummary {
     /// generated XML chunks, PackageEditor staging files, ZIP writer buffers,
     /// and save-time package assembly costs.
     std::size_t estimated_replacement_memory_usage = 0;
+
+    /// Active sparse cell records currently held by the dirty materialized
+    /// WorksheetEditor session. Zero when materialized_dirty is false.
+    std::size_t materialized_cell_count = 0;
+
+    /// Estimated sparse-store memory for the dirty materialized WorksheetEditor
+    /// session. This is a CellStore estimate, not process RSS, and excludes
+    /// source package bytes, generated XML chunks, PackageEditor staging files,
+    /// ZIP writer buffers, and save-time package assembly costs.
+    std::size_t estimated_materialized_memory_usage = 0;
 };
 
 /// Public source-to-planned worksheet catalog entry for WorkbookEditor.
@@ -546,17 +561,22 @@ public:
     /// Returns coarse worksheet-level summaries for pending public edits.
     ///
     /// The returned vector follows source workbook sheet-catalog order and only
-    /// includes worksheets with a queued public rename_sheet() and/or
-    /// replace_sheet_data() effect. Each summary reports the source name, current
-    /// planned name, whether the sheet was renamed, and whether a final
-    /// whole-<sheetData> replacement is queued for that planned name. As a
+    /// includes worksheets with a queued public rename_sheet(),
+    /// replace_sheet_data() effect, and/or dirty materialized WorksheetEditor
+    /// session waiting for save_as() auto-flush. Each summary reports the source
+    /// name, current planned name, whether the sheet was renamed, whether a
+    /// final whole-<sheetData> replacement is queued for that planned name, and
+    /// whether a dirty materialized session currently exists. As a
     /// current planned-state view, a rename-only chain that returns a sheet to
     /// its source name is omitted from this vector even though
     /// pending_change_count() still counts the successful public edit calls.
-    /// This is a public facade diagnostic; it does not expose internal EditPlan
-    /// entries, dependency audits, relationship audits, preserved metadata,
-    /// source cell counts, package parts, or save-time output-plan reasons. It
-    /// returns an empty vector for a moved-from editor.
+    /// Dirty materialized sessions are omitted after successful save_as()
+    /// auto-flush unless another queued rename or replacement still applies.
+    /// This method does not itself flush, increment pending_change_count(), or
+    /// update last_edit_error(). This is a public facade diagnostic; it does not
+    /// expose internal EditPlan entries, dependency audits, relationship audits,
+    /// preserved metadata, source cell counts, package parts, or save-time
+    /// output-plan reasons. It returns an empty vector for a moved-from editor.
     [[nodiscard]] std::vector<WorkbookEditorWorksheetEditSummary> pending_worksheet_edits()
         const;
 

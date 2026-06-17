@@ -2129,7 +2129,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `WorkbookEditor::pending_materialized_worksheet_names()` so callers can
       inspect dirty materialized sessions by planned sheet name without
       flushing, incrementing `pending_change_count()`, exposing internal Patch
-      state, or updating `last_edit_error()`.
+      state, or updating `last_edit_error()`; P8.386 folds dirty materialized
+      sessions into `WorkbookEditor::pending_worksheet_edits()` via
+      `materialized_dirty`, materialized sparse cell count, and materialized
+      memory estimate fields, still without flushing, changing
+      `pending_change_count()`, exposing `EditPlan`, or widening random editing
+      semantics.
    - Keep limits explicit: this path can hold a workbook or worksheet model in
      memory and is not the large-file low-memory path. `WorksheetEditorOptions`
      are per-materialization guardrails; current `WorkbookEditorOptions`

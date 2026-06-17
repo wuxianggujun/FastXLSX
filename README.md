@@ -352,6 +352,7 @@ const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
 const bool sheet_dirty = sheet.has_pending_changes();
 const auto dirty_materialized_sheets = editor.pending_materialized_worksheet_names();
+const auto pending_summaries = editor.pending_worksheet_edits();
 
 editor.save_as("edited.xlsx");
 ```
@@ -370,7 +371,12 @@ materialized session 是否 dirty；它不触发 flush、不增加
 `WorkbookEditor::pending_materialized_worksheet_names()` 返回当前 dirty
 materialized sessions 的 planned sheet names，按 planned catalog order 排列；
 它同样不触发 flush、不增加 pending change count，也不更新
-`last_edit_error()`。成功 `save_as()` 自动 flush 后，这个列表会清空。
+`last_edit_error()`。`WorkbookEditor::pending_worksheet_edits()` 也会把 dirty
+materialized sessions 合并进同一组 source-order summary，设置
+`materialized_dirty`、`materialized_cell_count` 和
+`estimated_materialized_memory_usage`；clean materialized sessions 不返回，
+successful `save_as()` 自动 flush 后 dirty materialized summary 会消失，除非同一
+worksheet 仍有 rename / whole-`<sheetData>` replacement summary。
 
 当前仍未完成：
 

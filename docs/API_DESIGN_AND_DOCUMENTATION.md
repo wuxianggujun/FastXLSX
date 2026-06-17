@@ -245,10 +245,15 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   diagnostics、catalog mapping 或 edit summaries。failed `save_as()` 不创建、更新或清空
   该字段；调用方可以修正输出路径后继续使用已 queued 的 public edits。
 - `pending_worksheet_edits()`：返回 `WorkbookEditorWorksheetEditSummary` 列表，按
-  source workbook sheet-catalog order 汇总当前 queued public worksheet-level edits：
-  source name、planned name、是否 catalog rename、是否 whole-`<sheetData>` replacement、
-  final queued replacement cell count 和 replacement memory estimate。它是粗粒度
-  public facade summary，不是 internal `EditPlan`、package part diff、dependency /
+  source workbook sheet-catalog order 汇总当前 queued public worksheet-level edits 和
+  dirty materialized `WorksheetEditor` sessions：source name、planned name、是否
+  catalog rename、是否 whole-`<sheetData>` replacement、final queued replacement cell
+  count / memory estimate，以及 `materialized_dirty`、materialized sparse cell count
+  和 materialized memory estimate。clean materialized sessions 不返回；successful
+  `save_as()` auto-flush 后，dirty materialized summary 会消失，除非同一 worksheet
+  仍有 rename / whole-`<sheetData>` replacement summary。它是粗粒度 public facade
+  summary，不触发 flush、不增加 `pending_change_count()`、不更新
+  `last_edit_error()`，也不是 internal `EditPlan`、package part diff、dependency /
   relationship audit、preserved metadata 列表、source cell count 或 save-time output plan。
 - `worksheet_catalog()`：返回 `WorkbookEditorWorksheetCatalogEntry` 列表，按 source
   workbook sheet-catalog order 展示 source name 到 current planned name 的完整映射，
@@ -411,6 +416,12 @@ Current F2 gate audit:
   auto-flush, and does not itself flush, increment
   `WorkbookEditor::pending_change_count()`, expose internal Patch state, include
   whole-`<sheetData>` replacement payloads, or update `last_edit_error()`.
+- P8.386 extends `WorkbookEditorWorksheetEditSummary` /
+  `WorkbookEditor::pending_worksheet_edits()` with dirty materialized-session
+  diagnostics. Summaries now include `materialized_dirty`, active materialized
+  sparse cell count, and materialized memory estimate for dirty
+  `WorksheetEditor` sessions, while preserving source catalog order and the
+  existing Patch-count semantics.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being

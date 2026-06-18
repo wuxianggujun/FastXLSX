@@ -36,6 +36,7 @@ bool is_workbook_editor_shard(std::string_view shard)
     return shard == "all" || shard == "core" || shard == "public"
         || shard == "public-edge"
         || shard == "source-success" || shard == "source-failure"
+        || shard == "source-failure-core" || shard == "source-failure-shapes"
         || shard == "materialized" || shard == "facade";
 }
 
@@ -10256,7 +10257,7 @@ void test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_project
     entries.at("xl/worksheets/sheet1.xml") =
         std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
         + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
-          R"(<sheetPr><tabColor rgb="FFFF0000"/></sheetPr>)"
+          R"(<sheetPr>ignored-wrapper-text<tabColor rgb="FFFF0000"/></sheetPr>)"
           R"(<dimension ref="A1"/>)"
           R"(<sheetViews><sheetView workbookViewId="0"/></sheetViews>)"
           R"(<sheetFormatPr defaultRowHeight="15"/>)"
@@ -10299,6 +10300,8 @@ void test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_project
         "dirty materialized projection should not preserve source sheetPr metadata");
     check_not_contains(worksheet_xml, "tabColor",
         "dirty materialized projection should not preserve source tabColor metadata");
+    check_not_contains(worksheet_xml, "ignored-wrapper-text",
+        "dirty materialized projection should not preserve source wrapper metadata text");
     check_not_contains(worksheet_xml, "<sheetViews",
         "dirty materialized projection should not preserve source sheetViews metadata");
     check_not_contains(worksheet_xml, "<sheetFormatPr",
@@ -13373,6 +13376,13 @@ void test_public_worksheet_editor_rejects_source_state_machine_shapes_cleanly()
             R"(<row r="1"><c r="A1"><v>1</v></c></row><sheetData/>)"),
         "worksheet event reader found row outside sheetData",
         "source row outside sheetData");
+
+    expect_public_state_machine_materialization_failure(
+        "worksheet-raw-text",
+        worksheet_xml(
+            R"(<dimension ref="A1"/>direct-worksheet-text<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found worksheet text outside metadata or sheetData",
+        "source worksheet raw text outside metadata");
 
     expect_public_state_machine_materialization_failure(
         "nested-rows",
@@ -16655,7 +16665,8 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_materializes_source_formulas();
         }
 
-        if (should_run_workbook_editor_shard(shard, "source-failure")) {
+        if (should_run_workbook_editor_shard(shard, "source-failure")
+            || should_run_workbook_editor_shard(shard, "source-failure-core")) {
         test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy_original();
         test_public_worksheet_editor_rejects_invalid_source_shared_string_index();
         test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata();
@@ -16663,6 +16674,10 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly();
         test_public_worksheet_editor_rejects_malformed_source_worksheet_xml_cleanly();
         test_public_worksheet_editor_rejects_source_cell_reference_issues_cleanly();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "source-failure")
+            || should_run_workbook_editor_shard(shard, "source-failure-shapes")) {
         test_public_worksheet_editor_rejects_source_formula_shapes_cleanly();
         test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly();
         test_public_worksheet_editor_rejects_source_row_cell_structure_cleanly();

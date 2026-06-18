@@ -24328,6 +24328,50 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.526 - Reject direct source worksheet text outside metadata or sheetData
+
+Status: done.
+
+Type: `CellStore` source-load worksheet-root state hardening, public
+`WorksheetEditor` source materialization failure hygiene regression,
+CTest shard split, Doxygen/API/README/task-doc sync; no new public symbol, no
+production CMake target membership change, and no package format expansion.
+
+Goal: prevent malformed source worksheets such as
+`<dimension ref="A1"/>direct-worksheet-text<sheetData>...</sheetData>` from
+silently dropping direct worksheet-root text while still preserving the current
+wrapper-metadata ignore boundary.
+
+Output:
+- `CellStoreWorksheetLoader` now tracks worksheet wrapper metadata depth outside
+  `sheetData` and rejects non-whitespace `RawText` at worksheet-root depth.
+- Text nested inside ignored wrapper metadata, such as
+  `<sheetPr>ignored text</sheetPr>`, remains ignored for read-only
+  materialization and is dropped by dirty sparse-store projection.
+- Public `fastxlsx.workbook_editor.source-failure` coverage injects
+  worksheet-root direct text and verifies `try_worksheet("Data")` /
+  `worksheet("Data")` fail with the worksheet-text-outside-metadata-or-sheetData
+  diagnostic.
+- The oversized workbook-editor source-failure CTest lane is split into
+  `source-failure-core` and `source-failure-shapes`; `--shard=source-failure`
+  remains accepted by the test executable for local compatibility.
+- The failure keeps editor/pending/materialized state clean, leaves
+  `last_edit_error()` unchanged, and still allows a later valid
+  `replace_sheet_data()` / `save_as()` recovery on an unrelated sheet.
+
+Non-goals / boundary:
+- No wrapper metadata text import, wrapper metadata preservation, metadata
+  repair, XML repair, schema validation, rich-text preservation,
+  metadata/range sync, or large-file low-memory random editing.
+- Source comments and processing instructions outside cells remain ignored
+  trivia for read-only materialization and are not preserved by dirty
+  projection.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure*` shards pass.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -243,6 +243,13 @@ sheetData-text-outside-row diagnostic, preserves the same clean failure state,
 and still allows later unrelated valid save-as recovery. This is sheetData/row
 state-machine fail-fast hygiene only, not sheetData text import, row inference,
 metadata preservation, or XML repair.
+P8.526 closes the worksheet-root direct raw-text gap without weakening wrapper
+metadata tolerance: source `<dimension .../>direct-worksheet-text<sheetData ...>`
+now fails with a CellStore worksheet-text-outside-metadata-or-sheetData
+diagnostic, while text nested inside ignored wrapper metadata such as
+`<sheetPr>ignored text</sheetPr>` remains ignored and dropped by dirty
+projection. This is worksheet-root state-machine fail-fast hygiene only, not
+wrapper metadata text import, metadata preservation, or XML repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags
@@ -580,10 +587,11 @@ This is strict validation, not coordinate inference, clamping, sorting,
 row-number repair, same-sheet Patch bypass, or XML repair.
 Source row/cell state-machine hygiene is now pinned as well: row elements
 outside `sheetData`, nested rows, cells outside row elements, nested cells,
+non-whitespace worksheet text outside wrapper metadata or `sheetData`,
 non-whitespace sheetData text outside rows, and non-whitespace row text outside
 cells fail cleanly without partial sessions. Recovery is proven through an
 unrelated valid sheet, not through row inference, state-machine recovery, direct
-sheetData/row text import, or same-sheet Patch repair.
+worksheet/sheetData/row text import, or same-sheet Patch repair.
 Supported source value materialization has positive coverage too: self-closing
 source cells and inline-string cells without text become explicit blank records,
 `t="b"` source cells become booleans, and empty inline text remains
@@ -1470,9 +1478,10 @@ feature completion.
       state-hygiene coverage for shared string indexes, unsupported cell type
       tokens, invalid boolean payloads, duplicate scalar/inline-text wrappers,
       direct raw cell text outside value wrappers, cell-contained comments /
-      processing instructions / CDATA, sheetData raw text outside rows, row raw
-      text outside cells, nested cell input rejected at the event-reader
-      boundary, and cells outside rows; these remain
+      processing instructions / CDATA, worksheet-root raw text outside wrapper
+      metadata or sheetData, sheetData raw text outside rows, row raw text
+      outside cells, nested cell input rejected at the event-reader boundary,
+      and cells outside rows; these remain
       failure-before-edit-state guardrails.
       Package-backed by-name loading now also has coordinate/numeric failure
       state-hygiene coverage for missing or malformed cell references, row/column
@@ -1516,8 +1525,9 @@ feature completion.
       loadable as plain semantic text only.
       Unsupported inline-string rich text runs and phonetic metadata now also
       fail before materialization instead of being flattened into plain text.
-      Direct raw cell text outside value wrappers, sheetData raw text outside
-      rows, row raw text outside cells, cell-contained comments, processing
+      Direct raw cell text outside value wrappers, worksheet-root raw text
+      outside wrapper metadata or sheetData, sheetData raw text outside rows,
+      row raw text outside cells, cell-contained comments, processing
       instructions, and unsupported markup such as CDATA now also fail before
       materialization instead of being silently dropped from inline text or
       other source worksheet payloads.

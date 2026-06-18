@@ -1514,6 +1514,10 @@ public:
             if (inside_sheet_data_) {
                 throw FastXlsxError("CellStore worksheet loader found nested sheetData");
             }
+            if (worksheet_metadata_depth_ != 0) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found sheetData inside worksheet metadata");
+            }
             inside_sheet_data_ = true;
             break;
         case WorksheetEventKind::SheetDataEnd:
@@ -1574,6 +1578,8 @@ public:
         case WorksheetEventKind::Metadata:
             if (active_cell_.has_value()) {
                 consume_cell_metadata(event);
+            } else if (!inside_sheet_data_) {
+                consume_worksheet_metadata(event);
             }
             break;
         case WorksheetEventKind::ProcessingInstruction:
@@ -1599,6 +1605,10 @@ public:
         }
         if (inside_sheet_data_) {
             throw FastXlsxError("CellStore worksheet loader ended inside open sheetData");
+        }
+        if (worksheet_metadata_depth_ != 0) {
+            throw FastXlsxError(
+                "CellStore worksheet loader ended inside open worksheet metadata");
         }
         return std::move(store_);
     }
@@ -1704,6 +1714,21 @@ private:
 
         throw FastXlsxError(
             "CellStore worksheet loader does not load unsupported cell metadata");
+    }
+
+    void consume_worksheet_metadata(const WorksheetEvent& event)
+    {
+        if (is_closing_raw_tag(event.raw_xml)) {
+            if (worksheet_metadata_depth_ == 0) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found a worksheet metadata end without metadata");
+            }
+            --worksheet_metadata_depth_;
+            return;
+        }
+        if (!event.self_closing) {
+            ++worksheet_metadata_depth_;
+        }
     }
 
     static void consume_inline_string_metadata(
@@ -1888,6 +1913,10 @@ private:
         if (inside_sheet_data_) {
             throw FastXlsxError("CellStore worksheet loader found sheetData text outside a row");
         }
+        if (worksheet_metadata_depth_ == 0) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found worksheet text outside metadata or sheetData");
+        }
     }
 
     void end_cell()
@@ -1919,6 +1948,7 @@ private:
     std::set<std::uint32_t> seen_rows_;
     std::optional<std::uint32_t> last_explicit_row_;
     std::optional<CellPosition> last_source_cell_;
+    std::size_t worksheet_metadata_depth_ = 0;
     bool inside_sheet_data_ = false;
     bool inside_row_ = false;
     std::optional<ActiveSourceCell> active_cell_;

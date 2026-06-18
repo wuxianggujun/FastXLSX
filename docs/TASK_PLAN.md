@@ -2300,6 +2300,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       works. This is sheetData/row state-machine fail-fast hygiene only, not
       sheetData text import, row inference, metadata preservation, or XML
       repair.
+      P8.526 rejects direct raw source worksheet text outside wrapper metadata
+      or `sheetData`: source `<dimension .../>direct-worksheet-text<sheetData ...>`
+      now fails through public materialization with no editor/materialized state
+      pollution, leaves `last_edit_error()` unchanged, and later valid
+      replacement/save still works. Text nested inside ignored wrapper metadata
+      remains ignored and dropped by dirty projection. This is worksheet-root
+      state-machine fail-fast hygiene only, not wrapper metadata text import,
+      metadata preservation, or XML repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2563,7 +2571,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       fail-fast instead of being coerced to blank. P8.524 proves source direct
       raw row text outside cells stays fail-fast instead of being silently
       dropped. P8.525 proves source direct raw sheetData text outside rows stays
-      fail-fast instead of being silently dropped. P8.415 pins public row/column
+      fail-fast instead of being silently dropped. P8.526 proves source direct
+      raw worksheet text outside wrapper metadata or `sheetData` stays fail-fast
+      instead of being silently dropped, while wrapper metadata text remains
+      ignored. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2732,6 +2743,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       worksheet handle is returned instead of being silently ignored, leaves
       editor/pending/materialized state and `last_edit_error()` clean, and does
       not prevent a later valid save.
+      P8.526 adds direct raw worksheet-root text failure evidence:
+      `<dimension .../>direct-worksheet-text<sheetData ...>` fails before a
+      public worksheet handle is returned instead of being silently ignored,
+      leaves editor/pending/materialized state and `last_edit_error()` clean,
+      does not prevent a later valid save, and preserves the existing
+      wrapper-metadata-text ignore boundary.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

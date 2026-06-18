@@ -217,6 +217,13 @@ with the same diagnostic, leaves editor/pending/materialized/`last_edit_error()`
 state clean, and does not block a later valid replacement/save. This is
 fail-fast markup-declaration hygiene only, not DOCTYPE import, inline text
 repair, XML repair, or XML trivia preservation.
+P8.522 pins the adjacent true XML declaration branch inside source cell text:
+`<t>a<?xml version="1.0"?>b</t>` fails through `try_worksheet()` /
+`worksheet()` with the worksheet event-reader late-declaration diagnostic,
+leaves editor/pending/materialized/`last_edit_error()` state clean, and does
+not block a later valid replacement/save on an unrelated sheet. This is
+fail-fast XML prolog hygiene only, not XML declaration import, inline text
+repair, XML repair, or XML trivia preservation.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

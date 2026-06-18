@@ -24189,6 +24189,39 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.522 - Cover cell-internal XML declaration failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source materialization failure hygiene
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: add direct public coverage for a true XML declaration token inside a
+source cell payload after the worksheet root has already started.
+
+Output:
+- Public facade `fastxlsx.workbook_editor.source-failure` coverage injects
+  `<t>a<?xml version="1.0"?>b</t>` inside a source inline string cell.
+- `try_worksheet("Data")` and `worksheet("Data")` both fail with the existing
+  worksheet event-reader diagnostic for XML declarations after the worksheet
+  root.
+- The failure keeps the editor clean, leaves public pending counts and dirty
+  materialized names empty, and does not update `last_edit_error()`.
+- A later valid `replace_sheet_data()` / `save_as()` on an unrelated sheet
+  still succeeds, proving the failed source materialization did not poison the
+  editor.
+
+Non-goals / boundary:
+- No cell-internal XML declaration import, XML prolog repair, tolerant inline
+  text parsing, XML repair, XML trivia preservation, rich-text preservation,
+  metadata/range sync, or large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

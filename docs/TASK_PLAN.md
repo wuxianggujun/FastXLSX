@@ -2274,6 +2274,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       pollution, leaves `last_edit_error()` unchanged, and later valid
       replacement/save still works. This is markup-declaration fail-fast
       hygiene only, not DOCTYPE import or XML repair.
+      P8.522 pins the adjacent true XML declaration branch inside source cell
+      text: source `<t>a<?xml version="1.0"?>b</t>` fails through public
+      materialization with no editor/materialized state pollution, leaves
+      `last_edit_error()` unchanged, and later valid replacement/save still
+      works on an unrelated sheet. This is XML prolog fail-fast hygiene only,
+      not XML declaration import or XML repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2530,7 +2536,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       does not block later valid save. P8.521 proves a source cell-internal
       DOCTYPE-like unsupported-markup declaration stays fail-fast through the
       same public no-state-pollution helper and does not block later valid
-      save. P8.415 pins public row/column
+      save. P8.522 proves a source cell-internal true XML declaration token
+      stays fail-fast through the same public no-state-pollution helper and
+      does not block later valid save on an unrelated sheet. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2679,6 +2687,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       evidence: `<t>a<!DOCTYPE fastxlsx>b</t>` fails before a public worksheet
       handle is returned, leaves editor/pending/materialized state and
       `last_edit_error()` clean, and does not prevent a later valid save.
+      P8.522 adds cell-internal true XML declaration failure evidence:
+      `<t>a<?xml version="1.0"?>b</t>` fails before a public worksheet handle
+      is returned, leaves editor/pending/materialized state and
+      `last_edit_error()` clean, and does not prevent a later valid save on an
+      unrelated sheet.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

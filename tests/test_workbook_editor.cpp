@@ -12966,7 +12966,9 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
         [&](std::string_view tag,
             std::string_view replacement_worksheet_xml,
             std::string_view expected_diagnostic,
-            std::string_view scenario) {
+            std::string_view scenario,
+            std::string_view recovery_sheet_name = "Data",
+            std::string_view output_entry_name = "xl/worksheets/sheet1.xml") {
             const std::string source_name =
                 std::string("fastxlsx-workbook-editor-public-source-value-wrapper-")
                 + std::string(tag) + "-source.xlsx";
@@ -12984,7 +12986,13 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
             const std::string replacement_text =
                 std::string("usable-after-source-value-wrapper-") + std::string(tag);
             check_public_worksheet_materialization_failure_hygiene(
-                source, output, expected_diagnostic, replacement_text, scenario);
+                source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                recovery_sheet_name,
+                output_entry_name);
         };
 
     expect_public_value_wrapper_materialization_failure(
@@ -13042,6 +13050,15 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
             R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<!DOCTYPE fastxlsx>b</t></is></c></row></sheetData>)"),
         "CellStore worksheet loader does not load cell comments, processing instructions, or unsupported markup",
         "source DOCTYPE-like markup inside cell text");
+
+    expect_public_value_wrapper_materialization_failure(
+        "xml-declaration-inside-cell",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<?xml version="1.0"?>b</t></is></c></row></sheetData>)"),
+        "worksheet event reader found XML declaration after worksheet root",
+        "source XML declaration inside cell text",
+        "Untouched",
+        "xl/worksheets/sheet2.xml");
 }
 
 void test_public_worksheet_editor_rejects_wrong_namespace_unsupported_local_names_cleanly()

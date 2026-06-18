@@ -25709,7 +25709,8 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P13 - Phase 3 metadata/styles hardening
 
-状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5、P13.6 已落地。
+状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5、P13.6、P13.7、P13.8、
+P13.9、P13.10 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -25725,6 +25726,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.7 small-workbook Workbook size diagnostics：基础完成。
 - P13.8 small-workbook example refresh：基础完成。
 - P13.9 README examples lane index：基础完成。
+- P13.10 small-workbook case-insensitive lookup consistency：基础完成。
 
 ### P13.7 small-workbook Workbook size diagnostics
 
@@ -25829,6 +25831,45 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
   通过；`cmake --build --preset windows-nmake-release --target
   fastxlsx_streaming_writer_example` 通过；两个 example exe 在
   `build/windows-nmake-release/examples` 下运行 smoke 通过。
+
+### P13.10 small-workbook case-insensitive lookup consistency
+
+状态：基础完成。
+
+类型：small new-workbook public API consistency + tests + docs；不新增 CMake
+dependency。
+
+目标：让 small `Workbook` 的 sheet lookup 行为与已经落地的 ASCII
+case-insensitive duplicate-name rule 一致，避免 `add_worksheet("Data")` 拒绝
+`"data"` 但 `has_worksheet("data")` / `worksheet("data")` 查不到同一 sheet 的
+API 语义割裂。
+
+输入事实：
+- `Workbook::add_worksheet()`、`WorkbookWriter::add_worksheet()` 和
+  `Workbook::rename_worksheet()` 的 duplicate new-name guardrail 已经拒绝 ASCII
+  case-insensitive duplicate。
+- small `Workbook` 仍是待生成 workbook 的 buffered creation path；这次只调整
+  name lookup semantics，不新增 existing-file sheet rename/delete。
+
+范围：
+- `Workbook::has_worksheet()`、`worksheet()`、`try_worksheet()`、
+  `rename_worksheet(old_name, ...)` 和 `remove_worksheet(name)` 使用 ASCII
+  case-insensitive lookup。
+- 保持 `worksheet_names()` 和生成的 workbook XML 输出原始 stored name casing。
+- 在 `tests/test_minimal_xlsx.cpp` 覆盖 lookup / const lookup / optional lookup /
+  rename old-name lookup / remove name lookup 的大小写变体。
+- 更新 public header、README 和 API docs，写清该行为属于 small new-workbook
+  path，不是 existing-file editing。
+
+非目标：
+- 不新增 Unicode / locale-aware sheet-name folding。
+- 不改变 stored worksheet name casing。
+- 不新增 WorkbookEditor / WorksheetEditor lookup 语义变更。
+- 不新增 benchmark、hard memory guardrail 或 package relationship repair。
+
+验证：
+- `fastxlsx.unit` 覆盖大小写 lookup 一致性。
+- 默认 CTest 和 `git diff --check` 通过。
 
 
 ### P13.1 default `StyleId{}` clears per-cell style

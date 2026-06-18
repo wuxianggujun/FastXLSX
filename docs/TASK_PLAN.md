@@ -176,6 +176,10 @@ own `fastxlsx.package_editor.c5` shard to keep the 60s CTest boundary stable.
   `WorksheetEditor::sparse_cells(CellRange)`, `WorksheetEditor::cell_count()`,
   `WorksheetEditor::estimated_memory_usage()`,
   and `FastXlsxError`.
+- Small `Workbook` duplicate-name checks, sheet lookup helpers,
+  `rename_worksheet()` old-name lookup, and `remove_worksheet()` name lookup
+  are ASCII case-insensitive; generated workbook XML preserves the stored sheet
+  name casing.
 - Current internal In-memory foundation includes
   `include/fastxlsx/detail/cell_store.hpp` and `src/cell_store.cpp` with
   `CellPosition`, `CellRecord`, worksheet-local sparse `CellStore`, and internal

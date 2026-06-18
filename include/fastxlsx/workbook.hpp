@@ -252,7 +252,8 @@ public:
     /// escaped during save(), and duplicate-name checks are conservative and
     /// ASCII case-insensitive.
     ///
-    /// @param old_name Existing worksheet name to rename.
+    /// @param old_name Existing worksheet name to rename. Lookup is ASCII
+    /// case-insensitive, matching the duplicate-name rule.
     /// @param new_name New worksheet name to store in the buffered workbook.
     /// @throws FastXlsxError if `old_name` is not present, if `new_name`
     /// duplicates an existing worksheet name (ASCII case-insensitive), if it is
@@ -269,7 +270,8 @@ public:
     /// the erased element in the internal vector. Later save() calls renumber
     /// generated worksheet parts and workbook relationships from the remaining
     /// worksheet order. Removing all worksheets is allowed, but save() will
-    /// reject an empty workbook.
+    /// reject an empty workbook. Name lookup is ASCII case-insensitive,
+    /// matching the duplicate-name rule.
     ///
     /// @throws FastXlsxError if no worksheet with the supplied name exists.
     void remove_worksheet(std::string_view name);
@@ -299,10 +301,13 @@ public:
     [[nodiscard]] std::vector<std::string> worksheet_names() const;
 
     /// Returns whether a worksheet with the given name exists.
+    ///
+    /// Name lookup is ASCII case-insensitive, matching the duplicate-name rule.
     [[nodiscard]] bool has_worksheet(std::string_view name) const noexcept;
 
     /// Returns a mutable worksheet reference by name.
     ///
+    /// Name lookup is ASCII case-insensitive, matching the duplicate-name rule.
     /// Returned references remain valid only until a later add_worksheet() call
     /// reallocates the internal vector or a remove_worksheet() call erases the
     /// same or a preceding worksheet.
@@ -310,16 +315,21 @@ public:
 
     /// Returns a const worksheet reference by name.
     ///
+    /// Name lookup is ASCII case-insensitive, matching the duplicate-name rule.
     /// Returned references remain valid only until a later add_worksheet() call
     /// reallocates the internal vector or a remove_worksheet() call erases the
     /// same or a preceding worksheet.
     [[nodiscard]] const Worksheet& worksheet(std::string_view name) const;
 
     /// Returns an optional mutable worksheet reference by name.
+    ///
+    /// Name lookup is ASCII case-insensitive, matching the duplicate-name rule.
     [[nodiscard]] std::optional<std::reference_wrapper<Worksheet>>
     try_worksheet(std::string_view name) noexcept;
 
     /// Returns an optional const worksheet reference by name.
+    ///
+    /// Name lookup is ASCII case-insensitive, matching the duplicate-name rule.
     [[nodiscard]] std::optional<std::reference_wrapper<const Worksheet>>
     try_worksheet(std::string_view name) const noexcept;
 

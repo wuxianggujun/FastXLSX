@@ -251,18 +251,22 @@ void test_workbook_sheet_inspection_helpers()
         "worksheet_names should preserve workbook order");
     check(workbook.has_worksheet("Data"), "has_worksheet should find the first sheet");
     check(workbook.has_worksheet("Summary"), "has_worksheet should find the second sheet");
+    check(workbook.has_worksheet("data"),
+        "has_worksheet should use ASCII case-insensitive matching");
 
     fastxlsx::Worksheet& data = workbook.worksheet("Data");
     fastxlsx::Worksheet& summary = workbook.worksheet("Summary");
     check(&workbook.worksheet("Data") == &data,
         "worksheet lookup should return the matching mutable worksheet");
+    check(&workbook.worksheet("summary") == &summary,
+        "worksheet lookup should use ASCII case-insensitive matching");
     const fastxlsx::Workbook& const_workbook = workbook;
-    check(&const_workbook.worksheet("Summary") == &summary,
-        "const worksheet lookup should return the matching worksheet");
+    check(&const_workbook.worksheet("DATA") == &data,
+        "const worksheet lookup should use ASCII case-insensitive matching");
     check(&workbook.try_worksheet("Summary")->get() == &summary,
         "try_worksheet should return the matching mutable worksheet");
-    check(&const_workbook.try_worksheet("Data")->get() == &data,
-        "const try_worksheet should return the matching worksheet");
+    check(&const_workbook.try_worksheet("summary")->get() == &summary,
+        "const try_worksheet should use ASCII case-insensitive matching");
 
     check_fastxlsx_error(
         [&workbook] { (void)workbook.worksheet("Missing"); },
@@ -297,7 +301,7 @@ void test_workbook_sheet_removal_helpers()
     workbook.add_worksheet("Scratch").append_row({fastxlsx::Cell::formula("SUM(A1:A1)")});
     workbook.add_worksheet("Summary").append_row({fastxlsx::Cell::number(42.0)});
 
-    workbook.remove_worksheet("Scratch");
+    workbook.remove_worksheet("scratch");
 
     check(workbook.worksheet_count() == 2, "remove_worksheet should reduce sheet count");
     const std::vector<std::string> names = workbook.worksheet_names();
@@ -383,7 +387,7 @@ void test_workbook_sheet_rename_helpers()
     workbook.add_worksheet("Data").append_row({fastxlsx::Cell::text("alpha")});
     workbook.add_worksheet("Summary").append_row({fastxlsx::Cell::number(42.0)});
 
-    workbook.rename_worksheet("Data", "Renamed & Data");
+    workbook.rename_worksheet("data", "Renamed & Data");
 
     check(workbook.worksheet_count() == 2, "rename_worksheet should preserve sheet count");
     const std::vector<std::string> names = workbook.worksheet_names();
@@ -417,7 +421,7 @@ void test_workbook_sheet_rename_helpers()
     check(names_after_duplicate_rename == names,
         "failed duplicate rename_worksheet should not mutate workbook order");
 
-    workbook.rename_worksheet("Renamed & Data", "Final Name");
+    workbook.rename_worksheet("renamed & data", "Final Name");
     const std::vector<std::string> renamed_again = workbook.worksheet_names();
     check(renamed_again.size() == 2 && renamed_again[0] == "Final Name" && renamed_again[1] == "Summary",
         "rename_worksheet should allow a later valid rename after failures");

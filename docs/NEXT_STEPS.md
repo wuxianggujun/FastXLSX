@@ -4687,7 +4687,9 @@ narrow creation path. Any later widening must be explicitly chosen.
 
 Next tasks:
 - Keep the current `Workbook` convenience surface aligned with code and tests;
-  only widen it when there is a concrete need.
+  only widen it when there is a concrete need. Small-workbook sheet lookup,
+  rename old-name lookup, and remove lookup now match the duplicate-name rule:
+  ASCII case-insensitive, with stored sheet name casing preserved.
 - Document memory growth and size guardrails. This path now exposes
   `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`,
   `Worksheet::cell_count()`, and `Worksheet::estimated_memory_usage()` as

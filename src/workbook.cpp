@@ -57,13 +57,6 @@ void validate_sheet_name(std::string_view name)
     }
 }
 
-template <typename WorksheetContainer>
-auto find_worksheet_by_name(WorksheetContainer& worksheets, std::string_view name)
-{
-    return std::find_if(worksheets.begin(), worksheets.end(),
-        [name](const auto& worksheet) { return worksheet.name() == name; });
-}
-
 bool ascii_equals_ignore_case(std::string_view lhs, std::string_view rhs) noexcept
 {
     if (lhs.size() != rhs.size()) {
@@ -85,6 +78,15 @@ bool ascii_equals_ignore_case(std::string_view lhs, std::string_view rhs) noexce
     }
 
     return true;
+}
+
+template <typename WorksheetContainer>
+auto find_worksheet_by_name(WorksheetContainer& worksheets, std::string_view name)
+{
+    return std::find_if(worksheets.begin(), worksheets.end(),
+        [name](const auto& worksheet) {
+            return ascii_equals_ignore_case(worksheet.name(), name);
+        });
 }
 
 constexpr std::string_view recalculation_calc_id = "124519";

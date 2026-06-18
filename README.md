@@ -97,7 +97,7 @@ cmake --build --preset windows-nmake-release --target fastxlsx_streaming_writer_
 ```
 
 - `examples/minimal_writer.cpp` 使用 `Workbook` / `Worksheet` / `Cell`，
-  面向小型 new-workbook buffered creation。它演示 sheet lookup、
+  面向小型 new-workbook buffered creation。它演示 ASCII case-insensitive sheet lookup、
   `rename_worksheet()`、`remove_worksheet()`、`worksheet_count()`、
   `cell_count()` 和 `estimated_memory_usage()`；这些 diagnostics 是近似观测值，
   不是进程 RSS、硬内存预算或大数据导出进度。
@@ -213,7 +213,9 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `Workbook::cell_count()`、`Workbook::estimated_memory_usage()`、
   `Worksheet::cell_count()`、`Worksheet::estimated_memory_usage()` 和
   `FastXlsxError`。这些 size diagnostics 是小型 buffered creation path 的近似观测值，
-  不是进程 RSS、硬内存预算或 large-export progress API。
+  不是进程 RSS、硬内存预算或 large-export progress API；sheet lookup、
+  rename old-name lookup 和 remove lookup 与 duplicate-name 规则一致，都是
+  ASCII case-insensitive。
 - 流式 writer public API：`WorkbookWriter`、`WorksheetWriter`、`CellView`、
   `WorkbookWriterOptions`、`StringStrategy`、`StyleId`、`CellStyle` 及当前窄
   styles / worksheet metadata / image insertion 值类型。

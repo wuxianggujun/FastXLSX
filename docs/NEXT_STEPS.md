@@ -169,6 +169,13 @@ public mutation diagnostic, keeps sparse and pending materialized diagnostics
 clean and unchanged, and a later no-op `save_as()` preserves source bytes while
 omitting the rejected text. This is clean no-op diagnostic hygiene only, not
 tombstones, explicit blank cells, source mutation, or budget release.
+P8.515 pins the explicit blank side of the same budget model:
+`set_cell("D4", CellValue::blank())` is a new active sparse record and is
+rejected by exact `max_cells` / `memory_budget_bytes` sessions without dirtying
+state, while an existing-cell `set_cell("A1", CellValue::blank())` stays within
+budget, clears the diagnostic, and saves as an empty cell. This is explicit
+blank sparse-record accounting only, not tombstones, style-preserving clear,
+workbook-level budgeting, or save-time memory accounting.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

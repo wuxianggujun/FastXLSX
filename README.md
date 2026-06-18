@@ -220,7 +220,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   mutations，且 source-load / mutation guardrail failure paths 均保持
   no-state-pollution hygiene；`erase_cell()` 会移除 active sparse record，并为后续
   insertions 释放这些 sparse-store guardrail budgets；missing-cell `erase_cell()`
-  保持 clean no-op，并会清除先前 public mutation diagnostic；不支持 namespace validation/repair、non-default `StyleId`、
+  保持 clean no-op，并会清除先前 public mutation diagnostic；explicit blank
+  insertion 作为 active sparse record 也受这些 guardrail 约束；不支持 namespace validation/repair、non-default `StyleId`、
   sharedStrings writeback/rebuild/migration、style migration、semantic metadata
   sync、relationship repair 或 large-file low-memory random editing。
 - 公共值和 helper：`CellValue` / `CellValueKind`、PNG/JPEG `ImageInfo` /

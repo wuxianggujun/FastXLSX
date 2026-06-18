@@ -2229,6 +2229,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       while omitting the rejected text. This is clean no-op diagnostic hygiene
       only, not tombstones, explicit blank cells, budget release, source
       mutation, or large-file random editing.
+      P8.515 pins explicit blank insertion budgeting: exact count/memory
+      sessions reject `set_cell("D4", CellValue::blank())` as a new active
+      sparse record without dirtying state, while existing-cell
+      `set_cell("A1", CellValue::blank())` stays within budget, clears the
+      diagnostic, reads back as blank, and saves as empty `<c r="A1"/>`. This
+      is explicit blank sparse-record accounting only, not tombstones,
+      style-preserving clear, workbook-level budgeting, save-time package
+      memory accounting, or large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2464,7 +2472,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       a later D4 insertion/save succeeds. P8.514 proves the missing-cell side:
       `erase_cell("D4")` after the same failures clears diagnostics without
       dirtying state or consuming/releasing budget, and no-op save preserves the
-      source while omitting rejected text. P8.415 pins
+      source while omitting rejected text. P8.515 proves explicit blank
+      insertion is not a shortcut around budgets: exact count/memory sessions
+      reject `set_cell("D4", CellValue::blank())` as a new sparse record, while
+      existing-cell blank overwrite succeeds and saves as an empty cell. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2584,6 +2595,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       missing-cell `erase_cell("D4")` clears the earlier max/memory insertion
       diagnostic, keeps sparse and pending materialized diagnostics unchanged,
       and leaves no rejected text in a later clean save.
+      P8.515 adds explicit blank guardrail evidence at the same boundary:
+      `set_cell("D4", CellValue::blank())` is rejected as a new sparse record
+      by exact count/memory budgets, but existing-cell blank overwrite remains
+      in budget and persists as an empty cell.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

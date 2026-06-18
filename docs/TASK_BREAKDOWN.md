@@ -23950,6 +23950,40 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.515 - Cover explicit blank insertion guardrail budgets
+
+Status: done.
+
+Type: public `WorksheetEditor::set_cell(..., CellValue::blank())` guardrail
+regression plus Doxygen/API/README/task-doc sync; no new public symbol, no
+production code change, no CMake membership change, and no package format
+expansion.
+
+Goal: prove an explicit blank insertion is an active sparse record and obeys
+the same `WorksheetEditorOptions::max_cells` and `memory_budget_bytes`
+guardrails as text/number/boolean/formula cells.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage first triggers exact
+  `max_cells` and exact `memory_budget_bytes` failures with
+  `set_cell("D4", CellValue::blank())`.
+- Both failures update `last_edit_error()`, leave the materialized
+  session/editor clean, keep pending materialized names/cell/memory diagnostics
+  empty, preserve sparse count/memory estimates, and keep D4 missing.
+- A later existing-cell `set_cell("A1", CellValue::blank())` succeeds under the
+  same budgets, clears the diagnostic, keeps sparse count stable, reads back as
+  explicit blank, and saves as empty `<c r="A1"/>` without leaking D4.
+
+Non-goals / boundary:
+- No tombstone model, no style-preserving clear, no dense range editing, no
+  workbook-level budgeting, no save-time package memory accounting, no
+  sharedStrings/style migration, and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

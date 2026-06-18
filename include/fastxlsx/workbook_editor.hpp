@@ -426,7 +426,9 @@ public:
     /// failures: they do not mutate the sparse store and update the owning
     /// WorkbookEditor::last_edit_error(). They also do not dirty a saved
     /// materialized session. Passing CellValue::blank() creates an explicit
-    /// blank record that dirty save_as() projects as an empty cell. Supported
+    /// blank record that dirty save_as() projects as an empty cell; inserting a
+    /// new explicit blank record is subject to the same sparse-store max_cells
+    /// and memory_budget_bytes guardrails as other cell values. Supported
     /// number, boolean, and formula values use the current sparse-store
     /// projection; formulas are not evaluated and do not generate cached
     /// results.
@@ -445,7 +447,9 @@ public:
     /// they do not mutate the sparse store and update the owning
     /// WorkbookEditor::last_edit_error(). They also do not dirty a saved
     /// materialized session. Passing CellValue::blank() creates an explicit
-    /// blank record that dirty save_as() projects as an empty cell. Supported
+    /// blank record that dirty save_as() projects as an empty cell, and new
+    /// blank records follow the same sparse-store max_cells and
+    /// memory_budget_bytes guardrails as the row/column overload. Supported
     /// number, boolean, and formula values use the current sparse-store
     /// projection; formulas are not evaluated and do not generate cached
     /// results. Non-default StyleId handles follow the row/column overload:

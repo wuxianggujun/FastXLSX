@@ -9067,6 +9067,159 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "rejected memory-budget text should not leak after missing erase");
 }
 
+void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
+{
+    const std::filesystem::path max_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-blank-max-guard-source.xlsx");
+    const std::filesystem::path max_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-blank-max-guard-output.xlsx");
+
+    fastxlsx::WorkbookEditor max_sizing_editor =
+        fastxlsx::WorkbookEditor::open(max_source);
+    const fastxlsx::WorksheetEditor max_sizing_sheet =
+        max_sizing_editor.worksheet("Data");
+    const std::size_t exact_max_cells = max_sizing_sheet.cell_count();
+
+    fastxlsx::WorkbookEditor max_editor = fastxlsx::WorkbookEditor::open(max_source);
+    fastxlsx::WorksheetEditorOptions max_options;
+    max_options.max_cells = exact_max_cells;
+    fastxlsx::WorksheetEditor max_sheet =
+        max_editor.worksheet("Data", max_options);
+
+    const std::size_t max_baseline_count = max_sheet.cell_count();
+    const std::size_t max_baseline_memory = max_sheet.estimated_memory_usage();
+    check(!max_sheet.try_cell("D4").has_value(),
+        "blank max_cells guard test precondition should use a missing target cell");
+
+    bool max_blank_failed = false;
+    try {
+        max_sheet.set_cell("D4", fastxlsx::CellValue::blank());
+    } catch (const fastxlsx::FastXlsxError& error) {
+        max_blank_failed = true;
+        check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+            "explicit blank insertion should expose max_cells diagnostics");
+    }
+    check(max_blank_failed,
+        "explicit blank insertion should obey the exact max_cells guardrail");
+    check(max_editor.last_edit_error().has_value(),
+        "failed explicit blank max_cells insertion should update last_edit_error");
+    check(!max_sheet.has_pending_changes(),
+        "failed explicit blank max_cells insertion should not dirty the session");
+    check(!max_editor.has_pending_changes(),
+        "failed explicit blank max_cells insertion should not dirty the editor");
+    check(max_editor.pending_materialized_worksheet_names().empty(),
+        "failed explicit blank max_cells insertion should not expose dirty names");
+    check(max_editor.pending_materialized_cell_count() == 0,
+        "failed explicit blank max_cells insertion should not expose dirty cell count");
+    check(max_editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed explicit blank max_cells insertion should not expose dirty memory");
+    check(max_sheet.cell_count() == max_baseline_count,
+        "failed explicit blank max_cells insertion should preserve sparse count");
+    check(max_sheet.estimated_memory_usage() == max_baseline_memory,
+        "failed explicit blank max_cells insertion should preserve memory estimate");
+    check(!max_sheet.try_cell("D4").has_value(),
+        "failed explicit blank max_cells insertion should not create a blank D4");
+
+    max_sheet.set_cell("A1", fastxlsx::CellValue::blank());
+    check(!max_editor.last_edit_error().has_value(),
+        "successful existing-cell blank overwrite should clear max_cells diagnostic");
+    check(max_sheet.has_pending_changes(),
+        "successful existing-cell blank overwrite should dirty the session");
+    check(max_editor.pending_materialized_cell_count() == max_baseline_count,
+        "existing-cell blank overwrite should keep the sparse count stable");
+    check(max_sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "existing-cell blank overwrite should read back as explicit blank");
+
+    max_editor.save_as(max_output);
+    const auto max_output_entries = fastxlsx::test::read_zip_entries(max_output);
+    const std::string max_worksheet_xml =
+        max_output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(max_worksheet_xml, R"(<c r="A1"/>)",
+        "existing-cell blank overwrite should save as an empty A1 cell");
+    check_not_contains(max_worksheet_xml, "placeholder-a1",
+        "blank overwrite should remove the previous A1 text");
+    check_not_contains(max_worksheet_xml, R"(r="D4")",
+        "rejected blank max_cells insertion should not leak as D4");
+
+    const std::filesystem::path memory_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-blank-memory-guard-source.xlsx");
+    const std::filesystem::path memory_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-blank-memory-guard-output.xlsx");
+
+    fastxlsx::WorkbookEditor memory_sizing_editor =
+        fastxlsx::WorkbookEditor::open(memory_source);
+    const fastxlsx::WorksheetEditor memory_sizing_sheet =
+        memory_sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget =
+        memory_sizing_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor memory_editor =
+        fastxlsx::WorkbookEditor::open(memory_source);
+    fastxlsx::WorksheetEditorOptions memory_options;
+    memory_options.memory_budget_bytes = exact_memory_budget;
+    fastxlsx::WorksheetEditor memory_sheet =
+        memory_editor.worksheet("Data", memory_options);
+
+    const std::size_t memory_baseline_count = memory_sheet.cell_count();
+    const std::size_t memory_baseline_usage =
+        memory_sheet.estimated_memory_usage();
+    check(!memory_sheet.try_cell("D4").has_value(),
+        "blank memory-budget guard test precondition should use a missing target cell");
+
+    bool memory_blank_failed = false;
+    try {
+        memory_sheet.set_cell("D4", fastxlsx::CellValue::blank());
+    } catch (const fastxlsx::FastXlsxError& error) {
+        memory_blank_failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "explicit blank insertion should expose memory-budget diagnostics");
+    }
+    check(memory_blank_failed,
+        "explicit blank insertion should obey the exact memory-budget guardrail");
+    check(memory_editor.last_edit_error().has_value(),
+        "failed explicit blank memory-budget insertion should update last_edit_error");
+    check(!memory_sheet.has_pending_changes(),
+        "failed explicit blank memory-budget insertion should not dirty the session");
+    check(!memory_editor.has_pending_changes(),
+        "failed explicit blank memory-budget insertion should not dirty the editor");
+    check(memory_editor.pending_materialized_worksheet_names().empty(),
+        "failed explicit blank memory-budget insertion should not expose dirty names");
+    check(memory_editor.pending_materialized_cell_count() == 0,
+        "failed explicit blank memory-budget insertion should not expose dirty cell count");
+    check(memory_editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed explicit blank memory-budget insertion should not expose dirty memory");
+    check(memory_sheet.cell_count() == memory_baseline_count,
+        "failed explicit blank memory-budget insertion should preserve sparse count");
+    check(memory_sheet.estimated_memory_usage() == memory_baseline_usage,
+        "failed explicit blank memory-budget insertion should preserve memory estimate");
+    check(!memory_sheet.try_cell("D4").has_value(),
+        "failed explicit blank memory-budget insertion should not create a blank D4");
+
+    memory_sheet.set_cell("A1", fastxlsx::CellValue::blank());
+    check(!memory_editor.last_edit_error().has_value(),
+        "successful existing-cell blank overwrite should clear memory-budget diagnostic");
+    check(memory_sheet.has_pending_changes(),
+        "successful existing-cell blank overwrite should dirty the memory-budget session");
+    check(memory_sheet.cell_count() == memory_baseline_count,
+        "existing-cell blank overwrite should keep memory-budget sparse count stable");
+    check(memory_sheet.estimated_memory_usage() <= exact_memory_budget,
+        "existing-cell blank overwrite should stay within exact memory budget");
+    check(memory_sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "memory-budget blank overwrite should read back as explicit blank");
+
+    memory_editor.save_as(memory_output);
+    const auto memory_output_entries =
+        fastxlsx::test::read_zip_entries(memory_output);
+    const std::string memory_worksheet_xml =
+        memory_output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(memory_worksheet_xml, R"(<c r="A1"/>)",
+        "memory-budget blank overwrite should save as an empty A1 cell");
+    check_not_contains(memory_worksheet_xml, "placeholder-a1",
+        "memory-budget blank overwrite should remove the previous A1 text");
+    check_not_contains(memory_worksheet_xml, R"(r="D4")",
+        "rejected blank memory-budget insertion should not leak as D4");
+}
+
 void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
 {
     const std::filesystem::path source =
@@ -16144,6 +16297,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_mutation_max_cells_failure_preserves_state();
         test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions();
         test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_clean();
+        test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         }
 

@@ -283,7 +283,8 @@ sheet-catalog order。`pending_worksheet_edits()` 是 current planned-state
 summary：rename-only 链如果最终回到 source name，不会留下 summary；粗粒度
 `pending_change_count()` 仍会统计这些成功 public edit calls。public inspection 和 pending diagnostic methods 不会清空、替换或
 创建 `last_edit_error()`；后续失败 public edit 会替换旧诊断，后续成功 public
-edit 会清空它。没有 queued public edits 时，no-op `save_as()` 仍是 reader-backed
+edit 会清空它；这个规则跨 `replace_sheet_data()`、`rename_sheet()` 和
+`WorksheetEditor` mutation 共用同一个 latest-error 槽。没有 queued public edits 时，no-op `save_as()` 仍是 reader-backed
 roundtrip copy；如果之前失败的是 `replace_sheet_data()` 或 `rename_sheet()`，
 该失败诊断也会保留，直到后续失败或成功 public edit 分别替换或清空它。
 `WorkbookEditor` move construction / move assignment 只是 ownership transfer：

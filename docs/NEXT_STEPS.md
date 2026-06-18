@@ -185,6 +185,14 @@ materialized state clean and keep rejected payloads out of saved output. This
 is last-error facade ordering only, not structured diagnostic history,
 save-as diagnostics, materialization-load diagnostics, or large-file random
 editing.
+P8.517 extends the same latest-error contract across mixed public edit
+surfaces: failed `replace_sheet_data("Missing", ...)`, failed
+`rename_sheet("Data", "Bad/Name")`, and failed `WorksheetEditor::set_cell("a1",
+...)` replace each other's diagnostics in order without dirtying editor or
+materialized state, and a later successful `replace_sheet_data("Untouched",
+...)` clears the diagnostic and saves only the valid replacement. This is
+coarse public facade diagnostic ordering only, not error history, rollback,
+save-as/load diagnostics, relationship repair, or semantic dependency sync.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

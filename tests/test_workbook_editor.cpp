@@ -9338,6 +9338,127 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "memory-budget rejected D4 should not leak into output");
 }
 
+void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-mixed-last-error-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-mixed-last-error-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_sheet_data("Missing",
+            {{fastxlsx::CellValue::text("missing-replacement-payload")}});
+    } catch (const fastxlsx::FastXlsxError& error) {
+        replacement_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "missing replacement should seed last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "replacement last_edit_error should match the thrown diagnostic");
+            check_contains(*last_error, "Missing",
+                "replacement diagnostic should mention the missing sheet");
+            check_contains(*last_error, "current planned catalog",
+                "replacement diagnostic should retain planned-catalog context");
+        }
+    }
+    check(replacement_failed,
+        "missing replacement should fail before mixed diagnostic replacement");
+    const std::optional<std::string> replacement_error = editor.last_edit_error();
+    check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+
+    bool rename_failed = false;
+    try {
+        editor.rename_sheet("Data", "Bad/Name");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        rename_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "invalid rename should replace replacement last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "rename last_edit_error should match the thrown diagnostic");
+            check_contains(*last_error, "Bad/Name",
+                "rename diagnostic should mention the rejected sheet name");
+            check_not_contains(*last_error, "Missing",
+                "rename diagnostic should replace the missing replacement diagnostic");
+        }
+    }
+    check(rename_failed,
+        "invalid rename should fail during mixed diagnostic replacement");
+    const std::optional<std::string> rename_error = editor.last_edit_error();
+    check_public_inspection_preserves_last_edit_error(editor, rename_error);
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    bool mutation_failed = false;
+    try {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-mutation-payload"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        mutation_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "invalid WorksheetEditor mutation should replace rename last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "WorksheetEditor mutation last_edit_error should match the thrown diagnostic");
+            check_contains(*last_error, "WorksheetEditor cell reference is invalid",
+                "WorksheetEditor mutation diagnostic should mention the invalid reference");
+            check_not_contains(*last_error, "Bad/Name",
+                "WorksheetEditor mutation should replace the rename diagnostic");
+            check_not_contains(*last_error, "Missing",
+                "WorksheetEditor mutation should not retain the older replacement diagnostic");
+        }
+    }
+    check(mutation_failed,
+        "invalid WorksheetEditor mutation should fail during mixed diagnostic replacement");
+
+    check(!sheet.has_pending_changes(),
+        "mixed failed edits should leave the materialized session clean");
+    check(!editor.has_pending_changes(),
+        "mixed failed edits should leave the editor clean");
+    check(editor.pending_change_count() == 0,
+        "mixed failed edits should not add public pending changes");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        "mixed failed edits should not leave pending replacements");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "mixed failed edits should not leave dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "mixed failed edits should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "mixed failed edits should not leave dirty materialized memory");
+
+    editor.replace_sheet_data("Untouched",
+        {{fastxlsx::CellValue::text("mixed-diagnostic-recovered")}});
+    check(!editor.last_edit_error().has_value(),
+        "successful public edit should clear mixed last_edit_error");
+    check(editor.has_pending_changes(),
+        "successful recovery replacement should dirty the editor");
+    check(editor.pending_change_count() == 1,
+        "successful recovery replacement should add one public pending change");
+    check(editor.has_pending_replacement("Untouched"),
+        "successful recovery replacement should be tracked under the target sheet");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialized Data session should not become dirty after other-sheet recovery");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, "placeholder-a1",
+        "clean Data materialized session should remain copy-original after mixed failures");
+    check_not_contains(data_xml, "invalid-mutation-payload",
+        "invalid WorksheetEditor payload should not leak into Data output");
+    check_contains(untouched_xml, "mixed-diagnostic-recovered",
+        "successful recovery replacement should persist on Untouched");
+    check_not_contains(untouched_xml, "missing-replacement-payload",
+        "failed replacement payload should not leak into output");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "Bad/Name",
+        "failed rename target should not leak into workbook catalog");
+}
+
 void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
 {
     const std::filesystem::path source =
@@ -16417,6 +16538,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_clean();
         test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets();
         test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics();
+        test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         }
 

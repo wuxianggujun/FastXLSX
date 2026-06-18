@@ -24023,6 +24023,45 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.517 - Cover mixed public edit diagnostic replacement order
+
+Status: done.
+
+Type: public `WorkbookEditor::last_edit_error()` mixed-surface replacement-order
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: prove failed public edits across the Patch facade and `WorksheetEditor`
+surface share one latest-error contract: the latest failed public edit replaces
+the previous message, and a later successful public edit clears it.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage first rejects
+  `replace_sheet_data("Missing", ...)` and records the missing planned-sheet
+  diagnostic.
+- A later invalid `rename_sheet("Data", "Bad/Name")` replaces that diagnostic
+  with the rename failure and does not leave the old missing-sheet text.
+- A later invalid `WorksheetEditor::set_cell("a1", ...)` replaces the rename
+  diagnostic with the strict A1 mutation diagnostic.
+- All failed calls leave the editor clean, do not add pending public changes,
+  do not queue replacement diagnostics, and do not dirty the clean materialized
+  `Data` session.
+- A final successful `replace_sheet_data("Untouched", ...)` clears
+  `last_edit_error()`, queues one valid public replacement, saves normally, and
+  output contains the successful replacement while omitting rejected payloads
+  and the failed rename target.
+
+Non-goals / boundary:
+- No multi-error history, structured diagnostic object, exception stack,
+  save-as diagnostics, load/materialization diagnostics, rollback model,
+  commit semantics, relationship repair, metadata/range sync, or large-file
+  low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

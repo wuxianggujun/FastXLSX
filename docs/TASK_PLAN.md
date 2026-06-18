@@ -2245,6 +2245,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       pending materialized state. This is last-error facade ordering only, not
       structured diagnostic history, save-as diagnostics, load diagnostics, or
       large-file random editing.
+      P8.517 extends that latest-error contract across mixed public edit
+      surfaces: missing `replace_sheet_data()`, invalid `rename_sheet()`, and
+      invalid `WorksheetEditor::set_cell()` replace each other's diagnostics
+      without dirtying editor/materialized state, and a later successful
+      replacement clears the diagnostic and saves only the valid payload. This
+      is public facade diagnostic ordering only, not rollback, structured error
+      history, relationship repair, dependency sync, or large-file random
+      editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2486,7 +2494,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       existing-cell blank overwrite succeeds and saves as an empty cell.
       P8.516 proves failed public `WorksheetEditor` mutations replace the
       previous `last_edit_error()` diagnostic in order, and a later successful
-      in-budget mutation clears it without leaking rejected payloads. P8.415 pins
+      in-budget mutation clears it without leaking rejected payloads. P8.517
+      proves the same latest-error ordering across mixed public edit surfaces:
+      failed replacement, failed rename, and failed `WorksheetEditor` mutation
+      replace each other, while a later successful replacement clears the
+      diagnostic and saves only the valid payload. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2615,6 +2627,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       replace `last_edit_error()` in latest-failure order while leaving sparse
       and pending materialized state clean, and the next successful mutation
       clears the diagnostic.
+      P8.517 adds mixed-surface diagnostic evidence: failed
+      `replace_sheet_data()`, failed `rename_sheet()`, and failed
+      `WorksheetEditor::set_cell()` replace the same public `last_edit_error()`
+      slot in order, leave editor/materialized state clean, and a following
+      successful replacement clears it.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

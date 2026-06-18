@@ -24256,6 +24256,41 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.524 - Reject direct source row text outside cells
+
+Status: done.
+
+Type: `CellStore` source-load state-machine hardening, public
+`WorksheetEditor` source materialization failure hygiene regression,
+Doxygen/API/README/task-doc sync; no new public symbol, no CMake membership
+change, and no package format expansion.
+
+Goal: prevent malformed source rows such as
+`<row r="1">direct-row-text<c r="A1"><v>1</v></c></row>` from silently dropping
+the direct row text while still materializing later cells.
+
+Output:
+- `CellStoreWorksheetLoader` now rejects non-whitespace `RawText` while inside a
+  source row but outside any active cell.
+- Public `fastxlsx.workbook_editor.source-failure` coverage injects row-level
+  direct text and verifies `try_worksheet("Data")` / `worksheet("Data")` fail
+  with the row-text-outside-cell diagnostic.
+- The failure keeps editor/pending/materialized state clean, leaves
+  `last_edit_error()` unchanged, and still allows a later valid
+  `replace_sheet_data()` / `save_as()` recovery on an unrelated sheet.
+
+Non-goals / boundary:
+- No row text import, cell inference, row repair, metadata preservation, XML
+  repair, schema validation, rich-text preservation, metadata/range sync, or
+  large-file low-memory random editing.
+- Non-whitespace raw text outside row/cell context remains outside this narrow
+  guardrail to preserve the current source wrapper-metadata ignore boundary.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

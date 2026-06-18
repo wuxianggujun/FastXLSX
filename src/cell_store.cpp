@@ -1853,14 +1853,19 @@ private:
 
     void consume_raw_text(const WorksheetEvent& event) const
     {
-        if (!active_cell_.has_value() || !has_non_whitespace(event.raw_xml)) {
+        if (!has_non_whitespace(event.raw_xml)) {
             return;
         }
-        if (active_cell_->type == SourceCellType::InlineString
-            && active_cell_->inline_ignored_metadata_depth > 0) {
-            return;
+        if (active_cell_.has_value()) {
+            if (active_cell_->type == SourceCellType::InlineString
+                && active_cell_->inline_ignored_metadata_depth > 0) {
+                return;
+            }
+            throw FastXlsxError("CellStore worksheet loader found value text without a value tag");
         }
-        throw FastXlsxError("CellStore worksheet loader found value text without a value tag");
+        if (inside_row_) {
+            throw FastXlsxError("CellStore worksheet loader found row text outside a cell");
+        }
     }
 
     void end_cell()

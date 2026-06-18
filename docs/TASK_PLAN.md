@@ -2286,6 +2286,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `last_edit_error()` unchanged, and later valid replacement/save still
       works. This is value-wrapper fail-fast hygiene only, not direct text
       import, wrapper inference, blank coercion, or XML repair.
+      P8.524 rejects direct raw source row text outside cells:
+      source `<row r="1">direct-row-text<c ...>` now fails through public
+      materialization with no editor/materialized state pollution, leaves
+      `last_edit_error()` unchanged, and later valid replacement/save still
+      works. This is row/cell state-machine fail-fast hygiene only, not row
+      text import, cell inference, row repair, metadata preservation, or XML
+      repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2546,7 +2553,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       stays fail-fast through the same public no-state-pollution helper and
       does not block later valid save on an unrelated sheet. P8.523 proves
       source direct raw cell text outside `<v>` / `<t>` / `<f>` wrappers stays
-      fail-fast instead of being coerced to blank. P8.415 pins public row/column
+      fail-fast instead of being coerced to blank. P8.524 proves source direct
+      raw row text outside cells stays fail-fast instead of being silently
+      dropped. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2703,6 +2712,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       P8.523 adds direct raw cell-text failure evidence:
       `<c r="A1">direct-text</c>` fails before a public worksheet handle is
       returned instead of materializing as blank, leaves
+      editor/pending/materialized state and `last_edit_error()` clean, and does
+      not prevent a later valid save.
+      P8.524 adds direct raw row-text failure evidence:
+      `<row r="1">direct-row-text<c ...>` fails before a public worksheet handle
+      is returned instead of being silently ignored, leaves
       editor/pending/materialized state and `last_edit_error()` clean, and does
       not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:

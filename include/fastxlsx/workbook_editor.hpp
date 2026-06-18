@@ -354,9 +354,10 @@ struct WorksheetCellSnapshot {
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
 /// or cell metadata attributes, coerce invalid numeric payloads, migrate
 /// sharedStrings indexes, validate or merge non-default style ids, import
-/// unsupported value-wrapper shapes, tolerate non-whitespace source cell text
-/// outside `<v>` / `<t>` / `<f>` wrappers, preserve inline rich text
-/// formatting, import inline phonetic metadata, repair malformed inline rich
+/// unsupported value-wrapper shapes, tolerate non-whitespace source row text
+/// outside cells or source cell text outside `<v>` / `<t>` / `<f>` wrappers,
+/// preserve inline rich text formatting, import inline phonetic metadata,
+/// repair malformed inline rich
 /// text metadata, infer or clamp invalid/out-of-range source coordinates,
 /// tolerate malformed XML/entity text, malformed source attributes, duplicate worksheet
 /// roots or duplicate sheetData boundaries, repair invalid row/cell nesting,

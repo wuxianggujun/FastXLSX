@@ -13393,6 +13393,13 @@ void test_public_worksheet_editor_rejects_source_state_machine_shapes_cleanly()
             R"(<sheetData><row r="1"><c r="A1"><c r="B1"><v>1</v></c></c></row></sheetData>)"),
         "worksheet event reader found an invalid cell boundary",
         "source nested cells");
+
+    expect_public_state_machine_materialization_failure(
+        "row-raw-text",
+        worksheet_xml(
+            R"(<sheetData><row r="1">direct-row-text<c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found row text outside a cell",
+        "source row raw text outside cells");
 }
 
 void test_public_worksheet_editor_rejects_source_root_boundaries_cleanly()

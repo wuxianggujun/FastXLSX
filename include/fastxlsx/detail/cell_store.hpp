@@ -236,7 +236,8 @@ private:
 /// continuation character, or lacking whitespace / immediate `?>` after the
 /// target are rejected; ordinary targets using legal ASCII name-start
 /// characters such as letters, `_`, and `:`, and continuation characters such
-/// as digits, `-`, and `.`, remain ignored trivia.
+/// as digits, `-`, and `.`, remain ignored trivia. Empty-data ordinary PIs
+/// whose target is followed immediately by `?>` remain ignored trivia.
 /// Prefixed source worksheet markup, including worksheet, sheetData, row, cell,
 /// inline-string wrappers, rich-run wrappers, formula wrappers, and value
 /// wrappers, is likewise matched by local-name by the shared worksheet loader;

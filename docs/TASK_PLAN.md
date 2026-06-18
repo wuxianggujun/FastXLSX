@@ -2294,6 +2294,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       ASCII continuation characters such as `.`, `-`, digits, and `:` accepted
       as ignored trivia. P8.505 keeps legal ordinary PI targets starting with
       ASCII name-start characters such as `_` and `:` accepted as ignored
+      trivia. P8.506 keeps empty-data ordinary PI tokens whose target is
+      followed immediately by `?>`, such as `<?fastxlsx?>`, accepted as ignored
       trivia.
       P8.399 extends the same public facade coverage
       to source row/cell structure and numeric-payload failures: unsupported
@@ -2750,7 +2752,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       P8.504 adds positive coverage for legal ASCII PI target continuation
       characters in public `WorksheetEditor` and package-backed `CellStore`
       source-success fixtures. P8.505 adds matching positive coverage for legal
-      ASCII PI target starts such as `_` and `:`.
+      ASCII PI target starts such as `_` and `:`. P8.506 adds matching positive
+      coverage for empty-data ordinary PI tokens such as `<?fastxlsx?>`.
       P8.466 normalizes source explicit default style attributes: selected
       source cells with exact `s="0"` / `s='0'` materialize as no style handle
       and dirty projection omits both forms, while non-default source style ids

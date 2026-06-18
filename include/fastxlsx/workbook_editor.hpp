@@ -233,10 +233,11 @@ struct WorksheetCellSnapshot {
 /// continuation character, or lacking whitespace / immediate `?>` after the
 /// target are rejected; ordinary targets using legal ASCII name-start
 /// characters such as letters, `_`, and `:`, and continuation characters such
-/// as digits, `-`, and `.`, remain ignored trivia. This summary is not sharedStrings
-/// writeback, style migration, rich-text preservation, XML repair, namespace
-/// repair, relationship repair/pruning, semantic metadata sync, or large-file
-/// low-memory random editing.
+/// as digits, `-`, and `.`, remain ignored trivia. Empty-data ordinary PIs
+/// whose target is followed immediately by `?>` remain ignored trivia. This
+/// summary is not sharedStrings writeback, style migration, rich-text
+/// preservation, XML repair, namespace repair, relationship repair/pruning,
+/// semantic metadata sync, or large-file low-memory random editing.
 /// Source cells, including blank/scalar cells, empty inline strings, inlineStr
 /// cells without text, simple source inline rich text runs flattened to plain
 /// text, workbook-backed shared string cells (including simple rich shared
@@ -285,7 +286,8 @@ struct WorksheetCellSnapshot {
 /// continuation character, or lacking whitespace / immediate `?>` after the
 /// target are rejected; ordinary targets using legal ASCII name-start
 /// characters such as letters, `_`, and `:`, and continuation characters such
-/// as digits, `-`, and `.`, remain ignored trivia.
+/// as digits, `-`, and `.`, remain ignored trivia. Empty-data ordinary PIs
+/// whose target is followed immediately by `?>` remain ignored trivia.
 /// Source workbooks without a sharedStrings part still materialize supported
 /// non-`t="s"` cells and dirty saves do not create
 /// a string table just because the source lacked one. SharedStrings metadata is
@@ -636,7 +638,8 @@ private:
 /// character, or lacking whitespace / immediate `?>` after the target.
 /// Ordinary targets using legal ASCII name-start characters such as letters,
 /// `_`, and `:`, and continuation characters such as digits, `-`, and `.`
-/// remain ignored trivia.
+/// remain ignored trivia. Empty-data ordinary PIs whose target is followed
+/// immediately by `?>` remain ignored trivia.
 /// Prefixed source worksheet /
 /// sheetData / row / cell element names and inlineStr, rich-run, formula, and
 /// value-wrapper element names are likewise matched by local-name for

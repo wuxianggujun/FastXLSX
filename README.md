@@ -385,8 +385,9 @@ PI trivia 忽略，不导入或解析 stylesheet；普通 processing instruction
 `<?_fastxlsx legal-start?>` / `<?:fastxlsx legal-colon-start?>` 仍是 ignored
 trivia；target 的 ASCII 后续字符只接受明显合法的 XML name 字符
 （letter/digit/`_`/`:`/`-`/`.`），例如 `<?fastxlsx.data-1:probe legal-target?>`
-仍是 ignored trivia；target 后必须是空白或立即 `?>`；缺失终止符、空
-target、非法起始/后续字符或缺失 target/data 分隔符的 malformed PI 会 fail fast。
+仍是 ignored trivia；target 后必须是空白或立即 `?>`，`<?fastxlsx?>` 这种
+空 data PI 仍是 ignored trivia；缺失终止符、空 target、非法起始/后续字符或缺失
+target/data 分隔符的 malformed PI 会 fail fast。
 prefixed source worksheet / `sheetData` / row / cell / inlineStr wrapper
 element names 也会按 local-name 读取；dirty projection 仍使用 standalone worksheet
 XML，不保留 source prefixes，也不做 namespace repair。该 local-name 路径不检查

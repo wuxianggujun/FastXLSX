@@ -23645,6 +23645,42 @@ Acceptance:
   hardening remains intact.
 - `git diff --check` passes.
 
+## P8.506 - Preserve sharedStrings empty-data ordinary PI trivia
+
+Status: done.
+
+Type: source sharedStrings parser success regression, public `WorksheetEditor`
+success coverage, package-backed `CellStore` success coverage, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no production code
+change, no CMake membership change, and no package format expansion.
+
+Goal: prove the P8.502 target/data separator guard is narrow: ordinary
+processing-instruction tokens whose target is followed immediately by `?>`, such
+as `<?fastxlsx?>`, remain ignored source `xl/sharedStrings.xml` PI trivia.
+
+Output:
+- Public `WorksheetEditor` source sharedStrings success coverage now includes an
+  empty-data ordinary PI and still materializes / dirty projects source shared
+  string cells.
+- Package-backed prefixed sharedStrings success coverage includes the same
+  empty-data ordinary PI shape and still materializes / projection-preserves
+  source sharedStrings bytes.
+- Docs distinguish legal immediate `?>` PI termination from malformed missing
+  target/data separators such as `<?target?data?>`.
+
+Non-goals / boundary:
+- No full XML `PITarget` grammar, no processing-instruction data parser, no
+  prolog schema validation, no XML repair, no PI import/preservation, no
+  stylesheet processing, no sharedStrings writeback/rebuild/migration, no
+  namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-success` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Adjacent source-failure shards still pass to prove malformed PI separator
+  hardening remains intact.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

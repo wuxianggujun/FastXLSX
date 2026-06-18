@@ -9651,6 +9651,7 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         "<?fastxlsx.data-1:probe legal-target?>"
         "<?_fastxlsx legal-start?>"
         "<?:fastxlsx legal-colon-start?>"
+        "<?fastxlsx?>"
         "<?xml-stylesheet type=\"text/xsl\" href=\"sharedStrings.xsl\"?><sst");
     rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings_before);
     {
@@ -9687,6 +9688,8 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         "source sharedStrings success fixture should include underscore-start PI target trivia");
     check(shared_strings_before.find("<?:fastxlsx legal-colon-start?>") != std::string::npos,
         "source sharedStrings success fixture should include colon-start PI target trivia");
+    check(shared_strings_before.find("<?fastxlsx?>") != std::string::npos,
+        "source sharedStrings success fixture should include empty-data PI trivia");
     check(shared_strings_before.find("<?xml-stylesheet") != std::string::npos,
         "source sharedStrings success fixture should include xml-stylesheet PI trivia");
     check(shared_strings_before.find(R"(standalone="yes")") != std::string::npos,

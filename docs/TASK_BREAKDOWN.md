@@ -74,9 +74,13 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   已有 worksheet XML chunk/string loader 和 `PackageReader` sheet-name helper
   首片，F2.2 internal `try_cell(row, column)` 读语义已落地，F2.3 首个
   source-loaded `CellStore` -> by-name `sheetData` Patch handoff smoke 已覆盖，
-  F2.4 首个 loader dependency guardrail 回归已固定 source style id /
-  sharedStrings index 和 unsupported source cell shape 的拒绝策略；error and
-  date-like source cell types are also pinned as unsupported；internal
+  F2.4 首个 loader dependency guardrail 回归已固定 non-default source style id 和
+  unsupported source cell shape 的拒绝策略；explicit source `s="0"` 现在归一化为
+  no style handle；workbook-backed source sharedStrings
+  当前可只读 materialize 为 plain text，invalid sharedStrings metadata / indexes
+  仍 fail fast，standalone generic worksheet loaders 仍因缺少 workbook-level
+  sharedStrings context 而拒绝 `t="s"`；error and date-like source cell types are
+  also pinned as unsupported；internal
   mutation guardrail 还覆盖坐标校验失败不污染已有 sparse records；
   loader XML entity decoding guardrail 已覆盖 unknown entity、unterminated
   entity、invalid character reference 和 out-of-range character reference 的
@@ -137,10 +141,74 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   queued whole-`<sheetData>` replacement payloads. P8.388 pins public borrowed
   handle lifetime around `save_as()`: successful or failed `WorkbookEditor::save_as()`
   does not delete or invalidate same-owner `WorksheetEditor` handles; owner move
-  / move assignment remains the invalidation boundary.
-  This still does not add non-default `StyleId` support, sharedStrings/style
-  migration, semantic metadata sync, relationship repair, or large-file
-  low-memory random editing.
+  / move assignment remains the invalidation boundary. P8.389 adds read-only
+  source sharedStrings materialization for public `WorksheetEditor` handles:
+  source `t="s"` cells load through existing workbook `xl/sharedStrings.xml`,
+  flatten simple rich text to plain text, and still save back as inline strings
+  while preserving the source sharedStrings bytes. Standalone worksheet XML /
+  chunk loaders still reject `t="s"` because they do not have workbook-level
+  sharedStrings context. P8.390 pins the corresponding failure matrix for
+  duplicate/invalid sharedStrings relationships, missing or wrong-typed parts,
+  malformed sharedStrings XML, and invalid indexes. This still does not add
+  non-default `StyleId` support, sharedStrings/style migration, semantic
+  metadata sync, relationship repair, or large-file low-memory random editing.
+  P8.391 lifts representative invalid sharedStrings metadata cases to the
+  public `try_worksheet()` / `worksheet()` facade and proves these failures do
+  not dirty materialized state, update `last_edit_error()`, or prevent later
+  valid Patch edits. P8.392 reconciles public-header and planning wording with
+  that current behavior. P8.393 applies the same public facade state-hygiene
+  proof to non-default source style id load failures, including `s="1"` after
+  an already loadable source cell. P8.466 later normalizes explicit default
+  `s="0"` to no style handle, and P8.467 later locks that exception to exact
+  source style tokens only. P8.394 pins
+  public facade state hygiene for unsupported source cell shapes and invalid
+  boolean payloads (`t="e"`, `t="d"`, invalid `t="b"` value). P8.395 factors
+  the repeated public materialization-failure state checks into one helper and
+  pins malformed source worksheet XML facade hygiene. P8.396 extends the same
+  public facade failure hygiene to source cell-reference validation failures:
+  missing cell `r` and row/cell reference mismatch fail before returning a
+  handle and do not imply coordinate repair or inference. P8.397 pins source
+  formula materialization and formula-shape failure hygiene at the public
+  facade: formula text loads as `CellValue::formula(...)`, cached values are
+  ignored, and malformed/unsupported formula shapes fail cleanly. P8.398 pins
+  public facade hygiene for source inline text/XML entity failures, including
+  unknown XML entities, unsupported inline `<t>` attributes, duplicate inline
+  text elements, and unknown inline string metadata. P8.399 pins public facade hygiene for
+  source row/cell structure and numeric value failures: row/cell metadata
+  attributes, duplicate/out-of-order row numbers, out-of-order cell references,
+  and invalid numeric payloads fail before returning a handle. P8.400 pins
+  public facade hygiene for unsupported source value-wrapper shapes: scalar
+  `<v>` attributes, duplicate `<v>` wrappers, inline/scalar wrapper mismatches,
+  and cell-internal unsupported markup fail before returning a handle. P8.401
+  pins public facade hygiene for XML/entity/attribute parser failures:
+  unterminated entities, invalid/out-of-range character references, unquoted
+  attributes, and duplicate source attributes fail cleanly. P8.402 pins public
+  facade hygiene for source reference boundary failures: out-of-range cell
+  columns/rows, zero row references, non-column-first cell references, and
+  invalid row numbers fail cleanly. P8.403 pins public facade hygiene for
+  source row/cell state-machine failures: rows outside `sheetData`, nested
+  rows, cells outside rows, and nested cells fail cleanly. P8.404 pins positive
+  public materialization for currently supported source blank, boolean, and
+  empty inline-string cells. P8.405 pins empty source worksheet materialization:
+  no `sheetData` and self-closing `<sheetData/>` both load as empty sparse
+  stores and later dirty projection writes standalone worksheet XML. P8.406
+  pins public facade hygiene for worksheet root and `sheetData` boundary
+  failures: markup before root, duplicate `sheetData`, duplicate roots, and
+  trailing text fail cleanly. P8.407-P8.409 pin source wrapper metadata,
+  cell-external comment / processing-instruction projection boundaries, and
+  clean read-only materialization no-op save behavior; P8.472-P8.473 extend the
+  wrapper boundary to representative relationship-bearing and range/reference
+  wrapper metadata. P8.474 materializes simple source inline rich text as
+  flattened plain text without preserving run formatting or phonetic/extension
+  metadata, while P8.475 pins malformed inline rich text shapes as fail-fast
+  hygiene. P8.410-P8.411 pin
+  no-op save behavior after failed materialization and missing
+  `try_worksheet()` lookup. P8.412-P8.413 split growing test shards to preserve
+  the 60s CTest discipline. P8.414 normalizes caller-supplied explicit default
+  `StyleId{0}` to no style handle in public `WorksheetEditor` mutations, and
+  P8.415 pins row/column overload coordinate guardrails for public reads and
+  mutations without adding coordinate inference, clamping, dense reads, or
+  large-file random access.
 
   Historical context:
   P8.285 gate audit froze the next step as public API design docs only, and
@@ -272,14 +340,18 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   worksheet，必须受 workbook-level / worksheet-level `max_cells` 和
   `memory_budget_bytes` guardrail 保护；加载失败必须在污染 editor state 前抛出
   `FastXlsxError`，不能静默得到半加载 workbook。当前 internal
-  `load_cell_store_from_worksheet_chunks()` / `load_cell_store_from_worksheet_xml()` /
-  `load_cell_store_from_workbook_sheet()` 只覆盖 number、boolean、inline string、
-  formula text 和 explicit blank，并在 sharedStrings、style id 和 unsupported cell
-  shape 上 fail；当前 package-level 回归还验证 source worksheet 出现 `s="..."`
-  style id（包括已读到前置普通 cell 后出现的 explicit default `s="0"`）、
-  `t="s"` shared string index、unsupported cell type 或 invalid boolean payload 时
-  loader 失败；这些负例都覆盖已读到前置普通 cell 后仍不暴露 partial `CellStore`，
-  且 `PackageReader` 仍可继续读取原 entry。package-backed 加载期
+  `load_cell_store_from_worksheet_chunks()` / `load_cell_store_from_worksheet_xml()`
+  只覆盖 number、boolean、inline string、formula text 和 explicit blank，并在
+  sharedStrings、style id 和 unsupported cell shape 上 fail；workbook-backed
+  `load_cell_store_from_workbook_sheet()` 还可通过 existing
+  `xl/sharedStrings.xml` 只读 materialize source `t="s"` cells as text。当前
+  package-level 回归还验证 source worksheet 出现 `s="..."` style id（包括已读到
+  前置普通 cell 后出现的 explicit default `s="0"`）、unsupported cell type 或
+  invalid boolean payload 时 loader 失败；sharedStrings negative matrix 则覆盖
+  missing/empty/non-numeric/out-of-range indexes、duplicate/external/query/fragment
+  relationships、missing/wrong-typed parts 和 malformed sharedStrings XML 的
+  fail-fast 行为。这些负例都覆盖已读到前置普通 cell 后仍不暴露 partial
+  `CellStore`，且 `PackageReader` 仍可继续读取原 entry。package-backed 加载期
   `max_cells` / `memory_budget_bytes` overflow 也已覆盖失败前不污染
   `PackageEditor` 状态和 aggregate output plan copy-original。它们不是
   public random editor。
@@ -337,7 +409,10 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   materialization / failure-before-state-change guardrail 场景或小型 save-as handoff
   缺口。当前策略先冻结为：
   `erase_cell()` 只是移除 sparse record，不是 tombstone；`CellValue::blank()` 是显式
-  blank replacement cell；source style ids 当前 fail，不做 preserve / migrate / merge。
+  blank replacement cell；non-default source style ids 当前 fail，explicit source
+  `s="0"` 归一化为 no style handle，但只有 exact token 被接受；empty / padded /
+  signed / leading-zero / entity-encoded / duplicate default-like source style
+  attributes 仍 fail，不做 preserve / migrate / merge。
   当前已固定的 source dependency/shape fail policy 不能写成 migration、repair 或
   preservation。仍只做内部回归，不公开 `WorksheetEditor`，不处理 sharedStrings/style
   migration 或 relationship repair。
@@ -590,7 +665,8 @@ In-memory random editor 仍未实现。
    只覆盖有限 cell value，不处理完整 worksheet 语义。当前首片完成。
 3. random mutation model：`try_cell` / `set_cell` / `erase_cell` / blank 已有
    internal store 语义；tombstone / style-preservation 当前策略已冻结为
-   erase-removes-record、blank-writes-empty-cell、source style ids fail。
+   erase-removes-record、blank-writes-empty-cell、non-default source style ids
+   fail、source `s="0"` normalizes to no style handle。
 4. internal save-as handoff smoke：把 source worksheet load、small mutation 和
    existing by-name `sheetData` Patch helper 串成一条内部回归。当前首片完成。
 5. public `WorksheetEditor` 首片：只在上述 guardrail 和 save-as contract 有测试后进入。
@@ -1224,7 +1300,7 @@ P8.108 继续让 stored/no-compression `read_entry()` 也复用
 
 状态：基础完成，后续 API 任务继续引用。P4.0 设计的 future existing-file editing
 facade 现已落地首个 public 切片 `WorkbookEditor`（`include/fastxlsx/workbook_editor.hpp`、
-`src/workbook_editor.cpp`、`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`）：
+`src/workbook_editor.cpp`、`tests/test_workbook_editor.cpp`，CTest family `fastxlsx.workbook_editor.*`）：
 `open()` / `worksheet_names()` / `has_worksheet()` / `replace_sheet_data(name, rows)` /
 `rename_sheet(old_name, new_name)` / `save_as()`，输入复用 `CellValue` 行，底层委托
 internal `PackageEditor::replace_worksheet_sheet_data_by_name()` 的 bounded local
@@ -12781,9 +12857,10 @@ Scope:
 - Document that current `CellValue::blank()` is an explicit blank replacement
   cell, and the existing source-loaded handoff writes it as an empty `<c>` when
   projected into replacement `<sheetData>`.
-- Document that source worksheet style ids currently fail during loader
-  materialization, including explicit default `s="0"`; they are not preserved,
-  migrated, merged, or validated against source `xl/styles.xml`.
+- Document that non-default source worksheet style ids currently fail during
+  loader materialization; explicit default `s="0"` is now normalized to no
+  style handle by P8.466. Source style ids are not preserved, migrated, merged,
+  or validated against source `xl/styles.xml`.
 - Keep the next implementation gate internal until focused tests cover the
   chosen tombstone/style policy.
 
@@ -14488,27 +14565,28 @@ Forbidden:
   `PackageEditor`, sharedStrings migration/rebuild, style id migration,
   stylesheet merge, XML repair, or relationship repair/pruning.
 
-## P8.281 - Pin package-backed CellStore inline phonetic metadata failure hygiene
+## P8.281 - Pin package-backed CellStore inline metadata failure hygiene
 
-Status: done.
+Status: done; original inline phonetic failure case was superseded by P8.474
+inline rich-text flattening.
 
 Type: internal `CellStore` package-backed source materialization guardrail
 regression + docs; no public API and no package format change.
 
-Goal: close the package-backed coverage gap for inline phonetic metadata under
-`t="inlineStr"` cells, matching the direct worksheet XML loader rejection path.
+Goal: close the package-backed coverage gap for unsupported inline metadata
+under `t="inlineStr"` cells, matching the direct worksheet XML loader rejection
+path.
 
 Output:
-- `fastxlsx.package_editor.sheetdata` now includes explicit inline
-  `<phoneticPr>` metadata in the package-backed metadata-shape failure matrix.
+- `fastxlsx.package_editor.cellstore-failures` now includes explicit unknown inline
+  metadata in the package-backed metadata-shape failure matrix.
 - The case verifies the error includes workbook sheet, worksheet part, ZIP
-  entry, and the underlying "inline rich text or phonetic metadata" loader
-  diagnostic.
+  entry, and the underlying unsupported-inline-metadata loader diagnostic.
 - The case verifies `EditPlan`, notes, calcChain policy, workbook recalculation
   flag, worksheet/calcChain manifest modes, and saved output bytes stay
   copy-original.
 - Docs record this as failure-before-edit-state hygiene only; it is not inline
-  rich text/phonetic preservation, flattening, schema validation, or public
+  rich text preservation, phonetic metadata import, schema validation, or public
   random cell editing.
 
 Acceptance:
@@ -18760,6 +18838,4585 @@ Acceptance:
   `save_as()`; they stay valid while the owner is unchanged.
 - `git diff --check` and trailing whitespace scan pass for touched headers,
   source, tests, and docs.
+
+## P8.389 - Materialize source sharedStrings as WorksheetEditor text
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load hardening, internal `CellStore`
+loader support, Doxygen/docs clarification, and public regression tests; no new
+public symbol, no CMake membership change, and no package format expansion.
+
+Goal: let `WorksheetEditor` materialize source workbook cells stored as
+`t="s"` shared string indexes into `CellValue::text(...)`, while keeping save
+output on the current inline-string sparse `CellStore` projection.
+
+Output:
+- `load_cell_store_from_workbook_sheet()` resolves the workbook-owned
+  sharedStrings relationship and reads the existing `xl/sharedStrings.xml`.
+- Source worksheet `t="s"` + `<v>index</v>` cells are materialized as text.
+- Repeated indexes, XML entity decoding, relationship target normalization,
+  simple rich-text flattening, and invalid-index failure hygiene are covered by
+  public `fastxlsx.workbook_editor` regressions.
+- `save_as()` still writes materialized text as inline strings and preserves the
+  source sharedStrings part bytes.
+
+Non-goals / boundary:
+- Standalone worksheet XML/chunk loaders still reject `t="s"` because they have
+  no workbook-level sharedStrings table context.
+- No sharedStrings rebuild, writeback, index migration, rich-text preservation,
+  style migration, relationship repair, metadata synchronization, or large-file
+  low-memory random editing.
+- Invalid, missing, empty, or out-of-range shared string indexes fail during
+  materialization instead of becoming blank cells.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/internal docs distinguish read-only source materialization from
+  sharedStrings migration or production sharedStrings editing.
+- `git diff --check` and trailing whitespace scan pass for touched headers,
+  source, tests, and docs.
+
+## P8.390 - Harden source sharedStrings materialization failure matrix
+
+Status: done.
+
+Type: internal workbook-backed `CellStore` loader guardrail tests,
+public/source-load boundary documentation, and task-plan clarification; no new
+public symbol, no CMake membership change, and no package format expansion.
+
+Goal: lock down the negative behavior around P8.389 source sharedStrings
+materialization so the narrow read-only import cannot be mistaken for
+sharedStrings migration, relationship repair, or tolerant XML repair.
+
+Output:
+- `fastxlsx.package_reader` now covers workbook-backed `CellStore` loader
+  failures for duplicate sharedStrings relationships, external targets,
+  query/fragment-qualified targets, missing target parts, wrong content type,
+  malformed `xl/sharedStrings.xml`, missing/empty/non-numeric indexes, and
+  out-of-range indexes.
+- These failures are asserted to happen without exposing a partial `CellStore`
+  and without poisoning the reusable `PackageReader`.
+- Existing standalone worksheet XML loader coverage still proves generic
+  worksheet-only loading rejects `t="s"` because it has no workbook-level string
+  table context.
+- The positive workbook-backed materialization path remains covered by P8.389:
+  source `t="s"` cells can become `CellValue::text(...)`, while save output
+  still emits inline strings and preserves the source sharedStrings part bytes.
+
+Non-goals / boundary:
+- No sharedStrings writeback, rebuild, index migration, string-table repair,
+  relationship repair, rich-text preservation, tolerant malformed-XML recovery,
+  or large-file low-memory random editing.
+- No new public diagnostics object; errors continue to surface as
+  `FastXlsxError` diagnostics through the existing materialization path.
+- No change to non-default source style id rejection or the current
+  inline-string save projection.
+
+Acceptance:
+- `fastxlsx.package_reader` passes.
+- Full default CTest passes.
+- Public/internal docs distinguish guarded read-only source materialization from
+  production sharedStrings editing or migration.
+- `git diff --check` and trailing whitespace scan pass for touched tests and
+  docs.
+
+## P8.391 - Pin public sharedStrings metadata materialization failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load failure-state regression tests and
+docs; no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prove invalid source sharedStrings workbook metadata reaches the public
+`WorkbookEditor::try_worksheet()` / `worksheet()` facade as materialization
+failure without dirtying editor state, updating `last_edit_error()`, or leaving
+partial materialized sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers duplicate sharedStrings relationship,
+  missing sharedStrings target part, wrong sharedStrings content type, and
+  malformed `xl/sharedStrings.xml`.
+- Both `try_worksheet("Data")` and `worksheet("Data")` throw for these
+  non-missing-sheet materialization failures and preserve the sharedStrings
+  diagnostic.
+- Failures preserve planned/source sheet catalog inspection,
+  `has_pending_changes()==false`, `pending_change_count()==0`, empty pending
+  materialized diagnostics, and no `last_edit_error()`.
+- The same editor remains usable after failure: a later `replace_sheet_data()`
+  plus `save_as()` succeeds and writes replacement text.
+
+Non-goals / boundary:
+- No new public diagnostics value/object, no tolerant repair, no relationship
+  repair, no sharedStrings rebuild/writeback/migration, no rich-text
+  preservation, no in-place save, and no large-file random editing.
+- The full low-level metadata/index negative matrix remains internal
+  `fastxlsx.package_reader` coverage from P8.390; this slice only proves public
+  facade state hygiene for representative invalid sharedStrings metadata
+  failures.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Docs distinguish public facade failure hygiene from sharedStrings production
+  editing or migration.
+- `git diff --check` and trailing whitespace scan pass for touched tests and
+  docs.
+
+## P8.392 - Reconcile WorksheetEditor sharedStrings docs after materialization
+
+Status: done.
+
+Type: public header Doxygen and planning-doc correction; no behavior change, no
+new public symbol, no CMake membership change, and no package format expansion.
+
+Goal: remove stale F2 wording that still described workbook-backed source
+sharedStrings indexes as unconditional load failures after P8.389-P8.391
+implemented and pinned read-only materialization.
+
+Output:
+- `WorkbookEditor::worksheet()` Doxygen now states that valid workbook-backed
+  source `t="s"` cells resolve through existing `xl/sharedStrings.xml` and
+  materialize as plain text.
+- F2 docs distinguish three cases: valid workbook-backed sharedStrings
+  materialization, invalid sharedStrings metadata/index fail-fast behavior, and
+  standalone generic worksheet XML/chunk loaders rejecting `t="s"` because they
+  lack workbook-level sharedStrings context.
+- API design docs and next-step summaries no longer say source shared string
+  indexes remain unconditional load failures.
+
+Non-goals / boundary:
+- No sharedStrings writeback, rebuild, migration, relationship repair,
+  rich-text preservation, style id migration, or behavior change.
+- No new diagnostics object or public low-level PackageReader/PackageEditor
+  API.
+
+Acceptance:
+- `git diff --check` passes.
+- Full default CTest remains green from the preceding P8.391 validation; no
+  runtime behavior is changed by this documentation-only slice.
+
+## P8.393 - Pin public source style-id materialization failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load failure-state regression tests and
+docs; no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prove non-default source worksheet style attributes still reach the
+public `WorkbookEditor::try_worksheet()` / `worksheet()` facade as clean
+materialization failures, without becoming partial sessions or blocking later
+Patch edits.
+
+Output:
+- `fastxlsx.workbook_editor` now covers a non-default source style id generated
+  by the writer. This section originally also pinned an explicit default
+  `s="0"` source style attribute as a failure; P8.466 supersedes that narrow
+  default-style boundary by normalizing source `s="0"` to no style handle, and
+  later P8.467/P8.471 keep that exception exact-value-only.
+- For non-default source style ids, both `try_worksheet("Data")` and
+  `worksheet("Data")` throw with the existing
+  `CellStore worksheet loader does not load style id references` diagnostic.
+- Failures preserve source/planned catalog inspection, leave no pending edits
+  or dirty materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure: a later `replace_sheet_data()`
+  plus `save_as()` succeeds and writes replacement text.
+
+Non-goals / boundary:
+- No source style preservation, style id validation, style migration, style
+  merge, stylesheet semantic editing, relationship repair, new diagnostics
+  object, or large-file random editing.
+- This does not change whole-`<sheetData>` Patch behavior, where caller-supplied
+  `CellValue` style ids are still written as-is by the existing Patch facade.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Docs continue to distinguish non-default source style id rejection from
+  future existing-workbook style migration or merge. Current docs must also
+  mention the P8.466 `s="0"` default-style normalization exception and the
+  P8.467/P8.471 exact-value-only boundary.
+- `git diff --check` passes.
+
+## P8.394 - Pin public unsupported source cell shape failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load failure-state regression tests and
+docs; no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prove unsupported source cell types and invalid boolean payloads surface
+through the public `WorkbookEditor::try_worksheet()` / `worksheet()` facade as
+clean materialization failures.
+
+Output:
+- `fastxlsx.workbook_editor` now covers source error cells (`t="e"`),
+  date-like cells (`t="d"`), and invalid boolean payloads (`t="b"` with an
+  unsupported value).
+- Both `try_worksheet("Data")` and `worksheet("Data")` throw with the existing
+  unsupported-cell-type or invalid-boolean diagnostic.
+- Failures preserve source/planned catalog inspection, leave no pending edits
+  or dirty materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure: a later `replace_sheet_data()`
+  plus `save_as()` succeeds and writes replacement text.
+
+Non-goals / boundary:
+- No error-cell import, date-cell import, cached value interpretation, date
+  serial conversion, tolerant boolean coercion, formula evaluation, style or
+  sharedStrings migration, relationship repair, or large-file random editing.
+- This keeps unsupported source semantics as fail-before-handle behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Docs keep unsupported source-cell import separate from future semantic import
+  work.
+- `git diff --check` passes.
+
+## P8.395 - Factor public materialization failure hygiene checks
+
+Status: done.
+
+Type: public `WorksheetEditor` test refactor, malformed source worksheet XML
+facade regression, and docs; no behavior change, no new public symbol, no CMake
+membership change, and no package format expansion.
+
+Goal: keep the growing public materialization-failure matrix maintainable while
+adding one XML-malformed public facade smoke.
+
+Output:
+- `tests/test_workbook_editor.cpp` now uses a shared helper for the common
+  `try_worksheet()` / `worksheet()` materialization-failure hygiene assertions:
+  diagnostic propagation, no pending edits, no dirty materialized sessions, no
+  `last_edit_error()` update, and a follow-up Patch save proving the editor is
+  still usable.
+- The existing public failure suites for invalid sharedStrings metadata, source
+  style ids, unsupported source cell types, and invalid boolean payloads now
+  reuse that helper instead of duplicating the same state checks.
+- `fastxlsx.workbook_editor` now also covers malformed source worksheet XML
+  with a missing closing worksheet root. `try_worksheet("Data")` and
+  `worksheet("Data")` throw with the worksheet event reader diagnostic and do
+  not dirty materialized state.
+- Because the same malformed target worksheet also blocks same-sheet
+  `replace_sheet_data()` preflight, the recovery assertion intentionally edits
+  a different valid sheet to prove the editor session is not poisoned.
+
+Non-goals / boundary:
+- No XML repair, namespace repair, tolerant source worksheet recovery,
+  same-sheet Patch bypass for malformed source worksheet XML, public
+  diagnostics object, relationship repair, or large-file random editing.
+- This does not change the runtime materializer or Patch helper behavior; it
+  only factors tests and pins the public facade boundary.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Docs describe malformed target worksheet XML as blocking same-sheet Patch
+  preflight while preserving editor recovery for unrelated valid sheets.
+- `git diff --check` passes.
+
+## P8.396 - Pin public source cell-reference materialization failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load failure-state regression tests and
+docs; no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prove malformed source cell references reach the public `try_worksheet()`
+/ `worksheet()` facade as clean materialization failures without partial
+sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers missing source cell `r` and row/cell
+  reference mismatch.
+- Both public facade calls throw with existing CellStore diagnostics.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()`.
+
+Non-goals / boundary:
+- No cell-reference repair, coordinate inference, row/cell rewrite, XML repair,
+  relationship repair, or large-file random editing.
+- This does not change source materializer or Patch helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Docs keep source coordinate validation separate from repair/inference.
+- `git diff --check` passes.
+
+## P8.397 - Pin public source formula materialization and failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source formula regression tests, Doxygen/docs
+clarification, and failure-state coverage; no new public symbol, no CMake
+membership change, and no package format expansion.
+
+Goal: expose the already-supported source formula materialization behavior at
+the public facade while keeping invalid formula shapes as clean
+fail-before-handle load errors.
+
+Output:
+- `fastxlsx.workbook_editor` covers source formula cells materializing as
+  `CellValue::formula(...)`.
+- A source formula cell with a stale cached `<v>` loads formula text and the
+  later materialized `save_as()` projection omits that cached value.
+- Public facade failure hygiene now covers empty formula text, duplicate
+  formula elements, formula attributes, and formulas in non-numeric cells.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+
+Non-goals / boundary:
+- No formula evaluation, formula parsing, shared/array formula support, cached
+  formula result preservation, calcChain rebuild, dependency graph, coordinate
+  repair, relationship repair, or large-file random editing.
+- This does not change source materializer or Patch helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish formula text import from formula evaluation or
+  cached-value preservation.
+- `git diff --check` passes.
+
+## P8.398 - Pin public source inline text failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source inline-text failure-state regression
+tests, Doxygen/docs clarification, and no runtime behavior change; no new
+public symbol, no CMake membership change, and no package format expansion.
+
+Goal: prove source inline text/XML entity import failures reach the public
+`try_worksheet()` / `worksheet()` facade as clean materialization failures
+without partial sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers source inline text with an unknown XML
+  entity reference.
+- Public facade failure hygiene now covers unsupported inline `<t>` attributes,
+  duplicate inline text elements, and inline rich text markup.
+- Both public facade calls throw with existing CellStore diagnostics.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()`.
+
+Non-goals / boundary:
+- No inline rich text import/preservation, phonetic metadata import, tolerant
+  XML entity recovery, XML repair, namespace repair, relationship repair, or
+  large-file random editing.
+- This does not change source materializer or Patch helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish plain inline text import from rich-text or XML
+  repair.
+- `git diff --check` passes.
+
+## P8.399 - Pin public source row/cell structure failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source row/cell structure and numeric-payload
+failure-state regression tests, Doxygen/docs clarification, and no runtime
+behavior change; no new public symbol, no CMake membership change, and no
+package format expansion.
+
+Goal: prove source row/cell ordering, metadata, and numeric-payload import
+failures reach the public `try_worksheet()` / `worksheet()` facade as clean
+materialization failures without partial sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers unsupported row metadata attributes and
+  unsupported cell metadata attributes.
+- Public facade failure hygiene now covers duplicate row numbers,
+  out-of-order row numbers, out-of-order cell references, and invalid numeric
+  payloads.
+- Both public facade calls throw with existing CellStore diagnostics.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()`.
+
+Non-goals / boundary:
+- No row/cell ordering repair, coordinate sorting, duplicate-cell merge,
+  numeric coercion, row/cell metadata preservation, XML repair, relationship
+  repair, or large-file random editing.
+- This does not change source materializer or Patch helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict source row/cell structure validation
+  from repair/coercion.
+- `git diff --check` passes.
+
+## P8.400 - Pin public source value-wrapper failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source value-wrapper and cell-internal markup
+failure-state regression tests, Doxygen/docs clarification, and no runtime
+behavior change; no new public symbol, no CMake membership change, and no
+package format expansion.
+
+Goal: prove unsupported source value-wrapper shapes reach the public
+`try_worksheet()` / `worksheet()` facade as clean materialization failures
+without partial sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers unsupported scalar `<v>` attributes and
+  duplicate scalar `<v>` wrappers.
+- Public facade failure hygiene now covers inline-string metadata in non-inline
+  cells and scalar `<v>` wrappers in `t="inlineStr"` cells.
+- Cell-internal comments / processing instructions / unsupported markup are
+  pinned as public materialization failures through the existing diagnostic.
+- Both public facade calls throw with existing CellStore diagnostics.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()`.
+
+Non-goals / boundary:
+- No value-wrapper repair, tolerant metadata import, duplicate wrapper merge,
+  inline/scalar coercion, comment/PI/CDATA import, XML repair, relationship
+  repair, or large-file random editing.
+- This does not change source materializer or Patch helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict source value-wrapper validation from
+  repair/coercion/import.
+- `git diff --check` passes.
+
+## P8.401 - Pin public source XML parser failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source XML/entity/attribute parser failure-state
+regression tests, Doxygen/docs clarification, and no runtime behavior change;
+no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prove source XML text/entity and source attribute parser failures reach
+the public `try_worksheet()` / `worksheet()` facade as clean materialization
+failures without partial sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers unterminated XML entity text.
+- Public facade failure hygiene now covers invalid XML character references and
+  out-of-range XML character references.
+- Attribute parser hygiene covers unquoted attributes and duplicate cell
+  reference / cell type attributes.
+- Both public facade calls throw with the live parser diagnostic.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()` on an unrelated valid sheet.
+
+Non-goals / boundary:
+- No tolerant XML entity recovery, invalid character replacement, malformed
+  attribute repair, duplicate attribute merge, XML repair, same-sheet Patch
+  bypass, relationship repair, or large-file random editing.
+- This does not change source materializer, worksheet event reader, or Patch
+  helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict source XML/entity/attribute validation
+  from repair/recovery/import.
+- `git diff --check` passes.
+
+## P8.402 - Pin public source reference boundary failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source cell-reference and row-number boundary
+failure-state regression tests, Doxygen/docs clarification, and no runtime
+behavior change; no new public symbol, no CMake membership change, and no
+package format expansion.
+
+Goal: prove source coordinate and row-number boundary failures reach the public
+`try_worksheet()` / `worksheet()` facade as clean materialization failures
+without partial sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers source cell column overflow and source cell
+  row overflow.
+- Public facade failure hygiene now covers zero-row cell references and
+  non-column-first cell references.
+- Source row-number parser hygiene covers zero, overflow, and non-numeric row
+  `r` values.
+- Both public facade calls throw with existing parser diagnostics.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()` on an unrelated valid sheet.
+
+Non-goals / boundary:
+- No coordinate inference, clamping, sorting, row-number repair, row/cell
+  mismatch repair, same-sheet Patch bypass, XML repair, relationship repair, or
+  large-file random editing.
+- This does not change source materializer, worksheet event reader, or Patch
+  helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict source coordinate validation from
+  inference/clamping/repair.
+- `git diff --check` passes.
+
+## P8.403 - Pin public source state-machine failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source row/cell state-machine failure-state
+regression tests, Doxygen/docs clarification, and no runtime behavior change;
+no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prove unsupported source row/cell nesting and scope failures reach the
+public `try_worksheet()` / `worksheet()` facade as clean materialization
+failures without partial sessions.
+
+Output:
+- `fastxlsx.workbook_editor` covers source row elements outside `sheetData`.
+- Public facade failure hygiene now covers nested source row elements, source
+  cells outside row elements, and nested source cell elements.
+- Both public facade calls throw with existing worksheet event reader
+  diagnostics.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()` on an unrelated valid sheet.
+
+Non-goals / boundary:
+- No row/cell nesting repair, implicit row or `sheetData` scope inference,
+  state-machine recovery, same-sheet Patch bypass, XML repair, relationship
+  repair, or large-file random editing.
+- This does not change source materializer, worksheet event reader, or Patch
+  helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict source row/cell state-machine
+  validation from inference/repair/recovery.
+- `git diff --check` passes.
+
+## P8.404 - Pin public source supported-value materialization
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load positive regression tests,
+Doxygen/docs clarification, and no public behavior expansion beyond existing
+CellStore materialization; no new public symbol, no CMake membership change, and
+no package format expansion.
+
+Goal: prove the current public source materializer reads supported source blank,
+boolean, and empty inline-string cells through the same small-file
+`WorksheetEditor` facade instead of only covering text/number/formula and
+negative paths.
+
+Output:
+- Source self-closing cells materialize as explicit `CellValue::blank()`
+  records.
+- Source `t="b"` cells with `0` / `1` materialize as `CellValue::boolean(false)`
+  / `CellValue::boolean(true)`.
+- Source empty inline `<t></t>` materializes as `CellValue::text("")`.
+- Source inline-string cells without text materialize as explicit blank records.
+- Read-only materialization stays clean; a later mutation flushes through
+  `save_as()` using the current sparse `CellStore` projection.
+
+Non-goals / boundary:
+- No new source cell type, date/error support, style migration, sharedStrings
+  migration, rich-text preservation, cached formula preservation, metadata
+  synchronization, or large-file random editing.
+- The save projection still writes sparse-store text as inline strings and
+  explicit blank records as empty `<c/>` cells.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish supported source value materialization from
+  broader source dependency migration or unsupported type coercion.
+- `git diff --check` passes.
+
+## P8.405 - Pin public empty source worksheet materialization
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load positive regression tests,
+Doxygen/docs clarification, and no runtime behavior change; no new public
+symbol, no CMake membership change, and no package format expansion.
+
+Goal: prove empty source worksheets can enter the small-file public
+`WorksheetEditor` path as empty sparse stores and can later be saved through the
+current standalone worksheet projection.
+
+Output:
+- Source worksheets with no `sheetData` materialize as empty sparse stores.
+- Source worksheets with self-closing `<sheetData/>` materialize as empty sparse
+  stores.
+- Read-only materialization stays clean and exposes zero sparse snapshots.
+- A later `set_cell()` marks the materialized session dirty and `save_as()`
+  writes standalone worksheet XML with dimension and `sheetData` derived from
+  active sparse records.
+- Untouched workbook sheets remain preserved beside the materialized edit.
+
+Non-goals / boundary:
+- No XML repair, row/cell scope inference for non-empty malformed input,
+  same-sheet Patch bypass, source worksheet wrapper metadata preservation,
+  relationship repair, metadata synchronization, or large-file random editing.
+- Dirty materialized save still uses the current standalone CellStore worksheet
+  projection; it does not preserve source `dimension`, `sheetViews`, `cols`, or
+  other wrapper metadata.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish empty source worksheet materialization from
+  XML repair or wrapper metadata preservation.
+- `git diff --check` passes.
+
+## P8.406 - Pin public source root boundary failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source worksheet-root / `sheetData` boundary
+failure-state regression tests, Doxygen/docs clarification, and no runtime
+behavior change; no new public symbol, no CMake membership change, and no
+package format expansion.
+
+Goal: prove malformed top-level worksheet XML boundaries reach the public
+`try_worksheet()` / `worksheet()` facade as clean materialization failures
+without partial sessions.
+
+Output:
+- Public facade failure hygiene covers markup before the worksheet root.
+- Duplicate top-level `sheetData` elements fail through existing worksheet event
+  reader diagnostics.
+- Duplicate worksheet roots and non-whitespace text after the worksheet root
+  fail cleanly.
+- Failures preserve catalog inspection, leave no pending edits or dirty
+  materialized sessions, and do not update `last_edit_error()`.
+- The same editor remains usable after failure through later
+  `replace_sheet_data()` / `save_as()` on an unrelated valid sheet.
+
+Non-goals / boundary:
+- No XML repair, tolerant root recovery, duplicate `sheetData` merge, same-sheet
+  Patch bypass, relationship repair, wrapper metadata preservation, or
+  large-file random editing.
+- This does not change source materializer, worksheet event reader, or Patch
+  helper behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict worksheet root / `sheetData` boundary
+  validation from repair or tolerant recovery.
+- `git diff --check` passes.
+
+## P8.407 - Pin public source wrapper metadata projection boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load / dirty-save projection regression
+tests, Doxygen/docs clarification, and no runtime behavior change; no new
+public symbol, no CMake membership change, and no package format expansion.
+
+Goal: prove worksheet-level source wrapper metadata outside cells does not block
+public materialization of supported cells, but dirty materialized save uses the
+current standalone sparse `CellStore` worksheet projection instead of
+preserving or synchronizing that metadata.
+
+Output:
+- `fastxlsx.workbook_editor` covers source worksheet-level `sheetPr`,
+  `dimension`, `sheetViews`, `sheetFormatPr`, `cols`, and `autoFilter` beside a
+  supported inline-string cell.
+- Supported cells still materialize, and read-only materialization stays clean.
+- Dirty save writes generated `dimension` and `sheetData` from sparse records.
+- Dirty save drops source wrapper metadata from the materialized worksheet
+  output.
+- Unrelated sheets remain preserved beside the materialized edit.
+
+Non-goals / boundary:
+- No source worksheet wrapper metadata preservation, synchronization, repair,
+  range recalculation, relationship repair, style/sharedStrings migration, or
+  large-file random editing.
+- This does not change source materializer, worksheet event reader, Patch
+  helper behavior, or the internal sheetData Patch path that preserves wrapper
+  metadata for a different operation mode.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish materializing supported cells beside source
+  wrapper metadata from preserving source wrapper metadata during dirty
+  materialized projection.
+- `git diff --check` passes.
+
+## P8.408 - Pin public source comment/PI projection boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load / dirty-save projection regression
+tests, Doxygen/docs clarification, and no runtime behavior change; no new
+public symbol, no CMake membership change, and no package format expansion.
+
+Goal: prove source worksheet comments and processing instructions outside cells
+do not block public materialization of supported cells, but dirty materialized
+save uses the standalone sparse `CellStore` worksheet projection and therefore
+drops those source comment / PI nodes.
+
+Output:
+- `fastxlsx.workbook_editor` covers comments and processing instructions before
+  the worksheet root, inside the worksheet root, inside `sheetData` outside
+  rows/cells, after rows, and after `sheetData`.
+- Supported cells beside those source comment / PI nodes still materialize, and
+  read-only materialization stays clean.
+- Dirty save writes generated `dimension` and `sheetData` from sparse records.
+- Dirty save drops source worksheet comments and processing instructions from
+  the materialized worksheet output.
+- Unrelated sheets remain preserved beside the materialized edit.
+
+Non-goals / boundary:
+- No comment import, processing-instruction preservation, XML trivia
+  preservation, comments-part editing, threaded comments, relationship repair,
+  wrapper metadata synchronization, or large-file random editing.
+- Cell-internal comments / processing instructions remain unsupported source
+  shapes and continue to fail instead of being imported.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish cell-external comment / PI tolerance from
+  comment import or trivia preservation.
+- `git diff --check` passes.
+
+## P8.409 - Pin no-op save_as after read-only WorksheetEditor materialization
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor::save_as()` no-op regression
+tests, Doxygen/docs clarification, and no runtime behavior change; no new
+public symbol, no CMake membership change, and no package format expansion.
+
+Goal: prove opening a `WorksheetEditor` and performing only read-only
+materialization does not turn a source-loaded worksheet into a pending edit, so
+`WorkbookEditor::save_as()` keeps the current no-op copy-original package
+behavior instead of flushing a standalone sparse projection.
+
+Output:
+- `fastxlsx.workbook_editor` covers read-only materialization of a worksheet
+  that combines workbook-backed shared string indexes, wrapper metadata,
+  comments, and processing instructions.
+- The materialized `WorksheetEditor` can read the source shared string cells
+  while staying clean.
+- The owning `WorkbookEditor` exposes no pending changes, no pending public edit
+  count, and no dirty materialized worksheet names.
+- `save_as()` after read-only materialization writes decompressed output entries
+  identical to the source package entries.
+- Source wrapper metadata, comments, processing instructions, and `t="s"`
+  shared string indexes remain byte-for-byte decompressed source content in the
+  no-op output; no inline-string projection is flushed.
+
+Non-goals / boundary:
+- No clean-session commit semantics, detached worksheet owner, in-place save,
+  transaction snapshot, metadata synchronization, wrapper/comment
+  preservation during dirty projection, sharedStrings migration, or relationship
+  repair.
+- Dirty materialized sessions still flush through the existing standalone
+  sparse `CellStore` projection on `save_as()`.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish clean read-only materialized sessions from
+  dirty sessions waiting for `save_as()` auto-flush.
+- `git diff --check` passes.
+
+## P8.410 - Pin no-op save_as after failed WorksheetEditor materialization
+
+Status: done.
+
+Type: public `WorksheetEditor` materialization failure /
+`WorkbookEditor::save_as()` no-op regression tests, Doxygen/docs
+clarification, and no runtime behavior change; no new public symbol, no CMake
+membership change, and no package format expansion.
+
+Goal: prove source materialization failure does not leave a partial worksheet
+session, pending edit, dirty materialized name, or public edit diagnostic, and
+does not block or corrupt a later no-op `WorkbookEditor::save_as()` copy-original
+output.
+
+Output:
+- `fastxlsx.workbook_editor` covers `try_worksheet()` and `worksheet()` failing
+  on a source worksheet with rejected style id metadata.
+- The failure keeps source/planned catalog inspection usable and leaves
+  pending-change counters, dirty materialized names, and `last_edit_error()`
+  clean.
+- A following no-op `save_as()` writes decompressed output entries identical to
+  the source package entries.
+- The rejected source worksheet bytes, including the style id attribute, and
+  untouched sheet bytes remain preserved by the no-op output.
+
+Non-goals / boundary:
+- No tolerant import of non-default source style ids, style migration, style
+  merge, XML repair, recovery materialization, dirty projection, relationship
+  repair, semantic worksheet validation during no-op copy, or save-as
+  diagnostic conversion.
+- This does not change the existing failure behavior for unsupported source
+  metadata; it only pins the state and no-op save boundary after that failure.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish failed materialization no-state-pollution from
+  save-as diagnostics and dirty-session auto-flush.
+- `git diff --check` passes.
+
+## P8.411 - Pin no-op save_as after missing try_worksheet lookup
+
+Status: done.
+
+Type: public `WorkbookEditor::try_worksheet()` optional lookup /
+`WorkbookEditor::save_as()` no-op regression test extension, Doxygen/docs
+clarification, and no runtime behavior change; no new public symbol, no CMake
+membership change, and no package format expansion.
+
+Goal: prove the missing-sheet `try_worksheet()` path remains a pure optional
+lookup: it returns `std::nullopt`, preserves prior public edit diagnostics,
+does not queue pending edits or dirty materialized sessions, and does not
+disturb a later no-op `save_as()` copy-original output.
+
+Output:
+- `fastxlsx.workbook_editor` extends the public missing-`try_worksheet()`
+  regression to call no-op `save_as()` afterward.
+- The test keeps a prior `last_edit_error()` diagnostic from an unrelated
+  failed public edit and verifies missing lookup plus no-op save do not
+  overwrite it.
+- The no-op output entries remain identical to the source package entries.
+
+Non-goals / boundary:
+- No missing-sheet auto-create, tolerant lookup fallback, materialization,
+  queued edit, catalog mutation, in-place save, or diagnostic conversion.
+- This is separate from P8.410: missing `try_worksheet()` returns empty, while
+  non-missing source materialization failures still throw `FastXlsxError`.
+
+Acceptance:
+- `fastxlsx.workbook_editor` passes.
+- Full default CTest passes.
+- Public/header docs distinguish missing optional lookup from materialization
+  failures and dirty-session auto-flush.
+- `git diff --check` passes.
+
+## P8.412 - Shard WorkbookEditor CTest coverage
+
+Status: done.
+
+Type: test infrastructure and task/docs update; no runtime behavior change, no
+public API change, no package format expansion, and no dependency change.
+
+Goal: keep the growing `WorkbookEditor` / `WorksheetEditor` regression suite
+inside the default 60s-per-test CTest gate by splitting the single long
+`fastxlsx.workbook_editor` test registration into focused shards while reusing
+the same `fastxlsx_workbook_editor_tests` executable.
+
+Output:
+- `tests/test_workbook_editor.cpp` accepts `--shard=<name>` with shard names
+  `core`, `public`, `source-success`, `source-failure`, `materialized`, and
+  `facade`; no argument still runs all shards for local manual use.
+- `tests/CMakeLists.txt` registers `fastxlsx.workbook_editor.core`,
+  `fastxlsx.workbook_editor.public`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.materialized`, and
+  `fastxlsx.workbook_editor.facade`.
+- `ctest -R "fastxlsx\\.workbook_editor"` continues to select the complete
+  WorkbookEditor coverage through the shard prefix.
+
+Non-goals / boundary:
+- No test body behavior change, no production code change, no Catch2 migration,
+  no parallel test runner requirement, and no relaxation of the 60s timeout.
+- Historical notes that mention `fastxlsx.workbook_editor` refer to the test
+  family/prefix after this split, not a single CTest item.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor"
+  --output-on-failure --timeout 60` runs all six shards and passes.
+- Full default CTest passes.
+- `git diff --check` passes.
+
+## P8.413 - Split PackageEditor CellStore CTest shard
+
+Status: done.
+
+Type: test infrastructure and task/docs update; no runtime behavior change, no
+public API change, no package format expansion, and no dependency change.
+
+Goal: keep the growing internal `PackageEditor` CellStore/source-loaded
+regression suite inside the default 60s-per-test CTest gate by splitting the
+single `fastxlsx.package_editor.cellstore` shard into focused shard-family
+entries while reusing the same `fastxlsx_package_editor_tests` executable.
+
+Output:
+- `tests/test_package_editor.cpp` replaces the single `cellstore` shard with
+  `cellstore-core`, `cellstore-chunks`, `cellstore-source`,
+  `cellstore-failures`, and `cellstore-catalog`.
+- `tests/CMakeLists.txt` registers
+  `fastxlsx.package_editor.cellstore-core`,
+  `fastxlsx.package_editor.cellstore-chunks`,
+  `fastxlsx.package_editor.cellstore-source`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-catalog`.
+- `ctest -R "fastxlsx\\.package_editor\\.cellstore"` continues to select the
+  full CellStore coverage through the shard prefix.
+- Focused CellStore validation passes with the longest shard under the default
+  60s timeout.
+
+Non-goals / boundary:
+- No test body behavior change, no production code change, no Catch2 migration,
+  no parallel test runner requirement, and no relaxation of the 60s timeout.
+- Historical notes that mention `fastxlsx.package_editor.cellstore` refer to
+  the test shard family/prefix after this split, not a single CTest item.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.package_editor\\.cellstore"
+  --output-on-failure --timeout 60` runs all five shards and passes.
+- Full default CTest passes.
+- `git diff --check` passes.
+
+## P8.414 - Normalize explicit default StyleId in WorksheetEditor cells
+
+Status: done.
+
+Type: public `WorksheetEditor` style-boundary hardening, internal `CellStore`
+normalization, public regression test, and docs update; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: keep the first public In-memory worksheet slice from exposing a
+semantically noisy explicit default style handle. `WorksheetEditor::set_cell()`
+should accept caller-supplied `CellValue::with_style(StyleId{})`, but store it
+as an unstyled value because the dirty projection already omits `s="0"`.
+
+Output:
+- `CellRecord::from_value()` stores only non-default style ids.
+- `WorksheetEditor::set_cell()` still rejects non-default style ids, accepts
+  `StyleId{0}`, and readback through `get_cell()` / `try_cell()` exposes no
+  style handle for the normalized value.
+- `WorksheetEditor::sparse_cells()` snapshots expose the normalized no-style
+  value.
+- Dirty `save_as()` output omits `s="0"` for the normalized cell.
+
+Non-goals / boundary:
+- No non-default style id support, source style import, style id migration,
+  style registry merge, style preservation, rich text support, relationship
+  repair, or existing-workbook formatting parity.
+- Source worksheet `s="0"` attributes still fail during materialization; this
+  task only covers caller-supplied default style handles on public mutations.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs describe default-style normalization separately from
+  non-default style support.
+- `git diff --check` passes.
+
+## P8.415 - Pin WorksheetEditor row/column coordinate guardrails
+
+Status: done.
+
+Type: public `WorksheetEditor` input-validation hardening, Doxygen/API docs
+clarification, and public regression tests; no new public symbol, no CMake
+membership change, no package format expansion, and no dependency change.
+
+Goal: make the row/column overloads of `WorksheetEditor::try_cell()`,
+`get_cell()`, `set_cell()`, and `erase_cell()` explicitly reject coordinates
+outside Excel worksheet limits instead of letting callers confuse invalid
+coordinates with missing sparse cells.
+
+Output:
+- Added an explicit public-facade coordinate guardrail for row/column overloads.
+- Invalid `try_cell()` / `get_cell()` row/column reads throw `FastXlsxError`
+  without mutating the sparse store or updating `WorkbookEditor::last_edit_error()`.
+- Invalid `set_cell()` / `erase_cell()` row/column mutations throw
+  `FastXlsxError`, update `last_edit_error()`, and leave the materialized
+  sparse store clean and unchanged.
+- The last legal Excel coordinate (`1048576`, `16384`) remains accepted and
+  reports a missing sparse cell as `std::nullopt` when no record exists.
+- A later valid row/column mutation clears the prior mutation diagnostic and
+  still persists through `save_as()`.
+
+Non-goals / boundary:
+- No coordinate inference, clamping, lowercase A1 tolerance, range support,
+  dense matrix reads, streaming sparse iterators, row/column insertion/deletion,
+  relationship repair, metadata synchronization, or large-file low-memory
+  random access.
+- No change to source worksheet coordinate parsing policy; this task only pins
+  public row/column overload behavior after a worksheet is already materialized.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish invalid coordinate failures from missing
+  sparse cells and from A1-string parsing failures.
+- `git diff --check` passes.
+
+## P8.416 - Sync README WorksheetEditor boundary wording
+
+Status: done.
+
+Type: API-facing documentation sync; no code behavior change, no public symbol,
+no CMake membership change, no package format expansion, and no dependency
+change.
+
+Goal: keep the README's current public API summary and `WorksheetEditor`
+small-file example aligned with the latest verified P8.389 / P8.414 / P8.415
+behavior.
+
+Output:
+- README public API summary now names row/column coordinate guardrails,
+  default `StyleId{0}` normalization, and workbook-backed source sharedStrings
+  read-only materialization.
+- The `WorksheetEditor` example notes that source `t="s"` cells become plain
+  text, dirty save still writes inline strings, and source sharedStrings are
+  preserved rather than rebuilt or written back.
+- The example shows caller-supplied default `StyleId{0}` normalization and
+  documents invalid row/column read-vs-mutation diagnostic behavior.
+
+Non-goals / boundary:
+- No new README claim for non-default style id support, sharedStrings
+  writeback/rebuild/migration, style migration, relationship repair,
+  coordinate inference/clamping, dense range reads, or large-file low-memory
+  random editing.
+- No code/test behavior change beyond the already verified P8.415 state.
+
+Acceptance:
+- README current API summary and `WorksheetEditor` example match public header
+  wording.
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- `git diff --check` passes.
+
+## P8.417 - Pin WorksheetEditor matching-option reacquire reuse
+
+Status: done.
+
+Type: public `WorksheetEditor` handle/session state hygiene regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove repeated public `WorkbookEditor::worksheet()` /
+`try_worksheet()` calls for the same planned sheet and matching
+`WorksheetEditorOptions` reuse the existing materialized sparse-store session
+instead of reloading source cells and overwriting dirty edits.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression reacquires a dirty
+  materialized sheet through both `try_worksheet()` and `worksheet()` with the
+  same options.
+- The reacquired handles see dirty state written by the first handle, and the
+  first handle sees mutations written through the reacquired handle.
+- Matching-option reacquire does not increment `pending_change_count()` before
+  save, does not update `last_edit_error()`, and `save_as()` flushes the reused
+  session exactly once.
+- The output worksheet contains the latest dirty values and does not restore
+  old source placeholder values.
+- Public header/API docs now state that matching `worksheet()` /
+  `try_worksheet()` reacquires share the same dirty materialized state.
+
+Non-goals / boundary:
+- No new public API, no owning `WorksheetEditor`, no transaction history,
+  no clean-session commit semantics, no session cloning, no source reload
+  policy change, no style/sharedStrings migration, no relationship repair, and
+  no large-file low-memory random editing.
+- Mismatched `WorksheetEditorOptions` and same-sheet Patch replacement mixing
+  remain failure paths.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish matching-option reuse from transaction or
+  clone semantics.
+- `git diff --check` passes.
+
+## P8.418 - Pin post-save WorksheetEditor matching-option reacquire reuse
+
+Status: done.
+
+Type: public `WorksheetEditor` post-save handle/session state hygiene
+regression, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove a successful `WorkbookEditor::save_as()` does not cause later
+matching-option `worksheet()` / `try_worksheet()` calls to reload the source
+worksheet and overwrite already-flushed materialized state.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression saves a dirty
+  materialized sheet, then reacquires the same planned sheet through
+  `try_worksheet()` with matching options.
+- The reacquired post-save handle reads the saved materialized value rather
+  than the original source placeholder, and starts clean because the first save
+  cleared the dirty flag.
+- A later mutation through the reacquired handle is visible through the older
+  handle and flushes as a second materialized handoff.
+- First and second output packages prove the staged post-save mutation is not
+  backfilled into the earlier output, while the second output keeps both saved
+  and later materialized values.
+- Public header/API docs now state that matching reacquire reuses the saved
+  materialized state after `save_as()`.
+
+Non-goals / boundary:
+- No in-place source mutation, no transaction history, no clean-session commit
+  semantics, no workbook reload API, no session cloning, no style/sharedStrings
+  migration, no relationship repair, and no large-file low-memory random
+  editing.
+- Mismatched options and same-sheet Patch replacement mixing remain unchanged
+  failure paths.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish post-save session reuse from source-package
+  mutation or transaction semantics.
+- `git diff --check` passes.
+
+## P8.419 - Pin post-save WorksheetEditor reacquire dirty diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` post-save diagnostic-state regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove matching-option post-save `worksheet()` reacquire reuses the saved
+clean materialized session without making dirty materialized diagnostics appear
+until a later mutation actually changes the session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression saves a dirty
+  materialized sheet, then reacquires it through `worksheet()` with matching
+  `WorksheetEditorOptions`.
+- After the first save and after clean post-save reacquire,
+  `pending_materialized_worksheet_names()` is empty,
+  `pending_materialized_cell_count()` is `0`, and
+  `estimated_pending_materialized_memory_usage()` is `0`.
+- A later mutation through the reacquired handle dirties the shared session,
+  exposes the planned sheet name in dirty materialized diagnostics, and makes
+  aggregate dirty cell/memory diagnostics match the reacquired session.
+- A second successful `save_as()` records one more materialized handoff and
+  clears dirty materialized diagnostics again.
+- Public header/API docs now state that clean matching reacquire does not
+  re-add dirty materialized diagnostics until a later mutation.
+
+Non-goals / boundary:
+- No new public API, no transaction history, no clean-session commit model,
+  no source-package mutation, no session clone semantics, no style/sharedStrings
+  migration, no relationship repair, and no large-file low-memory random
+  editing.
+- `pending_change_count()` remains a coarse successful-public-edit counter and
+  is not redefined as dirty materialized session count.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish clean post-save reacquire diagnostics from
+  transaction or commit semantics.
+- `git diff --check` passes.
+
+## P8.420 - Pin post-save WorksheetEditor option-mismatch hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` post-save option-identity failure regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove mismatched `WorksheetEditorOptions` still reject an existing saved
+materialized session after `save_as()` and do not corrupt that saved session or
+its diagnostics.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression saves a dirty
+  materialized sheet, then calls both `try_worksheet()` and `worksheet()` with
+  different `WorksheetEditorOptions`.
+- Both post-save mismatch calls throw `FastXlsxError`, leave
+  `last_edit_error()` unchanged, do not increment `pending_change_count()`, and
+  keep dirty materialized diagnostics empty/zero.
+- The existing saved materialized value remains readable through the original
+  handle after mismatch failures.
+- A later matching-option `worksheet()` call still reacquires the saved session,
+  can mutate it, and a later `save_as()` persists both the pre-mismatch saved
+  value and the post-mismatch mutation.
+
+Non-goals / boundary:
+- No dynamic session reconfiguration, no option merging, no source reload,
+  no session clone semantics, no transaction history, no clean-session commit
+  model, no style/sharedStrings migration, no relationship repair, and no
+  large-file low-memory random editing.
+- Mismatched options remain fail-fast behavior for an existing materialized
+  session before and after save.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish option mismatch from matching-option
+  reacquire reuse and from dynamic reconfiguration.
+- `git diff --check` passes.
+
+## P8.421 - Pin post-save WorksheetEditor summary diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor::pending_worksheet_edits()` post-save diagnostic
+regression, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove `pending_worksheet_edits()` follows the same saved-clean
+materialized session lifecycle as the lower-level dirty materialized
+diagnostics around `save_as()` and matching-option reacquire.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression dirties a materialized
+  `WorksheetEditor` session and verifies the pre-save summary reports only
+  `materialized_dirty`, `materialized_cell_count`, and
+  `estimated_materialized_memory_usage`.
+- The first successful `save_as()` records one materialized Patch handoff and
+  clears the dirty-only worksheet summary.
+- A clean matching-option post-save `worksheet()` reacquire reuses the saved
+  materialized state, remains clean, and keeps `pending_worksheet_edits()`
+  empty.
+- A later mutation through the reacquired handle re-adds one dirty
+  materialized summary with counts/memory matching the reused session, without
+  incrementing `pending_change_count()` before the next save.
+- The second successful `save_as()` records the later materialized handoff,
+  clears the dirty-only summary again, and the two output packages prove the
+  later mutation is not backfilled into the earlier output.
+- Public header/API docs now state that clean matching reacquire after save
+  remains omitted from `pending_worksheet_edits()` until a later mutation.
+
+Non-goals / boundary:
+- No new public API, no transaction history, no commit-state model, no
+  conversion of materialized handoffs into public whole-`<sheetData>`
+  replacement summaries, no source-package mutation, no style/sharedStrings
+  migration, no relationship repair, and no large-file low-memory random
+  editing.
+- `pending_change_count()` remains a coarse successful public handoff counter,
+  not a dirty-session or current-summary count.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish dirty-only materialized summary diagnostics
+  from replacement payload diagnostics and transaction semantics.
+- `git diff --check` passes.
+
+## P8.422 - Pin post-save renamed WorksheetEditor summary diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor::pending_worksheet_edits()` renamed-session
+diagnostic regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion,
+and no dependency change.
+
+Goal: prove a queued public sheet rename keeps its source-order worksheet
+summary visible after a dirty materialized `WorksheetEditor` session is
+auto-flushed by `save_as()`, while the materialized dirty fields clear until a
+later mutation dirties the saved renamed session again.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `SummaryRenamed`, materializes the planned name, mutates a cell, and checks
+  the pre-save summary reports both `renamed` and `materialized_dirty`.
+- The first successful `save_as()` records the rename plus one materialized
+  handoff and leaves one rename-only summary with `materialized_dirty=false`,
+  zero materialized cell count, and zero materialized memory estimate.
+- Clean matching-option post-save reacquire of the renamed sheet reuses the
+  saved materialized state and keeps the summary rename-only.
+- A later mutation through the reacquired renamed handle re-adds materialized
+  dirty fields to the same source-order summary, and the next `save_as()`
+  clears those fields again while preserving the rename summary.
+- Output package checks prove both saves keep the planned sheet catalog name
+  and that the later mutation is not backfilled into the earlier output.
+
+Non-goals / boundary:
+- No new public API, no sheet rename dependency repair, no definedNames /
+  formula / table / drawing / chart synchronization, no transaction history,
+  no source-package mutation, no style/sharedStrings migration, no relationship
+  repair, and no large-file low-memory random editing.
+- `pending_worksheet_edits()` remains a current planned-state diagnostic; it
+  does not expose internal EditPlan/output-plan reasons or convert materialized
+  handoffs into public whole-`<sheetData>` replacement summaries.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish rename-context summaries from dirty-only
+  materialized summaries and from full sheet rename semantics.
+- `git diff --check` passes.
+
+## P8.423 - Preserve renamed WorksheetEditor summaries after rejected save_as
+
+Status: done.
+
+Type: public `WorkbookEditor::pending_worksheet_edits()` rejected-save state
+hygiene regression, Doxygen/API docs clarification, and task-plan sync; no new
+public symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove `save_as()` path preflight rejection happens before materialized
+auto-flush, preserving a queued rename plus dirty materialized
+`WorksheetEditor` summary without counting a materialized handoff or updating
+`last_edit_error()`.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `FailedSaveSummary`, materializes that planned sheet, mutates a cell, and
+  then attempts `save_as(source)`.
+- The source-overwrite rejection leaves the borrowed `WorksheetEditor` dirty,
+  keeps `pending_change_count()` at the rename-only count, does not update
+  `last_edit_error()`, and preserves dirty materialized name/cell/memory
+  diagnostics.
+- `pending_worksheet_edits()` still reports one source-order summary with
+  `renamed=true`, `materialized_dirty=true`, no replacement diagnostics, and
+  materialized counts/memory matching the dirty session.
+- A later safe `save_as()` flushes the dirty renamed session, increments the
+  public handoff count once, leaves a rename-only summary, and writes the
+  planned sheet name plus materialized value to output.
+
+Non-goals / boundary:
+- No new public API, no atomic save rollback model, no broad save failure
+  taxonomy, no in-place save, no sheet rename dependency repair, no
+  style/sharedStrings migration, no relationship repair, and no large-file
+  low-memory random editing.
+- The covered failure is path preflight before materialized auto-flush; it does
+  not claim every possible PackageEditor/write failure preserves dirty-session
+  state identically after staging starts.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish preflight rejection hygiene from broad
+  save/rollback semantics.
+- `git diff --check` passes.
+
+## P8.424 - Pin renamed WorksheetEditor materialized aggregate diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor` dirty materialized diagnostic regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove lower-level dirty materialized diagnostics follow the same
+planned-name post-save lifecycle for renamed `WorksheetEditor` sessions as the
+coarse `pending_worksheet_edits()` summaries.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `RenamedDiagnostics`, materializes that planned sheet, mutates a cell, and
+  verifies `pending_materialized_worksheet_names()` reports the planned name.
+- Aggregate dirty materialized cell and memory diagnostics are checked against
+  the borrowed `WorksheetEditor` before save, after clean post-save reacquire,
+  after a later mutation, and after the second save.
+- Successful `save_as()` clears dirty materialized names/counts/memory for the
+  renamed session while retaining the queued rename as a public handoff.
+- Clean matching-option reacquire does not re-dirty diagnostics, and a later
+  mutation re-adds the planned dirty name until the next successful save.
+- Output package checks prove the planned renamed sheet is saved and that the
+  later mutation is not backfilled into the earlier output.
+
+Non-goals / boundary:
+- No new public API, no sheet rename dependency repair, no transaction history,
+  no source-package mutation, no style/sharedStrings migration, no relationship
+  repair, and no large-file low-memory random editing.
+- The diagnostics remain dirty-session aggregates only; they do not expose
+  queued whole-`<sheetData>` replacement payloads, internal EditPlan entries,
+  package output-plan reasons, or process RSS.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish planned-name dirty materialized diagnostics
+  from rename semantics and save/commit semantics.
+- `git diff --check` passes.
+
+## P8.425 - Pin rename-back WorksheetEditor materialized diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back/materialized diagnostic regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove a sheet renamed to a temporary planned name and then renamed back to
+its source name does not leak the transient name into later materialized
+`WorksheetEditor` diagnostics, summaries, or saved output.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientData`, renames it back to `Data`, then materializes and mutates the
+  restored source name.
+- Before materialization, rename-back keeps `pending_change_count()` as a
+  successful public edit count but clears current rename-only summaries and
+  leaves dirty materialized diagnostics empty.
+- After mutation, `pending_materialized_worksheet_names()` reports `Data`,
+  aggregate dirty materialized cell/memory diagnostics match the borrowed
+  `WorksheetEditor`, and `pending_worksheet_edits()` reports matching
+  source/planned names with `renamed=false`.
+- A successful `save_as()` clears dirty materialized diagnostics and summaries,
+  counts one materialized handoff, writes the restored source sheet name, and
+  does not leak the transient planned name into workbook XML.
+
+Non-goals / boundary:
+- No new public API, no transaction/undo model, no source-package mutation, no
+  sheet rename dependency repair, no style/sharedStrings migration, no
+  relationship repair, and no large-file low-memory random editing.
+- `pending_change_count()` remains a coarse successful public edit counter, not
+  a current-summary count or commit-state counter.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish rename-back diagnostic hygiene from undo or
+  transaction semantics.
+- `git diff --check` passes.
+
+## P8.426 - Pin rename-back WorksheetEditor failed-mutation hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-mutation state hygiene
+regression, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove invalid `WorksheetEditor` mutations after a rename-back path do not
+dirty materialized state, do not revive transient planned names, and still allow
+later valid mutations to recover under the restored source/planned name.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientFailure`, renames it back to `Data`, materializes `Data`, and calls
+  invalid lowercase A1 `set_cell("a1", ...)`.
+- The failed mutation sets `last_edit_error()`, keeps the borrowed session
+  clean, keeps dirty materialized names/cell/memory diagnostics empty, preserves
+  empty current `pending_worksheet_edits()`, and does not restore the transient
+  planned name.
+- A later valid mutation clears `last_edit_error()`, dirties the session under
+  the restored `Data` name, and reports a current summary with matching
+  source/planned names and `renamed=false`.
+- `save_as()` records one materialized handoff, clears dirty diagnostics, writes
+  the recovered mutation, and does not leak the failed payload or transient
+  planned name into output.
+
+Non-goals / boundary:
+- No new public API, no transaction/undo model, no source-package mutation, no
+  broad failed-save taxonomy, no sheet rename dependency repair, no
+  style/sharedStrings migration, no relationship repair, and no large-file
+  low-memory random editing.
+- `last_edit_error()` remains a coarse public facade diagnostic, not an
+  exception stack, internal EditPlan reason, output-plan reason, or relationship
+  audit object.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish failed-mutation state hygiene from undo or
+  transaction semantics.
+- `git diff --check` passes.
+
+## P8.427 - Pin rename-back WorksheetEditor failed-save hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save state hygiene
+regression, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove `save_as()` output-path preflight runs before materialized
+auto-flush even when a sheet was renamed to a transient planned name, renamed
+back to its source name, and then dirtied through `WorksheetEditor`.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientSave`, renames it back to `Data`, materializes `Data`, and dirties
+  the borrowed session.
+- `save_as(source)` throws before auto-flush, leaves the source package
+  unchanged, keeps the borrowed session dirty, preserves dirty
+  materialized names/cell/memory diagnostics under `Data`, keeps
+  `pending_change_count()` at the two successful rename calls, and does not
+  create `last_edit_error()`.
+- `pending_worksheet_edits()` keeps a single dirty materialized summary with
+  matching source/planned names, `renamed=false`, no replacement diagnostics,
+  and the same materialized cell/memory values.
+- A later safe `save_as()` records one materialized handoff, clears dirty
+  diagnostics, writes the materialized edit, and does not leak the transient
+  planned name.
+
+Non-goals / boundary:
+- No new public API, no transaction/undo model, no atomic save/rollback
+  guarantee beyond this path-preflight state hygiene, no source-package
+  mutation, no sheet rename dependency repair, no style/sharedStrings
+  migration, no relationship repair, and no large-file low-memory random
+  editing.
+- `save_as()` remains a write-to-new-path API. It still rejects source overwrite
+  rather than providing in-place editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish failed-save path-preflight state hygiene from
+  commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.428 - Pin rename-back failed-save recovery clean reacquire
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery session-reuse
+regression, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove a matching `WorksheetEditor` reacquire after rename-back
+failed-save recovery reuses the saved materialized state instead of reloading
+stale source cells.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientReacquire`, renames it back to `Data`, materializes `Data`, dirties
+  it, attempts rejected `save_as(source)`, and then performs a safe save.
+- After the safe save, dirty materialized diagnostics and current summaries are
+  empty, `last_edit_error()` is still empty, and matching `worksheet("Data")`
+  reacquire is clean.
+- The reacquired handle reads the saved materialized A1 value even though the
+  source package still contains the original `placeholder-a1`, proving the
+  session is reused instead of reloaded from source.
+- A later mutation through the reacquired handle dirties the shared session
+  visible to the older handle, reports restored `Data` dirty diagnostics, and a
+  second safe save writes both the first saved value and the later mutation
+  without leaking the transient planned name.
+
+Non-goals / boundary:
+- No new public API, no transaction/undo model, no source-package mutation, no
+  commit history, no sheet rename dependency repair, no style/sharedStrings
+  migration, no relationship repair, and no large-file low-memory random
+  editing.
+- This proves matching-option session reuse only. Mismatched
+  `WorksheetEditorOptions` remain a failure path for existing materialized
+  sessions.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish clean reacquire session reuse from source
+  mutation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.429 - Pin rename-back failed-save recovery option mismatch hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery
+option-mismatch state hygiene regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove mismatched `WorksheetEditorOptions` still reject an existing saved
+materialized session after rename-back failed-save recovery without dirtying,
+reloading, or losing that session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientOptionMismatch`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- Subsequent mismatched `try_worksheet("Data", mismatched_options)` and
+  `worksheet("Data", mismatched_options)` throw before session mutation.
+- The mismatch failures keep `last_edit_error()` empty, preserve restored
+  catalog names, leave both borrowed handles clean, keep dirty materialized
+  names/cell/memory diagnostics and `pending_worksheet_edits()` empty, and
+  preserve the saved materialized value.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No dynamic session reconfiguration, no automatic option widening, no source
+  package mutation, no transaction/undo model, no sheet rename dependency
+  repair, no style/sharedStrings migration, no relationship repair, and no
+  large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish mismatched-option rejection from session
+  reconfiguration, source mutation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.430 - Pin rename-back failed-save recovery missing try_worksheet no-op hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery missing-lookup
+state hygiene regression, Doxygen/API docs clarification, and task-plan sync;
+no new public symbol, no CMake membership change, no package format expansion,
+and no dependency change.
+
+Goal: prove missing `try_worksheet()` lookups remain no-op after rename-back
+failed-save recovery and do not disturb the saved materialized session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMissingTry`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- Subsequent `try_worksheet()` calls for the old transient name and an
+  unrelated missing name return `std::nullopt`.
+- The missing lookups keep `last_edit_error()` empty, preserve restored catalog
+  names, leave borrowed handles clean, keep dirty materialized
+  names/cell/memory diagnostics and `pending_worksheet_edits()` empty, and
+  preserve the saved materialized value.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No hidden sheet resurrection, no source reload, no dynamic catalog repair, no
+  transaction/undo model, no source package mutation, no sheet rename
+  dependency repair, no style/sharedStrings migration, no relationship repair,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish missing lookup no-op behavior from source
+  reload, catalog repair, source mutation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.431 - Pin rename-back failed-save recovery missing worksheet throw hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery missing
+`worksheet()` state hygiene regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove missing `worksheet()` lookups throw after rename-back failed-save
+recovery without disturbing the saved materialized session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMissingWorksheet`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, performs a safe save, and cleanly reacquires with
+  matching options.
+- Subsequent `worksheet()` calls for the old transient name and an unrelated
+  missing name throw `FastXlsxError`.
+- The missing throws keep `last_edit_error()` empty, preserve restored catalog
+  names, leave borrowed handles clean, keep dirty materialized
+  names/cell/memory diagnostics and `pending_worksheet_edits()` empty, and
+  preserve the saved materialized value.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No diagnostic-write behavior for missing `worksheet()` lookups, no hidden
+  sheet resurrection, no source reload, no dynamic catalog repair, no
+  transaction/undo model, no source package mutation, no sheet rename
+  dependency repair, no style/sharedStrings migration, no relationship repair,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish missing throwing lookup behavior from
+  diagnostic writes, source reload, catalog repair, source mutation, commit,
+  undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.432 - Pin rename-back failed-save recovery catalog query hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery read-only
+catalog-query state hygiene regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove read-only planned/source catalog queries remain no-op after
+rename-back failed-save recovery and do not disturb the saved materialized
+session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientCatalogQuery`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- `worksheet_names()` / `has_worksheet()` report the restored planned catalog,
+  while `source_worksheet_names()` / `has_source_worksheet()` report the source
+  catalog; neither view revives the transient name.
+- The read-only queries keep `last_edit_error()` empty, leave borrowed handles
+  clean, keep dirty materialized names/cell/memory diagnostics and
+  `pending_worksheet_edits()` empty, and preserve the saved materialized value.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No catalog repair, no source reload, no hidden sheet resurrection, no
+  transaction/undo model, no source package mutation, no sheet rename
+  dependency repair, no style/sharedStrings migration, no relationship repair,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish read-only catalog query behavior from source
+  reload, catalog repair, source mutation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.433 - Pin rename-back failed-save recovery diagnostic query hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery read-only
+diagnostic-query state hygiene regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove read-only pending-state and worksheet-catalog diagnostics remain
+no-op after rename-back failed-save recovery and do not disturb the saved
+materialized session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientDiagnostics`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- The regression exercises `has_pending_changes()`, `pending_change_count()`,
+  replacement diagnostics, materialized aggregate diagnostics,
+  `has_pending_replacement()`, `pending_worksheet_edits()`,
+  `worksheet_catalog()`, and `last_edit_error()` after recovery.
+- The read-only diagnostics preserve the prior public edit count, keep
+  replacement and dirty materialized diagnostics empty, keep
+  `last_edit_error()` empty, leave borrowed handles clean, preserve the
+  restored source/planned catalog mapping, and do not reload the saved
+  materialized value from the stale source package.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No diagnostic-triggered flush, no diagnostic-triggered source reload, no
+  catalog repair, no hidden sheet resurrection, no transaction/undo model, no
+  source package mutation, no sheet rename dependency repair, no
+  style/sharedStrings migration, no relationship repair, and no large-file
+  low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish read-only diagnostic query behavior from
+  source reload, catalog repair, source mutation, commit, undo, rollback, or
+  diagnostic-triggered flush semantics.
+- `git diff --check` passes.
+
+## P8.434 - Pin rename-back failed-save recovery WorksheetEditor read hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery handle-level
+read-only state hygiene regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove `WorksheetEditor` handle-level read APIs remain no-op after
+rename-back failed-save recovery and do not disturb the saved materialized
+session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientHandleReads`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- The regression exercises `name()`, row/column and A1 `try_cell()`,
+  row/column and A1 `get_cell()`, missing-cell read behavior, `cell_count()`,
+  `estimated_memory_usage()`, `sparse_cells()`, and `sparse_cells(range)` on the
+  saved/reacquired handles.
+- Handle-level reads preserve the saved materialized value, unchanged
+  source-backed cells, clean borrowed handles, empty dirty materialized
+  diagnostics, empty `pending_worksheet_edits()`, empty `last_edit_error()`, and
+  the restored planned catalog name.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No read-triggered flush, no read-triggered source reload, no catalog repair,
+  no hidden sheet resurrection, no transaction/undo model, no source package
+  mutation, no sheet rename dependency repair, no style/sharedStrings migration,
+  no relationship repair, no dense range API, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish handle-level read-only inspection from source
+  reload, catalog repair, source mutation, commit, undo, rollback, or
+  read-triggered flush semantics.
+- `git diff --check` passes.
+
+## P8.435 - Pin rename-back failed-save recovery invalid read hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery invalid-read
+state hygiene regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove invalid `WorksheetEditor` read operations remain read-only failures
+after rename-back failed-save recovery and do not disturb the saved materialized
+session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientInvalidReads`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- Invalid row/column reads, invalid A1 reads, and invalid `sparse_cells(range)`
+  calls throw `FastXlsxError` against the saved/reacquired session.
+- The invalid read failures keep `last_edit_error()` empty, leave borrowed
+  handles clean, preserve the saved materialized value and unchanged
+  source-backed cells, keep dirty materialized names/cell/memory diagnostics and
+  `pending_worksheet_edits()` empty, and do not revive the transient name.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, and does not leak the
+  transient planned name.
+
+Non-goals / boundary:
+- No read-triggered error diagnostic, no read-triggered flush, no source reload,
+  no coordinate repair or clamping, no dense range API, no catalog repair, no
+  transaction/undo model, no source package mutation, no sheet rename dependency
+  repair, no style/sharedStrings migration, no relationship repair, and no
+  large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish invalid read failures from mutation failures,
+  source reload, coordinate repair/clamping, diagnostic writes, commit, undo, or
+  rollback semantics.
+- `git diff --check` passes.
+
+## P8.436 - Pin rename-back failed-save recovery invalid mutation hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery invalid-mutation
+state hygiene regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove invalid `WorksheetEditor` mutation operations remain diagnostic
+mutation failures after rename-back failed-save recovery without dirtying or
+reloading the saved materialized session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientInvalidMutations`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, performs a safe save, and cleanly reacquires with
+  matching options.
+- Invalid row/column `set_cell()`, invalid A1 `set_cell()`, and invalid
+  row/column / A1 `erase_cell()` calls throw `FastXlsxError` against the
+  saved/reacquired session and update `last_edit_error()`.
+- The invalid mutation failures leave borrowed handles clean, preserve the saved
+  materialized value and unchanged source-backed cells, keep dirty materialized
+  names/cell/memory diagnostics and `pending_worksheet_edits()` empty, and do
+  not revive the transient name.
+- A later matching-option reacquire/mutation/save clears `last_edit_error()`,
+  reports dirty diagnostics under `Data`, writes the later value, omits rejected
+  invalid payloads, and does not leak the transient planned name.
+
+Non-goals / boundary:
+- No mutation-triggered source reload, no coordinate repair or clamping, no
+  invalid-payload retention, no catalog repair, no transaction/undo model, no
+  source package mutation, no sheet rename dependency repair, no style or
+  sharedStrings migration, no relationship repair, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish invalid mutation failures from invalid
+  read-only failures, source reload, coordinate repair/clamping, commit, undo,
+  or rollback semantics.
+- `git diff --check` passes.
+
+## P8.437 - Pin rename-back failed-save recovery missing erase no-op hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery missing-erase
+state hygiene regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove valid `erase_cell()` calls targeting missing cells remain successful
+no-ops after rename-back failed-save recovery, clear prior edit diagnostics, and
+do not disturb the saved materialized session.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMissingErase`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- The regression seeds `last_edit_error()` with an invalid mutation, then calls
+  valid row/column and A1 `erase_cell()` on missing cells.
+- Missing-cell erase no-ops clear the prior diagnostic while preserving clean
+  handles, saved materialized values, unchanged source-backed cells, empty dirty
+  diagnostics, empty `pending_worksheet_edits()`, and the restored planned
+  catalog name.
+- A later matching-option reacquire/mutation/save still works, reports dirty
+  diagnostics under `Data`, writes the later value, omits the rejected invalid
+  payload, and does not leak the transient planned name.
+
+Non-goals / boundary:
+- No erase tombstone for missing cells, no dirty no-op session, no source reload,
+  no catalog repair, no transaction/undo model, no source package mutation, no
+  sheet rename dependency repair, no style/sharedStrings migration, no
+  relationship repair, and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish successful missing-cell erase no-ops from
+  invalid mutation failures, explicit blank replacement cells, erase tombstones,
+  source reload, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.438 - Pin rename-back failed-save recovery blank and existing erase projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery positive
+blank/erase projection regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove valid explicit blank and existing-cell erase mutations after
+rename-back failed-save recovery dirty the saved materialized session and save
+with the current sparse-store projection semantics.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientBlankErase`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and cleanly reacquires with matching
+  options.
+- The regression applies `set_cell("A1", CellValue::blank())` and
+  `erase_cell(2, 1)` to the saved/reacquired session.
+- The valid blank/erase mutations dirty shared borrowed handles, report dirty
+  diagnostics under restored `Data`, keep `last_edit_error()` empty, preserve
+  B1, keep A1 as an explicit blank record, and remove source-backed A2.
+- The second safe save writes `<c r="A1"/>`, omits the old A1 text payload,
+  omits erased row 2 / `placeholder-a2`, refreshes dimension to `A1:B1`, and
+  does not leak the transient planned name.
+
+Non-goals / boundary:
+- No erase tombstone, no explicit blank style migration, no source wrapper
+  metadata preservation, no row metadata preservation, no source reload, no
+  catalog repair, no transaction/undo model, no source package mutation, no
+  sheet rename dependency repair, no style/sharedStrings migration, no
+  relationship repair, and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish explicit blank projection and existing-cell
+  erase omission from missing-cell erase no-op, invalid mutation failure,
+  source reload, tombstones, source wrapper preservation, commit, undo, or
+  rollback semantics.
+- `git diff --check` passes.
+
+## P8.439 - Pin rename-back failed-save recovery scalar and formula projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery positive
+number/boolean/formula projection regression, Doxygen/API docs clarification,
+and task-plan sync; no new public symbol, no CMake membership change, no
+package format expansion, and no dependency change.
+
+Goal: prove valid number, boolean, and formula mutations after rename-back
+failed-save recovery dirty the saved materialized session and save with the
+current sparse-store projection semantics.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientScalarFormula`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and reacquires with matching
+  options.
+- The regression applies a number replacement, a boolean replacement, and a new
+  formula cell to the saved/reacquired session.
+- The valid scalar/formula mutations dirty shared borrowed handles, report
+  dirty diagnostics under restored `Data`, keep `last_edit_error()` empty,
+  preserve untouched B1, and expose readback as number/boolean/formula
+  `CellValue`s.
+- The second safe save writes numeric `<v>`, boolean `t="b"` / `1`, escaped
+  formula `<f>` without cached value, refreshes dimension to `A1:C3`, and does
+  not leak the transient planned name.
+
+Non-goals / boundary:
+- No formula evaluation, no cached formula result preservation/generation, no
+  calcChain rebuild, no date cell type, no style/sharedStrings migration, no
+  source wrapper metadata preservation, no source reload, no catalog repair, no
+  transaction/undo model, no source package mutation, no relationship repair,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish number/boolean/formula projection from formula
+  evaluation, cached values, calcChain rebuild, date cells, source reload,
+  source wrapper preservation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.440 - Pin rename-back failed-save recovery text escape projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery positive text
+projection regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove valid text mutations after rename-back failed-save recovery dirty
+the saved materialized session and save with the current inline-string XML
+escape and whitespace-preservation semantics.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientTextEscape`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and reacquires with matching
+  options.
+- The regression applies leading/trailing-whitespace text, empty text, and
+  special-character text to the saved/reacquired session.
+- The valid text mutations dirty shared borrowed handles, report dirty
+  diagnostics under restored `Data`, keep `last_edit_error()` empty, preserve
+  untouched B1, and expose readback as text `CellValue`s.
+- The second safe save writes inline strings, XML-escapes `&`, `<`, and `>`,
+  preserves quotes in element text, emits `xml:space="preserve"` for
+  leading/trailing whitespace, writes empty text as `<t></t>`, refreshes
+  dimension to `A1:C3`, and does not leak the transient planned name.
+
+Non-goals / boundary:
+- No rich text formatting preservation, no phonetic metadata import, no
+  sharedStrings migration/writeback, no source
+  wrapper metadata preservation, no source reload, no catalog repair, no
+  transaction/undo model, no source package mutation, no relationship repair,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish inline-string text projection, XML escaping,
+  whitespace preservation, and empty text output from rich text preservation,
+  sharedStrings migration, source wrapper preservation, source reload, commit,
+  undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.441 - Pin rename-back failed-save recovery max coordinate projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate projection regression, Doxygen/API docs clarification, and task-plan
+sync; no new public symbol, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: prove a valid Excel maximum coordinate edit after rename-back failed-save
+recovery dirty-saves through the sparse-store projection without dense row or
+column materialization or transient planned-name leakage.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxCoordinate`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, performs a safe save, and reacquires with matching
+  options.
+- The regression writes `XFD1048576` via row/column max values, reads it back
+  through row/column and A1 APIs, and inspects a one-cell max-boundary range.
+- The valid max-coordinate mutation dirties shared borrowed handles, reports
+  dirty diagnostics under restored `Data`, keeps `last_edit_error()` empty,
+  preserves source-backed B1/A2, and keeps sparse cell count bounded.
+- The second safe save writes `<dimension ref="A1:XFD1048576"/>`, emits a
+  sparse `<row r="1048576">` with `<c r="XFD1048576" ...>`, and does not leak
+  the transient planned name.
+
+Non-goals / boundary:
+- No dense row/column allocation, no million-row performance benchmark, no
+  large-file low-memory random editing, no out-of-range coordinate repair or
+  clamping, no row metadata synthesis, no source wrapper metadata preservation,
+  no source reload, no catalog repair, no transaction/undo model, no source
+  package mutation, and no relationship repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish sparse legal max-coordinate support from dense
+  materialization, large-file performance, coordinate repair/clamping, source
+  reload, source wrapper preservation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.442 - Pin rename-back failed-save recovery max coordinate erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate erase/shrink projection regression, Doxygen/API docs clarification,
+and task-plan sync; no new public symbol, no CMake membership change, no
+package format expansion, and no dependency change.
+
+Goal: prove erasing a previously saved `XFD1048576` sparse record after
+rename-back failed-save recovery removes the edge record and lets dirty
+projection shrink to the remaining sparse extents.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxCoordinateErase`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, safe-saves, writes/saves `XFD1048576`, and then
+  reacquires with matching options.
+- The regression erases `XFD1048576`, verifies row/column and A1 reads no
+  longer expose the edge record, and confirms the one-cell max-boundary range
+  snapshot is empty.
+- The erase dirties all shared borrowed handles, reports dirty diagnostics
+  under restored `Data`, keeps `last_edit_error()` empty, and shrinks the sparse
+  cell count back to the remaining A1/B1/A2 records.
+- The third safe save writes `<dimension ref="A1:B2"/>`, omits `XFD1048576` and
+  its value, preserves source-backed B1/A2 and the saved A1 setup text, and does
+  not leak the transient planned name.
+
+Non-goals / boundary:
+- No dense row/column allocation, no million-row performance benchmark, no
+  large-file low-memory random editing, no row metadata repair/synthesis, no
+  tombstone output, no out-of-range coordinate repair or clamping, no source
+  wrapper metadata preservation, no source reload, no catalog repair, no
+  transaction/undo model, no source package mutation, and no relationship
+  repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish edge-record erase dimension shrink from dense
+  materialization, tombstones, row metadata repair, large-file performance,
+  coordinate repair/clamping, source reload, source wrapper preservation,
+  commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.443 - Pin rename-back failed-save recovery max coordinate A1 mutations
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate A1 overload mutation regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove strict uppercase A1 mutation overloads can write and erase the last
+legal Excel cell `XFD1048576` after rename-back failed-save recovery, matching
+the row/column sparse-store projection semantics.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxCoordinateA1`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, safe-saves, and reacquires with matching options.
+- The regression calls `set_cell("XFD1048576", ...)`, verifies readback through
+  A1 and row/column APIs, saves dimension `A1:XFD1048576`, and inspects the
+  sparse max-row output.
+- The same regression reacquires the saved session and calls
+  `erase_cell("XFD1048576")`, verifies A1 reads no longer expose the edge
+  record, shrinks dirty diagnostics to A1/B1/A2, and saves dimension `A1:B2`.
+- Both A1 mutations dirty shared borrowed handles, report diagnostics under
+  restored `Data`, keep `last_edit_error()` empty, and do not leak the
+  transient planned name or mutate the source package.
+
+Non-goals / boundary:
+- No lowercase A1 acceptance, no range mutation API, no dense row/column
+  allocation, no million-row performance benchmark, no large-file low-memory
+  random editing, no tombstone output, no row metadata repair/synthesis, no
+  coordinate repair/clamping, no source wrapper metadata preservation, no
+  source reload, no catalog repair, no transaction/undo model, no source
+  package mutation, and no relationship repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish strict A1 max-coordinate mutation overloads
+  from lowercase/range references, dense materialization, tombstones, row
+  metadata repair, large-file performance, coordinate repair/clamping, source
+  reload, source wrapper preservation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.444 - Pin rename-back failed-save recovery max coordinate blank projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate explicit blank projection regression, Doxygen/API docs
+clarification, and task-plan sync; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: prove `CellValue::blank()` at the last legal Excel cell remains an
+explicit sparse record after rename-back failed-save recovery, writes an empty
+`<c r="XFD1048576"/>` cell, extends dimension, and can then be erased to shrink
+projection again.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxCoordinateBlank`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, safe-saves, and reacquires with matching options.
+- The regression calls `set_cell("XFD1048576", CellValue::blank())`, verifies
+  A1 and row/column readback return `CellValueKind::Blank`, and confirms the
+  max-boundary range snapshot contains one explicit blank record.
+- The second safe save writes `<dimension ref="A1:XFD1048576"/>` and emits a
+  sparse max-row `<c r="XFD1048576"/>` with no inline text payload.
+- The regression then erases the saved blank via row/column coordinates,
+  verifies the edge range is empty, shrinks dirty diagnostics to A1/B1/A2, and
+  saves `<dimension ref="A1:B2"/>` without leaking the transient planned name.
+
+Non-goals / boundary:
+- No tombstone output, no conversion of explicit blanks into missing cells
+  before erase, no lowercase A1 acceptance, no range mutation API, no dense
+  row/column allocation, no million-row performance benchmark, no large-file
+  low-memory random editing, no row metadata repair/synthesis, no coordinate
+  repair/clamping, no source wrapper metadata preservation, no source reload,
+  no catalog repair, no transaction/undo model, no source package mutation, and
+  no relationship repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish explicit blank max-coordinate projection from
+  missing cells, erase tombstones, lowercase/range references, dense
+  materialization, row metadata repair, large-file performance, source reload,
+  source wrapper preservation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.445 - Pin rename-back failed-save recovery max coordinate formula projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate formula projection regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove a formula cell at the last legal Excel coordinate remains a sparse
+dirty record after rename-back failed-save recovery, writes escaped `<f>` text
+without a cached `<v>` value, extends dimension, and does not leak transient
+planned sheet names or mutate the source package.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxCoordinateFormula`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, safe-saves, and reacquires with matching options.
+- The regression calls
+  `set_cell(1048576, 16384, CellValue::formula(...))`, verifies row/column and
+  A1 readback return `CellValueKind::Formula`, and confirms the max-boundary
+  range snapshot contains one formula record at `XFD1048576`.
+- The second safe save writes `<dimension ref="A1:XFD1048576"/>` and emits a
+  sparse max-row formula cell with XML-escaped `<f>` text and no cached value.
+- Source bytes and the first safe-save output remain free of the later
+  max-coordinate formula mutation, and the restored `Data` catalog name is
+  preserved throughout.
+
+Non-goals / boundary:
+- No formula evaluation, no cached formula result generation or preservation,
+  no calcChain rebuild, no defined-name/formula dependency rewrite, no row
+  metadata repair/synthesis, no coordinate repair/clamping, no lowercase A1
+  acceptance, no range mutation API, no dense row/column allocation, no
+  million-row performance benchmark, no large-file low-memory random editing,
+  no source wrapper metadata preservation, no source reload, no catalog repair,
+  no transaction/undo model, no source package mutation, and no relationship
+  repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish max-coordinate formula projection from formula
+  calculation, cached values, calcChain rebuild, defined-name dependency
+  rewrite, dense materialization, row metadata repair, large-file performance,
+  source reload, source wrapper preservation, commit, undo, or rollback
+  semantics.
+- `git diff --check` passes.
+
+## P8.446 - Pin rename-back failed-save recovery max coordinate scalar projection
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate number/boolean scalar projection regression, Doxygen/API docs
+clarification, and task-plan sync; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: prove number and boolean cells at the last legal Excel coordinate remain
+sparse dirty records after rename-back failed-save recovery, write scalar
+OpenXML cell payloads, extend dimension, and preserve the restored catalog name
+without mutating the source package.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxCoordinateScalar`, renames it back to `Data`, dirties `Data`,
+  rejects `save_as(source)`, safe-saves, and reacquires with matching options.
+- The regression calls `set_cell(1048576, 16384, CellValue::number(42.5))`,
+  verifies row/column and A1 readback return `CellValueKind::Number`, and saves
+  `<dimension ref="A1:XFD1048576"/>` plus a sparse max-row numeric `<v>42.5</v>`
+  cell.
+- A later matching reacquire keeps the saved number clean, then
+  `set_cell("XFD1048576", CellValue::boolean(false))` overwrites the same sparse
+  edge record, verifies boolean readback through both overload families, and
+  saves `t="b"` / `<v>0</v>` without keeping the prior numeric payload.
+- Source bytes and the first safe-save output remain free of the later
+  max-coordinate scalar mutations, and the restored `Data` catalog name is
+  preserved throughout.
+
+Non-goals / boundary:
+- No date cell type, no non-finite numeric acceptance, no numeric formatting or
+  style migration, no boolean coercion beyond `CellValue::boolean(...)`, no row
+  metadata repair/synthesis, no coordinate repair/clamping, no lowercase A1
+  acceptance, no range mutation API, no dense row/column allocation, no
+  million-row performance benchmark, no large-file low-memory random editing,
+  no source wrapper metadata preservation, no source reload, no catalog repair,
+  no transaction/undo model, no source package mutation, and no relationship
+  repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish max-coordinate scalar projection from date
+  cells, non-finite numbers, number-format/style migration, boolean coercion,
+  dense materialization, row metadata repair, large-file performance, source
+  reload, source wrapper preservation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.447 - Pin rename-back failed-save recovery max coordinate scalar erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate saved scalar erase-shrink regression, Doxygen/API docs
+clarification, and task-plan sync; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: prove a saved scalar record at the last legal Excel coordinate can be
+erased after rename-back failed-save recovery, removes the sparse edge record,
+and shrinks the dirty projection dimension back to the remaining source-backed
+extents.
+
+Output:
+- A public `fastxlsx.workbook_editor.public` regression renames `Data` to
+  `TransientMaxScalarErase`, renames it back to `Data`, dirties
+  `Data`, rejects `save_as(source)`, safe-saves, and reacquires with matching
+  options.
+- The regression saves a number at `XFD1048576`, then overwrites and saves the
+  same edge record as boolean false, proving both scalar forms are real saved
+  sparse records before erase.
+- A later matching reacquire erases the saved boolean edge record via row/column
+  coordinates, verifies A1/range/readback no longer expose `XFD1048576`, and
+  shrinks dirty diagnostics to the remaining A1/B1/A2 records.
+- The final safe save writes `<dimension ref="A1:B2"/>`, omits `XFD1048576`,
+  omits the prior number/boolean payloads, preserves A1/B1/A2, and does not
+  leak the transient planned name.
+
+Non-goals / boundary:
+- No tombstone output, no scalar-to-blank conversion before erase, no date cell
+  type, no non-finite numeric acceptance, no numeric formatting or style
+  migration, no boolean coercion beyond `CellValue::boolean(...)`, no row
+  metadata repair/synthesis, no coordinate repair/clamping, no lowercase A1
+  acceptance, no range mutation API, no dense row/column allocation, no
+  million-row performance benchmark, no large-file low-memory random editing,
+  no source wrapper metadata preservation, no source reload, no catalog repair,
+  no transaction/undo model, no source package mutation, and no relationship
+  repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- Full default CTest passes.
+- Public/header docs distinguish saved scalar edge erase shrink from tombstones,
+  blank conversion, date cells, non-finite numbers, style migration, dense
+  materialization, row metadata repair, large-file performance, source reload,
+  source wrapper preservation, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.448 - Pin rename-back failed-save recovery max coordinate formula erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery legal maximum
+coordinate saved formula erase-shrink regression, Doxygen/API docs
+clarification, and task-plan sync; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: prove a saved formula record at the last legal Excel coordinate can be
+erased after rename-back failed-save recovery, removes the sparse edge record,
+and shrinks the dirty projection dimension back to the remaining source-backed
+extents.
+
+Output:
+- A public `fastxlsx.workbook_editor.public-edge` regression renames `Data` to
+  `TransientFormulaErase`, renames it back to `Data`, dirties `Data`, rejects
+  `save_as(source)`, safe-saves, and reacquires with matching options.
+- The regression saves an escaped formula at `XFD1048576`, verifies row/column,
+  A1, and range-snapshot readback, and confirms the saved projection writes
+  formula `<f>` text without a cached `<v>` value.
+- A later matching reacquire erases the saved formula edge record via the A1
+  overload, verifies row/column, A1, and range reads no longer expose
+  `XFD1048576`, and shrinks dirty diagnostics to the remaining A1/B1/A2
+  records.
+- The final safe save writes `<dimension ref="A1:B2"/>`, omits
+  `XFD1048576`, omits the prior formula payload, preserves A1/B1/A2, and does
+  not leak the transient planned name.
+
+Non-goals / boundary:
+- No formula evaluation, no cached result generation or preservation, no
+  calcChain rebuild, no defined-name/formula dependency rewrite, no tombstone
+  output, no formula-to-blank conversion before erase, no row metadata
+  repair/synthesis, no coordinate repair/clamping, no lowercase A1 acceptance,
+  no range mutation API, no dense row/column allocation, no million-row
+  performance benchmark, no large-file low-memory random editing, no source
+  wrapper metadata preservation, no source reload, no catalog repair, no
+  transaction/undo model, no source package mutation, and no relationship
+  repair.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public-edge` passes.
+- Full default CTest passes.
+- Public/header docs distinguish saved formula edge erase shrink from formula
+  calculation, cached values, calcChain rebuild, defined-name dependency
+  rewrite, tombstones, blank conversion, dense materialization, row metadata
+  repair, large-file performance, source reload, source wrapper preservation,
+  commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.449 - Split WorkbookEditor public edge CTest shard
+
+Status: done.
+
+Type: test organization / CTest shard split and docs; no product code semantics,
+no new public symbol, no package format expansion, and no dependency change.
+
+Goal: keep the default 60s CTest shard discipline stable as the public
+`WorksheetEditor` max-coordinate save-as regressions grow, without weakening or
+removing coverage.
+
+Output:
+- `tests/test_workbook_editor.cpp` accepts a new `--shard=public-edge` selector.
+- `tests/CMakeLists.txt` registers `fastxlsx.workbook_editor.public-edge` with
+  the same 60s timeout as the other workbook-editor shards.
+- The rename-back failed-save max-coordinate regression family
+  (`XFD1048576` projection, erase shrink, A1 overload parity, blank, formula,
+  scalar, saved scalar erase, and saved formula erase) moved from the general
+  `public` shard to `public-edge`.
+- Product behavior and public API are unchanged; only CTest membership changed.
+
+Non-goals / boundary:
+- No timeout relaxation, no skipped coverage, no product performance claim, no
+  runtime API mode change, no CMake target split, no dependency change, and no
+  benchmark result.
+
+Acceptance:
+- `fastxlsx.workbook_editor.public` passes.
+- `fastxlsx.workbook_editor.public-edge` passes.
+- `fastxlsx.workbook_editor` passes with the default 60s per-shard timeout.
+- Full default CTest passes.
+- `git diff --check` passes.
+
+## P8.450 - Pin source-backed max-coordinate materialization and erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` source materialization legal maximum coordinate
+read/erase-shrink regression, Doxygen/API docs clarification, and task-plan
+sync; no new public symbol, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: prove a fresh `WorkbookEditor::open()` can materialize an existing source
+worksheet cell at the last legal Excel coordinate, keep read-only no-op
+`save_as()` copy-original behavior, and erase that source-backed edge record so
+the dirty projection shrinks back to the remaining sparse source records.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression rewrites the
+  source `Data` worksheet to contain A1/B1/A2 plus an inline-string
+  `XFD1048576` record.
+- `WorksheetEditor::worksheet("Data")` materializes the edge cell cleanly,
+  reads it through row/column and A1 APIs, exposes it in a max-boundary range
+  snapshot, and does not dirty editor diagnostics.
+- A no-op `save_as()` after read-only materialization copies the source package
+  entries byte-for-byte instead of flushing a standalone projection.
+- `erase_cell("XFD1048576")` removes the source-backed edge record, clears
+  row/column, A1, and range reads, reports only A1/B1/A2 as dirty materialized
+  records, and the next `save_as()` writes `<dimension ref="A1:B2"/>` without
+  mutating the source package bytes.
+
+Non-goals / boundary:
+- No dense row/column allocation, no large-file low-memory random editing
+  claim, no source reload, no source wrapper metadata preservation after dirty
+  projection, no row metadata repair/synthesis, no coordinate repair/clamping,
+  no tombstone output, no blank conversion, no relationship repair, no
+  transaction/undo model, and no source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source-backed max-coordinate sparse
+  materialization from dense allocation, source reload, wrapper preservation,
+  row metadata repair, large-file performance, commit, undo, or rollback
+  semantics.
+- `git diff --check` passes.
+
+## P8.451 - Pin source-backed max-coordinate formula materialization and erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` source formula materialization legal maximum
+coordinate regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove a fresh `WorkbookEditor::open()` can materialize an existing source
+formula at the last legal Excel coordinate, ignore its stale cached scalar
+`<v>` value, preserve source package bytes on read-only no-op save, and erase
+that source-backed formula edge so the dirty projection shrinks back to the
+remaining sparse source records.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression rewrites the
+  source `Data` worksheet to contain A1/B1/A2 plus a formula
+  `XFD1048576` record with a stale cached scalar `<v>12345</v>`.
+- `WorksheetEditor::worksheet("Data")` materializes the edge formula as
+  `CellValueKind::Formula`, reads it through row/column and A1 APIs, exposes it
+  in a max-boundary range snapshot, ignores the stale cached scalar value, and
+  does not dirty editor diagnostics.
+- A no-op `save_as()` after read-only materialization copies the source package
+  entries byte-for-byte, including the original formula and stale cached value.
+- `erase_cell("XFD1048576")` removes the source-backed formula record, clears
+  row/column, A1, and range reads, reports only A1/B1/A2 as dirty materialized
+  records, and the next `save_as()` writes `<dimension ref="A1:B2"/>` without
+  the formula or stale cached value.
+
+Non-goals / boundary:
+- No formula evaluation, cached result generation, cached result preservation
+  after dirty projection, calcChain rebuild, defined-name or formula dependency
+  rewrite, dense row/column allocation, large-file low-memory random editing
+  claim, source reload, source wrapper metadata preservation after dirty
+  projection, row metadata repair/synthesis, coordinate repair/clamping,
+  tombstone output, blank conversion, relationship repair, transaction/undo
+  model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source-backed max-coordinate formula
+  materialization from formula evaluation, cached result preservation, dense
+  allocation, source reload, wrapper preservation, row metadata repair,
+  large-file performance, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.452 - Pin source-backed max-coordinate sharedStrings materialization and erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings materialization legal
+maximum coordinate regression, Doxygen/API docs clarification, and task-plan
+sync; no new public symbol, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: prove a fresh `WorkbookEditor::open()` can materialize an existing source
+shared-string cell at the last legal Excel coordinate through
+`xl/sharedStrings.xml`, preserve source package bytes on read-only no-op save,
+and erase that source-backed shared-string edge so the dirty projection shrinks
+back to the remaining sparse source records.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression rewrites the
+  source `Data` worksheet to contain A1/B1/A2 plus a `t="s"`
+  `XFD1048576` record pointing at a workbook shared string with XML entities.
+- `WorksheetEditor::worksheet("Data")` materializes the edge as
+  `CellValueKind::Text`, reads it through row/column and A1 APIs, exposes it in
+  a max-boundary range snapshot, decodes sharedStrings XML entities, and does
+  not dirty editor diagnostics.
+- A no-op `save_as()` after read-only materialization copies the source package
+  entries byte-for-byte, including source worksheet shared-string indexes.
+- `erase_cell("XFD1048576")` removes the source-backed shared-string record,
+  clears row/column, A1, and range reads, reports only A1/B1/A2 as dirty
+  materialized records, and the next `save_as()` writes
+  `<dimension ref="A1:B2"/>` with remaining text projected as inline strings.
+- The dirty projection preserves the source `xl/sharedStrings.xml` bytes but
+  does not rebuild, migrate, prune, or write back shared-string indexes.
+
+Non-goals / boundary:
+- No sharedStrings rebuild, writeback, pruning, index migration, relationship
+  repair, rich text preservation, large-file low-memory random editing claim,
+  dense row/column allocation, source reload, source wrapper metadata
+  preservation after dirty projection, row metadata repair/synthesis,
+  coordinate repair/clamping, tombstone output, blank conversion,
+  transaction/undo model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source-backed max-coordinate sharedStrings
+  materialization from sharedStrings migration/rebuild/writeback, rich text
+  preservation, dense allocation, source reload, wrapper preservation, row
+  metadata repair, large-file performance, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.453 - Pin source-backed max-coordinate scalar and blank materialization erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` source scalar/blank materialization legal maximum
+coordinate regression, Doxygen/API docs clarification, and task-plan sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove a fresh `WorkbookEditor::open()` can materialize existing source
+number, boolean, and blank cells at the last legal Excel coordinate, preserve
+source package bytes on read-only no-op save, and erase each source-backed edge
+record so the dirty projection shrinks back to the remaining sparse source
+records.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression builds three
+  source `Data` worksheet fixtures whose `XFD1048576` records are respectively
+  a number, a boolean false, and an explicit blank cell.
+- `WorksheetEditor::worksheet("Data")` materializes each edge value through
+  row/column and A1 APIs, exposes it in a max-boundary range snapshot, and does
+  not dirty editor diagnostics.
+- A no-op `save_as()` after read-only materialization copies each source
+  package entry byte-for-byte instead of flushing a standalone projection.
+- `erase_cell("XFD1048576")` removes each source-backed edge record, clears
+  row/column, A1, and range reads, reports only A1/B1/A2 as dirty materialized
+  records, and the next `save_as()` writes `<dimension ref="A1:B2"/>` without
+  the erased edge payload.
+
+Non-goals / boundary:
+- No dense row/column allocation, large-file low-memory random editing claim,
+  source reload, source wrapper metadata preservation after dirty projection,
+  row metadata repair/synthesis, coordinate repair/clamping, tombstone output,
+  blank conversion, style/sharedStrings migration, relationship repair,
+  transaction/undo model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source-backed max-coordinate scalar/blank
+  materialization from dense allocation, source reload, wrapper preservation,
+  row metadata repair, large-file performance, commit, undo, or rollback
+  semantics.
+- `git diff --check` passes.
+
+## P8.454 - Pin source-backed max-coordinate empty inline string materialization erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` source empty inline-string materialization legal
+maximum coordinate regression, Doxygen/API docs clarification, and task-plan
+sync; no new public symbol, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: prove a fresh `WorkbookEditor::open()` can materialize existing source
+empty inline text and inlineStr-without-text cells at the last legal Excel
+coordinate, preserve source package bytes on read-only no-op save, and erase
+each source-backed edge record so the dirty projection shrinks back to the
+remaining sparse source records.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression builds two
+  source `Data` worksheet fixtures whose `XFD1048576` records are respectively
+  `t="inlineStr"` with an empty `<t></t>` element and `t="inlineStr"` with
+  `<is/>` but no text.
+- `WorksheetEditor::worksheet("Data")` materializes the empty inline text edge
+  as `CellValueKind::Text` with an empty payload, materializes inlineStr without
+  text as `CellValueKind::Blank`, exposes each record through row/column, A1,
+  and max-boundary range APIs, and does not dirty editor diagnostics.
+- A no-op `save_as()` after read-only materialization copies each source package
+  entry byte-for-byte instead of flushing a standalone projection.
+- `erase_cell("XFD1048576")` removes each source-backed edge record, clears
+  row/column, A1, and range reads, reports only A1/B1/A2 as dirty materialized
+  records, and the next `save_as()` writes `<dimension ref="A1:B2"/>` without
+  the erased edge payload.
+
+Non-goals / boundary:
+- No dense row/column allocation, large-file low-memory random editing claim,
+  source reload, source wrapper metadata preservation after dirty projection,
+  rich text preservation, phonetic metadata import, inline/scalar coercion,
+  row metadata repair/synthesis, coordinate repair/clamping, tombstone output,
+  style/sharedStrings migration, relationship repair, transaction/undo model,
+  or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source-backed max-coordinate empty inline
+  string materialization from rich text preservation, XML repair, dense
+  allocation, source reload, wrapper preservation, row metadata repair,
+  large-file performance, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.455 - Pin source-backed max-coordinate rich sharedStrings flatten erase shrink
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings rich-text flatten legal
+maximum coordinate regression, Doxygen/API docs clarification, and task-plan
+sync; no new public symbol, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: prove a fresh `WorkbookEditor::open()` can materialize an existing source
+`t="s"` cell at the last legal Excel coordinate when the referenced shared
+string item uses simple rich-text runs, while keeping the current read-only
+flattening boundary, preserving source package bytes on read-only no-op save,
+and erasing the source-backed edge record so dirty projection shrinks back to
+the remaining sparse source records.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression rewrites a
+  source workbook so `XFD1048576` points to a rich shared string item containing
+  multiple `<r><t>...</t></r>` runs plus phonetic and extension text that must be
+  ignored during flattening.
+- `WorksheetEditor::worksheet("Data")` materializes the edge as
+  `CellValueKind::Text` with flattened plain text through row/column, A1, and
+  max-boundary range APIs, and does not dirty editor diagnostics.
+- A no-op `save_as()` after read-only materialization copies every source
+  package entry byte-for-byte, including the source worksheet `t="s"` reference
+  and source `xl/sharedStrings.xml` rich text markup.
+- `erase_cell("XFD1048576")` removes the source-backed rich shared-string edge
+  record, clears row/column, A1, and range reads, reports only A1/B1/A2 as
+  dirty materialized records, and the next `save_as()` writes
+  `<dimension ref="A1:B2"/>` with remaining source shared strings projected as
+  inline text while preserving source `xl/sharedStrings.xml` bytes.
+
+Non-goals / boundary:
+- No rich text preservation, phonetic metadata import, extension metadata import,
+  sharedStrings rebuild/writeback/pruning/index migration, relationship repair,
+  dense row/column allocation, large-file low-memory random editing claim,
+  source reload, source wrapper metadata preservation after dirty projection,
+  row metadata repair/synthesis, coordinate repair/clamping, tombstone output,
+  transaction/undo model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source-backed rich sharedStrings flattening
+  from rich text preservation, sharedStrings migration/rebuild/writeback,
+  relationship repair, dense allocation, source reload, wrapper preservation,
+  row metadata repair, large-file performance, commit, undo, or rollback
+  semantics.
+- `git diff --check` passes.
+
+## P8.456 - Pin source sharedStrings xml:space whitespace projection
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings whitespace materialization
+and dirty inline projection regression, Doxygen/API docs clarification, and
+task-plan sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: prove workbook-backed source `t="s"` cells keep legal sharedStrings
+`xml:space="preserve"` text whitespace during read-only materialization, for
+both plain `<si><t>` strings and simple rich shared-string runs, while dirty
+`save_as()` still projects the sparse store as inline strings and preserves the
+source `xl/sharedStrings.xml` bytes.
+
+Output:
+- A public `fastxlsx.workbook_editor.source-success` regression rewrites
+  `xl/sharedStrings.xml` with leading/trailing whitespace in plain and rich
+  shared-string `<t xml:space="preserve">` elements.
+- `WorksheetEditor::worksheet("Data")` materializes the whitespace exactly in
+  `CellValue::text(...)` and stays clean until a caller mutation.
+- A read-only no-op `save_as()` copies every source package entry byte-for-byte.
+- A later dirty `save_as()` writes the flattened source text as inline strings,
+  emits `xml:space="preserve"` for leading/trailing whitespace, includes the new
+  edit, preserves source sharedStrings bytes, and does not mutate the source
+  package.
+
+Non-goals / boundary:
+- No rich text preservation, phonetic metadata import, extension metadata import,
+  sharedStrings rebuild/writeback/pruning/index migration, source sharedStrings
+  attribute preservation in dirty worksheet XML beyond text whitespace semantics,
+  relationship repair, source reload, dense row/column allocation, large-file
+  low-memory random editing claim, transaction/undo model, or source package
+  mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish source sharedStrings whitespace materialization
+  and inline projection from sharedStrings migration/rebuild/writeback, rich text
+  preservation, relationship repair, dense allocation, large-file performance,
+  commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.457 - Pin public sharedStrings item/rich-run structure failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings structure failure hygiene
+regressions, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, no dependency
+change, and no behavior widening.
+
+Goal: lift malformed source `xl/sharedStrings.xml` item/rich-run structures to
+the public facade failure-hygiene suite so `try_worksheet()` / `worksheet()`
+continue to fail before creating a dirty materialized session, while later
+valid Patch edits can still save.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-failure` now covers shared-string item
+  text outside `<t>`, nested `<si>`, nested markup inside `<t>`, and mismatched
+  sharedStrings closing tags.
+- Each case verifies the materialization diagnostic reaches both
+  `try_worksheet()` and `worksheet()`, leaves pending edits / dirty materialized
+  sessions empty, does not update `last_edit_error()`, and preserves later
+  same-workbook Patch usability.
+
+Non-goals / boundary:
+- No sharedStrings XML repair, tolerant rich-text parsing beyond the current
+  simple-run flattening, schema validation, relationship repair, sharedStrings
+  rebuild/writeback/pruning/index migration, rich text preservation, metadata
+  import, source reload, dense allocation, large-file low-memory random editing,
+  transaction/undo model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Public/header docs distinguish malformed sharedStrings fail-fast hygiene from
+  XML repair, rich text preservation, sharedStrings migration/rebuild/writeback,
+  relationship repair, dense allocation, large-file performance, commit, undo,
+  or rollback semantics.
+- `git diff --check` passes.
+
+## P8.458 - Pin public sharedStrings XML/entity/attribute failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings XML/entity/attribute
+failure hygiene, internal sharedStrings parser hardening, Doxygen/API docs
+clarification, and task-plan sync; no new public symbol, no CMake membership
+change, no package format expansion, no dependency change, and no behavior
+widening.
+
+Goal: lift malformed source `xl/sharedStrings.xml` entity text, character
+references, and attribute syntax to the public facade failure-hygiene suite so
+`try_worksheet()` / `worksheet()` continue to fail before creating a dirty
+materialized session, while later valid Patch edits can still save.
+
+Output:
+- The sharedStrings source parser now validates generic XML attribute syntax on
+  sharedStrings tags without whitelisting or rejecting otherwise unknown legal
+  attributes.
+- Public `fastxlsx.workbook_editor.source-failure` now covers unknown XML
+  entity references, unterminated entities, out-of-range XML character
+  references, attributes without values, unquoted attribute values, and
+  truncated tags caused by unterminated attributes.
+- Each case verifies the materialization diagnostic reaches both
+  `try_worksheet()` and `worksheet()`, leaves pending edits / dirty materialized
+  sessions empty, does not update `last_edit_error()`, and preserves later
+  same-workbook Patch usability.
+
+Non-goals / boundary:
+- No sharedStrings XML repair, schema validation, attribute whitelist,
+  relationship repair, sharedStrings rebuild/writeback/pruning/index migration,
+  rich text preservation, metadata import, source reload, dense allocation,
+  large-file low-memory random editing claim, transaction/undo model, or source
+  package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Public/header docs distinguish malformed sharedStrings XML/entity/attribute
+  fail-fast hygiene from XML repair, schema validation, attribute whitelisting,
+  rich text preservation, sharedStrings migration/rebuild/writeback,
+  relationship repair, dense allocation, large-file performance, commit, undo,
+  or rollback semantics.
+- `git diff --check` passes.
+
+## P8.459 - Pin public sharedStrings relationship target failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings relationship target
+failure hygiene, Doxygen/API docs clarification, and task-plan sync; no new
+public symbol, no CMake membership change, no package format expansion, no
+dependency change, and no behavior widening.
+
+Goal: lift invalid source workbook sharedStrings relationship targets to the
+public facade failure-hygiene suite so `try_worksheet()` / `worksheet()`
+continue to fail before creating a dirty materialized session, while later
+valid Patch edits can still save.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-failure` now covers sharedStrings
+  relationships whose target is external, query-qualified, fragment-qualified,
+  malformed-percent, decoded-null, or escapes the package root.
+- Each case verifies the materialization diagnostic reaches both
+  `try_worksheet()` and `worksheet()`, leaves pending edits / dirty materialized
+  sessions empty, does not update `last_edit_error()`, and preserves later
+  same-workbook Patch usability.
+- No implementation widening was needed; the existing internal workbook-backed
+  loader already rejects these target shapes and this slice fixes the public
+  facade evidence.
+
+Non-goals / boundary:
+- No relationship target repair, URI repair, external target materialization,
+  sharedStrings XML repair, schema validation, sharedStrings
+  rebuild/writeback/pruning/index migration, rich text preservation, metadata
+  import, source reload, dense allocation, large-file low-memory random editing
+  claim, transaction/undo model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Public/header docs distinguish malformed sharedStrings relationship target
+  fail-fast hygiene from relationship repair, URI repair, external-target
+  materialization, sharedStrings migration/rebuild/writeback, dense allocation,
+  large-file performance, commit, undo, or rollback semantics.
+- `git diff --check` passes.
+
+## P8.460 - Pin source sharedStrings count and unknown-attribute boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings non-critical metadata
+boundary, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, no dependency
+change, and no behavior widening.
+
+Goal: prove source sharedStrings `count` / `uniqueCount` metadata and legal
+unknown attributes do not drive public source materialization. The
+workbook-backed loader should use actual `<si>` order and text, while keeping
+the current no-repair / no-writeback sharedStrings boundary.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-success` now covers a source
+  `xl/sharedStrings.xml` whose root `count` / `uniqueCount` are intentionally
+  inconsistent with the actual table and whose `sst` / `si` / `r` / `t` tags
+  carry legal unknown attributes.
+- Materialization still resolves source worksheet shared string indexes from
+  actual `<si>` item order and text; unknown legal attributes are ignored as
+  non-semantic metadata.
+- A clean no-op `save_as()` copies the source package entries, including the
+  mutated sharedStrings bytes. A dirty save still projects materialized text as
+  inline strings and preserves the source `xl/sharedStrings.xml` bytes.
+
+Non-goals / boundary:
+- No sharedStrings schema validation for `count` / `uniqueCount`, count repair,
+  attribute whitelist, semantic metadata import, rich-text preservation,
+  relationship repair, sharedStrings rebuild/writeback/pruning/index migration,
+  source reload, dense allocation, large-file low-memory random editing claim,
+  transaction/undo model, or source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish non-critical source sharedStrings metadata
+  from sharedStrings schema validation, repair, writeback, migration,
+  relationship repair, dense allocation, large-file performance, commit, undo,
+  or rollback semantics.
+- `git diff --check` passes.
+
+## P8.461 - Pin absent sharedStrings optional dependency for non-shared-string source cells
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load dependency boundary, Doxygen/API
+docs clarification, and task-plan sync; no new public symbol, no CMake
+membership change, no package format expansion, no dependency change, and no
+behavior widening.
+
+Goal: prove workbooks that do not contain `xl/sharedStrings.xml` can still
+materialize supported source cells that are not `t="s"`, and that dirty save
+does not create a sharedStrings part just because the source lacked one.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-success` now asserts the supported
+  source-values fixture has no `xl/sharedStrings.xml`, no workbook
+  sharedStrings relationship, and no sharedStrings content type.
+- The same test verifies dirty `WorksheetEditor` projection does not introduce
+  worksheet `t="s"` cells, a new sharedStrings part, a sharedStrings workbook
+  relationship, or a sharedStrings content type.
+
+Non-goals / boundary:
+- No lazy repair of malformed stale sharedStrings relationships, no tolerant
+  missing-target behavior when the workbook declares a sharedStrings
+  relationship, no sharedStrings writeback/rebuild/pruning/index migration, no
+  style migration, no relationship repair, no source reload, no dense
+  allocation, no large-file low-memory random editing claim, and no source
+  package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish an absent optional sharedStrings table for
+  non-`t="s"` cells from sharedStrings migration/rebuild/writeback,
+  relationship repair, dense allocation, large-file performance, commit, undo,
+  or rollback semantics.
+- `git diff --check` passes.
+
+## P8.462 - Resolve source sharedStrings lazily for selected worksheet indexes
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load dependency hardening, internal
+CellStore loader behavior, Doxygen/API docs clarification, and task-plan sync;
+no new public symbol, no CMake membership change, no package format expansion,
+and no dependency change.
+
+Goal: make workbook-backed `WorksheetEditor` treat sharedStrings as an
+on-demand dependency of actual `t="s"` cells in the selected worksheet, not as
+an eager workbook-level load requirement.
+
+Output:
+- `load_cell_store_from_workbook_sheet()` now passes a lazy sharedStrings
+  provider into the worksheet event loader.
+- The provider resolves and parses workbook `xl/sharedStrings.xml` only when a
+  source `t="s"` cell is materialized.
+- Public source-success coverage mutates the workbook sharedStrings
+  relationship to a missing target, then proves a non-`t="s"` `Data` sheet
+  still materializes and saves, while a `Shared` sheet with `t="s"` still fails
+  with the sharedStrings target diagnostic.
+- Dirty save preserves source sharedStrings bytes and stale workbook
+  relationship bytes; it does not repair or prune them.
+
+Non-goals / boundary:
+- No relationship repair, no stale relationship pruning, no tolerant `t="s"`
+  fallback, no sharedStrings writeback/rebuild/pruning/index migration, no
+  source reload, no dense allocation, no large-file low-memory random editing
+  claim, and no source package mutation.
+- Standalone worksheet XML/chunk loaders still reject `t="s"` because they have
+  no workbook-level table context.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` passes, proving actual `t="s"`
+  failures remain fail-fast.
+- Full default CTest passes.
+- Docs distinguish lazy dependency resolution from relationship repair or
+  sharedStrings migration/writeback.
+- `git diff --check` passes.
+
+## P8.463 - Pin lazy sharedStrings boundary for duplicate workbook relationships
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load lazy-dependency regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove the P8.462 lazy boundary is not limited to missing relationship
+targets: duplicate workbook sharedStrings relationships are ignored for a
+selected worksheet that has no `t="s"` cells, but remain fail-fast when the
+selected worksheet actually contains shared string indexes.
+
+Output:
+- Public source-success coverage mutates a sharedStrings workbook relationship
+  set to include a duplicate `sharedStrings` relationship.
+- The non-`t="s"` `Data` worksheet materializes and dirty-saves as inline
+  strings without loading or repairing sharedStrings metadata.
+- The `Shared` worksheet with `t="s"` still fails with the duplicate
+  sharedStrings relationship diagnostic.
+- Dirty save preserves the source sharedStrings bytes and duplicate workbook
+  relationship bytes.
+
+Non-goals / boundary:
+- No duplicate relationship repair, no relationship pruning, no tolerant `t="s"`
+  fallback, no sharedStrings writeback/rebuild/pruning/index migration, no
+  source reload, no dense allocation, no large-file low-memory random editing
+  claim, and no source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` remains passing.
+- Full default CTest passes.
+- Docs distinguish representative lazy metadata bypass from relationship repair
+  or sharedStrings migration/writeback.
+- `git diff --check` passes.
+
+## P8.464 - Pin lazy sharedStrings boundary for malformed table XML
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load lazy payload regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove workbook-backed sharedStrings XML parsing is also on demand: a
+selected worksheet with no `t="s"` cells does not parse a malformed
+`xl/sharedStrings.xml`, while a selected worksheet with shared string indexes
+still fails fast on that malformed table.
+
+Output:
+- Public source-success coverage mutates `xl/sharedStrings.xml` to a malformed
+  non-`sst` root while keeping the workbook sharedStrings relationship and
+  content type in place.
+- The non-`t="s"` `Data` worksheet materializes and dirty-saves as inline
+  strings without parsing or repairing the malformed sharedStrings payload.
+- The `Shared` worksheet with `t="s"` still fails with the malformed
+  sharedStrings XML diagnostic.
+- Dirty save preserves the malformed source sharedStrings bytes.
+
+Non-goals / boundary:
+- No sharedStrings XML repair, no tolerant `t="s"` fallback, no sharedStrings
+  writeback/rebuild/pruning/index migration, no relationship repair/pruning, no
+  source reload, no dense allocation, no large-file low-memory random editing
+  claim, and no source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` remains passing.
+- Full default CTest passes.
+- Docs distinguish lazy payload parsing from XML repair or sharedStrings
+  migration/writeback.
+- `git diff --check` passes.
+
+## P8.465 - Pin lazy sharedStrings boundary for wrong table content type
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load lazy content-type regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: prove workbook-backed sharedStrings content type validation is also on
+demand: a selected worksheet with no `t="s"` cells does not validate the
+`xl/sharedStrings.xml` part content type, while a selected worksheet with
+shared string indexes still fails fast when that content type is wrong.
+
+Output:
+- Public source-success coverage mutates the `xl/sharedStrings.xml` content
+  type override to a worksheet content type while keeping the sharedStrings
+  relationship and payload in place.
+- The non-`t="s"` `Data` worksheet materializes and dirty-saves as inline
+  strings without validating or repairing the wrong sharedStrings content type.
+- The `Shared` worksheet with `t="s"` still fails with the wrong sharedStrings
+  content type diagnostic.
+- Dirty save preserves source sharedStrings bytes and wrong content type
+  metadata.
+
+Non-goals / boundary:
+- No content type repair, no relationship repair/pruning, no tolerant `t="s"`
+  fallback, no sharedStrings writeback/rebuild/pruning/index migration, no
+  source reload, no dense allocation, no large-file low-memory random editing
+  claim, and no source package mutation.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` remains passing.
+- Full default CTest passes.
+- Docs distinguish lazy content-type validation from content type repair or
+  sharedStrings migration/writeback.
+- `git diff --check` passes.
+
+## P8.466 - Normalize source explicit default style attributes
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load style-boundary hardening, internal
+CellStore loader behavior, public/internal regression tests, Doxygen/API docs
+clarification, and task-plan sync; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: accept source worksheet cells that explicitly carry the default style
+attribute `s="0"` and materialize them as unstyled `CellValue` records, while
+continuing to reject non-default source style ids until a real existing-file
+style policy exists.
+
+Output:
+- `CellStore` source loaders now accept exact source `s="0"` and normalize it
+  to no style handle.
+- Non-default source style ids such as `s="1"` still fail with the existing
+  style-id diagnostic and preserve failure-before-handle state hygiene.
+- Public `fastxlsx.workbook_editor.source-success` coverage now proves a
+  workbook-backed source `s="0"` cell materializes as text with no style handle,
+  starts clean, and dirty save-as omits `s="0"`.
+- Internal `fastxlsx.package_reader` coverage now proves workbook-sheet
+  CellStore loading accepts source `s="0"` as an unstyled value while preserving
+  source package bytes for reader access.
+
+Non-goals / boundary:
+- No non-default source style import, style id validation, style migration,
+  styles.xml merge, stylesheet semantic editing, style preservation,
+  relationship repair, or existing-workbook formatting parity.
+- No change to whole-`<sheetData>` Patch behavior where caller-supplied style
+  ids remain caller-owned payload bytes.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` passes, proving non-default style
+  ids remain fail-fast.
+- `fastxlsx.package_reader` passes for the internal workbook-sheet loader
+  boundary.
+- Full default CTest passes.
+- Docs distinguish source `s="0"` normalization from non-default style
+  migration/merge/preservation.
+- `git diff --check` passes.
+
+## P8.467 - Pin strict source default-style token boundary
+
+Status: done.
+
+Type: internal/public `WorksheetEditor` source-load style-token regression,
+Doxygen/API docs clarification, and task-plan sync; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: lock source default-style import to exact value `0` only, expressed as
+`s="0"` or `s='0'`. Empty, padded, signed, leading-zero, entity-encoded, or
+duplicate style attributes must not silently normalize to default style.
+
+Output:
+- Generic worksheet XML loader accepts exact `s='0'` / `s="0"` and normalizes to
+  no style handle.
+- Empty, leading-zero, signed, whitespace-padded, entity-encoded, and duplicate
+  default-like source style attributes fail.
+- Public `fastxlsx.workbook_editor.source-failure` covers representative
+  default-like style tokens as clean materialization failures.
+- Existing source `s="0"` success and non-default style-id failure coverage
+  remain in place.
+
+Non-goals / boundary:
+- No numeric coercion of style ids, XML entity decoding for style id attributes,
+  style preservation, style migration, style merge, or stylesheet validation.
+- No non-default source style import and no relationship/content-type repair.
+
+Acceptance:
+- `fastxlsx.unit` passes.
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Docs say exact attribute value `0` only, not "any numeric zero-like style".
+- `git diff --check` passes.
+
+## P8.468 - Lift duplicate source style attributes to public facade hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load parser-boundary regression and docs
+sync; no new public symbol, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: prove duplicate source style attributes, including duplicate exact
+default-style tokens, fail cleanly through the public `try_worksheet()` /
+`worksheet()` facade instead of becoming a partially materialized session.
+
+Output:
+- `fastxlsx.workbook_editor.source-failure` now covers a workbook-backed source
+  cell with duplicate `s="0" s="0"` attributes.
+- The failure path uses the existing malformed attribute diagnostic, leaves the
+  editor without pending edits or dirty materialized sessions, preserves
+  `last_edit_error()`, and allows a later valid Patch edit to save.
+- Existing P8.467/P8.471 tests still cover empty, malformed, padded, signed,
+  leading-zero, and entity-encoded default-like style tokens.
+
+Non-goals / boundary:
+- No XML repair, duplicate-attribute tolerance, style id deduplication, numeric
+  style coercion, style preservation, style migration, style merge, or
+  relationship/content-type repair.
+- No change to whole-`<sheetData>` Patch payload behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Docs distinguish duplicate-attribute parser failure from style import or
+  default-style normalization.
+- `git diff --check` passes.
+
+## P8.469 - Pin qualified source style-like attribute rejection
+
+Status: done.
+
+Type: internal/public `WorksheetEditor` source-load metadata-boundary
+regression, Doxygen/API docs clarification, and task-plan sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: prove qualified style-like attributes such as `x:s="0"` are not treated
+as default style attributes. They remain unsupported source cell metadata and
+fail cleanly before public materialization returns a handle.
+
+Output:
+- Generic worksheet XML loader coverage rejects qualified style-like attributes
+  such as `x:s="0"` and `x:s="1"`.
+- Public `fastxlsx.workbook_editor.source-failure` coverage uses a
+  workbook-backed source worksheet with a bound `xmlns:x` prefix and
+  `x:s="0"` on a cell, proving the failure is surfaced through
+  `try_worksheet()` / `worksheet()` without partial materialization.
+- The failure leaves no pending edits or dirty materialized sessions, preserves
+  `last_edit_error()`, and allows a later valid Patch edit to save.
+
+Non-goals / boundary:
+- No namespace repair, namespace-aware style import, qualified-attribute
+  normalization, non-default source style support, style preservation,
+  migration, merge, or relationship/content-type repair.
+- No change to exact unqualified `s="0"` / `s='0'` default-style normalization.
+
+Acceptance:
+- `fastxlsx.unit` passes.
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Docs distinguish qualified style-like metadata rejection from default-style
+  normalization and namespace repair.
+- `git diff --check` passes.
+
+## P8.470 - Lift single-quoted source default style to public success coverage
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load success regression and docs sync; no
+new public symbol, no CMake membership change, no package format expansion, and
+no dependency change.
+
+Goal: prove the public workbook-backed materialization path accepts both XML
+quote forms for exact default style attributes: `s="0"` and `s='0'`.
+
+Output:
+- `fastxlsx.workbook_editor.source-success` now materializes a source cell with
+  `s='0'` as an unstyled text value beside the existing `s="0"` coverage.
+- Dirty save-as projects both normalized source cells as inline strings without
+  writing either `s="0"` or `s='0'`.
+- Existing default-like token and qualified `x:s` failure coverage remains
+  unchanged.
+
+Non-goals / boundary:
+- No numeric coercion, whitespace trimming, XML entity decoding for style ids,
+  non-default style import, style preservation, style migration, style merge,
+  or stylesheet validation.
+- No change to qualified style-like metadata rejection or duplicate-attribute
+  strictness.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` remains passing.
+- Full default CTest passes.
+- Docs distinguish exact XML quote-form support from tolerant numeric parsing
+  or style import.
+- `git diff --check` passes.
+
+## P8.471 - Pin source style attribute syntax boundary
+
+Status: done.
+
+Type: internal `CellStore` source-load parser hardening, public
+`WorksheetEditor` facade regression coverage, and docs sync; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: keep source default-style normalization exact while pinning XML attribute
+syntax behavior. Unqualified `s` attributes whose value is exactly `0` may be
+written as `s="0"`, `s='0'`, or with legal XML whitespace around `=`;
+malformed style-like syntax must fail instead of silently becoming default
+style or unsupported metadata.
+
+Output:
+- Internal worksheet loading now reports a target `s` attribute without `=`
+  as a malformed attribute-without-value error.
+- Internal `fastxlsx.unit` coverage accepts `s = "0"` as unstyled and rejects
+  valueless `s`, unquoted `s=0`, and unterminated style-attribute syntax.
+- Public `fastxlsx.workbook_editor.source-success` coverage materializes
+  `s = "0"` as no style handle and dirty projection omits it.
+- Public `fastxlsx.workbook_editor.source-failure` coverage rejects valueless
+  and unquoted default-like source style attributes through the same
+  materialization-failure hygiene path.
+
+Non-goals / boundary:
+- No numeric coercion, whitespace trimming inside the style value, XML entity
+  decoding for style ids, tolerant XML repair, non-default style import,
+  style preservation, style migration, style merge, or stylesheet validation.
+- No change to qualified style-like metadata rejection, duplicate-attribute
+  strictness, or standalone sharedStrings limitations.
+
+Acceptance:
+- `fastxlsx.unit` passes.
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` passes.
+- Full default CTest passes.
+- Docs distinguish legal XML whitespace around `=` from malformed style
+  attribute syntax and style import.
+- `git diff --check` passes.
+
+## P8.472 - Pin relationship-bearing source wrapper dirty-projection boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load / dirty-save projection regression
+and docs sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: extend the P8.407 source wrapper metadata boundary to representative
+relationship-bearing worksheet wrapper metadata. Source `<hyperlinks>` and
+`<tableParts>` must not block supported cell materialization, but dirty
+`WorksheetEditor` projection must stay a standalone sparse `CellStore`
+worksheet instead of preserving, repairing, or semantically synchronizing those
+wrapper references.
+
+Output:
+- `fastxlsx.workbook_editor.source-success` now creates a public source
+  workbook whose selected sheet has worksheet `<hyperlinks>`, `<tableParts>`,
+  a worksheet `.rels`, and a linked table part.
+- Supported text/number cells still materialize cleanly beside that metadata.
+- Dirty save projects materialized cells plus the new edit and drops
+  `<hyperlinks>`, `<tableParts>`, and `r:id` references from the worksheet XML.
+- Source worksheet `.rels` and the linked table part remain byte-preserved
+  opaque package artifacts; they are not pruned or repaired.
+
+Non-goals / boundary:
+- No hyperlink editing, table semantic editing, table range repair,
+  relationship pruning/repair, source wrapper metadata preservation, wrapper
+  metadata synchronization, or internal `sheetData` Patch preservation change.
+- No large-file random editing claim and no new public object model for
+  hyperlinks, tables, drawings, comments, or relationship-bearing metadata.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish dirty worksheet XML wrapper-reference
+  dropping from opaque package artifact preservation and relationship repair.
+- `git diff --check` passes.
+
+## P8.473 - Pin range/reference source wrapper dirty-projection boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` source-load / dirty-save projection regression
+and docs sync; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: extend the P8.407 source wrapper metadata boundary to representative
+range/reference worksheet wrapper metadata. Source `<mergeCells>`,
+`<dataValidations>`, `<conditionalFormatting>`, `<ignoredErrors>`,
+`<pageMargins>`, and `<pageSetup>` must not block supported cell
+materialization, but dirty `WorksheetEditor` projection must remain a
+standalone sparse `CellStore` worksheet instead of preserving, recalculating,
+or semantically synchronizing those wrapper elements.
+
+Output:
+- `fastxlsx.workbook_editor.source-success` now creates a public source
+  worksheet whose selected sheet contains merge, validation,
+  conditional-formatting, ignored-error, page margin, and page setup metadata
+  beside supported text, number, and boolean cells.
+- Supported cells still materialize cleanly and read-only materialization stays
+  non-dirty.
+- Dirty save projects materialized cells plus the new edit and drops
+  `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
+  `<ignoredErrors>`, `<pageMargins>`, and `<pageSetup>` from the output
+  worksheet XML.
+
+Non-goals / boundary:
+- No merged-cell editing, data-validation import, conditional-formatting
+  import, ignored-error preservation, page setup preservation, range
+  recalculation, wrapper metadata synchronization, relationship repair, or
+  internal `sheetData` Patch preservation change.
+- No large-file random editing claim and no new public object model for
+  validations, conditional formatting, merged cells, page setup, or range
+  metadata.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- Full default CTest passes.
+- Public/header docs distinguish dirty range/reference wrapper metadata
+  dropping from metadata synchronization and the internal sheetData Patch
+  preservation path.
+- `git diff --check` passes.
+
+## P8.474 - Materialize source inline rich text as plain WorksheetEditor text
+
+Status: done.
+
+Type: internal `CellStore` source-load support, public `WorksheetEditor`
+source-success regression, Doxygen/docs clarification; no new public symbol,
+no CMake membership change, no package format expansion, and no dependency
+change.
+
+Goal: align source inline-string rich text handling with the already supported
+sharedStrings rich-text read path. Simple source `<is><r><t>...</t></r>...</is>`
+runs should materialize as plain `CellValue::text(...)` while preserving the
+current no-rich-formatting, no-phonetic-import, and dirty-inlineStr projection
+boundary.
+
+Output:
+- Internal worksheet loading now tracks inline rich-text run, run-properties,
+  and ignored phonetic/extension metadata state for `t="inlineStr"` cells.
+- Simple inline rich-text runs are concatenated into one text payload.
+- Inline run formatting metadata is ignored, and inline `rPh` / `phoneticPr` /
+  `extLst` metadata text is ignored.
+- Direct duplicate `<is><t>...</t><t>...</t></is>` remains a failure, and
+  unknown inline string child metadata remains a failure.
+- Public `fastxlsx.workbook_editor.source-success` coverage proves read-only
+  materialization stays clean and dirty save writes the flattened text as a
+  plain inline string without rich formatting, phonetic text, or extension text.
+
+Non-goals / boundary:
+- No rich text preservation, rich-text object model, run formatting import,
+  phonetic metadata import, extension metadata import, XML repair, sharedStrings
+  migration/writeback, style migration, relationship repair, source reload,
+  or large-file random editing claim.
+- No change to unsupported direct duplicate inline `<t>` wrappers, unsupported
+  inline `<t>` attributes beyond `xml:space`, comments/processing-instructions
+  inside cells, or unknown inline string metadata failures.
+
+Acceptance:
+- `fastxlsx.unit` passes.
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.workbook_editor.source-failure` remains passing.
+- Full default CTest passes.
+- Public/internal docs distinguish plain-text materialization from rich text
+  preservation or metadata import.
+- `git diff --check` passes.
+
+## P8.475 - Pin malformed source inline rich text failure hygiene
+
+Status: done.
+
+Type: internal `CellStore` loader hardening, public `WorksheetEditor` source
+failure hygiene regression, package-backed loader regression, and docs
+clarification; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: after P8.474 made simple source inline rich text readable as plain text,
+keep malformed inline rich text shapes fail-fast and prove they do not create
+partial materialized sessions or dirty package state.
+
+Output:
+- `CellStoreWorksheetLoader` now rejects value wrappers encountered while
+  parsing inline rich run properties (`rPr`) instead of treating nested `<t>` as
+  cell text.
+- Internal loader tests cover mixed direct/rich text, `rPr` outside a run,
+  value wrappers inside `rPr`, unclosed rich runs, and unclosed ignored rich
+  metadata.
+- Public `fastxlsx.workbook_editor.source-failure` coverage proves those
+  malformed source inline rich text shapes fail through
+  `worksheet()` / `try_worksheet()` without dirtying materialized state.
+- Package-backed `load_cell_store_from_workbook_sheet()` failure coverage proves
+  the loader diagnostic survives the workbook sheet / worksheet part / ZIP
+  entry context wrapper while preserving `PackageEditor` state and copy-original
+  output.
+
+Non-goals / boundary:
+- No rich text preservation, rich-text object model, inline run formatting
+  import, phonetic metadata import, tolerant XML recovery, XML repair,
+  sharedStrings migration/writeback, style migration, relationship repair,
+  source reload, or large-file random editing claim.
+- No change to simple inline rich text flattening, ignored phonetic/extension
+  metadata text, unsupported unknown inline metadata failures, direct duplicate
+  inline text failures, or unsupported inline `<t>` attributes beyond
+  `xml:space`.
+
+Acceptance:
+- `fastxlsx.unit` passes.
+- `fastxlsx.workbook_editor.source-failure` passes.
+- `fastxlsx.package_editor.cellstore-failures` passes.
+- Full default CTest passes.
+- Public/internal docs distinguish malformed inline rich metadata fail-fast from
+  rich text preservation, metadata import, or XML repair.
+- `git diff --check` passes.
+
+## P8.476 - Pin prefixed source sharedStrings local-name materialization
+
+Status: done.
+
+Type: public `WorksheetEditor` source-success regression, package-backed
+`CellStore` source regression, and docs clarification; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: pin the workbook-backed source sharedStrings parser behavior for
+prefixed `sst` / `si` / `t` / `r` element names. These names are matched by
+local-name for read-only materialization, matching current narrow XML scanning,
+without claiming namespace URI validation, namespace repair, or schema
+validation.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-success` coverage rewrites
+  `xl/sharedStrings.xml` to `x:sst` / `x:si` / `x:t` / `x:r` markup and proves
+  plain text plus simple rich-run shared strings materialize as text.
+- The same public regression proves clean no-op `save_as()` stays copy-original
+  and dirty save projects materialized values as inline strings while
+  preserving source `xl/sharedStrings.xml` bytes.
+- Package-backed `load_cell_store_from_workbook_sheet()` coverage proves the
+  same local-name behavior through `CellStore` handoff and `PackageEditor`
+  output preservation.
+
+Non-goals / boundary:
+- No namespace URI validation, namespace repair, XML schema validation,
+  sharedStrings rebuild/writeback/migration, rich text preservation, style
+  migration, relationship repair, or large-file random editing claim.
+- No change to fail-fast sharedStrings metadata, target, malformed XML/entity,
+  malformed item/rich-run, or invalid-index boundaries.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.package_editor.cellstore-source` passes.
+- Full default CTest passes.
+- Public/internal docs distinguish local-name materialization from namespace
+  validation/repair and sharedStrings migration.
+- `git diff --check` passes.
+
+## P8.477 - Pin prefixed source worksheet inlineStr local-name materialization
+
+Status: done.
+
+Type: public `WorksheetEditor` source-success regression, package-backed
+`CellStore` source regression, and docs clarification; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: pin source worksheet XML local-name behavior for prefixed worksheet,
+`sheetData`, row, cell, inlineStr wrapper, rich-run, formula, and value-wrapper
+element names. These names are matched by local-name for read-only
+materialization, without claiming namespace URI validation, namespace repair,
+or schema validation.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-success` coverage rewrites
+  `xl/worksheets/sheet1.xml` to `x:worksheet` / `x:sheetData` / `x:row` /
+  `x:c` / `x:is` / `x:t` / `x:r` / `x:f` / `x:v` markup and proves plain
+  inline strings, `xml:space` text, simple inline rich text, numbers, booleans,
+  and formulas materialize correctly.
+- The same public regression proves clean no-op `save_as()` remains
+  copy-original and dirty save uses the standalone sparse-store worksheet
+  projection, dropping source prefixes, ignored inline phonetic / extension
+  text, and stale cached formula values.
+- Package-backed `load_cell_store_from_workbook_sheet()` coverage proves the
+  same local-name behavior through `CellStore` handoff and by-name
+  `PackageEditor` sheetData output.
+
+Non-goals / boundary:
+- No namespace URI validation, namespace repair, XML schema validation,
+  metadata preservation, inline rich formatting preservation, style migration,
+  sharedStrings migration/writeback, relationship repair, or large-file random
+  editing claim.
+- No change to malformed inline rich metadata, unsupported wrapper metadata,
+  invalid numeric payload, malformed formula, worksheet root / `sheetData`
+  boundary, row/cell state-machine, or XML/entity/attribute failure behavior.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.package_editor.cellstore-source` passes.
+- Full default CTest passes.
+- Public/internal docs distinguish prefixed worksheet/inlineStr local-name
+  materialization from namespace validation/repair and XML/schema repair.
+- `git diff --check` passes.
+
+## P8.478 - Pin source local-name materialization without namespace URI validation
+
+Status: done.
+
+Type: public `WorksheetEditor` source-success regression, package-backed
+`CellStore` source regression, and docs clarification; no new public symbol, no
+CMake membership change, no package format expansion, and no dependency change.
+
+Goal: pin the exact namespace boundary behind P8.476/P8.477. Source
+worksheet and sharedStrings element local-names drive this narrow
+materialization path; element namespace URIs are not inspected. A source part
+whose supported element local-names are bound to a non-spreadsheetml URI still
+materializes through the current local-name loader. This is a documented
+non-validation boundary, not namespace-aware support.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-success` coverage rewrites both
+  `xl/worksheets/sheet1.xml` and `xl/sharedStrings.xml` to use supported
+  local-names under a deliberately non-spreadsheetml namespace URI and verifies
+  shared string, inline string, and rich shared string materialization.
+- The same public regression proves clean no-op `save_as()` remains
+  copy-original and dirty save uses standalone sparse-store projection while
+  preserving the source sharedStrings bytes.
+- Package-backed `load_cell_store_from_workbook_sheet()` coverage proves the
+  same namespace-URI non-validation behavior through `CellStore` handoff and
+  by-name `PackageEditor` sheetData output.
+
+Non-goals / boundary:
+- No namespace URI validation, namespace repair, namespace-aware style import,
+  XML schema validation, XML repair, metadata preservation, sharedStrings
+  migration/writeback, rich text preservation, or relationship repair.
+- No change to fail-fast behavior for unsupported local-names, unsupported
+  metadata, malformed XML/entity/attribute syntax, invalid sharedStrings
+  indexes, malformed style attributes, or source row/cell state-machine
+  failures.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-success` passes.
+- `fastxlsx.package_editor.cellstore-source` passes.
+- Full default CTest passes.
+- Public/internal docs say namespace URIs are not inspected on this local-name
+  materialization path and avoid implying namespace-aware OpenXML validation.
+- `git diff --check` passes.
+
+## P8.479 - Pin namespace-URI non-validation still rejects unsupported local-names
+
+Status: done.
+
+Type: public `WorksheetEditor` source-failure regression, package-backed
+`CellStore` failure-hygiene regression, and docs clarification; no new public
+symbol, no CMake membership change, no package format expansion, and no
+dependency change.
+
+Goal: close the reverse boundary from P8.478. The source worksheet loader does
+not inspect element namespace URIs for supported local-names, but that does not
+make unsupported local-names or unsupported cell metadata acceptable. Wrong-URI
+elements still run through the same local-name state machine and fail fast when
+their local-name is outside the current narrow supported set.
+
+Output:
+- Public `fastxlsx.workbook_editor.source-failure` coverage verifies
+  wrong-namespace unsupported cell metadata and inline string metadata fail
+  through `try_worksheet()` / `worksheet()` without dirtying materialized state
+  or blocking a later valid Patch edit.
+- Package-backed `fastxlsx.package_editor.cellstore-failures` coverage verifies
+  the same unsupported local-name diagnostics through
+  `load_cell_store_from_workbook_sheet()` and confirms `PackageEditor` state and
+  copy-original output remain unchanged.
+- Public/internal docs distinguish namespace-URI non-validation for supported
+  local-names from broad malformed-package tolerance.
+
+Non-goals / boundary:
+- No namespace URI validation, namespace repair, schema validation, XML repair,
+  unsupported metadata import, rich text preservation, sharedStrings migration,
+  relationship repair, or namespace-aware OpenXML model.
+- No behavior change for supported local-name materialization from P8.476
+  through P8.478.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` passes.
+- `fastxlsx.package_editor.cellstore-failures` passes.
+- Full default CTest passes.
+- Docs explicitly say unsupported local-names remain fail-fast even when the
+  element namespace URI is ignored.
+- `git diff --check` passes.
+
+## P8.480 - Pin sharedStrings unsupported local-names under namespace-URI non-validation
+
+Status: done.
+
+Type: internal sharedStrings parser hardening, public `WorksheetEditor`
+source-failure regression, package-backed `CellStore` failure-hygiene
+regression, and docs clarification; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: extend the P8.479 reverse boundary to `xl/sharedStrings.xml`. The
+sharedStrings parser still matches supported `sst` / `si` / `t` / `r` /
+`rPr` / `rPh` / `phoneticPr` / `extLst` local-names without inspecting element
+namespace URIs, but unsupported item-level and rich-run local-names must fail
+instead of being treated as transparent containers.
+
+Output:
+- `parse_shared_strings_xml()` now rejects unsupported local-names directly
+  under `<si>` and unsupported local-names directly under rich `<r>` runs.
+- Existing support for simple shared string rich runs, `rPr` formatting
+  metadata, and ignored `rPh` / `phoneticPr` / `extLst` metadata is preserved.
+- Public `fastxlsx.workbook_editor.source-failure` coverage verifies
+  wrong-namespace unsupported sharedStrings item and rich-run local-names fail
+  through the public materialization facade without dirtying state.
+- Package-backed `fastxlsx.package_editor.cellstore-failures` coverage verifies
+  the same parser diagnostics and no-state-pollution/copy-original behavior
+  through `load_cell_store_from_workbook_sheet()`.
+
+Non-goals / boundary:
+- No namespace URI validation, namespace repair, schema validation, XML repair,
+  arbitrary rich-text model, unsupported sharedStrings metadata import,
+  sharedStrings rebuild/writeback/migration, or relationship repair.
+- No change to supported prefixed / wrong-namespace local-name materialization
+  for the currently supported sharedStrings and worksheet element set.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.workbook_editor.source-success` pass.
+- `fastxlsx.package_editor.cellstore-failures` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Full default CTest passes.
+- Docs distinguish supported sharedStrings local-name materialization from
+  unsupported local-name tolerance.
+- `git diff --check` passes.
+
+## P8.481 - Pin sharedStrings rich metadata malformed-shape failures
+
+Status: done.
+
+Type: internal sharedStrings parser hardening, public `WorksheetEditor`
+source-failure regression, package-backed `CellStore` failure-hygiene
+regression, and docs clarification; no new public symbol, no CMake membership
+change, no package format expansion, and no dependency change.
+
+Goal: tighten the boundary between supported source sharedStrings flattening
+and unsupported rich-text shapes. Simple rich shared string runs still flatten
+to plain text and run formatting metadata is ignored, but mixed direct text /
+rich-run items and malformed rich-run metadata should fail before any
+materialized store is returned.
+
+Output:
+- `parse_shared_strings_xml()` now rejects shared string items that mix direct
+  `<t>` text with rich `<r>` runs.
+- SharedStrings `rPr` outside a rich run and text wrappers inside `rPr` now
+  fail with malformed rich text metadata diagnostics.
+- Public `fastxlsx.workbook_editor.source-failure` coverage verifies those
+  malformed sharedStrings rich metadata shapes fail through
+  `try_worksheet()` / `worksheet()` without dirtying state.
+- Package-backed `fastxlsx.package_editor.cellstore-failures` coverage verifies
+  the same parser diagnostics and no-state-pollution/copy-original behavior
+  through `load_cell_store_from_workbook_sheet()`.
+
+Non-goals / boundary:
+- No sharedStrings rich-text preservation, run formatting object model, schema
+  validation, namespace repair, XML repair, tolerant mixed-mode import,
+  sharedStrings rebuild/writeback/migration, or relationship repair.
+- No change to supported plain shared strings, simple rich-run flattening, or
+  ignored `rPr` formatting metadata / `rPh` / `phoneticPr` / `extLst`
+  metadata.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.workbook_editor.source-success` pass.
+- `fastxlsx.package_editor.cellstore-failures` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Full default CTest passes.
+- Docs distinguish simple sharedStrings rich-run flattening from malformed
+  rich metadata import or preservation.
+- `git diff --check` passes.
+
+## P8.482 - Pin sharedStrings ignored metadata opacity boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` source sharedStrings behavior regression,
+package-backed `CellStore` regression, Doxygen/docs clarification, and
+failure-hygiene coverage; no new public symbol, no CMake membership change, no
+package format expansion, and no dependency change.
+
+Goal: make the `rPh` / `phoneticPr` / `extLst` boundary explicit for source
+sharedStrings materialization. Opaque nested metadata text remains ignored and
+does not contribute to direct/rich text mixing, but decoy shared string items
+and markup nested inside a text wrapper still fail fast.
+
+Output:
+- Public source-success coverage now proves nested opaque text under
+  sharedStrings `rPh` / `extLst` and root-level `extLst` is ignored during
+  materialization and dirty inline projection, while source sharedStrings bytes
+  are preserved.
+- Package-backed `CellStore` source coverage verifies the same ignored
+  metadata text boundary and copy-original `xl/sharedStrings.xml` behavior.
+- Public and package-backed source-failure coverage now pins nested `<si>`
+  decoys under ignored metadata and nested markup inside ignored metadata text
+  wrappers as fail-fast malformed sharedStrings input with no state pollution.
+
+Non-goals / boundary:
+- No import of phonetic or extension metadata text, no rich-text preservation,
+  no arbitrary extension object model, no XML repair, no namespace validation,
+  no sharedStrings rebuild/writeback/migration, and no relationship repair.
+- Opaque ignored metadata is not a schema-validating parser mode; it is only a
+  narrow read-only boundary for the currently materialized source text.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.workbook_editor.source-success` pass.
+- `fastxlsx.package_editor.cellstore-failures` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Full default CTest passes.
+- Docs distinguish ignored metadata text from malformed sharedStrings decoys.
+- `git diff --check` passes.
+
+## P8.483 - Pin inline rich ignored metadata opacity boundary
+
+Status: done.
+
+Type: internal worksheet loader hardening, public `WorksheetEditor` source
+inline-rich regression, package-backed `CellStore` regression, and
+Doxygen/docs clarification; no new public symbol, no CMake membership change,
+no package format expansion, and no dependency change.
+
+Goal: mirror the P8.482 source sharedStrings ignored-metadata boundary on
+source inline rich text. Inline `rPh` / `phoneticPr` / `extLst` opaque nested
+metadata text remains ignored, but decoy shared string items and markup nested
+inside ignored metadata text wrappers should fail fast.
+
+Output:
+- `CellStoreWorksheetLoader` now tracks text wrappers inside inline ignored
+  metadata and rejects nested markup inside those wrappers.
+- Inline ignored metadata now rejects nested `<si>` decoys before returning a
+  materialized store.
+- Public `fastxlsx.workbook_editor.source-success` coverage verifies nested
+  opaque inline ignored metadata text is ignored and omitted from dirty
+  projection.
+- Public and package-backed failure coverage verifies nested `<si>` decoys and
+  nested markup inside ignored metadata text wrappers fail without dirtying
+  state or changing copy-original output behavior.
+
+Non-goals / boundary:
+- No import of inline phonetic or extension metadata text, no rich formatting
+  preservation, no extension object model, no XML repair, no namespace
+  validation, no sharedStrings/style migration, and no relationship repair.
+- The ignored metadata path remains a narrow read-only text materialization
+  boundary, not a schema-validating or tolerant arbitrary XML parser.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.workbook_editor.source-success` pass.
+- `fastxlsx.package_editor.cellstore-failures` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Full default CTest passes.
+- Docs distinguish ignored inline metadata text from malformed inline metadata
+  decoys.
+- `git diff --check` passes.
+
+## P8.484 - Pin ignored metadata self-closing and malformed closing parity
+
+Status: done.
+
+Type: source loader hardening, public `WorksheetEditor` success/failure
+regression, package-backed `CellStore` success/failure regression, and docs
+clarification; no new public symbol, no CMake membership change, no package
+format expansion, and no dependency change.
+
+Goal: close the remaining inline/sharedStrings ignored metadata boundary gap:
+self-closing `rPh` / `phoneticPr` / `extLst` should behave as empty ignored
+metadata, while orphan closing tags and unclosed ignored metadata must fail
+instead of being guessed or depth-balanced through unrelated closing tags.
+
+Output:
+- Inline ignored metadata now uses tag-stack validation, so mismatched closing
+  tags inside inline ignored metadata fail instead of decrementing a generic
+  depth counter.
+- Public source-success coverage verifies self-closing ignored metadata remains
+  accepted for source sharedStrings and inline rich text without changing
+  materialized text or dirty projection.
+- Public and package-backed failure coverage verifies orphan closing tags and
+  unclosed ignored metadata fail for both source sharedStrings and inline rich
+  text with no state pollution / copy-original behavior preserved.
+
+Non-goals / boundary:
+- No XML repair, no namespace validation, no schema validation, no import of
+  phonetic/extension metadata, no rich-text preservation, no arbitrary
+  extension object model, no sharedStrings/style migration, and no relationship
+  repair.
+- This only tightens the supported source materialization boundary; it does not
+  make malformed packages tolerant or editable.
+
+Acceptance:
+- `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.workbook_editor.source-success` pass.
+- `fastxlsx.package_editor.cellstore-failures` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Full default CTest passes.
+- Docs distinguish self-closing ignored metadata from malformed closing /
+  unclosed ignored metadata.
+- `git diff --check` passes.
+
+## P8.485 - Add source dependency materialization summary index
+
+Status: done.
+
+Type: API design documentation hygiene; no implementation change, no public
+symbol, no test source change, no CMake membership change, no package format
+expansion, and no dependency change.
+
+Goal: keep the `WorksheetEditor` source materialization contract maintainable
+after the P8.482-P8.484 ignored-metadata hardening slices. The source
+dependency gate row had become too dense to safely extend without losing API
+boundaries, so the detailed contract now has a maintained summary index.
+
+Output:
+- `docs/API_DESIGN_AND_DOCUMENTATION.md` now has a dedicated
+  "Source dependency materialization summary" under the F2 gate.
+- The matrix keeps a compact source-dependency addendum and points future
+  slices to the maintained summary instead of lengthening the already dense
+  row.
+- The summary separates supported source values, sharedStrings import,
+  ignored metadata, local-name policy, lazy sharedStrings dependency, strict
+  failure groups, and non-goals.
+
+Non-goals / boundary:
+- No C++ implementation change, no new source tolerance, no XML repair, no
+  namespace validation, no rich-text preservation, no sharedStrings/style
+  migration, no relationship repair, and no test expansion.
+- This is documentation structure work only; existing verified behavior remains
+  unchanged.
+
+Acceptance:
+- `git diff --check` passes.
+- Documentation references P8.482-P8.484 behavior without broadening the public
+  capability claim.
+- No CMake or binary target rebuild is required for this doc-only slice.
+
+## P8.486 - Align public source materialization wording with summary index
+
+Status: done.
+
+Type: README / public Doxygen / internal loader comment documentation sync; no
+implementation change, no public symbol, no test source change, no CMake
+membership change, no package format expansion, and no dependency change.
+
+Goal: keep public-facing `WorksheetEditor` source materialization wording from
+forking away from the maintained "Source dependency materialization summary".
+The previous detailed README and Doxygen paragraphs described the same
+behavior, but future slices needed a single summary index to update first.
+
+Output:
+- `README.md` now has a compact `WorksheetEditor` source materialization
+  checklist that points to the API design summary.
+- `include/fastxlsx/workbook_editor.hpp` now summarizes supported source
+  values, read-only sharedStrings import, local-name matching, ignored metadata
+  behavior, and non-goals before the detailed Doxygen boundary.
+- `include/fastxlsx/detail/cell_store.hpp` now states that generic loaders
+  still reject `t="s"` without workbook context, while the workbook-backed
+  helper only performs read-only sharedStrings text materialization.
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`, `docs/NEXT_STEPS.md`, and
+  `docs/TASK_PLAN.md` now record that README and Doxygen should point back to
+  the maintained source materialization summary.
+
+Non-goals / boundary:
+- No source loader behavior change, no broader XML tolerance, no XML repair, no
+  namespace validation, no rich-text preservation, no sharedStrings/style
+  migration, no relationship repair, no semantic metadata sync, and no test or
+  CMake change.
+
+Acceptance:
+- `git diff --check` passes.
+- Public README/header wording stays consistent with the source dependency
+  materialization summary and still distinguishes read-only import from
+  migration/writeback/repair behavior.
+- No binary rebuild is required for this documentation/comment-only slice.
+
+## P8.487 - Pin sharedStrings text-wrapper markup failures
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor` failure
+hygiene regression, package-backed `CellStore` regression, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no CMake membership
+change, and no package format expansion.
+
+Goal: close the remaining source sharedStrings text-wrapper gap. The maintained
+contract already says nested markup inside `<t>` is malformed; the parser must
+not silently drop comments, processing instructions, CDATA, or other markup
+declarations and then materialize an incomplete string.
+
+Output:
+- `parse_shared_strings_xml()` now rejects comments and processing
+  instructions inside sharedStrings text wrappers with the same nested-markup
+  diagnostic as element markup.
+- `parse_shared_strings_xml()` now rejects CDATA / DOCTYPE-like markup
+  declarations instead of treating them as supported sharedStrings text import.
+- Public `WorksheetEditor` failure-hygiene coverage verifies comment,
+  processing-instruction, and CDATA markup inside sharedStrings `<t>`, plus
+  CDATA directly under `<si>`, fail without dirtying materialized state and
+  without blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same payload failures keep
+  `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- No CDATA import support, no XML repair, no schema validation, no broader rich
+  text support, no sharedStrings writeback/rebuild/migration, no namespace
+  repair, and no relationship repair/pruning.
+- Opaque ignored metadata element markup remains a narrow non-materialized
+  path; markup inside ignored metadata text wrappers is still malformed input.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.package_editor.cellstore-failures` pass.
+- `git diff --check` passes.
+- Docs distinguish fail-fast unsupported markup from supported simple text /
+  simple rich-run flattening.
+
+## P8.488 - Pin sharedStrings XML declaration placement failures
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor` failure
+hygiene regression, package-backed `CellStore` regression, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no CMake membership
+change, and no package format expansion.
+
+Goal: make true XML declarations in source `xl/sharedStrings.xml` fail fast
+once the sharedStrings root has started. `<?xml ...?>` must not be treated as
+ordinary processing-instruction trivia when nested inside `<si>` or trailing
+after `</sst>`.
+
+Output:
+- `parse_shared_strings_xml()` now detects true `<?xml ...?>` tokens and
+  rejects them after the sharedStrings root has started.
+- Public `WorksheetEditor` failure-hygiene coverage verifies XML declarations
+  inside a shared string item and after the sharedStrings root fail without
+  dirtying materialized state and without blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same payload failures keep
+  `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- Ordinary processing instructions remain XML trivia on the non-text path; this
+  slice only distinguishes true XML declarations from ordinary PI tokens after
+  root start.
+- No XML repair, no schema validation, no stricter prolog ordering gate, no
+  sharedStrings writeback/rebuild/migration, no namespace repair, and no
+  relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.package_editor.cellstore-failures` pass.
+- `git diff --check` passes.
+- Docs distinguish XML declaration placement failures from ordinary
+  processing-instruction trivia.
+
+## P8.489 - Pin duplicate sharedStrings XML declaration failures
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor` failure
+hygiene regression, package-backed `CellStore` regression, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no CMake membership
+change, and no package format expansion.
+
+Goal: reject duplicate XML declarations in source `xl/sharedStrings.xml` before
+the root. The second `<?xml ...?>` token must not be skipped as ordinary prolog
+processing-instruction trivia.
+
+Output:
+- `parse_shared_strings_xml()` now tracks whether a true XML declaration has
+  already been seen and rejects duplicates before the sharedStrings root.
+- Public `WorksheetEditor` failure-hygiene coverage verifies a duplicate XML
+  declaration fails without dirtying materialized state and without blocking
+  later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same payload failure keeps
+  `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- Ordinary processing instructions remain XML trivia on the non-text path.
+- This is not a full prolog ordering validator; the slice only distinguishes
+  duplicate true XML declarations from ordinary PI tokens.
+- No XML repair, no schema validation, no sharedStrings writeback/rebuild/
+  migration, no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.package_editor.cellstore-failures` pass.
+- `git diff --check` passes.
+- Docs distinguish duplicate XML declaration failures from ordinary
+  processing-instruction trivia.
+
+## P8.490 - Pin sharedStrings XML declaration after prolog trivia failures
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+success/failure regression, package-backed `CellStore` regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: reject source `xl/sharedStrings.xml` payloads where the XML declaration
+appears after prolog trivia such as a comment or ordinary processing
+instruction. The same slice keeps ordinary processing instructions after a
+valid XML declaration accepted as trivia so the boundary does not become a full
+PI ban.
+
+Output:
+- `parse_shared_strings_xml()` now tracks pre-root prolog trivia and rejects a
+  later true XML declaration.
+- Public `WorksheetEditor` failure-hygiene coverage verifies comment-before-
+  declaration and PI-before-declaration payloads fail without dirtying
+  materialized state and without blocking later valid Patch edits.
+- Public `WorksheetEditor` success coverage keeps an ordinary processing
+  instruction after a valid XML declaration on the supported sharedStrings path
+  to prove PI trivia is still accepted outside text wrappers.
+- Package-backed `CellStore` coverage verifies the same failure payloads keep
+  `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- No full prolog ordering validator, no whitespace-before-declaration
+  rejection in this slice, no ban on ordinary processing instructions, no XML
+  repair, no schema validation, no sharedStrings writeback/rebuild/migration,
+  no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish XML declaration ordering failures from ordinary
+  processing-instruction trivia.
+
+## P8.491 - Pin sharedStrings XML declaration after prolog text failures
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: reject source `xl/sharedStrings.xml` payloads where a true XML
+declaration appears after leading prolog text, including whitespace-only
+prefixes. XML declarations remain a first-token feature for this narrow loader.
+
+Output:
+- `parse_shared_strings_xml()` now tracks pre-root text and rejects a later true
+  XML declaration with a dedicated diagnostic.
+- Public `WorksheetEditor` failure-hygiene coverage verifies whitespace-before-
+  declaration payloads fail without dirtying materialized state and without
+  blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same failure payload keeps
+  `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- No full XML prolog validator, no XML declaration grammar validation, no ban
+  on root-before whitespace for payloads without an XML declaration, no XML
+  repair, no schema validation, no sharedStrings writeback/rebuild/migration,
+  no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish XML declaration first-token enforcement from ordinary
+  prolog trivia after a valid XML declaration.
+
+## P8.492 - Pin sharedStrings XML declaration grammar failures
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: make a true source sharedStrings XML declaration fail fast when its
+declaration metadata is malformed for the supported narrow loader. Accepted
+declarations must provide a `version` attribute with value `1.0` or `1.1`.
+
+Output:
+- `parse_shared_strings_xml()` now validates true XML declaration tokens after
+  placement checks and before accepting the declaration.
+- Missing declaration `version` metadata fails with a malformed XML declaration
+  diagnostic.
+- Unsupported declaration versions fail with a dedicated unsupported-version
+  diagnostic.
+- Public `WorksheetEditor` failure-hygiene coverage verifies both cases do not
+  dirty materialized state and do not block later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same malformed declaration
+  payloads keep `PackageEditor` edit-plan, manifest, calc policy, and copied
+  output state unchanged.
+
+Non-goals / boundary:
+- No full XML declaration grammar validator, no encoding-name validation, no
+  broader standalone/encoding semantic interpretation in this slice, no XML
+  repair, no schema validation, no sharedStrings writeback/rebuild/migration,
+  no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish the narrow XML declaration grammar gate from full XML
+  prolog/schema validation.
+
+## P8.493 - Pin sharedStrings XML declaration attribute hygiene
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+success/failure regression, package-backed `CellStore` regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: finish the narrow XML declaration metadata boundary for source
+sharedStrings by making duplicate/unknown declaration attributes and invalid
+`encoding` / `standalone` order fail fast, while keeping the valid
+`version`, optional `encoding`, optional `standalone` path accepted.
+
+Output:
+- `validate_shared_strings_xml_declaration()` now rejects `encoding` after
+  `standalone`, as part of the supported `version`, `encoding?`,
+  `standalone?` declaration metadata order.
+- Public `WorksheetEditor` success coverage verifies a source sharedStrings
+  declaration with legal `encoding` then `standalone` metadata still
+  materializes text and preserves the source sharedStrings part on dirty save.
+- Public `WorksheetEditor` failure-hygiene coverage verifies duplicate
+  `encoding`, unknown declaration attribute, and `encoding` after `standalone`
+  fail without dirtying materialized state and without blocking later valid
+  Patch edits.
+- Package-backed `CellStore` coverage verifies the same malformed declaration
+  payloads keep `PackageEditor` edit-plan, manifest, calc policy, and copied
+  output state unchanged.
+
+Non-goals / boundary:
+- No full XML declaration grammar validator, no encoding-name validation in
+  this slice, no character-set transcoding, no broader standalone semantics, no
+  XML repair, no schema validation, no sharedStrings writeback/rebuild/
+  migration, no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish narrow XML declaration attribute hygiene from full XML
+  prolog/schema validation.
+
+## P8.494 - Pin sharedStrings XML declaration encoding token hygiene
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: validate the narrow XML declaration `encoding` token shape for source
+sharedStrings. The loader still treats source bytes as the existing UTF-8
+string buffer and does not transcode; this slice only rejects malformed
+encoding names that should not be accepted as declaration metadata.
+
+Output:
+- `validate_shared_strings_xml_declaration()` now requires declaration
+  `encoding` values to start with an ASCII letter and continue with ASCII
+  letters, digits, `.`, `_`, or `-`.
+- Empty encoding values, digit-start encoding names, and unsupported
+  punctuation in encoding names fail as malformed XML declarations.
+- Public `WorksheetEditor` failure-hygiene coverage verifies these cases do not
+  dirty materialized state and do not block later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same malformed declaration
+  payloads keep `PackageEditor` edit-plan, manifest, calc policy, and copied
+  output state unchanged.
+
+Non-goals / boundary:
+- No character-set transcoding, no mapping of encoding labels to runtime
+  decoders, no BOM handling, no full XML declaration grammar validator, no XML
+  repair, no schema validation, no sharedStrings writeback/rebuild/migration,
+  no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish declaration encoding token validation from charset decoding
+  or transcoding.
+
+## P8.495 - Pin legal sharedStrings XML declaration forms
+
+Status: done.
+
+Type: source sharedStrings parser success regression, public `WorksheetEditor`
+success coverage, package-backed `CellStore` success coverage, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no production code
+change, no CMake membership change, and no package format expansion.
+
+Goal: mirror the P8.492-P8.494 malformed XML declaration failures with positive
+evidence for legal declaration forms. The source sharedStrings loader should
+accept supported version-only declarations, single-quoted attributes,
+`version="1.1"`, `standalone="no"`, and valid encoding-name punctuation, while
+still treating source bytes as the current UTF-8 buffer without transcoding.
+
+Output:
+- Public `WorksheetEditor` source sharedStrings materialization now has
+  positive coverage for legal declaration forms beyond the writer default
+  declaration.
+- Package-backed `CellStore` prefixed sharedStrings materialization also uses a
+  legal declaration with `version='1.1'`, `encoding='UTF_8-Test.1'`, and
+  `standalone='no'`.
+- Dirty projection still writes materialized text as inline strings and
+  preserves the source sharedStrings bytes.
+
+Non-goals / boundary:
+- No character-set transcoding, no encoding-label decoder mapping, no BOM
+  handling, no full XML declaration grammar validator, no XML repair, no schema
+  validation, no sharedStrings writeback/rebuild/migration, no namespace repair,
+  and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-success` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Broader source failure shards still pass after the positive coverage change.
+- `git diff --check` passes.
+- Docs distinguish legal declaration-form acceptance from charset decoding or
+  broader XML repair.
+
+## P8.496 - Pin sharedStrings XML declaration standalone value hygiene
+
+Status: done.
+
+Type: source sharedStrings parser failure-hygiene regression, public
+`WorksheetEditor` failure coverage, package-backed `CellStore` failure
+coverage, Doxygen/API docs sync, and task-plan documentation; no new public
+symbol, no production code change, no CMake membership change, and no package
+format expansion.
+
+Goal: close the remaining narrow `standalone` metadata boundary for source
+sharedStrings XML declarations. Legal `standalone="yes"` / `"no"` remains
+accepted when it follows the supported declaration order; duplicate
+`standalone`, empty `standalone`, and values other than `yes` / `no` fail fast.
+
+Output:
+- Public `WorksheetEditor` failure-hygiene coverage verifies duplicate,
+  empty, and invalid `standalone` values fail without dirtying materialized
+  state and without blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same malformed declaration
+  payloads keep `PackageEditor` edit-plan, manifest, calc policy, and copied
+  output state unchanged.
+- Public/header docs distinguish legal `standalone="no"` acceptance from
+  broader standalone semantics or XML repair.
+
+Non-goals / boundary:
+- No full XML declaration grammar validator, no broader standalone processing,
+  no XML repair, no schema validation, no charset transcoding, no sharedStrings
+  writeback/rebuild/migration, no namespace repair, and no relationship
+  repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish standalone value validation from full XML declaration
+  validation or repair.
+
+## P8.497 - Reject sharedStrings XML-like PI target decoys
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` failure regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: prevent case-varied XML-like processing-instruction targets such as
+`<?XML ...?>` or `<?Xml ...?>` from being skipped as ordinary source
+sharedStrings PI trivia. The loader should reject these reserved target decoys
+while leaving non-XML ordinary PI trivia behavior unchanged.
+
+Output:
+- The sharedStrings parser now rejects PI targets whose target name is exactly
+  `xml` case-insensitively but is not a legal lowercase XML declaration path.
+- Public `WorksheetEditor` failure-hygiene coverage verifies uppercase and
+  mixed-case XML-like PI decoys fail without dirtying materialized state and
+  without blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same decoys keep
+  `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- No broad PI ban, no rejection of non-XML ordinary PI trivia, no
+  `xml-stylesheet` import or special handling, no XML repair, no full prolog
+  validator, no schema validation, no sharedStrings writeback/rebuild/
+  migration, no namespace repair, and no relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure`,
+  `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- `git diff --check` passes.
+- Docs distinguish reserved XML-like PI target rejection from a broad PI ban or
+  full XML prolog validation.
+
+## P8.498 - Keep xml-stylesheet as ordinary sharedStrings PI trivia
+
+Status: done.
+
+Type: source sharedStrings parser success regression, public `WorksheetEditor`
+success coverage, package-backed `CellStore` success coverage, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no production code
+change, no CMake membership change, and no package format expansion.
+
+Goal: prove the P8.497 reserved-target guard is narrow:
+`<?xml-stylesheet ...?>` remains ordinary ignored source sharedStrings PI
+trivia, while exact `xml` targets in case variants still fail.
+
+Output:
+- Public `WorksheetEditor` source sharedStrings success fixture now includes
+  `<?xml-stylesheet ...?>` prolog trivia and still materializes text.
+- Package-backed prefixed sharedStrings success fixture also includes
+  `<?xml-stylesheet ...?>` and still materializes/projection-preserves bytes.
+- Docs distinguish ordinary PI trivia from stylesheet import or relationship
+  handling.
+
+Non-goals / boundary:
+- No stylesheet import, no XSL processing, no relationship creation or
+  resolution, no broad PI modeling, no XML repair, no full prolog validator,
+  no sharedStrings writeback/rebuild/migration, no namespace repair, and no
+  relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-success`,
+  `fastxlsx.package_editor.cellstore-source`, and adjacent source failure
+  shards pass.
+- `git diff --check` passes.
+- Docs distinguish `xml-stylesheet` PI trivia from reserved exact `xml` target
+  rejection.
+
+## P8.499 - Reject malformed sharedStrings ordinary PI tokens
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` failure regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: make malformed ordinary processing-instruction-like tokens in source
+`xl/sharedStrings.xml` fail fast when they do not end with `?>`, instead of
+being skipped as ordinary PI trivia.
+
+Output:
+- The sharedStrings parser now validates non-declaration PI trivia before
+  skipping it.
+- Public `WorksheetEditor` failure-hygiene coverage verifies malformed PI
+  tokens before the sharedStrings root and inside a shared string item fail
+  without dirtying materialized state or blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same malformed PI payloads
+  keep `PackageEditor` edit-plan, manifest, calc policy, and copied output state
+  unchanged.
+
+Non-goals / boundary:
+- No full processing-instruction data parser, no prolog schema validation, no
+  XML repair, no PI import/preservation, no stylesheet processing, no
+  sharedStrings writeback/rebuild/migration, no namespace repair, and no
+  relationship repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.package_editor.cellstore-failures` pass.
+- Adjacent source-success shards still pass to prove ordinary legal PI trivia
+  remains supported.
+- `git diff --check` passes.
 
 ## P8.345 - Split first public WorksheetEditor implementation task
 

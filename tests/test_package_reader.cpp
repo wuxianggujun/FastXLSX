@@ -2316,7 +2316,7 @@ void test_package_reader_materializes_registry_session_from_workbook_sheet()
         "failed guarded registry materialization should not leave a session");
 }
 
-void test_package_reader_cell_store_loader_rejects_style_and_shared_string_sources()
+void test_package_reader_cell_store_loader_rejects_styles_and_loads_shared_strings()
 {
     const std::string content_types =
         R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
@@ -2392,23 +2392,24 @@ void test_package_reader_cell_store_loader_rejects_style_and_shared_string_sourc
 
     const fastxlsx::detail::PackageReader explicit_default_style_reader =
         fastxlsx::detail::PackageReader::open(explicit_default_style_path);
-    std::optional<fastxlsx::detail::CellStore> explicit_default_style_store;
-    bool explicit_default_style_failed = false;
-    try {
-        explicit_default_style_store = fastxlsx::detail::load_cell_store_from_workbook_sheet(
+    const fastxlsx::detail::CellStore explicit_default_style_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(
             explicit_default_style_reader, "Source");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        explicit_default_style_failed = true;
-        check_contains(error.what(), "does not load style id references",
-            "workbook sheet CellStore loader should reject explicit default source styles");
-    }
-    check(explicit_default_style_failed,
-        "workbook sheet CellStore loader should reject explicit default source styles");
-    check(!explicit_default_style_store.has_value(),
-        "explicit-default-style loader failure should not expose a partial CellStore");
+    check(explicit_default_style_store.cell_count() == 2,
+        "workbook sheet CellStore loader should accept explicit default source styles");
+    const fastxlsx::detail::CellRecord* explicit_default_style_record =
+        explicit_default_style_store.try_cell(1, 2);
+    const fastxlsx::CellValue explicit_default_style_cell =
+        explicit_default_style_record != nullptr ? explicit_default_style_record->to_value()
+                                                 : fastxlsx::CellValue::blank();
+    check(explicit_default_style_record != nullptr
+            && explicit_default_style_cell.kind() == fastxlsx::CellValueKind::Number
+            && explicit_default_style_cell.number_value() == 2.0
+            && !explicit_default_style_cell.has_style(),
+        "workbook sheet CellStore loader should normalize source s=0 to no style handle");
     check_contains(
         explicit_default_style_reader.read_entry("xl/worksheets/sheet1.xml"), R"(s="0")",
-        "explicit-default-style source loader failure should not poison the PackageReader");
+        "explicit-default-style source loader should not poison the PackageReader");
 
     const std::filesystem::path shared_string_path =
         output_path("fastxlsx-package-reader-cell-store-shared-string-source.xlsx");
@@ -2427,22 +2428,243 @@ void test_package_reader_cell_store_loader_rejects_style_and_shared_string_sourc
 
     const fastxlsx::detail::PackageReader shared_string_reader =
         fastxlsx::detail::PackageReader::open(shared_string_path);
-    std::optional<fastxlsx::detail::CellStore> shared_string_store;
-    bool shared_string_failed = false;
-    try {
-        shared_string_store = fastxlsx::detail::load_cell_store_from_workbook_sheet(
-            shared_string_reader, "Source");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        shared_string_failed = true;
-        check_contains(error.what(), "does not load shared string indexes",
-            "workbook sheet CellStore loader should reject source shared string indexes");
-    }
-    check(shared_string_failed,
-        "workbook sheet CellStore loader should reject shared-string source cells");
-    check(!shared_string_store.has_value(),
-        "shared-string loader failure should not expose a partial CellStore");
+    const fastxlsx::detail::CellStore shared_string_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(shared_string_reader, "Source");
+    check(shared_string_store.cell_count() == 2,
+        "workbook sheet CellStore loader should materialize shared-string source cells");
+    const fastxlsx::detail::CellRecord* shared_string_record =
+        shared_string_store.try_cell(1, 2);
+    const fastxlsx::CellValue shared_string_cell =
+        shared_string_record != nullptr ? shared_string_record->to_value()
+                                        : fastxlsx::CellValue::blank();
+    check(shared_string_record != nullptr
+            && shared_string_cell.kind() == fastxlsx::CellValueKind::Text
+            && shared_string_cell.text_value() == "from sst",
+        "workbook sheet CellStore loader should resolve source shared string text");
     check_contains(shared_string_reader.read_entry("xl/sharedStrings.xml"), "from sst",
-        "shared-string source loader failure should not poison the PackageReader");
+        "shared-string source loader should not poison the PackageReader");
+}
+
+void test_package_reader_cell_store_loader_rejects_invalid_shared_strings_sources()
+{
+    constexpr std::string_view shared_strings_content_type =
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
+    constexpr std::string_view shared_strings_relationship_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
+
+    const std::string package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(</Relationships>)";
+    const std::string workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Source" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    const std::string valid_shared_strings =
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>ok</t></si></sst>)";
+    const std::string valid_shared_string_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>)";
+
+    const auto make_content_types = [](std::string_view shared_string_type) {
+        std::string xml =
+            R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+            R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+            R"(<Default Extension="xml" ContentType="application/xml"/>)"
+            R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+            R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)";
+        if (!shared_string_type.empty()) {
+            xml += R"(<Override PartName="/xl/sharedStrings.xml" ContentType=")";
+            xml += shared_string_type;
+            xml += R"("/>)";
+        }
+        xml += R"(</Types>)";
+        return xml;
+    };
+    const auto make_workbook_relationships = [&](std::string_view shared_strings_relationships) {
+        std::string xml =
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)";
+        xml += shared_strings_relationships;
+        xml += R"(</Relationships>)";
+        return xml;
+    };
+    const auto make_shared_strings_relationship = [&](std::string_view id,
+                                                      std::string_view target,
+                                                      bool external = false) {
+        std::string xml = R"(<Relationship Id=")";
+        xml += id;
+        xml += R"(" Type=")";
+        xml += shared_strings_relationship_type;
+        xml += R"(" Target=")";
+        xml += target;
+        xml += R"(")";
+        if (external) {
+            xml += R"( TargetMode="External")";
+        }
+        xml += R"(/>)";
+        return xml;
+    };
+
+    const auto write_source_package =
+        [&](const std::filesystem::path& path,
+            std::string_view content_types,
+            std::string_view workbook_relationships,
+            std::string_view worksheet_xml,
+            std::optional<std::string_view> shared_strings_xml) {
+            std::vector<fastxlsx::detail::PackageEntry> entries {
+                {"[Content_Types].xml", std::string(content_types)},
+                {"_rels/.rels", package_relationships},
+                {"xl/workbook.xml", workbook},
+                {"xl/_rels/workbook.xml.rels", std::string(workbook_relationships)},
+                {"xl/worksheets/sheet1.xml", std::string(worksheet_xml)},
+            };
+            if (shared_strings_xml.has_value()) {
+                entries.emplace_back("xl/sharedStrings.xml", std::string(*shared_strings_xml));
+            }
+            fastxlsx::detail::write_package(path,
+                entries,
+                {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+        };
+
+    const auto expect_load_failure =
+        [&](std::string_view name,
+            std::string_view content_types,
+            std::string_view workbook_relationships,
+            std::string_view worksheet_xml,
+            std::optional<std::string_view> shared_strings_xml,
+            std::string_view expected_diagnostic,
+            const char* context) {
+            const std::filesystem::path path = output_path(name);
+            write_source_package(
+                path, content_types, workbook_relationships, worksheet_xml, shared_strings_xml);
+
+            const fastxlsx::detail::PackageReader reader =
+                fastxlsx::detail::PackageReader::open(path);
+            std::optional<fastxlsx::detail::CellStore> loaded_store;
+            bool failed = false;
+            try {
+                loaded_store =
+                    fastxlsx::detail::load_cell_store_from_workbook_sheet(reader, "Source");
+            } catch (const fastxlsx::FastXlsxError& error) {
+                failed = true;
+                check_contains(error.what(), expected_diagnostic, context);
+            }
+            check(failed, context);
+            check(!loaded_store.has_value(),
+                "invalid sharedStrings source load should not expose a partial CellStore");
+            check_contains(reader.read_entry("xl/worksheets/sheet1.xml"), R"(t="s")",
+                "invalid sharedStrings source load should not poison the PackageReader");
+        };
+
+    const std::string valid_content_types = make_content_types(shared_strings_content_type);
+    const std::string valid_shared_strings_relationship =
+        make_shared_strings_relationship("rId2", "sharedStrings.xml");
+    const std::string valid_workbook_relationships =
+        make_workbook_relationships(valid_shared_strings_relationship);
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-duplicate-rel.xlsx",
+        valid_content_types,
+        make_workbook_relationships(valid_shared_strings_relationship
+            + make_shared_strings_relationship("rId3", "sharedStrings.xml")),
+        valid_shared_string_worksheet,
+        valid_shared_strings,
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "workbook sheet CellStore loader should reject duplicate sharedStrings relationships");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-external-target.xlsx",
+        valid_content_types,
+        make_workbook_relationships(
+            make_shared_strings_relationship("rId2", "https://example.invalid/sst.xml", true)),
+        valid_shared_string_worksheet,
+        valid_shared_strings,
+        "sharedStrings relationship target cannot be external",
+        "workbook sheet CellStore loader should reject external sharedStrings targets");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-query-target.xlsx",
+        valid_content_types,
+        make_workbook_relationships(
+            make_shared_strings_relationship("rId2", "sharedStrings.xml?x=1")),
+        valid_shared_string_worksheet,
+        valid_shared_strings,
+        "sharedStrings relationship target must be a package part",
+        "workbook sheet CellStore loader should reject query-qualified sharedStrings targets");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-fragment-target.xlsx",
+        valid_content_types,
+        make_workbook_relationships(
+            make_shared_strings_relationship("rId2", "sharedStrings.xml#frag")),
+        valid_shared_string_worksheet,
+        valid_shared_strings,
+        "sharedStrings relationship target must be a package part",
+        "workbook sheet CellStore loader should reject fragment-qualified sharedStrings targets");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-missing-part.xlsx",
+        make_content_types({}),
+        valid_workbook_relationships,
+        valid_shared_string_worksheet,
+        std::nullopt,
+        "workbook sharedStrings relationship targets an unknown package part",
+        "workbook sheet CellStore loader should reject missing sharedStrings parts");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-wrong-content-type.xlsx",
+        make_content_types(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"),
+        valid_workbook_relationships,
+        valid_shared_string_worksheet,
+        valid_shared_strings,
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "workbook sheet CellStore loader should reject non-sharedStrings content types");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-malformed-xml.xlsx",
+        valid_content_types,
+        valid_workbook_relationships,
+        valid_shared_string_worksheet,
+        std::string_view {R"(<notSst/>)"},
+        "CellStore sharedStrings loader root is missing an sst element",
+        "workbook sheet CellStore loader should reject malformed sharedStrings XML");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-missing-index.xlsx",
+        valid_content_types,
+        valid_workbook_relationships,
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"></c></row></sheetData></worksheet>)",
+        valid_shared_strings,
+        "CellStore worksheet loader found an invalid shared string index",
+        "workbook sheet CellStore loader should reject missing shared string indexes");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-empty-index.xlsx",
+        valid_content_types,
+        valid_workbook_relationships,
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"><v></v></c></row></sheetData></worksheet>)",
+        valid_shared_strings,
+        "CellStore worksheet loader found an invalid shared string index",
+        "workbook sheet CellStore loader should reject empty shared string indexes");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-invalid-index.xlsx",
+        valid_content_types,
+        valid_workbook_relationships,
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>abc</v></c></row></sheetData></worksheet>)",
+        valid_shared_strings,
+        "CellStore worksheet loader found an invalid shared string index",
+        "workbook sheet CellStore loader should reject non-numeric shared string indexes");
+
+    expect_load_failure(
+        "fastxlsx-package-reader-cell-store-shared-strings-out-of-range-index.xlsx",
+        valid_content_types,
+        valid_workbook_relationships,
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>1</v></c></row></sheetData></worksheet>)",
+        valid_shared_strings,
+        "CellStore worksheet loader found a shared string index out of range",
+        "workbook sheet CellStore loader should reject out-of-range shared string indexes");
 }
 
 void test_package_reader_cell_store_loader_rejects_unsupported_source_cell_shapes()
@@ -4105,7 +4327,8 @@ int main()
         test_package_reader_resolves_workbook_sheet_catalog();
         test_package_reader_loads_cell_store_from_workbook_sheet();
         test_package_reader_materializes_registry_session_from_workbook_sheet();
-        test_package_reader_cell_store_loader_rejects_style_and_shared_string_sources();
+        test_package_reader_cell_store_loader_rejects_styles_and_loads_shared_strings();
+        test_package_reader_cell_store_loader_rejects_invalid_shared_strings_sources();
         test_package_reader_cell_store_loader_rejects_unsupported_source_cell_shapes();
         test_package_reader_rejects_invalid_workbook_sheet_catalog();
         test_package_reader_ingests_root_source_relationships_as_metadata();

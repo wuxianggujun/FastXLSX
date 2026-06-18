@@ -150,6 +150,16 @@ void validate_worksheet_editor_cell_range(const CellRange& range)
     (void)detail::range_reference(range);
 }
 
+void validate_worksheet_editor_cell_coordinate(std::uint32_t row, std::uint32_t column)
+{
+    try {
+        (void)detail::cell_reference(row, column);
+    } catch (const FastXlsxError& error) {
+        throw FastXlsxError(
+            "WorksheetEditor cell coordinate is invalid: " + std::string(error.what()));
+    }
+}
+
 std::vector<WorksheetCellSnapshot> public_snapshots_from_internal(
     const std::vector<detail::MaterializedCellSnapshot>& internal_snapshots)
 {
@@ -781,6 +791,7 @@ std::optional<CellValue> WorksheetEditor::try_cell(
     std::uint32_t row, std::uint32_t column) const
 {
     const WorkbookEditor::Impl& state = *owner().impl_;
+    validate_worksheet_editor_cell_coordinate(row, column);
     const detail::MaterializedWorksheetSession* session =
         state.materialized_sessions.try_session(planned_name_);
     if (session == nullptr) {
@@ -820,14 +831,13 @@ CellValue WorksheetEditor::get_cell(std::string_view cell_reference) const
 void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
-    if (value.has_style() && value.style_id().value() != 0) {
-        FastXlsxError error(
-            "WorksheetEditor::set_cell() does not support non-default StyleId values");
-        state.record_last_edit_error(error);
-        throw error;
-    }
-
     try {
+        validate_worksheet_editor_cell_coordinate(row, column);
+        if (value.has_style() && value.style_id().value() != 0) {
+            throw FastXlsxError(
+                "WorksheetEditor::set_cell() does not support non-default StyleId values");
+        }
+
         detail::MaterializedWorksheetSession* session =
             state.materialized_sessions.try_session(planned_name_);
         if (session == nullptr) {
@@ -858,6 +868,7 @@ void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
+        validate_worksheet_editor_cell_coordinate(row, column);
         detail::MaterializedWorksheetSession* session =
             state.materialized_sessions.try_session(planned_name_);
         if (session == nullptr) {

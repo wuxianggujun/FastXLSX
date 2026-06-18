@@ -206,13 +206,18 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`erase_cell()`、这些 cell API 的 strict uppercase A1 string
-  overload、`WorksheetCellReference`、`WorksheetCellSnapshot`、
+  `set_cell()`、`erase_cell()`、row/column coordinate guardrails、这些 cell API 的
+  strict uppercase A1 string overload、`WorksheetCellReference`、`WorksheetCellSnapshot`、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
   `cell_count()` 和 `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
-  `WorkbookEditor::save_as()` 自动 flush；不支持 non-default `StyleId`、
-  sharedStrings/style migration、semantic metadata sync、relationship repair 或
-  large-file low-memory random editing。
+  `WorkbookEditor::save_as()` 自动 flush；caller-supplied default `StyleId{0}`
+  会归一化为 no style handle，workbook-backed source `t="s"` shared string cells
+  可只读 materialize 为 plain text，且 prefixed source sharedStrings `sst` / `si` /
+  `t` / `r` element names 按 local-name 匹配；prefixed source worksheet /
+  `sheetData` / row / cell / inlineStr wrapper element names 也按 local-name
+  匹配，namespace URI 不参与判断；不支持 namespace validation/repair、non-default `StyleId`、sharedStrings
+  writeback/rebuild/migration、style migration、semantic metadata sync、
+  relationship repair 或 large-file low-memory random editing。
 - 公共值和 helper：`CellValue` / `CellValueKind`、PNG/JPEG `ImageInfo` /
   `ImagePixels`、`read_image_info()` 和 `read_image_pixels()`。
 - 最小 OpenXML package 输出：
@@ -326,6 +331,85 @@ commit 或 undo/redo history。
 一个已有 worksheet 的小文件随机 cell edits。dirty edits 通过
 `WorkbookEditor::save_as()` 自动 flush 到 Patch plan。这个路径不会迁移
 sharedStrings/style ids，不修复 relationships，也不是大 worksheet 低内存 random access。
+当前 source materialization 边界与
+`docs/API_DESIGN_AND_DOCUMENTATION.md` 的 "Source dependency materialization
+summary" 保持一致：
+
+- 支持 source blank、number、boolean、formula text、plain inline string、
+  simple inline rich text flatten，以及 workbook-backed `t="s"` shared string
+  indexes。
+- sharedStrings 只做 read-only import；dirty projection 继续写 inline strings，
+  并保留 source `xl/sharedStrings.xml`，不 rebuild / writeback / migrate。
+- source sharedStrings 和 inline rich text 中 `rPh` / `phoneticPr` / `extLst`
+  下的 ignored metadata text 不进入 materialized text；self-closing ignored
+  metadata 是合法空 metadata；nested `<si>` decoy、ignored text wrapper 里的
+  nested markup（包括 comment / processing instruction / CDATA）、
+  orphan closing tag 和未闭合 ignored metadata 都 fail fast。
+- 支持的 worksheet / inlineStr / formula / value-wrapper / sharedStrings /
+  rich-run element names 按 local-name 匹配；namespace URI 不验证。unsupported
+  local-name 仍 fail fast。
+- 非目标保持不变：不做 rich-text preservation、style migration、
+  relationship repair/pruning、XML repair、namespace repair、semantic metadata
+  sync 或 large-file low-memory random editing。
+
+workbook-backed source `t="s"` cells 会通过现有 `xl/sharedStrings.xml` 只读解析成
+plain `CellValue::text(...)`；dirty `save_as()` 仍把 materialized text 写成 inline
+strings，并保留 source sharedStrings part，而不是重建或回写 string table。
+prefixed source sharedStrings element names (`sst` / `si` / `t` / `r`) 会按
+local-name 参与该只读 materialization；这不是 namespace URI validation、namespace
+repair 或 schema validation。unsupported sharedStrings item/rich-run local-name
+仍会 fail fast，即使对应元素绑定到非 spreadsheetml URI。sharedStrings 中
+direct `<t>` 与 rich `<r>` 混用、`rPr` 位于 rich run 外、`rPr` 内出现 text wrapper
+也会 fail fast。`rPh` / `phoneticPr` / `extLst` 内的 opaque nested markup 文本仍被忽略，
+self-closing ignored metadata 也按空 metadata 处理；但 nested `<si>` decoy、
+`<t>` 内再嵌 markup（包括 comment / processing instruction / CDATA）、
+orphan closing tag 或未闭合 ignored metadata 仍按 malformed source fail fast。
+sharedStrings 中的 CDATA / DOCTYPE-like markup declaration 不作为 text import
+能力处理；当前窄 loader 会 fail fast，避免静默丢文本。`<?xml ...?>`
+只允许作为 source sharedStrings payload 开头的 XML declaration；出现在
+sharedStrings root 开始后不是普通 processing instruction，会 fail fast；重复
+XML declaration 也会 fail fast。XML declaration 必须声明 `version="1.0"` 或
+`version="1.1"`，并只接受 `version`、可选 `encoding`、可选 `standalone`
+这一窄 metadata 顺序；version-only declaration、单引号属性和合法
+`encoding` -> `standalone` metadata 形式保持可读，但不会触发字符集转码；
+缺失或不支持的 version、空/非法 encoding token、空/非法 standalone token、
+重复/未知属性、`encoding` 出现在 `standalone` 之后都会 fail fast。XML
+declaration 不能出现在前导空白文本、comment / ordinary processing instruction
+这类 prolog trivia 之后；但 XML declaration 后的 ordinary processing
+instruction 仍作为 trivia 忽略，不 materialize。大小写变体的 XML-like
+processing instruction target（例如 `<?XML ...?>` / `<?Xml ...?>`）按 reserved
+target 失败，不作为 ordinary PI trivia 跳过；`<?xml-stylesheet ...?>` 仍按普通
+PI trivia 忽略，不导入或解析 stylesheet；普通 processing instruction 仍必须以
+`?>` 结束，缺失终止符的 malformed PI 会 fail fast。
+prefixed source worksheet / `sheetData` / row / cell / inlineStr wrapper
+element names 也会按 local-name 读取；dirty projection 仍使用 standalone worksheet
+XML，不保留 source prefixes，也不做 namespace repair。该 local-name 路径不检查
+元素 namespace URI；即使 source 元素绑定到非 spreadsheetml URI，只要 local-name
+匹配当前窄支持形状，也按同一边界 materialize。
+但 unsupported local-name 仍会 fail fast；namespace URI 被忽略不代表 XML repair、
+metadata import 或 malformed-package tolerance。
+source inline rich text runs 也会只读 flatten 成普通 text；rich formatting 不保留，
+inline phonetic / extension metadata text 会被忽略；这些 ignored metadata 里的
+opaque nested markup 文本也不会进入 materialized text 或 dirty projection，self-closing
+ignored metadata 也按空 metadata 处理；但 nested `<si>` decoy、`<t>` 内嵌 markup、
+orphan closing tag 或未闭合 ignored metadata 仍会 fail fast。malformed inline rich metadata
+（例如 direct/rich text 混用、`rPr` 位于 run 外、`rPr` 内出现 value wrapper，
+或 rich/ignored metadata 未闭合）仍会 fail fast，不做 XML repair。
+source wrapper metadata 不是 materialized sparse store 的一部分：普通 wrapper
+metadata、range/reference wrapper metadata（例如 mergeCells / dataValidations /
+conditionalFormatting / ignoredErrors / pageMargins / pageSetup）以及
+relationship-bearing wrapper metadata（例如 worksheet hyperlinks / tableParts）不会
+阻止 supported cells 读取；dirty projection 会丢弃这些 worksheet XML wrapper 引用，
+但保留 source worksheet `.rels` / linked table parts 这类 package artifacts，不做
+range recalculation、relationship pruning、repair 或语义同步。
+`WorksheetEditor::set_cell()` 接受 caller-supplied `StyleId{0}`，但会把它归一化为
+no style handle；dirty output 不写 `s="0"`。非默认 style ids 仍会被拒绝。
+读取 source worksheet 时，显式默认 `s` 属性值精确为 `0`（例如 `s="0"`、
+`s='0'` 或 `s = "0"`）也会归一化为 no style handle；非默认 source style ids
+仍不导入、不迁移、不合并。这个 source 归一化不做数值宽松解析：空值、缺失值、
+未加引号、未闭合引号、带符号、前导零、前后空白、entity 编码或重复的
+default-like style attribute 仍会失败；`x:s` 这类 qualified style-like
+attribute 也会作为 unsupported cell metadata 失败。
 移动或 move-assign owning `WorkbookEditor` 后，之前取得的 `WorksheetEditor`
 handle 不会自动跟随新 owner；除 `name()` 这个本地 planned-name label 外，
 继续读写/检查 session 会抛 `FastXlsxError`，调用方必须从 moved-to / assigned-to
@@ -351,6 +435,8 @@ auto& sheet = *maybe_sheet;
 auto maybe_a1 = sheet.try_cell(1, 1);
 auto required_a1 = sheet.get_cell(1, 1); // Throws if the sparse cell is missing.
 sheet.set_cell(1, 1, fastxlsx::CellValue::text("updated"));
+sheet.set_cell(1, 2, fastxlsx::CellValue::text("default style")
+    .with_style(fastxlsx::StyleId{})); // Normalized to no style handle.
 sheet.set_cell("D4", fastxlsx::CellValue::text("strict A1 ref"));
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
@@ -367,7 +453,10 @@ editor.save_as("edited.xlsx");
 
 `WorksheetEditor` 的 A1 overload 只接受单个 uppercase cell reference，例如
 `A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
-行列上限的引用会被拒绝。
+行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
+invalid read throws but does not update `last_edit_error()`，invalid
+`set_cell()` / `erase_cell()` throws、updates `last_edit_error()`，并且不会 dirty 或
+mutate sparse store；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，
 包含 explicit blank records；`sparse_cells(CellRange)` 返回 1-based inclusive
 range 内已经存在的 active sparse records，不补齐 missing cells。两者都不暴露内部

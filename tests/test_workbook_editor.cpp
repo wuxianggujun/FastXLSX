@@ -31,6 +31,40 @@ namespace {
 
 int g_failures = 0;
 
+bool is_workbook_editor_shard(std::string_view shard)
+{
+    return shard == "all" || shard == "core" || shard == "public"
+        || shard == "public-edge"
+        || shard == "source-success" || shard == "source-failure"
+        || shard == "materialized" || shard == "facade";
+}
+
+std::string_view workbook_editor_shard_from_args(int argc, char* argv[])
+{
+    if (argc <= 1) {
+        return "all";
+    }
+    if (argc != 2) {
+        throw std::runtime_error(
+            "usage: fastxlsx_workbook_editor_tests [--shard=<name>]");
+    }
+
+    std::string_view shard = argv[1];
+    constexpr std::string_view prefix = "--shard=";
+    if (shard.starts_with(prefix)) {
+        shard.remove_prefix(prefix.size());
+    }
+    if (!is_workbook_editor_shard(shard)) {
+        throw std::runtime_error("unknown workbook_editor shard: " + std::string(shard));
+    }
+    return shard;
+}
+
+bool should_run_workbook_editor_shard(std::string_view selected, std::string_view shard)
+{
+    return selected == "all" || selected == shard;
+}
+
 void check(bool condition, std::string_view message)
 {
     if (!condition) {
@@ -136,6 +170,71 @@ void check_public_inspection_preserves_last_edit_error(
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
+}
+
+void check_public_worksheet_materialization_failure_hygiene(
+    const std::filesystem::path& source,
+    const std::filesystem::path& output,
+    std::string_view expected_diagnostic,
+    std::string_view replacement_text,
+    std::string_view scenario,
+    std::string_view recovery_sheet_name = "Data",
+    std::string_view output_entry_name = "xl/worksheets/sheet1.xml")
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.has_worksheet("Data"),
+        std::string(scenario) + " should preserve planned sheet catalog");
+    check(editor.has_source_worksheet("Data"),
+        std::string(scenario) + " should preserve source sheet catalog");
+
+    bool try_failed = false;
+    try {
+        (void)editor.try_worksheet("Data");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        try_failed = true;
+        check_contains(error.what(), expected_diagnostic,
+            std::string(scenario)
+                + " try_worksheet should expose the materialization diagnostic");
+    }
+    check(try_failed,
+        std::string(scenario) + " try_worksheet should fail for non-missing sheets");
+    check(!editor.has_pending_changes(),
+        std::string(scenario) + " try_worksheet failure should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        std::string(scenario) + " try_worksheet failure should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        std::string(scenario)
+            + " try_worksheet failure should not leave materialized sessions");
+    check(!editor.last_edit_error().has_value(),
+        std::string(scenario) + " try_worksheet failure should not update last_edit_error");
+
+    bool worksheet_failed = false;
+    try {
+        (void)editor.worksheet("Data");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        worksheet_failed = true;
+        check_contains(error.what(), expected_diagnostic,
+            std::string(scenario)
+                + " worksheet should expose the materialization diagnostic");
+    }
+    check(worksheet_failed,
+        std::string(scenario) + " worksheet should reject invalid source materialization");
+    check(!editor.has_pending_changes(),
+        std::string(scenario) + " worksheet failure should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        std::string(scenario) + " worksheet failure should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        std::string(scenario)
+            + " worksheet failure should not leave materialized sessions");
+    check(!editor.last_edit_error().has_value(),
+        std::string(scenario) + " worksheet failure should not update last_edit_error");
+
+    editor.replace_sheet_data(std::string(recovery_sheet_name),
+        {{fastxlsx::CellValue::text(std::string(replacement_text))}});
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at(std::string(output_entry_name)), replacement_text,
+        std::string(scenario) + " editor should remain usable after materialization failure");
 }
 
 void write_binary_file(const std::filesystem::path& path, std::string_view data)
@@ -385,6 +484,16 @@ void rewrite_package_entry_as_stored(
     }
     entry->second = std::move(replacement);
     write_stored_zip_entries(path, entries);
+}
+
+void replace_first_or_throw(
+    std::string& value, std::string_view needle, std::string_view replacement)
+{
+    const std::size_t position = value.find(needle);
+    if (position == std::string::npos) {
+        throw std::runtime_error("test string replacement target was not found");
+    }
+    value.replace(position, needle.size(), replacement.data(), replacement.size());
 }
 
 void corrupt_zip_entry_payload(std::string& data, std::string_view entry_name)
@@ -1582,6 +1691,9 @@ void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
 {
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-try-worksheet-missing-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-try-worksheet-missing-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -1602,6 +1714,18 @@ void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
         "try_worksheet missing-sheet lookup should not dirty the editor");
     check(editor.pending_change_count() == 0,
         "try_worksheet missing-sheet lookup should not queue public edits");
+
+    editor.save_as(output);
+
+    check(!editor.has_pending_changes(),
+        "no-op save_as after missing try_worksheet should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after missing try_worksheet should not create public edits");
+    check(editor.last_edit_error() == prior_error,
+        "no-op save_as after missing try_worksheet should not overwrite prior diagnostics");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after missing try_worksheet should copy source entries");
 }
 
 void test_public_try_worksheet_existing_handle_reads_mutates_and_saves()
@@ -1635,6 +1759,48 @@ void test_public_try_worksheet_existing_handle_reads_mutates_and_saves()
         "try_worksheet handle mutation should replace the old value");
 }
 
+void test_public_worksheet_editor_normalizes_explicit_default_style_id()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-default-style-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-default-style-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const fastxlsx::CellValue explicit_default_style =
+        fastxlsx::CellValue::text("default-style-cell").with_style(fastxlsx::StyleId {});
+    check(explicit_default_style.has_style() && explicit_default_style.style_id().value() == 0,
+        "test precondition should use an explicit default StyleId");
+
+    sheet.set_cell(1, 1, explicit_default_style);
+    const fastxlsx::CellValue read_back = sheet.get_cell(1, 1);
+    check(read_back.kind() == fastxlsx::CellValueKind::Text &&
+            read_back.text_value() == "default-style-cell",
+        "WorksheetEditor should preserve the value when normalizing default StyleId");
+    check(!read_back.has_style(),
+        "WorksheetEditor should normalize explicit StyleId{0} to no style handle");
+
+    const std::optional<fastxlsx::CellValue> maybe_read_back = sheet.try_cell(1, 1);
+    check(maybe_read_back.has_value() && !maybe_read_back->has_style(),
+        "try_cell should expose the normalized no-style value");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells = sheet.sparse_cells();
+    check(!cells.empty() && cells[0].reference.row == 1 && cells[0].reference.column == 1,
+        "sparse_cells should include the edited default-style cell");
+    check(!cells.empty() && !cells[0].value.has_style(),
+        "sparse_cells should expose default StyleId normalization");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="A1" t="inlineStr"><is><t>default-style-cell</t></is></c>)",
+        "dirty projection should write the normalized value without an s attribute");
+    check_not_contains(worksheet_xml, R"(s="0")",
+        "dirty projection should not serialize an explicit default style attribute");
+}
+
 void test_public_try_worksheet_reuses_options_and_blocks_replacement_mix()
 {
     const std::filesystem::path source =
@@ -1666,6 +1832,5719 @@ void test_public_try_worksheet_reuses_options_and_blocks_replacement_mix()
         check(editor.pending_change_count() == 1,
             "try_worksheet replacement-mix rejection should preserve queued edits");
     }
+}
+
+void test_public_worksheet_editor_reacquire_reuses_dirty_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-reacquire-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-reacquire-output.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor first = editor.worksheet("Data", options);
+    first.set_cell(1, 1, fastxlsx::CellValue::text("reacquire-first"));
+
+    check(first.has_pending_changes(),
+        "first handle should be dirty after the first public mutation");
+    check(editor.has_pending_changes(),
+        "dirty materialized session should make the editor pending");
+    check(editor.pending_change_count() == 0,
+        "dirty materialized session should not queue a Patch handoff before save_as");
+
+    std::optional<fastxlsx::WorksheetEditor> maybe_second =
+        editor.try_worksheet("Data", options);
+    check(maybe_second.has_value(),
+        "try_worksheet should reacquire an existing materialized session with matching options");
+    if (!maybe_second.has_value()) {
+        return;
+    }
+
+    fastxlsx::WorksheetEditor& second = *maybe_second;
+    const fastxlsx::CellValue second_reads_first = second.get_cell(1, 1);
+    check(second_reads_first.kind() == fastxlsx::CellValueKind::Text &&
+            second_reads_first.text_value() == "reacquire-first",
+        "reacquired try_worksheet handle should see dirty state from the first handle");
+    check(second.has_pending_changes(),
+        "reacquired handle should report the shared dirty session");
+
+    second.set_cell(2, 1, fastxlsx::CellValue::text("reacquire-second"));
+    const fastxlsx::CellValue first_reads_second = first.get_cell(2, 1);
+    check(first_reads_second.kind() == fastxlsx::CellValueKind::Text &&
+            first_reads_second.text_value() == "reacquire-second",
+        "first handle should see dirty state written through the reacquired handle");
+
+    fastxlsx::WorksheetEditor third = editor.worksheet("Data", options);
+    const fastxlsx::CellValue third_reads_second = third.get_cell(2, 1);
+    check(third_reads_second.kind() == fastxlsx::CellValueKind::Text &&
+            third_reads_second.text_value() == "reacquire-second",
+        "worksheet should also reacquire the same dirty session with matching options");
+
+    check(editor.pending_change_count() == 0,
+        "reacquiring matching handles should not queue additional public edits");
+    check(!editor.last_edit_error().has_value(),
+        "successful matching reacquire should not update last_edit_error");
+
+    editor.save_as(output);
+    check(!first.has_pending_changes() && !second.has_pending_changes() &&
+            !third.has_pending_changes(),
+        "successful save_as should clear the shared dirty session for all handles");
+    check(editor.pending_change_count() == 1,
+        "successful save_as should flush the reused session exactly once");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "reacquire-first",
+        "flushed output should include the first handle mutation");
+    check_contains(worksheet_xml, "reacquire-second",
+        "flushed output should include the reacquired handle mutation");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "reused dirty session should not reload and restore the old A1 value");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "reused dirty session should not reload and restore the old A2 value");
+}
+
+void test_public_worksheet_editor_reacquire_after_save_reuses_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-reacquire-after-save-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-reacquire-after-save-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-reacquire-after-save-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor first = editor.worksheet("Data", options);
+    first.set_cell(1, 1, fastxlsx::CellValue::text("reacquire-after-save-first"));
+    editor.save_as(first_output);
+
+    check(!first.has_pending_changes(),
+        "successful first save_as should clear the original handle dirty state");
+    check(editor.pending_change_count() == 1,
+        "first save_as should flush one materialized handoff");
+
+    std::optional<fastxlsx::WorksheetEditor> maybe_second =
+        editor.try_worksheet("Data", options);
+    check(maybe_second.has_value(),
+        "try_worksheet should reacquire a saved clean materialized session");
+    if (!maybe_second.has_value()) {
+        return;
+    }
+
+    fastxlsx::WorksheetEditor& second = *maybe_second;
+    const fastxlsx::CellValue second_reads_saved = second.get_cell(1, 1);
+    check(second_reads_saved.kind() == fastxlsx::CellValueKind::Text &&
+            second_reads_saved.text_value() == "reacquire-after-save-first",
+        "reacquire after save_as should keep materialized state instead of reloading source");
+    check(!second.has_pending_changes(),
+        "reacquired post-save handle should see the shared clean session");
+    check(!editor.last_edit_error().has_value(),
+        "successful post-save reacquire should not update last_edit_error");
+
+    second.set_cell(2, 1, fastxlsx::CellValue::text("reacquire-after-save-second"));
+    const fastxlsx::CellValue first_reads_second = first.get_cell(2, 1);
+    check(first_reads_second.kind() == fastxlsx::CellValueKind::Text &&
+            first_reads_second.text_value() == "reacquire-after-save-second",
+        "original handle should see post-save edits made through the reacquired handle");
+
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 2,
+        "second save_as should flush the post-save reacquired dirty session once");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, "reacquire-after-save-first",
+        "first output should contain the first saved materialized value");
+    check_not_contains(first_xml, "reacquire-after-save-second",
+        "first output should not contain the later post-save mutation");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, "reacquire-after-save-first",
+        "second output should keep the previously saved materialized value");
+    check_contains(second_xml, "reacquire-after-save-second",
+        "second output should contain the post-save reacquired handle mutation");
+    check_not_contains(second_xml, "placeholder-a1",
+        "post-save reacquire should not restore the original source A1 value");
+    check_not_contains(second_xml, "placeholder-a2",
+        "post-save reacquire should not restore the original source A2 value");
+}
+
+void test_public_worksheet_editor_post_save_reacquire_preserves_clean_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-reacquire-diagnostics-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-reacquire-diagnostics-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-reacquire-diagnostics-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor first = editor.worksheet("Data", options);
+    first.set_cell(1, 1, fastxlsx::CellValue::text("diagnostic-first"));
+    editor.save_as(first_output);
+
+    check(editor.pending_change_count() == 1,
+        "first save_as should record one materialized Patch handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "first save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "first save_as should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "first save_as should clear dirty materialized memory estimate");
+
+    fastxlsx::WorksheetEditor second = editor.worksheet("Data", options);
+    const fastxlsx::CellValue second_reads_first = second.get_cell(1, 1);
+    check(second_reads_first.kind() == fastxlsx::CellValueKind::Text &&
+            second_reads_first.text_value() == "diagnostic-first",
+        "post-save worksheet reacquire should reuse the saved materialized state");
+    check(!second.has_pending_changes(),
+        "post-save worksheet reacquire should return the clean shared session");
+    check(editor.pending_change_count() == 1,
+        "clean post-save reacquire should not add a public edit count");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean post-save reacquire should not add dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean post-save reacquire should not add dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean post-save reacquire should not add dirty materialized memory");
+    check(!editor.last_edit_error().has_value(),
+        "clean post-save worksheet reacquire should not update last_edit_error");
+
+    second.set_cell(2, 2, fastxlsx::CellValue::text("diagnostic-second"));
+    check(first.has_pending_changes() && second.has_pending_changes(),
+        "post-save mutation through reacquired handle should dirty the shared session");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-save mutation should add one dirty materialized worksheet name");
+    }
+    check(editor.pending_materialized_cell_count() == second.cell_count(),
+        "dirty materialized cell count should match the reacquired session");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            second.estimated_memory_usage(),
+        "dirty materialized memory estimate should match the reacquired session");
+    check(editor.pending_change_count() == 1,
+        "dirty post-save session should not increment public edit count before save_as");
+
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 2,
+        "second save_as should record a second materialized Patch handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second save_as should clear dirty materialized names again");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second save_as should clear dirty materialized cell count again");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second save_as should clear dirty materialized memory estimate again");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, "diagnostic-first",
+        "second output should keep the saved materialized value");
+    check_contains(second_xml, "diagnostic-second",
+        "second output should include the post-save diagnostic mutation");
+}
+
+void test_public_worksheet_editor_post_save_option_mismatch_preserves_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-post-save-option-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-post-save-option-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-post-save-option-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditorOptions mismatched_options;
+    mismatched_options.max_cells = 9;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("post-save-option-first"));
+    editor.save_as(first_output);
+
+    check(!sheet.has_pending_changes(),
+        "first save_as should leave the saved materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "first save_as should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "first save_as should leave no dirty materialized names");
+
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), "post-save try_worksheet should still reject mismatched materialization options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", mismatched_options);
+    }), "post-save worksheet should still reject mismatched materialization options");
+    check(!editor.last_edit_error().has_value(),
+        "post-save option mismatch should not update last_edit_error");
+    check(editor.pending_change_count() == 1,
+        "post-save option mismatch should not queue another public edit");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-save option mismatch should not dirty the saved materialized session");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-save option mismatch should keep dirty materialized cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-save option mismatch should keep dirty materialized memory clear");
+
+    const fastxlsx::CellValue preserved_value = sheet.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == "post-save-option-first",
+        "post-save option mismatch should preserve the saved materialized value");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    const fastxlsx::CellValue reacquired_value = reacquired.get_cell(1, 1);
+    check(reacquired_value.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_value.text_value() == "post-save-option-first",
+        "matching options should still reacquire the saved session after mismatch failures");
+
+    reacquired.set_cell(2, 2, fastxlsx::CellValue::text("post-save-option-second"));
+    check(sheet.has_pending_changes(),
+        "valid post-mismatch mutation should dirty the original shared handle");
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 2,
+        "valid post-mismatch save_as should record a second materialized handoff");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, "post-save-option-first",
+        "second output should keep the value saved before option mismatch failures");
+    check_contains(second_xml, "post-save-option-second",
+        "second output should include the later valid post-mismatch mutation");
+    check_not_contains(second_xml, "placeholder-a1",
+        "post-save option mismatch should not reload stale source A1");
+}
+
+void test_public_worksheet_editor_post_save_summary_tracks_reacquire_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-post-save-summary-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-post-save-summary-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-post-save-summary-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("post-save-summary-first"));
+
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "dirty materialized session should appear in pending worksheet summaries before save");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data",
+                "pre-save summary should report the source sheet name");
+            check(summary.planned_name == "Data",
+                "pre-save summary should report the planned sheet name");
+            check(!summary.renamed,
+                "pre-save materialized-only summary should not report a rename");
+            check(!summary.sheet_data_replaced,
+                "pre-save materialized-only summary should not report a queued replacement");
+            check(summary.materialized_dirty,
+                "pre-save summary should report dirty materialized state");
+            check(summary.replacement_cell_count == 0,
+                "pre-save materialized-only summary should report zero replacement cells");
+            check(summary.estimated_replacement_memory_usage == 0,
+                "pre-save materialized-only summary should report zero replacement memory");
+            check(summary.materialized_cell_count == sheet.cell_count(),
+                "pre-save summary materialized cell count should match the dirty session");
+            check(summary.estimated_materialized_memory_usage ==
+                    sheet.estimated_memory_usage(),
+                "pre-save summary materialized memory should match the dirty session");
+        }
+    }
+    check(editor.pending_change_count() == 0,
+        "dirty materialized summary should not increment public edit count before save_as");
+
+    editor.save_as(first_output);
+    check(editor.pending_change_count() == 1,
+        "first save_as should record one materialized Patch handoff");
+    check(!sheet.has_pending_changes(),
+        "first save_as should clear the original handle dirty flag");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful materialized save_as should remove the dirty-only worksheet summary");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    const fastxlsx::CellValue reacquired_first = reacquired.get_cell(1, 1);
+    check(reacquired_first.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_first.text_value() == "post-save-summary-first",
+        "clean post-save reacquire should reuse the saved materialized value");
+    check(!reacquired.has_pending_changes(),
+        "clean post-save reacquire should keep the shared session clean");
+    check(editor.pending_worksheet_edits().empty(),
+        "clean post-save reacquire should keep pending worksheet summaries empty");
+
+    reacquired.set_cell(2, 2, fastxlsx::CellValue::text("post-save-summary-second"));
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-save mutation should re-add one dirty materialized summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-save dirty summary should still identify the same sheet");
+            check(!summary.sheet_data_replaced,
+                "post-save dirty summary should not expose the prior materialized handoff as replacement");
+            check(summary.materialized_dirty,
+                "post-save dirty summary should mark the reacquired session dirty");
+            check(summary.materialized_cell_count == reacquired.cell_count(),
+                "post-save dirty summary cell count should match the reacquired session");
+            check(summary.estimated_materialized_memory_usage ==
+                    reacquired.estimated_memory_usage(),
+                "post-save dirty summary memory should match the reacquired session");
+        }
+    }
+    check(editor.pending_change_count() == 1,
+        "post-save dirty summary should not increment public edit count before second save_as");
+
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 2,
+        "second save_as should record the post-save materialized handoff");
+    check(editor.pending_worksheet_edits().empty(),
+        "second save_as should clear dirty-only worksheet summaries again");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, "post-save-summary-first",
+        "first output should contain the first materialized edit");
+    check_not_contains(first_xml, "post-save-summary-second",
+        "first output should not contain the later post-save summary edit");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, "post-save-summary-first",
+        "second output should keep the first materialized value");
+    check_contains(second_xml, "post-save-summary-second",
+        "second output should include the post-save summary mutation");
+}
+
+void test_public_worksheet_editor_post_save_summary_preserves_rename_context()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-summary-rename-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-summary-rename-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-summary-rename-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "SummaryRenamed");
+    fastxlsx::WorksheetEditor renamed = editor.worksheet("SummaryRenamed", options);
+    renamed.set_cell(1, 1, fastxlsx::CellValue::text("summary-rename-first"));
+
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "renamed dirty materialized session should create one worksheet summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data",
+                "rename/materialized summary should report the source sheet name");
+            check(summary.planned_name == "SummaryRenamed",
+                "rename/materialized summary should report the planned sheet name");
+            check(summary.renamed,
+                "rename/materialized summary should report the rename");
+            check(!summary.sheet_data_replaced,
+                "rename/materialized summary should not report whole-sheet replacement");
+            check(summary.materialized_dirty,
+                "rename/materialized summary should report dirty materialized state before save");
+            check(summary.materialized_cell_count == renamed.cell_count(),
+                "rename/materialized summary should expose dirty session cell count before save");
+            check(summary.estimated_materialized_memory_usage ==
+                    renamed.estimated_memory_usage(),
+                "rename/materialized summary should expose dirty session memory before save");
+        }
+    }
+
+    editor.save_as(first_output);
+    check(editor.pending_change_count() == 2,
+        "rename plus first materialized flush should record two public handoffs");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "successful save_as should preserve the rename-only worksheet summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "SummaryRenamed",
+                "post-save rename-only summary should keep source and planned names");
+            check(summary.renamed,
+                "post-save summary should keep the rename flag");
+            check(!summary.sheet_data_replaced,
+                "post-save rename-only summary should not report replacement");
+            check(!summary.materialized_dirty,
+                "post-save rename-only summary should clear materialized dirty flag");
+            check(summary.materialized_cell_count == 0,
+                "post-save rename-only summary should clear materialized cell count");
+            check(summary.estimated_materialized_memory_usage == 0,
+                "post-save rename-only summary should clear materialized memory");
+        }
+    }
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("SummaryRenamed", options);
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "summary-rename-first",
+        "post-save reacquire should reuse the saved renamed materialized state");
+    check(!reacquired.has_pending_changes(),
+        "post-save reacquire of renamed session should stay clean");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].renamed &&
+                !summaries[0].materialized_dirty,
+            "clean post-save reacquire should keep only the rename summary");
+    }
+
+    reacquired.set_cell(2, 2, fastxlsx::CellValue::text("summary-rename-second"));
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-save mutation on renamed session should update the existing summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.renamed,
+                "post-save dirty renamed summary should keep the rename flag");
+            check(summary.materialized_dirty,
+                "post-save dirty renamed summary should re-add materialized dirty state");
+            check(summary.materialized_cell_count == reacquired.cell_count(),
+                "post-save dirty renamed summary should expose current cell count");
+            check(summary.estimated_materialized_memory_usage ==
+                    reacquired.estimated_memory_usage(),
+                "post-save dirty renamed summary should expose current memory");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 3,
+        "second materialized flush on renamed session should record a third handoff");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].renamed &&
+                !summaries[0].materialized_dirty,
+            "second save_as should return to a rename-only summary");
+    }
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="SummaryRenamed")",
+        "first output workbook catalog should contain the planned renamed sheet");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "summary-rename-first",
+        "first output should contain the first renamed materialized edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "summary-rename-second",
+        "first output should not contain the later renamed materialized edit");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="SummaryRenamed")",
+        "second output workbook catalog should keep the planned renamed sheet");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "summary-rename-first",
+        "second output should keep the first renamed materialized edit");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "summary-rename-second",
+        "second output should include the later renamed materialized edit");
+}
+
+void test_public_worksheet_editor_failed_save_as_preserves_renamed_summary_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-summary-rename-failed-save-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-summary-rename-failed-save-output.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "FailedSaveSummary");
+    fastxlsx::WorksheetEditor renamed = editor.worksheet("FailedSaveSummary", options);
+    renamed.set_cell(1, 1, fastxlsx::CellValue::text("summary-rename-failed-save"));
+
+    const std::size_t dirty_cell_count = renamed.cell_count();
+    const std::size_t dirty_memory_usage = renamed.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "save_as source overwrite guard should reject before flushing renamed dirty session");
+    check(renamed.has_pending_changes(),
+        "rejected save_as should keep the renamed materialized session dirty");
+    check(editor.pending_change_count() == 1,
+        "rejected save_as should not count a materialized handoff after the rename");
+    check(!editor.last_edit_error().has_value(),
+        "rejected save_as should not update last_edit_error");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "FailedSaveSummary",
+            "rejected save_as should preserve dirty materialized planned name");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "rejected save_as should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "rejected save_as should preserve dirty materialized memory estimate");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rejected save_as should preserve one renamed dirty worksheet summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data",
+                "rejected save_as summary should preserve source sheet name");
+            check(summary.planned_name == "FailedSaveSummary",
+                "rejected save_as summary should preserve planned sheet name");
+            check(summary.renamed,
+                "rejected save_as summary should preserve rename flag");
+            check(!summary.sheet_data_replaced,
+                "rejected save_as summary should not invent replacement diagnostics");
+            check(summary.materialized_dirty,
+                "rejected save_as summary should preserve materialized dirty flag");
+            check(summary.materialized_cell_count == dirty_cell_count,
+                "rejected save_as summary should preserve materialized cell count");
+            check(summary.estimated_materialized_memory_usage == dirty_memory_usage,
+                "rejected save_as summary should preserve materialized memory estimate");
+        }
+    }
+
+    editor.save_as(output);
+    check(!renamed.has_pending_changes(),
+        "safe save_as after rejection should flush the renamed dirty session");
+    check(editor.pending_change_count() == 2,
+        "safe save_as should count the rename plus one materialized handoff");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].renamed &&
+                !summaries[0].materialized_dirty,
+            "safe save_as should leave a rename-only worksheet summary");
+    }
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="FailedSaveSummary")",
+        "safe output should keep the planned renamed sheet");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "summary-rename-failed-save",
+        "safe output should include the materialized value after failed save_as recovery");
+}
+
+void test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planned_name()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "RenamedDiagnostics");
+    fastxlsx::WorksheetEditor renamed = editor.worksheet("RenamedDiagnostics", options);
+    renamed.set_cell(1, 1, fastxlsx::CellValue::text("renamed-diagnostic-first"));
+
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "RenamedDiagnostics",
+            "dirty renamed materialized diagnostics should use the planned sheet name");
+    }
+    check(editor.pending_materialized_cell_count() == renamed.cell_count(),
+        "dirty renamed materialized cell count should match the borrowed session");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            renamed.estimated_memory_usage(),
+        "dirty renamed materialized memory should match the borrowed session");
+
+    editor.save_as(first_output);
+    check(!renamed.has_pending_changes(),
+        "successful save_as should clean the renamed borrowed session");
+    check(editor.pending_change_count() == 2,
+        "rename plus materialized flush should count two public handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-save renamed diagnostics should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-save renamed diagnostics should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-save renamed diagnostics should clear dirty materialized memory");
+
+    fastxlsx::WorksheetEditor reacquired =
+        editor.worksheet("RenamedDiagnostics", options);
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "renamed-diagnostic-first",
+        "clean renamed reacquire should reuse the saved materialized state");
+    check(!reacquired.has_pending_changes(),
+        "clean renamed reacquire should keep the session clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean renamed reacquire should not re-add dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean renamed reacquire should not re-add dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean renamed reacquire should not re-add dirty materialized memory");
+
+    reacquired.set_cell(2, 2,
+        fastxlsx::CellValue::text("renamed-diagnostic-second"));
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "RenamedDiagnostics",
+            "post-save renamed mutation should re-add the planned dirty name");
+    }
+    check(editor.pending_materialized_cell_count() == reacquired.cell_count(),
+        "post-save renamed mutation should expose current dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            reacquired.estimated_memory_usage(),
+        "post-save renamed mutation should expose current dirty memory");
+
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 3,
+        "second renamed materialized flush should count a third public handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second save_as should clear renamed dirty materialized names again");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second save_as should clear renamed dirty materialized cells again");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second save_as should clear renamed dirty materialized memory again");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="RenamedDiagnostics")",
+        "first output should expose the planned renamed sheet name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "renamed-diagnostic-first",
+        "first output should contain the first renamed diagnostic edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "renamed-diagnostic-second",
+        "first output should not contain the later renamed diagnostic edit");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="RenamedDiagnostics")",
+        "second output should keep the planned renamed sheet name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "renamed-diagnostic-first",
+        "second output should keep the first renamed diagnostic edit");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "renamed-diagnostic-second",
+        "second output should include the later renamed diagnostic edit");
+}
+
+void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_source_name()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-output.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientData");
+    editor.rename_sheet("TransientData", "Data");
+
+    check(editor.pending_change_count() == 2,
+        "rename-back before materialization should count both successful public edits");
+    check(editor.has_worksheet("Data"),
+        "rename-back before materialization should restore the source planned name");
+    check(!editor.has_worksheet("TransientData"),
+        "rename-back before materialization should remove the transient planned name");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back before materialization should not create dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back before materialization should not create dirty materialized cell diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back before materialization should not create dirty materialized memory diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back before materialization should clear rename-only summaries");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    const fastxlsx::CellValue original = sheet.get_cell(1, 1);
+    check(original.kind() == fastxlsx::CellValueKind::Text &&
+            original.text_value() == "placeholder-a1",
+        "rename-back materialization should read through the restored source name");
+
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-materialized-source-name"));
+    check(editor.pending_change_count() == 2,
+        "dirty materialized state after rename-back should not increment public handoff count before save");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "dirty materialized diagnostics after rename-back should use the restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+        "dirty materialized cell count after rename-back should match the borrowed session");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            sheet.estimated_memory_usage(),
+        "dirty materialized memory after rename-back should match the borrowed session");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "dirty materialized session after rename-back should create one summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "rename-back materialized summary should use restored source/planned names");
+            check(!summary.renamed,
+                "rename-back materialized summary should not remain marked as renamed");
+            check(!summary.sheet_data_replaced,
+                "rename-back materialized summary should not invent replacement diagnostics");
+            check(summary.materialized_dirty,
+                "rename-back materialized summary should report dirty materialized state");
+            check(summary.materialized_cell_count == sheet.cell_count(),
+                "rename-back materialized summary should report current cell count");
+            check(summary.estimated_materialized_memory_usage ==
+                    sheet.estimated_memory_usage(),
+                "rename-back materialized summary should report current memory");
+        }
+    }
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "save_as after rename-back materialized edit should clear the borrowed dirty state");
+    check(editor.pending_change_count() == 3,
+        "save_as after rename-back should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after rename-back materialized edit should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after rename-back materialized edit should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after rename-back materialized edit should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after rename-back materialized edit should clear current summaries");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back materialized output should use the restored source name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back materialized output should not leak the transient planned name");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-materialized-source-name",
+        "rename-back materialized output should contain the materialized edit");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "rename-back materialized output should replace the old source cell value");
+}
+
+void test_public_worksheet_editor_rename_back_failed_mutation_preserves_clean_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-mutation-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-mutation-output.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientFailure");
+    editor.rename_sheet("TransientFailure", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes(),
+        "rename-back materialized session should start clean");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("rename-back-invalid"));
+    }), "invalid A1 mutation after rename-back should throw");
+
+    const std::optional<std::string> failed_mutation_error =
+        editor.last_edit_error();
+    check(failed_mutation_error.has_value(),
+        "failed rename-back materialized mutation should set last_edit_error");
+    check(!sheet.has_pending_changes(),
+        "failed mutation after rename-back should preserve clean dirty state");
+    check(editor.pending_change_count() == 2,
+        "failed mutation after rename-back should not count a materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed mutation after rename-back should not add dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed mutation after rename-back should not add dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed mutation after rename-back should not add dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "failed mutation after rename-back should preserve empty current summaries");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientFailure"),
+        "failed mutation after rename-back should preserve restored planned catalog");
+
+    sheet.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-recovered-after-failure"));
+    check(!editor.last_edit_error().has_value(),
+        "successful recovery mutation after rename-back should clear last_edit_error");
+    check(sheet.has_pending_changes(),
+        "successful recovery mutation after rename-back should dirty the session");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "recovered rename-back diagnostics should use the restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "recovered mutation after rename-back should create one current summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "recovered rename-back summary should use restored source/planned names");
+            check(!summary.renamed,
+                "recovered rename-back summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "recovered rename-back summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "recovered rename-back summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "save_as after recovered rename-back mutation should clear dirty state");
+    check(editor.pending_change_count() == 3,
+        "save_as after recovered rename-back mutation should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after recovered rename-back mutation should clear dirty names");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after recovered rename-back mutation should clear current summaries");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "recovered rename-back output should keep the restored source name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "TransientFailure",
+        "recovered rename-back output should not leak the transient planned name");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "rename-back-invalid",
+        "failed rename-back mutation payload should not leak into output");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-recovered-after-failure",
+        "recovered rename-back mutation should persist after save_as");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_preserves_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-output.xlsx");
+
+    const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientSave");
+    editor.rename_sheet("TransientSave", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-dirty-before-failed-save"));
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+
+    check(sheet.has_pending_changes(),
+        "rename-back failed-save setup should leave the borrowed session dirty");
+    check(editor.pending_change_count() == 2,
+        "rename-back failed-save setup should count only the two rename calls before save");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back failed-save setup should start without last_edit_error");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "save_as over source after rename-back dirty edit should fail before auto-flush");
+
+    const auto source_entries_after = fastxlsx::test::read_zip_entries(source);
+    check(source_entries_after == source_entries_before,
+        "rejected source-overwrite save_as after rename-back should not mutate source package bytes");
+    check(sheet.has_pending_changes(),
+        "rejected save_as after rename-back should keep the borrowed session dirty");
+    check(editor.pending_change_count() == 2,
+        "rejected save_as after rename-back should not count a materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "rejected save_as after rename-back should not create last_edit_error");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientSave"),
+        "rejected save_as after rename-back should preserve restored planned catalog");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "rejected save_as after rename-back should preserve restored dirty name");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "rejected save_as after rename-back should preserve materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "rejected save_as after rename-back should preserve materialized memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rejected save_as after rename-back should preserve one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "rejected save_as rename-back summary should use restored names");
+            check(!summary.renamed,
+                "rejected save_as rename-back summary should not remain marked renamed");
+            check(!summary.sheet_data_replaced,
+                "rejected save_as rename-back summary should not invent replacement diagnostics");
+            check(summary.materialized_dirty,
+                "rejected save_as rename-back summary should keep materialized dirty flag");
+            check(summary.materialized_cell_count == dirty_cell_count,
+                "rejected save_as rename-back summary should preserve cell count");
+            check(summary.estimated_materialized_memory_usage == dirty_memory_usage,
+                "rejected save_as rename-back summary should preserve memory estimate");
+        }
+    }
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "safe save_as after rename-back rejection should flush dirty state");
+    check(editor.pending_change_count() == 3,
+        "safe save_as after rename-back rejection should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "safe save_as after rename-back rejection should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "safe save_as after rename-back rejection should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "safe save_as after rename-back rejection should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "safe save_as after rename-back rejection should clear current summaries");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back failed-save recovery output should keep the restored source name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "TransientSave",
+        "rename-back failed-save recovery output should not leak the transient planned name");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-dirty-before-failed-save",
+        "rename-back failed-save recovery output should include the materialized edit");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "rename-back failed-save recovery output should replace the old source value");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_saved_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-reacquire-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-reacquire-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-reacquire-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientReacquire");
+    editor.rename_sheet("TransientReacquire", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-reacquire-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before rename-back reacquire setup flushes");
+    editor.save_as(first_output);
+
+    check(!sheet.has_pending_changes(),
+        "safe save_as after rename-back failed save should clean the original handle");
+    check(editor.pending_change_count() == 3,
+        "safe save_as after rename-back failed save should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "safe save_as before reacquire should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "safe save_as before reacquire should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "safe save_as before reacquire should clear dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "safe save_as before reacquire should clear rename-back dirty summaries");
+    check(!editor.last_edit_error().has_value(),
+        "failed save_as plus safe save_as should not create last_edit_error");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!reacquired.has_pending_changes(),
+        "matching reacquire after rename-back failed-save recovery should start clean");
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-reacquire-first",
+        "matching reacquire after rename-back failed-save recovery should reuse saved materialized state");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean reacquire after rename-back failed-save recovery should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean reacquire after rename-back failed-save recovery should not dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean reacquire after rename-back failed-save recovery should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clean reacquire after rename-back failed-save recovery should keep summaries empty");
+
+    reacquired.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-reacquire-second"));
+    check(sheet.has_pending_changes(),
+        "post-reacquire mutation should dirty the shared materialized session visible to older handle");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-reacquire rename-back dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-reacquire rename-back mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-reacquire rename-back summary should use restored names");
+            check(!summary.renamed,
+                "post-reacquire rename-back summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "post-reacquire rename-back summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "post-reacquire rename-back summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean both borrowed handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the second materialized handoff");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear rename-back reacquire summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value that reacquire must not reload");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-reacquire-first",
+        "source package should not contain the saved materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first rename-back reacquire output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientReacquire",
+        "first rename-back reacquire output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-reacquire-first",
+        "first output should include the saved materialized value");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-reacquire-second",
+        "first output should not include the later post-reacquire edit");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second rename-back reacquire output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientReacquire",
+        "second rename-back reacquire output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-reacquire-first",
+        "second output should preserve the saved materialized value after reacquire");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-reacquire-second",
+        "second output should include the post-reacquire mutation");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_preserves_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-option-mismatch-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-option-mismatch-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-option-mismatch-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditorOptions mismatched_options;
+    mismatched_options.max_cells = 9;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientOptionMismatch");
+    editor.rename_sheet("TransientOptionMismatch", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-option-mismatch-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before option-mismatch recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before option mismatch should keep both handles clean");
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-option-mismatch-first",
+        "matching reacquire before option mismatch should reuse saved materialized state");
+    check(editor.pending_change_count() == 3,
+        "safe save before option mismatch should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "safe save before option mismatch should leave dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "safe save before option mismatch should leave dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "safe save before option mismatch should leave dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "safe save before option mismatch should leave dirty summaries empty");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back failed-save recovery should not create last_edit_error");
+
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), "try_worksheet should reject mismatched options after failed-save recovery");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", mismatched_options);
+    }), "worksheet should reject mismatched options after failed-save recovery");
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery option mismatch should not update last_edit_error");
+    check(editor.pending_change_count() == 3,
+        "post-recovery option mismatch should not queue another public edit");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery option mismatch should keep existing handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery option mismatch should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery option mismatch should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery option mismatch should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery option mismatch should keep summaries empty");
+    check(editor.has_worksheet("Data") &&
+            !editor.has_worksheet("TransientOptionMismatch"),
+        "post-recovery option mismatch should preserve the restored planned catalog name");
+
+    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == "rename-back-option-mismatch-first",
+        "post-recovery option mismatch should preserve the saved materialized value");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after post-recovery option mismatch should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-option-mismatch-first",
+        "matching reacquire after option mismatch should still use the saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-option-mismatch-second"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "valid post-mismatch mutation should dirty older shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-mismatch dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-mismatch mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-mismatch summary should use restored names");
+            check(!summary.renamed,
+                "valid post-mismatch summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-mismatch summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-mismatch summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all option-mismatch recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear dirty names after option mismatch");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear dirty cell count after option mismatch");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second safe save_as should clear dirty memory after option mismatch");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after option mismatch");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first option-mismatch recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientOptionMismatch",
+        "first option-mismatch recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-option-mismatch-first",
+        "first output should contain the saved value before option mismatch");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-option-mismatch-second",
+        "first output should not contain the later post-mismatch mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second option-mismatch recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientOptionMismatch",
+        "second option-mismatch recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-option-mismatch-first",
+        "second output should preserve the saved value after option mismatch");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-option-mismatch-second",
+        "second output should include the valid post-mismatch mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after option mismatch");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_missing_try_preserves_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-try-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-try-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-try-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMissingTry");
+    editor.rename_sheet("TransientMissingTry", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-missing-try-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before missing-try recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before missing try_worksheet should keep both handles clean");
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-missing-try-first",
+        "matching reacquire before missing try_worksheet should reuse saved materialized state");
+
+    const std::optional<fastxlsx::WorksheetEditor> missing_transient =
+        editor.try_worksheet("TransientMissingTry", options);
+    check(!missing_transient.has_value(),
+        "try_worksheet should return empty for the old transient planned name");
+    const std::optional<fastxlsx::WorksheetEditor> missing =
+        editor.try_worksheet("Missing", options);
+    check(!missing.has_value(),
+        "try_worksheet should return empty for a missing name after failed-save recovery");
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery missing try_worksheet should not update last_edit_error");
+    check(editor.pending_change_count() == 3,
+        "post-recovery missing try_worksheet should not queue another public edit");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery missing try_worksheet should keep existing handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery missing try_worksheet should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery missing try_worksheet should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery missing try_worksheet should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery missing try_worksheet should keep summaries empty");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMissingTry"),
+        "post-recovery missing try_worksheet should preserve the restored planned catalog name");
+
+    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == "rename-back-missing-try-first",
+        "post-recovery missing try_worksheet should preserve the saved materialized value");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after missing try_worksheet should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-missing-try-first",
+        "matching reacquire after missing try_worksheet should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-missing-try-second"));
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-missing-try dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-missing-try mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-missing-try summary should use restored names");
+            check(!summary.renamed,
+                "valid post-missing-try summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-missing-try summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-missing-try summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all missing-try recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after missing try_worksheet");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after missing try_worksheet");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first missing-try recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMissingTry",
+        "first missing-try recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-try-first",
+        "first output should contain the saved value before missing try_worksheet");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-try-second",
+        "first output should not contain the later post-missing-try mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second missing-try recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientMissingTry",
+        "second missing-try recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-try-first",
+        "second output should preserve the saved value after missing try_worksheet");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-try-second",
+        "second output should include the valid post-missing-try mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after missing try_worksheet");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_missing_worksheet_preserves_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-worksheet-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-worksheet-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-worksheet-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMissingWorksheet");
+    editor.rename_sheet("TransientMissingWorksheet", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-missing-worksheet-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before missing-worksheet recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before missing worksheet should keep both handles clean");
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-missing-worksheet-first",
+        "matching reacquire before missing worksheet should reuse saved materialized state");
+
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("TransientMissingWorksheet", options);
+    }), "worksheet should throw for the old transient planned name");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), "worksheet should throw for a missing name after failed-save recovery");
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery missing worksheet should not update last_edit_error");
+    check(editor.pending_change_count() == 3,
+        "post-recovery missing worksheet should not queue another public edit");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery missing worksheet should keep existing handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery missing worksheet should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery missing worksheet should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery missing worksheet should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery missing worksheet should keep summaries empty");
+    check(editor.has_worksheet("Data") &&
+            !editor.has_worksheet("TransientMissingWorksheet"),
+        "post-recovery missing worksheet should preserve the restored planned catalog name");
+
+    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == "rename-back-missing-worksheet-first",
+        "post-recovery missing worksheet should preserve the saved materialized value");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after missing worksheet should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-missing-worksheet-first",
+        "matching reacquire after missing worksheet should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-missing-worksheet-second"));
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-missing-worksheet dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-missing-worksheet mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-missing-worksheet summary should use restored names");
+            check(!summary.renamed,
+                "valid post-missing-worksheet summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-missing-worksheet summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-missing-worksheet summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all missing-worksheet recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after missing worksheet");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after missing worksheet");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first missing-worksheet recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMissingWorksheet",
+        "first missing-worksheet recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-worksheet-first",
+        "first output should contain the saved value before missing worksheet");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-worksheet-second",
+        "first output should not contain the later post-missing-worksheet mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second missing-worksheet recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientMissingWorksheet",
+        "second missing-worksheet recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-worksheet-first",
+        "second output should preserve the saved value after missing worksheet");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-worksheet-second",
+        "second output should include the valid post-missing-worksheet mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after missing worksheet");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_preserve_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-catalog-query-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-catalog-query-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-catalog-query-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientCatalogQuery");
+    editor.rename_sheet("TransientCatalogQuery", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-catalog-query-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before catalog-query recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before catalog queries should keep both handles clean");
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-catalog-query-first",
+        "matching reacquire before catalog queries should reuse saved materialized state");
+
+    {
+        const std::vector<std::string> names = editor.worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "planned catalog query after recovery should report restored names");
+    }
+    check(editor.has_worksheet("Data"),
+        "planned catalog query after recovery should find restored Data");
+    check(editor.has_worksheet("Untouched"),
+        "planned catalog query after recovery should find untouched sheet");
+    check(!editor.has_worksheet("TransientCatalogQuery"),
+        "planned catalog query after recovery should not revive transient name");
+    check(!editor.has_worksheet("Missing"),
+        "planned catalog query after recovery should reject absent names");
+
+    {
+        const std::vector<std::string> source_names = editor.source_worksheet_names();
+        check(source_names.size() == 2 && source_names[0] == "Data" &&
+                source_names[1] == "Untouched",
+            "source catalog query after recovery should report original names");
+    }
+    check(editor.has_source_worksheet("Data"),
+        "source catalog query after recovery should find source Data");
+    check(editor.has_source_worksheet("Untouched"),
+        "source catalog query after recovery should find source untouched sheet");
+    check(!editor.has_source_worksheet("TransientCatalogQuery"),
+        "source catalog query after recovery should not expose transient planned name");
+    check(!editor.has_source_worksheet("Missing"),
+        "source catalog query after recovery should reject absent source names");
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery catalog queries should not update last_edit_error");
+    check(editor.pending_change_count() == 3,
+        "post-recovery catalog queries should not queue another public edit");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery catalog queries should keep existing handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery catalog queries should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery catalog queries should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery catalog queries should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery catalog queries should keep summaries empty");
+
+    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == "rename-back-catalog-query-first",
+        "post-recovery catalog queries should preserve the saved materialized value");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after catalog queries should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-catalog-query-first",
+        "matching reacquire after catalog queries should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-catalog-query-second"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-catalog-query mutation should dirty shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-catalog-query dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-catalog-query mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-catalog-query summary should use restored names");
+            check(!summary.renamed,
+                "valid post-catalog-query summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-catalog-query summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-catalog-query summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all catalog-query recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after catalog queries");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after catalog queries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after catalog queries");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-catalog-query-first",
+        "source package should not contain the saved catalog-query materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first catalog-query recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientCatalogQuery",
+        "first catalog-query recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-catalog-query-first",
+        "first output should contain the saved value before catalog queries");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-catalog-query-second",
+        "first output should not contain the later post-catalog-query mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second catalog-query recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientCatalogQuery",
+        "second catalog-query recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-catalog-query-first",
+        "second output should preserve the saved value after catalog queries");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-catalog-query-second",
+        "second output should include the valid post-catalog-query mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after catalog queries");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserve_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-diagnostics-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-diagnostics-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-diagnostics-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientDiagnostics");
+    editor.rename_sheet("TransientDiagnostics", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-diagnostics-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before diagnostic-query recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before diagnostics should keep both handles clean");
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-diagnostics-first",
+        "matching reacquire before diagnostics should reuse saved materialized state");
+
+    check(editor.has_pending_changes(),
+        "post-save recovery should still expose prior public edits as pending facade state");
+    check(editor.pending_change_count() == 3,
+        "post-save recovery should count rename, rename-back, and materialized handoff");
+    check(editor.pending_replacement_cell_count() == 0,
+        "post-save recovery should not invent replacement cell diagnostics");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        "post-save recovery should not invent replacement worksheet diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-save recovery should start with clean materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-save recovery should start with clean materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-save recovery should start with clean materialized memory");
+    check(!editor.has_pending_replacement("Data") &&
+            !editor.has_pending_replacement("TransientDiagnostics") &&
+            !editor.has_pending_replacement("Missing"),
+        "post-save recovery should not report replacement payloads");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        "post-save recovery should not report replacement memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-save recovery should not expose dirty materialized summaries");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog =
+            editor.worksheet_catalog();
+        check(catalog.size() == 2,
+            "post-save recovery catalog diagnostic should keep source workbook sheet count");
+        if (catalog.size() == 2) {
+            check(catalog[0].source_name == "Data" &&
+                    catalog[0].planned_name == "Data" && !catalog[0].renamed,
+                "post-save recovery catalog diagnostic should show restored Data mapping");
+            check(catalog[1].source_name == "Untouched" &&
+                    catalog[1].planned_name == "Untouched" && !catalog[1].renamed,
+                "post-save recovery catalog diagnostic should preserve untouched mapping");
+        }
+    }
+    check(!editor.last_edit_error().has_value(),
+        "post-save recovery should start diagnostics with no last_edit_error");
+
+    check_public_inspection_preserves_last_edit_error(editor, editor.last_edit_error());
+    (void)editor.has_pending_replacement("TransientDiagnostics");
+    (void)editor.has_pending_replacement("Missing");
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery diagnostic queries should not update last_edit_error");
+
+    check(editor.has_pending_changes(),
+        "post-recovery diagnostic queries should preserve pending facade state");
+    check(editor.pending_change_count() == 3,
+        "post-recovery diagnostic queries should not queue another public edit");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery diagnostic queries should keep existing handles clean");
+    check(editor.pending_replacement_cell_count() == 0,
+        "post-recovery diagnostic queries should keep replacement cell count empty");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        "post-recovery diagnostic queries should keep replacement names empty");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery diagnostic queries should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery diagnostic queries should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery diagnostic queries should keep dirty memory clear");
+    check(!editor.has_pending_replacement("Data") &&
+            !editor.has_pending_replacement("TransientDiagnostics"),
+        "post-recovery diagnostic queries should not revive replacement payloads");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        "post-recovery diagnostic queries should keep replacement memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery diagnostic queries should keep summaries empty");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog =
+            editor.worksheet_catalog();
+        check(catalog.size() == 2,
+            "post-recovery diagnostic queries should preserve catalog entry count");
+        if (catalog.size() == 2) {
+            check(catalog[0].source_name == "Data" &&
+                    catalog[0].planned_name == "Data" && !catalog[0].renamed,
+                "post-recovery diagnostics should preserve restored Data mapping");
+            check(catalog[1].source_name == "Untouched" &&
+                    catalog[1].planned_name == "Untouched" && !catalog[1].renamed,
+                "post-recovery diagnostics should preserve untouched mapping");
+        }
+    }
+
+    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == "rename-back-diagnostics-first",
+        "post-recovery diagnostic queries should preserve the saved materialized value");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after diagnostics should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-diagnostics-first",
+        "matching reacquire after diagnostics should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-diagnostics-second"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-diagnostic-query mutation should dirty shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-diagnostic-query dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-diagnostic-query mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-diagnostic-query summary should use restored names");
+            check(!summary.renamed,
+                "valid post-diagnostic-query summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-diagnostic-query summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-diagnostic-query summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all diagnostic-query recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after diagnostics");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after diagnostics");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-diagnostics-first",
+        "source package should not contain the saved diagnostic-query materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first diagnostic-query recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientDiagnostics",
+        "first diagnostic-query recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-diagnostics-first",
+        "first output should contain the saved value before diagnostics");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-diagnostics-second",
+        "first output should not contain the later post-diagnostic-query mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second diagnostic-query recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientDiagnostics",
+        "second diagnostic-query recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-diagnostics-first",
+        "second output should preserve the saved value after diagnostics");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-diagnostics-second",
+        "second output should include the valid post-diagnostic-query mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after diagnostics");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preserve_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-handle-reads-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-handle-reads-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-handle-reads-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientHandleReads");
+    editor.rename_sheet("TransientHandleReads", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-handle-reads-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before handle-read recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before handle reads should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired handles should keep the restored planned name");
+
+    const std::optional<fastxlsx::CellValue> maybe_saved = sheet.try_cell(1, 1);
+    check(maybe_saved.has_value() &&
+            maybe_saved->kind() == fastxlsx::CellValueKind::Text &&
+            maybe_saved->text_value() == "rename-back-handle-reads-first",
+        "post-recovery try_cell should read the saved materialized value");
+    const std::optional<fastxlsx::CellValue> maybe_saved_a1 =
+        reacquired.try_cell("A1");
+    check(maybe_saved_a1.has_value() &&
+            maybe_saved_a1->kind() == fastxlsx::CellValueKind::Text &&
+            maybe_saved_a1->text_value() == "rename-back-handle-reads-first",
+        "post-recovery A1 try_cell should read the saved materialized value");
+    check(!reacquired.try_cell(9, 9).has_value(),
+        "post-recovery try_cell should not synthesize missing cells");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(9, 9); }),
+        "post-recovery get_cell should still throw for missing cells");
+
+    const fastxlsx::CellValue saved_value = reacquired.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "rename-back-handle-reads-first",
+        "post-recovery get_cell should preserve the saved materialized value");
+    const fastxlsx::CellValue source_value = sheet.get_cell("A2");
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a2",
+        "post-recovery get_cell should keep unchanged source-backed cells");
+    check(sheet.cell_count() == 3 && reacquired.cell_count() == 3,
+        "post-recovery cell_count should report the clean saved sparse store");
+    check(sheet.estimated_memory_usage() > 0 &&
+            sheet.estimated_memory_usage() == reacquired.estimated_memory_usage(),
+        "post-recovery estimated_memory_usage should read the shared saved store");
+
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+            reacquired.sparse_cells();
+        check(cells.size() == 3,
+            "post-recovery sparse_cells should snapshot the saved sparse store");
+        if (cells.size() == 3) {
+            check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "rename-back-handle-reads-first",
+                "post-recovery sparse_cells should expose saved A1 first");
+            check(cells[1].reference.row == 1 && cells[1].reference.column == 2 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0,
+                "post-recovery sparse_cells should preserve source-backed B1");
+            check(cells[2].reference.row == 2 && cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2",
+                "post-recovery sparse_cells should preserve source-backed A2");
+        }
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> range_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1, 1, 1, 2});
+        check(range_cells.size() == 2,
+            "post-recovery sparse_cells(range) should snapshot only requested records");
+        if (range_cells.size() == 2) {
+            check(range_cells[0].reference.row == 1 &&
+                    range_cells[0].reference.column == 1 &&
+                    range_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    range_cells[0].value.text_value() == "rename-back-handle-reads-first",
+                "post-recovery sparse_cells(range) should expose saved A1");
+            check(range_cells[1].reference.row == 1 &&
+                    range_cells[1].reference.column == 2 &&
+                    range_cells[1].value.kind() == fastxlsx::CellValueKind::Number,
+                "post-recovery sparse_cells(range) should expose source-backed B1");
+        }
+    }
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery handle reads should not update last_edit_error");
+    check(editor.pending_change_count() == 3,
+        "post-recovery handle reads should not queue another public edit");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery handle reads should keep handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery handle reads should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery handle reads should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery handle reads should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery handle reads should keep summaries empty");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientHandleReads"),
+        "post-recovery handle reads should preserve the restored planned catalog name");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after handle reads should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-handle-reads-first",
+        "matching reacquire after handle reads should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-handle-reads-second"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-handle-read mutation should dirty shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-handle-read dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-handle-read mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-handle-read summary should use restored names");
+            check(!summary.renamed,
+                "valid post-handle-read summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-handle-read summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-handle-read summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all handle-read recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after handle reads");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after handle reads");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after handle reads");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-handle-reads-first",
+        "source package should not contain the saved handle-read materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first handle-read recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientHandleReads",
+        "first handle-read recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-handle-reads-first",
+        "first output should contain the saved value before handle reads");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-handle-reads-second",
+        "first output should not contain the later post-handle-read mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second handle-read recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientHandleReads",
+        "second handle-read recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-handle-reads-first",
+        "second output should preserve the saved value after handle reads");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-handle-reads-second",
+        "second output should include the valid post-handle-read mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after handle reads");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_preserve_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-reads-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-reads-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-reads-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientInvalidReads");
+    editor.rename_sheet("TransientInvalidReads", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-invalid-reads-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before invalid-read recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before invalid reads should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired invalid-read handles should keep the restored planned name");
+
+    const fastxlsx::CellValue saved_before_invalid_reads = reacquired.get_cell(1, 1);
+    check(saved_before_invalid_reads.kind() == fastxlsx::CellValueKind::Text &&
+            saved_before_invalid_reads.text_value() == "rename-back-invalid-reads-first",
+        "reacquired invalid-read setup should expose the saved materialized value");
+    check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Text &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "invalid-read setup should preserve unchanged source-backed cells");
+
+    const std::size_t baseline_count = reacquired.cell_count();
+    const std::size_t baseline_memory = reacquired.estimated_memory_usage();
+    check(baseline_count == 3 && baseline_memory > 0,
+        "invalid-read setup should start from the saved sparse store");
+    check(!editor.last_edit_error().has_value(),
+        "invalid-read setup should start without mutation diagnostics");
+
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell(0, 1); }),
+        "post-recovery invalid read should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(1, 0); }),
+        "post-recovery invalid read should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(1048577, 1); }),
+        "post-recovery invalid read should reject rows beyond Excel limits");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 16385); }),
+        "post-recovery invalid read should reject columns beyond Excel limits");
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell("a1"); }),
+        "post-recovery invalid A1 read should reject lowercase references");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("A1:B2"); }),
+        "post-recovery invalid A1 read should reject range references");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell("A01"); }),
+        "post-recovery invalid A1 read should reject leading-zero rows");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),
+        "post-recovery invalid A1 read should reject columns beyond Excel limits");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "post-recovery invalid range read should reject row zero");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
+    }), "post-recovery invalid range read should reject reversed ranges");
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery invalid reads should not update last_edit_error");
+    check(reacquired.cell_count() == baseline_count &&
+            sheet.cell_count() == baseline_count,
+        "post-recovery invalid reads should not mutate sparse cell counts");
+    check(reacquired.estimated_memory_usage() == baseline_memory &&
+            sheet.estimated_memory_usage() == baseline_memory,
+        "post-recovery invalid reads should not change sparse memory estimates");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery invalid reads should keep saved handles clean");
+    check(editor.pending_change_count() == 3,
+        "post-recovery invalid reads should not queue another public edit");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery invalid reads should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery invalid reads should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery invalid reads should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery invalid reads should keep summaries empty");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientInvalidReads"),
+        "post-recovery invalid reads should preserve the restored planned catalog name");
+
+    const fastxlsx::CellValue saved_after_invalid_reads = reacquired.get_cell(1, 1);
+    check(saved_after_invalid_reads.kind() == fastxlsx::CellValueKind::Text &&
+            saved_after_invalid_reads.text_value() == "rename-back-invalid-reads-first",
+        "post-recovery invalid reads should preserve the saved materialized value");
+    const fastxlsx::CellValue unchanged_after_invalid_reads = sheet.get_cell("A2");
+    check(unchanged_after_invalid_reads.kind() == fastxlsx::CellValueKind::Text &&
+            unchanged_after_invalid_reads.text_value() == "placeholder-a2",
+        "post-recovery invalid reads should preserve unchanged source-backed cells");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after invalid reads should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-invalid-reads-first",
+        "matching reacquire after invalid reads should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-invalid-reads-second"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-invalid-read mutation should dirty shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-invalid-read dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-invalid-read mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-invalid-read summary should use restored names");
+            check(!summary.renamed,
+                "valid post-invalid-read summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-invalid-read summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-invalid-read summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all invalid-read recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after invalid reads");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after invalid reads");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after invalid reads");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-reads-first",
+        "source package should not contain the saved invalid-read materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first invalid-read recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientInvalidReads",
+        "first invalid-read recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-reads-first",
+        "first output should contain the saved value before invalid reads");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-reads-second",
+        "first output should not contain the later post-invalid-read mutation");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second invalid-read recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientInvalidReads",
+        "second invalid-read recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-reads-first",
+        "second output should preserve the saved value after invalid reads");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-reads-second",
+        "second output should include the valid post-invalid-read mutation");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after invalid reads");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_preserve_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-mutations-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-mutations-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-mutations-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientInvalidMutations");
+    editor.rename_sheet("TransientInvalidMutations", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-invalid-mutations-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before invalid-mutation recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before invalid mutations should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired invalid-mutation handles should keep the restored planned name");
+
+    const fastxlsx::CellValue saved_before_invalid_mutations =
+        reacquired.get_cell(1, 1);
+    check(saved_before_invalid_mutations.kind() == fastxlsx::CellValueKind::Text &&
+            saved_before_invalid_mutations.text_value() ==
+                "rename-back-invalid-mutations-first",
+        "reacquired invalid-mutation setup should expose the saved materialized value");
+    const fastxlsx::CellValue source_backed_before_invalid_mutations =
+        sheet.get_cell("A2");
+    check(source_backed_before_invalid_mutations.kind() ==
+                fastxlsx::CellValueKind::Text &&
+            source_backed_before_invalid_mutations.text_value() == "placeholder-a2",
+        "invalid-mutation setup should preserve unchanged source-backed cells");
+
+    const std::size_t baseline_count = reacquired.cell_count();
+    const std::size_t baseline_memory = reacquired.estimated_memory_usage();
+    check(baseline_count == 3 && baseline_memory > 0,
+        "invalid-mutation setup should start from the saved sparse store");
+    check(!editor.last_edit_error().has_value(),
+        "invalid-mutation setup should start without mutation diagnostics");
+
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(0, 1,
+            fastxlsx::CellValue::text("invalid-mutation-row-zero"));
+    }), "post-recovery invalid mutation should reject row zero");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("a1",
+            fastxlsx::CellValue::text("invalid-mutation-lowercase"));
+    }), "post-recovery invalid mutation should reject lowercase references");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("XFE1",
+            fastxlsx::CellValue::text("invalid-mutation-column-overflow"));
+    }), "post-recovery invalid mutation should reject overflow columns");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell(1048577, 1); }),
+        "post-recovery invalid erase should reject rows beyond Excel limits");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell("A1:B2"); }),
+        "post-recovery invalid erase should reject range references");
+
+    check(editor.last_edit_error().has_value(),
+        "post-recovery invalid mutations should update last_edit_error");
+    check(reacquired.cell_count() == baseline_count &&
+            sheet.cell_count() == baseline_count,
+        "post-recovery invalid mutations should not mutate sparse cell counts");
+    check(reacquired.estimated_memory_usage() == baseline_memory &&
+            sheet.estimated_memory_usage() == baseline_memory,
+        "post-recovery invalid mutations should not change sparse memory estimates");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery invalid mutations should keep saved handles clean");
+    check(editor.pending_change_count() == 3,
+        "post-recovery invalid mutations should not queue another public edit");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery invalid mutations should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery invalid mutations should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery invalid mutations should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery invalid mutations should keep summaries empty");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientInvalidMutations"),
+        "post-recovery invalid mutations should preserve the restored planned catalog name");
+
+    const fastxlsx::CellValue saved_after_invalid_mutations =
+        reacquired.get_cell(1, 1);
+    check(saved_after_invalid_mutations.kind() == fastxlsx::CellValueKind::Text &&
+            saved_after_invalid_mutations.text_value() ==
+                "rename-back-invalid-mutations-first",
+        "post-recovery invalid mutations should preserve the saved materialized value");
+    const fastxlsx::CellValue unchanged_after_invalid_mutations = sheet.get_cell("A2");
+    check(unchanged_after_invalid_mutations.kind() == fastxlsx::CellValueKind::Text &&
+            unchanged_after_invalid_mutations.text_value() == "placeholder-a2",
+        "post-recovery invalid mutations should preserve unchanged source-backed cells");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after invalid mutations should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-invalid-mutations-first",
+        "matching reacquire after invalid mutations should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-invalid-mutations-second"));
+    check(!editor.last_edit_error().has_value(),
+        "valid post-invalid-mutation edit should clear mutation diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-invalid-mutation edit should dirty shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-invalid-mutation dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-invalid-mutation edit should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-invalid-mutation summary should use restored names");
+            check(!summary.renamed,
+                "valid post-invalid-mutation summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-invalid-mutation summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-invalid-mutation summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all invalid-mutation recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after invalid mutations");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after invalid mutations");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after invalid mutations");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-mutations-first",
+        "source package should not contain the saved invalid-mutation materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first invalid-mutation recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientInvalidMutations",
+        "first invalid-mutation recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-mutations-first",
+        "first output should contain the saved value before invalid mutations");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-mutations-second",
+        "first output should not contain the later post-invalid-mutation edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "invalid-mutation-row-zero",
+        "first output should not contain rejected invalid row payload");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "invalid-mutation-lowercase",
+        "first output should not contain rejected invalid A1 payload");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "invalid-mutation-column-overflow",
+        "first output should not contain rejected invalid column payload");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second invalid-mutation recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientInvalidMutations",
+        "second invalid-mutation recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-mutations-first",
+        "second output should preserve the saved value after invalid mutations");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-mutations-second",
+        "second output should include the valid post-invalid-mutation edit");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "invalid-mutation-row-zero",
+        "second output should not contain rejected invalid row payload");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "invalid-mutation-lowercase",
+        "second output should not contain rejected invalid A1 payload");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "invalid-mutation-column-overflow",
+        "second output should not contain rejected invalid column payload");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after invalid mutations");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-erase-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-erase-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMissingErase");
+    editor.rename_sheet("TransientMissingErase", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-missing-erase-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before missing-erase recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before missing erase should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired missing-erase handles should keep the restored planned name");
+
+    const fastxlsx::CellValue saved_before_missing_erase = reacquired.get_cell(1, 1);
+    check(saved_before_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
+            saved_before_missing_erase.text_value() == "rename-back-missing-erase-first",
+        "reacquired missing-erase setup should expose the saved materialized value");
+    const fastxlsx::CellValue source_backed_before_missing_erase =
+        sheet.get_cell("A2");
+    check(source_backed_before_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
+            source_backed_before_missing_erase.text_value() == "placeholder-a2",
+        "missing-erase setup should preserve unchanged source-backed cells");
+
+    const std::size_t baseline_count = reacquired.cell_count();
+    const std::size_t baseline_memory = reacquired.estimated_memory_usage();
+    check(baseline_count == 3 && baseline_memory > 0,
+        "missing-erase setup should start from the saved sparse store");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("missing-erase-invalid"));
+    }), "invalid mutation should seed last_edit_error before missing erase");
+    check(editor.last_edit_error().has_value(),
+        "invalid mutation before missing erase should update last_edit_error");
+
+    reacquired.erase_cell(9, 9);
+    sheet.erase_cell("D4");
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery missing erase no-op should clear prior mutation diagnostics");
+    check(reacquired.cell_count() == baseline_count &&
+            sheet.cell_count() == baseline_count,
+        "post-recovery missing erase no-op should not mutate sparse cell counts");
+    check(reacquired.estimated_memory_usage() == baseline_memory &&
+            sheet.estimated_memory_usage() == baseline_memory,
+        "post-recovery missing erase no-op should not change sparse memory estimates");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "post-recovery missing erase no-op should keep saved handles clean");
+    check(editor.pending_change_count() == 3,
+        "post-recovery missing erase no-op should not queue another public edit");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "post-recovery missing erase no-op should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "post-recovery missing erase no-op should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-recovery missing erase no-op should keep dirty memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "post-recovery missing erase no-op should keep summaries empty");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMissingErase"),
+        "post-recovery missing erase no-op should preserve the restored planned catalog name");
+
+    const fastxlsx::CellValue saved_after_missing_erase = reacquired.get_cell(1, 1);
+    check(saved_after_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
+            saved_after_missing_erase.text_value() == "rename-back-missing-erase-first",
+        "post-recovery missing erase no-op should preserve the saved materialized value");
+    const fastxlsx::CellValue unchanged_after_missing_erase = sheet.get_cell("A2");
+    check(unchanged_after_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
+            unchanged_after_missing_erase.text_value() == "placeholder-a2",
+        "post-recovery missing erase no-op should preserve unchanged source-backed cells");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after missing erase should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-missing-erase-first",
+        "matching reacquire after missing erase should still use saved state");
+
+    matching.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-missing-erase-second"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-missing-erase edit should dirty shared handles");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-missing-erase dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "valid post-missing-erase edit should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "valid post-missing-erase summary should use restored names");
+            check(!summary.renamed,
+                "valid post-missing-erase summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "valid post-missing-erase summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "valid post-missing-erase summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all missing-erase recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later materialized handoff after missing erase");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after missing erase");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after missing erase");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-first",
+        "source package should not contain the saved missing-erase materialized value");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first missing-erase recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMissingErase",
+        "first missing-erase recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-first",
+        "first output should contain the saved value before missing erase");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-second",
+        "first output should not contain the later post-missing-erase edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "missing-erase-invalid",
+        "first output should not contain rejected invalid mutation payload");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second missing-erase recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientMissingErase",
+        "second missing-erase recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-first",
+        "second output should preserve the saved value after missing erase");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-second",
+        "second output should include the valid post-missing-erase edit");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "missing-erase-invalid",
+        "second output should not contain rejected invalid mutation payload");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "second output should not reload stale source A1 after missing erase");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_erase_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-blank-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-blank-erase-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-blank-erase-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientBlankErase");
+    editor.rename_sheet("TransientBlankErase", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-blank-erase-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before blank/erase recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before blank/erase should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired blank/erase handles should keep the restored planned name");
+
+    const fastxlsx::CellValue saved_before_blank_erase = reacquired.get_cell(1, 1);
+    check(saved_before_blank_erase.kind() == fastxlsx::CellValueKind::Text &&
+            saved_before_blank_erase.text_value() == "rename-back-blank-erase-first",
+        "reacquired blank/erase setup should expose the saved materialized value");
+    const fastxlsx::CellValue source_backed_before_blank_erase = sheet.get_cell("A2");
+    check(source_backed_before_blank_erase.kind() == fastxlsx::CellValueKind::Text &&
+            source_backed_before_blank_erase.text_value() == "placeholder-a2",
+        "blank/erase setup should preserve unchanged source-backed cells");
+    check(!editor.last_edit_error().has_value(),
+        "blank/erase setup should start without edit diagnostics");
+
+    reacquired.set_cell("A1", fastxlsx::CellValue::blank());
+    sheet.erase_cell(2, 1);
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery blank/erase mutations should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "post-recovery blank/erase mutations should dirty shared handles");
+    check(reacquired.cell_count() == 2 && sheet.cell_count() == 2,
+        "post-recovery blank/erase mutations should keep blank A1 and B1 only");
+    {
+        const fastxlsx::CellValue blank_a1 = sheet.get_cell("A1");
+        check(blank_a1.kind() == fastxlsx::CellValueKind::Blank,
+            "post-recovery explicit blank should be readable as CellValue::blank");
+        check(!reacquired.try_cell(2, 1).has_value(),
+            "post-recovery existing erase should remove source-backed A2");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-recovery blank/erase dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 2,
+        "post-recovery blank/erase dirty diagnostics should report remaining sparse records");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            sheet.estimated_memory_usage(),
+        "post-recovery blank/erase dirty memory should match the shared session");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-recovery blank/erase mutations should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-recovery blank/erase summary should use restored names");
+            check(!summary.renamed,
+                "post-recovery blank/erase summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "post-recovery blank/erase summary should report dirty materialized state");
+            check(summary.materialized_cell_count == 2,
+                "post-recovery blank/erase summary should report remaining sparse records");
+            check(!summary.sheet_data_replaced,
+                "post-recovery blank/erase summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientBlankErase"),
+        "post-recovery blank/erase mutations should preserve the restored planned catalog name");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean blank/erase recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the blank/erase materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear blank/erase dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear blank/erase dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second safe save_as should clear blank/erase dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after blank/erase");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain original A1 after blank/erase");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a2",
+        "source package should still contain original A2 after blank/erase");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first blank/erase recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientBlankErase",
+        "first blank/erase recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-blank-erase-first",
+        "first output should contain the saved value before blank/erase");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a2",
+        "first output should still contain source-backed A2 before erase");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "first output should not reload stale source A1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second blank/erase recovery output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientBlankErase",
+        "second blank/erase recovery output should not leak the transient planned name");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1"><c r="A1"/><c r="B1"><v>1</v></c></row>)",
+        "second output should persist explicit blank A1 and preserve B1");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:B1"/>)",
+        "second output should refresh dimension after existing source-cell erase");
+    check_not_contains(second_worksheet_xml, "rename-back-blank-erase-first",
+        "second output should remove prior text payload after explicit blank");
+    check_not_contains(second_worksheet_xml, "placeholder-a1",
+        "second output should not reload stale source A1 after blank");
+    check_not_contains(second_worksheet_xml, "placeholder-a2",
+        "second output should remove erased source-backed A2");
+    check_not_contains(second_worksheet_xml, R"(<row r="2")",
+        "second output should remove row 2 after erasing its only source cell");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-scalar-formula-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-scalar-formula-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-scalar-formula-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientScalarFormula");
+    editor.rename_sheet("TransientScalarFormula", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-scalar-formula-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before scalar/formula recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before scalar/formula edits should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired scalar/formula handles should keep the restored planned name");
+    check(!editor.last_edit_error().has_value(),
+        "scalar/formula setup should start without edit diagnostics");
+    {
+        const fastxlsx::CellValue saved_a1 = sheet.get_cell("A1");
+        check(saved_a1.kind() == fastxlsx::CellValueKind::Text &&
+                saved_a1.text_value() == "rename-back-scalar-formula-first",
+            "scalar/formula setup should expose the saved materialized A1 value");
+        const fastxlsx::CellValue preserved_a2 = reacquired.get_cell(2, 1);
+        check(preserved_a2.kind() == fastxlsx::CellValueKind::Text &&
+                preserved_a2.text_value() == "placeholder-a2",
+            "scalar/formula setup should preserve unchanged source-backed A2");
+    }
+
+    reacquired.set_cell(1, 1, fastxlsx::CellValue::number(42.25));
+    sheet.set_cell("A2", fastxlsx::CellValue::boolean(true));
+    reacquired.set_cell(3, 3,
+        fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<ok>")"));
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery scalar/formula mutations should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "post-recovery scalar/formula mutations should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "post-recovery scalar/formula mutations should keep A1, B1, A2, and C3");
+    {
+        const fastxlsx::CellValue number_a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue preserved_b1 = reacquired.get_cell(1, 2);
+        const fastxlsx::CellValue boolean_a2 = reacquired.get_cell("A2");
+        const fastxlsx::CellValue formula_c3 = sheet.get_cell(3, 3);
+        check(number_a1.kind() == fastxlsx::CellValueKind::Number &&
+                number_a1.number_value() == 42.25,
+            "post-recovery scalar/formula edits should read A1 as a number");
+        check(preserved_b1.kind() == fastxlsx::CellValueKind::Number &&
+                preserved_b1.number_value() == 1.0,
+            "post-recovery scalar/formula edits should preserve source-backed B1");
+        check(boolean_a2.kind() == fastxlsx::CellValueKind::Boolean &&
+                boolean_a2.boolean_value(),
+            "post-recovery scalar/formula edits should read A2 as true");
+        check(formula_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                formula_c3.text_value() == R"(SUM(A1:B1)&"<ok>")",
+            "post-recovery scalar/formula edits should read C3 formula text");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-recovery scalar/formula dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "post-recovery scalar/formula dirty diagnostics should report active sparse records");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            sheet.estimated_memory_usage(),
+        "post-recovery scalar/formula dirty memory should match the shared session");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-recovery scalar/formula mutations should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-recovery scalar/formula summary should use restored names");
+            check(!summary.renamed,
+                "post-recovery scalar/formula summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "post-recovery scalar/formula summary should report dirty materialized state");
+            check(summary.materialized_cell_count == 4,
+                "post-recovery scalar/formula summary should report active sparse records");
+            check(!summary.sheet_data_replaced,
+                "post-recovery scalar/formula summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientScalarFormula"),
+        "post-recovery scalar/formula mutations should preserve the restored planned catalog name");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean scalar/formula recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the scalar/formula materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear scalar/formula dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear scalar/formula dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second safe save_as should clear scalar/formula dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after scalar/formula edits");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain original A1 after scalar/formula edits");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a2",
+        "source package should still contain original A2 after scalar/formula edits");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "42.25",
+        "source package should not contain later scalar edits");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "SUM(A1:B1)",
+        "source package should not contain later formula edits");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first scalar/formula recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientScalarFormula",
+        "first scalar/formula recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-scalar-formula-first",
+        "first output should contain the saved value before scalar/formula edits");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a2",
+        "first output should still contain source-backed A2 before boolean replacement");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "42.25",
+        "first output should not contain later number replacement");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "SUM(A1:B1)",
+        "first output should not contain later formula replacement");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second scalar/formula recovery output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientScalarFormula",
+        "second scalar/formula recovery output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "second scalar/formula output should refresh dimension through C3");
+    check_contains(second_worksheet_xml, R"(<c r="A1"><v>42.25</v></c>)",
+        "second output should persist numeric A1 replacement as scalar value");
+    check_contains(second_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "second output should preserve source-backed B1 number");
+    check_contains(second_worksheet_xml, R"(<c r="A2" t="b"><v>1</v></c>)",
+        "second output should persist boolean A2 replacement");
+    check_contains(second_worksheet_xml,
+        R"(<c r="C3"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f></c>)",
+        "second output should persist escaped formula C3 without cached value");
+    check_not_contains(second_worksheet_xml, "rename-back-scalar-formula-first",
+        "second output should remove prior text payload after number replacement");
+    check_not_contains(second_worksheet_xml, "placeholder-a1",
+        "second output should not reload stale source A1 after number replacement");
+    check_not_contains(second_worksheet_xml, "placeholder-a2",
+        "second output should replace source-backed A2 with a boolean cell");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-text-escape-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-text-escape-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-text-escape-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientTextEscape");
+    editor.rename_sheet("TransientTextEscape", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-text-escape-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before text escape recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before text escape edits should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired text escape handles should keep the restored planned name");
+    check(!editor.last_edit_error().has_value(),
+        "text escape setup should start without edit diagnostics");
+    {
+        const fastxlsx::CellValue saved_a1 = sheet.get_cell(1, 1);
+        check(saved_a1.kind() == fastxlsx::CellValueKind::Text &&
+                saved_a1.text_value() == "rename-back-text-escape-first",
+            "text escape setup should expose the saved materialized A1 value");
+        const fastxlsx::CellValue preserved_a2 = reacquired.get_cell("A2");
+        check(preserved_a2.kind() == fastxlsx::CellValueKind::Text &&
+                preserved_a2.text_value() == "placeholder-a2",
+            "text escape setup should preserve unchanged source-backed A2");
+    }
+
+    reacquired.set_cell("A1",
+        fastxlsx::CellValue::text(R"(  A&B <C> "D"  )"));
+    sheet.set_cell(2, 1, fastxlsx::CellValue::text(""));
+    reacquired.set_cell(3, 3,
+        fastxlsx::CellValue::text(R"(A&B <C> > "Q")"));
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery text escape mutations should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "post-recovery text escape mutations should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "post-recovery text escape mutations should keep A1, B1, A2, and C3");
+    {
+        const fastxlsx::CellValue escaped_a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue preserved_b1 = reacquired.get_cell("B1");
+        const fastxlsx::CellValue empty_a2 = reacquired.get_cell(2, 1);
+        const fastxlsx::CellValue escaped_c3 = sheet.get_cell("C3");
+        check(escaped_a1.kind() == fastxlsx::CellValueKind::Text &&
+                escaped_a1.text_value() == R"(  A&B <C> "D"  )",
+            "post-recovery text escape edits should read back preserved whitespace text");
+        check(preserved_b1.kind() == fastxlsx::CellValueKind::Number &&
+                preserved_b1.number_value() == 1.0,
+            "post-recovery text escape edits should preserve source-backed B1");
+        check(empty_a2.kind() == fastxlsx::CellValueKind::Text &&
+                empty_a2.text_value().empty(),
+            "post-recovery text escape edits should read A2 as empty text");
+        check(escaped_c3.kind() == fastxlsx::CellValueKind::Text &&
+                escaped_c3.text_value() == R"(A&B <C> > "Q")",
+            "post-recovery text escape edits should read C3 as special-character text");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-recovery text escape dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "post-recovery text escape dirty diagnostics should report active sparse records");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            sheet.estimated_memory_usage(),
+        "post-recovery text escape dirty memory should match the shared session");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-recovery text escape mutations should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-recovery text escape summary should use restored names");
+            check(!summary.renamed,
+                "post-recovery text escape summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "post-recovery text escape summary should report dirty materialized state");
+            check(summary.materialized_cell_count == 4,
+                "post-recovery text escape summary should report active sparse records");
+            check(!summary.sheet_data_replaced,
+                "post-recovery text escape summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientTextEscape"),
+        "post-recovery text escape mutations should preserve the restored planned catalog name");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean text escape recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the text escape materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear text escape dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear text escape dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second safe save_as should clear text escape dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after text escape edits");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain original A1 after text escape edits");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a2",
+        "source package should still contain original A2 after text escape edits");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "A&amp;B",
+        "source package should not contain later escaped text edits");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first text escape recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientTextEscape",
+        "first text escape recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-text-escape-first",
+        "first output should contain the saved value before text escape edits");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a2",
+        "first output should still contain source-backed A2 before empty replacement");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "A&amp;B",
+        "first output should not contain later escaped text edits");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second text escape recovery output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientTextEscape",
+        "second text escape recovery output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "second text escape output should refresh dimension through C3");
+    check_contains(second_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t xml:space="preserve">  A&amp;B &lt;C&gt; "D"  </t></is></c>)",
+        "second output should persist whitespace text with xml:space and escaped text");
+    check_contains(second_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "second output should preserve source-backed B1 number");
+    check_contains(second_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t></t></is></c>)",
+        "second output should persist empty text as an empty t element");
+    check_contains(second_worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>A&amp;B &lt;C&gt; &gt; "Q"</t></is></c>)",
+        "second output should persist special-character text without xml:space");
+    check_not_contains(second_worksheet_xml, "rename-back-text-escape-first",
+        "second output should remove prior text payload after whitespace replacement");
+    check_not_contains(second_worksheet_xml, "placeholder-a1",
+        "second output should not reload stale source A1 after text replacement");
+    check_not_contains(second_worksheet_xml, "placeholder-a2",
+        "second output should replace source-backed A2 with empty text");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxCoordinate");
+    editor.rename_sheet("TransientMaxCoordinate", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before max-coordinate edits should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired max-coordinate handles should keep the restored planned name");
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate setup should start without edit diagnostics");
+
+    constexpr std::uint32_t max_row = 1048576;
+    constexpr std::uint32_t max_column = 16384;
+    reacquired.set_cell(max_row, max_column,
+        fastxlsx::CellValue::text("max-coordinate"));
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery max-coordinate mutation should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "post-recovery max-coordinate mutation should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "post-recovery max-coordinate mutation should keep A1, B1, A2, and XFD1048576");
+    {
+        const fastxlsx::CellValue by_position =
+            sheet.get_cell(max_row, max_column);
+        const fastxlsx::CellValue by_a1 = reacquired.get_cell("XFD1048576");
+        const fastxlsx::CellValue preserved_b1 = sheet.get_cell("B1");
+        const fastxlsx::CellValue preserved_a2 = reacquired.get_cell(2, 1);
+        check(by_position.kind() == fastxlsx::CellValueKind::Text &&
+                by_position.text_value() == "max-coordinate",
+            "post-recovery row/column read should expose the max-coordinate edit");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Text &&
+                by_a1.text_value() == "max-coordinate",
+            "post-recovery A1 read should expose the max-coordinate edit");
+        check(preserved_b1.kind() == fastxlsx::CellValueKind::Number &&
+                preserved_b1.number_value() == 1.0,
+            "post-recovery max-coordinate mutation should preserve source-backed B1");
+        check(preserved_a2.kind() == fastxlsx::CellValueKind::Text &&
+                preserved_a2.text_value() == "placeholder-a2",
+            "post-recovery max-coordinate mutation should preserve source-backed A2");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            reacquired.sparse_cells(
+                fastxlsx::CellRange {max_row, max_column, max_row, max_column});
+        check(edge_cells.size() == 1,
+            "max-coordinate sparse range should return exactly the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == max_row &&
+                    edge_cells[0].reference.column == max_column,
+                "max-coordinate sparse range should preserve the legal Excel boundary");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    edge_cells[0].value.text_value() == "max-coordinate",
+                "max-coordinate sparse range should copy the edge text value");
+        }
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-recovery max-coordinate dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "post-recovery max-coordinate dirty diagnostics should report active sparse records");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            sheet.estimated_memory_usage(),
+        "post-recovery max-coordinate dirty memory should match the shared session");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-recovery max-coordinate mutation should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-recovery max-coordinate summary should use restored names");
+            check(!summary.renamed,
+                "post-recovery max-coordinate summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "post-recovery max-coordinate summary should report dirty materialized state");
+            check(summary.materialized_cell_count == 4,
+                "post-recovery max-coordinate summary should report active sparse records");
+            check(!summary.sheet_data_replaced,
+                "post-recovery max-coordinate summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinate"),
+        "post-recovery max-coordinate mutation should preserve the restored planned catalog name");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear max-coordinate dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear max-coordinate dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second safe save_as should clear max-coordinate dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after max-coordinate edit");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain original A1 after max-coordinate edit");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "source package should not contain the later max-coordinate edit");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMaxCoordinate",
+        "first max-coordinate recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-first",
+        "first output should contain the saved value before max-coordinate edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate edit");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second max-coordinate recovery output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientMaxCoordinate",
+        "second max-coordinate recovery output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate output should refresh dimension through XFD1048576");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576" t="inlineStr"><is><t>max-coordinate</t></is></c></row>)",
+        "second output should persist the sparse max-coordinate row without dense materialization");
+    check_contains(second_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "second output should preserve source-backed B1 number");
+    check_contains(second_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "second output should preserve source-backed A2 text");
+    check_contains(second_worksheet_xml, "rename-back-max-coordinate-first",
+        "second output should preserve the prior setup text alongside the sparse max-coordinate edit");
+    check_not_contains(second_worksheet_xml, "placeholder-a1",
+        "second output should not reload stale source A1 after setup replacement");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_erase_shrinks_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-second.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-third.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxCoordinateErase");
+    editor.rename_sheet("TransientMaxCoordinateErase", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-erase-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate erase setup flushes");
+    editor.save_as(first_output);
+
+    constexpr std::uint32_t max_row = 1048576;
+    constexpr std::uint32_t max_column = 16384;
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    reacquired.set_cell(max_row, max_column,
+        fastxlsx::CellValue::text("max-coordinate-to-erase"));
+    editor.save_as(second_output);
+
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate erase setup handles");
+    check(sheet.get_cell("XFD1048576").text_value() == "max-coordinate-to-erase",
+        "saved max-coordinate setup should be visible through the original handle");
+    check(reacquired.get_cell(max_row, max_column).text_value() == "max-coordinate-to-erase",
+        "saved max-coordinate setup should be visible through the reacquired handle");
+
+    fastxlsx::WorksheetEditor after_max_save = editor.worksheet("Data", options);
+    check(!after_max_save.has_pending_changes(),
+        "matching reacquire after max-coordinate save should start clean");
+    check(after_max_save.get_cell("XFD1048576").text_value() == "max-coordinate-to-erase",
+        "matching reacquire after max-coordinate save should reuse the saved edge state");
+
+    after_max_save.erase_cell(max_row, max_column);
+    check(!editor.last_edit_error().has_value(),
+        "erasing the saved max-coordinate cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            after_max_save.has_pending_changes(),
+        "erasing the saved max-coordinate cell should dirty shared handles");
+    check(sheet.cell_count() == 3 && reacquired.cell_count() == 3 &&
+            after_max_save.cell_count() == 3,
+        "erasing the saved max-coordinate cell should shrink the sparse record count");
+    check(!after_max_save.try_cell("XFD1048576").has_value(),
+        "erasing the saved max-coordinate cell should remove the edge record");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.get_cell(max_row, max_column);
+    }), "get_cell should throw after erasing the saved max-coordinate record");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(
+                fastxlsx::CellRange {max_row, max_column, max_row, max_column});
+        check(edge_cells.empty(),
+            "max-coordinate sparse range should be empty after erasing the edge record");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate erase dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "max-coordinate erase dirty diagnostics should report the shrunken sparse store");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate erase summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate erase summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "max-coordinate erase summary should report dirty materialized state");
+            check(summary.materialized_cell_count == 3,
+                "max-coordinate erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate erase summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateErase"),
+        "max-coordinate erase should preserve the restored planned catalog name");
+
+    editor.save_as(third_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_max_save.has_pending_changes(),
+        "third safe save_as should clean max-coordinate erase handles");
+    check(editor.pending_change_count() == 5,
+        "third safe save_as should count the max-coordinate erase materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "third safe save_as should clear max-coordinate erase dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "third safe save_as should clear max-coordinate erase dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "third safe save_as should clear summaries after max-coordinate erase");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "max-coordinate-to-erase",
+        "source package should not contain the transient max-coordinate erase value");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "second output should contain the saved max-coordinate cell before erase");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "max-coordinate-to-erase",
+        "second output should contain the max-coordinate value before erase");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_workbook_xml = third_entries.at("xl/workbook.xml");
+    const std::string third_worksheet_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_workbook_xml, R"(name="Data")",
+        "third max-coordinate erase output should keep the restored source name");
+    check_not_contains(third_workbook_xml, "TransientMaxCoordinateErase",
+        "third max-coordinate erase output should not leak the transient planned name");
+    check_contains(third_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "third output should shrink dimension after erasing the max-coordinate cell");
+    check_not_contains(third_worksheet_xml, "XFD1048576",
+        "third output should omit the erased max-coordinate cell reference");
+    check_not_contains(third_worksheet_xml, "max-coordinate-to-erase",
+        "third output should omit the erased max-coordinate cell value");
+    check_contains(third_worksheet_xml, "rename-back-max-coordinate-erase-first",
+        "third output should preserve the setup A1 text after edge erase");
+    check_contains(third_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "third output should preserve source-backed B1 number after edge erase");
+    check_contains(third_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "third output should preserve source-backed A2 text after edge erase");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_a1_mutations()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-a1-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-a1-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-a1-second.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-a1-third.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxCoordinateA1");
+    editor.rename_sheet("TransientMaxCoordinateA1", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-a1-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate A1 setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before max-coordinate A1 mutations should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired max-coordinate A1 handles should keep the restored planned name");
+
+    reacquired.set_cell("XFD1048576",
+        fastxlsx::CellValue::text("max-coordinate-a1"));
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate A1 set_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "max-coordinate A1 set_cell should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "max-coordinate A1 set_cell should add one sparse edge record");
+    {
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        const fastxlsx::CellValue by_position = reacquired.get_cell(1048576, 16384);
+        check(by_a1.kind() == fastxlsx::CellValueKind::Text &&
+                by_a1.text_value() == "max-coordinate-a1",
+            "max-coordinate A1 set_cell should read back through the A1 overload");
+        check(by_position.kind() == fastxlsx::CellValueKind::Text &&
+                by_position.text_value() == "max-coordinate-a1",
+            "max-coordinate A1 set_cell should read back through row/column overloads");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate A1 set dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate A1 set should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate A1 set summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate A1 set summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
+                "max-coordinate A1 set summary should report four sparse records");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate A1 set summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate A1 set handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate A1 set materialized handoff");
+
+    fastxlsx::WorksheetEditor after_set_save = editor.worksheet("Data", options);
+    check(!after_set_save.has_pending_changes(),
+        "matching reacquire after max-coordinate A1 set save should start clean");
+    check(after_set_save.get_cell("XFD1048576").text_value() == "max-coordinate-a1",
+        "matching reacquire after max-coordinate A1 set save should reuse the saved edge state");
+
+    after_set_save.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate A1 erase_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            after_set_save.has_pending_changes(),
+        "max-coordinate A1 erase_cell should dirty shared handles");
+    check(sheet.cell_count() == 3 && reacquired.cell_count() == 3 &&
+            after_set_save.cell_count() == 3,
+        "max-coordinate A1 erase_cell should shrink the sparse record count");
+    check(!after_set_save.try_cell("XFD1048576").has_value(),
+        "max-coordinate A1 erase_cell should remove the edge record");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.get_cell("XFD1048576");
+    }), "A1 get_cell should throw after max-coordinate A1 erase_cell");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate A1 erase dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "max-coordinate A1 erase dirty diagnostics should report the shrunken sparse store");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate A1 erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate A1 erase summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate A1 erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "max-coordinate A1 erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate A1 erase summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateA1"),
+        "max-coordinate A1 mutations should preserve the restored planned catalog name");
+
+    editor.save_as(third_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_set_save.has_pending_changes(),
+        "third safe save_as should clean max-coordinate A1 erase handles");
+    check(editor.pending_change_count() == 5,
+        "third safe save_as should count the max-coordinate A1 erase materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "third safe save_as should clear max-coordinate A1 dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "third safe save_as should clear max-coordinate A1 dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "third safe save_as should clear max-coordinate A1 summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "max-coordinate-a1",
+        "source package should not contain max-coordinate A1 mutations");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate A1 output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMaxCoordinateA1",
+        "first max-coordinate A1 output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-a1-first",
+        "first output should contain the setup value before max-coordinate A1 mutations");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate A1 mutation");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second max-coordinate A1 output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientMaxCoordinateA1",
+        "second max-coordinate A1 output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate A1 output should refresh dimension through XFD1048576");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576" t="inlineStr"><is><t>max-coordinate-a1</t></is></c></row>)",
+        "second output should persist the max-coordinate A1 set_cell payload");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_workbook_xml = third_entries.at("xl/workbook.xml");
+    const std::string third_worksheet_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_workbook_xml, R"(name="Data")",
+        "third max-coordinate A1 output should keep the restored source name");
+    check_not_contains(third_workbook_xml, "TransientMaxCoordinateA1",
+        "third max-coordinate A1 output should not leak the transient planned name");
+    check_contains(third_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "third max-coordinate A1 output should shrink dimension after A1 erase_cell");
+    check_not_contains(third_worksheet_xml, "XFD1048576",
+        "third output should omit the A1-erased max-coordinate reference");
+    check_not_contains(third_worksheet_xml, R"(<t>max-coordinate-a1</t>)",
+        "third output should omit the A1-erased max-coordinate cell value");
+    check_contains(third_worksheet_xml, "rename-back-max-coordinate-a1-first",
+        "third output should preserve the setup A1 text after A1 edge erase");
+    check_contains(third_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "third output should preserve source-backed B1 after A1 edge erase");
+    check_contains(third_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "third output should preserve source-backed A2 after A1 edge erase");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_blank_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-blank-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-blank-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-blank-second.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-blank-third.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxCoordinateBlank");
+    editor.rename_sheet("TransientMaxCoordinateBlank", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-blank-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate blank setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before max-coordinate blank should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired max-coordinate blank handles should keep the restored planned name");
+
+    reacquired.set_cell("XFD1048576", fastxlsx::CellValue::blank());
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate blank set_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "max-coordinate blank set_cell should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "max-coordinate blank set_cell should add one explicit blank edge record");
+    {
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        const fastxlsx::CellValue by_position = reacquired.get_cell(1048576, 16384);
+        check(by_a1.kind() == fastxlsx::CellValueKind::Blank,
+            "max-coordinate blank should read back through the A1 overload");
+        check(by_position.kind() == fastxlsx::CellValueKind::Blank,
+            "max-coordinate blank should read back through row/column overloads");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "max-coordinate blank sparse range should return exactly the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "max-coordinate blank sparse range should preserve the legal Excel boundary");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Blank,
+                "max-coordinate blank sparse range should preserve the explicit blank value");
+        }
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate blank dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "max-coordinate blank dirty diagnostics should report active sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate blank set should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate blank summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate blank summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
+                "max-coordinate blank summary should report four sparse records");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate blank summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate blank handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate blank materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear max-coordinate blank dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear max-coordinate blank dirty cell count");
+
+    fastxlsx::WorksheetEditor after_blank_save = editor.worksheet("Data", options);
+    check(!after_blank_save.has_pending_changes(),
+        "matching reacquire after max-coordinate blank save should start clean");
+    check(after_blank_save.get_cell("XFD1048576").kind() == fastxlsx::CellValueKind::Blank,
+        "matching reacquire after max-coordinate blank save should preserve the blank edge state");
+
+    after_blank_save.erase_cell(1048576, 16384);
+    check(!editor.last_edit_error().has_value(),
+        "row/column erase after max-coordinate blank save should not create diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            after_blank_save.has_pending_changes(),
+        "erasing the max-coordinate blank should dirty shared handles");
+    check(sheet.cell_count() == 3 && reacquired.cell_count() == 3 &&
+            after_blank_save.cell_count() == 3,
+        "erasing the max-coordinate blank should shrink the sparse record count");
+    check(!after_blank_save.try_cell("XFD1048576").has_value(),
+        "erasing the max-coordinate blank should remove the edge record");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            reacquired.sparse_cells(
+                fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "max-coordinate blank sparse range should be empty after erase");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate blank erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate blank erase summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate blank erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "max-coordinate blank erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate blank erase summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateBlank"),
+        "max-coordinate blank projection should preserve the restored planned catalog name");
+
+    editor.save_as(third_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_blank_save.has_pending_changes(),
+        "third safe save_as should clean max-coordinate blank erase handles");
+    check(editor.pending_change_count() == 5,
+        "third safe save_as should count the max-coordinate blank erase materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "third safe save_as should clear max-coordinate blank dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "third safe save_as should clear max-coordinate blank dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "third safe save_as should clear max-coordinate blank summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "source package should not contain max-coordinate blank mutations");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate blank output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMaxCoordinateBlank",
+        "first max-coordinate blank output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-blank-first",
+        "first output should contain the setup value before max-coordinate blank");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate blank record");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second max-coordinate blank output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientMaxCoordinateBlank",
+        "second max-coordinate blank output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate blank output should refresh dimension through XFD1048576");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576"/></row>)",
+        "second output should persist the explicit blank max-coordinate cell as an empty c element");
+    check_not_contains(second_worksheet_xml, R"(r="XFD1048576" t="inlineStr")",
+        "second output should not serialize the explicit blank as inline text");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_workbook_xml = third_entries.at("xl/workbook.xml");
+    const std::string third_worksheet_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_workbook_xml, R"(name="Data")",
+        "third max-coordinate blank output should keep the restored source name");
+    check_not_contains(third_workbook_xml, "TransientMaxCoordinateBlank",
+        "third max-coordinate blank output should not leak the transient planned name");
+    check_contains(third_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "third max-coordinate blank output should shrink dimension after erase");
+    check_not_contains(third_worksheet_xml, "XFD1048576",
+        "third output should omit the erased max-coordinate blank reference");
+    check_contains(third_worksheet_xml, "rename-back-max-coordinate-blank-first",
+        "third output should preserve the setup A1 text after blank edge erase");
+    check_contains(third_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "third output should preserve source-backed B1 after blank edge erase");
+    check_contains(third_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "third output should preserve source-backed A2 after blank edge erase");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_formula_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxCoordinateFormula");
+    editor.rename_sheet("TransientMaxCoordinateFormula", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-formula-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate formula setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before max-coordinate formula should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired max-coordinate formula handles should keep the restored planned name");
+
+    reacquired.set_cell(1048576, 16384,
+        fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<edge>")"));
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate formula set_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "max-coordinate formula set_cell should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "max-coordinate formula set_cell should add one sparse edge record");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = reacquired.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Formula &&
+                by_position.text_value() == R"(SUM(A1:B1)&"<edge>")",
+            "max-coordinate formula should read back through row/column overloads");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Formula &&
+                by_a1.text_value() == R"(SUM(A1:B1)&"<edge>")",
+            "max-coordinate formula should read back through the A1 overload");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "max-coordinate formula sparse range should return exactly the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "max-coordinate formula sparse range should preserve the legal Excel boundary");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    edge_cells[0].value.text_value() == R"(SUM(A1:B1)&"<edge>")",
+                "max-coordinate formula sparse range should preserve formula text");
+        }
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate formula dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "max-coordinate formula dirty diagnostics should report active sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate formula set should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate formula summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate formula summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
+                "max-coordinate formula summary should report four sparse records");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate formula summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateFormula"),
+        "max-coordinate formula projection should preserve the restored planned catalog name");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate formula handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate formula materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear max-coordinate formula dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear max-coordinate formula dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear max-coordinate formula summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "source package should not contain max-coordinate formula mutations");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "SUM(A1:B1)",
+        "source package should not contain max-coordinate formula text");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate formula output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMaxCoordinateFormula",
+        "first max-coordinate formula output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-formula-first",
+        "first output should contain the setup value before max-coordinate formula");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate formula record");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second max-coordinate formula output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientMaxCoordinateFormula",
+        "second max-coordinate formula output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate formula output should refresh dimension through XFD1048576");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576"><f>SUM(A1:B1)&amp;"&lt;edge&gt;"</f></c></row>)",
+        "second output should persist escaped formula at the sparse max-coordinate row");
+    check_not_contains(second_worksheet_xml,
+        R"(<c r="XFD1048576"><f>SUM(A1:B1)&amp;"&lt;edge&gt;"</f><v>)",
+        "second output should not generate a cached value for the max-coordinate formula");
+    check_contains(second_worksheet_xml, "rename-back-max-coordinate-formula-first",
+        "second output should preserve the setup A1 text alongside the max-coordinate formula");
+    check_contains(second_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "second output should preserve source-backed B1 after max-coordinate formula");
+    check_contains(second_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "second output should preserve source-backed A2 after max-coordinate formula");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scalar_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-second.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-third.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxCoordinateScalar");
+    editor.rename_sheet("TransientMaxCoordinateScalar", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-scalar-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate scalar setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before max-coordinate scalar should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired max-coordinate scalar handles should keep the restored planned name");
+
+    reacquired.set_cell(1048576, 16384, fastxlsx::CellValue::number(42.5));
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate number set_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "max-coordinate number set_cell should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "max-coordinate number set_cell should add one sparse edge record");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = reacquired.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Number &&
+                by_position.number_value() == 42.5,
+            "max-coordinate number should read back through row/column overloads");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Number &&
+                by_a1.number_value() == 42.5,
+            "max-coordinate number should read back through the A1 overload");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "max-coordinate number sparse range should return exactly the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "max-coordinate number sparse range should preserve the legal Excel boundary");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    edge_cells[0].value.number_value() == 42.5,
+                "max-coordinate number sparse range should preserve scalar value");
+        }
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate number dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "max-coordinate number dirty diagnostics should report active sparse records");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate number handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate number materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear max-coordinate number dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear max-coordinate number dirty cell count");
+
+    fastxlsx::WorksheetEditor after_number_save = editor.worksheet("Data", options);
+    check(!after_number_save.has_pending_changes(),
+        "matching reacquire after max-coordinate number save should start clean");
+    check(after_number_save.get_cell("XFD1048576").kind() == fastxlsx::CellValueKind::Number &&
+            after_number_save.get_cell("XFD1048576").number_value() == 42.5,
+        "matching reacquire after max-coordinate number save should preserve the edge number");
+
+    after_number_save.set_cell("XFD1048576", fastxlsx::CellValue::boolean(false));
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate boolean set_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            after_number_save.has_pending_changes(),
+        "max-coordinate boolean set_cell should dirty shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4 &&
+            after_number_save.cell_count() == 4,
+        "max-coordinate boolean set_cell should keep one sparse edge record");
+    {
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        const fastxlsx::CellValue by_position =
+            after_number_save.get_cell(1048576, 16384);
+        check(by_a1.kind() == fastxlsx::CellValueKind::Boolean &&
+                !by_a1.boolean_value(),
+            "max-coordinate boolean should read back through the A1 overload");
+        check(by_position.kind() == fastxlsx::CellValueKind::Boolean &&
+                !by_position.boolean_value(),
+            "max-coordinate boolean should read back through row/column overloads");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate boolean set should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate boolean summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate boolean summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
+                "max-coordinate boolean summary should report four sparse records");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate boolean summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateScalar"),
+        "max-coordinate scalar projection should preserve the restored planned catalog name");
+
+    editor.save_as(third_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_number_save.has_pending_changes(),
+        "third safe save_as should clean max-coordinate boolean handles");
+    check(editor.pending_change_count() == 5,
+        "third safe save_as should count the max-coordinate boolean materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "third safe save_as should clear max-coordinate boolean dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "third safe save_as should clear max-coordinate boolean dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "third safe save_as should clear max-coordinate boolean summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "source package should not contain max-coordinate scalar mutations");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate scalar output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMaxCoordinateScalar",
+        "first max-coordinate scalar output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-scalar-first",
+        "first output should contain the setup value before max-coordinate scalar edits");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate scalar record");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second max-coordinate scalar output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientMaxCoordinateScalar",
+        "second max-coordinate scalar output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate number output should refresh dimension through XFD1048576");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576"><v>42.5</v></c></row>)",
+        "second output should persist scalar number at the sparse max-coordinate row");
+    check_not_contains(second_worksheet_xml, R"(r="XFD1048576" t="b")",
+        "second output should not serialize the number as a boolean");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_workbook_xml = third_entries.at("xl/workbook.xml");
+    const std::string third_worksheet_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_workbook_xml, R"(name="Data")",
+        "third max-coordinate scalar output should keep the restored source name");
+    check_not_contains(third_workbook_xml, "TransientMaxCoordinateScalar",
+        "third max-coordinate scalar output should not leak the transient planned name");
+    check_contains(third_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "third max-coordinate boolean output should keep dimension through XFD1048576");
+    check_contains(third_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576" t="b"><v>0</v></c></row>)",
+        "third output should persist scalar boolean false at the sparse max-coordinate row");
+    check_not_contains(third_worksheet_xml, R"(<c r="XFD1048576"><v>42.5</v></c>)",
+        "third output should remove the previous max-coordinate number payload");
+    check_contains(third_worksheet_xml, "rename-back-max-coordinate-scalar-first",
+        "third output should preserve the setup A1 text alongside the max-coordinate boolean");
+    check_contains(third_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "third output should preserve source-backed B1 after max-coordinate scalar edits");
+    check_contains(third_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "third output should preserve source-backed A2 after max-coordinate scalar edits");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scalar_erase_shrinks_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-erase-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-erase-second.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-erase-third.xlsx");
+    const std::filesystem::path fourth_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-scalar-erase-fourth.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientMaxScalarErase");
+    editor.rename_sheet("TransientMaxScalarErase", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-scalar-erase-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate scalar erase setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before max-coordinate scalar erase should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired max-coordinate scalar erase handles should keep the restored planned name");
+
+    reacquired.set_cell(1048576, 16384, fastxlsx::CellValue::number(42.5));
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "second safe save_as should clean max-coordinate scalar erase number handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate scalar erase number handoff");
+
+    fastxlsx::WorksheetEditor after_number_save = editor.worksheet("Data", options);
+    check(!after_number_save.has_pending_changes(),
+        "matching reacquire after max-coordinate scalar erase number save should start clean");
+    check(after_number_save.get_cell("XFD1048576").kind() == fastxlsx::CellValueKind::Number &&
+            after_number_save.get_cell("XFD1048576").number_value() == 42.5,
+        "matching reacquire after max-coordinate scalar erase number save should preserve the edge number");
+
+    after_number_save.set_cell("XFD1048576", fastxlsx::CellValue::boolean(false));
+    editor.save_as(third_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_number_save.has_pending_changes(),
+        "third safe save_as should clean max-coordinate scalar erase boolean handles");
+    check(editor.pending_change_count() == 5,
+        "third safe save_as should count the max-coordinate scalar erase boolean handoff");
+
+    fastxlsx::WorksheetEditor after_boolean_save = editor.worksheet("Data", options);
+    check(!after_boolean_save.has_pending_changes(),
+        "matching reacquire after max-coordinate scalar erase boolean save should start clean");
+    {
+        const fastxlsx::CellValue saved_boolean = after_boolean_save.get_cell(1048576, 16384);
+        check(saved_boolean.kind() == fastxlsx::CellValueKind::Boolean &&
+                !saved_boolean.boolean_value(),
+            "matching reacquire after max-coordinate scalar erase boolean save should preserve the edge boolean");
+    }
+
+    after_boolean_save.erase_cell(1048576, 16384);
+    check(!editor.last_edit_error().has_value(),
+        "row/column erase after max-coordinate scalar save should not create diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            after_number_save.has_pending_changes() && after_boolean_save.has_pending_changes(),
+        "erasing the saved max-coordinate scalar should dirty shared handles");
+    check(sheet.cell_count() == 3 && reacquired.cell_count() == 3 &&
+            after_number_save.cell_count() == 3 && after_boolean_save.cell_count() == 3,
+        "erasing the saved max-coordinate scalar should shrink the sparse record count");
+    check(!after_boolean_save.try_cell("XFD1048576").has_value(),
+        "erasing the saved max-coordinate scalar should remove the edge record");
+    check(threw_fastxlsx_error([&] {
+        (void)after_number_save.get_cell(1048576, 16384);
+    }), "get_cell should throw after erasing the saved max-coordinate scalar");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "max-coordinate scalar sparse range should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate scalar erase dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "max-coordinate scalar erase dirty diagnostics should report the shrunken sparse store");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate scalar erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate scalar erase summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate scalar erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "max-coordinate scalar erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate scalar erase summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxScalarErase"),
+        "max-coordinate scalar erase should preserve the restored planned catalog name");
+
+    editor.save_as(fourth_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_number_save.has_pending_changes() && !after_boolean_save.has_pending_changes(),
+        "fourth safe save_as should clean max-coordinate scalar erase handles");
+    check(editor.pending_change_count() == 6,
+        "fourth safe save_as should count the max-coordinate scalar erase handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "fourth safe save_as should clear max-coordinate scalar erase dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "fourth safe save_as should clear max-coordinate scalar erase dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "fourth safe save_as should clear max-coordinate scalar erase summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "source package should not contain max-coordinate scalar erase mutations");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate scalar erase output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientMaxScalarErase",
+        "first max-coordinate scalar erase output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-scalar-erase-first",
+        "first output should contain the setup value before max-coordinate scalar erase");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate scalar erase record");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate scalar erase output should refresh dimension through XFD1048576");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<row r="1048576"><c r="XFD1048576"><v>42.5</v></c></row>)",
+        "second output should contain the saved max-coordinate number before scalar erase");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), R"(<dimension ref="A1:XFD1048576"/>)",
+        "third max-coordinate scalar erase output should keep dimension through XFD1048576 before erase");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<row r="1048576"><c r="XFD1048576" t="b"><v>0</v></c></row>)",
+        "third output should contain the saved max-coordinate boolean before scalar erase");
+
+    const auto fourth_entries = fastxlsx::test::read_zip_entries(fourth_output);
+    const std::string fourth_workbook_xml = fourth_entries.at("xl/workbook.xml");
+    const std::string fourth_worksheet_xml = fourth_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(fourth_workbook_xml, R"(name="Data")",
+        "fourth max-coordinate scalar erase output should keep the restored source name");
+    check_not_contains(fourth_workbook_xml, "TransientMaxScalarErase",
+        "fourth max-coordinate scalar erase output should not leak the transient planned name");
+    check_contains(fourth_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "fourth output should shrink dimension after erasing the max-coordinate scalar");
+    check_not_contains(fourth_worksheet_xml, "XFD1048576",
+        "fourth output should omit the erased max-coordinate scalar reference");
+    check_not_contains(fourth_worksheet_xml, "42.5",
+        "fourth output should omit the erased max-coordinate number payload");
+    check_not_contains(fourth_worksheet_xml, R"(t="b"><v>0</v>)",
+        "fourth output should omit the erased max-coordinate boolean payload");
+    check_contains(fourth_worksheet_xml, "rename-back-max-coordinate-scalar-erase-first",
+        "fourth output should preserve the setup A1 text after scalar edge erase");
+    check_contains(fourth_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "fourth output should preserve source-backed B1 after scalar edge erase");
+    check_contains(fourth_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "fourth output should preserve source-backed A2 after scalar edge erase");
+}
+
+void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_formula_erase_shrinks_projection()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-erase-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-erase-second.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-formula-erase-third.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientFormulaErase");
+    editor.rename_sheet("TransientFormulaErase", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell("A1",
+        fastxlsx::CellValue::text("rename-back-max-coordinate-formula-erase-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before max-coordinate formula erase setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor formula_handle = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !formula_handle.has_pending_changes(),
+        "matching reacquire before max-coordinate formula erase should keep both handles clean");
+    check(sheet.name() == "Data" && formula_handle.name() == "Data",
+        "saved and reacquired max-coordinate formula erase handles should keep the restored planned name");
+
+    formula_handle.set_cell(1048576, 16384,
+        fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<edge-erase>")"));
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate formula erase set_cell should not create edit diagnostics");
+    check(sheet.has_pending_changes() && formula_handle.has_pending_changes(),
+        "max-coordinate formula erase set_cell should dirty shared handles");
+    check(sheet.cell_count() == 4 && formula_handle.cell_count() == 4,
+        "max-coordinate formula erase set_cell should add one sparse edge record");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = formula_handle.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Formula &&
+                by_position.text_value() == R"(SUM(A1:B1)&"<edge-erase>")",
+            "max-coordinate formula erase should read back through row/column overloads");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Formula &&
+                by_a1.text_value() == R"(SUM(A1:B1)&"<edge-erase>")",
+            "max-coordinate formula erase should read back through the A1 overload");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "max-coordinate formula erase sparse range should return exactly the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "max-coordinate formula erase sparse range should preserve the legal Excel boundary");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    edge_cells[0].value.text_value() == R"(SUM(A1:B1)&"<edge-erase>")",
+                "max-coordinate formula erase sparse range should preserve formula text");
+        }
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate formula erase dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 4,
+        "max-coordinate formula erase dirty diagnostics should report active sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate formula erase set should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate formula erase summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate formula erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
+                "max-coordinate formula erase summary should report four sparse records");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate formula erase summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientFormulaErase"),
+        "max-coordinate formula erase should preserve the restored planned catalog name");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !formula_handle.has_pending_changes(),
+        "second safe save_as should clean max-coordinate formula erase handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the max-coordinate formula erase handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear max-coordinate formula erase dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear max-coordinate formula erase dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear max-coordinate formula erase summaries");
+
+    fastxlsx::WorksheetEditor after_formula_save = editor.worksheet("Data", options);
+    check(!after_formula_save.has_pending_changes(),
+        "matching reacquire after max-coordinate formula erase save should start clean");
+    check(after_formula_save.get_cell("XFD1048576").kind() == fastxlsx::CellValueKind::Formula &&
+            after_formula_save.get_cell("XFD1048576").text_value() == R"(SUM(A1:B1)&"<edge-erase>")",
+        "matching reacquire after max-coordinate formula erase save should preserve the edge formula");
+
+    after_formula_save.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "A1 erase after max-coordinate formula save should not create diagnostics");
+    check(sheet.has_pending_changes() && formula_handle.has_pending_changes() &&
+            after_formula_save.has_pending_changes(),
+        "erasing the saved max-coordinate formula should dirty shared handles");
+    check(sheet.cell_count() == 3 && formula_handle.cell_count() == 3 &&
+            after_formula_save.cell_count() == 3,
+        "erasing the saved max-coordinate formula should shrink the sparse record count");
+    check(!after_formula_save.try_cell(1048576, 16384).has_value(),
+        "erasing the saved max-coordinate formula should remove the edge record");
+    check(!sheet.try_cell("XFD1048576").has_value(),
+        "erasing the saved max-coordinate formula should remove the A1 edge record");
+    check(threw_fastxlsx_error([&] {
+        (void)formula_handle.get_cell("XFD1048576");
+    }), "A1 get_cell should throw after erasing the saved max-coordinate formula");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "max-coordinate formula sparse range should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "max-coordinate formula erase-after-save dirty diagnostics should use restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "max-coordinate formula erase-after-save dirty diagnostics should report the shrunken sparse store");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "max-coordinate formula erase-after-save should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "max-coordinate formula erase-after-save summary should use restored names");
+            check(!summary.renamed,
+                "max-coordinate formula erase-after-save summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "max-coordinate formula erase-after-save summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "max-coordinate formula erase-after-save summary should not invent replacement diagnostics");
+        }
+    }
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientFormulaErase"),
+        "max-coordinate formula erase-after-save should preserve the restored planned catalog name");
+
+    editor.save_as(third_output);
+    check(!sheet.has_pending_changes() && !formula_handle.has_pending_changes() &&
+            !after_formula_save.has_pending_changes(),
+        "third safe save_as should clean max-coordinate formula erase handles");
+    check(editor.pending_change_count() == 5,
+        "third safe save_as should count the max-coordinate formula erase handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "third safe save_as should clear max-coordinate formula erase dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "third safe save_as should clear max-coordinate formula erase dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "third safe save_as should clear max-coordinate formula erase summaries");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "source package should not contain max-coordinate formula erase mutations");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"), "SUM(A1:B1)",
+        "source package should not contain max-coordinate formula erase text");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first max-coordinate formula erase output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientFormulaErase",
+        "first max-coordinate formula erase output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-max-coordinate-formula-erase-first",
+        "first output should contain the setup value before max-coordinate formula erase");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "XFD1048576",
+        "first output should not contain the later max-coordinate formula erase record");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="Data")",
+        "second max-coordinate formula erase output should keep the restored source name");
+    check_not_contains(second_workbook_xml, "TransientFormulaErase",
+        "second max-coordinate formula erase output should not leak the transient planned name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "second max-coordinate formula erase output should refresh dimension through XFD1048576");
+    check_contains(second_worksheet_xml,
+        R"(<row r="1048576"><c r="XFD1048576"><f>SUM(A1:B1)&amp;"&lt;edge-erase&gt;"</f></c></row>)",
+        "second output should persist escaped formula at the sparse max-coordinate row before erase");
+    check_not_contains(second_worksheet_xml,
+        R"(<c r="XFD1048576"><f>SUM(A1:B1)&amp;"&lt;edge-erase&gt;"</f><v>)",
+        "second output should not generate a cached value for the max-coordinate formula before erase");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_workbook_xml = third_entries.at("xl/workbook.xml");
+    const std::string third_worksheet_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_workbook_xml, R"(name="Data")",
+        "third max-coordinate formula erase output should keep the restored source name");
+    check_not_contains(third_workbook_xml, "TransientFormulaErase",
+        "third max-coordinate formula erase output should not leak the transient planned name");
+    check_contains(third_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "third output should shrink dimension after erasing the max-coordinate formula");
+    check_not_contains(third_worksheet_xml, "XFD1048576",
+        "third output should omit the erased max-coordinate formula reference");
+    check_not_contains(third_worksheet_xml, "SUM(A1:B1)",
+        "third output should omit the erased max-coordinate formula payload");
+    check_contains(third_worksheet_xml, "rename-back-max-coordinate-formula-erase-first",
+        "third output should preserve the setup A1 text after formula edge erase");
+    check_contains(third_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "third output should preserve source-backed B1 after formula edge erase");
+    check_contains(third_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "third output should preserve source-backed A2 after formula edge erase");
+}
+
+void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_edge()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-source-max-coordinate-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-noop-output.xlsx");
+    const std::filesystem::path erase_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-erase-output.xlsx");
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    check(entries.find("xl/sharedStrings.xml") == entries.end(),
+        "supported source values fixture should not require a sharedStrings part");
+    check_not_contains(entries.at("xl/_rels/workbook.xml.rels"),
+        "relationships/sharedStrings",
+        "supported source values fixture should not require a sharedStrings relationship");
+    check_not_contains(entries.at("[Content_Types].xml"),
+        "spreadsheetml.sharedStrings+xml",
+        "supported source values fixture should not require a sharedStrings content type");
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<dimension ref="A1:XFD1048576"/>)"
+          R"(<sheetData>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is><t>source-max-a1</t></is></c>)"
+          R"(<c r="B1"><v>1</v></c>)"
+          R"(</row>)"
+          R"(<row r="2">)"
+          R"(<c r="A2" t="inlineStr"><is><t>source-max-a2</t></is></c>)"
+          R"(</row>)"
+          R"(<row r="1048576">)"
+          R"(<c r="XFD1048576" t="inlineStr"><is><t>source-max-edge</t></is></c>)"
+          R"(</row>)"
+          R"(</sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    check(sheet.cell_count() == 4,
+        "source max-coordinate materialization should load sparse source records only");
+    check(!sheet.has_pending_changes(),
+        "read-only source max-coordinate materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source max-coordinate materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source max-coordinate materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only source max-coordinate materialization should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "read-only source max-coordinate materialization should not expose dirty cell count");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Text &&
+                by_position.text_value() == "source-max-edge",
+            "source max-coordinate materialization should read through row/column overloads");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Text &&
+                by_a1.text_value() == "source-max-edge",
+            "source max-coordinate materialization should read through A1 overloads");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "source max-coordinate range snapshot should expose the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "source max-coordinate range snapshot should preserve legal boundary coordinates");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    edge_cells[0].value.text_value() == "source-max-edge",
+                "source max-coordinate range snapshot should preserve source text");
+        }
+    }
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source max-coordinate materialization should keep the handle clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source max-coordinate materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after source max-coordinate materialization should not create public edits");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after source max-coordinate materialization should copy source entries");
+
+    sheet.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "source max-coordinate erase should not create edit diagnostics");
+    check(sheet.has_pending_changes(),
+        "source max-coordinate erase should dirty the materialized handle");
+    check(sheet.cell_count() == 3,
+        "source max-coordinate erase should shrink the sparse record count");
+    check(!sheet.try_cell(1048576, 16384).has_value(),
+        "source max-coordinate erase should remove row/column readback");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.get_cell("XFD1048576");
+    }), "source max-coordinate get_cell should throw after erase");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "source max-coordinate range snapshot should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "source max-coordinate erase dirty diagnostics should use source sheet name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "source max-coordinate erase dirty diagnostics should report remaining sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "source max-coordinate erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "source max-coordinate erase summary should use source names");
+            check(!summary.renamed,
+                "source max-coordinate erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "source max-coordinate erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "source max-coordinate erase summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(erase_output);
+    check(!sheet.has_pending_changes(),
+        "save_as after source max-coordinate erase should clean the handle");
+    check(editor.pending_change_count() == 1,
+        "save_as after source max-coordinate erase should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after source max-coordinate erase should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after source max-coordinate erase should clear dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after source max-coordinate erase should clear summaries");
+
+    const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+    const std::string worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "source max-coordinate erase output should shrink dimension to remaining source records");
+    check_not_contains(worksheet_xml, "XFD1048576",
+        "source max-coordinate erase output should omit the erased edge reference");
+    check_not_contains(worksheet_xml, "source-max-edge",
+        "source max-coordinate erase output should omit the erased edge text");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-max-a1</t></is></c>)",
+        "source max-coordinate erase output should preserve source A1");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "source max-coordinate erase output should preserve source B1");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>source-max-a2</t></is></c>)",
+        "source max-coordinate erase output should preserve source A2");
+    check_contains(erase_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "source max-coordinate erase output should preserve untouched sheets");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "source-max-edge",
+        "source max-coordinate erase should not mutate the source package bytes");
+}
+
+void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and_erases_edge()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-source-max-coordinate-formula-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-noop-output.xlsx");
+    const std::filesystem::path erase_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-erase-output.xlsx");
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<dimension ref="A1:XFD1048576"/>)"
+          R"(<sheetData>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is><t>source-formula-a1</t></is></c>)"
+          R"(<c r="B1"><v>1</v></c>)"
+          R"(</row>)"
+          R"(<row r="2">)"
+          R"(<c r="A2" t="inlineStr"><is><t>source-formula-a2</t></is></c>)"
+          R"(</row>)"
+          R"(<row r="1048576">)"
+          R"(<c r="XFD1048576"><f>SUM(A1:B1)&amp;"&lt;source-edge&gt;"</f><v>12345</v></c>)"
+          R"(</row>)"
+          R"(</sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<v>12345</v>",
+        "source max-coordinate formula fixture should contain a stale cached value");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    check(sheet.cell_count() == 4,
+        "source max-coordinate formula materialization should load sparse source records only");
+    check(!sheet.has_pending_changes(),
+        "read-only source max-coordinate formula materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source max-coordinate formula materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source max-coordinate formula materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only source max-coordinate formula materialization should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "read-only source max-coordinate formula materialization should not expose dirty cell count");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Formula &&
+                by_position.text_value() == R"(SUM(A1:B1)&"<source-edge>")",
+            "source max-coordinate formula materialization should ignore stale cached scalar values");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Formula &&
+                by_a1.text_value() == R"(SUM(A1:B1)&"<source-edge>")",
+            "source max-coordinate formula materialization should read formulas through A1 overloads");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "source max-coordinate formula range snapshot should expose the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "source max-coordinate formula range snapshot should preserve legal boundary coordinates");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    edge_cells[0].value.text_value() == R"(SUM(A1:B1)&"<source-edge>")",
+                "source max-coordinate formula range snapshot should preserve source formula text");
+        }
+    }
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source max-coordinate formula materialization should keep the handle clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source max-coordinate formula materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after source max-coordinate formula materialization should not create public edits");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after source max-coordinate formula materialization should copy source entries");
+
+    sheet.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "source max-coordinate formula erase should not create edit diagnostics");
+    check(sheet.has_pending_changes(),
+        "source max-coordinate formula erase should dirty the materialized handle");
+    check(sheet.cell_count() == 3,
+        "source max-coordinate formula erase should shrink the sparse record count");
+    check(!sheet.try_cell(1048576, 16384).has_value(),
+        "source max-coordinate formula erase should remove row/column readback");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.get_cell("XFD1048576");
+    }), "source max-coordinate formula get_cell should throw after erase");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "source max-coordinate formula range snapshot should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "source max-coordinate formula erase dirty diagnostics should use source sheet name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "source max-coordinate formula erase dirty diagnostics should report remaining sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "source max-coordinate formula erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "source max-coordinate formula erase summary should use source names");
+            check(!summary.renamed,
+                "source max-coordinate formula erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "source max-coordinate formula erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "source max-coordinate formula erase summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(erase_output);
+    check(!sheet.has_pending_changes(),
+        "save_as after source max-coordinate formula erase should clean the handle");
+    check(editor.pending_change_count() == 1,
+        "save_as after source max-coordinate formula erase should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after source max-coordinate formula erase should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after source max-coordinate formula erase should clear dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after source max-coordinate formula erase should clear summaries");
+
+    const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+    const std::string worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "source max-coordinate formula erase output should shrink dimension to remaining source records");
+    check_not_contains(worksheet_xml, "XFD1048576",
+        "source max-coordinate formula erase output should omit the erased edge reference");
+    check_not_contains(worksheet_xml, "SUM(A1:B1)",
+        "source max-coordinate formula erase output should omit the erased edge formula");
+    check_not_contains(worksheet_xml, "12345",
+        "source max-coordinate formula erase output should omit the stale cached scalar value");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-formula-a1</t></is></c>)",
+        "source max-coordinate formula erase output should preserve source A1");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "source max-coordinate formula erase output should preserve source B1");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>source-formula-a2</t></is></c>)",
+        "source max-coordinate formula erase output should preserve source A2");
+    check_contains(erase_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "source max-coordinate formula erase output should preserve untouched sheets");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<v>12345</v>",
+        "source max-coordinate formula erase should not mutate the source package bytes");
+}
+
+void test_public_worksheet_editor_materializes_source_max_coordinate_shared_string_and_erases_edge()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-noop-output.xlsx");
+    const std::filesystem::path erase_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-erase-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions writer_options;
+        writer_options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, writer_options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("source-shared-a1"),
+            fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::text("source-shared-edge & <max>")});
+        data.append_row({fastxlsx::CellView::text("source-shared-a2")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-shared-edge")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/sharedStrings.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">)"
+          R"(<si><t>source-shared-a1</t></si>)"
+          R"(<si><t>source-shared-edge &amp; &lt;max&gt;</t></si>)"
+          R"(<si><t>source-shared-a2</t></si>)"
+          R"(<si><t>keep-shared-edge</t></si>)"
+          R"(</sst>)";
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<dimension ref="A1:XFD1048576"/>)"
+          R"(<sheetData>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="s"><v>0</v></c>)"
+          R"(<c r="B1"><v>1</v></c>)"
+          R"(</row>)"
+          R"(<row r="2">)"
+          R"(<c r="A2" t="s"><v>2</v></c>)"
+          R"(</row>)"
+          R"(<row r="1048576">)"
+          R"(<c r="XFD1048576" t="s"><v>1</v></c>)"
+          R"(</row>)"
+          R"(</sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string shared_strings_before =
+        source_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_before, "source-shared-edge &amp; &lt;max&gt;",
+        "source max-coordinate shared string fixture should contain the edge text");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="XFD1048576" t="s"><v>1</v></c>)",
+        "source max-coordinate shared string fixture should store the edge cell as t=s");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    check(sheet.cell_count() == 4,
+        "source max-coordinate shared string materialization should load sparse source records only");
+    check(!sheet.has_pending_changes(),
+        "read-only source max-coordinate shared string materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source max-coordinate shared string materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source max-coordinate shared string materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only source max-coordinate shared string materialization should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "read-only source max-coordinate shared string materialization should not expose dirty cell count");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Text &&
+                by_position.text_value() == "source-shared-edge & <max>",
+            "source max-coordinate shared string materialization should decode XML entities");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Text &&
+                by_a1.text_value() == "source-shared-edge & <max>",
+            "source max-coordinate shared string materialization should read text through A1 overloads");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "source max-coordinate shared string range snapshot should expose the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "source max-coordinate shared string range snapshot should preserve legal boundary coordinates");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    edge_cells[0].value.text_value() == "source-shared-edge & <max>",
+                "source max-coordinate shared string range snapshot should preserve source text");
+        }
+    }
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source max-coordinate shared string materialization should keep the handle clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source max-coordinate shared string materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after source max-coordinate shared string materialization should not create public edits");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after source max-coordinate shared string materialization should copy source entries");
+
+    sheet.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "source max-coordinate shared string erase should not create edit diagnostics");
+    check(sheet.has_pending_changes(),
+        "source max-coordinate shared string erase should dirty the materialized handle");
+    check(sheet.cell_count() == 3,
+        "source max-coordinate shared string erase should shrink the sparse record count");
+    check(!sheet.try_cell(1048576, 16384).has_value(),
+        "source max-coordinate shared string erase should remove row/column readback");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.get_cell("XFD1048576");
+    }), "source max-coordinate shared string get_cell should throw after erase");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "source max-coordinate shared string range snapshot should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "source max-coordinate shared string erase dirty diagnostics should use source sheet name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "source max-coordinate shared string erase dirty diagnostics should report remaining sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "source max-coordinate shared string erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "source max-coordinate shared string erase summary should use source names");
+            check(!summary.renamed,
+                "source max-coordinate shared string erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "source max-coordinate shared string erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "source max-coordinate shared string erase summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(erase_output);
+    check(!sheet.has_pending_changes(),
+        "save_as after source max-coordinate shared string erase should clean the handle");
+    check(editor.pending_change_count() == 1,
+        "save_as after source max-coordinate shared string erase should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after source max-coordinate shared string erase should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after source max-coordinate shared string erase should clear dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after source max-coordinate shared string erase should clear summaries");
+
+    const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+    const std::string worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "source max-coordinate shared string erase output should shrink dimension to remaining source records");
+    check_not_contains(worksheet_xml, "XFD1048576",
+        "source max-coordinate shared string erase output should omit the erased edge reference");
+    check_not_contains(worksheet_xml, "source-shared-edge",
+        "source max-coordinate shared string erase output should omit the erased edge text");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "source max-coordinate shared string erase output should flush remaining text as inline strings");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-shared-a1</t></is></c>)",
+        "source max-coordinate shared string erase output should preserve source A1 as inline text");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "source max-coordinate shared string erase output should preserve source B1");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>source-shared-a2</t></is></c>)",
+        "source max-coordinate shared string erase output should preserve source A2 as inline text");
+    check(erase_entries.find("xl/sharedStrings.xml") != erase_entries.end()
+            && erase_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "source max-coordinate shared string erase output should preserve source sharedStrings bytes");
+    check(erase_entries.at("xl/worksheets/sheet2.xml") ==
+            source_entries.at("xl/worksheets/sheet2.xml"),
+        "source max-coordinate shared string erase output should preserve untouched sheets byte-for-byte");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="XFD1048576" t="s"><v>1</v></c>)",
+        "source max-coordinate shared string erase should not mutate the source package bytes");
+}
+
+void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_values_and_erases_edge()
+{
+    struct SourceMaxCoordinateScalarCase {
+        std::string_view name;
+        std::string_view edge_cell_xml;
+        fastxlsx::CellValueKind expected_kind;
+        double expected_number = 0.0;
+        bool expected_boolean = false;
+        std::string_view absent_payload;
+    };
+
+    const std::array<SourceMaxCoordinateScalarCase, 3> cases {{
+        {"number",
+            R"(<c r="XFD1048576"><v>9000.25</v></c>)",
+            fastxlsx::CellValueKind::Number,
+            9000.25,
+            false,
+            "9000.25"},
+        {"boolean-false",
+            R"(<c r="XFD1048576" t="b"><v>0</v></c>)",
+            fastxlsx::CellValueKind::Boolean,
+            0.0,
+            false,
+            R"(t="b")"},
+        {"blank",
+            R"(<c r="XFD1048576"/>)",
+            fastxlsx::CellValueKind::Blank,
+            0.0,
+            false,
+            R"(XFD1048576)"},
+    }};
+
+    for (const SourceMaxCoordinateScalarCase& case_info : cases) {
+        const std::filesystem::path source = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
+            + std::string(case_info.name) + "-source.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
+            + std::string(case_info.name) + "-noop-output.xlsx");
+        const std::filesystem::path erase_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
+            + std::string(case_info.name) + "-erase-output.xlsx");
+
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+            fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+            data.append_row({fastxlsx::CellView::text("placeholder")});
+            fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+            untouched.append_row({fastxlsx::CellView::text("keep-scalar-edge")});
+            writer.close();
+        }
+
+        std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+        std::string worksheet_xml =
+            std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+              R"(<dimension ref="A1:XFD1048576"/>)"
+              R"(<sheetData>)"
+              R"(<row r="1">)"
+              R"(<c r="A1" t="inlineStr"><is><t>source-scalar-a1</t></is></c>)"
+              R"(<c r="B1"><v>1</v></c>)"
+              R"(</row>)"
+              R"(<row r="2">)"
+              R"(<c r="A2" t="inlineStr"><is><t>source-scalar-a2</t></is></c>)"
+              R"(</row>)"
+              R"(<row r="1048576">)";
+        worksheet_xml.append(case_info.edge_cell_xml.data(), case_info.edge_cell_xml.size());
+        worksheet_xml += R"(</row></sheetData></worksheet>)";
+        entries.at("xl/worksheets/sheet1.xml") = worksheet_xml;
+        write_stored_zip_entries(source, entries);
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+        check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+            case_info.edge_cell_xml,
+            "source max-coordinate scalar fixture should contain the edge cell");
+
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 8;
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+        check(sheet.cell_count() == 4,
+            "source max-coordinate scalar materialization should load sparse source records only");
+        check(!sheet.has_pending_changes(),
+            "read-only source max-coordinate scalar materialization should start clean");
+        check(!editor.has_pending_changes(),
+            "read-only source max-coordinate scalar materialization should not dirty WorkbookEditor");
+        check(editor.pending_change_count() == 0,
+            "read-only source max-coordinate scalar materialization should not queue public edits");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only source max-coordinate scalar materialization should not expose dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "read-only source max-coordinate scalar materialization should not expose dirty cell count");
+
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        if (case_info.expected_kind == fastxlsx::CellValueKind::Number) {
+            check(by_position.kind() == fastxlsx::CellValueKind::Number &&
+                    by_position.number_value() == case_info.expected_number,
+                "source max-coordinate number should materialize through row/column overloads");
+            check(by_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    by_a1.number_value() == case_info.expected_number,
+                "source max-coordinate number should materialize through A1 overloads");
+        } else if (case_info.expected_kind == fastxlsx::CellValueKind::Boolean) {
+            check(by_position.kind() == fastxlsx::CellValueKind::Boolean &&
+                    by_position.boolean_value() == case_info.expected_boolean,
+                "source max-coordinate boolean should materialize through row/column overloads");
+            check(by_a1.kind() == fastxlsx::CellValueKind::Boolean &&
+                    by_a1.boolean_value() == case_info.expected_boolean,
+                "source max-coordinate boolean should materialize through A1 overloads");
+        } else {
+            check(by_position.kind() == fastxlsx::CellValueKind::Blank,
+                "source max-coordinate blank should materialize through row/column overloads");
+            check(by_a1.kind() == fastxlsx::CellValueKind::Blank,
+                "source max-coordinate blank should materialize through A1 overloads");
+        }
+        {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+                sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+            check(edge_cells.size() == 1,
+                "source max-coordinate scalar range snapshot should expose the edge record");
+            if (edge_cells.size() == 1) {
+                check(edge_cells[0].reference.row == 1048576 &&
+                        edge_cells[0].reference.column == 16384,
+                    "source max-coordinate scalar range snapshot should preserve legal boundary coordinates");
+                check(edge_cells[0].value.kind() == case_info.expected_kind,
+                    "source max-coordinate scalar range snapshot should preserve the source value kind");
+            }
+        }
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "no-op save_as after source max-coordinate scalar materialization should keep the handle clean");
+        check(!editor.has_pending_changes(),
+            "no-op save_as after source max-coordinate scalar materialization should keep the editor clean");
+        check(editor.pending_change_count() == 0,
+            "no-op save_as after source max-coordinate scalar materialization should not create public edits");
+        check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+            "no-op save_as after source max-coordinate scalar materialization should copy source entries");
+
+        sheet.erase_cell("XFD1048576");
+        check(!editor.last_edit_error().has_value(),
+            "source max-coordinate scalar erase should not create edit diagnostics");
+        check(sheet.has_pending_changes(),
+            "source max-coordinate scalar erase should dirty the materialized handle");
+        check(sheet.cell_count() == 3,
+            "source max-coordinate scalar erase should shrink the sparse record count");
+        check(!sheet.try_cell(1048576, 16384).has_value(),
+            "source max-coordinate scalar erase should remove row/column readback");
+        check(threw_fastxlsx_error([&] {
+            (void)sheet.get_cell("XFD1048576");
+        }), "source max-coordinate scalar get_cell should throw after erase");
+        {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+                sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+            check(edge_cells.empty(),
+                "source max-coordinate scalar range snapshot should be empty after erase");
+        }
+        {
+            const std::vector<std::string> names =
+                editor.pending_materialized_worksheet_names();
+            check(names.size() == 1 && names[0] == "Data",
+                "source max-coordinate scalar erase dirty diagnostics should use source sheet name");
+        }
+        check(editor.pending_materialized_cell_count() == 3,
+            "source max-coordinate scalar erase dirty diagnostics should report remaining sparse records");
+
+        editor.save_as(erase_output);
+        check(!sheet.has_pending_changes(),
+            "save_as after source max-coordinate scalar erase should clean the handle");
+        check(editor.pending_change_count() == 1,
+            "save_as after source max-coordinate scalar erase should count one materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "save_as after source max-coordinate scalar erase should clear dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "save_as after source max-coordinate scalar erase should clear dirty cell count");
+        check(editor.pending_worksheet_edits().empty(),
+            "save_as after source max-coordinate scalar erase should clear summaries");
+
+        const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+        const std::string erase_worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(erase_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+            "source max-coordinate scalar erase output should shrink dimension to remaining source records");
+        check_not_contains(erase_worksheet_xml, "XFD1048576",
+            "source max-coordinate scalar erase output should omit the erased edge reference");
+        if (case_info.name != "blank") {
+            check_not_contains(erase_worksheet_xml, case_info.absent_payload,
+                "source max-coordinate scalar erase output should omit the erased edge payload");
+        }
+        check_contains(erase_worksheet_xml,
+            R"(<c r="A1" t="inlineStr"><is><t>source-scalar-a1</t></is></c>)",
+            "source max-coordinate scalar erase output should preserve source A1");
+        check_contains(erase_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "source max-coordinate scalar erase output should preserve source B1");
+        check_contains(erase_worksheet_xml,
+            R"(<c r="A2" t="inlineStr"><is><t>source-scalar-a2</t></is></c>)",
+            "source max-coordinate scalar erase output should preserve source A2");
+        check(erase_entries.at("xl/worksheets/sheet2.xml") ==
+                source_entries.at("xl/worksheets/sheet2.xml"),
+            "source max-coordinate scalar erase output should preserve untouched sheets byte-for-byte");
+        check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+            case_info.edge_cell_xml,
+            "source max-coordinate scalar erase should not mutate the source package bytes");
+    }
+}
+
+void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inline_strings_and_erases_edge()
+{
+    struct SourceMaxCoordinateInlineCase {
+        std::string_view name;
+        std::string_view edge_cell_xml;
+        fastxlsx::CellValueKind expected_kind;
+        std::string_view absent_payload;
+    };
+
+    const std::array<SourceMaxCoordinateInlineCase, 2> cases {{
+        {"empty-text",
+            R"(<c r="XFD1048576" t="inlineStr"><is><t></t></is></c>)",
+            fastxlsx::CellValueKind::Text,
+            R"(<t></t>)"},
+        {"inline-without-text",
+            R"(<c r="XFD1048576" t="inlineStr"><is/></c>)",
+            fastxlsx::CellValueKind::Blank,
+            R"(<is/>)"},
+    }};
+
+    for (const SourceMaxCoordinateInlineCase& case_info : cases) {
+        const std::filesystem::path source = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
+            + std::string(case_info.name) + "-source.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
+            + std::string(case_info.name) + "-noop-output.xlsx");
+        const std::filesystem::path erase_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
+            + std::string(case_info.name) + "-erase-output.xlsx");
+
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+            fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+            data.append_row({fastxlsx::CellView::text("placeholder")});
+            fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+            untouched.append_row({fastxlsx::CellView::text("keep-empty-inline-edge")});
+            writer.close();
+        }
+
+        std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+        std::string worksheet_xml =
+            std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+              R"(<dimension ref="A1:XFD1048576"/>)"
+              R"(<sheetData>)"
+              R"(<row r="1">)"
+              R"(<c r="A1" t="inlineStr"><is><t>source-empty-inline-a1</t></is></c>)"
+              R"(<c r="B1"><v>1</v></c>)"
+              R"(</row>)"
+              R"(<row r="2">)"
+              R"(<c r="A2" t="inlineStr"><is><t>source-empty-inline-a2</t></is></c>)"
+              R"(</row>)"
+              R"(<row r="1048576">)";
+        worksheet_xml.append(case_info.edge_cell_xml.data(), case_info.edge_cell_xml.size());
+        worksheet_xml += R"(</row></sheetData></worksheet>)";
+        entries.at("xl/worksheets/sheet1.xml") = worksheet_xml;
+        write_stored_zip_entries(source, entries);
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+        check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+            case_info.edge_cell_xml,
+            "source max-coordinate empty inline fixture should contain the edge cell");
+
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 8;
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+        check(sheet.cell_count() == 4,
+            "source max-coordinate empty inline materialization should load sparse source records only");
+        check(!sheet.has_pending_changes(),
+            "read-only source max-coordinate empty inline materialization should start clean");
+        check(!editor.has_pending_changes(),
+            "read-only source max-coordinate empty inline materialization should not dirty WorkbookEditor");
+        check(editor.pending_change_count() == 0,
+            "read-only source max-coordinate empty inline materialization should not queue public edits");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only source max-coordinate empty inline materialization should not expose dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "read-only source max-coordinate empty inline materialization should not expose dirty cell count");
+
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        if (case_info.expected_kind == fastxlsx::CellValueKind::Text) {
+            check(by_position.kind() == fastxlsx::CellValueKind::Text &&
+                    by_position.text_value().empty(),
+                "source max-coordinate empty inline text should materialize through row/column overloads");
+            check(by_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    by_a1.text_value().empty(),
+                "source max-coordinate empty inline text should materialize through A1 overloads");
+        } else {
+            check(by_position.kind() == fastxlsx::CellValueKind::Blank,
+                "source max-coordinate inline string without text should materialize through row/column overloads");
+            check(by_a1.kind() == fastxlsx::CellValueKind::Blank,
+                "source max-coordinate inline string without text should materialize through A1 overloads");
+        }
+        {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+                sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+            check(edge_cells.size() == 1,
+                "source max-coordinate empty inline range snapshot should expose the edge record");
+            if (edge_cells.size() == 1) {
+                check(edge_cells[0].reference.row == 1048576 &&
+                        edge_cells[0].reference.column == 16384,
+                    "source max-coordinate empty inline range snapshot should preserve legal boundary coordinates");
+                check(edge_cells[0].value.kind() == case_info.expected_kind,
+                    "source max-coordinate empty inline range snapshot should preserve the source value kind");
+                if (case_info.expected_kind == fastxlsx::CellValueKind::Text) {
+                    check(edge_cells[0].value.text_value().empty(),
+                        "source max-coordinate empty inline range snapshot should preserve empty text");
+                }
+            }
+        }
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "no-op save_as after source max-coordinate empty inline materialization should keep the handle clean");
+        check(!editor.has_pending_changes(),
+            "no-op save_as after source max-coordinate empty inline materialization should keep the editor clean");
+        check(editor.pending_change_count() == 0,
+            "no-op save_as after source max-coordinate empty inline materialization should not create public edits");
+        check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+            "no-op save_as after source max-coordinate empty inline materialization should copy source entries");
+
+        sheet.erase_cell("XFD1048576");
+        check(!editor.last_edit_error().has_value(),
+            "source max-coordinate empty inline erase should not create edit diagnostics");
+        check(sheet.has_pending_changes(),
+            "source max-coordinate empty inline erase should dirty the materialized handle");
+        check(sheet.cell_count() == 3,
+            "source max-coordinate empty inline erase should shrink the sparse record count");
+        check(!sheet.try_cell(1048576, 16384).has_value(),
+            "source max-coordinate empty inline erase should remove row/column readback");
+        check(threw_fastxlsx_error([&] {
+            (void)sheet.get_cell("XFD1048576");
+        }), "source max-coordinate empty inline get_cell should throw after erase");
+        {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+                sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+            check(edge_cells.empty(),
+                "source max-coordinate empty inline range snapshot should be empty after erase");
+        }
+        {
+            const std::vector<std::string> names =
+                editor.pending_materialized_worksheet_names();
+            check(names.size() == 1 && names[0] == "Data",
+                "source max-coordinate empty inline erase dirty diagnostics should use source sheet name");
+        }
+        check(editor.pending_materialized_cell_count() == 3,
+            "source max-coordinate empty inline erase dirty diagnostics should report remaining sparse records");
+
+        editor.save_as(erase_output);
+        check(!sheet.has_pending_changes(),
+            "save_as after source max-coordinate empty inline erase should clean the handle");
+        check(editor.pending_change_count() == 1,
+            "save_as after source max-coordinate empty inline erase should count one materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "save_as after source max-coordinate empty inline erase should clear dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "save_as after source max-coordinate empty inline erase should clear dirty cell count");
+        check(editor.pending_worksheet_edits().empty(),
+            "save_as after source max-coordinate empty inline erase should clear summaries");
+
+        const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+        const std::string erase_worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(erase_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+            "source max-coordinate empty inline erase output should shrink dimension to remaining source records");
+        check_not_contains(erase_worksheet_xml, "XFD1048576",
+            "source max-coordinate empty inline erase output should omit the erased edge reference");
+        check_not_contains(erase_worksheet_xml, case_info.absent_payload,
+            "source max-coordinate empty inline erase output should omit the erased edge payload");
+        check_contains(erase_worksheet_xml,
+            R"(<c r="A1" t="inlineStr"><is><t>source-empty-inline-a1</t></is></c>)",
+            "source max-coordinate empty inline erase output should preserve source A1");
+        check_contains(erase_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "source max-coordinate empty inline erase output should preserve source B1");
+        check_contains(erase_worksheet_xml,
+            R"(<c r="A2" t="inlineStr"><is><t>source-empty-inline-a2</t></is></c>)",
+            "source max-coordinate empty inline erase output should preserve source A2");
+        check(erase_entries.at("xl/worksheets/sheet2.xml") ==
+                source_entries.at("xl/worksheets/sheet2.xml"),
+            "source max-coordinate empty inline erase output should preserve untouched sheets byte-for-byte");
+        check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+            case_info.edge_cell_xml,
+            "source max-coordinate empty inline erase should not mutate the source package bytes");
+    }
+}
+
+void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared_string_and_erases_edge()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-noop-output.xlsx");
+    const std::filesystem::path erase_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::number(7.0)});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    const std::string rich_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3">)"
+        R"(<si><t>source-rich-a1</t></si>)"
+        R"(<si><r><t>rich-</t></r><r><t>A&amp;B </t></r><r><t>&lt;edge&gt;</t></r><rPh sb="0" eb="1"><t>ignored-phonetic</t></rPh><phoneticPr fontId="1"/><extLst><ext uri="{fastxlsx-test}"><t>ignored-ext</t></ext></extLst></si>)"
+        R"(<si><t>source-rich-a2</t></si>)"
+        R"(</sst>)";
+    entries.at("xl/sharedStrings.xml") = rich_shared_strings;
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<dimension ref="A1:XFD1048576"/>)"
+          R"(<sheetData>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="s"><v>0</v></c>)"
+          R"(<c r="B1"><v>1</v></c>)"
+          R"(</row>)"
+          R"(<row r="2">)"
+          R"(<c r="A2" t="s"><v>2</v></c>)"
+          R"(</row>)"
+          R"(<row r="1048576">)"
+          R"(<c r="XFD1048576" t="s"><v>1</v></c>)"
+          R"(</row></sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_before, R"(<rPh sb="0" eb="1"><t>ignored-phonetic</t></rPh>)",
+        "source rich shared string fixture should contain ignored phonetic text");
+    check_contains(shared_strings_before, R"(<ext uri="{fastxlsx-test}"><t>ignored-ext</t></ext>)",
+        "source rich shared string fixture should contain ignored extension text");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="XFD1048576" t="s"><v>1</v></c>)",
+        "source max-coordinate rich shared string fixture should store the edge as t=s");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    check(sheet.cell_count() == 4,
+        "source max-coordinate rich shared string materialization should load sparse source records only");
+    check(!sheet.has_pending_changes(),
+        "read-only source max-coordinate rich shared string materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source max-coordinate rich shared string materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source max-coordinate rich shared string materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only source max-coordinate rich shared string materialization should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "read-only source max-coordinate rich shared string materialization should not expose dirty cell count");
+
+    const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+    const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+    check(by_position.kind() == fastxlsx::CellValueKind::Text &&
+            by_position.text_value() == "rich-A&B <edge>",
+        "source max-coordinate rich shared string should flatten runs through row/column overloads");
+    check(by_a1.kind() == fastxlsx::CellValueKind::Text &&
+            by_a1.text_value() == "rich-A&B <edge>",
+        "source max-coordinate rich shared string should flatten runs through A1 overloads");
+    check(sheet.get_cell("A1").text_value() == "source-rich-a1",
+        "source rich shared string fixture should materialize A1 beside the edge");
+    check(sheet.get_cell("A2").text_value() == "source-rich-a2",
+        "source rich shared string fixture should materialize A2 beside the edge");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "source max-coordinate rich shared string range snapshot should expose the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "source max-coordinate rich shared string range snapshot should preserve legal boundary coordinates");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    edge_cells[0].value.text_value() == "rich-A&B <edge>",
+                "source max-coordinate rich shared string range snapshot should preserve flattened text");
+        }
+    }
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source max-coordinate rich shared string materialization should keep the handle clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source max-coordinate rich shared string materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after source max-coordinate rich shared string materialization should not create public edits");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after source max-coordinate rich shared string materialization should copy source entries");
+
+    sheet.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "source max-coordinate rich shared string erase should not create edit diagnostics");
+    check(sheet.has_pending_changes(),
+        "source max-coordinate rich shared string erase should dirty the materialized handle");
+    check(sheet.cell_count() == 3,
+        "source max-coordinate rich shared string erase should shrink the sparse record count");
+    check(!sheet.try_cell(1048576, 16384).has_value(),
+        "source max-coordinate rich shared string erase should remove row/column readback");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.get_cell("XFD1048576");
+    }), "source max-coordinate rich shared string get_cell should throw after erase");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "source max-coordinate rich shared string range snapshot should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "source max-coordinate rich shared string erase dirty diagnostics should use source sheet name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "source max-coordinate rich shared string erase dirty diagnostics should report remaining sparse records");
+
+    editor.save_as(erase_output);
+    check(!sheet.has_pending_changes(),
+        "save_as after source max-coordinate rich shared string erase should clean the handle");
+    check(editor.pending_change_count() == 1,
+        "save_as after source max-coordinate rich shared string erase should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after source max-coordinate rich shared string erase should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after source max-coordinate rich shared string erase should clear dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after source max-coordinate rich shared string erase should clear summaries");
+
+    const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+    const std::string erase_worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(erase_worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "source max-coordinate rich shared string erase output should shrink dimension to remaining source records");
+    check_not_contains(erase_worksheet_xml, "XFD1048576",
+        "source max-coordinate rich shared string erase output should omit the erased edge reference");
+    check_not_contains(erase_worksheet_xml, "rich-A&amp;B",
+        "source max-coordinate rich shared string erase output should omit the erased flattened text");
+    check_contains(erase_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-rich-a1</t></is></c>)",
+        "source max-coordinate rich shared string erase output should project source A1 as inline text");
+    check_contains(erase_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "source max-coordinate rich shared string erase output should preserve source B1");
+    check_contains(erase_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>source-rich-a2</t></is></c>)",
+        "source max-coordinate rich shared string erase output should project source A2 as inline text");
+    check(erase_entries.find("xl/sharedStrings.xml") != erase_entries.end() &&
+            erase_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "source max-coordinate rich shared string erase output should preserve source sharedStrings bytes");
+    check(erase_entries.at("xl/worksheets/sheet2.xml") ==
+            source_entries.at("xl/worksheets/sheet2.xml"),
+        "source max-coordinate rich shared string erase output should preserve untouched sheets byte-for-byte");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="XFD1048576" t="s"><v>1</v></c>)",
+        "source max-coordinate rich shared string erase should not mutate the source package bytes");
 }
 
 void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
@@ -2313,6 +8192,69 @@ void test_public_worksheet_editor_a1_overloads_reject_invalid_references()
         "invalid A1 erase_cell should update last_edit_error");
 }
 
+void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-row-column-invalid-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-row-column-invalid-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before_reads = sheet.cell_count();
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
+        "row/column try_cell should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 0); }),
+        "row/column get_cell should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(1048577, 1); }),
+        "row/column try_cell should reject rows beyond Excel limits");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 16385); }),
+        "row/column get_cell should reject columns beyond Excel limits");
+    check(sheet.cell_count() == cell_count_before_reads,
+        "invalid row/column reads should not mutate sparse cell count");
+    check(!sheet.try_cell(1048576, 16384).has_value(),
+        "row/column try_cell should accept the last legal Excel coordinate");
+    check(!editor.last_edit_error().has_value(),
+        "invalid row/column reads should not update last_edit_error");
+
+    const std::size_t cell_count_before_mutations = sheet.cell_count();
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-row-zero"));
+    }), "row/column set_cell should reject row zero");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(1, 16385, fastxlsx::CellValue::text("invalid-column-overflow"));
+    }), "row/column set_cell should reject columns beyond Excel limits");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell(1048577, 1); }),
+        "row/column erase_cell should reject rows beyond Excel limits");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell(1, 0); }),
+        "row/column erase_cell should reject column zero");
+    check(sheet.cell_count() == cell_count_before_mutations,
+        "invalid row/column mutations should not mutate sparse cell count");
+    check(!sheet.has_pending_changes(),
+        "invalid row/column mutations should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "invalid row/column mutations should not make save_as pending");
+    check(editor.last_edit_error().has_value(),
+        "invalid row/column mutations should update last_edit_error");
+    check(sheet.get_cell(1, 1).text_value() == "placeholder-a1",
+        "invalid row/column mutations should preserve existing cells");
+
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("row-column-recovered"));
+    check(!editor.last_edit_error().has_value(),
+        "valid row/column mutation should clear prior mutation diagnostics");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "row-column-recovered",
+        "valid row/column mutation after invalid coordinates should still persist");
+    check_not_contains(worksheet_xml, "invalid-row-zero",
+        "invalid row/column set_cell payload should not leak into saved XML");
+    check_not_contains(worksheet_xml, "invalid-column-overflow",
+        "invalid overflow-column set_cell payload should not leak into saved XML");
+}
+
 void test_public_worksheet_editor_sparse_cells_snapshot()
 {
     const std::filesystem::path source =
@@ -2525,6 +8467,3733 @@ void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
         "blocked same-sheet replacement should not leak into output");
     check_not_contains(output_entries.at("xl/workbook.xml"), "BlockedPublicRename",
         "blocked same-sheet rename should not leak into workbook catalog");
+}
+
+void test_public_worksheet_editor_materializes_source_supported_values()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-supported-values-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-supported-values-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<sheetData><row r="1">)"
+          R"(<c r="A1"/>)"
+          R"(<c r="B1" t="b"><v>1</v></c>)"
+          R"(<c r="C1" t="b"><v>0</v></c>)"
+          R"(<c r="D1" t="inlineStr"><is><t></t></is></c>)"
+          R"(<c r="E1" t="inlineStr"><is/></c>)"
+          R"(</row></sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> d1 = sheet.try_cell("D1");
+    const std::optional<fastxlsx::CellValue> e1 = sheet.try_cell("E1");
+    check(sheet.cell_count() == 5,
+        "WorksheetEditor should count source blank and boolean cells as sparse records");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Blank,
+        "WorksheetEditor should materialize self-closing source cells as explicit blank");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Boolean
+            && b1->boolean_value(),
+        "WorksheetEditor should materialize source boolean true");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Boolean
+            && !c1->boolean_value(),
+        "WorksheetEditor should materialize source boolean false");
+    check(d1.has_value() && d1->kind() == fastxlsx::CellValueKind::Text
+            && d1->text_value().empty(),
+        "WorksheetEditor should materialize empty source inline text as empty text");
+    check(e1.has_value() && e1->kind() == fastxlsx::CellValueKind::Blank,
+        "WorksheetEditor should materialize inline string cells without text as blank");
+    check(!sheet.has_pending_changes(),
+        "read-only supported source value materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only supported source value materialization should not dirty WorkbookEditor");
+
+    sheet.set_cell("F2", fastxlsx::CellValue::text("supported-values-new-inline"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:F2"/>)",
+        "flushed supported source values should contribute to projected dimension");
+    check_contains(worksheet_xml, R"(<c r="A1"/>)",
+        "source blank should be projected as an explicit blank cell");
+    check_contains(worksheet_xml, R"(<c r="B1" t="b"><v>1</v></c>)",
+        "source boolean true should be projected as a boolean cell");
+    check_contains(worksheet_xml, R"(<c r="C1" t="b"><v>0</v></c>)",
+        "source boolean false should be projected as a boolean cell");
+    check_contains(worksheet_xml,
+        R"(<c r="D1" t="inlineStr"><is><t></t></is></c>)",
+        "empty source inline text should remain an explicit empty text cell");
+    check_contains(worksheet_xml, R"(<c r="E1"/>)",
+        "source inline string without text should be projected as blank");
+    check_contains(worksheet_xml,
+        R"(<c r="F2" t="inlineStr"><is><t>supported-values-new-inline</t></is></c>)",
+        "new WorksheetEditor text should continue to write inline strings");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "dirty supported source value projection should not introduce shared string indexes");
+    check(output_entries.find("xl/sharedStrings.xml") == output_entries.end(),
+        "dirty supported source value projection should not create a sharedStrings part");
+    check_not_contains(output_entries.at("xl/_rels/workbook.xml.rels"),
+        "relationships/sharedStrings",
+        "dirty supported source value projection should not create a sharedStrings relationship");
+    check_not_contains(output_entries.at("[Content_Types].xml"),
+        "spreadsheetml.sharedStrings+xml",
+        "dirty supported source value projection should not create a sharedStrings content type");
+}
+
+void test_public_worksheet_editor_flattens_source_inline_rich_text()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-inline-rich-text-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-inline-rich-text-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-inline-rich")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-inline-rich")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<sheetData><row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is>)"
+          R"(<r><rPr><b/><color rgb="FFFF0000"/></rPr><t>rich-</t></r>)"
+          R"(<r><t>A&amp;B</t></r>)"
+          R"(<r><t xml:space="preserve"> kept </t></r>)"
+          R"(<rPh sb="0" eb="1"><t>ignored-phonetic</t></rPh>)"
+          R"(<phoneticPr fontId="1"/>)"
+          R"(<extLst><ext uri="{fastxlsx-test}"><t>ignored-ext</t></ext></extLst>)"
+          R"(</is></c>)"
+          R"(</row></sheetData>)"
+          R"(</worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "rich-A&B kept ",
+        "WorksheetEditor should flatten source inline rich text and ignore phonetic/ext text");
+    check(!sheet.has_pending_changes(),
+        "inline rich text materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "inline rich text materialization should not dirty WorkbookEditor");
+
+    sheet.set_cell("B2", fastxlsx::CellValue::text("inline-rich-new"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t xml:space="preserve">rich-A&amp;B kept </t></is></c>)",
+        "dirty projection should write flattened source inline rich text as plain inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>inline-rich-new</t></is></c>)",
+        "dirty projection should include edits beside flattened inline rich text");
+    check_not_contains(worksheet_xml, "<rPr>",
+        "dirty projection should not preserve inline rich text formatting");
+    check_not_contains(worksheet_xml, "<rPh",
+        "dirty projection should not preserve inline phonetic markup");
+    check_not_contains(worksheet_xml, "ignored-phonetic",
+        "dirty projection should not keep ignored inline phonetic text");
+    check_not_contains(worksheet_xml, "ignored-ext",
+        "dirty projection should not keep ignored inline extension text");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-inline-rich",
+        "dirty inline rich text projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-prefixed-inline-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-inline-noop-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-inline-dirty-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("prefixed-inline-placeholder")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-prefixed-inline")});
+        writer.close();
+    }
+
+    const std::string worksheet_xml =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test">)"
+          R"(<x:sheetData>)"
+          R"(<x:row r="1">)"
+          R"(<x:c r="A1" t="inlineStr"><x:is><x:t>prefixed-inline</x:t></x:is></x:c>)"
+          R"(<x:c r="B1" t="inlineStr"><x:is><x:t xml:space="preserve"> spaced </x:t></x:is></x:c>)"
+          R"(<x:c r="C1" t="inlineStr"><x:is>)"
+          R"(<x:r><x:rPr><x:b/></x:rPr><x:t>rich-</x:t></x:r>)"
+          R"(<x:r><x:t>tail</x:t></x:r>)"
+          R"(<x:rPh sb="1" eb="1"/><x:phoneticPr fontId="1"/><x:extLst/>)"
+          R"(<x:rPh sb="0" eb="1"><fx:opaque><x:r><x:t>ignored-nested-phonetic</x:t></x:r></fx:opaque></x:rPh>)"
+          R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:r><x:t>ignored-nested-ext</x:t></x:r></fx:opaque></x:ext></x:extLst>)"
+          R"(</x:is></x:c>)"
+          R"(</x:row>)"
+          R"(<x:row r="2">)"
+          R"(<x:c r="A2"><x:v>42</x:v></x:c>)"
+          R"(<x:c r="B2" t="b"><x:v>1</x:v></x:c>)"
+          R"(<x:c r="C2"><x:f>SUM(A2:A2)</x:f><x:v>999</x:v></x:c>)"
+          R"(</x:row>)"
+          R"(</x:sheetData>)"
+          R"(</x:worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<x:worksheet",
+        "prefixed inline fixture should use a qualified worksheet root");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<x:is>",
+        "prefixed inline fixture should use qualified inline-string wrappers");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "ignored-nested-ext",
+        "prefixed inline fixture should carry nested ignored extension text");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<x:extLst/>",
+        "prefixed inline fixture should carry self-closing ignored metadata");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
+    const std::optional<fastxlsx::CellValue> b2 = sheet.try_cell("B2");
+    const std::optional<fastxlsx::CellValue> c2 = sheet.try_cell("C2");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "prefixed-inline",
+        "WorksheetEditor should materialize prefixed source inline text by local-name");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == " spaced ",
+        "WorksheetEditor should keep xml:space text from prefixed inline wrappers");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Text
+            && c1->text_value() == "rich-tail",
+        "WorksheetEditor should flatten prefixed source inline rich text by local-name");
+    check(a2.has_value() && a2->kind() == fastxlsx::CellValueKind::Number
+            && a2->number_value() == 42.0,
+        "WorksheetEditor should materialize prefixed numeric value wrappers");
+    check(b2.has_value() && b2->kind() == fastxlsx::CellValueKind::Boolean
+            && b2->boolean_value(),
+        "WorksheetEditor should materialize prefixed boolean value wrappers");
+    check(c2.has_value() && c2->kind() == fastxlsx::CellValueKind::Formula
+            && c2->text_value() == "SUM(A2:A2)",
+        "WorksheetEditor should materialize prefixed formula wrappers and ignore cached values");
+    check(!sheet.has_pending_changes(),
+        "prefixed inline materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "prefixed inline materialization should not dirty WorkbookEditor");
+
+    editor.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after prefixed inline materialization should copy source entries");
+
+    sheet.set_cell("D2", fastxlsx::CellValue::text("prefixed-inline-dirty"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string dirty_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(dirty_worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "dirty prefixed inline projection should refresh the sparse-store dimension");
+    check_contains(dirty_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>prefixed-inline</t></is></c>)",
+        "dirty projection should write prefixed source inline text as plain inlineStr");
+    check_contains(dirty_worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c>)",
+        "dirty projection should preserve prefixed inline whitespace in plain inlineStr");
+    check_contains(dirty_worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>rich-tail</t></is></c>)",
+        "dirty projection should write flattened prefixed inline rich text as plain text");
+    check_contains(dirty_worksheet_xml, R"(<c r="A2"><v>42</v></c>)",
+        "dirty projection should preserve materialized numeric values");
+    check_contains(dirty_worksheet_xml, R"(<c r="B2" t="b"><v>1</v></c>)",
+        "dirty projection should preserve materialized boolean values");
+    check_contains(dirty_worksheet_xml, R"(<c r="C2"><f>SUM(A2:A2)</f></c>)",
+        "dirty projection should preserve formulas without stale cached values");
+    check_contains(dirty_worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>prefixed-inline-dirty</t></is></c>)",
+        "dirty projection should include edits beside prefixed source cells");
+    check_not_contains(dirty_worksheet_xml, "<x:",
+        "dirty full-worksheet projection should not preserve source element prefixes");
+    check_not_contains(dirty_worksheet_xml, "ignored-phonetic",
+        "dirty projection should not keep ignored prefixed phonetic text");
+    check_not_contains(dirty_worksheet_xml, "ignored-nested-phonetic",
+        "dirty projection should not keep nested ignored prefixed phonetic text");
+    check_not_contains(dirty_worksheet_xml, "ignored-nested-ext",
+        "dirty projection should not keep nested ignored prefixed extension text");
+    check_not_contains(dirty_worksheet_xml, "ignored-ext",
+        "dirty projection should not keep ignored prefixed extension text");
+    check_not_contains(dirty_worksheet_xml, "<v>999</v>",
+        "dirty projection should not preserve stale cached formula values");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "dirty prefixed inline projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-source.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-dirty-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(2.0),
+            fastxlsx::CellView::boolean(true),
+            fastxlsx::CellView::formula("A1+1")});
+        fastxlsx::WorksheetWriter shared = writer.add_worksheet("Shared");
+        shared.append_row({fastxlsx::CellView::text("requires-sharedStrings")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    check(entries.find("xl/sharedStrings.xml") != entries.end(),
+        "lazy sharedStrings fixture should contain a sharedStrings part for the second sheet");
+    check_not_contains(entries.at("xl/worksheets/sheet1.xml"), R"(t="s")",
+        "lazy sharedStrings fixture Data sheet should not contain shared string indexes");
+    check_contains(entries.at("xl/worksheets/sheet2.xml"), R"(t="s")",
+        "lazy sharedStrings fixture Shared sheet should contain shared string indexes");
+    const std::string shared_strings_before = entries.at("xl/sharedStrings.xml");
+
+    std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+    replace_first_or_throw(workbook_relationships,
+        R"(Target="sharedStrings.xml")",
+        R"(Target="missingSharedStrings.xml")");
+    write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+            && a1->number_value() == 2.0,
+        "WorksheetEditor should materialize non-shared-string numbers without loading sharedStrings");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Boolean
+            && b1->boolean_value(),
+        "WorksheetEditor should materialize non-shared-string booleans without loading sharedStrings");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Formula
+            && c1->text_value() == "A1+1",
+        "WorksheetEditor should materialize formulas without loading sharedStrings");
+    check(!sheet.has_pending_changes(),
+        "lazy sharedStrings non-index materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "lazy sharedStrings non-index materialization should not dirty the editor");
+
+    sheet.set_cell("D1", fastxlsx::CellValue::text("inline-after-lazy-sharedStrings"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="D1" t="inlineStr"><is><t>inline-after-lazy-sharedStrings</t></is></c>)",
+        "dirty lazy sharedStrings projection should still write new text as inlineStr");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "dirty lazy sharedStrings projection should not introduce shared string indexes");
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "dirty lazy sharedStrings projection should preserve the source sharedStrings bytes");
+    check_contains(output_entries.at("xl/_rels/workbook.xml.rels"),
+        R"(Target="missingSharedStrings.xml")",
+        "dirty lazy sharedStrings projection should not repair the stale workbook relationship");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy sharedStrings materialization should not mutate the source package");
+
+    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
+    bool failed_shared_sheet = false;
+    try {
+        (void)failing_editor.worksheet("Shared");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_shared_sheet = true;
+        check_contains(error.what(),
+            "workbook sharedStrings relationship targets an unknown package part",
+            "worksheet with shared string indexes should still fail on the stale relationship");
+    }
+    check(failed_shared_sheet,
+        "worksheet with shared string indexes should force sharedStrings lookup");
+    check(!failing_editor.has_pending_changes(),
+        "failed lazy sharedStrings lookup should keep the editor clean");
+    check(failing_editor.pending_materialized_worksheet_names().empty(),
+        "failed lazy sharedStrings lookup should not leave a dirty materialized name");
+    check(!failing_editor.last_edit_error().has_value(),
+        "failed lazy sharedStrings materialization should not update last_edit_error");
+}
+
+void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_until_index_cells()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-source.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(7.0)});
+        fastxlsx::WorksheetWriter shared = writer.add_worksheet("Shared");
+        shared.append_row({fastxlsx::CellView::text("duplicate-rel-needs-sharedStrings")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+    replace_first_or_throw(workbook_relationships,
+        R"(</Relationships>)",
+        R"(<Relationship Id="rId99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)"
+        R"(</Relationships>)");
+    const std::string shared_strings_before = entries.at("xl/sharedStrings.xml");
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+            && a1->number_value() == 7.0,
+        "duplicate sharedStrings relationships should not block a non-index sheet");
+    check(!editor.has_pending_changes(),
+        "lazy duplicate sharedStrings relationship read should not dirty the editor");
+
+    sheet.set_cell("B1", fastxlsx::CellValue::text("after-duplicate-rel-lazy-load"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "dirty lazy duplicate-rel projection should preserve source sharedStrings bytes");
+    check_contains(output_entries.at("xl/_rels/workbook.xml.rels"), R"(Id="rId99")",
+        "dirty lazy duplicate-rel projection should preserve duplicate relationship bytes");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="B1" t="inlineStr"><is><t>after-duplicate-rel-lazy-load</t></is></c>)",
+        "dirty lazy duplicate-rel projection should still write new text as inlineStr");
+
+    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
+    bool failed_shared_sheet = false;
+    try {
+        (void)failing_editor.worksheet("Shared");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_shared_sheet = true;
+        check_contains(error.what(),
+            "workbook sharedStrings lookup found multiple sharedStrings relationships",
+            "worksheet with shared string indexes should fail on duplicate relationship metadata");
+    }
+    check(failed_shared_sheet,
+        "worksheet with shared string indexes should force duplicate relationship validation");
+    check(!failing_editor.has_pending_changes(),
+        "failed duplicate sharedStrings lookup should keep the editor clean");
+    check(failing_editor.pending_materialized_worksheet_names().empty(),
+        "failed duplicate sharedStrings lookup should not leave a dirty materialized name");
+    check(!failing_editor.last_edit_error().has_value(),
+        "failed duplicate sharedStrings lookup should not update last_edit_error");
+}
+
+void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_index_cells()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-source.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(11.0)});
+        fastxlsx::WorksheetWriter shared = writer.add_worksheet("Shared");
+        shared.append_row({fastxlsx::CellView::text("malformed-xml-needs-sharedStrings")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/sharedStrings.xml") = R"(<notSst/>)";
+    write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+            && a1->number_value() == 11.0,
+        "malformed sharedStrings XML should not block a non-index sheet");
+    check(!editor.has_pending_changes(),
+        "lazy malformed sharedStrings XML read should not dirty the editor");
+
+    sheet.set_cell("B1", fastxlsx::CellValue::text("after-malformed-xml-lazy-load"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == R"(<notSst/>)",
+        "dirty lazy malformed-xml projection should preserve malformed sharedStrings bytes");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="B1" t="inlineStr"><is><t>after-malformed-xml-lazy-load</t></is></c>)",
+        "dirty lazy malformed-xml projection should still write new text as inlineStr");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy malformed sharedStrings XML materialization should not mutate the source package");
+
+    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
+    bool failed_shared_sheet = false;
+    try {
+        (void)failing_editor.worksheet("Shared");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_shared_sheet = true;
+        check_contains(error.what(),
+            "CellStore sharedStrings loader root is missing an sst element",
+            "worksheet with shared string indexes should fail on malformed sharedStrings XML");
+    }
+    check(failed_shared_sheet,
+        "worksheet with shared string indexes should force malformed sharedStrings XML parsing");
+    check(!failing_editor.has_pending_changes(),
+        "failed malformed sharedStrings XML lookup should keep the editor clean");
+    check(failing_editor.pending_materialized_worksheet_names().empty(),
+        "failed malformed sharedStrings XML lookup should not leave a dirty materialized name");
+    check(!failing_editor.last_edit_error().has_value(),
+        "failed malformed sharedStrings XML lookup should not update last_edit_error");
+}
+
+void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until_index_cells()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-source.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(13.0)});
+        fastxlsx::WorksheetWriter shared = writer.add_worksheet("Shared");
+        shared.append_row({fastxlsx::CellView::text("wrong-content-type-needs-sharedStrings")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    std::string& content_types = entries.at("[Content_Types].xml");
+    replace_first_or_throw(content_types,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
+    const std::string shared_strings_before = entries.at("xl/sharedStrings.xml");
+    write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+            && a1->number_value() == 13.0,
+        "wrong sharedStrings content type should not block a non-index sheet");
+    check(!editor.has_pending_changes(),
+        "lazy wrong sharedStrings content type read should not dirty the editor");
+
+    sheet.set_cell("B1", fastxlsx::CellValue::text("after-wrong-content-type-lazy-load"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "dirty lazy wrong-content-type projection should preserve sharedStrings bytes");
+    check_contains(output_entries.at("[Content_Types].xml"),
+        R"(PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")",
+        "dirty lazy wrong-content-type projection should preserve wrong content type metadata");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="B1" t="inlineStr"><is><t>after-wrong-content-type-lazy-load</t></is></c>)",
+        "dirty lazy wrong-content-type projection should still write new text as inlineStr");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy wrong sharedStrings content type materialization should not mutate the source package");
+
+    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
+    bool failed_shared_sheet = false;
+    try {
+        (void)failing_editor.worksheet("Shared");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed_shared_sheet = true;
+        check_contains(error.what(),
+            "workbook sharedStrings relationship target is not a sharedStrings part",
+            "worksheet with shared string indexes should fail on wrong sharedStrings content type");
+    }
+    check(failed_shared_sheet,
+        "worksheet with shared string indexes should force sharedStrings content type validation");
+    check(!failing_editor.has_pending_changes(),
+        "failed wrong sharedStrings content type lookup should keep the editor clean");
+    check(failing_editor.pending_materialized_worksheet_names().empty(),
+        "failed wrong sharedStrings content type lookup should not leave a dirty materialized name");
+    check(!failing_editor.last_edit_error().has_value(),
+        "failed wrong sharedStrings content type lookup should not update last_edit_error");
+}
+
+void test_public_worksheet_editor_materializes_empty_source_worksheets()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-empty-source")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-empty-source")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view body) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(body) + "</worksheet>";
+    };
+
+    const auto expect_empty_source_worksheet_materialization =
+        [&](std::string_view tag, std::string_view replacement_worksheet_xml) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-empty-source-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-empty-source-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            check(sheet.cell_count() == 0,
+                "empty source worksheet should materialize as an empty sparse store");
+            check(!sheet.try_cell("A1").has_value(),
+                "empty source worksheet should not invent an A1 sparse record");
+            check(sheet.sparse_cells().empty(),
+                "empty source worksheet should expose no sparse snapshots");
+            check(!sheet.has_pending_changes(),
+                "read-only empty source worksheet materialization should start clean");
+            check(!editor.has_pending_changes(),
+                "read-only empty source worksheet materialization should not dirty WorkbookEditor");
+
+            const std::string inserted_text =
+                std::string("empty-source-materialized-") + std::string(tag);
+            sheet.set_cell("B2", fastxlsx::CellValue::text(inserted_text));
+            editor.save_as(output);
+
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+            check_contains(worksheet_xml, R"(<dimension ref="B2"/>)",
+                "empty source worksheet edit should project a dimension from sparse records");
+            check_contains(worksheet_xml,
+                R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>)"
+                    + inserted_text + R"(</t></is></c></row></sheetData>)",
+                "empty source worksheet edit should project standalone sheetData");
+            check_not_contains(worksheet_xml, "placeholder-empty-source",
+                "empty source worksheet materialization should not revive original placeholder cells");
+            check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-empty-source",
+                "empty source worksheet materialization should preserve untouched sheets");
+        };
+
+    expect_empty_source_worksheet_materialization(
+        "missing-sheet-data", worksheet_xml(R"(<dimension ref="A1"/>)"));
+
+    expect_empty_source_worksheet_materialization(
+        "self-closing-sheet-data",
+        worksheet_xml(R"(<dimension ref="A1"/><sheetData/>)"));
+}
+
+void test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_projection()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-wrapper-metadata-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-wrapper-metadata-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-wrapper")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-wrapper-metadata")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<sheetPr><tabColor rgb="FFFF0000"/></sheetPr>)"
+          R"(<dimension ref="A1"/>)"
+          R"(<sheetViews><sheetView workbookViewId="0"/></sheetViews>)"
+          R"(<sheetFormatPr defaultRowHeight="15"/>)"
+          R"(<cols><col min="1" max="1" width="20" customWidth="1"/></cols>)"
+          R"(<sheetData><row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is><t>source-wrapper</t></is></c>)"
+          R"(</row></sheetData>)"
+          R"(<autoFilter ref="A1:A1"/>)"
+          R"(</worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "source-wrapper",
+        "WorksheetEditor should materialize supported cells beside source wrapper metadata");
+    check(!sheet.has_pending_changes(),
+        "read-only source wrapper metadata materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source wrapper metadata materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source wrapper metadata materialization should not queue Patch edits");
+
+    sheet.set_cell("B2", fastxlsx::CellValue::text("wrapper-new-inline"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "dirty source wrapper metadata projection should generate sparse-store dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-wrapper</t></is></c>)",
+        "dirty source wrapper metadata projection should keep materialized source cells");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>wrapper-new-inline</t></is></c>)",
+        "dirty source wrapper metadata projection should write new inline text");
+    check_not_contains(worksheet_xml, "<sheetPr",
+        "dirty materialized projection should not preserve source sheetPr metadata");
+    check_not_contains(worksheet_xml, "tabColor",
+        "dirty materialized projection should not preserve source tabColor metadata");
+    check_not_contains(worksheet_xml, "<sheetViews",
+        "dirty materialized projection should not preserve source sheetViews metadata");
+    check_not_contains(worksheet_xml, "<sheetFormatPr",
+        "dirty materialized projection should not preserve source sheetFormatPr metadata");
+    check_not_contains(worksheet_xml, "<cols>",
+        "dirty materialized projection should not preserve source cols metadata");
+    check_not_contains(worksheet_xml, "<autoFilter",
+        "dirty materialized projection should not preserve source autoFilter metadata");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-wrapper-metadata",
+        "dirty source wrapper metadata projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_drops_relationship_wrapper_metadata_without_pruning()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("Name"),
+            fastxlsx::CellView::text("Value")});
+        data.append_row({fastxlsx::CellView::text("source-link-row"),
+            fastxlsx::CellView::number(7.0)});
+        data.add_external_hyperlink(2, 1, "https://example.com/source-wrapper-link");
+
+        fastxlsx::TableOptions table;
+        table.name = "RelationshipWrapperTable";
+        table.column_names = {"Name", "Value"};
+        data.add_table({1, 1, 2, 2}, table);
+
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-relationship-wrapper")});
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_worksheet_xml =
+        source_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(source_worksheet_xml, "<hyperlinks>",
+        "source relationship-wrapper fixture should contain hyperlinks metadata");
+    check_contains(source_worksheet_xml, "<tableParts",
+        "source relationship-wrapper fixture should contain tableParts metadata");
+    check(source_entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "source relationship-wrapper fixture should contain worksheet relationships");
+    check(source_entries.contains("xl/tables/table1.xml"),
+        "source relationship-wrapper fixture should contain a table part");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
+    const std::optional<fastxlsx::CellValue> b2 = sheet.try_cell("B2");
+    check(a2.has_value() && a2->kind() == fastxlsx::CellValueKind::Text
+            && a2->text_value() == "source-link-row",
+        "WorksheetEditor should materialize source cells beside relationship wrapper metadata");
+    check(b2.has_value() && b2->kind() == fastxlsx::CellValueKind::Number
+            && b2->number_value() == 7.0,
+        "WorksheetEditor should materialize source numbers beside relationship wrapper metadata");
+    check(!sheet.has_pending_changes(),
+        "relationship wrapper metadata materialization should start clean");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("relationship-wrapper-new"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>source-link-row</t></is></c>)",
+        "dirty relationship wrapper projection should keep materialized source text");
+    check_contains(worksheet_xml, R"(<c r="B2"><v>7</v></c>)",
+        "dirty relationship wrapper projection should keep materialized source number");
+    check_contains(worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>relationship-wrapper-new</t></is></c>)",
+        "dirty relationship wrapper projection should include the new edit");
+    check_not_contains(worksheet_xml, "<hyperlinks>",
+        "dirty relationship wrapper projection should drop source hyperlinks XML");
+    check_not_contains(worksheet_xml, "<tableParts",
+        "dirty relationship wrapper projection should drop source tableParts XML");
+    check_not_contains(worksheet_xml, "r:id",
+        "dirty relationship wrapper projection should not keep source relationship references");
+    check(output_entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "dirty projection should not prune the source worksheet relationships part");
+    check(output_entries.at("xl/worksheets/_rels/sheet1.xml.rels")
+            == source_entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        "dirty projection should preserve source worksheet relationship bytes");
+    check(output_entries.contains("xl/tables/table1.xml"),
+        "dirty projection should not prune the source table part");
+    check(output_entries.at("xl/tables/table1.xml")
+            == source_entries.at("xl/tables/table1.xml"),
+        "dirty projection should preserve source table bytes");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+        "keep-relationship-wrapper",
+        "dirty relationship wrapper projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_drops_range_wrapper_metadata_on_dirty_projection()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-range-wrapper-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-range-wrapper-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-range-wrapper")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-range-wrapper")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<dimension ref="A1:C3"/>)"
+          R"(<sheetData>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is><t>range-wrapper-source</t></is></c>)"
+          R"(<c r="B1"><v>3</v></c>)"
+          R"(</row>)"
+          R"(<row r="2">)"
+          R"(<c r="A2" t="b"><v>1</v></c>)"
+          R"(</row>)"
+          R"(</sheetData>)"
+          R"(<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>)"
+          R"(<dataValidations count="1">)"
+          R"(<dataValidation type="whole" operator="between" sqref="B2:B3">)"
+          R"(<formula1>1</formula1><formula2>10</formula2>)"
+          R"(</dataValidation>)"
+          R"(</dataValidations>)"
+          R"(<conditionalFormatting sqref="B2:B3">)"
+          R"(<cfRule type="cellIs" priority="1" operator="greaterThan">)"
+          R"(<formula>5</formula>)"
+          R"(</cfRule>)"
+          R"(</conditionalFormatting>)"
+          R"(<ignoredErrors><ignoredError sqref="A1:C3" numberStoredAsText="1"/></ignoredErrors>)"
+          R"(<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>)"
+          R"(<pageSetup orientation="landscape"/>)"
+          R"(</worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "range-wrapper-source",
+        "WorksheetEditor should materialize source text beside range wrapper metadata");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Number
+            && b1->number_value() == 3.0,
+        "WorksheetEditor should materialize source numbers beside range wrapper metadata");
+    check(a2.has_value() && a2->kind() == fastxlsx::CellValueKind::Boolean
+            && a2->boolean_value(),
+        "WorksheetEditor should materialize source booleans beside range wrapper metadata");
+    check(!sheet.has_pending_changes(),
+        "range wrapper metadata materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "range wrapper metadata materialization should not dirty WorkbookEditor");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("range-wrapper-new"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "dirty range wrapper projection should keep the sparse-store dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>range-wrapper-source</t></is></c>)",
+        "dirty range wrapper projection should keep materialized source text");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>3</v></c>)",
+        "dirty range wrapper projection should keep materialized source number");
+    check_contains(worksheet_xml, R"(<c r="A2" t="b"><v>1</v></c>)",
+        "dirty range wrapper projection should keep materialized source boolean");
+    check_contains(worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>range-wrapper-new</t></is></c>)",
+        "dirty range wrapper projection should include the new edit");
+    check_not_contains(worksheet_xml, "<mergeCells",
+        "dirty range wrapper projection should drop source mergeCells metadata");
+    check_not_contains(worksheet_xml, "<dataValidations",
+        "dirty range wrapper projection should drop source dataValidations metadata");
+    check_not_contains(worksheet_xml, "<conditionalFormatting",
+        "dirty range wrapper projection should drop source conditionalFormatting metadata");
+    check_not_contains(worksheet_xml, "<ignoredErrors",
+        "dirty range wrapper projection should drop source ignoredErrors metadata");
+    check_not_contains(worksheet_xml, "<pageMargins",
+        "dirty range wrapper projection should drop source pageMargins metadata");
+    check_not_contains(worksheet_xml, "<pageSetup",
+        "dirty range wrapper projection should drop source pageSetup metadata");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-range-wrapper",
+        "dirty range wrapper projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_drops_source_comments_and_processing_instructions_on_dirty_projection()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-comments-pi-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-comments-pi-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-comments-pi")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-comments-pi")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<!--source-comment-before-root-->)"
+          R"(<?source-pi-before-root keep?>)"
+          R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<!--source-comment-inside-root-->)"
+          R"(<?source-pi-inside-root keep?>)"
+          R"(<sheetData>)"
+          R"(<!--source-comment-inside-sheetData-->)"
+          R"(<?source-pi-inside-sheetData keep?>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is><t>source-comments-pi</t></is></c>)"
+          R"(</row>)"
+          R"(<!--source-comment-after-row-->)"
+          R"(</sheetData>)"
+          R"(<?source-pi-after-sheetData keep?>)"
+          R"(</worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "source-comments-pi",
+        "WorksheetEditor should materialize supported cells beside source comments and processing instructions");
+    check(!sheet.has_pending_changes(),
+        "read-only source comment/PI materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source comment/PI materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source comment/PI materialization should not queue Patch edits");
+
+    sheet.set_cell("B2", fastxlsx::CellValue::text("comments-pi-new-inline"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "dirty source comment/PI projection should generate sparse-store dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-comments-pi</t></is></c>)",
+        "dirty source comment/PI projection should keep materialized source cells");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>comments-pi-new-inline</t></is></c>)",
+        "dirty source comment/PI projection should write new inline text");
+    check_not_contains(worksheet_xml, "source-comment-",
+        "dirty materialized projection should not preserve source comments");
+    check_not_contains(worksheet_xml, "source-pi-",
+        "dirty materialized projection should not preserve source processing instructions");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-comments-pi",
+        "dirty source comment/PI projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_copy_original()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-readonly-materialized-noop-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-readonly-materialized-noop-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("noop-shared-a"),
+            fastxlsx::CellView::text("noop-shared-b")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-noop-materialized")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<!--readonly-noop-comment-before-root-->)"
+          R"(<?readonly-noop-pi keep?>)"
+          R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<sheetPr><tabColor rgb="FF00FF00"/></sheetPr>)"
+          R"(<dimension ref="A1:B1"/>)"
+          R"(<sheetViews><sheetView workbookViewId="0"/></sheetViews>)"
+          R"(<sheetData><row r="1">)"
+          R"(<c r="A1" t="s"><v>0</v></c>)"
+          R"(<c r="B1" t="s"><v>1</v></c>)"
+          R"(</row></sheetData>)"
+          R"(<autoFilter ref="A1:B1"/>)"
+          R"(</worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "noop-shared-a",
+        "read-only no-op materialization should still read source shared string A1");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "noop-shared-b",
+        "read-only no-op materialization should still read source shared string B1");
+    check(!sheet.has_pending_changes(),
+        "read-only no-op materialization should keep the sheet clean");
+    check(!editor.has_pending_changes(),
+        "read-only no-op materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "read-only no-op materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only no-op materialization should not expose dirty materialized names");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after read-only materialization should keep the sheet clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after read-only materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after read-only materialization should not create public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "no-op save_as after read-only materialization should not expose dirty names");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after read-only materialization should copy source entries");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "readonly-noop-comment-before-root",
+        "no-op save_as after read-only materialization should preserve source comments");
+    check_contains(worksheet_xml, "readonly-noop-pi",
+        "no-op save_as after read-only materialization should preserve source processing instructions");
+    check_contains(worksheet_xml, "<sheetPr>",
+        "no-op save_as after read-only materialization should preserve source wrapper metadata");
+    check_contains(worksheet_xml, R"(<c r="A1" t="s"><v>0</v></c>)",
+        "no-op save_as after read-only materialization should preserve source shared string indexes");
+    check_not_contains(worksheet_xml, R"(t="inlineStr")",
+        "no-op save_as after read-only materialization should not flush inline-string projection");
+}
+
+void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy_original()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-failed-materialize-noop-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-failed-materialize-noop-output.xlsx");
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1" s="1" t="inlineStr"><is><t>invalid-style-source</t></is></c>)"
+        R"(</row></sheetData>)"
+        R"(</worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.has_worksheet("Data"),
+        "failed materialization no-op should preserve planned sheet catalog");
+    check(editor.has_source_worksheet("Data"),
+        "failed materialization no-op should preserve source sheet catalog");
+
+    bool try_failed = false;
+    try {
+        (void)editor.try_worksheet("Data");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        try_failed = true;
+        check_contains(error.what(), "does not load style id references",
+            "try_worksheet should expose failed materialization diagnostic");
+    }
+    check(try_failed,
+        "try_worksheet should fail when source materialization rejects style ids");
+    check(!editor.has_pending_changes(),
+        "try_worksheet materialization failure should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        "try_worksheet materialization failure should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "try_worksheet materialization failure should not leave dirty materialized names");
+    check(!editor.last_edit_error().has_value(),
+        "try_worksheet materialization failure should not update last_edit_error");
+
+    bool worksheet_failed = false;
+    try {
+        (void)editor.worksheet("Data");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        worksheet_failed = true;
+        check_contains(error.what(), "does not load style id references",
+            "worksheet should expose failed materialization diagnostic");
+    }
+    check(worksheet_failed,
+        "worksheet should fail when source materialization rejects style ids");
+    check(!editor.has_pending_changes(),
+        "worksheet materialization failure should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        "worksheet materialization failure should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "worksheet materialization failure should not leave dirty materialized names");
+    check(!editor.last_edit_error().has_value(),
+        "worksheet materialization failure should not update last_edit_error");
+
+    editor.save_as(output);
+
+    check(!editor.has_pending_changes(),
+        "no-op save_as after failed materialization should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after failed materialization should not create public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "no-op save_as after failed materialization should not expose dirty names");
+    check(!editor.last_edit_error().has_value(),
+        "no-op save_as after failed materialization should not update last_edit_error");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after failed materialization should copy source entries");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), R"(s="1")",
+        "no-op save_as after failed materialization should preserve rejected source style id");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "invalid-style-source",
+        "no-op save_as after failed materialization should preserve rejected source worksheet bytes");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "no-op save_as after failed materialization should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_materializes_source_shared_strings()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-source.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("shared-a"),
+            fastxlsx::CellView::text("A&B <C>")});
+        data.append_row({fastxlsx::CellView::text("shared-a")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-shared")});
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check(source_entries.find("xl/sharedStrings.xml") != source_entries.end(),
+        "shared-string source should emit a sharedStrings part for materialization");
+    std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+    replace_first_or_throw(shared_strings_before, "?><sst",
+        "?><?fastxlsx sharedStrings-trivia?>"
+        "<?xml-stylesheet type=\"text/xsl\" href=\"sharedStrings.xsl\"?><sst");
+    rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings_before);
+    {
+        std::string updated_workbook_rels = source_entries.at("xl/_rels/workbook.xml.rels");
+        replace_first_or_throw(updated_workbook_rels,
+            R"(Target="sharedStrings.xml")",
+            R"(Target="./sharedStrings.xml")");
+        rewrite_package_entry_as_stored(
+            source, "xl/_rels/workbook.xml.rels", updated_workbook_rels);
+    }
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "shared-a",
+        "WorksheetEditor should materialize A1 shared string text");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "A&B <C>",
+        "WorksheetEditor should decode XML entities from source sharedStrings");
+    check(a2.has_value() && a2->kind() == fastxlsx::CellValueKind::Text
+            && a2->text_value() == "shared-a",
+        "WorksheetEditor should materialize repeated shared string indexes");
+    check(shared_strings_before.find("<?fastxlsx sharedStrings-trivia?>")
+            != std::string::npos,
+        "source sharedStrings success fixture should include prolog processing instruction trivia");
+    check(shared_strings_before.find("<?xml-stylesheet") != std::string::npos,
+        "source sharedStrings success fixture should include xml-stylesheet PI trivia");
+    check(shared_strings_before.find(R"(standalone="yes")") != std::string::npos,
+        "source sharedStrings success fixture should include legal standalone declaration metadata");
+    check(!sheet.has_pending_changes(),
+        "read-only source sharedStrings materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source sharedStrings materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source sharedStrings materialization should not queue Patch edits");
+
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-output.xlsx");
+    sheet.set_cell("C3", fastxlsx::CellValue::text("new-inline"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>shared-a</t></is></c>)",
+        "flushed WorksheetEditor source shared string should be projected as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>A&amp;B &lt;C&gt;</t></is></c>)",
+        "flushed WorksheetEditor source shared string should be XML escaped inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>new-inline</t></is></c>)",
+        "new WorksheetEditor text should continue to write inline strings");
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "WorksheetEditor save_as should preserve source sharedStrings bytes, not rebuild them");
+}
+
+void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()
+{
+    struct LegalDeclarationCase {
+        std::string_view name;
+        std::string_view declaration;
+        std::string_view expected_text;
+    };
+
+    const std::array<LegalDeclarationCase, 2> cases{{
+        {"single-quoted-version-1-1-with-encoding-and-standalone-no",
+            "<?xml version='1.1' encoding='UTF_8-Test.1' standalone='no'?>",
+            "legal-declaration-version-1-1"},
+        {"version-only-single-quoted",
+            "<?xml version='1.0'?>",
+            "legal-declaration-version-only"},
+    }};
+
+    for (const LegalDeclarationCase& test_case : cases) {
+        const std::filesystem::path source = artifact(
+            "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
+            + std::string(test_case.name) + "-source.xlsx");
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
+            + std::string(test_case.name) + "-output.xlsx");
+        {
+            fastxlsx::WorkbookWriterOptions options;
+            options.string_strategy = fastxlsx::StringStrategy::SharedString;
+            fastxlsx::WorkbookWriter writer =
+                fastxlsx::WorkbookWriter::create(source, options);
+            fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+            data.append_row({fastxlsx::CellView::text("declaration-placeholder")});
+            fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+            untouched.append_row({fastxlsx::CellView::text("keep-legal-declaration")});
+            writer.close();
+        }
+
+        const std::string shared_strings_xml =
+            std::string(test_case.declaration)
+            + R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">)"
+              R"(<si><t>)"
+            + std::string(test_case.expected_text)
+            + R"(</t></si><si><t>keep-legal-declaration</t></si></sst>)";
+        rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings_xml);
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+        check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+                && a1->text_value() == test_case.expected_text,
+            std::string(test_case.name)
+                + " should materialize source sharedStrings text");
+        check(!sheet.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration materialization should start clean");
+        check(!editor.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration materialization should not dirty WorkbookEditor");
+        check(editor.pending_change_count() == 0,
+            std::string(test_case.name)
+                + " legal declaration materialization should not queue Patch edits");
+
+        sheet.set_cell("B2", fastxlsx::CellValue::text("legal-declaration-new-inline"));
+        editor.save_as(output);
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml,
+            std::string(R"(<c r="A1" t="inlineStr"><is><t>)")
+                + std::string(test_case.expected_text) + R"(</t></is></c>)",
+            std::string(test_case.name)
+                + " dirty projection should write materialized text inline");
+        check_contains(worksheet_xml,
+            R"(<c r="B2" t="inlineStr"><is><t>legal-declaration-new-inline</t></is></c>)",
+            std::string(test_case.name)
+                + " dirty projection should include edits beside legal declaration source text");
+        check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+                && output_entries.at("xl/sharedStrings.xml") == shared_strings_xml,
+            std::string(test_case.name)
+                + " dirty projection should preserve legal declaration sharedStrings bytes");
+        check(output_entries.at("xl/worksheets/sheet2.xml")
+                == source_entries.at("xl/worksheets/sheet2.xml"),
+            std::string(test_case.name)
+                + " dirty projection should preserve untouched sheet bytes");
+    }
+}
+
+void test_public_worksheet_editor_flattens_rich_source_shared_strings()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-rich-sharedstrings-source.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("rich-placeholder"),
+            fastxlsx::CellView::text("plain-placeholder")});
+        writer.close();
+    }
+
+    const std::string rich_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">)"
+        R"(<si><r><t>rich-</t></r><r><t>A&amp;B</t></r><rPh sb="0" eb="1"><t>ignored-phonetic</t></rPh><phoneticPr fontId="1"/></si>)"
+        R"(<si><t>plain</t></si>)"
+        R"(</sst>)";
+    rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", rich_shared_strings);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "rich-A&B",
+        "WorksheetEditor should flatten simple source sharedStrings rich text runs");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "plain",
+        "WorksheetEditor should still materialize plain shared string items beside rich text");
+    check(!sheet.has_pending_changes(),
+        "rich sharedStrings read-only materialization should start clean");
+}
+
+void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-noop-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-dirty-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("prefix-placeholder-a"),
+            fastxlsx::CellView::text("prefix-placeholder-b")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-prefixed-shared")});
+        writer.close();
+    }
+
+    const std::string prefixed_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test" count="2" uniqueCount="2">)"
+        R"(<x:si><x:t>prefixed-A&amp;B</x:t></x:si>)"
+        R"(<x:si><x:r><x:rPr><x:b/></x:rPr><x:t>rich-</x:t></x:r><x:r><x:t xml:space="preserve"> tail </x:t></x:r>)"
+        R"(<x:rPh sb="1" eb="1"/><x:phoneticPr fontId="1"/><x:extLst/>)"
+        R"(<x:rPh sb="0" eb="1"><fx:opaque><x:r><x:t>ignored-nested-phonetic</x:t></x:r></fx:opaque></x:rPh>)"
+        R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:r><x:t>ignored-nested-ext</x:t></x:r></fx:opaque></x:ext></x:extLst></x:si>)"
+        R"(<x:phoneticPr fontId="2"/><x:extLst/><x:extLst><x:ext uri="{fastxlsx-root}"><fx:opaque><x:t>ignored-root-ext</x:t></fx:opaque></x:ext></x:extLst>)"
+        R"(</x:sst>)";
+    rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", prefixed_shared_strings);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_before, "<x:sst",
+        "prefixed sharedStrings fixture should use a qualified root element");
+    check_contains(shared_strings_before, "<x:si>",
+        "prefixed sharedStrings fixture should use qualified shared string items");
+    check_contains(shared_strings_before, "<x:t>",
+        "prefixed sharedStrings fixture should use qualified text elements");
+    check_contains(shared_strings_before, "ignored-nested-ext",
+        "prefixed sharedStrings fixture should carry nested ignored extension text");
+    check_contains(shared_strings_before, "ignored-root-ext",
+        "prefixed sharedStrings fixture should carry root-level ignored extension text");
+    check_contains(shared_strings_before, "<x:extLst/>",
+        "prefixed sharedStrings fixture should carry self-closing ignored metadata");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "prefixed-A&B",
+        "WorksheetEditor should materialize prefixed source sharedStrings text");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "rich- tail ",
+        "WorksheetEditor should flatten prefixed rich sharedStrings by local-name");
+    check(!sheet.has_pending_changes(),
+        "prefixed sharedStrings read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "prefixed sharedStrings read-only materialization should not dirty WorkbookEditor");
+
+    editor.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after prefixed sharedStrings materialization should copy source entries");
+
+    sheet.set_cell("C1", fastxlsx::CellValue::text("prefixed-shared-dirty"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>prefixed-A&amp;B</t></is></c>)",
+        "dirty projection should write prefixed source sharedStrings text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve">rich- tail </t></is></c>)",
+        "dirty projection should preserve flattened prefixed rich sharedStrings whitespace");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>prefixed-shared-dirty</t></is></c>)",
+        "dirty projection should include edits beside prefixed source sharedStrings");
+    check_not_contains(worksheet_xml, "ignored-nested-phonetic",
+        "dirty projection should not leak nested ignored sharedStrings phonetic text");
+    check_not_contains(worksheet_xml, "ignored-nested-ext",
+        "dirty projection should not leak nested ignored sharedStrings extension text");
+    check_not_contains(worksheet_xml, "ignored-root-ext",
+        "dirty projection should not leak root-level ignored sharedStrings extension text");
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "dirty projection should preserve prefixed source sharedStrings bytes");
+    check(output_entries.at("xl/worksheets/sheet2.xml") ==
+            source_entries.at("xl/worksheets/sheet2.xml"),
+        "dirty prefixed sharedStrings projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_materializes_local_names_without_namespace_validation()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-local-name-no-namespace-validation-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-local-name-no-namespace-validation-noop.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-local-name-no-namespace-validation-dirty.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("wrong-ns-placeholder-a"),
+            fastxlsx::CellView::text("wrong-ns-placeholder-b")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-wrong-namespace")});
+        writer.close();
+    }
+
+    const std::string wrong_namespace_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="2" uniqueCount="2">)"
+        R"(<bad:si><bad:t>wrong-ns-shared</bad:t></bad:si>)"
+        R"(<bad:si><bad:r><bad:t>wrong-rich-</bad:t></bad:r><bad:r><bad:t>tail</bad:t></bad:r></bad:si>)"
+        R"(</bad:sst>)";
+    rewrite_package_entry_as_stored(
+        source, "xl/sharedStrings.xml", wrong_namespace_shared_strings);
+
+    const std::string wrong_namespace_worksheet =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml">)"
+          R"(<bad:sheetData><bad:row r="1">)"
+          R"(<bad:c r="A1" t="s"><bad:v>0</bad:v></bad:c>)"
+          R"(<bad:c r="B1" t="inlineStr"><bad:is><bad:t>wrong-ns-inline</bad:t></bad:is></bad:c>)"
+          R"(<bad:c r="C1" t="s"><bad:v>1</bad:v></bad:c>)"
+          R"(</bad:row></bad:sheetData>)"
+          R"(</bad:worksheet>)";
+    rewrite_package_entry_as_stored(
+        source, "xl/worksheets/sheet1.xml", wrong_namespace_worksheet);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/sharedStrings.xml"), "urn:fastxlsx:not-spreadsheetml",
+        "wrong-namespace local-name fixture should use a non-spreadsheetml sharedStrings URI");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "urn:fastxlsx:not-spreadsheetml",
+        "wrong-namespace local-name fixture should use a non-spreadsheetml worksheet URI");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "wrong-ns-shared",
+        "WorksheetEditor should materialize sharedStrings by local-name without namespace URI validation");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "wrong-ns-inline",
+        "WorksheetEditor should materialize inline strings by local-name without namespace URI validation");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Text
+            && c1->text_value() == "wrong-rich-tail",
+        "WorksheetEditor should flatten rich sharedStrings by local-name without namespace URI validation");
+    check(!sheet.has_pending_changes(),
+        "wrong-namespace local-name materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "wrong-namespace local-name materialization should not dirty WorkbookEditor");
+
+    editor.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after wrong-namespace local-name materialization should copy source entries");
+
+    sheet.set_cell("D1", fastxlsx::CellValue::text("wrong-ns-dirty"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>wrong-ns-shared</t></is></c>)",
+        "dirty projection should write wrong-namespace sharedStrings text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>wrong-ns-inline</t></is></c>)",
+        "dirty projection should write wrong-namespace inline text as plain inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>wrong-rich-tail</t></is></c>)",
+        "dirty projection should write flattened wrong-namespace sharedStrings rich text");
+    check_contains(worksheet_xml,
+        R"(<c r="D1" t="inlineStr"><is><t>wrong-ns-dirty</t></is></c>)",
+        "dirty projection should include edits beside wrong-namespace local-name source cells");
+    check_not_contains(worksheet_xml, "urn:fastxlsx:not-spreadsheetml",
+        "dirty standalone projection should not preserve wrong source namespace declarations");
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml")
+                == source_entries.at("xl/sharedStrings.xml"),
+        "dirty wrong-namespace projection should preserve source sharedStrings bytes");
+    check(output_entries.at("xl/worksheets/sheet2.xml") ==
+            source_entries.at("xl/worksheets/sheet2.xml"),
+        "dirty wrong-namespace projection should preserve untouched sheets");
+}
+
+void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_and_projects_inline()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-noop-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-dirty-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("space-placeholder"),
+            fastxlsx::CellView::text("rich-space-placeholder")});
+        writer.close();
+    }
+
+    const std::string shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2">)"
+        R"(<si><t xml:space="preserve">  plain &amp; space  </t></si>)"
+        R"(<si><r><t xml:space="preserve">  rich </t></r><r><t>&amp; B</t></r><r><t xml:space="preserve"> tail  </t></r></si>)"
+        R"(</sst>)";
+    rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "  plain & space  ",
+        "WorksheetEditor should preserve xml:space whitespace from plain sharedStrings text");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "  rich & B tail  ",
+        "WorksheetEditor should preserve xml:space whitespace while flattening rich sharedStrings runs");
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings xml:space materialization should start clean");
+
+    editor.save_as(noop_output);
+    check(!editor.has_pending_changes(),
+        "no-op save_as after sharedStrings xml:space materialization should keep editor clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after sharedStrings xml:space materialization should copy source entries");
+
+    sheet.set_cell("C1", fastxlsx::CellValue::text("dirty-space-trigger"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t xml:space="preserve">  plain &amp; space  </t></is></c>)",
+        "dirty projection should write source sharedStrings whitespace as inline text with xml:space");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve">  rich &amp; B tail  </t></is></c>)",
+        "dirty projection should flatten rich sharedStrings whitespace into inline text with xml:space");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>dirty-space-trigger</t></is></c>)",
+        "dirty projection should include the new trigger edit");
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "dirty projection should preserve source sharedStrings bytes with xml:space markup");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source sharedStrings xml:space projection should not mutate the source package");
+}
+
+void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-metadata-counts-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-metadata-counts-noop-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-metadata-counts-dirty-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("first-placeholder"),
+            fastxlsx::CellView::text("second-placeholder")});
+        writer.close();
+    }
+
+    const std::string shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test" count="999" uniqueCount="0" fx:root="ignored">)"
+        R"(<si fx:item="first"><t fx:text="first">first-meta</t></si>)"
+        R"(<si fx:item="second"><r fx:run="1"><t fx:text="second">second</t></r><r fx:run="2"><t>-meta</t></r></si>)"
+        R"(</sst>)";
+    rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_before, R"(count="999")",
+        "source sharedStrings metadata fixture should carry inconsistent count");
+    check_contains(shared_strings_before, R"(uniqueCount="0")",
+        "source sharedStrings metadata fixture should carry inconsistent uniqueCount");
+    check_contains(shared_strings_before, R"(fx:root="ignored")",
+        "source sharedStrings metadata fixture should carry unknown root attributes");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "first-meta",
+        "WorksheetEditor should use actual sharedStrings item text, not root count metadata");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "second-meta",
+        "WorksheetEditor should ignore unknown sharedStrings item/run/text attributes");
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings count/attribute materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "source sharedStrings count/attribute materialization should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "source sharedStrings count/attribute materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!editor.has_pending_changes(),
+        "no-op save_as after sharedStrings count/attribute materialization should keep editor clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after sharedStrings count/attribute materialization should copy source entries");
+
+    sheet.set_cell("C1", fastxlsx::CellValue::text("after-metadata"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>first-meta</t></is></c>)",
+        "dirty projection should write count-mismatched source sharedStrings as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>second-meta</t></is></c>)",
+        "dirty projection should write unknown-attribute source sharedStrings as flattened inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>after-metadata</t></is></c>)",
+        "dirty projection should include the metadata-boundary trigger edit");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "dirty projection should not write shared string indexes after materialization");
+    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
+            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "dirty projection should preserve source sharedStrings bytes with inconsistent metadata");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source sharedStrings count/attribute projection should not mutate the source package");
+}
+
+void test_public_worksheet_editor_materializes_source_formulas()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-formula-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-formula-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(2.0),
+            fastxlsx::CellView::number(3.0),
+            fastxlsx::CellView::formula("SUM(A1:B1)&\"<ok>\"")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    std::string& source_worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    replace_first_or_throw(source_worksheet_xml,
+        R"(<c r="C1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f></c>)",
+        R"(<c r="C1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f><v>999</v></c>)");
+    write_stored_zip_entries(source, entries);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+            && a1->number_value() == 2.0,
+        "WorksheetEditor should materialize source formula sibling number A1");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Number
+            && b1->number_value() == 3.0,
+        "WorksheetEditor should materialize source formula sibling number B1");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Formula
+            && c1->text_value() == "SUM(A1:B1)&\"<ok>\"",
+        "WorksheetEditor should materialize source formula text and ignore cached values");
+    check(!sheet.has_pending_changes(),
+        "source formula read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "source formula read-only materialization should not dirty the workbook editor");
+
+    sheet.set_cell("D2", fastxlsx::CellValue::text("formula-new-inline"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="C1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f></c>)",
+        "flushed WorksheetEditor source formula should preserve formula text");
+    check(worksheet_xml.find("<v>999</v>") == std::string::npos,
+        "flushed WorksheetEditor source formula should not preserve stale cached values");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>formula-new-inline</t></is></c>)",
+        "flushed WorksheetEditor source formula sheet should include later text edits");
+}
+
+void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-invalid-sharedstring-index-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-invalid-sharedstring-index-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("shared")});
+        writer.close();
+    }
+
+    std::string worksheet_xml =
+        fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet1.xml");
+    replace_first_or_throw(worksheet_xml, "<v>0</v>", "<v>99</v>");
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    check_public_worksheet_materialization_failure_hygiene(source, output,
+        "CellStore worksheet loader found a shared string index out of range",
+        "usable-after-failure",
+        "out-of-range source shared string index");
+}
+
+void test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata()
+{
+    const auto write_shared_string_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("shared-public-metadata")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-public-metadata")});
+        writer.close();
+        return source;
+    };
+
+    const auto expect_public_materialization_failure =
+        [&](std::string_view tag,
+            const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::filesystem::path source = write_shared_string_source(
+                std::string("fastxlsx-workbook-editor-public-invalid-sharedstrings-")
+                + std::string(tag) + "-source.xlsx");
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-invalid-sharedstrings-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            mutate_entries(entries);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_materialization_failure(
+        "duplicate-rel",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(</Relationships>)",
+                R"(<Relationship Id="rId99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)"
+                R"(</Relationships>)");
+        },
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "duplicate sharedStrings relationship");
+
+    expect_public_materialization_failure(
+        "missing-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(
+                workbook_relationships, R"(Target="sharedStrings.xml")",
+                R"(Target="missingSharedStrings.xml")");
+        },
+        "workbook sharedStrings relationship targets an unknown package part",
+        "missing sharedStrings target");
+
+    expect_public_materialization_failure(
+        "external-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="https://example.invalid/sharedStrings.xml" TargetMode="External")");
+        },
+        "sharedStrings relationship target cannot be external",
+        "external sharedStrings target");
+
+    expect_public_materialization_failure(
+        "query-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="sharedStrings.xml?version=1")");
+        },
+        "sharedStrings relationship target must be a package part",
+        "query-qualified sharedStrings target");
+
+    expect_public_materialization_failure(
+        "fragment-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="sharedStrings.xml#frag")");
+        },
+        "sharedStrings relationship target must be a package part",
+        "fragment-qualified sharedStrings target");
+
+    expect_public_materialization_failure(
+        "incomplete-percent-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="sharedStrings%2")");
+        },
+        "relationship target percent escape is incomplete",
+        "sharedStrings target with incomplete percent escape");
+
+    expect_public_materialization_failure(
+        "invalid-percent-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="sharedStrings%ZZ.xml")");
+        },
+        "relationship target percent escape is invalid",
+        "sharedStrings target with invalid percent escape");
+
+    expect_public_materialization_failure(
+        "null-percent-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="sharedStrings%00.xml")");
+        },
+        "relationship target cannot contain null bytes",
+        "sharedStrings target with decoded null byte");
+
+    expect_public_materialization_failure(
+        "root-escape-target",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& workbook_relationships = entries.at("xl/_rels/workbook.xml.rels");
+            replace_first_or_throw(workbook_relationships,
+                R"(Target="sharedStrings.xml")",
+                R"(Target="../../sharedStrings.xml")");
+        },
+        "part name cannot escape the package root",
+        "sharedStrings target escaping package root");
+
+    expect_public_materialization_failure(
+        "wrong-content-type",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& content_types = entries.at("[Content_Types].xml");
+            replace_first_or_throw(content_types,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
+        },
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "wrong sharedStrings content type");
+
+    expect_public_materialization_failure(
+        "malformed-xml",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") = R"(<notSst/>)";
+        },
+        "CellStore sharedStrings loader root is missing an sst element",
+        "malformed sharedStrings XML");
+
+    expect_public_materialization_failure(
+        "wrong-namespace-unsupported-item",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="1" uniqueCount="1">)"
+                R"(<bad:si><bad:unsupportedItem><bad:t>bad</bad:t></bad:unsupportedItem></bad:si>)"
+                R"(</bad:sst>)";
+        },
+        "CellStore sharedStrings loader found an unsupported shared string item element",
+        "wrong-namespace unsupported sharedStrings item local-name");
+
+    expect_public_materialization_failure(
+        "wrong-namespace-unsupported-rich-run",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="1" uniqueCount="1">)"
+                R"(<bad:si><bad:r><bad:unsupportedRun><bad:t>bad</bad:t></bad:unsupportedRun></bad:r></bad:si>)"
+                R"(</bad:sst>)";
+        },
+        "CellStore sharedStrings loader found an unsupported shared string rich text element",
+        "wrong-namespace unsupported sharedStrings rich-run local-name");
+
+    expect_public_materialization_failure(
+        "mixed-direct-rich",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>direct</t><r><t>rich</t></r></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found mixed direct and rich text in a shared string item",
+        "sharedStrings item mixing direct and rich text");
+
+    expect_public_materialization_failure(
+        "rpr-outside-run",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><rPr><b/></rPr></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed rich text metadata",
+        "sharedStrings run properties outside a rich run");
+
+    expect_public_materialization_failure(
+        "text-inside-rpr",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><r><rPr><t>not-text</t></rPr><t>rich</t></r></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed rich text metadata",
+        "sharedStrings text inside rich run properties");
+
+    expect_public_materialization_failure(
+        "ignored-metadata-nested-si",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><rPh sb="0" eb="1"><si><t>decoy</t></si></rPh><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found a nested shared string item",
+        "sharedStrings ignored metadata with nested si decoy");
+
+    expect_public_materialization_failure(
+        "ignored-metadata-nested-markup-in-text",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><rPh sb="0" eb="1"><t>ignored<r/>text</t></rPh><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found nested markup inside a text element",
+        "sharedStrings ignored metadata with nested markup inside text");
+
+    expect_public_materialization_failure(
+        "ignored-metadata-orphan-closing",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>bad</t></rPh></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found mismatched closing tags",
+        "sharedStrings ignored metadata orphan closing tag");
+
+    expect_public_materialization_failure(
+        "ignored-metadata-unclosed",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><rPh sb="0" eb="1"><t>ignored</t>)";
+        },
+        "CellStore sharedStrings loader found malformed XML",
+        "sharedStrings ignored metadata left unclosed");
+
+    expect_public_materialization_failure(
+        "text-outside-t",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si>bad-text</si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found text outside a text element",
+        "sharedStrings item text outside t");
+
+    expect_public_materialization_failure(
+        "nested-si",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><si><t>nested</t></si></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found a nested shared string item",
+        "nested sharedStrings item");
+
+    expect_public_materialization_failure(
+        "nested-markup-in-t",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>bad<r/>text</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found nested markup inside a text element",
+        "sharedStrings text element with nested markup");
+
+    expect_public_materialization_failure(
+        "comment-inside-text",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>bad<!--hidden-->text</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found nested markup inside a text element",
+        "sharedStrings text element with comment markup");
+
+    expect_public_materialization_failure(
+        "processing-instruction-inside-text",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>bad<?fx hidden?>text</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found nested markup inside a text element",
+        "sharedStrings text element with processing instruction markup");
+
+    expect_public_materialization_failure(
+        "malformed-processing-instruction-before-root",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?fastxlsx broken>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed processing instruction",
+        "sharedStrings payload with malformed processing instruction before root");
+
+    expect_public_materialization_failure(
+        "malformed-processing-instruction-inside-item",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><?fastxlsx broken><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed processing instruction",
+        "sharedStrings item with malformed processing instruction");
+
+    expect_public_materialization_failure(
+        "xml-declaration-inside-item",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><?xml version="1.0"?><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found XML declaration after sharedStrings root start",
+        "sharedStrings item with nested XML declaration");
+
+    expect_public_materialization_failure(
+        "duplicate-xml-declaration",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<?xml version="1.0"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found duplicate XML declaration",
+        "sharedStrings payload with duplicate XML declaration");
+
+    expect_public_materialization_failure(
+        "xml-like-processing-instruction-before-root",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?XML version="1.0"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found reserved XML processing instruction target",
+        "sharedStrings payload with uppercase XML-like processing instruction before root");
+
+    expect_public_materialization_failure(
+        "xml-like-processing-instruction-inside-item",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><?Xml version="1.0"?><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found reserved XML processing instruction target",
+        "sharedStrings item with mixed-case XML-like processing instruction");
+
+    expect_public_materialization_failure(
+        "xml-declaration-missing-version",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with XML declaration missing version");
+
+    expect_public_materialization_failure(
+        "xml-declaration-unsupported-version",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="2.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found unsupported XML declaration version",
+        "sharedStrings payload with unsupported XML declaration version");
+
+    expect_public_materialization_failure(
+        "xml-declaration-duplicate-encoding",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8" encoding="UTF-16"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with duplicate XML declaration encoding");
+
+    expect_public_materialization_failure(
+        "xml-declaration-unknown-attribute",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" flavor="fastxlsx"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with unknown XML declaration attribute");
+
+    expect_public_materialization_failure(
+        "xml-declaration-encoding-after-standalone",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" standalone="yes" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with XML declaration encoding after standalone");
+
+    expect_public_materialization_failure(
+        "xml-declaration-duplicate-standalone",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" standalone="yes" standalone="no"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with duplicate XML declaration standalone");
+
+    expect_public_materialization_failure(
+        "xml-declaration-empty-standalone",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" standalone=""?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with empty XML declaration standalone");
+
+    expect_public_materialization_failure(
+        "xml-declaration-invalid-standalone",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" standalone="maybe"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with invalid XML declaration standalone value");
+
+    expect_public_materialization_failure(
+        "xml-declaration-empty-encoding",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding=""?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with empty XML declaration encoding");
+
+    expect_public_materialization_failure(
+        "xml-declaration-digit-start-encoding",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="8BIT"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with digit-start XML declaration encoding");
+
+    expect_public_materialization_failure(
+        "xml-declaration-invalid-encoding-character",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF:8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed XML declaration",
+        "sharedStrings payload with invalid XML declaration encoding character");
+
+    expect_public_materialization_failure(
+        "comment-before-xml-declaration",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<!--before-declaration-->)"
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found XML declaration after sharedStrings prolog markup",
+        "sharedStrings payload with comment before XML declaration");
+
+    expect_public_materialization_failure(
+        "processing-instruction-before-xml-declaration",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?fastxlsx before-declaration?>)"
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found XML declaration after sharedStrings prolog markup",
+        "sharedStrings payload with processing instruction before XML declaration");
+
+    expect_public_materialization_failure(
+        "whitespace-before-xml-declaration",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                " \r\n\t"
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found XML declaration after sharedStrings prolog text",
+        "sharedStrings payload with whitespace before XML declaration");
+
+    expect_public_materialization_failure(
+        "xml-declaration-after-root",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst><?xml version="1.0"?>)";
+        },
+        "CellStore sharedStrings loader found XML declaration after sharedStrings root start",
+        "sharedStrings payload with XML declaration after root");
+
+    expect_public_materialization_failure(
+        "cdata-inside-text",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t><![CDATA[hidden]]></t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found nested markup inside a text element",
+        "sharedStrings text element with CDATA markup");
+
+    expect_public_materialization_failure(
+        "cdata-outside-text",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><![CDATA[hidden]]><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found unsupported markup declaration",
+        "sharedStrings item with unsupported CDATA declaration outside text");
+
+    expect_public_materialization_failure(
+        "mismatched-closing-tags",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>bad</r></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found mismatched closing tags",
+        "sharedStrings mismatched closing tag");
+
+    expect_public_materialization_failure(
+        "unknown-entity",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>A&bogus;</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore worksheet loader found an unknown XML entity reference",
+        "sharedStrings text with unknown XML entity");
+
+    expect_public_materialization_failure(
+        "unterminated-entity",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>A&amp</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore worksheet loader found an unterminated XML entity",
+        "sharedStrings text with unterminated XML entity");
+
+    expect_public_materialization_failure(
+        "character-reference-out-of-range",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>A&#x110000;</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore worksheet loader XML character reference exceeds Unicode range",
+        "sharedStrings text with out-of-range XML character reference");
+
+    expect_public_materialization_failure(
+        "attribute-without-value",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si bad><t>bad</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found an attribute without a value",
+        "sharedStrings tag with missing attribute value");
+
+    expect_public_materialization_failure(
+        "unquoted-attribute",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si bad=1><t>bad</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found an unquoted attribute value",
+        "sharedStrings tag with unquoted attribute value");
+
+    expect_public_materialization_failure(
+        "unterminated-attribute",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si bad="unterminated><t>bad</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore worksheet loader found a truncated XML tag",
+        "sharedStrings tag with unterminated attribute value");
+}
+
+void test_public_worksheet_editor_rejects_source_style_ids_without_dirtying_state()
+{
+    const auto expect_public_style_materialization_failure =
+        [](std::string_view tag,
+            const std::function<std::filesystem::path(std::string_view)>& write_source,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-style-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-style-")
+                + std::string(tag) + "-output.xlsx");
+
+            const std::string replacement_text =
+                std::string("usable-after-source-style-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(source, output,
+                expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_style_materialization_failure(
+        "non-default",
+        [](std::string_view name) {
+            const std::filesystem::path source = artifact(name);
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+            const fastxlsx::StyleId number_style =
+                writer.add_style(fastxlsx::CellStyle {"0.00"});
+            fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+            data.append_row({fastxlsx::CellView::text("styled-source")
+                    .with_style(number_style)});
+            fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+            untouched.append_row({fastxlsx::CellView::text("keep-source-style")});
+            writer.close();
+            return source;
+        },
+        "does not load style id references",
+        "non-default source style id");
+
+    const auto write_source_with_style_attribute = [](std::string_view style_attribute) {
+        return [style_attribute = std::string(style_attribute)](std::string_view name) {
+            const std::filesystem::path source = artifact(name);
+            {
+                fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+                fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+                data.append_row({fastxlsx::CellView::text("loadable-before-style-token"),
+                    fastxlsx::CellView::text("invalid-default-like-style-token")});
+                fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+                untouched.append_row({fastxlsx::CellView::text("keep-invalid-style-token")});
+                writer.close();
+            }
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="B1" t="inlineStr">)",
+                std::string(R"(<c r="B1" )") + style_attribute + R"( t="inlineStr">)");
+            write_stored_zip_entries(source, entries);
+            return source;
+        };
+    };
+
+    const auto write_source_with_qualified_style_attribute =
+        [](std::string_view style_attribute) {
+            return [style_attribute = std::string(style_attribute)](std::string_view name) {
+                const std::filesystem::path source = artifact(name);
+                {
+                    fastxlsx::WorkbookWriter writer =
+                        fastxlsx::WorkbookWriter::create(source);
+                    fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+                    data.append_row({fastxlsx::CellView::text("loadable-before-qualified-style"),
+                        fastxlsx::CellView::text("invalid-qualified-style-token")});
+                    fastxlsx::WorksheetWriter untouched =
+                        writer.add_worksheet("Untouched");
+                    untouched.append_row(
+                        {fastxlsx::CellView::text("keep-qualified-style-token")});
+                    writer.close();
+                }
+
+                std::map<std::string, std::string> entries =
+                    fastxlsx::test::read_zip_entries(source);
+                std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+                replace_first_or_throw(worksheet_xml,
+                    R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)",
+                    R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:x="urn:fastxlsx-test-style">)");
+                replace_first_or_throw(worksheet_xml,
+                    R"(<c r="B1" t="inlineStr">)",
+                    std::string(R"(<c r="B1" )") + style_attribute
+                        + R"( t="inlineStr">)");
+                write_stored_zip_entries(source, entries);
+                return source;
+            };
+        };
+
+    expect_public_style_materialization_failure(
+        "empty-default-like",
+        write_source_with_style_attribute(R"(s="")"),
+        "does not load style id references",
+        "empty default-like source style id");
+    expect_public_style_materialization_failure(
+        "leading-zero-default-like",
+        write_source_with_style_attribute(R"(s="00")"),
+        "does not load style id references",
+        "leading-zero default-like source style id");
+    expect_public_style_materialization_failure(
+        "signed-zero-default-like",
+        write_source_with_style_attribute(R"(s="+0")"),
+        "does not load style id references",
+        "signed-zero default-like source style id");
+    expect_public_style_materialization_failure(
+        "whitespace-default-like",
+        write_source_with_style_attribute(R"(s=" 0 ")"),
+        "does not load style id references",
+        "whitespace-padded default-like source style id");
+    expect_public_style_materialization_failure(
+        "entity-default-like",
+        write_source_with_style_attribute(R"(s="&#48;")"),
+        "does not load style id references",
+        "entity-encoded default-like source style id");
+    expect_public_style_materialization_failure(
+        "valueless-default-like",
+        write_source_with_style_attribute(R"(s)"),
+        "found an attribute without a value",
+        "valueless default-like source style id");
+    expect_public_style_materialization_failure(
+        "unquoted-default-like",
+        write_source_with_style_attribute(R"(s=0)"),
+        "found an unquoted attribute value",
+        "unquoted default-like source style id");
+    expect_public_style_materialization_failure(
+        "duplicate-default-like",
+        write_source_with_style_attribute(R"(s="0" s="0")"),
+        "found duplicate attributes",
+        "duplicate default-like source style id");
+    expect_public_style_materialization_failure(
+        "qualified-default-like",
+        write_source_with_qualified_style_attribute(R"(x:s="0")"),
+        "does not load cell metadata attributes",
+        "qualified default-like source style id");
+}
+
+void test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-default-style-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-default-style-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("loadable-before-style"),
+            fastxlsx::CellView::text("explicit-default-source-style"),
+            fastxlsx::CellView::text("single-quoted-default-source-style"),
+            fastxlsx::CellView::text("spaced-default-source-style")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-explicit-default")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries =
+        fastxlsx::test::read_zip_entries(source);
+    std::string& source_worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    replace_first_or_throw(source_worksheet_xml,
+        R"(<c r="B1" t="inlineStr">)",
+        R"(<c r="B1" s="0" t="inlineStr">)");
+    replace_first_or_throw(source_worksheet_xml,
+        R"(<c r="C1" t="inlineStr">)",
+        R"(<c r="C1" s='0' t="inlineStr">)");
+    replace_first_or_throw(source_worksheet_xml,
+        R"(<c r="D1" t="inlineStr">)",
+        R"(<c r="D1" s = "0" t="inlineStr">)");
+    write_stored_zip_entries(source, entries);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), R"(s="0")",
+        "source default-style fixture should contain an explicit s=0 attribute");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), R"(s='0')",
+        "source default-style fixture should contain a single-quoted explicit s=0 attribute");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), R"(s = "0")",
+        "source default-style fixture should contain an explicit s=0 attribute with whitespace around equals");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> d1 = sheet.try_cell("D1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "loadable-before-style" && !a1->has_style(),
+        "WorksheetEditor should materialize the unstyled source cell");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "explicit-default-source-style" && !b1->has_style(),
+        "WorksheetEditor should normalize source s=0 to no style handle");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Text
+            && c1->text_value() == "single-quoted-default-source-style"
+            && !c1->has_style(),
+        "WorksheetEditor should normalize source single-quoted s=0 to no style handle");
+    check(d1.has_value() && d1->kind() == fastxlsx::CellValueKind::Text
+            && d1->text_value() == "spaced-default-source-style" && !d1->has_style(),
+        "WorksheetEditor should normalize source s=0 with whitespace around equals to no style handle");
+    check(!sheet.has_pending_changes(),
+        "source s=0 materialization should start as a clean read-only session");
+    check(!editor.has_pending_changes(),
+        "source s=0 materialization should not dirty WorkbookEditor");
+
+    sheet.set_cell("E1", fastxlsx::CellValue::text("dirty-default-style-trigger"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>loadable-before-style</t></is></c>)",
+        "dirty projection should keep the prior unstyled source cell");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>explicit-default-source-style</t></is></c>)",
+        "dirty projection should write source s=0 as an unstyled inline string");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>single-quoted-default-source-style</t></is></c>)",
+        "dirty projection should write source single-quoted s=0 as an unstyled inline string");
+    check_contains(worksheet_xml,
+        R"(<c r="D1" t="inlineStr"><is><t>spaced-default-source-style</t></is></c>)",
+        "dirty projection should write source s=0 with whitespace around equals as an unstyled inline string");
+    check_contains(worksheet_xml,
+        R"(<c r="E1" t="inlineStr"><is><t>dirty-default-style-trigger</t></is></c>)",
+        "dirty projection should include the trigger edit");
+    check_not_contains(worksheet_xml, R"(s="0")",
+        "dirty projection should not serialize the normalized default style attribute");
+    check_not_contains(worksheet_xml, R"(s='0')",
+        "dirty projection should not serialize the normalized single-quoted default style attribute");
+    check_not_contains(worksheet_xml, R"(s = "0")",
+        "dirty projection should not serialize the normalized whitespace-around-equals default style attribute");
+}
+
+void test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly()
+{
+    const auto write_text_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("source-shape")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-source-shape")});
+        writer.close();
+        return source;
+    };
+
+    const auto write_boolean_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::boolean(true)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-boolean-shape")});
+        writer.close();
+        return source;
+    };
+
+    const auto expect_public_shape_materialization_failure =
+        [](std::string_view tag,
+            const std::function<std::filesystem::path(std::string_view)>& write_source,
+            const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-shape-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-shape-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            mutate_entries(entries);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-shape-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_shape_materialization_failure(
+        "error-cell",
+        write_text_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-shape</t></is></c>)",
+                R"(<c r="A1" t="e"><v>#VALUE!</v></c>)");
+        },
+        "unsupported cell type: e",
+        "source error cell");
+
+    expect_public_shape_materialization_failure(
+        "date-cell",
+        write_text_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-shape</t></is></c>)",
+                R"(<c r="A1" t="d"><v>2026-06-17T00:00:00Z</v></c>)");
+        },
+        "unsupported cell type: d",
+        "source date-like cell");
+
+    expect_public_shape_materialization_failure(
+        "invalid-boolean",
+        write_boolean_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="b"><v>1</v></c>)",
+                R"(<c r="A1" t="b"><v>2</v></c>)");
+        },
+        "invalid boolean cell value",
+        "source invalid boolean cell");
+}
+
+void test_public_worksheet_editor_rejects_malformed_source_worksheet_xml_cleanly()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-malformed-source-worksheet-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-malformed-source-worksheet-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("malformed-source")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-malformed-source")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    replace_first_or_throw(worksheet_xml, "</worksheet>", "");
+    write_stored_zip_entries(source, entries);
+
+    check_public_worksheet_materialization_failure_hygiene(source, output,
+        "worksheet event reader requires a closing worksheet root",
+        "usable-after-malformed-source-worksheet",
+        "malformed source worksheet XML",
+        "Untouched",
+        "xl/worksheets/sheet2.xml");
+}
+
+void test_public_worksheet_editor_rejects_source_cell_reference_issues_cleanly()
+{
+    const auto write_text_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("source-reference")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-source-reference")});
+        writer.close();
+        return source;
+    };
+
+    const auto expect_public_reference_materialization_failure =
+        [&](std::string_view tag,
+            const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-reference-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_text_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-reference-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            mutate_entries(entries);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-reference-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_reference_materialization_failure(
+        "missing-r",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-reference</t></is></c>)",
+                R"(<c t="inlineStr"><is><t>source-reference</t></is></c>)");
+        },
+        "CellStore worksheet loader requires explicit cell references",
+        "missing source cell reference");
+
+    expect_public_reference_materialization_failure(
+        "row-cell-mismatch",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr">)",
+                R"(<c r="A2" t="inlineStr">)");
+        },
+        "CellStore worksheet loader row and cell reference do not match",
+        "source row/cell reference mismatch");
+}
+
+void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
+{
+    const auto write_formula_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::formula("A1+1")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-formula-shape")});
+        writer.close();
+        return source;
+    };
+
+    const auto write_text_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("formula-shape")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-formula-shape")});
+        writer.close();
+        return source;
+    };
+
+    const auto expect_public_formula_materialization_failure =
+        [](std::string_view tag,
+            const std::function<std::filesystem::path(std::string_view)>& write_source,
+            const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-formula-shape-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-formula-shape-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            mutate_entries(entries);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-formula-shape-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_formula_materialization_failure(
+        "empty-formula",
+        write_formula_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1"><f>A1+1</f></c>)",
+                R"(<c r="A1"><f/></c>)");
+        },
+        "CellStore worksheet loader found an empty formula text",
+        "empty source formula");
+
+    expect_public_formula_materialization_failure(
+        "duplicate-formula",
+        write_formula_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1"><f>A1+1</f></c>)",
+                R"(<c r="A1"><f>A1+1</f><f>A1+2</f></c>)");
+        },
+        "CellStore worksheet loader found duplicate formula elements",
+        "duplicate source formula elements");
+
+    expect_public_formula_materialization_failure(
+        "formula-attributes",
+        write_formula_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1"><f>A1+1</f></c>)",
+                R"(<c r="A1"><f t="shared" si="0">A1+1</f></c>)");
+        },
+        "CellStore worksheet loader does not load formula attributes",
+        "source formula attributes");
+
+    expect_public_formula_materialization_failure(
+        "non-numeric-formula",
+        write_text_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>formula-shape</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><f>A1+1</f></c>)");
+        },
+        "CellStore worksheet loader found a formula in a non-numeric cell",
+        "formula in non-numeric source cell");
+}
+
+void test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly()
+{
+    const auto write_text_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("source-inline")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-inline-shape")});
+        writer.close();
+        return source;
+    };
+
+    const auto expect_public_inline_materialization_failure =
+        [&](std::string_view tag,
+            const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-inline-shape-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_text_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-inline-shape-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            mutate_entries(entries);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-inline-shape-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_inline_materialization_failure(
+        "unknown-entity",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><t>bad &unknown;</t></is></c>)");
+        },
+        "CellStore worksheet loader found an unknown XML entity reference",
+        "source inline unknown XML entity");
+
+    expect_public_inline_materialization_failure(
+        "text-attributes",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><t foo="1">source-inline</t></is></c>)");
+        },
+        "CellStore worksheet loader does not load inline text attributes",
+        "source inline text unsupported attributes");
+
+    expect_public_inline_materialization_failure(
+        "duplicate-text",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><t>source-</t><t>inline</t></is></c>)");
+        },
+        "CellStore worksheet loader found duplicate inline text elements",
+        "source duplicate inline text elements");
+
+    expect_public_inline_materialization_failure(
+        "direct-plus-rich-text",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><t>source-</t><r><t>inline</t></r></is></c>)");
+        },
+        "CellStore worksheet loader found duplicate inline text elements",
+        "source mixed direct and rich inline text");
+
+    expect_public_inline_materialization_failure(
+        "rpr-outside-run",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><rPr><b/></rPr></is></c>)");
+        },
+        "CellStore worksheet loader found malformed inline rich text metadata",
+        "source inline rich properties outside run");
+
+    expect_public_inline_materialization_failure(
+        "text-inside-rpr",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><r><rPr><t>not-text</t></rPr><t>source-inline</t></r></is></c>)");
+        },
+        "CellStore worksheet loader found malformed inline rich text metadata",
+        "source value markup inside inline rich properties");
+
+    expect_public_inline_materialization_failure(
+        "ignored-metadata-nested-si",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><rPh sb="0" eb="1"><si><t>decoy</t></si></rPh><t>source-inline</t></is></c>)");
+        },
+        "CellStore worksheet loader found malformed inline rich text metadata",
+        "source inline ignored metadata with nested si decoy");
+
+    expect_public_inline_materialization_failure(
+        "ignored-metadata-nested-markup-in-text",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><rPh sb="0" eb="1"><t>ignored<r/>text</t></rPh><t>source-inline</t></is></c>)");
+        },
+        "CellStore worksheet loader found malformed inline rich text metadata",
+        "source inline ignored metadata with nested markup inside text");
+
+    expect_public_inline_materialization_failure(
+        "ignored-metadata-orphan-closing",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></rPh></is></c>)");
+        },
+        "CellStore worksheet loader found malformed inline rich text metadata",
+        "source inline ignored metadata orphan closing tag");
+
+    expect_public_inline_materialization_failure(
+        "ignored-metadata-unclosed",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><rPh sb="0" eb="1"><t>ignored</t></is></c>)");
+        },
+        "CellStore worksheet loader found malformed inline rich text metadata",
+        "source inline ignored metadata left unclosed");
+
+    expect_public_inline_materialization_failure(
+        "unknown-metadata",
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-inline</t></is></c>)",
+                R"(<c r="A1" t="inlineStr"><is><unknownInlineMetadata/></is></c>)");
+        },
+        "CellStore worksheet loader does not load unsupported inline string metadata",
+        "source unknown inline string metadata");
+}
+
+void test_public_worksheet_editor_rejects_source_row_cell_structure_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-row-cell-structure")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view sheet_data) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(sheet_data) + "</worksheet>";
+    };
+
+    const auto expect_public_structure_materialization_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-row-cell-structure-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-row-cell-structure-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-row-cell-structure-")
+                + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_structure_materialization_failure(
+        "row-metadata",
+        worksheet_xml(
+            R"(<sheetData><row r="1" ht="20"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader does not load row metadata attributes",
+        "source row metadata attributes");
+
+    expect_public_structure_materialization_failure(
+        "cell-metadata",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" cm="1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader does not load cell metadata attributes",
+        "source cell metadata attributes");
+
+    expect_public_structure_materialization_failure(
+        "duplicate-row",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="1"><c r="B1"><v>2</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found duplicate row numbers",
+        "source duplicate row numbers");
+
+    expect_public_structure_materialization_failure(
+        "out-of-order-row",
+        worksheet_xml(
+            R"(<sheetData><row r="2"><c r="A2"><v>2</v></c></row><row r="1"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found out-of-order row numbers",
+        "source out-of-order row numbers");
+
+    expect_public_structure_materialization_failure(
+        "out-of-order-cell",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="B1"><v>2</v></c><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found out-of-order cell references",
+        "source out-of-order cell references");
+
+    expect_public_structure_materialization_failure(
+        "invalid-numeric",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1"><v>1e999</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found an invalid numeric cell value",
+        "source invalid numeric cell value");
+}
+
+void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-value-wrapper")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view sheet_data) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(sheet_data) + "</worksheet>";
+    };
+
+    const auto expect_public_value_wrapper_materialization_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-value-wrapper-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-value-wrapper-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-value-wrapper-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_value_wrapper_materialization_failure(
+        "scalar-attributes",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1"><v foo="1">1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader does not load scalar value attributes",
+        "source scalar value attributes");
+
+    expect_public_value_wrapper_materialization_failure(
+        "duplicate-scalar",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1"><v>1</v><v>2</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found duplicate scalar value elements",
+        "source duplicate scalar value elements");
+
+    expect_public_value_wrapper_materialization_failure(
+        "inline-metadata-in-number",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1"><is><t>bad</t></is></c></row></sheetData>)"),
+        "CellStore worksheet loader found inline-string metadata in a non-inline string cell",
+        "source inline metadata in non-inline cell");
+
+    expect_public_value_wrapper_materialization_failure(
+        "scalar-in-inline",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><v>bad</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found a non-inline value in an inline string cell",
+        "source scalar value in inline string cell");
+
+    expect_public_value_wrapper_materialization_failure(
+        "comment-inside-cell",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<!--hidden-->b</t></is></c></row></sheetData>)"),
+        "CellStore worksheet loader does not load cell comments, processing instructions, or unsupported markup",
+        "source comments inside cell text");
+}
+
+void test_public_worksheet_editor_rejects_wrong_namespace_unsupported_local_names_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-wrong-namespace-local-name")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view sheet_data) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml">)"
+            + std::string(sheet_data) + "</bad:worksheet>";
+    };
+
+    const auto expect_public_wrong_namespace_unsupported_local_name_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-wrong-namespace-unsupported-local-name-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-wrong-namespace-unsupported-local-name-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-wrong-namespace-unsupported-local-name-")
+                + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(
+                source, output, expected_diagnostic, replacement_text, scenario);
+        };
+
+    expect_public_wrong_namespace_unsupported_local_name_failure(
+        "cell-metadata",
+        worksheet_xml(
+            R"(<bad:sheetData><bad:row r="1"><bad:c r="A1"><bad:unsupportedCellMetadata/></bad:c></bad:row></bad:sheetData>)"),
+        "CellStore worksheet loader does not load unsupported cell metadata",
+        "wrong-namespace unsupported cell metadata local-name");
+
+    expect_public_wrong_namespace_unsupported_local_name_failure(
+        "inline-metadata",
+        worksheet_xml(
+            R"(<bad:sheetData><bad:row r="1"><bad:c r="A1" t="inlineStr"><bad:is><bad:unsupportedInlineMetadata/></bad:is></bad:c></bad:row></bad:sheetData>)"),
+        "CellStore worksheet loader does not load unsupported inline string metadata",
+        "wrong-namespace unsupported inline string metadata local-name");
+}
+
+void test_public_worksheet_editor_rejects_source_xml_parser_issues_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("source-parser")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-source-parser")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view sheet_data) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(sheet_data) + "</worksheet>";
+    };
+
+    const auto expect_public_xml_parser_materialization_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-xml-parser-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-xml-parser-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-xml-parser-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                "Untouched",
+                "xl/worksheets/sheet2.xml");
+        };
+
+    expect_public_xml_parser_materialization_failure(
+        "unterminated-entity",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &amp</t></is></c></row></sheetData>)"),
+        "CellStore worksheet loader found an unterminated XML entity",
+        "source unterminated XML entity");
+
+    expect_public_xml_parser_materialization_failure(
+        "invalid-character-reference",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &#xZZ;</t></is></c></row></sheetData>)"),
+        "CellStore worksheet loader found an invalid XML character reference",
+        "source invalid XML character reference");
+
+    expect_public_xml_parser_materialization_failure(
+        "out-of-range-character-reference",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>bad &#x110000;</t></is></c></row></sheetData>)"),
+        "CellStore worksheet loader XML character reference exceeds Unicode range",
+        "source out-of-range XML character reference");
+
+    expect_public_xml_parser_materialization_failure(
+        "unquoted-attribute",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r=A1><v>1</v></c></row></sheetData>)"),
+        "worksheet event reader found an unquoted attribute value",
+        "source unquoted cell attribute");
+
+    expect_public_xml_parser_materialization_failure(
+        "duplicate-cell-reference-attribute",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" r="B1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found duplicate attributes",
+        "source duplicate cell reference attributes");
+
+    expect_public_xml_parser_materialization_failure(
+        "duplicate-cell-type-attribute",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="n" t="b"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found duplicate attributes",
+        "source duplicate cell type attributes");
+}
+
+void test_public_worksheet_editor_rejects_source_reference_boundaries_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-source-reference-boundary")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view sheet_data) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(sheet_data) + "</worksheet>";
+    };
+
+    const auto expect_public_reference_boundary_materialization_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-reference-boundary-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-reference-boundary-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-reference-boundary-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                "Untouched",
+                "xl/worksheets/sheet2.xml");
+        };
+
+    expect_public_reference_boundary_materialization_failure(
+        "column-overflow",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="XFE1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader cell column exceeds Excel limits",
+        "source cell column overflow");
+
+    expect_public_reference_boundary_materialization_failure(
+        "zero-cell-row",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A0"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found an invalid cell reference",
+        "source zero row cell reference");
+
+    expect_public_reference_boundary_materialization_failure(
+        "cell-row-overflow",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1048577"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader cell row exceeds Excel limits",
+        "source cell row overflow");
+
+    expect_public_reference_boundary_materialization_failure(
+        "non-column-first",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="1A"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found an invalid cell reference",
+        "source non-column-first cell reference");
+
+    expect_public_reference_boundary_materialization_failure(
+        "zero-row-number",
+        worksheet_xml(
+            R"(<sheetData><row r="0"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "must be one-based",
+        "source zero row number");
+
+    expect_public_reference_boundary_materialization_failure(
+        "row-number-overflow",
+        worksheet_xml(
+            R"(<sheetData><row r="1048577"><c r="A1048577"><v>1</v></c></row></sheetData>)"),
+        "row exceeds Excel limits",
+        "source row number overflow");
+
+    expect_public_reference_boundary_materialization_failure(
+        "invalid-row-number",
+        worksheet_xml(
+            R"(<sheetData><row r="bad"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader row found an invalid row number",
+        "source invalid row number");
+}
+
+void test_public_worksheet_editor_rejects_source_state_machine_shapes_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-source-state-machine")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view body) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(body) + "</worksheet>";
+    };
+
+    const auto expect_public_state_machine_materialization_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-state-machine-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-state-machine-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-state-machine-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                "Untouched",
+                "xl/worksheets/sheet2.xml");
+        };
+
+    expect_public_state_machine_materialization_failure(
+        "row-outside-sheet-data",
+        worksheet_xml(
+            R"(<row r="1"><c r="A1"><v>1</v></c></row><sheetData/>)"),
+        "worksheet event reader found row outside sheetData",
+        "source row outside sheetData");
+
+    expect_public_state_machine_materialization_failure(
+        "nested-rows",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><row r="2"></row></row></sheetData>)"),
+        "worksheet event reader found an invalid row boundary",
+        "source nested rows");
+
+    expect_public_state_machine_materialization_failure(
+        "cell-outside-row",
+        worksheet_xml(R"(<sheetData><c r="A1"><v>1</v></c></sheetData>)"),
+        "worksheet event reader found cell outside row",
+        "source cell outside row");
+
+    expect_public_state_machine_materialization_failure(
+        "nested-cells",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1"><c r="B1"><v>1</v></c></c></row></sheetData>)"),
+        "worksheet event reader found an invalid cell boundary",
+        "source nested cells");
+}
+
+void test_public_worksheet_editor_rejects_source_root_boundaries_cleanly()
+{
+    const auto write_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-source-root-boundary")});
+        writer.close();
+        return source;
+    };
+
+    const auto worksheet_xml = [](std::string_view body) {
+        return std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + std::string(body) + "</worksheet>";
+    };
+
+    const auto expect_public_root_boundary_materialization_failure =
+        [&](std::string_view tag,
+            std::string_view replacement_worksheet_xml,
+            std::string_view expected_diagnostic,
+            std::string_view scenario) {
+            const std::string source_name =
+                std::string("fastxlsx-workbook-editor-public-source-root-boundary-")
+                + std::string(tag) + "-source.xlsx";
+            const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path output = artifact(
+                std::string("fastxlsx-workbook-editor-public-source-root-boundary-")
+                + std::string(tag) + "-output.xlsx");
+
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/worksheets/sheet1.xml") =
+                std::string(replacement_worksheet_xml);
+            write_stored_zip_entries(source, entries);
+
+            const std::string replacement_text =
+                std::string("usable-after-source-root-boundary-") + std::string(tag);
+            check_public_worksheet_materialization_failure_hygiene(source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                "Untouched",
+                "xl/worksheets/sheet2.xml");
+        };
+
+    expect_public_root_boundary_materialization_failure(
+        "markup-before-root",
+        std::string(R"(<ignored/>)")
+            + worksheet_xml(R"(<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "worksheet event reader found markup before worksheet root",
+        "source markup before worksheet root");
+
+    expect_public_root_boundary_materialization_failure(
+        "duplicate-sheet-data",
+        worksheet_xml(R"(<sheetData/><sheetData/>)"),
+        "worksheet event reader found an invalid sheetData boundary",
+        "source duplicate sheetData elements");
+
+    expect_public_root_boundary_materialization_failure(
+        "duplicate-root",
+        worksheet_xml(R"(<sheetData/>)") + std::string(R"(<worksheet><sheetData/></worksheet>)"),
+        "worksheet event reader found markup after worksheet root",
+        "source duplicate worksheet root");
+
+    expect_public_root_boundary_materialization_failure(
+        "text-after-root",
+        worksheet_xml(R"(<sheetData/>)") + std::string("trailing-text"),
+        "worksheet event reader found text after worksheet root",
+        "source text after worksheet root");
 }
 
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
@@ -5566,9 +15235,14 @@ void test_rename_to_invalid_name_throws()
 
 } // namespace
 
-int main()
+int main(int argc, char* argv[])
 {
     try {
+        const std::string_view shard = workbook_editor_shard_from_args(argc, argv);
+        std::printf("fastxlsx.workbook_editor shard: %.*s\n",
+            static_cast<int>(shard.size()), shard.data());
+
+        if (should_run_workbook_editor_shard(shard, "core")) {
         test_replaces_sheet_data_and_preserves_untouched_parts();
         test_replace_sheet_data_preserves_surrounding_worksheet_metadata();
         test_replace_sheet_data_writes_caller_style_ids_as_is();
@@ -5587,12 +15261,40 @@ int main()
         test_move_assignment_clears_target_replacement_options_when_source_is_default();
         test_move_assignment_from_moved_from_source_clears_dirty_target_state();
         test_internal_materialized_sessions_move_with_workbook_editor_impl();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "public")) {
         test_public_worksheet_editor_handles_invalidate_after_owner_move();
         test_public_worksheet_editor_handles_invalidate_after_move_assignment();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
+        test_public_worksheet_editor_normalizes_explicit_default_style_id();
         test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
+        test_public_worksheet_editor_reacquire_reuses_dirty_session();
+        test_public_worksheet_editor_reacquire_after_save_reuses_session();
+        test_public_worksheet_editor_post_save_reacquire_preserves_clean_diagnostics();
+        test_public_worksheet_editor_post_save_option_mismatch_preserves_session();
+        test_public_worksheet_editor_post_save_summary_tracks_reacquire_dirty_state();
+        test_public_worksheet_editor_post_save_summary_preserves_rename_context();
+        test_public_worksheet_editor_failed_save_as_preserves_renamed_summary_dirty_state();
+        test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planned_name();
+        test_public_worksheet_editor_rename_back_materialized_diagnostics_use_source_name();
+        test_public_worksheet_editor_rename_back_failed_mutation_preserves_clean_diagnostics();
+        test_public_worksheet_editor_rename_back_failed_save_as_preserves_dirty_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_saved_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_preserves_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_missing_try_preserves_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_missing_worksheet_preserves_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_preserve_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserve_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preserve_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_preserve_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_preserve_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state();
+        test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_erase_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_text_escape_projection();
         test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
         test_public_worksheet_editor_handle_remains_valid_after_save_as();
         test_public_workbook_editor_pending_materialized_names_track_dirty_state();
@@ -5604,11 +15306,76 @@ int main()
         test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();
+        test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates();
         test_public_worksheet_editor_sparse_cells_snapshot();
         test_public_worksheet_editor_sparse_cells_range_snapshot();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "public-edge")) {
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_erase_shrinks_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_a1_mutations();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_blank_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_formula_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scalar_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scalar_erase_shrinks_projection();
+        test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_formula_erase_shrinks_projection();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "source-success")) {
+        test_public_worksheet_editor_materializes_source_supported_values();
+        test_public_worksheet_editor_flattens_source_inline_rich_text();
+        test_public_worksheet_editor_materializes_prefixed_source_inline_strings();
+        test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled();
+        test_public_worksheet_editor_defers_source_shared_strings_until_index_cells();
+        test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_until_index_cells();
+        test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_index_cells();
+        test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until_index_cells();
+        test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_edge();
+        test_public_worksheet_editor_materializes_source_max_coordinate_formula_and_erases_edge();
+        test_public_worksheet_editor_materializes_source_max_coordinate_shared_string_and_erases_edge();
+        test_public_worksheet_editor_materializes_source_max_coordinate_scalar_values_and_erases_edge();
+        test_public_worksheet_editor_materializes_source_max_coordinate_empty_inline_strings_and_erases_edge();
+        test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared_string_and_erases_edge();
+        test_public_worksheet_editor_materializes_empty_source_worksheets();
+        test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_projection();
+        test_public_worksheet_editor_drops_relationship_wrapper_metadata_without_pruning();
+        test_public_worksheet_editor_drops_range_wrapper_metadata_on_dirty_projection();
+        test_public_worksheet_editor_drops_source_comments_and_processing_instructions_on_dirty_projection();
+        test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_copy_original();
+        test_public_worksheet_editor_materializes_source_shared_strings();
+        test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations();
+        test_public_worksheet_editor_flattens_rich_source_shared_strings();
+        test_public_worksheet_editor_materializes_prefixed_source_shared_strings();
+        test_public_worksheet_editor_materializes_local_names_without_namespace_validation();
+        test_public_worksheet_editor_materializes_source_shared_strings_xml_space_and_projects_inline();
+        test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes();
+        test_public_worksheet_editor_materializes_source_formulas();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "source-failure")) {
+        test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy_original();
+        test_public_worksheet_editor_rejects_invalid_source_shared_string_index();
+        test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata();
+        test_public_worksheet_editor_rejects_source_style_ids_without_dirtying_state();
+        test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly();
+        test_public_worksheet_editor_rejects_malformed_source_worksheet_xml_cleanly();
+        test_public_worksheet_editor_rejects_source_cell_reference_issues_cleanly();
+        test_public_worksheet_editor_rejects_source_formula_shapes_cleanly();
+        test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly();
+        test_public_worksheet_editor_rejects_source_row_cell_structure_cleanly();
+        test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly();
+        test_public_worksheet_editor_rejects_wrong_namespace_unsupported_local_names_cleanly();
+        test_public_worksheet_editor_rejects_source_xml_parser_issues_cleanly();
+        test_public_worksheet_editor_rejects_source_reference_boundaries_cleanly();
+        test_public_worksheet_editor_rejects_source_state_machine_shapes_cleanly();
+        test_public_worksheet_editor_rejects_source_root_boundaries_cleanly();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "materialized")) {
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();
@@ -5633,6 +15400,9 @@ int main()
         test_internal_materialized_session_load_guard_failure_preserves_editor_state();
         test_internal_materialized_session_memory_guard_failure_preserves_editor_state();
         test_internal_materialized_session_missing_source_load_preserves_editor_state();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "facade")) {
         test_pending_change_diagnostics_track_public_edits();
         test_last_edit_error_tracks_failed_public_edits();
         test_pending_worksheet_edit_summaries_track_public_facade_state();
@@ -5660,6 +15430,7 @@ int main()
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();
         test_rename_to_invalid_name_throws();
+        }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());
         return 1;

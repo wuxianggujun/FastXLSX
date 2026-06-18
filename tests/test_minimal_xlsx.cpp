@@ -265,13 +265,15 @@ void test_internal_cell_store_sparse_boundary()
     check(formula->kind == fastxlsx::CellValueKind::Formula,
         "CellStore formula record kind mismatch");
     check(formula->text_value == "A1+B1", "CellStore formula payload mismatch");
-    check(formula->style_id.has_value(), "CellStore should retain explicit style handles");
+    check(!formula->style_id.has_value(),
+        "CellStore should normalize explicit default StyleId to no style handle");
     const fastxlsx::CellValue round_tripped_formula = formula->to_value();
     check(round_tripped_formula.kind() == fastxlsx::CellValueKind::Formula,
         "CellRecord should convert back to a formula CellValue");
     check(round_tripped_formula.text_value() == "A1+B1",
         "CellRecord formula round trip payload mismatch");
-    check(round_tripped_formula.has_style(), "CellRecord should round trip style handles");
+    check(!round_tripped_formula.has_style(),
+        "CellRecord should round trip normalized default StyleId as no style");
 
     store.set_cell(2, 1, fastxlsx::CellValue::boolean(false));
     check(store.cell_count() == 3, "CellStore overwrite should not grow the sparse index");
@@ -918,12 +920,74 @@ void test_internal_cell_store_worksheet_loader()
         },
         "worksheet loader should reject style references");
 
+    const fastxlsx::detail::CellStore explicit_default_style_store =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(
+            R"(<worksheet><sheetData><row r="1"><c r="A1" s="0"><v>1</v></c></row></sheetData></worksheet>)");
+    const fastxlsx::detail::CellRecord* explicit_default_style_record =
+        explicit_default_style_store.find_cell(1, 1);
+    const fastxlsx::CellValue explicit_default_style_value =
+        explicit_default_style_record != nullptr ? explicit_default_style_record->to_value()
+                                                 : fastxlsx::CellValue::blank();
+    check(explicit_default_style_record != nullptr
+            && explicit_default_style_value.kind() == fastxlsx::CellValueKind::Number
+            && explicit_default_style_value.number_value() == 1.0
+            && !explicit_default_style_value.has_style(),
+        "worksheet loader should normalize explicit default style references");
+    const fastxlsx::detail::CellStore single_quoted_default_style_store =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(
+            R"(<worksheet><sheetData><row r="1"><c r="A1" s='0'><v>1</v></c></row></sheetData></worksheet>)");
+    const fastxlsx::detail::CellRecord* single_quoted_default_style_record =
+        single_quoted_default_style_store.find_cell(1, 1);
+    check(single_quoted_default_style_record != nullptr
+            && !single_quoted_default_style_record->to_value().has_style(),
+        "worksheet loader should accept exact default style references with single quotes");
+    const fastxlsx::detail::CellStore spaced_default_style_store =
+        fastxlsx::detail::load_cell_store_from_worksheet_xml(
+            R"(<worksheet><sheetData><row r="1"><c r="A1" s = "0"><v>1</v></c></row></sheetData></worksheet>)");
+    const fastxlsx::detail::CellRecord* spaced_default_style_record =
+        spaced_default_style_store.find_cell(1, 1);
+    check(spaced_default_style_record != nullptr
+            && !spaced_default_style_record->to_value().has_style(),
+        "worksheet loader should accept exact default style references with whitespace around equals");
+
+    const auto expect_rejected_style_token = [](std::string_view style_attribute,
+                                                const char* scenario) {
+        const std::string xml =
+            std::string(R"(<worksheet><sheetData><row r="1"><c r="A1" )")
+            + std::string(style_attribute)
+            + R"(><v>1</v></c></row></sheetData></worksheet>)";
+        check_fastxlsx_error(
+            [&] {
+                (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(xml);
+            },
+            scenario);
+    };
+    expect_rejected_style_token(R"(s="")",
+        "worksheet loader should reject empty style references");
+    expect_rejected_style_token(R"(s="00")",
+        "worksheet loader should reject leading-zero default-like style references");
+    expect_rejected_style_token(R"(s="+0")",
+        "worksheet loader should reject signed default-like style references");
+    expect_rejected_style_token(R"(s=" 0 ")",
+        "worksheet loader should reject whitespace-padded default-like style references");
+    expect_rejected_style_token(R"(s="&#48;")",
+        "worksheet loader should reject entity-encoded default-like style references");
+    expect_rejected_style_token(R"(s)",
+        "worksheet loader should reject valueless default style attributes");
+    expect_rejected_style_token(R"(s=0)",
+        "worksheet loader should reject unquoted default style attributes");
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" s="0"><v>1</v></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1" s="0><v>1</v></c></row></sheetData></worksheet>)");
         },
-        "worksheet loader should reject explicit default style references");
+        "worksheet loader should reject unterminated default style attributes");
+    expect_rejected_style_token(R"(s="0" s="0")",
+        "worksheet loader should reject duplicate default style attributes");
+    expect_rejected_style_token(R"(x:s="0")",
+        "worksheet loader should reject qualified default-like style references");
+    expect_rejected_style_token(R"(x:s="1")",
+        "worksheet loader should reject qualified non-default style references");
 
     check_fastxlsx_error(
         [&] {
@@ -1051,19 +1115,52 @@ void test_internal_cell_store_worksheet_loader()
         },
         "worksheet loader should reject unsupported inline text attributes");
 
-    check_fastxlsx_error(
-        [&] {
-            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><t>rich</t></r></is></c></row></sheetData></worksheet>)");
-        },
-        "worksheet loader should reject inline rich text runs");
+    {
+        const fastxlsx::detail::CellStore rich_inline_store =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><rPr><b/><color rgb="FFFF0000"/></rPr><t>rich-</t></r><r><t>A&amp;B </t></r><r><t xml:space="preserve"> kept </t></r><rPh sb="0" eb="1"><t>ignored-phonetic</t></rPh><phoneticPr fontId="1"/><extLst><ext uri="{fastxlsx-test}"><t>ignored-ext</t></ext></extLst></is></c></row></sheetData></worksheet>)");
+        const fastxlsx::detail::CellRecord* rich_inline =
+            rich_inline_store.find_cell(1, 1);
+        check(rich_inline != nullptr && rich_inline->kind == fastxlsx::CellValueKind::Text,
+            "worksheet loader should materialize source inline rich text as text");
+        check(rich_inline->text_value == "rich-A&B  kept ",
+            "worksheet loader should flatten inline rich text and ignore phonetic/ext text");
+    }
 
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t><phoneticPr fontId="1"/></is></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>direct-</t><r><t>rich</t></r></is></c></row></sheetData></worksheet>)");
         },
-        "worksheet loader should reject inline phonetic metadata");
+        "worksheet loader should reject mixed direct and rich inline text");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><rPr><b/></rPr></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject inline rich text properties outside a run");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><rPr><t>not-text</t></rPr><t>rich</t></r></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject value markup inside inline rich text properties");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><t>rich</t></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unclosed inline rich text runs");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><extLst><ext uri="{fastxlsx-test}"><t>ignored</t></extLst></is></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject unclosed ignored inline rich text metadata");
 
     check_fastxlsx_error(
         [&] {

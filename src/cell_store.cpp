@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cmath>
 #include <exception>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -16,6 +17,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 namespace fastxlsx::detail {
 
@@ -57,6 +59,181 @@ bool is_ascii_alpha(char ch)
 bool is_ascii_digit(char ch)
 {
     return ch >= '0' && ch <= '9';
+}
+
+bool is_xml_encoding_name(std::string_view value)
+{
+    if (value.empty() || !is_ascii_alpha(value.front())) {
+        return false;
+    }
+    for (const char ch : value) {
+        if (!is_ascii_alpha(ch) && !is_ascii_digit(ch) && ch != '.' && ch != '_'
+            && ch != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_xml_declaration_tag(std::string_view raw_tag)
+{
+    if (raw_tag.size() <= 5 || raw_tag.substr(0, 5) != "<?xml") {
+        return false;
+    }
+
+    const char after_target = raw_tag[5];
+    return is_space(after_target) || after_target == '?';
+}
+
+bool ascii_equals_ignore_case(std::string_view value, std::string_view lower_case)
+{
+    if (value.size() != lower_case.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < value.size(); ++index) {
+        char ch = value[index];
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = static_cast<char>(ch - 'A' + 'a');
+        }
+        if (ch != lower_case[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool is_reserved_xml_processing_instruction_target(std::string_view raw_tag)
+{
+    if (raw_tag.size() < 4 || raw_tag.substr(0, 2) != "<?") {
+        return false;
+    }
+
+    std::size_t position = 2;
+    const std::size_t target_begin = position;
+    while (position < raw_tag.size() && !is_space(raw_tag[position])
+        && raw_tag[position] != '?' && raw_tag[position] != '>') {
+        ++position;
+    }
+
+    const std::string_view target =
+        raw_tag.substr(target_begin, position - target_begin);
+    return ascii_equals_ignore_case(target, "xml");
+}
+
+[[noreturn]] void throw_malformed_shared_strings_xml_declaration()
+{
+    throw FastXlsxError(
+        "CellStore sharedStrings loader found malformed XML declaration");
+}
+
+void skip_spaces(std::string_view value, std::size_t& position)
+{
+    while (position < value.size() && is_space(value[position])) {
+        ++position;
+    }
+}
+
+std::pair<std::string_view, std::string_view> parse_xml_declaration_attribute(
+    std::string_view body, std::size_t& position)
+{
+    skip_spaces(body, position);
+    if (position >= body.size()) {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+
+    const std::size_t name_begin = position;
+    while (position < body.size() && !is_space(body[position])
+        && body[position] != '=') {
+        ++position;
+    }
+    if (position == name_begin) {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+
+    const std::string_view name = body.substr(name_begin, position - name_begin);
+    skip_spaces(body, position);
+    if (position >= body.size() || body[position] != '=') {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+    ++position;
+
+    skip_spaces(body, position);
+    if (position >= body.size() || (body[position] != '"' && body[position] != '\'')) {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+
+    const char quote = body[position];
+    ++position;
+    const std::size_t value_begin = position;
+    while (position < body.size() && body[position] != quote) {
+        ++position;
+    }
+    if (position >= body.size()) {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+
+    const std::string_view value = body.substr(value_begin, position - value_begin);
+    ++position;
+    return {name, value};
+}
+
+void validate_shared_strings_xml_declaration(std::string_view raw_tag)
+{
+    if (raw_tag.size() < 7 || raw_tag.substr(raw_tag.size() - 2) != "?>") {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+    if (raw_tag.substr(0, 5) != "<?xml" || !is_space(raw_tag[5])) {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+
+    const std::string_view body = raw_tag.substr(2, raw_tag.size() - 4);
+    std::size_t position = 3;
+    const auto [version_name, version_value] =
+        parse_xml_declaration_attribute(body, position);
+    if (version_name != "version") {
+        throw_malformed_shared_strings_xml_declaration();
+    }
+    if (version_value != "1.0" && version_value != "1.1") {
+        throw FastXlsxError(
+            "CellStore sharedStrings loader found unsupported XML declaration version");
+    }
+
+    bool saw_encoding = false;
+    bool saw_standalone = false;
+    while (true) {
+        skip_spaces(body, position);
+        if (position >= body.size()) {
+            return;
+        }
+
+        const auto [name, value] = parse_xml_declaration_attribute(body, position);
+        if (name == "version") {
+            throw_malformed_shared_strings_xml_declaration();
+        }
+        if (name == "encoding") {
+            if (saw_encoding || saw_standalone || !is_xml_encoding_name(value)) {
+                throw_malformed_shared_strings_xml_declaration();
+            }
+            saw_encoding = true;
+            continue;
+        }
+        if (name == "standalone") {
+            if (saw_standalone || (value != "yes" && value != "no")) {
+                throw_malformed_shared_strings_xml_declaration();
+            }
+            saw_standalone = true;
+            continue;
+        }
+        throw_malformed_shared_strings_xml_declaration();
+    }
+}
+
+void validate_shared_strings_processing_instruction(std::string_view raw_tag)
+{
+    if (raw_tag.size() < 4 || raw_tag.substr(raw_tag.size() - 2) != "?>") {
+        throw FastXlsxError(
+            "CellStore sharedStrings loader found malformed processing instruction");
+    }
 }
 
 void append_utf8(std::string& output, std::uint32_t code_point)
@@ -196,6 +373,38 @@ std::string_view tag_body(std::string_view raw_tag)
     return body;
 }
 
+std::string_view local_xml_name(std::string_view name)
+{
+    const std::size_t colon = name.find(':');
+    if (colon == std::string_view::npos) {
+        return name;
+    }
+    return name.substr(colon + 1);
+}
+
+std::size_t find_xml_tag_end(std::string_view xml, std::size_t open)
+{
+    char quote = '\0';
+    for (std::size_t index = open + 1; index < xml.size(); ++index) {
+        const char ch = xml[index];
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '>') {
+            return index;
+        }
+    }
+
+    throw FastXlsxError("CellStore worksheet loader found a truncated XML tag");
+}
+
 std::optional<std::string_view> unqualified_attribute_value(
     std::string_view raw_tag, std::string_view attribute_name)
 {
@@ -225,6 +434,10 @@ std::optional<std::string_view> unqualified_attribute_value(
             ++position;
         }
         if (position >= body.size() || body[position] != '=') {
+            if (name == attribute_name) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found an attribute without a value");
+            }
             continue;
         }
         ++position;
@@ -260,6 +473,450 @@ std::optional<std::string_view> unqualified_attribute_value(
     return value;
 }
 
+void validate_raw_tag_attribute_syntax(
+    std::string_view raw_tag, std::string_view context)
+{
+    std::string_view body = tag_body(raw_tag);
+    std::size_t position = 0;
+    while (position < body.size() && !is_space(body[position]) && body[position] != '/'
+        && body[position] != '?') {
+        ++position;
+    }
+
+    while (position < body.size()) {
+        while (position < body.size() && is_space(body[position])) {
+            ++position;
+        }
+        if (position >= body.size() || body[position] == '/' || body[position] == '?') {
+            return;
+        }
+
+        const std::size_t name_begin = position;
+        while (position < body.size() && !is_space(body[position]) && body[position] != '='
+            && body[position] != '/' && body[position] != '?') {
+            ++position;
+        }
+        if (position == name_begin) {
+            throw FastXlsxError(std::string(context) + " found an invalid attribute name");
+        }
+
+        while (position < body.size() && is_space(body[position])) {
+            ++position;
+        }
+        if (position >= body.size() || body[position] != '=') {
+            throw FastXlsxError(std::string(context) + " found an attribute without a value");
+        }
+        ++position;
+
+        while (position < body.size() && is_space(body[position])) {
+            ++position;
+        }
+        if (position >= body.size() || (body[position] != '"' && body[position] != '\'')) {
+            throw FastXlsxError(std::string(context) + " found an unquoted attribute value");
+        }
+
+        const char quote = body[position];
+        ++position;
+        while (position < body.size() && body[position] != quote) {
+            ++position;
+        }
+        if (position >= body.size()) {
+            throw FastXlsxError(std::string(context) + " found an unterminated attribute value");
+        }
+        ++position;
+    }
+}
+
+bool has_non_whitespace(std::string_view value)
+{
+    for (const char ch : value) {
+        if (!is_space(ch)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool is_self_closing_raw_tag(std::string_view raw_tag)
+{
+    std::string_view body = raw_tag.substr(1, raw_tag.size() - 2);
+    body = trim(body);
+    if (body.empty()) {
+        return false;
+    }
+    std::size_t end = body.size();
+    while (end > 0 && is_space(body[end - 1])) {
+        --end;
+    }
+    return end > 0 && body[end - 1] == '/';
+}
+
+std::string_view raw_tag_name(std::string_view raw_tag)
+{
+    std::string_view body = tag_body(raw_tag);
+    std::size_t end = 0;
+    while (end < body.size() && !is_space(body[end]) && body[end] != '/' && body[end] != '?') {
+        ++end;
+    }
+    return local_xml_name(body.substr(0, end));
+}
+
+int hex_digit_value(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    return -1;
+}
+
+std::string decode_percent_encoded_relationship_target(std::string_view target)
+{
+    std::string decoded;
+    decoded.reserve(target.size());
+
+    for (std::size_t index = 0; index < target.size(); ++index) {
+        const char ch = target[index];
+        if (ch != '%') {
+            decoded.push_back(ch);
+            continue;
+        }
+
+        if (index + 2 >= target.size()) {
+            throw FastXlsxError("relationship target percent escape is incomplete");
+        }
+
+        const int high = hex_digit_value(target[index + 1]);
+        const int low = hex_digit_value(target[index + 2]);
+        if (high < 0 || low < 0) {
+            throw FastXlsxError("relationship target percent escape is invalid");
+        }
+
+        const char decoded_char = static_cast<char>((high << 4) | low);
+        if (decoded_char == '\0') {
+            throw FastXlsxError("relationship target cannot contain null bytes");
+        }
+
+        decoded.push_back(decoded_char);
+        index += 2;
+    }
+
+    return decoded;
+}
+
+std::string resolve_internal_relationship_target_path(
+    const PartName& source_part, const Relationship& relationship)
+{
+    if (relationship.target_mode == Relationship::TargetMode::External) {
+        throw FastXlsxError("sharedStrings relationship target cannot be external");
+    }
+    if (relationship.target.find_first_of("?#") != std::string::npos) {
+        throw FastXlsxError("sharedStrings relationship target must be a package part");
+    }
+
+    const std::string decoded_target =
+        decode_percent_encoded_relationship_target(relationship.target);
+    if (!decoded_target.empty() && decoded_target.front() == '/') {
+        return PartName(decoded_target).value();
+    }
+
+    const std::string& source = source_part.value();
+    const std::size_t slash = source.find_last_of('/');
+    if (slash == std::string::npos || slash == 0) {
+        return PartName("/" + decoded_target).value();
+    }
+    return PartName(source.substr(0, slash) + "/" + decoded_target).value();
+}
+
+std::vector<std::string> parse_shared_strings_xml(std::string_view xml)
+{
+    std::vector<std::string> strings;
+    std::vector<std::string> element_stack;
+    std::string current_text;
+    bool saw_root = false;
+    bool closed_root = false;
+    bool saw_xml_declaration = false;
+    bool saw_prolog_trivia = false;
+    bool saw_prolog_text = false;
+    bool current_item_saw_direct_text = false;
+    bool current_item_saw_rich_run = false;
+
+    const auto stack_contains = [&](std::string_view name) {
+        return std::find(element_stack.begin(), element_stack.end(), name)
+            != element_stack.end();
+    };
+
+    const auto inside_ignored_metadata = [&]() {
+        return stack_contains("rPh") || stack_contains("phoneticPr")
+            || stack_contains("extLst");
+    };
+
+    const auto inside_text_element = [&]() {
+        return !element_stack.empty() && element_stack.back() == "t";
+    };
+
+    const auto capture_text = [&](std::string_view text) {
+        if (text.empty()) {
+            return;
+        }
+        if (inside_ignored_metadata()) {
+            return;
+        }
+        if (!element_stack.empty() && element_stack.back() == "t") {
+            current_text += unescape_xml_text(text);
+            return;
+        }
+        if (!saw_root) {
+            saw_prolog_text = true;
+        }
+        if (has_non_whitespace(text)) {
+            throw FastXlsxError("CellStore sharedStrings loader found text outside a text element");
+        }
+    };
+
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = xml.find('<', offset);
+        if (open == std::string_view::npos) {
+            capture_text(xml.substr(offset));
+            break;
+        }
+
+        capture_text(xml.substr(offset, open - offset));
+        if (open + 1 >= xml.size()) {
+            throw FastXlsxError("CellStore sharedStrings loader found a truncated XML tag");
+        }
+
+        if (xml.substr(open, 4) == "<!--") {
+            if (inside_text_element()) {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found nested markup inside a text element");
+            }
+            if (!saw_root) {
+                saw_prolog_trivia = true;
+            }
+            const std::size_t close = xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                throw FastXlsxError("CellStore sharedStrings loader found an unterminated comment");
+            }
+            offset = close + 3;
+            continue;
+        }
+
+        const char marker = xml[open + 1];
+        const std::size_t close = find_xml_tag_end(xml, open);
+        const std::string_view raw_tag = xml.substr(open, close - open + 1);
+
+        if (marker == '?') {
+            if (inside_text_element()) {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found nested markup inside a text element");
+            }
+            if (is_xml_declaration_tag(raw_tag)) {
+                if (saw_root) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found XML declaration after sharedStrings root start");
+                }
+                if (saw_xml_declaration) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found duplicate XML declaration");
+                }
+                if (saw_prolog_trivia) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found XML declaration after sharedStrings prolog markup");
+                }
+                if (saw_prolog_text) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found XML declaration after sharedStrings prolog text");
+                }
+                validate_shared_strings_xml_declaration(raw_tag);
+                saw_xml_declaration = true;
+            } else {
+                validate_shared_strings_processing_instruction(raw_tag);
+                if (is_reserved_xml_processing_instruction_target(raw_tag)) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found reserved XML processing instruction target");
+                }
+                if (!saw_root) {
+                    saw_prolog_trivia = true;
+                }
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (marker == '!') {
+            if (inside_text_element()) {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found nested markup inside a text element");
+            }
+            throw FastXlsxError(
+                "CellStore sharedStrings loader found unsupported markup declaration");
+        }
+
+        validate_raw_tag_attribute_syntax(raw_tag, "CellStore sharedStrings loader");
+        const std::string_view name = raw_tag_name(raw_tag);
+        const bool closing = marker == '/';
+        const bool self_closing = is_self_closing_raw_tag(raw_tag);
+
+        if (closing) {
+            if (element_stack.empty() || element_stack.back() != name) {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found mismatched closing tags");
+            }
+            if (name == "si") {
+                strings.push_back(current_text);
+                current_text.clear();
+                current_item_saw_direct_text = false;
+                current_item_saw_rich_run = false;
+            }
+            element_stack.pop_back();
+            if (element_stack.empty()) {
+                closed_root = true;
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (closed_root) {
+            throw FastXlsxError("CellStore sharedStrings loader found markup after the root");
+        }
+
+        if (!saw_root) {
+            if (name != "sst") {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader root is missing an sst element");
+            }
+            saw_root = true;
+            if (!self_closing) {
+                element_stack.push_back(std::string(name));
+            } else {
+                closed_root = true;
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (name == "si"
+            && !(element_stack.size() == 1 && element_stack.back() == "sst")) {
+            throw FastXlsxError(
+                "CellStore sharedStrings loader found a nested shared string item");
+        }
+        if (!element_stack.empty() && element_stack.back() == "t") {
+            throw FastXlsxError(
+                "CellStore sharedStrings loader found nested markup inside a text element");
+        }
+        if (!inside_ignored_metadata() && !stack_contains("rPr")) {
+            const std::string_view parent =
+                element_stack.empty() ? std::string_view {} : element_stack.back();
+            if (parent == "sst" && name != "si" && name != "extLst"
+                && name != "phoneticPr") {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found an unsupported root child element");
+            }
+            if (parent == "si" && name == "rPr") {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found malformed rich text metadata");
+            }
+            if (parent == "si" && name == "t") {
+                if (current_item_saw_rich_run) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found mixed direct and rich text in a shared string item");
+                }
+                current_item_saw_direct_text = true;
+            }
+            if (parent == "si" && name == "r") {
+                if (current_item_saw_direct_text) {
+                    throw FastXlsxError(
+                        "CellStore sharedStrings loader found mixed direct and rich text in a shared string item");
+                }
+                current_item_saw_rich_run = true;
+            }
+            if (parent == "si" && name != "t" && name != "r" && name != "rPh"
+                && name != "phoneticPr" && name != "extLst") {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found an unsupported shared string item element");
+            }
+            if (parent == "r" && name != "t" && name != "rPr") {
+                throw FastXlsxError(
+                    "CellStore sharedStrings loader found an unsupported shared string rich text element");
+            }
+        } else if (stack_contains("rPr") && name == "t") {
+            throw FastXlsxError(
+                "CellStore sharedStrings loader found malformed rich text metadata");
+        }
+
+        if (!self_closing) {
+            element_stack.push_back(std::string(name));
+        } else if (name == "si") {
+            strings.push_back(current_text);
+            current_text.clear();
+            current_item_saw_direct_text = false;
+            current_item_saw_rich_run = false;
+        }
+
+        offset = close + 1;
+    }
+
+    if (!saw_root || !element_stack.empty()) {
+        throw FastXlsxError("CellStore sharedStrings loader found malformed XML");
+    }
+
+    return strings;
+}
+
+std::optional<std::vector<std::string>> load_shared_strings_from_workbook(
+    const PackageReader& reader)
+{
+    const PartName workbook_part("/xl/workbook.xml");
+    const RelationshipSet* workbook_relationships = reader.relationships_for(workbook_part);
+    if (workbook_relationships == nullptr) {
+        return std::nullopt;
+    }
+
+    const Relationship* shared_strings_relationship = nullptr;
+    for (const Relationship& relationship : workbook_relationships->relationships()) {
+        if (relationship.type !=
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings") {
+            continue;
+        }
+        if (shared_strings_relationship != nullptr) {
+            throw FastXlsxError(
+                "workbook sharedStrings lookup found multiple sharedStrings relationships");
+        }
+        shared_strings_relationship = &relationship;
+    }
+
+    if (shared_strings_relationship == nullptr) {
+        return std::nullopt;
+    }
+
+    const PartName shared_strings_part(resolve_internal_relationship_target_path(
+        workbook_part, *shared_strings_relationship));
+    const PackagePart* package_part = reader.part_index().find_part(shared_strings_part);
+    if (package_part == nullptr) {
+        throw FastXlsxError(
+            "workbook sharedStrings relationship targets an unknown package part");
+    }
+    if (package_part->content_type
+        != "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml") {
+        throw FastXlsxError(
+            "workbook sharedStrings relationship target is not a sharedStrings part");
+    }
+
+    try {
+        return parse_shared_strings_xml(reader.read_entry(shared_strings_part.zip_path()));
+    } catch (const std::exception& error) {
+        throw FastXlsxError("failed to load workbook sharedStrings part '"
+            + shared_strings_part.value() + "' ZIP entry '" + shared_strings_part.zip_path()
+            + "': " + error.what());
+    }
+}
+
 bool raw_tag_has_attributes(std::string_view raw_tag)
 {
     const std::string_view body = tag_body(raw_tag);
@@ -274,15 +931,20 @@ bool raw_tag_has_attributes(std::string_view raw_tag)
 }
 
 bool is_allowed_attribute_name(
-    std::string_view name, std::string_view allowed_first, std::optional<std::string_view> allowed_second)
+    std::string_view name,
+    std::string_view allowed_first,
+    std::optional<std::string_view> allowed_second,
+    std::optional<std::string_view> allowed_third)
 {
-    return name == allowed_first || (allowed_second.has_value() && name == *allowed_second);
+    return name == allowed_first || (allowed_second.has_value() && name == *allowed_second)
+        || (allowed_third.has_value() && name == *allowed_third);
 }
 
 bool raw_tag_has_unsupported_attributes(
     std::string_view raw_tag,
     std::string_view allowed_first,
-    std::optional<std::string_view> allowed_second = std::nullopt)
+    std::optional<std::string_view> allowed_second = std::nullopt,
+    std::optional<std::string_view> allowed_third = std::nullopt)
 {
     std::string_view body = tag_body(raw_tag);
     std::size_t position = 0;
@@ -304,7 +966,7 @@ bool raw_tag_has_unsupported_attributes(
             ++position;
         }
         const std::string_view name = body.substr(name_begin, position - name_begin);
-        if (!is_allowed_attribute_name(name, allowed_first, allowed_second)) {
+        if (!is_allowed_attribute_name(name, allowed_first, allowed_second, allowed_third)) {
             return true;
         }
 
@@ -336,6 +998,19 @@ bool raw_tag_has_unsupported_attributes(
     }
 
     return false;
+}
+
+void validate_source_style_attribute_for_load(std::string_view raw_tag)
+{
+    const std::optional<std::string_view> style_id =
+        unqualified_attribute_value(raw_tag, "s");
+    if (!style_id.has_value()) {
+        return;
+    }
+    if (*style_id != "0") {
+        throw FastXlsxError(
+            "CellStore worksheet loader does not load style id references");
+    }
 }
 
 struct ParsedCellReference {
@@ -596,9 +1271,11 @@ enum class SourceCellType {
     Number,
     Boolean,
     InlineString,
+    SharedString,
 };
 
-SourceCellType source_cell_type_from_raw_tag(std::string_view raw_xml)
+SourceCellType source_cell_type_from_raw_tag(
+    std::string_view raw_xml, bool allow_shared_strings)
 {
     const std::optional<std::string_view> type = unqualified_attribute_value(raw_xml, "t");
     if (!type.has_value() || *type == "n") {
@@ -611,8 +1288,11 @@ SourceCellType source_cell_type_from_raw_tag(std::string_view raw_xml)
         return SourceCellType::InlineString;
     }
     if (*type == "s") {
-        throw FastXlsxError(
-            "CellStore worksheet loader does not load shared string indexes");
+        if (!allow_shared_strings) {
+            throw FastXlsxError(
+                "CellStore worksheet loader does not load shared string indexes");
+        }
+        return SourceCellType::SharedString;
     }
 
     std::string message = "CellStore worksheet loader found unsupported cell type";
@@ -635,10 +1315,31 @@ struct ActiveSourceCell {
     std::string scalar_text;
     std::string inline_text;
     std::string formula_text;
+    std::size_t inline_rich_run_depth = 0;
+    std::size_t inline_rich_properties_depth = 0;
+    std::size_t inline_ignored_metadata_depth = 0;
+    std::size_t inline_ignored_metadata_text_depth = 0;
+    std::vector<std::string> inline_ignored_metadata_stack;
     bool saw_scalar_value_element = false;
     bool saw_inline_text_element = false;
+    bool saw_direct_inline_text_element = false;
     bool saw_formula_element = false;
 };
+
+using SharedStringsProvider = std::function<const std::vector<std::string>&()>;
+
+bool parse_shared_string_index(
+    std::string_view value, std::uint64_t& index, const char* error_message)
+{
+    if (value.empty()) {
+        throw FastXlsxError(error_message);
+    }
+
+    const char* const begin = value.data();
+    const char* const end = begin + value.size();
+    const auto result = std::from_chars(begin, end, index);
+    return result.ec == std::errc {} && result.ptr == end;
+}
 
 double parse_cell_number(std::string_view value)
 {
@@ -663,7 +1364,8 @@ bool parse_cell_boolean(std::string_view value)
     throw FastXlsxError("CellStore worksheet loader found an invalid boolean cell value");
 }
 
-CellValue materialize_cell_value(const ActiveSourceCell& cell)
+CellValue materialize_cell_value(
+    const ActiveSourceCell& cell, const SharedStringsProvider* shared_strings_provider)
 {
     if (cell.saw_formula_element) {
         if (cell.formula_text.empty()) {
@@ -688,6 +1390,30 @@ CellValue materialize_cell_value(const ActiveSourceCell& cell)
             return CellValue::blank();
         }
         return CellValue::text(cell.inline_text);
+    case SourceCellType::SharedString:
+        if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found an invalid shared string index");
+        }
+        if (shared_strings_provider == nullptr) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found shared string indexes without a sharedStrings table");
+        }
+        {
+            const std::vector<std::string>& shared_strings = (*shared_strings_provider)();
+            std::uint64_t index = 0;
+            if (!parse_shared_string_index(
+                    cell.scalar_text, index,
+                    "CellStore worksheet loader found an invalid shared string index")) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found an invalid shared string index");
+            }
+            if (index >= shared_strings.size()) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found a shared string index out of range");
+            }
+            return CellValue::text(shared_strings[static_cast<std::size_t>(index)]);
+        }
     }
 
     throw FastXlsxError("CellStore worksheet loader found an unsupported internal cell state");
@@ -719,8 +1445,10 @@ void reject_unsupported_value_shape(const ActiveSourceCell& cell, std::string_vi
 
 class CellStoreWorksheetLoader {
 public:
-    explicit CellStoreWorksheetLoader(CellStoreOptions options)
+    explicit CellStoreWorksheetLoader(
+        CellStoreOptions options, const SharedStringsProvider* shared_strings_provider = nullptr)
         : store_(std::move(options))
+        , shared_strings_provider_(shared_strings_provider)
     {
     }
 
@@ -807,11 +1535,9 @@ private:
         if (!inside_row_) {
             throw FastXlsxError("CellStore worksheet loader found a cell outside a row");
         }
-        if (unqualified_attribute_value(event.raw_xml, "s").has_value()) {
-            throw FastXlsxError(
-                "CellStore worksheet loader does not load style id references");
-        }
-        if (raw_tag_has_unsupported_attributes(event.raw_xml, "r", std::string_view {"t"})) {
+        validate_source_style_attribute_for_load(event.raw_xml);
+        if (raw_tag_has_unsupported_attributes(
+                event.raw_xml, "r", std::string_view {"t"}, std::string_view {"s"})) {
             throw FastXlsxError(
                 "CellStore worksheet loader does not load cell metadata attributes");
         }
@@ -836,7 +1562,8 @@ private:
                 "CellStore worksheet loader found out-of-order cell references");
         }
         last_source_cell_ = cell.position;
-        cell.type = source_cell_type_from_raw_tag(event.raw_xml);
+        cell.type = source_cell_type_from_raw_tag(
+            event.raw_xml, shared_strings_provider_ != nullptr);
         active_cell_ = std::move(cell);
     }
 
@@ -847,6 +1574,16 @@ private:
         }
 
         ActiveSourceCell& cell = *active_cell_;
+        if (cell.type == SourceCellType::InlineString
+            && !cell.inline_ignored_metadata_stack.empty()) {
+            consume_inline_ignored_value_markup(cell, event);
+            return;
+        }
+        if (cell.type == SourceCellType::InlineString
+            && cell.inline_rich_properties_depth > 0) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found malformed inline rich text metadata");
+        }
         if (is_closing_raw_tag(event.raw_xml)) {
             cell.current_value_element.clear();
             return;
@@ -883,8 +1620,122 @@ private:
             return;
         }
 
+        if (cell.type == SourceCellType::InlineString) {
+            consume_inline_string_metadata(cell, event);
+            return;
+        }
+
         throw FastXlsxError(
-            "CellStore worksheet loader does not load inline rich text or phonetic metadata");
+            "CellStore worksheet loader does not load unsupported cell metadata");
+    }
+
+    static void consume_inline_string_metadata(
+        ActiveSourceCell& cell, const WorksheetEvent& event)
+    {
+        const bool closing = is_closing_raw_tag(event.raw_xml);
+        if (!cell.inline_ignored_metadata_stack.empty()) {
+            if (cell.inline_ignored_metadata_text_depth > 0) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found malformed inline rich text metadata");
+            }
+            if (event.element_name == "si") {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found malformed inline rich text metadata");
+            }
+            if (closing) {
+                if (cell.inline_ignored_metadata_stack.back() != event.element_name) {
+                    throw FastXlsxError(
+                        "CellStore worksheet loader found malformed inline rich text metadata");
+                }
+                cell.inline_ignored_metadata_stack.pop_back();
+                cell.inline_ignored_metadata_depth = cell.inline_ignored_metadata_stack.size();
+            } else if (!event.self_closing) {
+                cell.inline_ignored_metadata_stack.emplace_back(event.element_name);
+                cell.inline_ignored_metadata_depth = cell.inline_ignored_metadata_stack.size();
+            }
+            return;
+        }
+
+        if (cell.inline_rich_properties_depth > 0) {
+            if (closing) {
+                if (event.element_name == "r") {
+                    throw FastXlsxError(
+                        "CellStore worksheet loader found malformed inline rich text metadata");
+                }
+                --cell.inline_rich_properties_depth;
+            } else if (!event.self_closing) {
+                ++cell.inline_rich_properties_depth;
+            }
+            return;
+        }
+
+        if (event.element_name == "rPh" || event.element_name == "phoneticPr"
+            || event.element_name == "extLst") {
+            if (closing) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found malformed inline rich text metadata");
+            }
+            if (!event.self_closing) {
+                cell.inline_ignored_metadata_stack.emplace_back(event.element_name);
+                cell.inline_ignored_metadata_depth = cell.inline_ignored_metadata_stack.size();
+            }
+            return;
+        }
+
+        if (event.element_name == "rPr") {
+            if (closing || cell.inline_rich_run_depth == 0) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found malformed inline rich text metadata");
+            }
+            if (!event.self_closing) {
+                ++cell.inline_rich_properties_depth;
+            }
+            return;
+        }
+
+        if (event.element_name == "r") {
+            if (closing) {
+                if (cell.inline_rich_run_depth == 0) {
+                    throw FastXlsxError(
+                        "CellStore worksheet loader found malformed inline rich text metadata");
+                }
+                --cell.inline_rich_run_depth;
+            } else if (!event.self_closing) {
+                ++cell.inline_rich_run_depth;
+            }
+            return;
+        }
+
+        throw FastXlsxError(
+            "CellStore worksheet loader does not load unsupported inline string metadata");
+    }
+
+    static void consume_inline_ignored_value_markup(
+        ActiveSourceCell& cell, const WorksheetEvent& event)
+    {
+        const bool closing = is_closing_raw_tag(event.raw_xml);
+        if (event.element_name != "t") {
+            if (cell.inline_ignored_metadata_text_depth > 0) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found malformed inline rich text metadata");
+            }
+            return;
+        }
+        if (closing) {
+            if (cell.inline_ignored_metadata_text_depth == 0) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found malformed inline rich text metadata");
+            }
+            --cell.inline_ignored_metadata_text_depth;
+            return;
+        }
+        if (cell.inline_ignored_metadata_text_depth > 0) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found malformed inline rich text metadata");
+        }
+        if (!event.self_closing) {
+            ++cell.inline_ignored_metadata_text_depth;
+        }
     }
 
     static void remember_value_element(ActiveSourceCell& cell, std::string_view element_name)
@@ -902,16 +1753,31 @@ private:
             }
             cell.saw_scalar_value_element = true;
         } else if (element_name == "t") {
-            if (cell.saw_inline_text_element) {
+            const bool inside_rich_run = cell.inline_rich_run_depth > 0;
+            if (!inside_rich_run && cell.saw_inline_text_element) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found duplicate inline text elements");
+            }
+            if (inside_rich_run && cell.saw_direct_inline_text_element) {
                 throw FastXlsxError(
                     "CellStore worksheet loader found duplicate inline text elements");
             }
             cell.saw_inline_text_element = true;
+            if (inside_rich_run) {
+                return;
+            } else {
+                cell.saw_direct_inline_text_element = true;
+            }
         }
     }
 
     void consume_value_text(const WorksheetEvent& event)
     {
+        if (active_cell_.has_value()
+            && active_cell_->type == SourceCellType::InlineString
+            && active_cell_->inline_ignored_metadata_depth > 0) {
+            return;
+        }
         if (!active_cell_.has_value() || active_cell_->current_value_element.empty()) {
             throw FastXlsxError("CellStore worksheet loader found value text without a value tag");
         }
@@ -935,14 +1801,24 @@ private:
 
         const ActiveSourceCell cell = std::move(*active_cell_);
         active_cell_.reset();
+        if (cell.inline_rich_run_depth != 0 || cell.inline_rich_properties_depth != 0
+            || cell.inline_ignored_metadata_depth != 0
+            || cell.inline_ignored_metadata_text_depth != 0
+            || !cell.inline_ignored_metadata_stack.empty()) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found malformed inline rich text metadata");
+        }
         if (store_.try_cell(cell.position.row, cell.position.column) != nullptr) {
             throw FastXlsxError(
                 "CellStore worksheet loader found duplicate cell references");
         }
-        store_.set_cell(cell.position.row, cell.position.column, materialize_cell_value(cell));
+        store_.set_cell(
+            cell.position.row, cell.position.column,
+            materialize_cell_value(cell, shared_strings_provider_));
     }
 
     CellStore store_;
+    const SharedStringsProvider* shared_strings_provider_ = nullptr;
     std::set<std::uint32_t> seen_rows_;
     std::optional<std::uint32_t> last_explicit_row_;
     std::optional<CellPosition> last_source_cell_;
@@ -959,7 +1835,7 @@ CellRecord CellRecord::from_value(const CellValue& value)
     record.number_value = value.number_value();
     record.boolean_value = value.boolean_value();
     record.text_value = value.text_value();
-    if (value.has_style()) {
+    if (value.has_style() && value.style_id().value() != 0) {
         record.style_id = value.style_id();
     }
     return record;
@@ -1030,12 +1906,21 @@ std::string cell_store_dimension_reference(const CellStore& store)
     return range_reference(first_row, first_column, last_row, last_column);
 }
 
-CellStore load_cell_store_from_worksheet_chunks(
+CellStore load_cell_store_from_worksheet_chunks_with_shared_strings(
     const WorksheetInputChunkCallback& read_next_chunk,
     CellStoreOptions options,
-    WorksheetEventReaderOptions reader_options)
+    WorksheetEventReaderOptions reader_options,
+    const std::vector<std::string>* shared_strings)
 {
-    CellStoreWorksheetLoader loader(std::move(options));
+    std::optional<SharedStringsProvider> shared_strings_provider;
+    if (shared_strings != nullptr) {
+        shared_strings_provider = [shared_strings]() -> const std::vector<std::string>& {
+            return *shared_strings;
+        };
+    }
+    CellStoreWorksheetLoader loader(
+        std::move(options),
+        shared_strings_provider.has_value() ? &*shared_strings_provider : nullptr);
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
         [&loader](const WorksheetEvent& event) {
@@ -1043,6 +1928,31 @@ CellStore load_cell_store_from_worksheet_chunks(
         },
         reader_options);
     return loader.finish();
+}
+
+CellStore load_cell_store_from_worksheet_chunks_with_shared_strings_provider(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    CellStoreOptions options,
+    WorksheetEventReaderOptions reader_options,
+    const SharedStringsProvider* shared_strings_provider)
+{
+    CellStoreWorksheetLoader loader(std::move(options), shared_strings_provider);
+    scan_worksheet_events_from_chunk_source(
+        read_next_chunk,
+        [&loader](const WorksheetEvent& event) {
+            loader.consume(event);
+        },
+        reader_options);
+    return loader.finish();
+}
+
+CellStore load_cell_store_from_worksheet_chunks(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    CellStoreOptions options,
+    WorksheetEventReaderOptions reader_options)
+{
+    return load_cell_store_from_worksheet_chunks_with_shared_strings(
+        read_next_chunk, std::move(options), reader_options, nullptr);
 }
 
 CellStore load_cell_store_from_worksheet_xml(
@@ -1079,9 +1989,24 @@ CellStore load_cell_store_from_workbook_sheet(
     }();
     const std::string worksheet_zip_entry = worksheet_part.zip_path();
     try {
-        return load_cell_store_from_worksheet_chunks(
+        std::optional<std::vector<std::string>> shared_strings;
+        SharedStringsProvider shared_strings_provider = [&reader, &shared_strings]()
+            -> const std::vector<std::string>& {
+            if (!shared_strings.has_value()) {
+                std::optional<std::vector<std::string>> loaded_shared_strings =
+                    load_shared_strings_from_workbook(reader);
+                if (!loaded_shared_strings.has_value()) {
+                    throw FastXlsxError(
+                        "CellStore worksheet loader found shared string indexes without a sharedStrings table");
+                }
+                shared_strings = std::move(*loaded_shared_strings);
+            }
+            return *shared_strings;
+        };
+        return load_cell_store_from_worksheet_chunks_with_shared_strings_provider(
             reader.entry_chunk_source(worksheet_zip_entry),
-            std::move(options), reader_options);
+            std::move(options), reader_options,
+            &shared_strings_provider);
     } catch (const std::exception& error) {
         throw FastXlsxError("failed to load CellStore from workbook sheet '"
             + std::string(sheet_name) + "' worksheet part '" + worksheet_part.value()

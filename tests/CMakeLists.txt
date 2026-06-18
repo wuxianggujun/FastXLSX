@@ -124,7 +124,11 @@ add_fastxlsx_package_editor_shard(preservation-removal 60)
 add_fastxlsx_package_editor_shard(preservation-resources 60)
 add_fastxlsx_package_editor_shard(preservation-comments 60)
 add_fastxlsx_package_editor_shard(preservation-linked 60)
-add_fastxlsx_package_editor_shard(cellstore 60)
+add_fastxlsx_package_editor_shard(cellstore-core 60)
+add_fastxlsx_package_editor_shard(cellstore-chunks 60)
+add_fastxlsx_package_editor_shard(cellstore-source 60)
+add_fastxlsx_package_editor_shard(cellstore-failures 60)
+add_fastxlsx_package_editor_shard(cellstore-catalog 60)
 add_fastxlsx_package_editor_shard(sheetdata 60)
 add_fastxlsx_package_editor_shard(sheetdata-catalog 60)
 add_fastxlsx_package_editor_shard(sheetdata-guards 60)
@@ -144,11 +148,24 @@ if(FASTXLSX_ENABLE_MINIZIP_NG)
     target_compile_definitions(fastxlsx_workbook_editor_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
 endif()
 
-add_test(NAME fastxlsx.workbook_editor COMMAND fastxlsx_workbook_editor_tests)
-set_tests_properties(fastxlsx.workbook_editor PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    TIMEOUT 60
-)
+function(add_fastxlsx_workbook_editor_shard shard timeout_seconds)
+    add_test(
+        NAME fastxlsx.workbook_editor.${shard}
+        COMMAND fastxlsx_workbook_editor_tests --shard=${shard}
+    )
+    set_tests_properties(fastxlsx.workbook_editor.${shard} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
+add_fastxlsx_workbook_editor_shard(core 60)
+add_fastxlsx_workbook_editor_shard(public 60)
+add_fastxlsx_workbook_editor_shard(public-edge 60)
+add_fastxlsx_workbook_editor_shard(source-success 60)
+add_fastxlsx_workbook_editor_shard(source-failure 60)
+add_fastxlsx_workbook_editor_shard(materialized 60)
+add_fastxlsx_workbook_editor_shard(facade 60)
 
 add_executable(fastxlsx_image_tests
     test_image.cpp

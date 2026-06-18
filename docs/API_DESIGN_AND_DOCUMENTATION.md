@@ -105,10 +105,10 @@ Public API 概念矩阵：
 ```text
 概念            Streaming              Small new workbook       Current Patch / Future editor
 创建入口        WorkbookWriter          Workbook                 WorkbookEditor
-sheet 入口      add_worksheet           add_worksheet            worksheet_names / has_worksheet；future worksheet
+sheet 入口      add_worksheet           add_worksheet            worksheet_names / has_worksheet / worksheet / try_worksheet
 追加行          append_row(CellView)    append_row(Cell)         replace_sheet_data(rows)；future append_row
-随机写 cell     不支持                  不作为大文件路径承诺      当前不支持；future set_cell(CellValue)
-读取 cell       不支持                  可作为小文件能力规划      当前不支持；future get_cell / try_cell
+随机写 cell     不支持                  不作为大文件路径承诺      WorksheetEditor::set_cell / erase_cell
+读取 cell       不支持                  可作为小文件能力规划      WorksheetEditor::get_cell / try_cell
 保存            close                   save                     save_as
 范围值          CellRange               CellRange                CellRange
 样式句柄        StyleId                 StyleId                  StyleId
@@ -119,7 +119,7 @@ sheet 入口      add_worksheet           add_worksheet            worksheet_nam
 `CellStore` / `CellRecord` 已有 internal detail 首片，且已有 internal `<sheetData>`
 payload emission helper。`WorkbookEditor` 现已落地首个 public Patch 切片
 （`include/fastxlsx/workbook_editor.hpp`、`src/workbook_editor.cpp`、
-`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`）：已覆盖
+`tests/test_workbook_editor.cpp`，CTest family `fastxlsx.workbook_editor.*`）：已覆盖
 `open()`、`worksheet_names()` / `has_worksheet()` sheet inspection、按 sheet name
 做整表 `<sheetData>` 替换的 `replace_sheet_data(rows)`、窄 sheet-catalog 改名的
 `rename_sheet(old_name, new_name)`、`save_as()`，以及首个 small-file
@@ -141,7 +141,7 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 | New workbook streaming | 已公开，继续低风险打磨 | `WorkbookWriter`, `WorksheetWriter`, `CellView`, styles, validations, hyperlinks, tables, conditional formatting, images | 不支持随机回写历史行；不把 convenience API 放进 row hot path |
 | Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::save()` | 不承诺大文件低内存；不作为 existing-file editor |
 | Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `replace_sheet_data()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；不做 relationship repair、sharedStrings/style migration |
-| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict uppercase A1 overloads, `WorksheetCellReference`, `WorksheetCellSnapshot`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id、sharedStrings/style migration、semantic metadata sync、dense range reads、streaming sparse iterators 或 large-file low-memory random editing |
+| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict row/column coordinate guardrails, strict uppercase A1 overloads, default `StyleId{0}` normalization to no style handle, source explicit `s="0"` / `s='0'` normalization to no style handle, `WorksheetCellReference`, `WorksheetCellSnapshot`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, pre-/post-save matching-option `worksheet()` / `try_worksheet()` session reacquire reuse, post-save materialized summary and aggregate diagnostic lifecycle, renamed-sheet planned-name materialized diagnostics, guarded source sharedStrings read-only materialization plus absent-table optional-dependency, lazy selected-sheet dependency, and non-critical metadata boundaries, relationship-target, and XML/entity/attribute fail-fast hygiene, source inline/sharedStrings rich-text flattening, prefixed source worksheet/inlineStr local-name materialization, namespace-URI non-validation coverage for supported local-names, wrong-namespace unsupported local-name fail-fast hygiene including sharedStrings item/rich-run local-names, malformed source sharedStrings and inline rich metadata failure hygiene, source wrapper metadata dirty-projection boundary, cell-external comment/PI dirty-projection boundary, clean read-only materialized no-op save copy-original boundary, failed-materialization no-op save copy-original boundary, missing `try_worksheet()` no-op save copy-original boundary, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id、sharedStrings writeback / rebuild / migration、sharedStrings XML repair / schema count repair、sharedStrings relationship repair/pruning、external sharedStrings target materialization、namespace URI validation/repair、unsupported local-name import/tolerance、rich-text preservation、malformed rich metadata repair、source wrapper metadata preservation / sync、comment import / XML trivia preservation、coordinate inference / clamping、semantic metadata sync、clean-session commit semantics、transaction history、dense range reads、streaming sparse iterators 或 large-file low-memory random editing |
 | Materialized worksheet foundation | internal + public handoff 底座 | `CellStore`, materialized-session registry, chunked projection, `WorkbookEditor::save_as()` dirty-session auto-flush | internal test hooks 仍不是 public API；不公开 source chunk lifetimes、EditPlan 或 PackageEditor |
 | Existing-file semantic objects | preserve/audit/fail 为主 | internal preservation and audit coverage for drawings, media, tables, comments, VBA, custom XML, pivot/external links, unknown entries | 不做语义编辑、range/table/chart sync、orphan cleanup、relationship pruning/repair |
 | Formula / calculation | 写入和重算请求基础 | formula cell XML, `fullCalcOnLoad`, calcChain cleanup policy in Patch paths | 不计算公式、不写 cached values、不 rebuild `calcChain.xml` |
@@ -231,6 +231,11 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 - `pending_materialized_worksheet_names()`：只统计 dirty materialized
   `WorksheetEditor` sessions，按 current planned catalog order 返回 planned sheet
   names；clean materialized sessions 不返回，successful `save_as()` auto-flush 后清空。
+  Renamed sheets report the current planned name; clean post-save reacquire does
+  not re-add the name, and a later mutation re-adds it until the next save. If
+  a rename chain returns to the source name before materialization, later dirty
+  materialized diagnostics use that restored source/planned name instead of the
+  transient name.
   它不触发 flush、不增加 `pending_change_count()`、不包含 whole-`<sheetData>`
   replacement payloads、不暴露 internal `EditPlan`，也不更新 `last_edit_error()`。
 - `pending_materialized_cell_count()` /
@@ -240,6 +245,8 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   总和，不是进程 RSS，也不包含 source package bytes、generated XML chunks、
   `PackageEditor` staging files、ZIP writer buffers 或 save-time package assembly
   costs。clean materialized sessions 和 queued whole-`<sheetData>` replacements 不计入。
+  Renamed and unrenamed sessions share the same save/clean-reacquire clearing
+  lifecycle and later-mutation re-dirtying behavior.
   这两个方法不触发 flush、不增加 `pending_change_count()`、不暴露 internal
   `EditPlan`，也不更新 `last_edit_error()`。
 - `last_edit_error()`：返回最近一次失败的 public edit（当前包括
@@ -248,7 +255,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   public inspection / pending diagnostic methods、`WorksheetEditor::try_cell()` /
   size inspection 和 `save_as()` 不更新它。Materialization / load failure 不更新它。它不是
   exception stack、internal `EditPlan` diagnostic、relationship / dependency audit 或
-  output-plan reason。
+  output-plan reason。Failed `WorksheetEditor` mutations do not create dirty
+  materialized diagnostics or summaries; a later successful mutation follows
+  the current planned-name mapping.
   当前回归还固定 replacement 后 failed rename 的状态卫生：duplicate / invalid
   rename 失败会把该字段更新为当前失败诊断，但不会迁移 pending replacement
   diagnostics、catalog mapping 或 edit summaries。failed `save_as()` 不创建、更新或清空
@@ -388,7 +397,9 @@ Current F2 gate audit:
 - P8.379 extends the same narrow public slice with `WorkbookEditor::try_worksheet()`
   and `WorksheetEditor::get_cell()`. `try_worksheet()` returns empty only for
   missing current-planned sheet names; non-missing materialization failures still
-  throw without updating `last_edit_error()`. `get_cell()` throws on missing
+  throw without updating `last_edit_error()`. P8.411 pins that a missing
+  `try_worksheet()` result also preserves prior diagnostics and leaves later
+  no-op `save_as()` on the copy-original path. `get_cell()` throws on missing
   sparse records and returns explicit `CellValue::blank()` records unchanged.
 - P8.380 adds strict uppercase A1 string overloads for
   `WorksheetEditor::try_cell()`, `get_cell()`, `set_cell()`, and `erase_cell()`.
@@ -445,6 +456,701 @@ Current F2 gate audit:
   `WorksheetEditor` handle while the owning `WorkbookEditor` object is unchanged.
   The same handle can be reused for post-save small-file edits and later
   reflushes; owner move / move assignment remains the invalidation boundary.
+- P8.389 adds read-only source sharedStrings materialization for
+  `WorksheetEditor`: workbook-backed source `t="s"` cells are resolved through
+  the existing `xl/sharedStrings.xml` part and exposed as `CellValue::text(...)`.
+  Simple rich-text shared string runs are flattened to plain text, invalid or
+  out-of-range indexes fail during materialization, and standalone worksheet
+  XML/chunk loaders still reject `t="s"` because they have no workbook-level
+  string table context. `save_as()` still projects materialized text as inline
+  strings and preserves the source sharedStrings bytes; this is not
+  sharedStrings rebuild, writeback, index migration, or rich-text preservation.
+- P8.390 hardens the negative matrix around that read-only source
+  materialization. Workbook-backed loading now has focused regressions for
+  duplicate sharedStrings relationships, external/query/fragment targets,
+  missing parts, wrong content types, malformed `xl/sharedStrings.xml`, and
+  missing/empty/non-numeric/out-of-range indexes. These are fail-fast
+  guardrails; they do not add tolerant XML repair, relationship repair,
+  sharedStrings rebuild/writeback/migration, or rich-text preservation.
+- P8.391 pins the public facade state hygiene for invalid source sharedStrings
+  metadata. `WorkbookEditor::try_worksheet()` and `worksheet()` now have public
+  regressions for duplicate sharedStrings relationships, missing target parts,
+  wrong content types, and malformed `xl/sharedStrings.xml`; the calls throw
+  with the underlying diagnostic, preserve source/planned catalog inspection,
+  leave no pending edits or dirty materialized sessions, do not update
+  `last_edit_error()`, and the editor remains usable for later Patch edits.
+  This still is not a public diagnostics object, repair, rebuild, writeback,
+  migration, or rich-text preservation.
+- P8.392 reconciles public-header and F2 planning wording with the current
+  sharedStrings behavior: valid workbook-backed source `t="s"` cells are
+  materialized as plain text, malformed sharedStrings structures/targets or
+  invalid indexes fail fast, non-critical `count` / `uniqueCount` metadata is
+  not used to drive materialization, and standalone generic worksheet XML/chunk
+  loaders still reject `t="s"` due to missing workbook-level table context.
+- P8.393 adds public facade state-hygiene regressions for non-default source
+  style id load failures. `try_worksheet()` and `worksheet()` still throw with
+  the style-id diagnostic, leave no pending edits or dirty materialized
+  sessions, do not update `last_edit_error()`, and allow later Patch edits to
+  save. P8.466 supersedes the former explicit-default failure boundary:
+  source `s="0"` / `s='0'` now materializes as no style handle and dirty
+  projection omits both forms. This remains default-style normalization only,
+  not source style preservation, validation, migration, or merge. P8.467 pins
+  that this exception is exact-value only: empty, padded, signed, leading-zero,
+  entity-encoded, or duplicate default-like source style attributes still fail
+  instead of being coerced to default style. P8.468 lifts duplicate exact default-style
+  attributes (`s="0" s="0"`) to the same public facade hygiene path with the
+  parser duplicate-attribute diagnostic; this is not duplicate-attribute repair
+  or style import. P8.469 pins qualified style-like attributes such as
+  `x:s="0"` as unsupported source cell metadata, not default-style attributes;
+  they fail through the same public facade hygiene path and do not imply
+  namespace repair or namespace-aware style import. P8.470 adds public success
+  coverage for the other exact XML quote form: source `s='0'` materializes as
+  no style handle beside `s="0"`, and dirty projection writes neither style
+  attribute form. P8.471 pins the remaining syntax boundary: XML whitespace
+  around `=` is accepted when the unqualified `s` value is still exactly `0`,
+  while valueless, unquoted, or unterminated default-style attributes fail
+  cleanly before a partial public materialization session is created.
+- P8.394 adds the same public facade state-hygiene coverage for unsupported
+  source cell shapes: source error cells (`t="e"`), date-like cells (`t="d"`),
+  and invalid boolean payloads throw through `try_worksheet()` / `worksheet()`
+  without dirtying materialized state, updating `last_edit_error()`, or blocking
+  later Patch edits. This is fail-before-handle behavior, not semantic import.
+- P8.395 factors the repeated public materialization-failure hygiene assertions
+  in `fastxlsx.workbook_editor` and adds malformed source worksheet XML public
+  facade coverage. A missing closing worksheet root now fails cleanly through
+  `try_worksheet()` / `worksheet()` without leaving partial materialized state.
+  The same malformed target worksheet still blocks same-sheet Patch preflight,
+  so recovery is asserted through an unrelated valid sheet rather than implying
+  XML repair or same-sheet bypass.
+- P8.396 adds public facade state-hygiene coverage for source cell-reference
+  failures: missing cell `r` and row/cell reference mismatch throw through
+  `try_worksheet()` / `worksheet()` without dirtying materialized state,
+  without updating `last_edit_error()`, and without blocking later valid Patch
+  edits. This is validation-only fail-before-handle behavior, not coordinate
+  repair or inference.
+- P8.397 pins source formula behavior at the public facade: source formula cells
+  materialize as `CellValue::formula(...)`, stale cached scalar values are
+  ignored on the materialized save-as projection, and malformed formula shapes
+  fail through `try_worksheet()` / `worksheet()` without dirtying state. This is
+  formula-text import only, not formula evaluation, shared/array formula
+  support, cached-value preservation, or calcChain rebuild.
+- P8.398 adds public facade state-hygiene coverage for source inline text/XML
+  entity failures: unknown XML entities, unsupported inline `<t>` attributes,
+  duplicate direct inline text elements, and unknown inline string metadata
+  throw through `try_worksheet()` / `worksheet()` without dirtying materialized
+  state. This is strict inline-text import only, not rich text formatting
+  preservation, phonetic metadata import, tolerant XML entity recovery, or XML
+  repair.
+- P8.474 adds public facade source inline rich text flattening: simple
+  `<is><r><t>...</t></r>...</is>` runs materialize as plain text, run
+  formatting is ignored, inline phonetic / extension metadata text is ignored,
+  and dirty save projects the flattened text as an ordinary inline string. This
+  is not rich text preservation, phonetic metadata import, extension metadata
+  import, or a full rich-text object model.
+- P8.475 pins malformed source inline rich text failure hygiene: mixed direct
+  `<t>` and rich-run text, `rPr` outside a rich run, value wrappers inside
+  `rPr`, and unclosed rich/ignored metadata fail through `try_worksheet()` /
+  `worksheet()` without dirtying materialized state. This is validation-only
+  fail-fast behavior, not XML repair, rich text preservation, or richer inline
+  metadata import.
+- P8.476 pins prefixed source sharedStrings local-name materialization:
+  workbook-backed `xl/sharedStrings.xml` payloads using prefixed `sst` / `si` /
+  `t` / `r` element names materialize through the public `WorksheetEditor` and
+  package-backed `CellStore` paths, including simple rich-run flattening,
+  clean no-op copy-original save, dirty inline projection, and source
+  sharedStrings byte preservation. This is local-name matching only, not
+  namespace URI validation, namespace repair, schema validation, sharedStrings
+  migration/writeback, or rich text preservation.
+- P8.477 pins prefixed source worksheet / inlineStr local-name
+  materialization: source worksheet XML using prefixed worksheet, `sheetData`,
+  row, cell, inlineStr wrapper, rich-run, formula, and value-wrapper element
+  names materializes through the public `WorksheetEditor` and package-backed
+  `CellStore` paths. Clean no-op save remains copy-original; dirty public save
+  uses the standalone sparse-store worksheet projection and drops source
+  prefixes, ignored inline phonetic / extension text, and stale cached formula
+  values. This is local-name matching only, not namespace URI validation,
+  namespace repair, schema validation, metadata preservation, XML repair, or a
+  rich-text object model.
+- P8.478 pins that this local-name behavior does not inspect element namespace
+  URIs. Public `WorksheetEditor` and package-backed `CellStore` regressions now
+  materialize supported worksheet and sharedStrings local-names even when those
+  elements are bound to a deliberately non-spreadsheetml URI. This is
+  namespace-URI non-validation evidence, not namespace-aware OpenXML support,
+  namespace repair, schema validation, XML repair, or a recommendation to
+  accept malformed producer output silently in broader APIs.
+- P8.479 pins the reverse boundary: ignoring element namespace URIs for
+  supported local-names does not relax unsupported local-name handling. Public
+  `WorksheetEditor` and package-backed `CellStore` failure regressions cover
+  wrong-namespace unsupported cell metadata and inline string metadata; both
+  fail fast without dirtying editor/package state. This is strict local-name
+  state-machine hygiene, not malformed-package tolerance or namespace repair.
+- P8.480 extends that reverse boundary to `xl/sharedStrings.xml`: unsupported
+  wrong-namespace sharedStrings item and rich-run local-names now fail through
+  the sharedStrings parser instead of being treated as transparent containers.
+  Supported simple rich runs, `rPr` formatting metadata, and ignored
+  `rPh` / `phoneticPr` / `extLst` metadata remain supported. This is
+  sharedStrings parser hardening, not schema validation, namespace repair, or a
+  rich-text object model.
+- P8.481 tightens malformed source sharedStrings rich metadata shapes: mixed
+  direct `<t>` text and rich `<r>` runs, `rPr` outside a rich run, and text
+  wrappers inside `rPr` fail through the public and package-backed
+  materialization paths without dirtying state. Simple rich-run flattening and
+  ignored formatting/phonetic/extension metadata remain unchanged. This is
+  fail-fast hygiene, not rich-text preservation or tolerant mixed-mode import.
+- P8.482 pins the source sharedStrings ignored metadata opacity boundary:
+  nested opaque text under `rPh` / `phoneticPr` / `extLst`, including
+  root-level `extLst`, is ignored and does not leak into materialized text or
+  dirty inline projection, while nested `<si>` decoys and markup nested inside
+  text wrappers still fail fast with no state pollution. This is not phonetic
+  metadata import, extension object modeling, XML repair, or sharedStrings
+  writeback.
+- P8.483 applies the same opacity boundary to source inline rich text:
+  opaque nested text under inline `rPh` / `phoneticPr` / `extLst` is ignored
+  and omitted from dirty projection, while nested `<si>` decoys and markup
+  nested inside ignored metadata text wrappers fail fast through the public and
+  package-backed materialization paths. This is not inline phonetic metadata
+  import, extension object modeling, XML repair, or rich-text preservation.
+- P8.484 pins the self-closing and malformed-closing edge for ignored metadata:
+  self-closing `rPh` / `phoneticPr` / `extLst` remains accepted as empty
+  ignored metadata for both source sharedStrings and inline rich text, while
+  orphan closing tags and unclosed ignored metadata fail through the public and
+  package-backed paths. This is fail-fast source materialization hygiene, not
+  XML repair or tolerant package recovery.
+- P8.399 adds public facade state-hygiene coverage for source row/cell
+  structure and numeric-payload failures: unsupported row/cell metadata
+  attributes, duplicate row numbers, out-of-order row numbers, out-of-order cell
+  references, and invalid numeric payloads throw through `try_worksheet()` /
+  `worksheet()` without dirtying materialized state. This is strict validation
+  only, not sorting, duplicate merge, metadata preservation, numeric coercion,
+  or repair.
+- P8.400 adds public facade state-hygiene coverage for unsupported source
+  value-wrapper shapes: scalar `<v>` attributes, duplicate scalar `<v>`
+  wrappers, inline-string metadata in non-inline cells, scalar `<v>` wrappers in
+  `t="inlineStr"` cells, and cell-internal comments / processing instructions /
+  unsupported markup throw through `try_worksheet()` / `worksheet()` without
+  dirtying materialized state. This is strict validation only, not wrapper
+  repair, duplicate merge, inline/scalar coercion, comment import, or XML
+  repair.
+- P8.401 adds public facade state-hygiene coverage for source XML/entity and
+  attribute parser failures: unterminated entities, invalid/out-of-range XML
+  character references, unquoted cell attributes, duplicate cell reference
+  attributes, and duplicate cell type attributes throw through
+  `try_worksheet()` / `worksheet()` without dirtying materialized state. This
+  is strict validation only, not tolerant entity recovery, invalid character
+  replacement, attribute repair, duplicate merge, same-sheet Patch bypass, or
+  XML repair.
+- P8.402 adds public facade state-hygiene coverage for source coordinate and
+  row-number boundary failures: out-of-range cell columns/rows, zero-row cell
+  references, non-column-first cell references, zero row numbers, row-number
+  overflow, and non-numeric row numbers throw through `try_worksheet()` /
+  `worksheet()` without dirtying materialized state. This is strict validation
+  only, not coordinate inference, clamping, sorting, row-number repair,
+  same-sheet Patch bypass, or XML repair.
+- P8.403 adds public facade state-hygiene coverage for source row/cell
+  state-machine failures: row elements outside `sheetData`, nested rows, cells
+  outside rows, and nested cells throw through `try_worksheet()` /
+  `worksheet()` without dirtying materialized state. This is strict validation
+  only, not row/cell nesting repair, implicit row or `sheetData` scope
+  inference, state-machine recovery, same-sheet Patch bypass, or XML repair.
+- P8.404 adds positive public materialization coverage for supported source
+  values: self-closing cells and inline-string cells without text become
+  explicit blank records, `t="b"` cells become `CellValue::boolean(...)`, and
+  empty inline `<t></t>` becomes `CellValue::text("")`. The save projection
+  still writes through the sparse `CellStore`; this is not date/error support,
+  type coercion, style/sharedStrings migration, rich-text preservation, cached
+  formula preservation, or metadata synchronization.
+- P8.405 adds positive public materialization coverage for empty source
+  worksheets: worksheets with no `sheetData` and worksheets with self-closing
+  `<sheetData/>` materialize as empty sparse stores, remain clean until
+  mutation, and can later save through the standalone CellStore worksheet
+  projection. This is not XML repair, row/cell scope inference for malformed
+  non-empty input, same-sheet Patch bypass, source wrapper metadata
+  preservation, relationship repair, or large-file random editing.
+- P8.406 adds public facade state-hygiene coverage for worksheet root and
+  `sheetData` boundary failures: markup before the worksheet root, duplicate
+  `sheetData`, duplicate worksheet roots, and trailing text after the worksheet
+  root throw through `try_worksheet()` / `worksheet()` without dirtying
+  materialized state. This is strict validation only, not XML repair, tolerant
+  root recovery, duplicate merge, same-sheet Patch bypass, wrapper metadata
+  preservation, or relationship repair.
+- P8.407 adds public facade projection-boundary coverage for source worksheet
+  wrapper metadata: `sheetPr`, `dimension`, `sheetViews`, `sheetFormatPr`,
+  `cols`, and `autoFilter` beside supported cells do not block read-only
+  materialization, but a later dirty save writes the standalone sparse
+  CellStore projection and drops those source wrapper elements. This is not
+  wrapper metadata preservation, synchronization, range recalculation,
+  relationship repair, or the internal sheetData Patch preservation path.
+- P8.472 extends the same dirty-projection boundary to representative
+  relationship-bearing wrapper metadata: source `<hyperlinks>` and
+  `<tableParts>` do not block supported cell materialization, dirty projection
+  drops those worksheet XML references, and the source worksheet `.rels` plus
+  linked table part remain opaque preserved package artifacts. This is not
+  hyperlink/table semantic editing, relationship pruning/repair, table range
+  repair, or the internal sheetData Patch preservation path.
+- P8.473 extends the same dirty-projection boundary to representative
+  range/reference wrapper metadata: source `<mergeCells>`,
+  `<dataValidations>`, `<conditionalFormatting>`, `<ignoredErrors>`,
+  `<pageMargins>`, and `<pageSetup>` do not block supported
+  text/number/boolean materialization, but dirty projection drops those
+  worksheet XML elements. This is not merged-cell editing,
+  validation/conditional-formatting import, page setup preservation, range
+  recalculation, metadata synchronization, or the internal sheetData Patch
+  preservation path.
+- P8.408 adds public facade projection-boundary coverage for source comments
+  and processing instructions outside cells: those XML trivia nodes do not
+  block supported cell materialization, but dirty save writes the standalone
+  sparse CellStore projection and drops them. This is not comment import,
+  processing-instruction preservation, comments-part editing, XML trivia
+  preservation, relationship repair, or a change to cell-internal comment / PI
+  rejection.
+- P8.409 adds public no-op save coverage after read-only `WorksheetEditor`
+  materialization: clean materialized sessions are not pending edits, expose no
+  dirty materialized names, and `WorkbookEditor::save_as()` keeps the
+  copy-original package roundtrip instead of flushing a standalone worksheet
+  projection. This is not clean-session commit semantics, in-place save,
+  transaction snapshot, wrapper/comment preservation during dirty projection,
+  sharedStrings migration, or relationship repair.
+- P8.410 adds public no-op save coverage after failed `WorksheetEditor`
+  materialization: rejected non-default source style id metadata still fails
+  fast, but the failed `try_worksheet()` / `worksheet()` attempts do not leave partial
+  sessions, pending edits, dirty materialized names, or `last_edit_error()`
+  state, and a later no-op `save_as()` remains a copy-original package write.
+  This is not tolerant style import, style migration, recovery materialization,
+  XML repair, semantic validation during no-op copy, or relationship repair.
+- P8.414 normalizes caller-supplied explicit default `StyleId{0}` in
+  `WorksheetEditor::set_cell()` values to no style handle. Public readback,
+  `try_cell()`, `sparse_cells()`, and dirty save-as output all expose the
+  normalized no-style cell and omit `s="0"`. This is not non-default style
+  migration, existing-workbook style registry support, or style preservation.
+- P8.415 pins row/column overload coordinate guardrails for
+  `WorksheetEditor::try_cell()`, `get_cell()`, `set_cell()`, and `erase_cell()`.
+  Invalid row/column reads throw without updating `last_edit_error()`, invalid
+  mutations update the public edit diagnostic without dirtying the sparse
+  store, and the last legal Excel coordinate is accepted. This is validation
+  only, not coordinate inference, clamping, dense reads, or large-file random
+  access.
+- P8.417 pins public matching-option session reacquire behavior for
+  `WorkbookEditor::worksheet()` and `try_worksheet()`. Reacquiring the same
+  planned sheet with the same `WorksheetEditorOptions` returns another borrowed
+  handle to the existing materialized sparse store, preserves dirty edits,
+  exposes mutations through all handles, and lets `save_as()` flush the reused
+  session once. This is state hygiene only, not transaction history,
+  clean-session commit semantics, or large-file random editing.
+- P8.418 extends the same matching-option reacquire contract after a successful
+  `save_as()`: a clean saved materialized session is still reused by later
+  `worksheet()` / `try_worksheet()` calls, so callers read the flushed
+  materialized values instead of reloading stale source cells; later edits
+  through the reacquired handle remain visible through older handles and flush
+  as a subsequent materialized handoff. This is not an in-place commit model,
+  transaction history, source-package mutation, or large-file random editing.
+- P8.419 pins the public dirty-diagnostic boundary around that post-save
+  reacquire path: matching clean reacquire keeps
+  `pending_materialized_worksheet_names()`,
+  `pending_materialized_cell_count()`, and
+  `estimated_pending_materialized_memory_usage()` empty/zero; a later mutation
+  through the reacquired handle populates those dirty-session diagnostics, and
+  the next successful `save_as()` clears them again. This is diagnostic state
+  hygiene only, not a transaction or commit model.
+- P8.420 pins the corresponding post-save option-mismatch failure path:
+  `try_worksheet()` and `worksheet()` with different `WorksheetEditorOptions`
+  still reject an existing saved materialized session, do not update
+  `last_edit_error()`, do not dirty materialized diagnostics, preserve saved
+  materialized values, and leave later matching-option edits/save usable.
+  This is option identity hygiene only, not a dynamic session reconfiguration
+  API.
+- P8.421 pins `pending_worksheet_edits()` around the same post-save session
+  lifecycle: dirty-only materialized summaries disappear after successful
+  auto-flush, stay absent after clean matching reacquire, reappear only after a
+  later mutation dirties the reused session, and clear again after the next
+  successful `save_as()`. A prior materialized handoff is not reported as a
+  whole-`<sheetData>` replacement summary. This is summary diagnostic hygiene
+  only, not transaction history, commit state, or replacement migration.
+- P8.422 pins the renamed-sheet variant of that summary lifecycle: a queued
+  public rename keeps the source-order worksheet summary visible after
+  materialized auto-flush, but the summary clears `materialized_dirty`,
+  `materialized_cell_count`, and `estimated_materialized_memory_usage` until a
+  later mutation re-dirties the reused renamed session. This is rename-context
+  diagnostic hygiene only, not sheet-rename dependency repair or commit
+  semantics.
+- P8.423 pins the rejected-save preflight side of that renamed summary state:
+  source-overwrite rejection happens before materialized auto-flush, preserves
+  both the queued rename and dirty materialized summary fields, does not add a
+  materialized handoff to `pending_change_count()`, and does not update
+  `last_edit_error()`. This is path-preflight state hygiene only, not atomic
+  save/rollback semantics.
+- P8.424 pins the lower-level materialized diagnostics for the same renamed
+  post-save lifecycle: dirty renamed sessions are reported under the current
+  planned sheet name, aggregate cell/memory diagnostics match the borrowed
+  session, successful `save_as()` and clean matching reacquire clear those
+  dirty aggregates, and a later mutation re-adds them until the next save. This
+  is public diagnostic hygiene only, not sheet-rename dependency repair or a
+  broader commit model.
+- P8.425 pins the rename-back-before-materialization variant: after a sheet is
+  renamed to a temporary planned name and then back to its source name, a later
+  dirty `WorksheetEditor` session reports matching source/planned names, is not
+  marked `renamed`, uses the restored source name in dirty materialized
+  diagnostics, and saves without leaking the transient name. This is
+  current-planned diagnostic hygiene only, not undo/transaction semantics.
+- P8.426 pins the failure/recovery side of that same rename-back path: an
+  invalid A1 `WorksheetEditor::set_cell()` after rename-back sets
+  `last_edit_error()` but keeps the materialized session clean, keeps dirty
+  materialized diagnostics and summaries empty, preserves the restored planned
+  catalog, and a later valid mutation recovers under the restored source name.
+  This is failed-mutation state hygiene only, not broad undo or transaction
+  semantics.
+- P8.427 pins the rejected-save side of that same rename-back path:
+  source-overwrite `save_as()` preflight happens before materialized auto-flush,
+  preserves the dirty borrowed session and restored source/planned summary,
+  does not add a materialized handoff count, does not create
+  `last_edit_error()`, leaves the source package unchanged, and a later safe
+  `save_as()` flushes the dirty edit without leaking the transient name. This
+  is path-preflight state hygiene only, not atomic save/rollback semantics.
+- P8.428 pins clean reacquire after that failed-save recovery: once the later
+  safe `save_as()` flushes the dirty rename-back session, matching
+  `worksheet("Data")` reuses the saved materialized state instead of reloading
+  stale source cells, keeps dirty diagnostics and summaries empty until the
+  next mutation, and can then flush another dirty edit under the restored source
+  name. This is session reuse hygiene only, not source mutation, transaction
+  history, or commit semantics.
+- P8.429 pins the corresponding option-mismatch failure path after that
+  recovery: mismatched `try_worksheet()` / `worksheet()` calls still reject the
+  existing saved materialized session without updating `last_edit_error()`,
+  dirtying materialized diagnostics or summaries, losing saved values, reviving
+  the transient name, or blocking later matching-option mutation and save. This
+  is option identity hygiene only, not dynamic session reconfiguration,
+  transaction rollback, source mutation, or sheet-rename dependency repair.
+- P8.430 pins the missing-lookup no-op path after that same recovery:
+  `try_worksheet()` for missing names, including the old transient planned
+  name, returns empty without updating `last_edit_error()`, dirtying
+  materialized diagnostics or summaries, discarding or reloading the saved
+  materialized value, reviving the transient name, or blocking later
+  matching-option mutation and save. This is lookup hygiene only, not hidden
+  sheet resurrection, source reload, dynamic catalog repair, or transaction
+  semantics.
+- P8.431 pins the matching missing-lookup throwing path after that recovery:
+  `worksheet()` for missing names, including the old transient planned name,
+  throws `FastXlsxError` without updating `last_edit_error()`, dirtying
+  materialized diagnostics or summaries, discarding or reloading the saved
+  materialized value, reviving the transient name, or blocking later
+  matching-option mutation and save. This is throwing lookup hygiene only, not
+  diagnostic-write behavior, hidden sheet resurrection, source reload, dynamic
+  catalog repair, or transaction semantics.
+- P8.432 pins read-only catalog queries after that same recovery:
+  `worksheet_names()` / `has_worksheet()` report the restored planned catalog,
+  while `source_worksheet_names()` / `has_source_worksheet()` report the opened
+  source catalog, without updating `last_edit_error()`, dirtying materialized
+  diagnostics or summaries, discarding or reloading the saved materialized
+  value, reviving the transient name, or blocking later matching-option mutation
+  and save. This is catalog inspection hygiene only, not source reload, dynamic
+  catalog repair, source mutation, commit, undo, or rollback semantics.
+- P8.433 pins read-only pending-state diagnostics after that recovery:
+  `has_pending_changes()`, `pending_change_count()`, replacement diagnostics,
+  materialized aggregate diagnostics, `has_pending_replacement()`,
+  `pending_worksheet_edits()`, `worksheet_catalog()`, and `last_edit_error()`
+  preserve the saved materialized session, restored source/planned mapping,
+  empty dirty diagnostics, and prior public edit count without flushing,
+  reloading, reviving the transient name, or blocking later matching-option
+  mutation and save. This is diagnostic-query hygiene only, not
+  diagnostic-triggered flush, source reload, dynamic catalog repair, source
+  mutation, commit, undo, or rollback semantics.
+- P8.434 pins handle-level `WorksheetEditor` reads after that recovery:
+  `try_cell()`, `get_cell()`, missing-cell reads, `cell_count()`,
+  `estimated_memory_usage()`, `sparse_cells()`, and `sparse_cells(range)`
+  preserve the saved materialized value, unchanged source-backed cells, clean
+  handles, empty dirty diagnostics, and restored planned catalog name without
+  flushing, reloading stale source values, reviving the transient name, or
+  blocking later matching-option mutation and save. This is handle read hygiene
+  only, not read-triggered flush, source reload, dense range reads, source
+  mutation, commit, undo, or rollback semantics.
+- P8.435 pins invalid handle-level reads after that recovery: invalid
+  row/column coordinates, invalid A1 references, and invalid
+  `sparse_cells(range)` calls throw `FastXlsxError` while preserving the saved
+  materialized session, clean handles, empty dirty diagnostics, empty
+  `last_edit_error()`, and restored planned catalog name. A later matching
+  reacquire/mutation/save still works under `Data`. This is invalid-read
+  hygiene only, not read-triggered diagnostics, coordinate repair/clamping,
+  source reload, source mutation, commit, undo, or rollback semantics.
+- P8.436 pins invalid handle-level mutations after that recovery: invalid
+  row/column and A1 `set_cell()` / `erase_cell()` calls throw `FastXlsxError`
+  and update `last_edit_error()` while preserving the saved materialized
+  session, clean handles, empty dirty diagnostics, and restored planned catalog
+  name. A later valid mutation clears the diagnostic, writes under `Data`, and
+  omits rejected invalid payloads. This is invalid-mutation hygiene only, not
+  invalid-payload retention, coordinate repair/clamping, source reload, source
+  mutation, commit, undo, or rollback semantics.
+- P8.437 pins valid missing-cell erase no-ops after that recovery: row/column
+  and A1 `erase_cell()` calls targeting absent cells clear prior edit
+  diagnostics while preserving the saved materialized session, clean handles,
+  empty dirty diagnostics, and restored planned catalog name. A later valid
+  mutation/save still works under `Data`. This is missing-erase no-op hygiene
+  only, not erase tombstones, explicit blank cells, source reload, source
+  mutation, commit, undo, or rollback semantics.
+- P8.438 pins positive blank/erase projection after that recovery:
+  `set_cell("A1", CellValue::blank())` remains an explicit blank record and
+  `erase_cell(2, 1)` removes the existing source-backed A2 record. The next
+  `save_as()` writes `<c r="A1"/>`, preserves B1, omits row 2 /
+  `placeholder-a2`, refreshes dimension to `A1:B1`, and does not leak the
+  transient planned name. This is sparse-store projection hygiene only, not
+  erase tombstones, source wrapper metadata preservation, style/sharedStrings
+  migration, source reload, commit, undo, or rollback semantics.
+- P8.439 pins positive scalar/formula projection after that recovery: number,
+  boolean, and formula mutations remain valid dirty sparse-store edits after
+  the safe-save/reacquire path. The next `save_as()` writes numeric `<v>`,
+  boolean `t="b"` / `1`, escaped formula `<f>` without cached value, preserves
+  untouched source-backed B1, refreshes dimension to `A1:C3`, and does not leak
+  the transient planned name. This is current `CellValue` projection hygiene
+  only, not formula evaluation, cached formula result generation/preservation,
+  calcChain rebuild, date cell typing, style/sharedStrings migration, source
+  reload, commit, undo, or rollback semantics.
+- P8.440 pins positive text escape projection after that recovery:
+  leading/trailing-whitespace text, empty text, and special-character text
+  remain valid dirty sparse-store edits after the safe-save/reacquire path. The
+  next `save_as()` writes inline strings, escapes `&`, `<`, and `>`, preserves
+  quotes in element text, emits `xml:space="preserve"` where required, writes
+  empty text as `<t></t>`, preserves untouched source-backed B1, refreshes
+  dimension to `A1:C3`, and does not leak the transient planned name. This is
+  current inline-string text projection hygiene only, not rich text
+  preservation, phonetic metadata preservation, sharedStrings migration or
+  writeback, source wrapper metadata preservation, source reload, commit, undo,
+  or rollback semantics.
+- P8.441 pins legal maximum coordinate projection after that recovery:
+  `XFD1048576` remains a valid sparse-store edit after the safe-save/reacquire
+  path. It can be written via row/column max values, read back through
+  row/column and A1 APIs, inspected through a one-cell range snapshot, and saved
+  with dimension `A1:XFD1048576` plus a single sparse max-row record. This is
+  sparse boundary correctness only, not dense row/column allocation, a
+  million-row benchmark, large-file low-memory random editing, coordinate
+  repair/clamping, source reload, commit, undo, or rollback semantics.
+- P8.442 pins edge-record erase shrink after that recovery: after a saved
+  `XFD1048576` sparse record is erased, row/column and A1 reads no longer expose
+  the edge record, the max-boundary range snapshot is empty, and the next
+  `save_as()` shrinks dimension to `A1:B2` while preserving remaining A1/B1/A2
+  records. This is sparse dimension recomputation only, not tombstone output,
+  dense allocation, row metadata repair/synthesis, source wrapper preservation,
+  large-file low-memory random editing, source reload, commit, undo, or
+  rollback semantics.
+- P8.443 pins the strict A1 mutation overloads on the same boundary:
+  `set_cell("XFD1048576", ...)` writes the last legal Excel cell after the
+  safe-save/reacquire path and `erase_cell("XFD1048576")` removes it again.
+  The row/column APIs observe the same saved state, the set save emits
+  dimension `A1:XFD1048576`, and the erase save shrinks to `A1:B2`. This is A1
+  overload parity only, not lowercase reference acceptance, range mutation,
+  dense materialization, tombstone output, row metadata repair/synthesis,
+  large-file low-memory random editing, source reload, commit, undo, or
+  rollback semantics.
+- P8.444 pins explicit blank projection on the same max-coordinate boundary:
+  `set_cell("XFD1048576", CellValue::blank())` remains an active sparse record,
+  reads back as `CellValueKind::Blank`, saves as `<c r="XFD1048576"/>`, and
+  extends dimension to `A1:XFD1048576`. A later row/column erase removes that
+  blank record and shrinks the next save to `A1:B2`. This is explicit blank
+  projection only, not missing-cell synthesis, tombstone output, row metadata
+  repair/synthesis, dense materialization, large-file low-memory random
+  editing, source reload, commit, undo, or rollback semantics.
+- P8.445 pins formula projection on the same max-coordinate boundary:
+  `set_cell(1048576, 16384, CellValue::formula(...))` remains an active sparse
+  formula record, reads back through row/column and A1 APIs, saves escaped
+  `<f>` text at `XFD1048576`, extends dimension to `A1:XFD1048576`, and does
+  not generate a cached `<v>` value. This is formula payload projection only,
+  not formula evaluation, cached result generation/preservation, calcChain
+  rebuild, defined-name/formula dependency rewrite, dense materialization,
+  large-file low-memory random editing, source reload, commit, undo, or
+  rollback semantics.
+- P8.446 pins scalar projection on the same max-coordinate boundary:
+  `set_cell(1048576, 16384, CellValue::number(...))` remains an active sparse
+  numeric record and saves a scalar `<v>` at `XFD1048576`; a later
+  `set_cell("XFD1048576", CellValue::boolean(false))` overwrites the same sparse
+  edge record as `t="b"` / `<v>0</v>`. This is current number/boolean payload
+  projection only, not date cell typing, non-finite number acceptance,
+  number-format/style migration, boolean coercion, dense materialization,
+  large-file low-memory random editing, source reload, commit, undo, or
+  rollback semantics.
+- P8.447 pins saved scalar edge erase shrink on the same boundary: after the
+  max-coordinate number has been saved and overwritten by a saved boolean false,
+  `erase_cell(1048576, 16384)` removes the edge record, clears the max-boundary
+  range snapshot, and the next save shrinks dimension to `A1:B2`. This is erase
+  shrink for a saved scalar sparse record only, not tombstone output,
+  scalar-to-blank conversion, row metadata repair, dense materialization,
+  large-file low-memory random editing, source reload, commit, undo, or
+  rollback semantics.
+- P8.448 pins saved formula edge erase shrink on the same boundary: after an
+  escaped formula has been saved at `XFD1048576` without a cached `<v>` value,
+  `erase_cell("XFD1048576")` removes the edge record, clears row/column, A1,
+  and range reads, and the next save shrinks dimension to `A1:B2`. This is
+  erase shrink for a saved formula sparse record only, not formula evaluation,
+  cached result generation/preservation, calcChain rebuild, defined-name or
+  formula dependency rewrite, tombstone output, formula-to-blank conversion,
+  row metadata repair, dense materialization, large-file low-memory random
+  editing, source reload, commit, undo, or rollback semantics.
+- P8.449 keeps the workbook-editor public test budget stable by moving the
+  max-coordinate public regression family into
+  `fastxlsx.workbook_editor.public-edge`; this is CTest organization only, not
+  a product API or runtime behavior change.
+- P8.450 pins fresh source-backed max-coordinate materialization:
+  an existing source worksheet `XFD1048576` inline-string record is
+  materialized cleanly, read through row/column and A1 APIs, preserved by a
+  read-only no-op copy-original `save_as()`, and removable through
+  `erase_cell("XFD1048576")` so the next dirty projection shrinks to `A1:B2`.
+  This is sparse source materialization only, not dense allocation, source
+  reload, source wrapper preservation after dirty projection, row metadata
+  repair, large-file low-memory random editing, tombstone output, commit, undo,
+  or rollback semantics.
+- P8.451 pins the same source-backed edge for formula cells:
+  an existing source `XFD1048576` formula is materialized as
+  `CellValueKind::Formula`, stale cached scalar `<v>` values are ignored by the
+  materialized value, read-only no-op `save_as()` still copies source bytes
+  including the cached value, and `erase_cell("XFD1048576")` removes the edge
+  formula so the next dirty projection shrinks to `A1:B2` without the formula
+  or cached scalar. This is not formula evaluation, cached result generation or
+  dirty-projection preservation, calcChain rebuild, dependency rewrite, source
+  reload, dense allocation, large-file low-memory random editing, commit, undo,
+  or rollback semantics.
+- P8.452 pins the same source-backed edge for workbook sharedStrings cells:
+  an existing source `XFD1048576` `t="s"` cell is resolved through
+  `xl/sharedStrings.xml` and materialized as `CellValueKind::Text`, read-only
+  no-op `save_as()` still copies source bytes including source shared-string
+  indexes, and `erase_cell("XFD1048576")` removes the edge so the next dirty
+  projection shrinks to `A1:B2` with remaining text written as inline strings
+  while preserving the source sharedStrings part bytes. This is not
+  sharedStrings rebuild, writeback, pruning, index migration, rich text
+  preservation, relationship repair, source reload, dense allocation,
+  large-file low-memory random editing, commit, undo, or rollback semantics.
+- P8.453 pins the same source-backed edge for scalar and blank cells:
+  existing source number, boolean, and explicit blank cells at `XFD1048576`
+  materialize through row/column and A1 APIs, read-only no-op `save_as()` still
+  copies source bytes, and `erase_cell("XFD1048576")` removes each edge so the
+  next dirty projection shrinks to `A1:B2` without the erased edge payload.
+  This is not dense allocation, source reload, wrapper preservation after dirty
+  projection, row metadata repair, coordinate repair, tombstone output, blank
+  conversion, large-file low-memory random editing, commit, undo, or rollback
+  semantics.
+- P8.454 pins the same source-backed edge for empty inline-string cells:
+  existing source `t="inlineStr"` cells at `XFD1048576` with empty `<t></t>`
+  materialize as empty text, inlineStr cells with `<is/>` and no text
+  materialize as blank, read-only no-op `save_as()` still copies source bytes,
+  and `erase_cell("XFD1048576")` removes each edge so the next dirty projection
+  shrinks to `A1:B2` without the erased edge payload. This is not rich text
+  preservation, phonetic metadata import, inline/scalar coercion, XML repair,
+  source reload, dense allocation, large-file low-memory random editing,
+  commit, undo, or rollback semantics.
+- P8.455 pins the same source-backed edge for simple rich sharedStrings:
+  an existing source `XFD1048576` `t="s"` cell can point at a shared string item
+  with multiple rich text runs and still materialize as flattened plain text;
+  phonetic and extension metadata text is ignored, read-only no-op `save_as()`
+  still copies source bytes including rich sharedStrings markup, and
+  `erase_cell("XFD1048576")` removes the edge so the next dirty projection
+  shrinks to `A1:B2` while preserving source `xl/sharedStrings.xml` bytes. This
+  is not rich text preservation, phonetic metadata import, extension metadata
+  import, sharedStrings rebuild, writeback, pruning, index migration,
+  relationship repair, source reload, dense allocation, large-file low-memory
+  random editing, commit, undo, or rollback semantics.
+- P8.456 pins source sharedStrings `xml:space` whitespace at the public facade:
+  plain shared-string text and simple rich shared-string runs with
+  `xml:space="preserve"` materialize with leading/trailing whitespace intact,
+  clean no-op `save_as()` still copies source bytes, and a later dirty save
+  projects the flattened text as inline strings with `xml:space="preserve"`
+  where needed while preserving the source `xl/sharedStrings.xml` bytes. This
+  is not source sharedStrings writeback, pruning, index migration, rich text
+  preservation, relationship repair, large-file low-memory random editing,
+  commit, undo, or rollback semantics.
+- P8.457 pins malformed sharedStrings item/rich-run structure failure hygiene at
+  the public facade: text outside `<t>`, nested `<si>`, nested markup inside
+  `<t>`, and mismatched closing tags fail through `try_worksheet()` /
+  `worksheet()` without dirtying materialized state or blocking later valid
+  Patch edits. This is not XML repair, tolerant schema recovery, broader
+  rich-text support, sharedStrings migration/rebuild/writeback, relationship
+  repair, large-file low-memory random editing, commit, undo, or rollback
+  semantics.
+- P8.458 pins malformed sharedStrings XML/entity/attribute failure hygiene at
+  the public facade: unknown or unterminated XML entities, out-of-range
+  character references, attributes without values, unquoted attribute values,
+  and truncated tags caused by unterminated attributes fail through
+  `try_worksheet()` / `worksheet()` without dirtying materialized state or
+  blocking later valid Patch edits. The parser validates generic tag attribute
+  syntax but does not add XML repair, schema validation, attribute whitelisting,
+  sharedStrings migration/rebuild/writeback, relationship repair, large-file
+  low-memory random editing, commit, undo, or rollback semantics.
+- P8.459 pins malformed sharedStrings relationship target failure hygiene at
+  the public facade: external targets, query-qualified targets,
+  fragment-qualified targets, incomplete or invalid percent escapes, decoded
+  null bytes, and package-root escapes fail through `try_worksheet()` /
+  `worksheet()` without dirtying materialized state or blocking later valid
+  Patch edits. This is relationship-target fail-fast evidence only, not
+  relationship repair, URI repair, external target materialization,
+  sharedStrings migration/rebuild/writeback, large-file low-memory random
+  editing, commit, undo, or rollback semantics.
+- P8.460 pins source sharedStrings non-critical metadata behavior on the
+  positive path: inconsistent root `count` / `uniqueCount` values and otherwise
+  well-formed unknown attributes on `sst` / `si` / `r` / `t` do not drive
+  materialization. The public editor follows actual `<si>` order/text, keeps
+  clean no-op save copy-original, and dirty save still projects inline strings
+  while preserving the source `xl/sharedStrings.xml` bytes. This is not
+  sharedStrings schema validation, count repair, attribute whitelisting,
+  sharedStrings migration/rebuild/writeback, large-file low-memory random
+  editing, commit, undo, or rollback semantics.
+- P8.461 pins the absent sharedStrings optional-dependency boundary for
+  supported non-`t="s"` source cells: a workbook with no `xl/sharedStrings.xml`,
+  no workbook sharedStrings relationship, and no sharedStrings content type can
+  still materialize supported blank/boolean/inline cells. Dirty save continues
+  to write inline strings and does not create a sharedStrings part,
+  relationship, content type, or worksheet shared-string indexes. This is
+  absence preservation only, not lazy repair of malformed declared
+  sharedStrings relationships, sharedStrings migration/rebuild/writeback,
+  large-file low-memory random editing, commit, undo, or rollback semantics.
+- P8.462 pins lazy selected-worksheet sharedStrings resolution: a workbook can
+  carry a stale sharedStrings relationship and still materialize/save a
+  selected sheet that contains only supported non-`t="s"` cells, while a
+  selected sheet with actual shared string indexes still triggers the same
+  fail-fast sharedStrings target/content/XML/index validation. Dirty save
+  preserves the stale source relationship and `xl/sharedStrings.xml` bytes; it
+  does not repair, prune, migrate, rebuild, or write back sharedStrings.
+- P8.463 extends that lazy boundary to representative malformed workbook
+  metadata: duplicate sharedStrings relationships are bypassed for selected
+  non-`t="s"` sheets but still fail fast for selected sheets with shared string
+  indexes. Dirty save preserves the duplicate relationship bytes; it does not
+  repair, prune, migrate, rebuild, or write back sharedStrings.
+- P8.464 extends the same on-demand boundary to malformed sharedStrings table
+  XML: selected non-`t="s"` sheets do not parse or repair a malformed
+  `xl/sharedStrings.xml`, but selected sheets with shared string indexes still
+  fail fast on the malformed payload. Dirty save preserves the malformed
+  sharedStrings bytes; it does not repair, prune, migrate, rebuild, or write
+  back sharedStrings.
+- P8.465 extends the same on-demand boundary to wrong sharedStrings content
+  type metadata: selected non-`t="s"` sheets do not validate or repair the
+  sharedStrings part content type, but selected sheets with shared string
+  indexes still fail fast before materializing. Dirty save preserves the wrong
+  content type metadata; it does not repair, prune, migrate, rebuild, or write
+  back sharedStrings.
+- P8.466 normalizes source explicit default style attributes: selected
+  worksheet cells with exact `s="0"` / `s='0'` materialize as unstyled values
+  and dirty projection omits both forms, while non-default source style ids remain
+  fail-fast. This is not style preservation, style id migration, style merge,
+  stylesheet semantic editing, or formatting parity.
+- P8.467 pins the strict token boundary for that default-style exception:
+  selected source cells accept exact `s="0"` / `s='0'` only; empty,
+  leading-zero, signed, whitespace-padded, entity-encoded, and duplicate
+  default-like source style attributes remain fail-fast materialization
+  failures. This is not numeric coercion, XML entity decoding for style ids,
+  style preservation, style migration, style merge, or stylesheet validation.
+- P8.468 adds public facade hygiene for duplicate source style attributes:
+  duplicate `s="0" s="0"` fails through `try_worksheet()` / `worksheet()`
+  without creating a partial materialized session, dirtying the editor, updating
+  `last_edit_error()`, or blocking a later valid Patch edit. This is parser
+  strictness, not duplicate-attribute repair or style deduplication.
+- P8.469 pins qualified source style-like attributes as unsupported cell
+  metadata: `x:s="0"` is rejected through the public facade without partial
+  materialization, dirty state, `last_edit_error()` updates, or later Patch edit
+  blockage. This is not namespace repair, namespace-aware style import, or a
+  broad metadata tolerance policy.
+- P8.470 lifts single-quoted exact default-style attributes into public success
+  coverage: `s='0'` materializes as no style handle beside `s="0"`, and dirty
+  projection omits both quote forms. This is exact XML quote-form support, not
+  tolerant numeric parsing, whitespace trimming, entity decoding, or style
+  import.
+- P8.471 pins the source style attribute syntax boundary: `s = "0"` stays
+  accepted because the attribute value is exactly `0`, while valueless
+  `s`, unquoted `s=0`, and unterminated style attribute syntax fail through the
+  same source-load/public-facade hygiene path. This is strict XML attribute
+  parsing, not tolerant style-id coercion, XML repair, or style import.
 - The exposed mutation semantics remain intentionally narrow: `erase_cell()`
   removes the sparse record, `CellValue::blank()` is the explicit blank
   replacement cell, and non-default `StyleId` is rejected instead of being
@@ -604,10 +1310,22 @@ Draft `WorksheetEditor` first public slice:
   the first public `WorksheetEditor` design should either reject non-default
   `StyleId` on `set_cell()` or document it as a caller-supplied raw workbook
   style id with no validation. Do not claim style migration or merge.
-- Source dependency policy: source cells using shared string indexes, source
-  style ids, unsupported cell types, unsupported metadata, malformed
-  references, or XML/entity/parser failures remain load failures before a
-  caller-visible worksheet editor is returned.
+- Source dependency policy: workbook-backed source cells using valid shared
+  string indexes are materialized through the existing `xl/sharedStrings.xml`
+  as plain text. Declared sharedStrings `count` / `uniqueCount` and
+  well-formed unknown sharedStrings attributes are non-driving metadata; actual
+  `<si>` order/text is used. Prefixed source sharedStrings `sst` / `si` / `t`
+  / `r` element names are matched by local-name for materialization; this is
+  not namespace URI validation or repair. Element namespace URIs are not
+  inspected on this current local-name path. Prefixed source worksheet,
+  `sheetData`, row, cell, inlineStr wrapper, rich-run, formula, and
+  value-wrapper element names are also matched by local-name for read-only
+  materialization. Source style ids, unsupported cell types,
+  unsupported metadata, malformed references, XML/entity/parser failures,
+  invalid sharedStrings relationship targets, malformed sharedStrings
+  XML/entity/attribute syntax or item structures, and invalid shared string
+  indexes remain load failures before a caller-visible worksheet editor is
+  returned.
 - Save-as handoff: materialized cell edits must still save through
   `WorkbookEditor::save_as(output_path)`. Unmodified entries and unknown entries
   remain copy-original; modified worksheet cells flow through a worksheet
@@ -637,9 +1355,70 @@ Draft `WorksheetEditor` acceptance matrix:
 | Read API | `try_cell()` returns empty for missing records; `get_cell()` throws on missing records. | Tests distinguish missing from explicit blank. |
 | Mutation API | `set_cell()` overwrites the active record; `erase_cell()` removes it; `CellValue::blank()` writes explicit blank. | Tests must prove no-state-pollution on invalid coordinates, limit failures, and unsupported values. |
 | Styles | Recommended first slice: reject non-default `StyleId` on `WorksheetEditor::set_cell()` until a style registry / validation story exists. | Tests must prove rejection does not mutate the store; docs must say no style migration or merge. |
-| Source dependencies | Shared string indexes, source style ids, unsupported cell types, unsupported metadata, malformed references, and XML/entity/parser failures remain load failures. | Existing internal coverage is enough for design; public facade tests are still needed before exposing the header. |
-| Save-as | All materialized edits save through `WorkbookEditor::save_as(output_path)`. | Public tests must prove modified source-loaded cells roundtrip through save-as with unknown-byte preservation and calc policy notes. |
-| Diagnostics | Errors must identify load vs mutation vs save-as preflight context and preserve recovery guidance. | Decide whether materialization failures update `last_edit_error()` or use a separate diagnostic before implementation. |
+| Source dependencies | Valid workbook-backed shared string indexes materialize as text, including prefixed source sharedStrings `sst` / `si` / `t` / `r` element names matched by local-name, `xml:space` whitespace, and simple rich shared string runs flattened to plain text; ignored sharedStrings metadata text under `rPh` / `phoneticPr` / `extLst` remains non-materialized even with opaque nested markup, while nested `<si>` decoys and markup inside text wrappers remain fail-fast; declared source sharedStrings `count` / `uniqueCount` values and otherwise well-formed unknown sharedStrings attributes are ignored as non-critical metadata while actual `<si>` order/text drives materialization; workbooks with no sharedStrings part can materialize supported non-`t="s"` cells and dirty save does not create sharedStrings metadata; stale or duplicate sharedStrings relationship metadata, malformed sharedStrings table payloads, and wrong sharedStrings content type metadata are resolved lazily and only block selected worksheets that actually contain `t="s"` cells; source explicit default style attributes whose unqualified `s` value is exactly `0` (`s="0"`, `s='0'`, or `s = "0"`) materialize as no style handle and dirty projection omits those forms; empty, valueless, unquoted, unterminated, padded, signed, leading-zero, entity-encoded, duplicate, and qualified default-like source style attributes remain load failures; source formula cells materialize as formula text while cached values are ignored; source blank, boolean, plain inline string, empty inline string, simple inline rich-text run cells, ignored inline `rPh` / `phoneticPr` / `extLst` metadata text including opaque nested markup, and prefixed worksheet / `sheetData` / row / cell / inlineStr / rich-run / formula / value-wrapper element names materialize into current `CellValue` variants by local-name; element namespace URIs are not inspected on this local-name materialization path, so supported local-names bound to a non-spreadsheetml URI may still materialize; unsupported local-names remain fail-fast even when bound to a non-spreadsheetml URI, including unsupported sharedStrings item/rich-run local-names; malformed sharedStrings rich metadata such as mixed direct/rich text, `rPr` outside a run, or text inside `rPr` remains load-failure behavior; malformed inline rich text metadata, including nested `<si>` decoys or markup inside ignored metadata text wrappers, still fails fast; empty source worksheets materialize as empty sparse stores; worksheet wrapper metadata, representative relationship-bearing wrapper metadata, representative range/reference wrapper metadata, and cell-external comments / processing instructions beside supported cells may be ignored during read-only materialization but are dropped by dirty standalone projection; source worksheet `.rels` / linked table parts may remain as opaque preserved package artifacts and are not pruned or repaired; non-default source style ids, unsupported cell types, unsupported metadata, malformed references, XML/entity/parser failures, worksheet root / `sheetData` boundary failures, row/cell structure failures, row/cell state-machine failures, unsupported value-wrapper shapes, invalid numeric payloads, and invalid sharedStrings metadata/relationship targets/indexes/structures/XML entities/attributes remain load failures. | P8.389-P8.411, P8.452-P8.494 cover sharedStrings materialization, rich sharedStrings flattening, source sharedStrings whitespace projection, prefixed sharedStrings local-name materialization, ignored sharedStrings metadata opacity, prefixed worksheet/inlineStr local-name materialization, ignored inline metadata opacity, namespace-URI non-validation on supported local-names, wrong-namespace unsupported local-name failure hygiene including sharedStrings item/rich-run local-names, malformed sharedStrings item/rich-run structure and rich metadata failure hygiene, sharedStrings XML/entity/attribute and XML declaration placement/grammar failure hygiene, sharedStrings relationship target failure hygiene, source sharedStrings non-critical metadata boundary, absent sharedStrings optional-dependency boundary, selected-sheet lazy sharedStrings dependency boundary, representative duplicate relationship lazy boundary, malformed table payload lazy boundary, wrong content type lazy boundary, source explicit default style normalization, strict default-style token boundary, duplicate style-attribute public facade hygiene, qualified style-like metadata rejection, single-quoted exact default-style public success, style attribute syntax boundary, source formula materialization, source blank/boolean/empty-inline materialization, source inline rich-text flattening, malformed source inline rich metadata failure hygiene, empty source worksheet materialization, wrapper metadata dirty-projection boundary, relationship-bearing wrapper metadata dirty-projection/no-pruning boundary, range/reference wrapper metadata dirty-projection boundary, cell-external comment / PI dirty-projection boundary, clean read-only materialized no-op copy-original save, failed materialization no-op copy-original save, missing `try_worksheet()` no-op copy-original save, and representative public facade failure hygiene for invalid sharedStrings metadata, non-default source style ids, unsupported source cell shapes, malformed source XML, malformed source cell references, malformed formula shapes, inline text/XML entity failures, row/cell ordering or metadata failures, invalid numeric payloads, unsupported value-wrapper / cell-internal markup failures, XML/entity/attribute parser failures, source coordinate / row-number boundary failures, source row/cell state-machine failures, and worksheet root / `sheetData` boundary failures; remaining unsupported dependency groups still need focused public facade evidence before broadening behavior. |
+| Source dependency addenda | Keep detailed source materialization notes in the summary below instead of further lengthening this matrix row. P8.484 additionally pins self-closing ignored metadata as the legal empty case and orphan/unclosed ignored metadata as malformed for source sharedStrings and inline rich text. P8.495 pins legal source sharedStrings XML declaration forms: version-only declarations, single-quoted attributes, `version="1.1"`, `standalone="no"`, and valid encoding token punctuation remain accepted without charset transcoding. P8.496 pins standalone declaration value hygiene: duplicate standalone metadata, empty standalone values, and values other than `yes` or `no` remain malformed. P8.497 rejects case-varied XML-like processing-instruction targets such as `<?XML ...?>` as reserved target decoys instead of ordinary PI trivia. P8.498 pins `<?xml-stylesheet ...?>` as ordinary ignored PI trivia, with no stylesheet import or interpretation. P8.499 rejects malformed ordinary PI tokens missing the `?>` terminator. | This addendum is documentation hygiene only; it does not broaden source tolerance, XML repair, namespace validation, rich-text preservation, sharedStrings/style migration, or relationship repair. |
+| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, and P8.411 proves missing optional lookup does not disturb no-op save. |
+| Diagnostics | Errors must identify load vs mutation vs save-as preflight context and preserve recovery guidance. | Materialization failures throw `FastXlsxError` at `try_worksheet()` / `worksheet()` time and do not update public `last_edit_error()`; missing `try_worksheet()` returns empty and preserves prior diagnostics; save-as and queued edit diagnostics remain separate. |
+
+### Source dependency materialization summary
+
+This summary is the maintained API-design index for the `Source dependencies`
+gate row above. Future source-loading slices should update this list before
+adding more prose to the matrix row.
+README and public Doxygen wording should point back to this summary instead of
+forking a separate source-loading contract.
+
+- **Supported source values:** blank, number, boolean, formula text without
+  stale cached values, plain inline strings, simple inline rich text flattened
+  to plain text, and workbook-backed `t="s"` shared-string indexes resolved
+  through the existing `xl/sharedStrings.xml`.
+- **SharedStrings import:** valid shared string text, `xml:space`, prefixed
+  `sst` / `si` / `t` / `r` local-names, simple rich runs, non-driving
+  `count` / `uniqueCount`, and otherwise well-formed unknown attributes are
+  materialized read-only; dirty projection still writes inline strings and
+  preserves the source sharedStrings part.
+- **Ignored metadata:** source sharedStrings and source inline rich text ignore
+  text under `rPh` / `phoneticPr` / `extLst`, including opaque nested metadata;
+  self-closing ignored metadata is treated as empty metadata. Nested `<si>`
+  decoys, markup inside ignored metadata text wrappers, comments / processing
+  instructions / CDATA inside sharedStrings text wrappers, orphan closing tags,
+  and unclosed ignored metadata remain fail-fast malformed input. CDATA /
+  DOCTYPE-like markup declarations are not a supported sharedStrings text
+  import path, and a true XML declaration after the sharedStrings root has
+  started is rejected rather than treated as ordinary processing-instruction
+  trivia. Duplicate XML declarations, declarations missing a supported
+  `version` attribute, unsupported declaration versions, duplicate/unknown
+  declaration attributes, empty or invalid declaration encoding names,
+  declaration `standalone` values other than `yes` or `no`, declaration
+  `encoding` after `standalone`, and XML declarations after leading whitespace
+  text or prolog comment / ordinary PI trivia, are rejected as malformed source
+  XML. Legal version-only declarations, single-quoted
+  attributes, supported `version="1.1"`, `standalone="no"`, and encoding names
+  using ASCII letters, digits, `.`, `_`, or `-` remain accepted without implying
+  charset transcoding. Case-varied XML-like processing-instruction targets such
+  as `<?XML ...?>` or `<?Xml ...?>` are rejected as reserved targets instead of
+  being skipped as ordinary PI trivia. `<?xml-stylesheet ...?>` remains
+  ordinary PI trivia and is not imported or interpreted. Malformed ordinary PI
+  tokens missing the `?>` terminator are rejected instead of being guessed or
+  skipped.
+- **Local-name policy:** supported worksheet, inline-string, formula, value,
+  sharedStrings, and rich-run element names may be prefixed and are matched by
+  local-name; namespace URIs are not validated. Unsupported local-names still
+  fail fast even when namespace URI is ignored.
+- **Lazy sharedStrings dependency:** stale duplicate relationship metadata,
+  malformed payloads, and wrong content types are resolved only if the selected
+  worksheet actually contains `t="s"` cells; non-shared-string selected sheets
+  can still materialize and save without repair or pruning.
+- **Strict failure groups:** non-default or malformed source styles,
+  unsupported cell types or metadata, malformed XML/entity/attribute syntax,
+  invalid references, row/cell ordering failures, invalid numeric payloads,
+  unsupported value-wrapper shapes, malformed sharedStrings structures, invalid
+  shared string indexes, and worksheet root / `sheetData` boundary failures all
+  fail before a public editor handle is returned.
+- **Non-goals:** no sharedStrings rebuild/writeback/migration, style migration,
+  rich-text preservation, namespace validation/repair, XML repair,
+  relationship repair/pruning, semantic metadata sync, or large-file low-memory
+  random editing.
 
 Open decisions before implementation:
 - Resolved by P8.312: use `WorksheetEditorOptions`, passed per
@@ -1547,9 +2326,12 @@ struct WorksheetEditorOptions {
 /// only the requested sheet. It must not load every sheet during open().
 /// Loading may fail before returning a WorksheetEditor if the worksheet exceeds
 /// limits or uses source constructs that the current materializer cannot
-/// migrate, such as shared string indexes, source style ids, unsupported cell
-/// types, unsupported cell metadata, malformed references, or XML parser/entity
-/// errors.
+/// import, such as source style ids, unsupported cell types, unsupported cell
+/// metadata, malformed references, XML parser/entity errors, or invalid
+/// sharedStrings relationship targets / XML structures / indexes. Valid
+/// workbook-backed source shared string cells are materialized as plain text
+/// rather than migrated; declared `count` / `uniqueCount` values are not used
+/// to drive materialization.
 ///
 /// The returned editor remains tied to this WorkbookEditor and is saved through
 /// save_as(). It is not a Streaming writer, not a low-memory large worksheet
@@ -1607,9 +2389,13 @@ README caveats for that future example:
   current `WorkbookEditor::replace_sheet_data()` facade.
 - The first slice does not migrate shared string indexes, merge styles, repair
   relationships, recalculate formulas, rebuild calcChain, or update table /
-  drawing / defined-name ranges.
-- If source cells use unsupported style/sharedStrings/cell metadata shapes,
+  drawing / defined-name ranges. Valid workbook-backed source shared strings
+  are imported as plain text only.
+- If source cells use unsupported style/cell metadata shapes, or if
+  sharedStrings relationship targets, XML structures, or indexes are invalid,
   loading the worksheet fails before returning a partially materialized editor.
+  Declared `count` / `uniqueCount` mismatches alone do not drive
+  materialization or repair.
 
 Draft save-as acceptance design for future `WorksheetEditor`:
 - Materialization without mutation must not create a pending edit by itself.
@@ -1674,7 +2460,16 @@ header:
 3. Freeze style and dependency policy:
    - Recommended first slice rejects non-default `StyleId` in
      `WorksheetEditor::set_cell()`.
-   - Source style ids and shared string indexes remain load failures.
+   - Non-default source style ids remain load failures. Explicit unqualified
+     source `s` values normalize to no style handle only when the value is
+     exactly `0` (`s="0"`, `s='0'`, or `s = "0"`); empty, valueless, unquoted,
+     unterminated, padded, signed, leading-zero, entity-encoded, duplicate, or
+     qualified default-like source style attributes remain load failures. Valid
+     workbook-backed source shared string indexes materialize as text; declared
+     `count` /
+     `uniqueCount` values do not drive materialization; invalid sharedStrings
+     relationship targets, XML structures, or indexes fail before returning a
+     handle.
 4. Freeze dimension and calc behavior:
    - Edited output refreshes top-level worksheet `<dimension>` to match emitted
      cell extents.
@@ -1692,9 +2487,9 @@ header:
    - Internal tests should only be added for uncovered behavior, not duplicate
      loader-negative matrices.
 7. Check test budget:
-   - Current F2 source-loaded `CellStore` coverage is split into
-     `fastxlsx.package_editor.cellstore`; sheetData catalog / guardrail /
-     linked-object coverage is split into
+   - Current F2 source-loaded `CellStore` coverage is split into the
+     `fastxlsx.package_editor.cellstore-*` shard family; sheetData catalog /
+     guardrail / linked-object coverage is split into
      `fastxlsx.package_editor.sheetdata-catalog`,
      `fastxlsx.package_editor.sheetdata-guards`, and
      `fastxlsx.package_editor.sheetdata-linked`, leaving
@@ -1814,14 +2609,19 @@ random-edit / in-memory save-as handoff。
 `load_cell_store_from_worksheet_chunks()` / `load_cell_store_from_worksheet_xml()`
 可从 worksheet XML 事件流建立 `CellStore`，
 `load_cell_store_from_workbook_sheet()` 可经 `PackageReader` workbook catalog 按
-sheet name 定位 worksheet part 后复用同一路径。该 loader 只接受 number、
-boolean、inline string、formula text 和 explicit blank；sharedStrings、style ids 和
-unsupported cell shapes 仍 fail，不迁移索引、不合并 styles、不修复 relationships，
-也不暴露 public `WorksheetEditor`。当前 package-level 回归已固定 source
-worksheet 含 `s="..."` style id（包括已读到前置普通 cell 后出现的 explicit
-default `s="0"`）、`t="s"` shared string index、unsupported cell type 或 invalid
-boolean payload 时的失败策略，并验证这些 source dependency/shape 失败不会暴露
-partial `CellStore` 或污染 `PackageReader` 后续 entry 读取能力。
+sheet name 定位 worksheet part 后复用同一路径。generic worksheet XML/chunk
+loaders 只接受 number、boolean、inline string、formula text 和 explicit blank；
+standalone sharedStrings、non-default style ids 和 unsupported cell shapes 仍 fail；
+explicit source `s="0"` normalizes to no style handle。workbook-backed
+loader 还可通过 existing `xl/sharedStrings.xml` 只读 materialize source `t="s"`
+cells as text；`count` / `uniqueCount` 和 legal unknown attributes 不驱动
+materialization，malformed structures/targets 或 invalid indexes fail fast。不迁移索引、不合并
+styles、不修复 relationships，也不暴露 low-level public `PackageReader` /
+`PackageEditor`。当前 package-level 回归已固定 source worksheet 含 non-default
+`s="..."` style id、unsupported cell type 或 invalid boolean payload 时的失败策略，
+同时覆盖 explicit default `s="0"` 归一化为 no style handle，并验证这些 source
+dependency/shape 失败不会暴露 partial `CellStore` 或污染 `PackageReader` 后续
+entry 读取能力。
 
 核心原则：
 
@@ -2012,11 +2812,14 @@ EditPlan 交接：
   stale calcChain cleanup 和 unknown bytes preservation；后续 focused smoke 还固定
   当前 projection 行为：source cell 被 `CellValue::blank()` 覆盖时输出 empty
   `<c>`，source cell 被 `erase_cell()` 删除时从 replacement `<sheetData>` 中省略。
-  F2.4 首个 dependency/shape guardrail smoke 还固定 source style ids（包括已读到
-  前置普通 cell 后出现的 explicit default `s="0"`）、source sharedStrings indexes、
-  unsupported cell types 和 invalid boolean payload 的 fail policy；这些失败路径不暴露
-  partial `CellStore`。这不代表 public `WorksheetEditor`、tombstone policy、style preservation、
-  sharedStrings/style migration、relationship repair 或完整 in-memory save-as。
+  F2.4 首个 dependency/shape guardrail smoke 还固定 non-default source style ids、
+  unsupported cell types 和 invalid boolean payload 的 fail policy，并固定
+  explicit source `s="0"` 归一化为 no style handle；workbook-backed valid source sharedStrings
+  indexes now materialize as text, non-critical count/attribute metadata does
+  not drive materialization, and malformed sharedStrings structures/targets or
+  invalid indexes fail fast。这些失败路径不暴露 partial `CellStore`。这不代表 tombstone policy、
+  style preservation、sharedStrings/style migration、relationship repair 或完整
+  in-memory save-as。
 - `planned_output()` / equivalent diagnostic snapshot 应能展示 active rewrites、
   copy-original entries、omitted entries、removed-part inbound audit 和 calc policy。
 - 显式 removal / omission audit 不等于 relationship pruning；P7.5 不自动删除 inbound
@@ -2686,7 +3489,7 @@ P4.1 冻结的第一个 Patch MVP 是 internal by-name worksheet `<sheetData>` p
 calcChain remove / `fullCalcOnLoad`、relationship/content-type audit 和
 unknown/unmodified part preservation 路径。这个 helper 已有首个 public facade：
 `WorkbookEditor`（`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp` /
-`tests/test_workbook_editor.cpp`，CTest `fastxlsx.workbook_editor`）。public facade 把
+`tests/test_workbook_editor.cpp`，CTest family `fastxlsx.workbook_editor.*`）。public facade 把
 caller 的 `CellValue` 行投影为 standalone `<sheetData>` 后委托上述 by-name helper，
 只暴露 `open()` / `worksheet_names()` / `has_worksheet()` /
 `source_worksheet_names()` / `has_source_worksheet()` / `replace_sheet_data()` /

@@ -12,6 +12,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <iostream>
+#include <map>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -185,6 +186,28 @@ void check_preserved_source_entries(const fastxlsx::detail::PackageReader& sourc
         }
         check_entry_bytes(output_reader, source_entry.name, source_reader.read_entry(source_entry.name));
     }
+}
+
+void rewrite_package_entry_as_stored(
+    const std::filesystem::path& path, std::string_view entry_name, std::string replacement)
+{
+    std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(path);
+    auto entry = source_entries.find(std::string(entry_name));
+    if (entry == source_entries.end()) {
+        throw TestFailure("test package entry to rewrite was not found");
+    }
+    entry->second = std::move(replacement);
+
+    std::vector<fastxlsx::detail::PackageEntry> rewritten_entries;
+    rewritten_entries.reserve(source_entries.size());
+    for (auto& [name, body] : source_entries) {
+        rewritten_entries.emplace_back(name, std::move(body));
+    }
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap;
+    fastxlsx::detail::write_package(path, rewritten_entries, options);
 }
 
 template <typename Notes>
@@ -496,9 +519,12 @@ bool is_package_editor_shard(std::string_view shard)
     return shard == "all" || shard == "core" || shard == "preservation-core"
         || shard == "preservation-removal" || shard == "preservation-resources"
         || shard == "preservation-comments" || shard == "c5"
-        || shard == "preservation-linked" || shard == "cellstore" || shard == "sheetdata"
-        || shard == "sheetdata-catalog" || shard == "sheetdata-guards"
-        || shard == "sheetdata-linked" || shard == "policy";
+        || shard == "preservation-linked" || shard == "cellstore-core"
+        || shard == "cellstore-chunks" || shard == "cellstore-source"
+        || shard == "cellstore-failures" || shard == "cellstore-catalog"
+        || shard == "sheetdata" || shard == "sheetdata-catalog"
+        || shard == "sheetdata-guards" || shard == "sheetdata-linked"
+        || shard == "policy";
 }
 
 std::string_view package_editor_shard_from_args(int argc, char* argv[])
@@ -34713,6 +34739,321 @@ void test_package_editor_source_loaded_cell_store_preserves_unreferenced_shared_
         "source-loaded CellStore output graph should re-read the sharedStrings relationship");
 }
 
+void test_package_editor_source_loaded_cell_store_materializes_prefixed_shared_strings()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-sharedstrings-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-sharedstrings-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        auto data = workbook.add_worksheet("Data");
+        auto untouched = workbook.add_worksheet("Untouched");
+        data.append_row({fastxlsx::CellView::text("prefix-placeholder-a"),
+            fastxlsx::CellView::text("prefix-placeholder-b")});
+        untouched.append_row({fastxlsx::CellView::text("keep-prefixed-package")});
+        workbook.close();
+    }
+
+    const std::string prefixed_shared_strings =
+        R"(<?xml version='1.1' encoding='UTF_8-Test.1' standalone='no'?>)"
+        R"(<?xml-stylesheet type="text/xsl" href="prefixed-sharedStrings.xsl"?>)"
+        R"(<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test" count="2" uniqueCount="2">)"
+        R"(<x:si><x:t>package-prefixed-A&amp;B</x:t></x:si>)"
+        R"(<x:si><x:r><x:t>rich-</x:t></x:r><x:r><x:t xml:space="preserve"> tail </x:t></x:r>)"
+        R"(<x:rPh sb="1" eb="1"/><x:phoneticPr fontId="1"/><x:extLst/>)"
+        R"(<x:rPh sb="0" eb="1"><fx:opaque><x:r><x:t>ignored-nested-phonetic</x:t></x:r></fx:opaque></x:rPh>)"
+        R"(<x:phoneticPr fontId="1"/>)"
+        R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:r><x:t>ignored-nested-ext</x:t></x:r></fx:opaque></x:ext></x:extLst></x:si>)"
+        R"(<x:phoneticPr fontId="2"/><x:extLst/><x:extLst><x:ext uri="{fastxlsx-root}"><fx:opaque><x:t>ignored-root-ext</x:t></fx:opaque></x:ext></x:extLst>)"
+        R"(</x:sst>)";
+    check_contains(prefixed_shared_strings,
+        "version='1.1' encoding='UTF_8-Test.1' standalone='no'",
+        "package-backed prefixed sharedStrings fixture should cover legal declaration metadata");
+    check_contains(prefixed_shared_strings, "<?xml-stylesheet",
+        "package-backed prefixed sharedStrings fixture should cover xml-stylesheet PI trivia");
+    rewrite_package_entry_as_stored(source_path, "xl/sharedStrings.xml", prefixed_shared_strings);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Data");
+
+    const fastxlsx::detail::CellRecord* a1 = store.try_cell(1, 1);
+    const fastxlsx::detail::CellRecord* b1 = store.try_cell(1, 2);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
+            && a1->text_value == "package-prefixed-A&B",
+        "package-backed CellStore should materialize prefixed sharedStrings text");
+    check(b1 != nullptr && b1->kind == fastxlsx::CellValueKind::Text
+            && b1->text_value == "rich- tail ",
+        "package-backed CellStore should flatten prefixed rich sharedStrings by local-name");
+    check_contains(shared_strings_before, "ignored-nested-ext",
+        "package-backed prefixed sharedStrings fixture should carry nested ignored extension text");
+    check_contains(shared_strings_before, "ignored-root-ext",
+        "package-backed prefixed sharedStrings fixture should carry root-level ignored extension text");
+    check_contains(shared_strings_before, "<x:extLst/>",
+        "package-backed prefixed sharedStrings fixture should carry self-closing ignored metadata");
+
+    store.set_cell(1, 3, fastxlsx::CellValue::text("package-prefixed-patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Data", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "prefixed sharedStrings CellStore output plan should preserve sharedStrings");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>package-prefixed-A&amp;B</t></is></c>)",
+        "prefixed sharedStrings CellStore output should project A1 as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve">rich- tail </t></is></c>)",
+        "prefixed sharedStrings CellStore output should preserve flattened whitespace");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>package-prefixed-patched</t></is></c>)",
+        "prefixed sharedStrings CellStore output should include the new edit");
+    check_not_contains(worksheet_xml, "ignored-nested-phonetic",
+        "prefixed sharedStrings CellStore output should not leak nested ignored phonetic text");
+    check_not_contains(worksheet_xml, "ignored-nested-ext",
+        "prefixed sharedStrings CellStore output should not leak nested ignored extension text");
+    check_not_contains(worksheet_xml, "ignored-root-ext",
+        "prefixed sharedStrings CellStore output should not leak root-level ignored extension text");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "prefixed sharedStrings CellStore output should not write shared string indexes");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == shared_strings_before,
+        "prefixed sharedStrings CellStore output should preserve sharedStrings bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "prefixed sharedStrings CellStore output should preserve untouched sheets");
+}
+
+void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_strings()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-inline-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-inline-output.xlsx");
+
+    {
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path);
+        auto data = workbook.add_worksheet("Data");
+        auto untouched = workbook.add_worksheet("Untouched");
+        data.append_row({fastxlsx::CellView::text("prefixed-inline-placeholder")});
+        untouched.append_row({fastxlsx::CellView::text("keep-prefixed-inline-package")});
+        workbook.close();
+    }
+
+    const std::string worksheet_xml =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test">)"
+          R"(<x:sheetData>)"
+          R"(<x:row r="1">)"
+          R"(<x:c r="A1" t="inlineStr"><x:is><x:t>package-prefixed-inline</x:t></x:is></x:c>)"
+          R"(<x:c r="B1" t="inlineStr"><x:is><x:t xml:space="preserve"> package space </x:t></x:is></x:c>)"
+          R"(<x:c r="C1" t="inlineStr"><x:is>)"
+          R"(<x:r><x:rPr><x:b/></x:rPr><x:t>pkg-rich-</x:t></x:r>)"
+          R"(<x:r><x:t>tail</x:t></x:r>)"
+          R"(<x:rPh sb="1" eb="1"/><x:phoneticPr fontId="1"/><x:extLst/>)"
+          R"(<x:rPh sb="0" eb="1"><fx:opaque><x:r><x:t>ignored-nested-phonetic</x:t></x:r></fx:opaque></x:rPh>)"
+          R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:r><x:t>ignored-nested-ext</x:t></x:r></fx:opaque></x:ext></x:extLst>)"
+          R"(</x:is></x:c>)"
+          R"(</x:row>)"
+          R"(<x:row r="2">)"
+          R"(<x:c r="A2"><x:v>42</x:v></x:c>)"
+          R"(<x:c r="B2" t="b"><x:v>1</x:v></x:c>)"
+          R"(<x:c r="C2"><x:f>SUM(A2:A2)</x:f><x:v>999</x:v></x:c>)"
+          R"(</x:row>)"
+          R"(</x:sheetData>)"
+          R"(</x:worksheet>)";
+    rewrite_package_entry_as_stored(source_path, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "ignored-nested-ext",
+        "package-backed prefixed inline fixture should carry nested ignored extension text");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<x:extLst/>",
+        "package-backed prefixed inline fixture should carry self-closing ignored metadata");
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Data");
+
+    const fastxlsx::detail::CellRecord* a1 = store.try_cell(1, 1);
+    const fastxlsx::detail::CellRecord* b1 = store.try_cell(1, 2);
+    const fastxlsx::detail::CellRecord* c1 = store.try_cell(1, 3);
+    const fastxlsx::detail::CellRecord* a2 = store.try_cell(2, 1);
+    const fastxlsx::detail::CellRecord* b2 = store.try_cell(2, 2);
+    const fastxlsx::detail::CellRecord* c2 = store.try_cell(2, 3);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
+            && a1->text_value == "package-prefixed-inline",
+        "package-backed CellStore should materialize prefixed inline text by local-name");
+    check(b1 != nullptr && b1->kind == fastxlsx::CellValueKind::Text
+            && b1->text_value == " package space ",
+        "package-backed CellStore should keep prefixed inline xml:space text");
+    check(c1 != nullptr && c1->kind == fastxlsx::CellValueKind::Text
+            && c1->text_value == "pkg-rich-tail",
+        "package-backed CellStore should flatten prefixed inline rich text by local-name");
+    check(a2 != nullptr && a2->kind == fastxlsx::CellValueKind::Number
+            && a2->number_value == 42.0,
+        "package-backed CellStore should materialize prefixed numeric values");
+    check(b2 != nullptr && b2->kind == fastxlsx::CellValueKind::Boolean
+            && b2->boolean_value,
+        "package-backed CellStore should materialize prefixed boolean values");
+    check(c2 != nullptr && c2->kind == fastxlsx::CellValueKind::Formula
+            && c2->text_value == "SUM(A2:A2)",
+        "package-backed CellStore should materialize prefixed formula wrappers");
+
+    store.set_cell(2, 4, fastxlsx::CellValue::text("package-prefixed-inline-patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Data", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string output_worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>package-prefixed-inline</t></is></c>)",
+        "source-loaded CellStore should project prefixed inline text as inlineStr");
+    check_contains(output_worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve"> package space </t></is></c>)",
+        "source-loaded CellStore should preserve prefixed inline whitespace in projection");
+    check_contains(output_worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>pkg-rich-tail</t></is></c>)",
+        "source-loaded CellStore should project flattened prefixed inline rich text");
+    check_contains(output_worksheet_xml, R"(<c r="A2"><v>42</v></c>)",
+        "source-loaded CellStore should project prefixed numeric values");
+    check_contains(output_worksheet_xml, R"(<c r="B2" t="b"><v>1</v></c>)",
+        "source-loaded CellStore should project prefixed boolean values");
+    check_contains(output_worksheet_xml, R"(<c r="C2"><f>SUM(A2:A2)</f></c>)",
+        "source-loaded CellStore should project formulas without cached values");
+    check_contains(output_worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>package-prefixed-inline-patched</t></is></c>)",
+        "source-loaded CellStore should include edits beside prefixed source cells");
+    check_not_contains(output_worksheet_xml, "ignored-phonetic",
+        "source-loaded CellStore projection should not keep prefixed phonetic text");
+    check_not_contains(output_worksheet_xml, "ignored-ext",
+        "source-loaded CellStore projection should not keep prefixed extension text");
+    check_not_contains(output_worksheet_xml, "ignored-nested-phonetic",
+        "source-loaded CellStore projection should not keep nested ignored phonetic text");
+    check_not_contains(output_worksheet_xml, "ignored-nested-ext",
+        "source-loaded CellStore projection should not keep nested ignored extension text");
+    check_not_contains(output_worksheet_xml, "<x:v>999</x:v>",
+        "source-loaded CellStore projection should not keep stale cached values");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "prefixed inline CellStore output should preserve untouched sheets");
+}
+
+void test_package_editor_source_loaded_cell_store_materializes_local_names_without_namespace_validation()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-local-name-no-namespace-validation-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-local-name-no-namespace-validation-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        auto data = workbook.add_worksheet("Data");
+        auto untouched = workbook.add_worksheet("Untouched");
+        data.append_row({fastxlsx::CellView::text("wrong-ns-package-a"),
+            fastxlsx::CellView::text("wrong-ns-package-b")});
+        untouched.append_row({fastxlsx::CellView::text("keep-wrong-ns-package")});
+        workbook.close();
+    }
+
+    const std::string wrong_namespace_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="2" uniqueCount="2">)"
+        R"(<bad:si><bad:t>package-wrong-ns-shared</bad:t></bad:si>)"
+        R"(<bad:si><bad:r><bad:t>package-wrong-rich-</bad:t></bad:r><bad:r><bad:t>tail</bad:t></bad:r></bad:si>)"
+        R"(</bad:sst>)";
+    rewrite_package_entry_as_stored(
+        source_path, "xl/sharedStrings.xml", wrong_namespace_shared_strings);
+
+    const std::string wrong_namespace_worksheet =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml">)"
+          R"(<bad:sheetData><bad:row r="1">)"
+          R"(<bad:c r="A1" t="s"><bad:v>0</bad:v></bad:c>)"
+          R"(<bad:c r="B1" t="inlineStr"><bad:is><bad:t>package-wrong-ns-inline</bad:t></bad:is></bad:c>)"
+          R"(<bad:c r="C1" t="s"><bad:v>1</bad:v></bad:c>)"
+          R"(</bad:row></bad:sheetData>)"
+          R"(</bad:worksheet>)";
+    rewrite_package_entry_as_stored(
+        source_path, "xl/worksheets/sheet1.xml", wrong_namespace_worksheet);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Data");
+
+    const fastxlsx::detail::CellRecord* a1 = store.try_cell(1, 1);
+    const fastxlsx::detail::CellRecord* b1 = store.try_cell(1, 2);
+    const fastxlsx::detail::CellRecord* c1 = store.try_cell(1, 3);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
+            && a1->text_value == "package-wrong-ns-shared",
+        "package-backed CellStore should materialize sharedStrings by local-name without namespace URI validation");
+    check(b1 != nullptr && b1->kind == fastxlsx::CellValueKind::Text
+            && b1->text_value == "package-wrong-ns-inline",
+        "package-backed CellStore should materialize inline text by local-name without namespace URI validation");
+    check(c1 != nullptr && c1->kind == fastxlsx::CellValueKind::Text
+            && c1->text_value == "package-wrong-rich-tail",
+        "package-backed CellStore should flatten rich sharedStrings without namespace URI validation");
+
+    store.set_cell(1, 4, fastxlsx::CellValue::text("package-wrong-ns-patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Data", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>package-wrong-ns-shared</t></is></c>)",
+        "wrong-namespace CellStore output should project sharedStrings text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>package-wrong-ns-inline</t></is></c>)",
+        "wrong-namespace CellStore output should project inline text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>package-wrong-rich-tail</t></is></c>)",
+        "wrong-namespace CellStore output should project flattened rich sharedStrings text");
+    check_contains(worksheet_xml,
+        R"(<c r="D1" t="inlineStr"><is><t>package-wrong-ns-patched</t></is></c>)",
+        "wrong-namespace CellStore output should include edits beside source-loaded cells");
+    check(output_reader.read_entry("xl/sharedStrings.xml")
+            == source_entries.at("xl/sharedStrings.xml"),
+        "wrong-namespace CellStore output should preserve source sharedStrings bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "wrong-namespace CellStore output should preserve untouched sheets");
+}
+
 void test_package_editor_source_loaded_cell_store_distinguishes_blank_and_erase()
 {
     CalcSourcePackage source =
@@ -34935,6 +35276,294 @@ void test_package_editor_source_loaded_cell_store_option_failure_preserves_edito
         memory_options, "CellStore memory_budget_bytes guardrail exceeded");
 }
 
+void test_package_editor_source_loaded_cell_store_shared_strings_payload_failure_preserves_editor_state()
+{
+    struct SharedStringsPayloadFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* shared_strings_xml;
+        const char* expected_diagnostic;
+    };
+
+    const SharedStringsPayloadFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-sharedstrings-unsupported-item-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-sharedstrings-unsupported-item-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="1" uniqueCount="1"><bad:si><bad:unsupportedItem><bad:t>bad</bad:t></bad:unsupportedItem></bad:si></bad:sst>)",
+            "unsupported shared string item element",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-sharedstrings-unsupported-rich-run-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-sharedstrings-unsupported-rich-run-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="1" uniqueCount="1"><bad:si><bad:r><bad:unsupportedRun><bad:t>bad</bad:t></bad:unsupportedRun></bad:r></bad:si></bad:sst>)",
+            "unsupported shared string rich text element",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-mixed-direct-rich-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-mixed-direct-rich-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>direct</t><r><t>rich</t></r></si></sst>)",
+            "mixed direct and rich text in a shared string item",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-rpr-outside-run-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-rpr-outside-run-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><rPr><b/></rPr></si></sst>)",
+            "malformed rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-text-inside-rpr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-text-inside-rpr-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><r><rPr><t>not-text</t></rPr><t>rich</t></r></si></sst>)",
+            "malformed rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-nested-si-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-nested-si-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><rPh sb="0" eb="1"><si><t>decoy</t></si></rPh><t>real</t></si></sst>)",
+            "nested shared string item",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-nested-markup-in-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-nested-markup-in-text-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><rPh sb="0" eb="1"><t>ignored<r/>text</t></rPh><t>real</t></si></sst>)",
+            "nested markup inside a text element",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-orphan-closing-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-orphan-closing-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>bad</t></rPh></si></sst>)",
+            "mismatched closing tags",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-unclosed-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-ignored-unclosed-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><rPh sb="0" eb="1"><t>ignored</t>)",
+            "malformed XML",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-comment-inside-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-comment-inside-text-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>bad<!--hidden-->text</t></si></sst>)",
+            "nested markup inside a text element",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-processing-instruction-inside-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-processing-instruction-inside-text-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>bad<?fx hidden?>text</t></si></sst>)",
+            "nested markup inside a text element",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-malformed-pi-before-root-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-malformed-pi-before-root-output.xlsx",
+            R"(<?fastxlsx broken><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed processing instruction",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-malformed-pi-inside-item-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-malformed-pi-inside-item-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><?fastxlsx broken><t>real</t></si></sst>)",
+            "malformed processing instruction",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-inside-item-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-inside-item-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><?xml version="1.0"?><t>real</t></si></sst>)",
+            "XML declaration after sharedStrings root start",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-duplicate-xml-declaration-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-duplicate-xml-declaration-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "duplicate XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-like-pi-before-root-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-like-pi-before-root-output.xlsx",
+            R"(<?XML version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "reserved XML processing instruction target",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-like-pi-inside-item-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-like-pi-inside-item-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><?Xml version="1.0"?><t>real</t></si></sst>)",
+            "reserved XML processing instruction target",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-missing-version-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-missing-version-output.xlsx",
+            R"(<?xml?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-unsupported-version-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-unsupported-version-output.xlsx",
+            R"(<?xml version="2.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "unsupported XML declaration version",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-duplicate-encoding-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-duplicate-encoding-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8" encoding="UTF-16"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-unknown-attribute-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-unknown-attribute-output.xlsx",
+            R"(<?xml version="1.0" flavor="fastxlsx"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-encoding-after-standalone-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-encoding-after-standalone-output.xlsx",
+            R"(<?xml version="1.0" standalone="yes" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-duplicate-standalone-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-duplicate-standalone-output.xlsx",
+            R"(<?xml version="1.0" standalone="yes" standalone="no"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-empty-standalone-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-empty-standalone-output.xlsx",
+            R"(<?xml version="1.0" standalone=""?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-invalid-standalone-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-invalid-standalone-output.xlsx",
+            R"(<?xml version="1.0" standalone="maybe"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-empty-encoding-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-empty-encoding-output.xlsx",
+            R"(<?xml version="1.0" encoding=""?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-digit-start-encoding-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-digit-start-encoding-output.xlsx",
+            R"(<?xml version="1.0" encoding="8BIT"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-invalid-encoding-character-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-invalid-encoding-character-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF:8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed XML declaration",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-comment-before-xml-declaration-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-comment-before-xml-declaration-output.xlsx",
+            R"(<!--before-declaration--><?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "XML declaration after sharedStrings prolog markup",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-pi-before-xml-declaration-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-pi-before-xml-declaration-output.xlsx",
+            R"(<?fastxlsx before-declaration?><?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "XML declaration after sharedStrings prolog markup",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-whitespace-before-xml-declaration-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-whitespace-before-xml-declaration-output.xlsx",
+            " \r\n\t"
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "XML declaration after sharedStrings prolog text",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-after-root-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-after-root-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst><?xml version="1.0"?>)",
+            "XML declaration after sharedStrings root start",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-cdata-inside-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-cdata-inside-text-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t><![CDATA[hidden]]></t></si></sst>)",
+            "nested markup inside a text element",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-cdata-outside-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-cdata-outside-text-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><![CDATA[hidden]]><t>real</t></si></sst>)",
+            "unsupported markup declaration",
+        },
+    };
+
+    for (const SharedStringsPayloadFailureCase& test_case : cases) {
+        const std::filesystem::path source_path = output_path(test_case.source_name);
+        {
+            fastxlsx::WorkbookWriterOptions options;
+            options.string_strategy = fastxlsx::StringStrategy::SharedString;
+            fastxlsx::WorkbookWriter writer =
+                fastxlsx::WorkbookWriter::create(source_path, options);
+            fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+            data.append_row({fastxlsx::CellView::text("sharedstrings-payload-failure")});
+            fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+            untouched.append_row({fastxlsx::CellView::text("keep-sharedstrings-payload-failure")});
+            writer.close();
+        }
+        rewrite_package_entry_as_stored(
+            source_path, "xl/sharedStrings.xml", test_case.shared_strings_xml);
+
+        const std::filesystem::path output = output_path(test_case.output_name);
+        const std::map<std::string, std::string> source_entries =
+            fastxlsx::test::read_zip_entries(source_path);
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source_path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source_path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(
+                source_reader, "Data");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to load CellStore from workbook sheet 'Data'",
+                "package-backed sharedStrings payload failure should identify the workbook sheet");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "package-backed sharedStrings payload failure should identify the worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "package-backed sharedStrings payload failure should identify the worksheet ZIP entry");
+            check_contains(error.what(), "failed to load workbook sharedStrings part '/xl/sharedStrings.xml'",
+                "package-backed sharedStrings payload failure should identify the sharedStrings part");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "package-backed sharedStrings payload failure should preserve the parser diagnostic");
+        }
+        check(failed,
+            "package-backed CellStore load should fail on unsupported sharedStrings local-names");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "package-backed sharedStrings payload failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "package-backed sharedStrings payload failure should not append notes");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "package-backed sharedStrings payload failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "package-backed sharedStrings payload failure should not change calcChain policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed sharedStrings payload failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, shared_strings_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "package-backed sharedStrings payload failure should keep sharedStrings copy-original");
+
+        editor.save_as(output);
+        check(fastxlsx::test::read_zip_entries(output) == source_entries,
+            "package-backed sharedStrings payload failure output should preserve source entries");
+    }
+}
+
 void test_package_editor_source_loaded_cell_store_source_shape_failure_preserves_editor_state()
 {
     struct SourceShapeFailureCase {
@@ -35092,16 +35721,64 @@ void test_package_editor_source_loaded_cell_store_metadata_shape_failure_preserv
             "inline text attributes",
         },
         {
-            "fastxlsx-package-editor-source-cellstore-inline-rich-text-source.xlsx",
-            "fastxlsx-package-editor-source-cellstore-inline-rich-text-output.xlsx",
-            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><t>rich</t></r></is></c></row></sheetData></worksheet>)",
-            "inline rich text or phonetic metadata",
+            "fastxlsx-package-editor-source-cellstore-inline-direct-plus-rich-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-direct-plus-rich-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>direct-</t><r><t>rich</t></r></is></c></row></sheetData></worksheet>)",
+            "duplicate inline text elements",
         },
         {
-            "fastxlsx-package-editor-source-cellstore-inline-phonetic-source.xlsx",
-            "fastxlsx-package-editor-source-cellstore-inline-phonetic-output.xlsx",
-            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t><phoneticPr fontId="1"/></is></c></row></sheetData></worksheet>)",
-            "inline rich text or phonetic metadata",
+            "fastxlsx-package-editor-source-cellstore-inline-rpr-outside-run-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-rpr-outside-run-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><rPr><b/></rPr></is></c></row></sheetData></worksheet>)",
+            "malformed inline rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-text-inside-rpr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-text-inside-rpr-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><r><rPr><t>not-text</t></rPr><t>rich</t></r></is></c></row></sheetData></worksheet>)",
+            "malformed inline rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-nested-si-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-nested-si-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><rPh sb="0" eb="1"><si><t>decoy</t></si></rPh><t>real</t></is></c></row></sheetData></worksheet>)",
+            "malformed inline rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-nested-markup-in-text-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-nested-markup-in-text-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><rPh sb="0" eb="1"><t>ignored<r/>text</t></rPh><t>real</t></is></c></row></sheetData></worksheet>)",
+            "malformed inline rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-orphan-closing-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-orphan-closing-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>real</t></rPh></is></c></row></sheetData></worksheet>)",
+            "malformed inline rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-unclosed-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-ignored-unclosed-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><rPh sb="0" eb="1"><t>ignored</t></is></c></row></sheetData></worksheet>)",
+            "malformed inline rich text metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-inline-unknown-metadata-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-inline-unknown-metadata-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><unknownInlineMetadata/></is></c></row></sheetData></worksheet>)",
+            "unsupported inline string metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-unknown-cell-metadata-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-unknown-cell-metadata-output.xlsx",
+            R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml"><bad:sheetData><bad:row r="1"><bad:c r="A1"><bad:unsupportedCellMetadata/></bad:c></bad:row></bad:sheetData></bad:worksheet>)",
+            "unsupported cell metadata",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-unknown-inline-metadata-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-wrong-namespace-unknown-inline-metadata-output.xlsx",
+            R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml"><bad:sheetData><bad:row r="1"><bad:c r="A1" t="inlineStr"><bad:is><bad:unsupportedInlineMetadata/></bad:is></bad:c></bad:row></bad:sheetData></bad:worksheet>)",
+            "unsupported inline string metadata",
         },
     };
 
@@ -35802,7 +36479,7 @@ void test_package_editor_source_loaded_cell_store_failure_preserves_editor_state
     CalcSourcePackage source =
         write_calc_source_package("fastxlsx-package-editor-source-cellstore-failure-source.xlsx");
     source.worksheet =
-        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1" s="0"><v>22</v></c></row></sheetData></worksheet>)";
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1" s="1"><v>22</v></c></row></sheetData></worksheet>)";
     rewrite_calc_source_package(source);
 
     const fastxlsx::detail::PackageReader source_reader =
@@ -48187,13 +48864,16 @@ int main(int argc, char* argv[])
         test_package_editor_background_picture_and_header_footer_vml_same_path_ordering();
         }
 
-        if (should_run_package_editor_shard(shard, "cellstore")) {
+        if (should_run_package_editor_shard(shard, "cellstore-core")) {
         test_package_editor_patches_cell_store_sheet_data_by_sheet_name();
         test_package_editor_patches_cell_store_sheet_data_with_writer_style();
         test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name();
         test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename();
         test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement();
         test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet();
+        }
+
+        if (should_run_package_editor_shard(shard, "cellstore-chunks")) {
         test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_name_after_queued_rename_and_worksheet();
         test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_after_workbook_removal();
         test_package_editor_source_loaded_cell_store_worksheet_chunks_reject_invalid_planned_catalog();
@@ -48203,12 +48883,22 @@ int main(int argc, char* argv[])
         test_package_editor_source_loaded_cell_store_worksheet_chunks_replace_queued_worksheet();
         test_package_editor_replaces_worksheet_from_cell_store_worksheet_chunks_by_name();
         test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_name_after_rename();
+        }
+
+        if (should_run_package_editor_shard(shard, "cellstore-source")) {
         test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name();
         test_package_editor_source_loaded_cell_store_preserves_unreferenced_styles();
         test_package_editor_source_loaded_cell_store_preserves_unreferenced_shared_strings();
+        test_package_editor_source_loaded_cell_store_materializes_prefixed_shared_strings();
+        test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_strings();
+        test_package_editor_source_loaded_cell_store_materializes_local_names_without_namespace_validation();
         test_package_editor_source_loaded_cell_store_distinguishes_blank_and_erase();
         test_package_editor_source_loaded_cell_store_preserves_loader_options();
+        }
+
+        if (should_run_package_editor_shard(shard, "cellstore-failures")) {
         test_package_editor_source_loaded_cell_store_option_failure_preserves_editor_state();
+        test_package_editor_source_loaded_cell_store_shared_strings_payload_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_source_shape_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_metadata_shape_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_payload_failure_preserves_editor_state();
@@ -48217,6 +48907,9 @@ int main(int argc, char* argv[])
         test_package_editor_source_loaded_cell_store_entity_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_cell_type_shape_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_failure_preserves_editor_state();
+        }
+
+        if (should_run_package_editor_shard(shard, "cellstore-catalog")) {
         test_package_editor_source_loaded_cell_store_missing_entry_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_crc_failure_preserves_editor_state();
         test_package_editor_source_loaded_cell_store_corrupt_workbook_catalog_preserves_editor_state();

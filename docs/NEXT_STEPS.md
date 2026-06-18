@@ -123,6 +123,9 @@ fast, without adding non-ASCII XML Name validation.
 P8.504 pins the positive side of that guard: ordinary PI targets containing
 legal ASCII continuation characters such as `.`, `-`, digits, and `:` remain
 ignored trivia.
+P8.505 pins the matching positive side of the target-start guard: ordinary PI
+targets starting with legal ASCII name-start characters such as `_` and `:`
+remain ignored trivia.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

@@ -23607,6 +23607,44 @@ Acceptance:
   hardening remains intact.
 - `git diff --check` passes.
 
+## P8.505 - Preserve legal sharedStrings ordinary PI target starts
+
+Status: done.
+
+Type: source sharedStrings parser success regression, public `WorksheetEditor`
+success coverage, package-backed `CellStore` success coverage, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no production code
+change, no CMake membership change, and no package format expansion.
+
+Goal: prove the P8.501 ASCII target-start guard is narrow: ordinary
+processing-instruction targets starting with legal ASCII XML name-start
+characters such as `_` and `:` remain ignored source `xl/sharedStrings.xml` PI
+trivia.
+
+Output:
+- Public `WorksheetEditor` source sharedStrings success coverage now includes
+  `_`-start and `:`-start ordinary PI trivia and still materializes / dirty
+  projects source shared string cells.
+- Package-backed prefixed sharedStrings success coverage includes the same
+  legal target-start shapes and still materializes / projection-preserves source
+  sharedStrings bytes.
+- Docs distinguish legal ASCII name-start coverage from full XML Name
+  validation, namespace validation, or broad PI parsing.
+
+Non-goals / boundary:
+- No full XML `PITarget` grammar, no non-ASCII XML name validation, no namespace
+  validation, no processing-instruction data parser, no prolog schema
+  validation, no XML repair, no PI import/preservation, no stylesheet
+  processing, no sharedStrings writeback/rebuild/migration, and no relationship
+  repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-success` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Adjacent source-failure shards still pass to prove malformed PI target-start
+  hardening remains intact.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

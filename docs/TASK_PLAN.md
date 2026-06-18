@@ -2214,6 +2214,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       existing-cell overwrite/save remains usable. This is not row/column
       insertion, dense range editing, workbook-level budgeting, streaming
       random editing, or large-file random editing.
+      P8.513 adds guardrail recovery after erase: exact `max_cells` and exact
+      `memory_budget_bytes` sessions first reject a new-cell insertion, then
+      `erase_cell("A2")` removes the source-backed sparse record, releases
+      count/memory budget, clears the diagnostic, exposes the smaller dirty
+      aggregate diagnostics, and allows a later D4 insertion/save. This is
+      sparse-record removal only, not tombstones, style-preserving clear,
+      row/column delete, metadata/range sync, workbook-level budgeting, or
+      large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2443,7 +2451,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       works. P8.512 pins the symmetric mutation-side max-cells hygiene:
       an exact-count materialized session rejects a new-cell `set_cell()`
       insert, updates `last_edit_error()` without dirtying sparse or pending
-      state, and later existing-cell overwrite/save still works. P8.415 pins
+      state, and later existing-cell overwrite/save still works. P8.513 pins
+      guardrail recovery after erase: exact count/memory sessions reject
+      insertion before erase, then `erase_cell("A2")` releases sparse budget and
+      a later D4 insertion/save succeeds. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,

@@ -8791,6 +8791,143 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "rejected max_cells mutation should not leak into saved output");
 }
 
+void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()
+{
+    const std::filesystem::path max_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-source.xlsx");
+    const std::filesystem::path max_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-output.xlsx");
+
+    fastxlsx::WorkbookEditor max_sizing_editor = fastxlsx::WorkbookEditor::open(max_source);
+    const fastxlsx::WorksheetEditor max_sizing_sheet = max_sizing_editor.worksheet("Data");
+    const std::size_t exact_max_cells = max_sizing_sheet.cell_count();
+
+    fastxlsx::WorkbookEditor max_editor = fastxlsx::WorkbookEditor::open(max_source);
+    fastxlsx::WorksheetEditorOptions max_options;
+    max_options.max_cells = exact_max_cells;
+    fastxlsx::WorksheetEditor max_sheet = max_editor.worksheet("Data", max_options);
+
+    const std::size_t max_baseline_count = max_sheet.cell_count();
+    const std::size_t max_baseline_memory = max_sheet.estimated_memory_usage();
+
+    bool max_insert_failed = false;
+    try {
+        max_sheet.set_cell("D4", fastxlsx::CellValue::text("max-before-erase"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        max_insert_failed = true;
+        check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+            "exact max_cells should reject a new sparse record before erase");
+    }
+    check(max_insert_failed, "exact max_cells should reject insertion before erase");
+    check(max_editor.last_edit_error().has_value(),
+        "failed exact max_cells insertion should update last_edit_error before erase");
+    check(!max_editor.has_pending_changes(),
+        "failed exact max_cells insertion before erase should not dirty the editor");
+
+    max_sheet.erase_cell("A2");
+    check(!max_editor.last_edit_error().has_value(),
+        "successful erase should clear the prior max_cells diagnostic");
+    check(max_sheet.has_pending_changes(), "erasing an existing cell should dirty the session");
+    check(max_editor.has_pending_changes(), "erasing an existing cell should dirty the editor");
+    check(max_sheet.cell_count() == max_baseline_count - 1,
+        "erase should release one sparse record from max_cells accounting");
+    check(max_sheet.estimated_memory_usage() < max_baseline_memory,
+        "erase should lower the sparse memory estimate before reinsertion");
+    check(max_editor.pending_materialized_cell_count() == max_baseline_count - 1,
+        "pending materialized cell count should reflect erase before reinsertion");
+    check(max_editor.estimated_pending_materialized_memory_usage() ==
+            max_sheet.estimated_memory_usage(),
+        "pending materialized memory should reflect erase before reinsertion");
+    check(max_sheet.try_cell("A2") == std::nullopt,
+        "erase should remove the source-backed A2 record before reinsertion");
+
+    max_sheet.set_cell("D4", fastxlsx::CellValue::text("after-erase-max-cells"));
+    const fastxlsx::CellValue max_d4 = max_sheet.get_cell("D4");
+    check(max_d4.kind() == fastxlsx::CellValueKind::Text &&
+            max_d4.text_value() == "after-erase-max-cells",
+        "erased max_cells budget should allow a replacement insertion");
+    check(max_sheet.cell_count() == max_baseline_count,
+        "replacement insertion after erase should restore the original sparse count");
+    check(max_editor.pending_materialized_cell_count() == max_baseline_count,
+        "pending materialized count should include the replacement insertion");
+
+    max_editor.save_as(max_output);
+    const auto max_output_entries = fastxlsx::test::read_zip_entries(max_output);
+    const std::string max_worksheet_xml = max_output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(max_worksheet_xml, "after-erase-max-cells",
+        "replacement insertion after max_cells erase should persist through save_as");
+    check_not_contains(max_worksheet_xml, "max-before-erase",
+        "rejected max_cells insertion before erase should not leak into output");
+    check_not_contains(max_worksheet_xml, "placeholder-a2",
+        "erased source-backed A2 should not leak into max_cells output");
+
+    const std::filesystem::path memory_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-source.xlsx");
+    const std::filesystem::path memory_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-output.xlsx");
+
+    fastxlsx::WorkbookEditor memory_sizing_editor =
+        fastxlsx::WorkbookEditor::open(memory_source);
+    const fastxlsx::WorksheetEditor memory_sizing_sheet =
+        memory_sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = memory_sizing_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor memory_editor = fastxlsx::WorkbookEditor::open(memory_source);
+    fastxlsx::WorksheetEditorOptions memory_options;
+    memory_options.memory_budget_bytes = exact_memory_budget;
+    fastxlsx::WorksheetEditor memory_sheet =
+        memory_editor.worksheet("Data", memory_options);
+
+    const std::size_t memory_baseline_count = memory_sheet.cell_count();
+    const std::size_t memory_baseline_usage = memory_sheet.estimated_memory_usage();
+
+    bool memory_insert_failed = false;
+    try {
+        memory_sheet.set_cell("D4", fastxlsx::CellValue::text("memory-before-erase"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        memory_insert_failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "exact memory budget should reject a new sparse record before erase");
+    }
+    check(memory_insert_failed,
+        "exact memory budget should reject insertion before erase");
+    check(memory_editor.last_edit_error().has_value(),
+        "failed exact memory-budget insertion should update last_edit_error before erase");
+    check(!memory_editor.has_pending_changes(),
+        "failed exact memory-budget insertion before erase should not dirty the editor");
+
+    memory_sheet.erase_cell("A2");
+    check(!memory_editor.last_edit_error().has_value(),
+        "successful erase should clear the prior memory-budget diagnostic");
+    check(memory_sheet.cell_count() == memory_baseline_count - 1,
+        "erase should release one sparse record from memory-budget accounting");
+    check(memory_sheet.estimated_memory_usage() < memory_baseline_usage,
+        "erase should lower the sparse memory estimate for the memory-budget path");
+
+    memory_sheet.set_cell("D4", fastxlsx::CellValue::text("mem-ok"));
+    const fastxlsx::CellValue memory_d4 = memory_sheet.get_cell("D4");
+    check(memory_d4.kind() == fastxlsx::CellValueKind::Text &&
+            memory_d4.text_value() == "mem-ok",
+        "erased memory budget should allow a smaller replacement insertion");
+    check(memory_sheet.cell_count() == memory_baseline_count,
+        "memory-budget replacement insertion after erase should restore sparse count");
+    check(memory_sheet.estimated_memory_usage() <= exact_memory_budget,
+        "memory-budget replacement insertion after erase should stay within budget");
+    check(memory_editor.pending_materialized_cell_count() == memory_baseline_count,
+        "pending materialized count should include the memory-budget replacement");
+
+    memory_editor.save_as(memory_output);
+    const auto memory_output_entries = fastxlsx::test::read_zip_entries(memory_output);
+    const std::string memory_worksheet_xml =
+        memory_output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(memory_worksheet_xml, "mem-ok",
+        "replacement insertion after memory-budget erase should persist through save_as");
+    check_not_contains(memory_worksheet_xml, "memory-before-erase",
+        "rejected memory-budget insertion before erase should not leak into output");
+    check_not_contains(memory_worksheet_xml, "placeholder-a2",
+        "erased source-backed A2 should not leak into memory-budget output");
+}
+
 void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
 {
     const std::filesystem::path source =
@@ -15866,6 +16003,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
         test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();
         test_public_worksheet_editor_mutation_max_cells_failure_preserves_state();
+        test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         }
 

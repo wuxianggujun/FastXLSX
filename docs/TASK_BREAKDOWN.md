@@ -23886,6 +23886,39 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.513 - Cover public WorksheetEditor erase-released guardrail budgets
+
+Status: done.
+
+Type: public `WorksheetEditor::erase_cell()` / `set_cell()` guardrail recovery
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: prove erasing an existing sparse record releases the same
+`WorksheetEditorOptions::max_cells` and `memory_budget_bytes` budgets that guard
+later `set_cell()` insertions.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage first proves exact
+  `max_cells` and exact `memory_budget_bytes` sessions reject a new-cell
+  insertion before erase.
+- `erase_cell("A2")` clears the prior diagnostic, dirties the session, removes
+  the source-backed record, lowers sparse count/memory diagnostics, and exposes
+  the lower dirty aggregate through workbook-level materialized diagnostics.
+- A later `set_cell("D4", ...)` succeeds within the released budget, restores
+  the sparse count, saves normally, and the pre-erase rejected text remains
+  absent from output.
+
+Non-goals / boundary:
+- No tombstone model, no style-preserving clear, no row/column delete/insert,
+  no dense range editing, no workbook-level budgeting, no metadata/range sync,
+  no sharedStrings/style migration, and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

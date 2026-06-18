@@ -1801,6 +1801,89 @@ void test_public_worksheet_editor_normalizes_explicit_default_style_id()
         "dirty projection should not serialize an explicit default style attribute");
 }
 
+void test_public_worksheet_editor_rejects_non_default_style_id_without_mutation()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-non-default-style-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-non-default-style-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        const std::filesystem::path style_source =
+            artifact("fastxlsx-workbook-editor-public-non-default-style-provider.xlsx");
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("StyleProvider");
+        data.append_row({fastxlsx::CellView::number(1.0).with_style(non_default_style)});
+        writer.close();
+    }
+    check(non_default_style.value() != 0,
+        "test precondition should use a non-default StyleId");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before = sheet.cell_count();
+    const std::size_t memory_before = sheet.estimated_memory_usage();
+    const std::optional<fastxlsx::CellValue> a1_before = sheet.try_cell(1, 1);
+    const std::optional<fastxlsx::CellValue> c3_before = sheet.try_cell(3, 3);
+    const std::vector<fastxlsx::WorksheetCellSnapshot> sparse_before = sheet.sparse_cells();
+
+    const fastxlsx::CellValue styled_value =
+        fastxlsx::CellValue::text("must-not-write").with_style(non_default_style);
+    check(styled_value.has_style() && styled_value.style_id().value() != 0,
+        "test precondition should pass a styled CellValue");
+
+    check(threw_fastxlsx_error([&] { sheet.set_cell(3, 3, styled_value); }),
+        "WorksheetEditor should reject non-default StyleId values");
+    check(editor.last_edit_error().has_value(),
+        "style rejection should update WorkbookEditor::last_edit_error");
+    check(editor.last_edit_error()->find("does not support non-default StyleId")
+            != std::string::npos,
+        "style rejection diagnostic should explain the unsupported StyleId");
+
+    check(!sheet.has_pending_changes(),
+        "rejected non-default StyleId should not dirty the materialized sheet");
+    check(!editor.has_pending_changes(),
+        "rejected non-default StyleId should not dirty the workbook editor");
+    check(editor.pending_change_count() == 0,
+        "rejected non-default StyleId should not queue a pending edit");
+    check(sheet.cell_count() == cell_count_before,
+        "rejected non-default StyleId should not change the sparse cell count");
+    check(sheet.estimated_memory_usage() == memory_before,
+        "rejected non-default StyleId should not change sparse-store memory usage");
+
+    const std::optional<fastxlsx::CellValue> a1_after = sheet.try_cell(1, 1);
+    const std::optional<fastxlsx::CellValue> c3_after = sheet.try_cell(3, 3);
+    check(a1_before.has_value() && a1_after.has_value()
+            && a1_after->kind() == a1_before->kind()
+            && a1_after->text_value() == a1_before->text_value(),
+        "rejected non-default StyleId should not alter existing cells");
+    check(!c3_before.has_value() && !c3_after.has_value(),
+        "rejected non-default StyleId should not create the target cell");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> sparse_after = sheet.sparse_cells();
+    check(sparse_after.size() == sparse_before.size(),
+        "rejected non-default StyleId should not change sparse snapshot size");
+    if (sparse_after.size() == sparse_before.size()) {
+        for (std::size_t index = 0; index < sparse_before.size(); ++index) {
+            check(sparse_after[index].reference.row == sparse_before[index].reference.row
+                    && sparse_after[index].reference.column
+                        == sparse_before[index].reference.column
+                    && sparse_after[index].value.kind() == sparse_before[index].value.kind(),
+                "rejected non-default StyleId should preserve sparse snapshot entries");
+        }
+    }
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save after non-default StyleId rejection should copy source entries");
+}
+
 void test_public_try_worksheet_reuses_options_and_blocks_replacement_mix()
 {
     const std::filesystem::path source =
@@ -15379,6 +15462,7 @@ int main(int argc, char* argv[])
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
         test_public_worksheet_editor_normalizes_explicit_default_style_id();
+        test_public_worksheet_editor_rejects_non_default_style_id_without_mutation();
         test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
         test_public_worksheet_editor_reacquire_reuses_dirty_session();
         test_public_worksheet_editor_reacquire_after_save_reuses_session();

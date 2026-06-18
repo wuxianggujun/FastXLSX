@@ -23681,6 +23681,42 @@ Acceptance:
   hardening remains intact.
 - `git diff --check` passes.
 
+## P8.507 - Reject styled WorksheetEditor cells without mutation
+
+Status: done.
+
+Type: public `WorksheetEditor::set_cell()` style-boundary regression, Doxygen /
+README/API docs sync, and task-plan documentation; no new public symbol, no
+production code change, no CMake membership change, and no package format
+expansion.
+
+Goal: prove caller-supplied non-default `StyleId` values are rejected at the
+public `WorksheetEditor::set_cell()` boundary before the materialized sparse
+store is mutated or dirtied.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage now creates a real
+  non-default `StyleId`, passes it through `CellValue::with_style()`, and proves
+  `WorksheetEditor::set_cell()` throws `FastXlsxError`.
+- The failed call updates `WorkbookEditor::last_edit_error()` but keeps
+  `WorksheetEditor::has_pending_changes()`, aggregate pending state,
+  sparse-cell count, estimated sparse memory usage, target-cell readback, and
+  sparse snapshots unchanged.
+- A later no-op `save_as()` remains on the source copy-original path.
+- Public docs now distinguish caller non-default style rejection from default
+  `StyleId{0}` normalization and source `s="0"` materialization.
+
+Non-goals / boundary:
+- No existing-workbook style registry, style id validation against
+  `xl/styles.xml`, style migration, style merge, style preservation, source
+  style import broadening, rich text formatting preservation, relationship
+  repair/pruning, clean-session commit semantics, or large-file random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

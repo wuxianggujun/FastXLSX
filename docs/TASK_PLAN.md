@@ -2180,6 +2180,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       quote forms. P8.471 pins style attribute syntax: `s = "0"` stays accepted
       as an exact `0` value, while valueless `s`, unquoted `s=0`, and
       unterminated style attribute syntax fail before partial materialization.
+      P8.507 pins caller-supplied non-default `StyleId` rejection at the public
+      `WorksheetEditor::set_cell()` boundary, proving the diagnostic path does
+      not mutate, dirty, queue pending edits, or force dirty projection on a
+      later no-op save. It remains separate from source style parsing and is not
+      style migration, merge, or preservation.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2387,12 +2392,18 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       caller-supplied explicit default `StyleId{0}` in materialized
       `WorksheetEditor` cells to no style handle, so readback, sparse snapshots,
       and dirty projection omit `s="0"` while non-default style ids remain
-      unsupported. P8.415 pins public row/column coordinate guardrails for
-      `WorksheetEditor` reads and mutations: invalid coordinates throw, read
-      failures do not update `last_edit_error()`, mutation failures update the
-      diagnostic without dirtying the sparse store, and the last legal Excel
-      coordinate is still accepted. This is validation only, not coordinate
-      inference, clamping, dense reads, or large-file random access. P8.416
+      unsupported. P8.507 pins the corresponding non-default `StyleId`
+      rejection hygiene for `WorksheetEditor::set_cell()`: the failed call
+      updates the public diagnostic, does not mutate or dirty the sparse store,
+      queues no pending edit, and leaves no-op save on the copy-original path.
+      This is rejection-only, not style migration, merge, preservation, or
+      existing-workbook style registry support. P8.415 pins public row/column
+      coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
+      coordinates throw, read failures do not update `last_edit_error()`,
+      mutation failures update the diagnostic without dirtying the sparse
+      store, and the last legal Excel coordinate is still accepted. This is
+      validation only, not coordinate inference, clamping, dense reads, or
+      large-file random access. P8.416
       syncs the README current-API summary and `WorksheetEditor` example with
       the verified source sharedStrings read-only materialization, default
       `StyleId{0}` normalization, and row/column coordinate guardrail wording

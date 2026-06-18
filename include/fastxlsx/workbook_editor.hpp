@@ -432,7 +432,7 @@ public:
     /// Non-default StyleId handles are rejected because the first public slice
     /// has no existing-workbook style registry or migration policy. An explicit
     /// default StyleId{0} is accepted and normalized to no style handle. A
-    /// rejected call does not mutate the sparse store.
+    /// rejected call does not mutate or dirty the sparse store.
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
 
     /// Sets or replaces one sparse-store cell value by strict uppercase A1
@@ -446,7 +446,8 @@ public:
     /// blank record that dirty save_as() projects as an empty cell. Supported
     /// number, boolean, and formula values use the current sparse-store
     /// projection; formulas are not evaluated and do not generate cached
-    /// results.
+    /// results. Non-default StyleId handles follow the row/column overload:
+    /// they are rejected before the sparse store is mutated or dirtied.
     void set_cell(std::string_view cell_reference, const CellValue& value);
 
     /// Removes one sparse-store cell record.

@@ -23821,6 +23821,38 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.511 - Cover public WorksheetEditor mutation memory-budget failure
+
+Status: done.
+
+Type: public `WorksheetEditor::set_cell()` memory-budget state-hygiene
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: prove `WorksheetEditorOptions::memory_budget_bytes` continues to guard
+later sparse-store mutations after successful source materialization.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage materializes `Data` with an
+  exact current sparse-store memory budget.
+- A later insert that would exceed that budget throws the `CellStore
+  memory_budget_bytes guardrail exceeded` diagnostic, updates
+  `last_edit_error()`, and leaves sparse cell count, sparse memory estimate,
+  readback, dirty state, pending materialized names, pending cell count, and
+  pending memory diagnostics unchanged.
+- A later in-budget overwrite clears the diagnostic, dirties the session, and
+  saves normally; the rejected oversized cell text is absent from output.
+
+Non-goals / boundary:
+- No exact RSS accounting, no save-time ZIP/package assembly budget, no
+  workbook-level memory budget, no dense range editing, no large-file random
+  editing, and no broader source import/repair.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

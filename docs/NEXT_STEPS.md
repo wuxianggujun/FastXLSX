@@ -143,6 +143,13 @@ materialized session, pending cell/memory diagnostics, dirty state, or
 `last_edit_error()`, and a later default-options materialization can still edit
 and save. This remains a sparse-store estimate guardrail, not process RSS,
 save-time package assembly accounting, or large-file random editing.
+P8.511 extends that evidence to post-materialization mutations: an exact-budget
+`WorksheetEditor` session rejects an oversized `set_cell()` insert with the
+same `CellStore` diagnostic, updates `last_edit_error()`, preserves sparse and
+pending dirty diagnostics, and still accepts a later in-budget overwrite that
+saves normally. This is mutation-side sparse-store hygiene, not workbook-level
+memory budgeting, save-time package peak accounting, or large-file random
+editing.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

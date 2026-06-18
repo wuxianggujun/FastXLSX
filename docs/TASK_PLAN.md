@@ -2200,6 +2200,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       dirty state, or `last_edit_error()`, and later default-options
       materialization remains usable. This is sparse-store estimate hygiene,
       not process RSS or save-time package assembly accounting.
+      P8.511 adds the matching mutation-side memory-budget hygiene:
+      after exact-budget materialization, an oversized `set_cell()` insert
+      fails with the CellStore diagnostic, updates `last_edit_error()`, leaves
+      sparse and pending materialized diagnostics unchanged, and later
+      in-budget overwrite/save remains usable. This is not workbook-level
+      memory budgeting, exact RSS accounting, save-time package peak
+      accounting, dense range editing, or large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2422,7 +2429,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `WorksheetEditorOptions::memory_budget_bytes` source-load failure hygiene:
       the failed `try_worksheet()` exposes the CellStore diagnostic but leaves
       no partial materialized state or diagnostics and later default-options
-      materialization remains usable. P8.415 pins
+      materialization remains usable. P8.511 pins the matching mutation-side
+      memory-budget hygiene: an exact-budget materialized session rejects an
+      oversized `set_cell()` insert, updates `last_edit_error()` without
+      dirtying sparse or pending state, and later in-budget overwrite/save still
+      works. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,

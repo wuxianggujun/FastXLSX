@@ -23919,6 +23919,37 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.514 - Cover missing erase after WorksheetEditor guardrail failure
+
+Status: done.
+
+Type: public `WorksheetEditor::erase_cell()` missing-cell diagnostic cleanup
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: distinguish missing-cell erase from existing-cell erase after prior
+`max_cells` / `memory_budget_bytes` guardrail failures.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage first triggers exact
+  `max_cells` and exact `memory_budget_bytes` `set_cell()` insertion failures.
+- A following `erase_cell("D4")` targets the still-missing rejected cell,
+  succeeds, clears `last_edit_error()`, leaves the session/editor clean, keeps
+  workbook-level pending materialized names/cell/memory diagnostics empty, and
+  preserves sparse count/memory estimates.
+- A later clean `save_as()` stays on the no-op copy-original path: source A2 is
+  still present and the rejected text is absent from output.
+
+Non-goals / boundary:
+- No tombstone model, no style-preserving clear, no row/column delete/insert,
+  no dense range editing, no workbook-level budgeting, no metadata/range sync,
+  no sharedStrings/style migration, and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -2222,6 +2222,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       sparse-record removal only, not tombstones, style-preserving clear,
       row/column delete, metadata/range sync, workbook-level budgeting, or
       large-file random editing.
+      P8.514 adds the adjacent missing-cell erase hygiene after those
+      guardrail failures: `erase_cell("D4")` targets the still-missing rejected
+      cell, clears `last_edit_error()`, leaves sparse and pending materialized
+      diagnostics clean/unchanged, and a later no-op save preserves source A2
+      while omitting the rejected text. This is clean no-op diagnostic hygiene
+      only, not tombstones, explicit blank cells, budget release, source
+      mutation, or large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2454,7 +2461,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       state, and later existing-cell overwrite/save still works. P8.513 pins
       guardrail recovery after erase: exact count/memory sessions reject
       insertion before erase, then `erase_cell("A2")` releases sparse budget and
-      a later D4 insertion/save succeeds. P8.415 pins
+      a later D4 insertion/save succeeds. P8.514 proves the missing-cell side:
+      `erase_cell("D4")` after the same failures clears diagnostics without
+      dirtying state or consuming/releasing budget, and no-op save preserves the
+      source while omitting rejected text. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2570,6 +2580,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostics without dirtying diagnostics or summaries, flushing,
       reloading stale source values, reviving the transient name, creating erase
       tombstones, or blocking a later valid matching-option mutation and save.
+      P8.514 extends that no-op boundary to post-guardrail-failure sessions:
+      missing-cell `erase_cell("D4")` clears the earlier max/memory insertion
+      diagnostic, keeps sparse and pending materialized diagnostics unchanged,
+      and leaves no rejected text in a later clean save.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

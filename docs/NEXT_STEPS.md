@@ -163,6 +163,12 @@ diagnostic, marks the materialized session dirty, and allows a later D4
 insertion to save. This is sparse-record removal only, not tombstones,
 style-preserving clear, row/column delete, metadata/range sync, or large-file
 random editing.
+P8.514 pins the adjacent missing-cell erase edge after those same guardrail
+failures: `erase_cell("D4")` targets the still-missing rejected cell, clears the
+public mutation diagnostic, keeps sparse and pending materialized diagnostics
+clean and unchanged, and a later no-op `save_as()` preserves source bytes while
+omitting the rejected text. This is clean no-op diagnostic hygiene only, not
+tombstones, explicit blank cells, source mutation, or budget release.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

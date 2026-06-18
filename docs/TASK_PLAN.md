@@ -2237,6 +2237,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       is explicit blank sparse-record accounting only, not tombstones,
       style-preserving clear, workbook-level budgeting, save-time package
       memory accounting, or large-file random editing.
+      P8.516 pins public mutation diagnostic replacement ordering: invalid A1
+      `set_cell()` seeds `last_edit_error()`, a later memory-budget
+      `set_cell()` replaces that message, a later invalid-coordinate
+      `erase_cell()` replaces the memory diagnostic, and a final in-budget
+      mutation clears it, with all failed calls preserving clean sparse and
+      pending materialized state. This is last-error facade ordering only, not
+      structured diagnostic history, save-as diagnostics, load diagnostics, or
+      large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2475,7 +2483,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source while omitting rejected text. P8.515 proves explicit blank
       insertion is not a shortcut around budgets: exact count/memory sessions
       reject `set_cell("D4", CellValue::blank())` as a new sparse record, while
-      existing-cell blank overwrite succeeds and saves as an empty cell. P8.415 pins
+      existing-cell blank overwrite succeeds and saves as an empty cell.
+      P8.516 proves failed public `WorksheetEditor` mutations replace the
+      previous `last_edit_error()` diagnostic in order, and a later successful
+      in-budget mutation clears it without leaking rejected payloads. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2599,6 +2610,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `set_cell("D4", CellValue::blank())` is rejected as a new sparse record
       by exact count/memory budgets, but existing-cell blank overwrite remains
       in budget and persists as an empty cell.
+      P8.516 adds consecutive failure diagnostic evidence at the same boundary:
+      invalid A1, memory-budget, and invalid-coordinate mutation failures
+      replace `last_edit_error()` in latest-failure order while leaving sparse
+      and pending materialized state clean, and the next successful mutation
+      clears the diagnostic.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

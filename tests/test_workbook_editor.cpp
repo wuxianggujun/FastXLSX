@@ -9220,6 +9220,124 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "rejected blank memory-budget insertion should not leak as D4");
 }
 
+void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-last-error-replace-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-last-error-replace-output.xlsx");
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_memory_budget;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    const std::size_t baseline_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(!sheet.try_cell("D4").has_value(),
+        "last-error replacement test precondition should use a missing D4 cell");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-reference-payload"));
+    }), "invalid A1 mutation should seed last_edit_error");
+    check(editor.last_edit_error().has_value(),
+        "invalid A1 mutation should populate last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "WorksheetEditor cell reference is invalid",
+            "invalid A1 diagnostic should be visible");
+    }
+    const std::optional<std::string> invalid_reference_error = editor.last_edit_error();
+    check_public_inspection_preserves_last_edit_error(editor, invalid_reference_error);
+
+    bool memory_failed = false;
+    try {
+        sheet.set_cell("D4", fastxlsx::CellValue::text("replacement-memory-diagnostic"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        memory_failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "memory guardrail failure should expose CellStore diagnostic");
+    }
+    check(memory_failed,
+        "memory guardrail failure should replace invalid-reference diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "memory guardrail failure should keep last_edit_error populated");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "CellStore memory_budget_bytes guardrail exceeded",
+            "latest diagnostic should be the memory-budget failure");
+        check_not_contains(*editor.last_edit_error(),
+            "WorksheetEditor cell reference is invalid",
+            "memory-budget failure should replace the old invalid-reference diagnostic");
+    }
+    const std::optional<std::string> memory_error = editor.last_edit_error();
+    check_public_inspection_preserves_last_edit_error(editor, memory_error);
+
+    bool coordinate_failed = false;
+    try {
+        sheet.erase_cell(1048577, 1);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        coordinate_failed = true;
+        check_contains(error.what(), "WorksheetEditor cell coordinate is invalid",
+            "invalid coordinate erase should expose coordinate diagnostic");
+    }
+    check(coordinate_failed,
+        "invalid coordinate erase should replace memory-budget diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "invalid coordinate erase should keep last_edit_error populated");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "WorksheetEditor cell coordinate is invalid",
+            "latest diagnostic should be the invalid coordinate failure");
+        check_not_contains(*editor.last_edit_error(),
+            "memory_budget_bytes guardrail exceeded",
+            "coordinate failure should replace the old memory-budget diagnostic");
+    }
+
+    check(!sheet.has_pending_changes(),
+        "replaced failure diagnostics should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "replaced failure diagnostics should not dirty the editor");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "replaced failure diagnostics should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "replaced failure diagnostics should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "replaced failure diagnostics should not expose dirty materialized memory");
+    check(sheet.cell_count() == baseline_count,
+        "replaced failure diagnostics should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "replaced failure diagnostics should preserve sparse memory estimate");
+    check(!sheet.try_cell("D4").has_value(),
+        "replaced failure diagnostics should keep the rejected D4 cell absent");
+
+    sheet.set_cell("A1", fastxlsx::CellValue::text("fixed"));
+    check(!editor.last_edit_error().has_value(),
+        "successful in-budget mutation should clear replaced failure diagnostic");
+    check(sheet.has_pending_changes(),
+        "successful in-budget mutation should dirty the materialized session");
+    check(editor.has_pending_changes(),
+        "successful in-budget mutation should dirty the editor");
+    check(editor.pending_materialized_cell_count() == baseline_count,
+        "successful overwrite after diagnostic replacement should keep sparse count stable");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "fixed",
+        "successful mutation after diagnostic replacement should persist");
+    check_not_contains(worksheet_xml, "invalid-reference-payload",
+        "invalid-reference payload should not leak into output");
+    check_not_contains(worksheet_xml, "replacement-memory-diagnostic",
+        "memory-budget rejected payload should not leak into output");
+    check_not_contains(worksheet_xml, R"(r="D4")",
+        "memory-budget rejected D4 should not leak into output");
+}
+
 void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
 {
     const std::filesystem::path source =
@@ -16298,6 +16416,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions();
         test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_clean();
         test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets();
+        test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         }
 

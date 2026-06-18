@@ -888,11 +888,11 @@ public:
     ///
     /// This optional message is a coarse public facade diagnostic for failed
     /// replace_sheet_data(), rename_sheet(), or WorksheetEditor mutation calls.
-    /// Successful public edits clear it. Inspection / pending diagnostic
-    /// methods and save_as() do not update it, and a moved-from editor returns
-    /// std::nullopt. The message is not an exception stack, internal EditPlan
-    /// diagnostic, relationship audit, dependency audit, or package output-plan
-    /// reason.
+    /// A later failed public edit replaces the previous message; a successful
+    /// public edit clears it. Inspection / pending diagnostic methods and
+    /// save_as() do not update it, and a moved-from editor returns std::nullopt.
+    /// The message is not an exception stack, internal EditPlan diagnostic,
+    /// relationship audit, dependency audit, or package output-plan reason.
     [[nodiscard]] std::optional<std::string> last_edit_error() const;
 
     /// Returns coarse worksheet-level summaries for pending public edits.

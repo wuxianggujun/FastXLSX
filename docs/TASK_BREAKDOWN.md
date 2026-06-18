@@ -23984,6 +23984,45 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.516 - Cover WorksheetEditor mutation diagnostic replacement order
+
+Status: done.
+
+Type: public `WorksheetEditor` `last_edit_error()` replacement-order
+regression plus Doxygen/API/README/task-doc sync; no new public symbol, no
+production code change, no CMake membership change, and no package format
+expansion.
+
+Goal: prove consecutive failed public `WorksheetEditor` mutations replace the
+previous facade diagnostic with the latest failure, while successful mutations
+clear it.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage first rejects lowercase
+  `set_cell("a1", ...)` and records the invalid A1 diagnostic.
+- A later exact-memory-budget `set_cell("D4", ...)` rejects the insertion,
+  replaces the old invalid-reference diagnostic with the `CellStore`
+  `memory_budget_bytes` diagnostic, and leaves D4 missing.
+- A later invalid-coordinate `erase_cell(1048577, 1)` replaces the memory
+  diagnostic with the coordinate diagnostic.
+- All failed calls leave the materialized session/editor clean, preserve sparse
+  count/memory estimates, and keep pending materialized names/cell/memory
+  diagnostics empty.
+- A final in-budget existing-cell `set_cell("A1", ...)` clears
+  `last_edit_error()`, dirties the session, saves normally, and output contains
+  only the successful replacement text, not the rejected payloads or D4.
+
+Non-goals / boundary:
+- No multi-error history, no structured diagnostic object, no exception-stack
+  capture, no save-as diagnostics, no materialization-load diagnostics, no
+  workbook-level budgeting, no tombstones, no metadata/range sync, and no
+  large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

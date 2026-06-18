@@ -176,6 +176,15 @@ state, while an existing-cell `set_cell("A1", CellValue::blank())` stays within
 budget, clears the diagnostic, and saves as an empty cell. This is explicit
 blank sparse-record accounting only, not tombstones, style-preserving clear,
 workbook-level budgeting, or save-time memory accounting.
+P8.516 pins public mutation diagnostic replacement order: an invalid A1
+`set_cell()` seeds `last_edit_error()`, a later memory-budget `set_cell()`
+replaces it with the `CellStore` guardrail diagnostic, a later invalid
+coordinate `erase_cell()` replaces that diagnostic, and a final successful
+in-budget mutation clears it. All failed calls leave sparse/pending
+materialized state clean and keep rejected payloads out of saved output. This
+is last-error facade ordering only, not structured diagnostic history,
+save-as diagnostics, materialization-load diagnostics, or large-file random
+editing.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

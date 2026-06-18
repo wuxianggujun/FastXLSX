@@ -282,9 +282,10 @@ names；`pending_worksheet_edits()` / `worksheet_catalog()` 保持 source workbo
 sheet-catalog order。`pending_worksheet_edits()` 是 current planned-state
 summary：rename-only 链如果最终回到 source name，不会留下 summary；粗粒度
 `pending_change_count()` 仍会统计这些成功 public edit calls。public inspection 和 pending diagnostic methods 不会清空、替换或
-创建 `last_edit_error()`。没有 queued public edits 时，no-op `save_as()` 仍是
-reader-backed roundtrip copy；如果之前失败的是 `replace_sheet_data()` 或
-`rename_sheet()`，该失败诊断也会保留，后续成功 public edit 才会清空它。
+创建 `last_edit_error()`；后续失败 public edit 会替换旧诊断，后续成功 public
+edit 会清空它。没有 queued public edits 时，no-op `save_as()` 仍是 reader-backed
+roundtrip copy；如果之前失败的是 `replace_sheet_data()` 或 `rename_sheet()`，
+该失败诊断也会保留，直到后续失败或成功 public edit 分别替换或清空它。
 `WorkbookEditor` move construction / move assignment 只是 ownership transfer：
 move assignment 会用 source editor state 替换 target state，不合并 queued edits；
 如果 source 已经 moved-from，target 也会变为 moved-from / not open。
@@ -472,7 +473,8 @@ editor.save_as("edited.xlsx");
 行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
 `set_cell()` / `erase_cell()` throws、updates `last_edit_error()`，并且不会 dirty 或
-mutate sparse store；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
+mutate sparse store；连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
+mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，
 包含 explicit blank records；`sparse_cells(CellRange)` 返回 1-based inclusive
 range 内已经存在的 active sparse records，不补齐 missing cells。两者都不暴露内部

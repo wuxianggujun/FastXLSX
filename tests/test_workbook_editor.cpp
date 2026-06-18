@@ -13388,6 +13388,13 @@ void test_public_worksheet_editor_rejects_source_state_machine_shapes_cleanly()
         "source cell outside row");
 
     expect_public_state_machine_materialization_failure(
+        "sheet-data-raw-text",
+        worksheet_xml(
+            R"(<sheetData>direct-sheet-data-text<row r="1"><c r="A1"><v>1</v></c></row></sheetData>)"),
+        "CellStore worksheet loader found sheetData text outside a row",
+        "source sheetData raw text outside rows");
+
+    expect_public_state_machine_materialization_failure(
         "nested-cells",
         worksheet_xml(
             R"(<sheetData><row r="1"><c r="A1"><c r="B1"><v>1</v></c></c></row></sheetData>)"),

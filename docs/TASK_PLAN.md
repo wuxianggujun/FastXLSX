@@ -2293,6 +2293,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       works. This is row/cell state-machine fail-fast hygiene only, not row
       text import, cell inference, row repair, metadata preservation, or XML
       repair.
+      P8.525 rejects direct raw source sheetData text outside rows:
+      source `<sheetData>direct-sheet-data-text<row ...>` now fails through
+      public materialization with no editor/materialized state pollution, leaves
+      `last_edit_error()` unchanged, and later valid replacement/save still
+      works. This is sheetData/row state-machine fail-fast hygiene only, not
+      sheetData text import, row inference, metadata preservation, or XML
+      repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2555,7 +2562,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source direct raw cell text outside `<v>` / `<t>` / `<f>` wrappers stays
       fail-fast instead of being coerced to blank. P8.524 proves source direct
       raw row text outside cells stays fail-fast instead of being silently
-      dropped. P8.415 pins public row/column
+      dropped. P8.525 proves source direct raw sheetData text outside rows stays
+      fail-fast instead of being silently dropped. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2717,6 +2725,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       P8.524 adds direct raw row-text failure evidence:
       `<row r="1">direct-row-text<c ...>` fails before a public worksheet handle
       is returned instead of being silently ignored, leaves
+      editor/pending/materialized state and `last_edit_error()` clean, and does
+      not prevent a later valid save.
+      P8.525 adds direct raw sheetData-text failure evidence:
+      `<sheetData>direct-sheet-data-text<row ...>` fails before a public
+      worksheet handle is returned instead of being silently ignored, leaves
       editor/pending/materialized state and `last_edit_error()` clean, and does
       not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:

@@ -24291,6 +24291,43 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.525 - Reject direct source sheetData text outside rows
+
+Status: done.
+
+Type: `CellStore` source-load sheetData/row state hardening, public
+`WorksheetEditor` source materialization failure hygiene regression,
+Doxygen/API/README/task-doc sync; no new public symbol, no CMake membership
+change, and no package format expansion.
+
+Goal: prevent malformed source `sheetData` such as
+`<sheetData>direct-sheet-data-text<row r="1"><c r="A1"><v>1</v></c></row></sheetData>`
+from silently dropping the direct `sheetData` text while still materializing
+later rows.
+
+Output:
+- `CellStoreWorksheetLoader` now tracks `SheetDataStart` / `SheetDataEnd` and
+  rejects non-whitespace `RawText` while inside `sheetData` but outside any row.
+- Public `fastxlsx.workbook_editor.source-failure` coverage injects
+  `sheetData`-level direct text and verifies `try_worksheet("Data")` /
+  `worksheet("Data")` fail with the sheetData-text-outside-row diagnostic.
+- The failure keeps editor/pending/materialized state clean, leaves
+  `last_edit_error()` unchanged, and still allows a later valid
+  `replace_sheet_data()` / `save_as()` recovery on an unrelated sheet.
+
+Non-goals / boundary:
+- No `sheetData` text import, row inference, sheetData/row repair, metadata
+  preservation, XML repair, schema validation, rich-text preservation,
+  metadata/range sync, or large-file low-memory random editing.
+- Non-whitespace raw text outside `sheetData` / row / cell context remains
+  outside this narrow guardrail to preserve the current source wrapper-metadata
+  ignore boundary.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -1510,9 +1510,25 @@ public:
     void consume(const WorksheetEvent& event)
     {
         switch (event.kind) {
+        case WorksheetEventKind::SheetDataStart:
+            if (inside_sheet_data_) {
+                throw FastXlsxError("CellStore worksheet loader found nested sheetData");
+            }
+            inside_sheet_data_ = true;
+            break;
+        case WorksheetEventKind::SheetDataEnd:
+            if (!inside_sheet_data_ || inside_row_ || active_cell_.has_value()) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader found an invalid sheetData boundary");
+            }
+            inside_sheet_data_ = false;
+            break;
         case WorksheetEventKind::RowStart:
             if (inside_row_) {
                 throw FastXlsxError("CellStore worksheet loader found nested rows");
+            }
+            if (!inside_sheet_data_) {
+                throw FastXlsxError("CellStore worksheet loader found a row outside sheetData");
             }
             inside_row_ = true;
             if (raw_tag_has_unsupported_attributes(event.raw_xml, "r")) {
@@ -1580,6 +1596,9 @@ public:
         }
         if (inside_row_) {
             throw FastXlsxError("CellStore worksheet loader ended inside an open row");
+        }
+        if (inside_sheet_data_) {
+            throw FastXlsxError("CellStore worksheet loader ended inside open sheetData");
         }
         return std::move(store_);
     }
@@ -1866,6 +1885,9 @@ private:
         if (inside_row_) {
             throw FastXlsxError("CellStore worksheet loader found row text outside a cell");
         }
+        if (inside_sheet_data_) {
+            throw FastXlsxError("CellStore worksheet loader found sheetData text outside a row");
+        }
     }
 
     void end_cell()
@@ -1897,6 +1919,7 @@ private:
     std::set<std::uint32_t> seen_rows_;
     std::optional<std::uint32_t> last_explicit_row_;
     std::optional<CellPosition> last_source_cell_;
+    bool inside_sheet_data_ = false;
     bool inside_row_ = false;
     std::optional<ActiveSourceCell> active_cell_;
 };

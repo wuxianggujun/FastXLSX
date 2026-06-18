@@ -237,6 +237,12 @@ editor/pending/materialized/`last_edit_error()` state clean, and still permits a
 later valid replacement/save. This is row/cell state-machine fail-fast hygiene
 only, not row text import, row repair, cell inference, metadata preservation, or
 XML repair.
+P8.525 closes the adjacent sheetData raw-text gap: source
+`<sheetData>direct-sheet-data-text<row ...>` now fails with a CellStore
+sheetData-text-outside-row diagnostic, preserves the same clean failure state,
+and still allows later unrelated valid save-as recovery. This is sheetData/row
+state-machine fail-fast hygiene only, not sheetData text import, row inference,
+metadata preservation, or XML repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags
@@ -573,10 +579,11 @@ numbers, and non-numeric row numbers fail cleanly without partial sessions.
 This is strict validation, not coordinate inference, clamping, sorting,
 row-number repair, same-sheet Patch bypass, or XML repair.
 Source row/cell state-machine hygiene is now pinned as well: row elements
-outside `sheetData`, nested rows, cells outside row elements, nested cells, and
-non-whitespace row text outside cells fail cleanly without partial sessions.
-Recovery is proven through an unrelated valid sheet, not through row inference,
-state-machine recovery, direct row text import, or same-sheet Patch repair.
+outside `sheetData`, nested rows, cells outside row elements, nested cells,
+non-whitespace sheetData text outside rows, and non-whitespace row text outside
+cells fail cleanly without partial sessions. Recovery is proven through an
+unrelated valid sheet, not through row inference, state-machine recovery, direct
+sheetData/row text import, or same-sheet Patch repair.
 Supported source value materialization has positive coverage too: self-closing
 source cells and inline-string cells without text become explicit blank records,
 `t="b"` source cells become booleans, and empty inline text remains
@@ -1463,8 +1470,9 @@ feature completion.
       state-hygiene coverage for shared string indexes, unsupported cell type
       tokens, invalid boolean payloads, duplicate scalar/inline-text wrappers,
       direct raw cell text outside value wrappers, cell-contained comments /
-      processing instructions / CDATA, row raw text outside cells, nested cell
-      input rejected at the event-reader boundary, and cells outside rows; these remain
+      processing instructions / CDATA, sheetData raw text outside rows, row raw
+      text outside cells, nested cell input rejected at the event-reader
+      boundary, and cells outside rows; these remain
       failure-before-edit-state guardrails.
       Package-backed by-name loading now also has coordinate/numeric failure
       state-hygiene coverage for missing or malformed cell references, row/column
@@ -1508,10 +1516,11 @@ feature completion.
       loadable as plain semantic text only.
       Unsupported inline-string rich text runs and phonetic metadata now also
       fail before materialization instead of being flattened into plain text.
-      Direct raw cell text outside value wrappers, row raw text outside cells,
-      cell-contained comments, processing instructions, and unsupported markup
-      such as CDATA now also fail before materialization instead of being
-      silently dropped from inline text or other source worksheet payloads.
+      Direct raw cell text outside value wrappers, sheetData raw text outside
+      rows, row raw text outside cells, cell-contained comments, processing
+      instructions, and unsupported markup such as CDATA now also fail before
+      materialization instead of being silently dropped from inline text or
+      other source worksheet payloads.
       Focused loader coverage now also pins invalid boolean payload rejection.
       Malformed cell reference guardrails now also cover missing `r`,
       out-of-range `r`, zero-row refs, last-row overflow refs,

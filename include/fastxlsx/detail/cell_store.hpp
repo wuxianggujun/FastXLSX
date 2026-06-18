@@ -148,10 +148,10 @@ private:
 /// duplicate key attributes inspected by this loader, malformed inspected
 /// attributes, XML entity decoding failures, out-of-order explicit row numbers,
 /// out-of-order cell references, formula elements with attributes, empty
-/// formula text, cells outside row elements, non-whitespace row text outside
-/// cells, and unsupported row/cell metadata, value-wrapper attributes,
-/// unsupported inline string metadata, or non-whitespace cell text outside
-/// `<v>` / `<t>` / `<f>` wrappers,
+/// formula text, cells outside row elements, non-whitespace sheetData text
+/// outside rows, non-whitespace row text outside cells, and unsupported
+/// row/cell metadata, value-wrapper attributes, unsupported inline string
+/// metadata, or non-whitespace cell text outside `<v>` / `<t>` / `<f>` wrappers,
 /// cell-contained comments / processing instructions / unsupported markup fail
 /// before a store is returned. Simple source inline rich text runs are
 /// flattened to text; rich formatting is not preserved, and inline phonetic /

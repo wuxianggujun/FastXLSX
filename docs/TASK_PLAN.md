@@ -2333,6 +2333,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       does not create replacement/materialized diagnostics, pending edit
       summaries, catalog drift, or `last_edit_error()` changes while the source
       package bytes remain copied original.
+      P8.529 applies that same diagnostic contract to the missing
+      `try_worksheet()` no-op path after a prior public edit failure: the
+      optional lookup and later no-op save preserve replacement/materialized
+      diagnostics, pending edit summaries, source/planned catalog views, and
+      the prior `last_edit_error()`.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2604,7 +2609,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source/planned catalog views, and `last_edit_error()` clean after both
       handle-acquisition APIs. P8.528 proves the later no-op save-as
       copy-original path preserves the same diagnostics and catalog views after
-      failed materialization. P8.415 pins public row/column
+      failed materialization. P8.529 proves a missing optional
+      `try_worksheet()` lookup after a prior public edit failure also preserves
+      those diagnostics, catalog views, and prior `last_edit_error()` through
+      the no-op copy-original save path. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2786,6 +2794,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       P8.528 carries those checks through the later no-op `save_as()` recovery
       after failed materialization and keeps the byte-level copy-original
       assertion.
+      P8.529 applies the same checks to missing `try_worksheet()` no-op
+      recovery after a prior public edit failure, preserving the prior
+      `last_edit_error()` while keeping catalog diagnostics and byte-level
+      copy-original output unchanged.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

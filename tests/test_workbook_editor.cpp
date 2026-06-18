@@ -192,7 +192,8 @@ void check_public_materialization_failure_clean_state(
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
     std::string_view scenario,
     std::string_view stage,
-    std::string_view recovery_sheet_name)
+    std::string_view recovery_sheet_name,
+    const std::optional<std::string>& expected_last_error = std::nullopt)
 {
     const std::string prefix = std::string(scenario) + " " + std::string(stage);
 
@@ -224,8 +225,8 @@ void check_public_materialization_failure_clean_state(
     check(workbook_editor_catalog_entries_equal(
               editor.worksheet_catalog(), expected_catalog),
         prefix + " should preserve worksheet_catalog");
-    check(!editor.last_edit_error().has_value(),
-        prefix + " should not update last_edit_error");
+    check(editor.last_edit_error() == expected_last_error,
+        prefix + " should preserve last_edit_error");
 }
 
 std::filesystem::path artifact(std::string_view name)
@@ -1766,26 +1767,46 @@ void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
     const std::optional<std::string> prior_error = editor.last_edit_error();
     check(prior_error.has_value(),
         "precondition failed replacement should leave last_edit_error populated");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "missing try_worksheet",
+        "after failed replacement precondition",
+        "Missing",
+        prior_error);
 
     const std::optional<fastxlsx::WorksheetEditor> missing =
         editor.try_worksheet("Missing");
     check(!missing.has_value(),
         "try_worksheet should return empty for a missing planned worksheet");
-    check(editor.last_edit_error() == prior_error,
-        "try_worksheet missing-sheet lookup should not update last_edit_error");
-    check(!editor.has_pending_changes(),
-        "try_worksheet missing-sheet lookup should not dirty the editor");
-    check(editor.pending_change_count() == 0,
-        "try_worksheet missing-sheet lookup should not queue public edits");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "missing try_worksheet",
+        "after missing lookup",
+        "Missing",
+        prior_error);
 
     editor.save_as(output);
 
-    check(!editor.has_pending_changes(),
-        "no-op save_as after missing try_worksheet should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        "no-op save_as after missing try_worksheet should not create public edits");
-    check(editor.last_edit_error() == prior_error,
-        "no-op save_as after missing try_worksheet should not overwrite prior diagnostics");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "missing try_worksheet",
+        "after no-op save_as",
+        "Missing",
+        prior_error);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after missing try_worksheet should copy source entries");

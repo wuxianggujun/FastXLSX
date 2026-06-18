@@ -263,6 +263,13 @@ materialized diagnostics, pending edit summaries, source/planned catalog views,
 and `last_edit_error()` remain clean while the output package still byte-copies
 the source entries. This is no-op save-as hygiene only, not source repair or
 semantic migration.
+P8.529 extends the same diagnostic hygiene to the missing optional worksheet
+lookup path after a prior public edit failure: `try_worksheet("Missing")` and
+the later no-op `save_as()` keep replacement/materialized diagnostics, pending
+edit summaries, source/planned catalog views, and the prior `last_edit_error()`
+unchanged while the output package remains byte-for-byte source-copy original.
+This is missing-lookup/no-op save-as hygiene only, not missing-sheet creation,
+source repair, or semantic migration.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

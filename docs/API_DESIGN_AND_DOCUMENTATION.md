@@ -888,6 +888,14 @@ Current F2 gate audit:
   source/planned catalog views, and `last_edit_error()` clean while the output
   package remains byte-for-byte source-copy original. This is no-op save-as
   hygiene only, not source repair, semantic migration, or relationship repair.
+- P8.529 carries the same clean-state contract through missing optional
+  `try_worksheet()` lookup after a prior public edit failure: the lookup plus
+  later copy-original save keeps replacement/materialized diagnostics, pending
+  edit summaries, source/planned catalog views, and the prior
+  `last_edit_error()` unchanged while the output package remains
+  byte-for-byte source-copy original. This is missing-lookup/no-op save-as
+  hygiene only, not missing-sheet creation, source repair, semantic migration,
+  or relationship repair.
 - P8.415 pins row/column overload coordinate guardrails for
   `WorksheetEditor::try_cell()`, `get_cell()`, `set_cell()`, and `erase_cell()`.
   Invalid row/column reads throw without updating `last_edit_error()`, invalid
@@ -1528,7 +1536,8 @@ Draft `WorksheetEditor` acceptance matrix:
 | Source dependency addenda P8.526 | P8.526 additionally pins direct worksheet-root raw text outside wrapper metadata or `sheetData` as a public materialization failure, while preserving the existing behavior that text nested inside ignored wrapper metadata is ignored and later dropped by dirty projection. | This is worksheet-root state-machine fail-fast hygiene only; it does not import wrapper metadata text, preserve wrapper metadata, repair XML, or broaden comment/PI import. |
 | Source dependency addenda P8.527 | P8.527 strengthens the shared public materialization-failure hygiene helper so `try_worksheet()` and `worksheet()` failures also prove replacement diagnostics, materialized diagnostics, pending edit summaries, source/planned worksheet names, `worksheet_catalog()`, and `last_edit_error()` remain clean before later valid recovery. | This is diagnostic evidence for existing fail-fast behavior only; it does not add source repair, metadata preservation, relationship repair, sharedStrings/styles migration, or new public API. |
 | Source dependency addenda P8.528 | P8.528 extends that complete clean-state check through the later no-op `save_as()` copy-original path after failed materialization, while keeping the byte-level source-entry copy assertion. | This is no-op save-as diagnostic hygiene only; it does not repair source XML, migrate sharedStrings/styles, recalculate metadata, prune relationships, or add public API. |
-| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, and P8.411 proves missing optional lookup does not disturb no-op save. |
+| Source dependency addenda P8.529 | P8.529 extends the complete clean-state check to missing optional `try_worksheet()` lookup after a prior public edit failure, proving the lookup and later no-op `save_as()` preserve replacement/materialized diagnostics, pending edit summaries, source/planned catalog views, and the prior `last_edit_error()` while keeping byte-level source-entry copy output. | This is missing-lookup/no-op save-as hygiene only; it does not create sheets, repair source XML, migrate sharedStrings/styles, recalculate metadata, prune relationships, or add public API. |
+| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, P8.411 proves missing optional lookup does not disturb no-op save, and P8.529 strengthens missing-lookup no-op save diagnostics after a prior public edit failure. |
 | Diagnostics | Errors must identify load vs mutation vs save-as preflight context and preserve recovery guidance. | Materialization failures throw `FastXlsxError` at `try_worksheet()` / `worksheet()` time and do not update public `last_edit_error()`; missing `try_worksheet()` returns empty and preserves prior diagnostics; save-as and queued edit diagnostics remain separate. |
 
 ### Source dependency materialization summary

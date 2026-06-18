@@ -2258,6 +2258,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       editor/materialized state or updating `last_edit_error()`, and later
       valid replacement/save still works. This is source-shape fail-fast
       hygiene only, not custom type import or tolerant fallback.
+      P8.519 pins the explicit cell-internal processing-instruction branch:
+      source `<t>a<?fastxlsx hidden?>b</t>` fails through public materialization
+      with no editor/materialized state pollution, leaves `last_edit_error()`
+      unchanged, and later valid replacement/save still works. This is XML
+      trivia fail-fast hygiene only, not PI import or preservation.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2506,7 +2511,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostic and saves only the valid payload. P8.518 proves a custom
       unknown source cell type token (`t="z"`) stays fail-fast at public
       materialization time, without state pollution and without blocking a
-      later valid replacement/save. P8.415 pins
+      later valid replacement/save. P8.519 proves a source cell-internal
+      processing instruction stays fail-fast through the same public
+      no-state-pollution helper and does not block later valid save. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2644,6 +2651,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       fails before a public worksheet handle is returned, leaves
       editor/pending/materialized state and `last_edit_error()` clean, and does
       not prevent a later valid save.
+      P8.519 adds cell-internal processing-instruction failure evidence:
+      `<t>a<?fastxlsx hidden?>b</t>` fails before a public worksheet handle is
+      returned, leaves editor/pending/materialized state and `last_edit_error()`
+      clean, and does not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

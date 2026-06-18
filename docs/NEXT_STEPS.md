@@ -199,6 +199,12 @@ cell type diagnostic, leaves editor/pending/materialized/`last_edit_error()`
 state clean, and the same editor can still save a later valid replacement.
 This is fail-fast hygiene only, not custom cell type import, tolerant fallback,
 date/error support, or metadata migration.
+P8.519 pins the explicit cell-internal processing-instruction branch:
+`<t>a<?fastxlsx hidden?>b</t>` fails through `try_worksheet()` / `worksheet()`
+with the cell comments / processing-instructions / unsupported-markup
+diagnostic, leaves editor/pending/materialized/`last_edit_error()` state clean,
+and does not block a later valid replacement/save. This is fail-fast XML trivia
+hygiene only, not PI import, inline text repair, or XML trivia preservation.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

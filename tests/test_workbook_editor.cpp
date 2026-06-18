@@ -13021,6 +13021,13 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
             R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<!--hidden-->b</t></is></c></row></sheetData>)"),
         "CellStore worksheet loader does not load cell comments, processing instructions, or unsupported markup",
         "source comments inside cell text");
+
+    expect_public_value_wrapper_materialization_failure(
+        "processing-instruction-inside-cell",
+        worksheet_xml(
+            R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<?fastxlsx hidden?>b</t></is></c></row></sheetData>)"),
+        "CellStore worksheet loader does not load cell comments, processing instructions, or unsupported markup",
+        "source processing instruction inside cell text");
 }
 
 void test_public_worksheet_editor_rejects_wrong_namespace_unsupported_local_names_cleanly()

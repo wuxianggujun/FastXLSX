@@ -1298,6 +1298,8 @@ P8.108 继续让 stored/no-compression `read_entry()` 也复用
 
 ## P4.0 - API Surface Unification Design
 
+Status: done.
+
 状态：基础完成，后续 API 任务继续引用。P4.0 设计的 future existing-file editing
 facade 现已落地首个 public 切片 `WorkbookEditor`（`include/fastxlsx/workbook_editor.hpp`、
 `src/workbook_editor.cpp`、`tests/test_workbook_editor.cpp`，CTest family `fastxlsx.workbook_editor.*`）：
@@ -7325,6 +7327,8 @@ Forbidden:
 
 ## P8.86 - Active output replacement materialization boundary helper
 
+Status: done.
+
 Type: internal PackageEditor low-memory boundary cleanup + docs; no public API or
 package format change.
 
@@ -7366,6 +7370,8 @@ Forbidden:
 
 ## P8.87 - Output-plan active materialized replacement marker
 
+Status: done.
+
 Type: internal PackageEditor audit-state cleanup + tests + docs; no public API or
 package format change.
 
@@ -7403,6 +7409,8 @@ Forbidden:
 - Do not add a public low-memory editor API in this slice.
 
 ## P8.88 - Output-plan active materialized replacement reason
+
+Status: done.
 
 Type: internal PackageEditor audit-state cleanup + tests + docs; no public API or
 package format change.
@@ -7444,6 +7452,8 @@ Forbidden:
 - Do not add public low-memory editor API in this slice.
 
 ## P8.89 - Package-entry materialized replacement allowlist
+
+Status: done.
 
 Type: internal PackageEditor output-materialization guard + docs; no public API
 or package format change.
@@ -7490,6 +7500,8 @@ Forbidden:
 
 ## P8.90 - Package-entry materialized replacement mutation guard
 
+Status: done.
+
 Type: internal PackageEditor state-mutation guard + docs; no public API or
 package format change.
 
@@ -7524,6 +7536,8 @@ Forbidden:
   payloads or public `read_entry()` materialization.
 
 ## P8.91 - Workbook XML small-materialization guard
+
+Status: done.
 
 Type: internal PackageReader/PackageEditor materialization guard + regression
 tests + docs; no public API or package format change.
@@ -7563,6 +7577,8 @@ Forbidden:
 - Do not add public low-memory editor API in this slice.
 
 ## P8.92 - Source package-part materialized replacement size guard
+
+Status: done.
 
 Type: internal PackageEditor mutation guard + regression tests + docs; no
 public API or package format change.
@@ -7605,6 +7621,8 @@ Forbidden:
 
 ## P8.93 - Metadata materialization small-XML guard
 
+Status: done.
+
 Type: internal PackageReader guard + regression tests + docs; no public API or
 package format change.
 
@@ -7633,6 +7651,8 @@ Forbidden:
 - Do not expose this as public API.
 
 ## P8.94 - PackageEditor active metadata materialization guard
+
+Status: done.
 
 Type: internal PackageEditor guard + no-state-pollution regression + docs; no
 public API or package format change.
@@ -7669,6 +7689,8 @@ Forbidden:
 
 ## P8.95 - Remove stale unbounded materialized naming
 
+Status: done.
+
 Type: internal naming cleanup + docs; no behavior, public API, or package format
 change.
 
@@ -7692,6 +7714,8 @@ Forbidden:
 - Do not change `replace_part(std::string)` behavior in this naming-only slice.
 
 ## P8.96 - Reject materialized StreamRewrite replacements
+
+Status: done.
 
 Type: internal PackageEditor guard + test migration + no-state-pollution
 regression + docs; no public API or package format change.
@@ -7725,6 +7749,8 @@ Forbidden:
 - Do not expose staged chunks as public API in this slice.
 
 ## P8.97 - SharedStrings source replacement staged-only boundary
+
+Status: done.
 
 Type: internal PackageEditor guard + regression + docs; no public API or package
 format change.
@@ -7761,6 +7787,8 @@ Forbidden:
 
 ## P8.98 - Styles source replacement staged-only boundary
 
+Status: done.
+
 Type: internal PackageEditor guard + test migration + regression + docs; no
 public API or package format change.
 
@@ -7795,6 +7823,8 @@ Forbidden:
 - Do not expose staged chunks as public API in this slice.
 
 ## P8.99 - Source package-part materialized replacement removal
+
+Status: done.
 
 Type: internal PackageEditor guard + broad test migration + regression + docs; no
 public API or package format change.

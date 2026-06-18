@@ -217,8 +217,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `sheetData` / row / cell / inlineStr wrapper element names 也按 local-name
   匹配，namespace URI 不参与判断；`WorksheetEditorOptions::max_cells` 和
   `memory_budget_bytes` 会约束 source materialization 与后续 sparse-store
-  mutations，且 source-load / mutation failure paths 均保持 no-state-pollution
-  hygiene；不支持 namespace validation/repair、non-default `StyleId`、
+  mutations，且 source-load / mutation guardrail failure paths 均保持
+  no-state-pollution hygiene；不支持 namespace validation/repair、non-default `StyleId`、
   sharedStrings writeback/rebuild/migration、style migration、semantic metadata
   sync、relationship repair 或 large-file low-memory random editing。
 - 公共值和 helper：`CellValue` / `CellValueKind`、PNG/JPEG `ImageInfo` /

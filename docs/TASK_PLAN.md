@@ -2207,6 +2207,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       in-budget overwrite/save remains usable. This is not workbook-level
       memory budgeting, exact RSS accounting, save-time package peak
       accounting, dense range editing, or large-file random editing.
+      P8.512 adds the symmetric mutation-side max-cells hygiene:
+      after exact-count materialization, a new-cell `set_cell()` insert fails
+      with the CellStore max_cells diagnostic, updates `last_edit_error()`,
+      leaves sparse and pending materialized diagnostics unchanged, and later
+      existing-cell overwrite/save remains usable. This is not row/column
+      insertion, dense range editing, workbook-level budgeting, streaming
+      random editing, or large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2433,7 +2440,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       memory-budget hygiene: an exact-budget materialized session rejects an
       oversized `set_cell()` insert, updates `last_edit_error()` without
       dirtying sparse or pending state, and later in-budget overwrite/save still
-      works. P8.415 pins
+      works. P8.512 pins the symmetric mutation-side max-cells hygiene:
+      an exact-count materialized session rejects a new-cell `set_cell()`
+      insert, updates `last_edit_error()` without dirtying sparse or pending
+      state, and later existing-cell overwrite/save still works. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,

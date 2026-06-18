@@ -8718,6 +8718,79 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "rejected memory-budget mutation should not leak into saved output");
 }
 
+void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-output.xlsx");
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_max_cells = sizing_sheet.cell_count();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = exact_max_cells;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    const std::size_t baseline_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(!sheet.try_cell("D4").has_value(),
+        "mutation max-cells test precondition should use a missing target cell");
+
+    bool failed = false;
+    try {
+        sheet.set_cell("D4", fastxlsx::CellValue::text("mutation-max-cells-rejected"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+            "public WorksheetEditor mutation should expose max_cells diagnostics");
+    }
+    check(failed, "public WorksheetEditor should enforce max_cells while mutating cells");
+    check(editor.last_edit_error().has_value(),
+        "failed max_cells mutation should update last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "CellStore max_cells guardrail exceeded",
+            "last_edit_error should retain the mutation max_cells diagnostic");
+    }
+    check(!sheet.has_pending_changes(),
+        "failed max_cells mutation should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "failed max_cells mutation should not dirty the editor");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed max_cells mutation should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed max_cells mutation should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed max_cells mutation should not expose dirty materialized memory");
+    check(sheet.cell_count() == baseline_count,
+        "failed max_cells mutation should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "failed max_cells mutation should preserve sparse memory estimate");
+    check(!sheet.try_cell("D4").has_value(),
+        "failed max_cells mutation should not leave the rejected cell readable");
+
+    sheet.set_cell("A1", fastxlsx::CellValue::text("after-max-cells-overwrite"));
+    check(!editor.last_edit_error().has_value(),
+        "successful overwrite under max_cells should clear last_edit_error");
+    check(sheet.has_pending_changes(),
+        "successful overwrite under max_cells should dirty the materialized session");
+    check(editor.has_pending_changes(),
+        "successful overwrite under max_cells should dirty the editor");
+    check(editor.pending_materialized_cell_count() == baseline_count,
+        "successful overwrite under max_cells should keep the sparse cell count stable");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "after-max-cells-overwrite",
+        "successful overwrite under max_cells should persist through save_as");
+    check_not_contains(worksheet_xml, "mutation-max-cells-rejected",
+        "rejected max_cells mutation should not leak into saved output");
+}
+
 void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
 {
     const std::filesystem::path source =
@@ -15792,6 +15865,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
         test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();
+        test_public_worksheet_editor_mutation_max_cells_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         }
 

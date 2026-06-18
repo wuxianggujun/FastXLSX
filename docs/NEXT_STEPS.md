@@ -150,6 +150,12 @@ pending dirty diagnostics, and still accepts a later in-budget overwrite that
 saves normally. This is mutation-side sparse-store hygiene, not workbook-level
 memory budgeting, save-time package peak accounting, or large-file random
 editing.
+P8.512 pins the symmetric post-materialization cell-count guardrail: an
+exact-`max_cells` `WorksheetEditor` session rejects a new-cell `set_cell()`
+insert, records the `CellStore max_cells` diagnostic, leaves sparse/pending
+dirty state unchanged, and still accepts an overwrite of an existing cell. This
+is not row/column insertion, dense range editing, workbook-level budgeting, or
+large-file random editing.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

@@ -23853,6 +23853,39 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.512 - Cover public WorksheetEditor mutation max-cells failure
+
+Status: done.
+
+Type: public `WorksheetEditor::set_cell()` max-cells state-hygiene regression
+plus API/README/task-doc sync; no new public symbol, no production code change,
+no CMake membership change, and no package format expansion.
+
+Goal: prove `WorksheetEditorOptions::max_cells` continues to guard later
+sparse-store insert mutations after successful source materialization.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage materializes `Data` with an
+  exact current sparse cell-count budget.
+- A later insert that would exceed `max_cells` throws the `CellStore max_cells
+  guardrail exceeded` diagnostic, updates `last_edit_error()`, and leaves sparse
+  cell count, sparse memory estimate, readback, dirty state, pending
+  materialized names, pending cell count, and pending memory diagnostics
+  unchanged.
+- A later overwrite of an existing cell clears the diagnostic, dirties the
+  session, keeps the sparse count stable, and saves normally; the rejected cell
+  text is absent from output.
+
+Non-goals / boundary:
+- No dense range editing, row/column insertion, workbook-level cell budget,
+  streaming random editing, source repair, style/sharedStrings migration, or
+  large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

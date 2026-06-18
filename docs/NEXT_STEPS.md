@@ -250,6 +250,12 @@ diagnostic, while text nested inside ignored wrapper metadata such as
 `<sheetPr>ignored text</sheetPr>` remains ignored and dropped by dirty
 projection. This is worksheet-root state-machine fail-fast hygiene only, not
 wrapper metadata text import, metadata preservation, or XML repair.
+P8.527 strengthens the shared public materialization-failure hygiene helper:
+after both `try_worksheet()` and `worksheet()` failures it now proves
+replacement diagnostics, materialized diagnostics, pending edit summaries,
+source/planned worksheet names, `worksheet_catalog()`, and `last_edit_error()`
+remain clean, while the later valid replacement/save recovery still works.
+This is diagnostic evidence only, not behavior expansion or source repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

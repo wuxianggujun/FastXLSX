@@ -104,6 +104,23 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+bool workbook_editor_catalog_entries_equal(
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& lhs,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& rhs)
+{
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        if (lhs[index].source_name != rhs[index].source_name
+            || lhs[index].planned_name != rhs[index].planned_name
+            || lhs[index].renamed != rhs[index].renamed) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
@@ -168,6 +185,50 @@ void check_public_inspection_preserves_last_edit_error(
         "worksheet_catalog should not update last_edit_error");
 }
 
+void check_public_materialization_failure_clean_state(
+    const fastxlsx::WorkbookEditor& editor,
+    const std::vector<std::string>& expected_source_names,
+    const std::vector<std::string>& expected_planned_names,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
+    std::string_view scenario,
+    std::string_view stage,
+    std::string_view recovery_sheet_name)
+{
+    const std::string prefix =
+        std::string(scenario) + " " + std::string(stage) + " failure";
+
+    check(!editor.has_pending_changes(), prefix + " should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        prefix + " should not queue public edits");
+    check(editor.pending_replacement_cell_count() == 0,
+        prefix + " should not retain replacement cells");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        prefix + " should not retain replacement sheet names");
+    check(!editor.has_pending_replacement("Data"),
+        prefix + " should not report a Data replacement");
+    check(!editor.has_pending_replacement(recovery_sheet_name),
+        prefix + " should not report a recovery-sheet replacement");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        prefix + " should not retain replacement memory estimates");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        prefix + " should not leave materialized sessions");
+    check(editor.pending_materialized_cell_count() == 0,
+        prefix + " should not retain materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should not retain materialized memory estimates");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should not expose pending worksheet edit summaries");
+    check(editor.source_worksheet_names() == expected_source_names,
+        prefix + " should preserve source worksheet_names");
+    check(editor.worksheet_names() == expected_planned_names,
+        prefix + " should preserve planned worksheet_names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), expected_catalog),
+        prefix + " should preserve worksheet_catalog");
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should not update last_edit_error");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -187,6 +248,10 @@ void check_public_worksheet_materialization_failure_hygiene(
         std::string(scenario) + " should preserve planned sheet catalog");
     check(editor.has_source_worksheet("Data"),
         std::string(scenario) + " should preserve source sheet catalog");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
 
     bool try_failed = false;
     try {
@@ -199,15 +264,14 @@ void check_public_worksheet_materialization_failure_hygiene(
     }
     check(try_failed,
         std::string(scenario) + " try_worksheet should fail for non-missing sheets");
-    check(!editor.has_pending_changes(),
-        std::string(scenario) + " try_worksheet failure should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        std::string(scenario) + " try_worksheet failure should not queue public edits");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        std::string(scenario)
-            + " try_worksheet failure should not leave materialized sessions");
-    check(!editor.last_edit_error().has_value(),
-        std::string(scenario) + " try_worksheet failure should not update last_edit_error");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        scenario,
+        "try_worksheet",
+        recovery_sheet_name);
 
     bool worksheet_failed = false;
     try {
@@ -220,15 +284,14 @@ void check_public_worksheet_materialization_failure_hygiene(
     }
     check(worksheet_failed,
         std::string(scenario) + " worksheet should reject invalid source materialization");
-    check(!editor.has_pending_changes(),
-        std::string(scenario) + " worksheet failure should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        std::string(scenario) + " worksheet failure should not queue public edits");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        std::string(scenario)
-            + " worksheet failure should not leave materialized sessions");
-    check(!editor.last_edit_error().has_value(),
-        std::string(scenario) + " worksheet failure should not update last_edit_error");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        scenario,
+        "worksheet",
+        recovery_sheet_name);
 
     editor.replace_sheet_data(std::string(recovery_sheet_name),
         {{fastxlsx::CellValue::text(std::string(replacement_text))}});

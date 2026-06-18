@@ -2322,6 +2322,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       remains ignored and dropped by dirty projection. This is worksheet-root
       state-machine fail-fast hygiene only, not wrapper metadata text import,
       metadata preservation, or XML repair.
+      P8.527 strengthens the shared public materialization-failure hygiene
+      helper so the same failures also prove replacement diagnostics,
+      materialized diagnostics, pending edit summaries, source/planned worksheet
+      names, and `worksheet_catalog()` remain clean after both
+      `try_worksheet()` and `worksheet()`. This is diagnostic evidence only,
+      not behavior expansion or source repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2588,7 +2594,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       fail-fast instead of being silently dropped. P8.526 proves source direct
       raw worksheet text outside wrapper metadata or `sheetData` stays fail-fast
       instead of being silently dropped, while wrapper metadata text remains
-      ignored. P8.415 pins public row/column
+      ignored. P8.527 proves those public materialization failures also leave
+      replacement diagnostics, materialized diagnostics, pending edit summaries,
+      source/planned catalog views, and `last_edit_error()` clean after both
+      handle-acquisition APIs. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2763,6 +2772,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       leaves editor/pending/materialized state and `last_edit_error()` clean,
       does not prevent a later valid save, and preserves the existing
       wrapper-metadata-text ignore boundary.
+      P8.527 strengthens that public failure evidence by checking no
+      replacement cells/names/memory, no dirty materialized cells/names/memory,
+      no pending worksheet edit summaries, and unchanged source/planned catalog
+      diagnostics after both `try_worksheet()` and `worksheet()` failures.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

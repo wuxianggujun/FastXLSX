@@ -24402,6 +24402,44 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.527 - Strengthen public materialization failure diagnostic hygiene
+
+Status: done.
+
+Type: public `WorkbookEditor` / `WorksheetEditor` source materialization
+failure hygiene regression and task-doc sync; no new public symbol, no
+production CMake target membership change, and no package format expansion.
+
+Goal: make the shared public materialization-failure helper prove that
+`try_worksheet()` / `worksheet()` source-load failures leave every public
+facade diagnostic clean, not just the coarse pending/materialized checks.
+
+Output:
+- The shared public materialization-failure helper now checks zero
+  `pending_replacement_cell_count()`, empty
+  `pending_replacement_worksheet_names()`, false `has_pending_replacement()`,
+  zero `estimated_pending_replacement_memory_usage()`, zero
+  `pending_materialized_cell_count()`, zero
+  `estimated_pending_materialized_memory_usage()`, and empty
+  `pending_worksheet_edits()` after both `try_worksheet()` and `worksheet()`
+  failure paths.
+- The helper also snapshots and rechecks `source_worksheet_names()`,
+  `worksheet_names()`, and `worksheet_catalog()` so source-load failure cannot
+  silently mutate source/planned catalog diagnostics.
+- The same recovery assertion remains: a later valid `replace_sheet_data()` /
+  `save_as()` still works after the failed materialization.
+
+Non-goals / boundary:
+- No behavior expansion, no new public API, no XML repair, no source metadata
+  preservation, no sharedStrings/styles migration, and no relationship repair.
+- This is diagnostic evidence for existing fail-fast behavior; it does not make
+  unsupported source worksheet constructs materializable.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure*` shards pass.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

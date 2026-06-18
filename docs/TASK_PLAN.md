@@ -2287,7 +2287,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       parser. P8.500 rejects empty-target ordinary PI-like tokens such as
       `<? ?>` on the same source sharedStrings path. P8.501 rejects ordinary PI
       targets that start with obviously invalid ASCII name-start characters
-      such as `-`.
+      such as `-`. P8.502 rejects ordinary PI targets that are not followed by
+      whitespace or immediate `?>`, such as `<?target?data?>`.
       P8.399 extends the same public facade coverage
       to source row/cell structure and numeric-payload failures: unsupported
       row/cell metadata attributes, duplicate/out-of-order rows, out-of-order
@@ -2736,7 +2737,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `?>` before the sharedStrings root and inside shared string items.
       P8.500 adds matching failure coverage for empty-target ordinary PI-like
       tokens such as `<? ?>`. P8.501 adds matching failure coverage for
-      obviously invalid ASCII PI target starts such as `<?-bad?>`.
+      obviously invalid ASCII PI target starts such as `<?-bad?>`. P8.502 adds
+      matching failure coverage for missing target/data separators such as
+      `<?target?data?>`.
       P8.466 normalizes source explicit default style attributes: selected
       source cells with exact `s="0"` / `s='0'` materialize as no style handle
       and dirty projection omits both forms, while non-default source style ids

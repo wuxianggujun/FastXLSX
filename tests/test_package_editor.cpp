@@ -35389,6 +35389,18 @@ void test_package_editor_source_loaded_cell_store_shared_strings_payload_failure
             "malformed processing instruction",
         },
         {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-pi-target-missing-separator-before-root-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-pi-target-missing-separator-before-root-output.xlsx",
+            R"(<?target?data?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><t>real</t></si></sst>)",
+            "malformed processing instruction",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-pi-target-missing-separator-inside-item-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sharedstrings-pi-target-missing-separator-inside-item-output.xlsx",
+            R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><?target?data?><t>real</t></si></sst>)",
+            "malformed processing instruction",
+        },
+        {
             "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-inside-item-source.xlsx",
             "fastxlsx-package-editor-source-cellstore-sharedstrings-xml-declaration-inside-item-output.xlsx",
             R"(<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1"><si><?xml version="1.0"?><t>real</t></si></sst>)",

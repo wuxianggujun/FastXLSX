@@ -257,6 +257,15 @@ void validate_shared_strings_processing_instruction(std::string_view raw_tag)
         throw FastXlsxError(
             "CellStore sharedStrings loader found malformed processing instruction");
     }
+    if (raw_tag[position] == '?') {
+        if (position + 1 >= raw_tag.size() || raw_tag[position + 1] != '>') {
+            throw FastXlsxError(
+                "CellStore sharedStrings loader found malformed processing instruction");
+        }
+    } else if (!is_space(raw_tag[position])) {
+        throw FastXlsxError(
+            "CellStore sharedStrings loader found malformed processing instruction");
+    }
 }
 
 void append_utf8(std::string& output, std::uint32_t code_point)

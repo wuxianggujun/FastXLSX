@@ -8595,6 +8595,55 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         "editor should remain usable after failed public WorksheetEditor materialization");
 }
 
+void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-memory-options-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = 1;
+
+    bool failed = false;
+    try {
+        (void)editor.try_worksheet("Data", options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "public WorksheetEditor should expose source-load memory budget diagnostics");
+    }
+    check(failed,
+        "public WorksheetEditor should enforce memory_budget_bytes while materializing source cells");
+    check(!editor.has_pending_changes(),
+        "memory-budget materialization failure should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "memory-budget materialization failure should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "memory-budget materialization failure should not leave a partial materialized session");
+    check(editor.pending_materialized_cell_count() == 0,
+        "memory-budget materialization failure should not expose partial materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "memory-budget materialization failure should not expose partial materialized memory");
+    check(!editor.last_edit_error().has_value(),
+        "memory-budget materialization failure should not update last_edit_error");
+
+    std::optional<fastxlsx::WorksheetEditor> recovered = editor.try_worksheet("Data");
+    check(recovered.has_value(),
+        "editor should remain able to materialize the sheet after memory-budget failure");
+    check(recovered.has_value() && recovered->cell_count() == 3,
+        "recovered materialization should load all source cells after memory-budget failure");
+    if (recovered.has_value()) {
+        recovered->set_cell("A1", fastxlsx::CellValue::text("after-memory-budget-failure"));
+    }
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "after-memory-budget-failure",
+        "recovered WorksheetEditor session should save after memory-budget failure");
+}
+
 void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
 {
     const std::filesystem::path source =
@@ -15667,6 +15716,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_sparse_cells_range_snapshot();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
+        test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         }
 

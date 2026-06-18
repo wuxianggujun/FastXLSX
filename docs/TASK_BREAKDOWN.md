@@ -23789,6 +23789,38 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.510 - Cover public WorksheetEditor source-load memory-budget failure
+
+Status: done.
+
+Type: public `WorksheetEditorOptions::memory_budget_bytes` state-hygiene
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: prove the public `WorksheetEditor` source materialization path enforces
+the `memory_budget_bytes` sparse-store guardrail without leaving partial
+materialized state.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage now calls
+  `try_worksheet("Data", options)` with `memory_budget_bytes = 1` and checks the
+  `CellStore memory_budget_bytes guardrail exceeded` diagnostic.
+- The failed load leaves no pending changes, public edits, materialized
+  worksheet names, materialized cell count, materialized memory estimate, or
+  `last_edit_error()`.
+- A later default-options `try_worksheet("Data")` materializes the same source
+  sheet, accepts a mutation, and saves through the normal dirty projection path.
+
+Non-goals / boundary:
+- No new memory estimator, no exact process RSS accounting, no ZIP/package
+  assembly peak accounting, no workbook-level memory budget, no large-file
+  random editing, and no broader source tolerance or repair.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -136,6 +136,13 @@ and formulas as `<f>` without cached values. This is not date/error cell import,
 formula evaluation, cached-result generation, sharedStrings writeback, style
 migration, wrapper metadata preservation, XML repair, or large-file random
 editing.
+P8.510 adds the matching public memory-budget guardrail evidence for source
+materialization: `WorksheetEditorOptions::memory_budget_bytes` failures through
+`try_worksheet()` expose the `CellStore` diagnostic, leave no partial
+materialized session, pending cell/memory diagnostics, dirty state, or
+`last_edit_error()`, and a later default-options materialization can still edit
+and save. This remains a sparse-store estimate guardrail, not process RSS,
+save-time package assembly accounting, or large-file random editing.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

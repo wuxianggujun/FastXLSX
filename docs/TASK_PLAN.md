@@ -2193,6 +2193,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       output without cached values. This is not date/error import, formula
       evaluation, cached-result preservation, sharedStrings/style migration,
       wrapper metadata preservation, XML repair, or large-file random editing.
+      P8.510 adds public source-load memory-budget failure hygiene:
+      `WorksheetEditorOptions::memory_budget_bytes` failures through
+      `try_worksheet()` expose the CellStore diagnostic without partial
+      materialized sessions, pending materialized cell/memory diagnostics,
+      dirty state, or `last_edit_error()`, and later default-options
+      materialization remains usable. This is sparse-store estimate hygiene,
+      not process RSS or save-time package assembly accounting.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2411,7 +2418,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `WorksheetEditor`, with dirty save projecting text as inline strings and
       formulas without cached values; it does not add date/error materialization,
       formula evaluation, cached-result preservation, sharedStrings/style
-      migration, XML repair, or large-file random editing. P8.415 pins
+      migration, XML repair, or large-file random editing. P8.510 pins public
+      `WorksheetEditorOptions::memory_budget_bytes` source-load failure hygiene:
+      the failed `try_worksheet()` exposes the CellStore diagnostic but leaves
+      no partial materialized state or diagnostics and later default-options
+      materialization remains usable. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,

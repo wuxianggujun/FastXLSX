@@ -5398,6 +5398,46 @@ void test_streaming_writer_invalid_table_options()
         "tables should reject duplicate workbook table names case-insensitively");
 }
 
+void test_streaming_writer_sheet_name_uniqueness()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-sheet-name-uniqueness.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+
+    check_fastxlsx_error(
+        [&workbook] {
+            workbook.add_worksheet("Sheet1");
+            workbook.add_worksheet("sheet1");
+        },
+        "streaming workbook should reject ASCII case-insensitive duplicate sheet names");
+
+    auto data = workbook.add_worksheet("Data");
+    auto summary = workbook.add_worksheet("Summary");
+    (void)data;
+    (void)summary;
+
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet("SUMMARY"); },
+        "streaming workbook should reject case-insensitive duplicate sheet names after valid adds");
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet("Data"); },
+        "streaming workbook should reject exact duplicate sheet names");
+
+    auto final_sheet = workbook.add_worksheet("Final");
+    final_sheet.append_row({fastxlsx::CellView::text("ok")});
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find(R"(name="Data")") != std::string::npos,
+        "streaming workbook should keep the first valid sheet");
+    check(workbook_xml.find(R"(name="Summary")") != std::string::npos,
+        "streaming workbook should keep the second valid sheet");
+    check(workbook_xml.find(R"(name="Final")") != std::string::npos,
+        "streaming workbook should keep the later valid sheet");
+}
+
 void test_streaming_writer_invalid_data_validation_rules()
 {
     const auto output_path =
@@ -5642,6 +5682,7 @@ int main()
         test_streaming_writer_rejects_mutation_after_close();
         test_streaming_writer_invalid_ranges();
         test_streaming_writer_invalid_table_options();
+        test_streaming_writer_sheet_name_uniqueness();
         test_streaming_writer_invalid_data_validation_rules();
         test_streaming_writer_invalid_metadata_and_rows();
     } catch (const std::exception& error) {

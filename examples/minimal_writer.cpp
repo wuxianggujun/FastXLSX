@@ -6,8 +6,10 @@
 int main()
 {
     auto workbook = fastxlsx::Workbook::create();
-    auto& sheet = workbook.add_worksheet("Summary");
+    workbook.add_worksheet("Summary");
+    workbook.add_worksheet("Scratch").append_row({fastxlsx::Cell::text("temporary")});
 
+    auto& sheet = workbook.worksheet("Summary");
     sheet.append_row({
         fastxlsx::Cell::text("Name"),
         fastxlsx::Cell::text("Value"),
@@ -24,9 +26,18 @@ int main()
         fastxlsx::Cell::boolean(false),
     });
 
+    workbook.rename_worksheet("Summary", "Report");
+    workbook.remove_worksheet("Scratch");
+
+    const auto buffered_cells = workbook.cell_count();
+    const auto estimated_memory = workbook.estimated_memory_usage();
+
     const auto output = std::filesystem::current_path() / "fastxlsx-minimal-example.xlsx";
     workbook.save(output);
 
     std::cout << "Wrote " << output.string() << '\n';
+    std::cout << "Buffered sheets: " << workbook.worksheet_count()
+              << ", cells: " << buffered_cells
+              << ", estimated buffered bytes: " << estimated_memory << '\n';
     return 0;
 }

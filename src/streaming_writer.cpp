@@ -362,6 +362,21 @@ std::string ascii_lower_copy(std::string_view value)
     return lowered;
 }
 
+bool ascii_equals_ignore_case(std::string_view lhs, std::string_view rhs) noexcept
+{
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        if (ascii_lower(lhs[index]) != ascii_lower(rhs[index])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool looks_like_excel_cell_reference(std::string_view value)
 {
     std::uint32_t column = 0;
@@ -2736,12 +2751,10 @@ WorksheetWriter WorkbookWriter::add_worksheet(std::string name)
     }
     validate_sheet_name(name);
 
-    std::set<std::string> existing_names;
     for (const auto& worksheet : state_->worksheets) {
-        existing_names.insert(worksheet->name);
-    }
-    if (existing_names.contains(name)) {
-        throw FastXlsxError("worksheet names must be unique");
+        if (ascii_equals_ignore_case(worksheet->name, name)) {
+            throw FastXlsxError("worksheet names must be unique");
+        }
     }
 
     state_->worksheets.push_back(

@@ -1157,10 +1157,12 @@ public:
     ///
     /// Worksheets are assigned workbook relationship ids in add order. Sheet
     /// names are validated against Excel's basic restrictions and must be
-    /// unique. New worksheets cannot be added after close().
+    /// unique. Duplicate checks are ASCII case-insensitive. New worksheets
+    /// cannot be added after close().
     ///
     /// @throws FastXlsxError if the writer is uninitialized or closed, or if the
-    /// worksheet name is invalid or duplicated.
+    /// worksheet name is invalid or duplicates an existing sheet name
+    /// case-insensitively.
     WorksheetWriter add_worksheet(std::string name = "Sheet1");
 
     /// Finalizes workbook XML and writes the XLSX package.

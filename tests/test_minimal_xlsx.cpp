@@ -232,6 +232,258 @@ void test_cell_value_public_boundary()
         "CellValue should reject negative infinite numeric payloads");
 }
 
+void test_workbook_sheet_inspection_helpers()
+{
+    auto workbook = fastxlsx::Workbook::create();
+    check(workbook.worksheet_count() == 0, "new workbook should start with zero sheets");
+    check(workbook.worksheet_names().empty(), "new workbook should start with empty names");
+    check(!workbook.has_worksheet("Data"), "new workbook should not report missing sheets");
+    check(!workbook.try_worksheet("Data").has_value(),
+        "new workbook should return empty optional for missing sheets");
+
+    workbook.add_worksheet("Data").append_row({fastxlsx::Cell::text("alpha")});
+    workbook.add_worksheet("Summary").append_row({fastxlsx::Cell::number(1.0)});
+
+    check(workbook.worksheet_count() == 2, "workbook sheet count should track additions");
+
+    const std::vector<std::string> names = workbook.worksheet_names();
+    check(names.size() == 2 && names[0] == "Data" && names[1] == "Summary",
+        "worksheet_names should preserve workbook order");
+    check(workbook.has_worksheet("Data"), "has_worksheet should find the first sheet");
+    check(workbook.has_worksheet("Summary"), "has_worksheet should find the second sheet");
+
+    fastxlsx::Worksheet& data = workbook.worksheet("Data");
+    fastxlsx::Worksheet& summary = workbook.worksheet("Summary");
+    check(&workbook.worksheet("Data") == &data,
+        "worksheet lookup should return the matching mutable worksheet");
+    const fastxlsx::Workbook& const_workbook = workbook;
+    check(&const_workbook.worksheet("Summary") == &summary,
+        "const worksheet lookup should return the matching worksheet");
+    check(&workbook.try_worksheet("Summary")->get() == &summary,
+        "try_worksheet should return the matching mutable worksheet");
+    check(&const_workbook.try_worksheet("Data")->get() == &data,
+        "const try_worksheet should return the matching worksheet");
+
+    check_fastxlsx_error(
+        [&workbook] { (void)workbook.worksheet("Missing"); },
+        "worksheet lookup should reject missing names");
+}
+
+void test_workbook_sheet_addition_uniqueness()
+{
+    auto workbook = fastxlsx::Workbook::create();
+
+    workbook.add_worksheet("Data").append_row({fastxlsx::Cell::text("alpha")});
+
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet("data"); },
+        "workbook add_worksheet should reject ASCII case-insensitive duplicate sheet names");
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet("Data"); },
+        "workbook add_worksheet should reject exact duplicate sheet names");
+
+    check(workbook.worksheet_count() == 1, "failed add_worksheet should not change sheet count");
+    const std::vector<std::string> names = workbook.worksheet_names();
+    check(names.size() == 1 && names[0] == "Data",
+        "failed add_worksheet should preserve the existing sheet order");
+    check(workbook.worksheet("Data").row_count() == 1,
+        "failed add_worksheet should preserve existing sheet rows");
+}
+
+void test_workbook_sheet_removal_helpers()
+{
+    auto workbook = fastxlsx::Workbook::create();
+    workbook.add_worksheet("Data").append_row({fastxlsx::Cell::text("alpha")});
+    workbook.add_worksheet("Scratch").append_row({fastxlsx::Cell::formula("SUM(A1:A1)")});
+    workbook.add_worksheet("Summary").append_row({fastxlsx::Cell::number(42.0)});
+
+    workbook.remove_worksheet("Scratch");
+
+    check(workbook.worksheet_count() == 2, "remove_worksheet should reduce sheet count");
+    const std::vector<std::string> names = workbook.worksheet_names();
+    check(names.size() == 2 && names[0] == "Data" && names[1] == "Summary",
+        "remove_worksheet should preserve remaining workbook order");
+    check(workbook.has_worksheet("Data"), "remove_worksheet should preserve earlier sheets");
+    check(!workbook.has_worksheet("Scratch"), "remove_worksheet should hide the erased sheet");
+    check(workbook.try_worksheet("Scratch") == std::nullopt,
+        "try_worksheet should return empty after removal");
+    check(workbook.worksheet("Summary").row_count() == 1,
+        "remove_worksheet should preserve later sheet rows");
+
+    check_fastxlsx_error(
+        [&workbook] { workbook.remove_worksheet("Missing"); },
+        "remove_worksheet should reject missing sheets");
+    const std::vector<std::string> names_after_failed_remove = workbook.worksheet_names();
+    check(names_after_failed_remove == names,
+        "failed remove_worksheet should not mutate workbook order");
+
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-remove-worksheet.xlsx";
+    workbook.save(output_path);
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"),
+        "remaining first sheet part should be generated");
+    check(entries.contains("xl/worksheets/sheet2.xml"),
+        "remaining second sheet part should be generated");
+    check(!entries.contains("xl/worksheets/sheet3.xml"),
+        "removed sheet should not leave a stale worksheet part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("/xl/worksheets/sheet1.xml") != std::string::npos,
+        "content types should contain first remaining worksheet");
+    check(content_types.find("/xl/worksheets/sheet2.xml") != std::string::npos,
+        "content types should contain second remaining worksheet");
+    check(content_types.find("/xl/worksheets/sheet3.xml") == std::string::npos,
+        "content types should not contain removed worksheet");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find(R"(name="Data" sheetId="1" r:id="rId1")")
+            != std::string::npos,
+        "workbook catalog should renumber first remaining sheet");
+    check(workbook_xml.find(R"(name="Summary" sheetId="2" r:id="rId2")")
+            != std::string::npos,
+        "workbook catalog should renumber second remaining sheet");
+    check(workbook_xml.find("Scratch") == std::string::npos,
+        "workbook catalog should not contain removed sheet name");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "formula cells from removed sheets should not request recalculation");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(workbook_rels.find(R"(Id="rId1")") != std::string::npos
+            && workbook_rels.find(R"(Target="worksheets/sheet1.xml")") != std::string::npos,
+        "workbook rels should target first remaining sheet");
+    check(workbook_rels.find(R"(Id="rId2")") != std::string::npos
+            && workbook_rels.find(R"(Target="worksheets/sheet2.xml")") != std::string::npos,
+        "workbook rels should target second remaining sheet");
+    check(workbook_rels.find("sheet3.xml") == std::string::npos,
+        "workbook rels should not target removed sheet");
+
+    check(entries.at("xl/worksheets/sheet1.xml").find("alpha") != std::string::npos,
+        "first remaining sheet payload should be preserved");
+    check(entries.at("xl/worksheets/sheet2.xml").find(R"(<c r="A1"><v>42</v></c>)")
+            != std::string::npos,
+        "second remaining sheet payload should be preserved");
+
+    auto empty_after_remove = fastxlsx::Workbook::create();
+    empty_after_remove.add_worksheet("Only");
+    empty_after_remove.remove_worksheet("Only");
+    check(empty_after_remove.worksheet_count() == 0,
+        "removing the only worksheet should leave an empty workbook");
+    check_fastxlsx_error(
+        [&empty_after_remove] {
+            empty_after_remove.save(
+                fastxlsx::test::artifact_dir() / "invalid-empty-after-remove.xlsx");
+        },
+        "save should reject a workbook emptied by remove_worksheet");
+}
+
+void test_workbook_sheet_rename_helpers()
+{
+    auto workbook = fastxlsx::Workbook::create();
+    workbook.add_worksheet("Data").append_row({fastxlsx::Cell::text("alpha")});
+    workbook.add_worksheet("Summary").append_row({fastxlsx::Cell::number(42.0)});
+
+    workbook.rename_worksheet("Data", "Renamed & Data");
+
+    check(workbook.worksheet_count() == 2, "rename_worksheet should preserve sheet count");
+    const std::vector<std::string> names = workbook.worksheet_names();
+    check(names.size() == 2 && names[0] == "Renamed & Data" && names[1] == "Summary",
+        "rename_worksheet should preserve workbook order");
+    check(!workbook.has_worksheet("Data"), "rename_worksheet should hide the old name");
+    check(workbook.has_worksheet("Renamed & Data"),
+        "rename_worksheet should expose the new name");
+    check(workbook.worksheet("Renamed & Data").row_count() == 1,
+        "rename_worksheet should preserve renamed sheet rows");
+    check(workbook.worksheet("Summary").row_count() == 1,
+        "rename_worksheet should preserve other sheet rows");
+
+    check_fastxlsx_error(
+        [&workbook] { workbook.rename_worksheet("Missing", "Other"); },
+        "rename_worksheet should reject missing sheets");
+    const std::vector<std::string> names_after_missing_rename = workbook.worksheet_names();
+    check(names_after_missing_rename == names,
+        "failed rename_worksheet should not mutate workbook order");
+
+    check_fastxlsx_error(
+        [&workbook] { workbook.rename_worksheet("Renamed & Data", "Summary"); },
+        "rename_worksheet should reject duplicate sheet names");
+    check_fastxlsx_error(
+        [&workbook] { workbook.rename_worksheet("Renamed & Data", "summary"); },
+        "rename_worksheet should reject ASCII case-insensitive duplicate sheet names");
+    check_fastxlsx_error(
+        [&workbook] { workbook.rename_worksheet("Renamed & Data", "Renamed & Data"); },
+        "rename_worksheet should reject a no-op same-name rename");
+    const std::vector<std::string> names_after_duplicate_rename = workbook.worksheet_names();
+    check(names_after_duplicate_rename == names,
+        "failed duplicate rename_worksheet should not mutate workbook order");
+
+    workbook.rename_worksheet("Renamed & Data", "Final Name");
+    const std::vector<std::string> renamed_again = workbook.worksheet_names();
+    check(renamed_again.size() == 2 && renamed_again[0] == "Final Name" && renamed_again[1] == "Summary",
+        "rename_worksheet should allow a later valid rename after failures");
+
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-rename-worksheet.xlsx";
+    workbook.save(output_path);
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find(R"(name="Final Name" sheetId="1" r:id="rId1")")
+            != std::string::npos,
+        "workbook catalog should serialize the renamed first sheet");
+    check(workbook_xml.find(R"(name="Summary" sheetId="2" r:id="rId2")")
+            != std::string::npos,
+        "workbook catalog should keep the second sheet");
+    check(workbook_xml.find("Renamed &amp; Data") == std::string::npos,
+        "workbook catalog should reflect the later rename target only");
+    check(entries.at("xl/worksheets/sheet1.xml").find("alpha") != std::string::npos,
+        "renamed first sheet payload should be preserved");
+    check(entries.at("xl/worksheets/sheet2.xml").find(R"(<c r="A1"><v>42</v></c>)")
+            != std::string::npos,
+        "renamed second sheet payload should be preserved");
+}
+
+void test_workbook_memory_diagnostics()
+{
+    auto workbook = fastxlsx::Workbook::create();
+    check(workbook.cell_count() == 0, "new workbook should start with zero buffered cells");
+    const std::size_t empty_memory = workbook.estimated_memory_usage();
+    check(empty_memory >= sizeof(fastxlsx::Workbook),
+        "empty workbook memory estimate should include the workbook object");
+
+    workbook.add_worksheet("Data")
+        .append_row({fastxlsx::Cell::text("alpha"), fastxlsx::Cell::number(1.0)});
+    workbook.worksheet("Data").append_row({});
+    workbook.add_worksheet("Summary")
+        .append_row({fastxlsx::Cell::formula("SUM(Data!B1:B1)")});
+
+    fastxlsx::Worksheet& data = workbook.worksheet("Data");
+    fastxlsx::Worksheet& summary = workbook.worksheet("Summary");
+
+    check(workbook.cell_count() == 3,
+        "workbook cell_count should sum buffered cells across worksheets");
+    check(data.cell_count() == 2, "worksheet cell_count should count buffered cells");
+    check(summary.cell_count() == 1, "worksheet cell_count should count formula cells");
+
+    const std::size_t workbook_memory = workbook.estimated_memory_usage();
+    check(workbook_memory > empty_memory,
+        "workbook memory estimate should grow after buffering rows and text");
+    check(data.estimated_memory_usage() > sizeof(fastxlsx::Worksheet),
+        "worksheet memory estimate should grow after buffering rows");
+    check(summary.estimated_memory_usage() > 0,
+        "formula worksheet memory estimate should be non-zero");
+
+    const std::size_t data_memory_before_rename = data.estimated_memory_usage();
+    workbook.rename_worksheet("Data", "Renamed Data");
+    check(workbook.cell_count() == 3,
+        "worksheet rename should not change buffered cell count");
+    check(workbook.estimated_memory_usage() >= workbook_memory,
+        "worksheet rename should not shrink the workbook memory estimate");
+    check(workbook.worksheet("Renamed Data").estimated_memory_usage()
+            >= data_memory_before_rename,
+        "worksheet rename should not shrink the buffered worksheet memory estimate");
+}
+
 void test_internal_cell_store_sparse_boundary()
 {
     fastxlsx::detail::CellStore store;
@@ -1670,6 +1922,11 @@ int main()
     try {
         test_xml_helpers();
         test_cell_value_public_boundary();
+        test_workbook_sheet_inspection_helpers();
+        test_workbook_sheet_addition_uniqueness();
+        test_workbook_sheet_removal_helpers();
+        test_workbook_sheet_rename_helpers();
+        test_workbook_memory_diagnostics();
         test_internal_cell_store_sparse_boundary();
         test_internal_cell_store_guardrails();
         test_internal_materialized_worksheet_session();

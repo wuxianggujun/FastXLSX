@@ -86,6 +86,29 @@ CTest preset 和测试属性保持 60s 边界。当前手工 benchmark 通过
 `[Content_Types].xml`、relationships、workbook、worksheet、shared strings 和
 styles 等 XML。
 
+## 示例
+
+当前 `examples/` 是 opt-in 构建入口，不进入默认 CTest：
+
+```powershell
+cmake --preset windows-nmake-release -DFASTXLSX_BUILD_EXAMPLES=ON
+cmake --build --preset windows-nmake-release --target fastxlsx_minimal_writer_example
+cmake --build --preset windows-nmake-release --target fastxlsx_streaming_writer_example
+```
+
+- `examples/minimal_writer.cpp` 使用 `Workbook` / `Worksheet` / `Cell`，
+  面向小型 new-workbook buffered creation。它演示 sheet lookup、
+  `rename_worksheet()`、`remove_worksheet()`、`worksheet_count()`、
+  `cell_count()` 和 `estimated_memory_usage()`；这些 diagnostics 是近似观测值，
+  不是进程 RSS、硬内存预算或大数据导出进度。
+- `examples/streaming_writer.cpp` 使用 `WorkbookWriter` / `WorksheetWriter` /
+  `CellView`，面向大数据顺序导出和 worksheet metadata 写入，不保留完整
+  worksheet cell matrix。
+
+已有 XLSX 文件的 Patch / small-file In-memory 编辑请使用 `WorkbookEditor` /
+`WorksheetEditor`，不要把 `Workbook` 示例当作 existing-file sheet rename/delete
+或 relationship repair。
+
 ## 目录
 
 ```text
@@ -184,7 +207,13 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - compiled `fastxlsx` CMake target 和 `FastXLSX::fastxlsx` alias。
 - 保守 `vcpkg.json`、`CMakePresets.json` 和 Windows VS2026/NMake CI workflow 基础。
 - 新建小工作簿 public API：`Workbook`、`Worksheet`、`Cell`、`CellRange`、
-  `RowOptions`、`DocumentProperties` 和 `FastXlsxError`。
+  `RowOptions`、`DocumentProperties`、`Workbook::add_worksheet()`、
+  `worksheet_count()`、`worksheet_names()`、`has_worksheet()`、`worksheet()`、
+  `try_worksheet()`、`rename_worksheet()`、`remove_worksheet()`、
+  `Workbook::cell_count()`、`Workbook::estimated_memory_usage()`、
+  `Worksheet::cell_count()`、`Worksheet::estimated_memory_usage()` 和
+  `FastXlsxError`。这些 size diagnostics 是小型 buffered creation path 的近似观测值，
+  不是进程 RSS、硬内存预算或 large-export progress API。
 - 流式 writer public API：`WorkbookWriter`、`WorksheetWriter`、`CellView`、
   `WorkbookWriterOptions`、`StringStrategy`、`StyleId`、`CellStyle` 及当前窄
   styles / worksheet metadata / image insertion 值类型。
@@ -325,7 +354,7 @@ editor.save_as("patched.xlsx");
 ```
 
 这条路径只替换已有 worksheet 的 whole-`<sheetData>` 并保存到新文件；它不是
-small-file random cell editing、语义 sheet rename、sharedStrings/style migration 或 public
+small-file random cell editing、sheet rename/remove、sharedStrings/style migration 或 public
 `PackageEditor`。小文件随机 cell 编辑请显式使用 `WorkbookEditor::worksheet()` /
 `WorksheetEditor`。`CellValue::blank()` 是显式 replacement cell，会写 empty cell；
 空 row vector 只推进输入行号，不表示 tombstone / erase。

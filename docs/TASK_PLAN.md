@@ -149,7 +149,13 @@ own `fastxlsx.package_editor.c5` shard to keep the 60s CTest boundary stable.
 - `docs/API_DESIGN_AND_DOCUMENTATION.md` requires public API documentation and
   forbids API convenience from sacrificing the streaming/performance path.
 - Current public API includes `Workbook`, `Worksheet`, `Cell`, `CellValue`,
-  `CellValueKind`, `WorkbookWriter`, `WorksheetWriter`, `CellView`, `StyleId`,
+  `CellValueKind`, `Workbook::add_worksheet()`, `Workbook::worksheet_count()`,
+  `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`,
+  `Workbook::worksheet_names()`, `Workbook::has_worksheet()`,
+  `Workbook::worksheet()`, `Workbook::try_worksheet()`,
+  `Workbook::rename_worksheet()`, `Workbook::remove_worksheet()`,
+  `Worksheet::cell_count()`, `Worksheet::estimated_memory_usage()`,
+  `WorkbookWriter`, `WorksheetWriter`, `CellView`, `StyleId`,
   `CellAlignment`, `CellFont`, `CellFill`, `CellStyle`,
   `WorkbookWriter::add_style()`, `CellView::with_style()`, narrow
   `WorkbookEditor`, `WorkbookEditorOptions`, `WorkbookEditor::open(path, options)`,
@@ -1882,7 +1888,7 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
      preserves prior diagnostics and leaves later no-op `save_as()` on the
      copy-original path.
    - P8.312 resolves the options naming and passing rule:
-     `WorksheetEditorOptions` is the future per-materialization options type
+     `WorksheetEditorOptions` is the per-materialization options type
      for `worksheet(name, options)` / `try_worksheet(name, options)`, with
      `max_cells` and `memory_budget_bytes` separate from current
      `WorkbookEditorOptions` replacement-payload guardrails.
@@ -3388,8 +3394,9 @@ Tasks:
   semantic value used by future editor and In-memory APIs; `CellRecord` /
   `CellStore` now have a first internal sparse-store slice and remain internal
   storage, not the default public model.
-- Standardize method names across modes: `add_worksheet`, `worksheet` /
-  `try_worksheet`, `append_row`, `set_cell`, `save`, and `save_as`.
+- Standardize method names across modes: `add_worksheet`, `remove_worksheet`,
+  `worksheet` / `try_worksheet`, `append_row`, `set_cell`, `save`, and
+  `save_as`.
 - Add documentation examples that show the three intended user-facing paths
   without claiming unimplemented symbols are available today.
 
@@ -3403,9 +3410,11 @@ Validation:
   landed a first public Patch-mode slice (`open` / `worksheet_names` /
   `has_worksheet` / `replace_sheet_data` / `rename_sheet` / `save_as` in
   `include/fastxlsx/workbook_editor.hpp`, `src/workbook_editor.cpp`, covered by
-  `fastxlsx.workbook_editor.*` CTest shards), while `WorksheetEditor` and random cell
-  editing (`get_cell` / `set_cell`) remain future design targets until code
-  exists, and `CellValue` is a value type rather than editor readiness.
+  `fastxlsx.workbook_editor.*` CTest shards), and `WorksheetEditor` random cell
+  editing has a first public small-file slice. Small new-workbook
+  `Workbook::rename_worksheet()` / `Workbook::remove_worksheet()` are
+  convenience mutations for the buffered workbook being generated; they are
+  not existing-file sheet edit/delete or relationship repair.
 
 Do not claim:
 - Full editor readiness, random cell editing, public `PackageEditor`, or broad
@@ -3459,69 +3468,25 @@ Validation:
 
 ### M7.5 - In-memory Small Workbook Editor
 
-Status: design gate in progress; first internal `CellStore` / `CellRecord`
-sparse-store foundation, `CellStoreOptions` guardrail slice, internal
-`CellStore` to standalone `<sheetData>` emission slice, internal source-backed
-worksheet loading, and internal by-name `PackageEditor` handoff regressions
-exist, and first options / handle-lifetime / operation-mixing decisions are now
-recorded, but public editor headers, implementation evidence, workbook-level
-guardrails, final diagnostics wording/tests, and full save-as handoff are not
-ready.
+Status: the small-workbook `Workbook` convenience surface is implemented and
+tested for the current narrow creation path. The current `Workbook` type
+remains new-workbook-only, not an existing-file random-edit engine, and any
+later widening must stay explicitly bounded.
 
 Use this lane for the editing experience users expect from a workbook library:
 random cell access, small sheet edits, and convenient workbook manipulation.
 It is deliberately separate from the large worksheet Streaming/Patch paths.
 
 Tasks:
-- Define an In-memory API surface for small workbooks: open, inspect sheets,
-  `get_cell()`, `set_cell()`, `erase_cell()`, append/insert/delete rows where
-  supported, rename/add/delete sheets, and save-as.
+- Define the missing `Workbook`-side in-memory convenience surface only where
+  the code still lacks it: sheet inspection and lookup helpers, plus any
+  intentionally scoped row or sheet mutation helpers we decide to add.
 - Define size and memory guardrails. The API may hold cell maps or worksheet
-  models in memory, but it must document that it is not the million-row
+  models in memory, but it must still document that it is not the million-row
   low-memory path.
-- Before adding a public header, satisfy the P8.310 gate: choose a separate
-  worksheet materialization options type, define handle lifetime / invalidation,
-  reject or fully specify ambiguous mixing with `rename_sheet()` /
-  `replace_sheet_data()`, and prove edited materialized cells persist only
-  through `WorkbookEditor::save_as()`. P8.311 has already chosen the first
-  diagnostics rule: materialization failures throw `FastXlsxError` and do not
-  update current edit-only `last_edit_error()`. P8.312 has chosen
-  `WorksheetEditorOptions` as the per-call materialization options type. P8.313
-  has chosen the first lifetime / mixing policy. P8.315 / P8.316 now provide
-  internal dimension projection and minimal worksheet chunk-source handoff
-  evidence, and P8.317-P8.319 cover current public facade rename-back
-  diagnostics and restored-name replacement usability. P8.320 completes the
-  wording alignment gate. P8.321 adds the first internal planned-catalog
-  CellStore handoff guardrail after queued rename. P8.322 extends that guardrail
-  to full worksheet projection and refreshed dimension evidence. P8.323 proves
-  the old-name preflight failures do not drain prepared projection sources.
-  P8.324 adds queued whole-worksheet replacement follow-up handoff evidence for
-  source-loaded `CellStore` sheetData patching. P8.325 adds the paired full
-  worksheet projection case after queued replacement, including `StreamRewrite`
-  staging and refreshed dimension evidence. P8.326 adds the combined rename plus
-  queued-worksheet planned-name handoff guardrail. P8.327 adds the matching full
-  worksheet projection guardrail for that combined setup, including zero chunk
-  consumption on old-name failure and refreshed dimension on planned-name
-  success. P8.328 adds source-overwrite `save_as()` failure hygiene for that
-  combined staged state, proving staged chunks / pending edits survive and a
-  later safe output path still persists. P8.329 extends that proof to
-  path-equivalent source-overwrite attempts. P8.330 extends it to empty output
-  path rejection. P8.331 extends it to missing output parent rejection. P8.332
-  / P8.333 extend it to non-directory output parent and existing-directory
-  output rejection. P8.334 adds writer/backend failure hygiene for the same
-  combined staged state. P8.335 adds successful-save staged-chunk reuse evidence
-  for a second safe output path. P8.336 adds source-copy temp-size failure
-  hygiene for the same combined staged state, and P8.337 adds the matching
-  missing source-copy temp-file failure hygiene. P8.338 adds the matching
-  source-copy temp CRC failure hygiene. P8.339 adds a workbook planned-removal
-  preflight guard for source-loaded full worksheet chunks. P8.340 adds an
-  invalid planned workbook catalog preflight guard for the same chunk handoff.
-  P8.341 adds the matching wrong-namespace planned catalog id guard. P8.342 adds
-  the matching plain unqualified planned catalog id guard. P8.343 adds the
-  matching unregistered planned worksheet target guard. The main remaining blocker is the rest of the concrete
-  operation-mixing guardrail evidence, followed by
-  explicit public header tests if the first
-  `WorksheetEditor` slice is opened.
+- For any future widening beyond the current public `WorksheetEditor` slice,
+  use the existing P8.310-P8.343 evidence below to keep the contract narrow.
+  The current slice is already public and tested.
 - Continue compacting the internal cell store instead of persisting the public
   owning `Cell` type for every stored cell. The first slice stores typed payload
   records and style id references in a sparse map; future work still needs
@@ -3529,14 +3494,14 @@ Tasks:
   boundary values.
 - Keep the current `CellStore` sheetData emitter as an internal handoff
   building block only. It emits values as standalone `<sheetData>` XML with
-  inline strings, and can expose the same projection as a row/cell chunk source,
-  but it does not generate full worksheet XML, migrate sharedStrings, merge
-  styles, update calc metadata, or repair relationships. The current
+  inline strings, and can expose the same projection as a row/cell chunk
+  source, but it does not generate full worksheet XML, migrate sharedStrings,
+  merge styles, update calc metadata, or repair relationships. The current
   package-editor regression only proves that this payload can feed the internal
   by-name `sheetData` Patch helper while preserving unknown bytes and exposing
-  calc/audit diagnostics; the public `WorkbookEditor` uses that
-  path only for whole-`<sheetData>` replacement, not random cell editing or
-  full in-memory save-as.
+  calc/audit diagnostics; the public `WorkbookEditor` uses that path only for
+  whole-`<sheetData>` replacement, not random cell editing or full in-memory
+  save-as.
 - Add guardrail APIs or options such as `max_cells`, `memory_budget_bytes`,
   `cell_count()`, and `estimated_memory_usage()` before calling the In-memory
   editor ready. The current internal `CellStoreOptions` is only a worksheet-local

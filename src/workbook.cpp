@@ -7,7 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <set>
+#include <functional>
 #include <utility>
 
 namespace fastxlsx {
@@ -57,7 +57,59 @@ void validate_sheet_name(std::string_view name)
     }
 }
 
+template <typename WorksheetContainer>
+auto find_worksheet_by_name(WorksheetContainer& worksheets, std::string_view name)
+{
+    return std::find_if(worksheets.begin(), worksheets.end(),
+        [name](const auto& worksheet) { return worksheet.name() == name; });
+}
+
+bool ascii_equals_ignore_case(std::string_view lhs, std::string_view rhs) noexcept
+{
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        char left = lhs[index];
+        char right = rhs[index];
+        if (left >= 'A' && left <= 'Z') {
+            left = static_cast<char>(left - 'A' + 'a');
+        }
+        if (right >= 'A' && right <= 'Z') {
+            right = static_cast<char>(right - 'A' + 'a');
+        }
+        if (left != right) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 constexpr std::string_view recalculation_calc_id = "124519";
+
+std::size_t row_memory_usage(const detail::WorksheetRowData& row) noexcept
+{
+    std::size_t total = row.cells.capacity() * sizeof(Cell);
+    for (const Cell& cell : row.cells) {
+        total += cell.string_value().capacity();
+    }
+    return total;
+}
+
+std::size_t document_properties_memory_usage(const DocumentProperties& properties) noexcept
+{
+    return properties.creator.capacity()
+        + properties.last_modified_by.capacity()
+        + properties.title.capacity()
+        + properties.subject.capacity()
+        + properties.description.capacity()
+        + properties.keywords.capacity()
+        + properties.category.capacity()
+        + properties.application.capacity()
+        + properties.app_version.capacity();
+}
 
 bool rows_have_formula(const std::vector<detail::WorksheetRowData>& rows) noexcept
 {
@@ -274,6 +326,25 @@ std::uint32_t Worksheet::row_count() const noexcept
     return static_cast<std::uint32_t>(rows_.size());
 }
 
+std::size_t Worksheet::cell_count() const noexcept
+{
+    std::size_t total = 0;
+    for (const auto& row : rows_) {
+        total += row.cells.size();
+    }
+    return total;
+}
+
+std::size_t Worksheet::estimated_memory_usage() const noexcept
+{
+    std::size_t total = sizeof(Worksheet) + name_.capacity();
+    total += rows_.capacity() * sizeof(detail::WorksheetRowData);
+    for (const auto& row : rows_) {
+        total += row_memory_usage(row);
+    }
+    return total;
+}
+
 Workbook Workbook::create()
 {
     return Workbook {};
@@ -288,16 +359,129 @@ Worksheet& Workbook::add_worksheet(std::string name)
 {
     validate_sheet_name(name);
 
-    std::set<std::string> existing_names;
     for (const Worksheet& worksheet : worksheets_) {
-        existing_names.insert(worksheet.name());
-    }
-    if (existing_names.contains(name)) {
-        throw FastXlsxError("worksheet names must be unique");
+        if (ascii_equals_ignore_case(worksheet.name(), name)) {
+            throw FastXlsxError("worksheet names must be unique");
+        }
     }
 
     worksheets_.push_back(Worksheet(std::move(name)));
     return worksheets_.back();
+}
+
+void Workbook::rename_worksheet(std::string_view old_name, std::string new_name)
+{
+    validate_sheet_name(new_name);
+
+    auto old_iterator = find_worksheet_by_name(worksheets_, old_name);
+    if (old_iterator == worksheets_.end()) {
+        throw FastXlsxError("worksheet not found");
+    }
+
+    if (ascii_equals_ignore_case(old_iterator->name(), new_name)) {
+        throw FastXlsxError("worksheet names must be unique");
+    }
+
+    for (const Worksheet& worksheet : worksheets_) {
+        if (&worksheet == &*old_iterator) {
+            continue;
+        }
+        if (worksheet.name() == new_name) {
+            throw FastXlsxError("worksheet names must be unique");
+        }
+        if (ascii_equals_ignore_case(worksheet.name(), new_name)) {
+            throw FastXlsxError("worksheet names must be unique");
+        }
+    }
+
+    old_iterator->name_ = std::move(new_name);
+}
+
+void Workbook::remove_worksheet(std::string_view name)
+{
+    auto iterator = find_worksheet_by_name(worksheets_, name);
+    if (iterator == worksheets_.end()) {
+        throw FastXlsxError("worksheet not found");
+    }
+    worksheets_.erase(iterator);
+}
+
+std::size_t Workbook::worksheet_count() const noexcept
+{
+    return worksheets_.size();
+}
+
+std::size_t Workbook::cell_count() const noexcept
+{
+    std::size_t total = 0;
+    for (const Worksheet& worksheet : worksheets_) {
+        total += worksheet.cell_count();
+    }
+    return total;
+}
+
+std::size_t Workbook::estimated_memory_usage() const noexcept
+{
+    std::size_t total = sizeof(Workbook);
+    total += worksheets_.capacity() * sizeof(Worksheet);
+    total += document_properties_memory_usage(document_properties_);
+    for (const Worksheet& worksheet : worksheets_) {
+        total += worksheet.estimated_memory_usage() - sizeof(Worksheet);
+    }
+    return total;
+}
+
+std::vector<std::string> Workbook::worksheet_names() const
+{
+    std::vector<std::string> names;
+    names.reserve(worksheets_.size());
+    for (const Worksheet& worksheet : worksheets_) {
+        names.push_back(worksheet.name());
+    }
+    return names;
+}
+
+bool Workbook::has_worksheet(std::string_view name) const noexcept
+{
+    return find_worksheet_by_name(worksheets_, name) != worksheets_.end();
+}
+
+Worksheet& Workbook::worksheet(std::string_view name)
+{
+    auto iterator = find_worksheet_by_name(worksheets_, name);
+    if (iterator == worksheets_.end()) {
+        throw FastXlsxError("worksheet not found");
+    }
+    return *iterator;
+}
+
+const Worksheet& Workbook::worksheet(std::string_view name) const
+{
+    auto iterator = find_worksheet_by_name(worksheets_, name);
+    if (iterator == worksheets_.end()) {
+        throw FastXlsxError("worksheet not found");
+    }
+    return *iterator;
+}
+
+std::optional<std::reference_wrapper<Worksheet>> Workbook::try_worksheet(
+    std::string_view name) noexcept
+{
+    auto iterator = find_worksheet_by_name(worksheets_, name);
+    if (iterator == worksheets_.end()) {
+        return std::nullopt;
+    }
+    return std::ref(*iterator);
+}
+
+std::optional<std::reference_wrapper<const Worksheet>> Workbook::try_worksheet(
+    std::string_view name) const noexcept
+{
+    auto iterator = find_worksheet_by_name(worksheets_, name);
+    if (iterator == worksheets_.end()) {
+        return std::nullopt;
+    }
+    return std::cref(*iterator);
 }
 
 void Workbook::save(const std::filesystem::path& path) const

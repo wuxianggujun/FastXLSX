@@ -25588,6 +25588,75 @@ ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure -
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
+### P13.6 small-workbook Workbook convenience surface
+
+状态：基础完成。
+
+类型：small new-workbook public API convenience surface + docs；不新增 CMake
+dependency。
+
+目标：把当前小工作簿 `Workbook` 便利层从只追加 sheet 的表面扩展到可检查和调整
+待生成 workbook 的 sheet catalog，同时保持它明确属于 new-workbook / buffered
+creation path，而不是 existing-file editing。
+
+输入事实：
+- `Workbook` 当前用于新建小工作簿，`Workbook::save()` 生成全新 package。
+- Existing-file editing 入口是 `WorkbookEditor` / `WorksheetEditor`，不能把
+  `Workbook::rename_worksheet()` / `remove_worksheet()` 写成已有文件 sheet rename/delete。
+- Sheet name uniqueness 在 streaming writer、Patch catalog rename 和 small
+  workbook path 都应保持 ASCII case-insensitive。
+
+范围：
+- 在 `include/fastxlsx/workbook.hpp` 暴露 `worksheet_count()`、
+  `worksheet_names()`、`has_worksheet()`、`worksheet()`、`try_worksheet()`、
+  `rename_worksheet()` 和 `remove_worksheet()`。
+- `Workbook::add_worksheet()` 继续拒绝 exact 和 ASCII case-insensitive duplicate
+  sheet names。
+- `rename_worksheet()` 只改当前 buffered worksheet name，失败不改变 workbook
+  order / rows；`remove_worksheet()` 只删除当前 buffered worksheet，`save()` 继续
+  拒绝空 workbook。
+- `Workbook::save()` 对剩余 worksheets 重新生成 sheet parts、sheet ids 和
+  workbook relationships；不会保留被删除 sheet 的 stale parts。
+- Streaming `WorkbookWriter::add_worksheet()` 同步拒绝 ASCII case-insensitive
+  duplicate sheet names。
+
+触碰文件：
+- `include/fastxlsx/workbook.hpp`
+- `src/workbook.cpp`
+- `include/fastxlsx/streaming_writer.hpp`
+- `src/streaming_writer.cpp`
+- `tests/test_minimal_xlsx.cpp`
+- `tests/test_streaming_writer.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/TASK_PLAN.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+验收条件：
+- `fastxlsx.unit` 覆盖 sheet inspection、lookup、rename、remove、duplicate
+  rejection、failed mutation state hygiene、renumbered saved workbook structure 和
+  empty-after-remove save rejection。
+- `fastxlsx.streaming` 覆盖 streaming writer sheet names 的 ASCII
+  case-insensitive duplicate rejection。
+- README / API docs / task docs 明确该便利层只属于 small new-workbook creation
+  path，不是 existing-file editor、semantic sheet rename/delete、relationship
+  repair 或 broad In-memory readiness。
+
+非目标：
+- 不新增 existing-file sheet add/delete、semantic sheet rename、definedNames /
+  formula / table / drawing synchronization、relationship repair、sharedStrings /
+  styles migration、public `PackageEditor` 或 transaction/undo semantics。
+- 不把 `Workbook` 变成大文件低内存随机编辑路径。
+- 不改变 `WorksheetEditor` existing-file random cell editing 的边界。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R "fastxlsx.unit|fastxlsx.streaming" --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
 ### P12.4 shared string index stores string_view keys
 
 状态：基础完成。
@@ -25640,7 +25709,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 
 ## P13 - Phase 3 metadata/styles hardening
 
-状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5 已落地。
+状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5、P13.6 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -25652,6 +25721,115 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.3 invalid style registration preserves registry state：基础完成。
 - P13.4 all-default optional style metadata is ignored：基础完成。
 - P13.5 styles with formula recalculation metadata：基础完成。
+- P13.6 small-workbook Workbook convenience surface：基础完成。
+- P13.7 small-workbook Workbook size diagnostics：基础完成。
+- P13.8 small-workbook example refresh：基础完成。
+- P13.9 README examples lane index：基础完成。
+
+### P13.7 small-workbook Workbook size diagnostics
+
+状态：基础完成，已通过默认 preset 构建与 CTest 验证。
+
+类型：small new-workbook public API diagnostics + docs；不新增 CMake 依赖。
+
+目标：为当前小型 new-workbook `Workbook` / `Worksheet` 便利层补充
+`cell_count()` 与 `estimated_memory_usage()`，让调用方能粗略判断当前缓冲
+规模和资源占用，但仍不把 `Workbook` 变成 existing-file editor 或大文件
+低内存路径。
+
+输入事实：
+- `Workbook` / `Worksheet` 已有 buffered rows/cells，以及 rename/remove /
+  lookup 便利面。
+- `CellStore` 已有独立的 sparse 内存估算实现，可作为内部估算风格参考，但
+  这次不把它引入 public small-workbook 语义。
+- 现有文档已明确 small-workbook path 与 streaming / patch / in-memory 的边界。
+
+范围：
+- 在 `include/fastxlsx/workbook.hpp` 和 `src/workbook.cpp` 暴露并实现
+  `Workbook::cell_count()` / `Workbook::estimated_memory_usage()`。
+- 在 `Worksheet` 上补充同名诊断，用于按 sheet 观察缓冲 cell 数量与粗略内存占用。
+- 让文档明确这些是诊断近似值，不是 RSS、不是硬预算、不是 large-export
+  progress API。
+- 在 `tests/test_minimal_xlsx.cpp` 增加 workbook / worksheet 计数与内存增长回归，
+  并确认 rename 之类操作不改变 buffered cell 数量。
+
+验证：
+- 小工作簿测试覆盖 cell count 和 memory estimate 的增长语义。
+- 文档同步后，`TASK_PLAN` / `NEXT_STEPS` 的 public API 与 in-memory 边界说明一致。
+- 2026-06-18 本地验证：
+  `cmake --build --preset windows-nmake-release --target fastxlsx_tests` 通过；
+  `cmake --build --preset windows-nmake-release --target fastxlsx_streaming_writer_tests`
+  通过；`ctest --test-dir build/windows-nmake-release -R "fastxlsx.unit|fastxlsx.streaming"
+  --output-on-failure --timeout 60` 通过；`ctest --test-dir build/windows-nmake-release
+  --output-on-failure --timeout 60` 通过 32/32。
+
+### P13.8 small-workbook example refresh
+
+状态：基础完成，已通过 opt-in examples 构建和示例运行验证。
+
+类型：example / docs hygiene；不新增 public API / CMake dependency。
+
+目标：让 `examples/minimal_writer.cpp` 使用当前 small new-workbook `Workbook`
+便利面，展示 sheet lookup、rename/remove 和 size diagnostics 的正确组合，同时
+避免把该示例误读为 large-export 或 existing-file editing 路径。
+
+范围：
+- 更新 `examples/minimal_writer.cpp`：先用 `Workbook::add_worksheet()` 建立小工作簿，
+  再用 `worksheet()` 获取当前 sheet，最后演示 `rename_worksheet()`、
+  `remove_worksheet()`、`worksheet_count()`、`cell_count()` 和
+  `estimated_memory_usage()`。
+- 示例继续生成一个小型 workbook；大数据导出仍由 `examples/streaming_writer.cpp`
+  和 `WorkbookWriter` 表达。
+- 构建 opt-in example target，确认当前 public headers 可编译。
+
+非目标：
+- 不新增 example CTest；`FASTXLSX_BUILD_EXAMPLES` 仍是 opt-in。
+- 不新增 existing-file sheet rename/delete、semantic sync、relationship repair、
+  workbook-level hard guardrails 或 benchmark。
+
+验证：
+- `fastxlsx_minimal_writer_example` 在 `FASTXLSX_BUILD_EXAMPLES=ON` 构建下通过。
+- 默认 `fastxlsx.unit|fastxlsx.streaming` 仍通过。
+- 2026-06-18 本地验证：
+  `cmake --preset windows-nmake-release -DFASTXLSX_BUILD_EXAMPLES=ON` 通过；
+  `cmake --build --preset windows-nmake-release --target fastxlsx_minimal_writer_example`
+  通过；在 `build/windows-nmake-release/examples` 运行
+  `fastxlsx_minimal_writer_example.exe` 通过，输出 1 sheet / 9 cells /
+  estimated buffered bytes diagnostics。
+
+### P13.9 README examples lane index
+
+状态：基础完成，已通过 opt-in examples 构建和运行 smoke。
+
+类型：README public examples documentation；不新增 public API / CMake dependency。
+
+目标：在 README 中给 opt-in examples 提供明确入口，并把 small new-workbook
+`Workbook` 示例和 large ordered export `WorkbookWriter` 示例的适用边界写清，避免
+调用方把 small buffered creation 示例误当作 existing-file editing 或大数据路径。
+
+范围：
+- README 增加 `examples/` 构建命令。
+- README 标明 `examples/minimal_writer.cpp` 是 `Workbook` / `Worksheet` / `Cell`
+  的 small new-workbook buffered creation 示例，包含 sheet lookup、rename/remove 和
+  size diagnostics。
+- README 标明 `examples/streaming_writer.cpp` 是 `WorkbookWriter` /
+  `WorksheetWriter` / `CellView` 的大数据顺序导出示例。
+
+非目标：
+- 不新增 example CTest 或默认 CI example 构建要求。
+- 不新增 public API、benchmark、existing-file semantic editing、relationship repair
+  或 workbook-level hard guardrails。
+
+验证：
+- README 示例命令对应现有 CMake preset / target。
+- `fastxlsx_minimal_writer_example` 和 `fastxlsx_streaming_writer_example` 可在
+  `FASTXLSX_BUILD_EXAMPLES=ON` 构建下编译。
+- 2026-06-19 本地验证：
+  `cmake --build --preset windows-nmake-release --target fastxlsx_minimal_writer_example`
+  通过；`cmake --build --preset windows-nmake-release --target
+  fastxlsx_streaming_writer_example` 通过；两个 example exe 在
+  `build/windows-nmake-release/examples` 下运行 smoke 通过。
+
 
 ### P13.1 default `StyleId{}` clears per-cell style
 

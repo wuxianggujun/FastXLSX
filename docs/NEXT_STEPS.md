@@ -810,7 +810,10 @@ schema validation.
   - `ImageOptions`
   - `read_image_info()`
   - `read_image_pixels()`
+  - `Workbook::add_worksheet()`
   - `Workbook::set_document_properties()`
+  - `Workbook::rename_worksheet()`
+  - `Workbook::remove_worksheet()`
   - `WorkbookWriterOptions::document_properties`
   - `WorkbookWriter::add_style()`
   - `CellView::with_style()`
@@ -1652,12 +1655,12 @@ feature completion.
       separate worksheet materialization options type, handle lifetime /
       invalidation behavior, diagnostics surface, operation mixing policy, and
       save-as handoff tests.
-      P8.311 resolves the first diagnostics decision: future worksheet
-      materialization failures should throw `FastXlsxError` and must not update
-      current edit-only `last_edit_error()`; `try_worksheet()`, if added, may
-      return empty only for missing sheet names.
+      P8.311 resolves the first diagnostics decision: worksheet
+      materialization failures throw `FastXlsxError` and must not update
+      current edit-only `last_edit_error()`; `try_worksheet()` returns empty
+      only for missing sheet names.
       P8.312 resolves the options naming and call-site decision:
-      `WorksheetEditorOptions` is the future per-materialization options type
+      `WorksheetEditorOptions` is the per-materialization options type
       for `worksheet(name, options)` / `try_worksheet(name, options)`, with
       `max_cells` and `memory_budget_bytes` separate from current
       `WorkbookEditorOptions` replacement-payload guardrails.
@@ -2125,14 +2128,13 @@ facade boundary: caller-supplied non-default `StyleId` values are serialized as
 `CellValue::blank()` replacement cells write empty `<c/>` cells, while empty row
 vectors remain missing rows rather than explicit blank rows. This is the narrow
 whole-sheet-data / catalog-name slice only;
-`WorksheetEditor`, `get_cell()` / `set_cell()`, random
-cell editing, caller-supplied worksheet XML, and sharedStrings/style migration
-remain future design targets, and `PackageEditor` stays internal/test-only.
-The P8.320 wording gate keeps README / API docs / task docs aligned with that
-boundary: no public `WorksheetEditor` symbols should be added until the next
-task supplies implementation and tests for materialization failure hygiene,
-handle lifetime, option matching, operation-mixing rejection, refreshed
-dimension output, and `save_as()` persistence.
+caller-supplied worksheet XML and sharedStrings/style migration remain future
+design targets, and `PackageEditor` stays internal/test-only. `WorksheetEditor`,
+`get_cell()` / `set_cell()`, and random cell editing now have a first public
+small-file slice; further widening still needs targeted implementation and
+tests.
+The P8.320 wording gate kept README / API docs / task docs aligned with that
+boundary before the public `WorksheetEditor` slice landed.
 P8.321 adds one internal planned-catalog handoff regression for that path:
 source-loaded `CellStore` data must be handed off by current planned sheet name
 after a queued rename, and an old-name failure must preserve the queued rename
@@ -4650,8 +4652,8 @@ Current foundation:
   dependency sync, drawing/image/chart/table editing, and broad preservation remains 计划.
 
 Next tasks:
-- Complete `P4.0` from `TASK_BREAKDOWN.md` before widening public Patch or
-  In-memory APIs.
+- Keep the current public Patch / In-memory slices aligned with code and
+  tests before widening either API.
 - Build on the internal `EditPlan`, `DependencyAnalyzer`, `ReferencePolicy`,
   and `PartRewritePlanner` planning foundation, including explicit registered-part
   removal planning, without exposing it as complete
@@ -4679,22 +4681,30 @@ Validation:
 
 ### 2. In-memory Small-File Editing
 
-Status: 计划.
+Status: the first public `WorksheetEditor` slice is already implemented, and
+the current small-workbook `Workbook` convenience surface is in place for the
+narrow creation path. Any later widening must be explicitly chosen.
 
 Next tasks:
-- Define a small-workbook random editing API for sheet inspection,
-  `get_cell()`, `set_cell()`, `erase_cell()`, sheet rename/add/delete, and
-  save-as.
-- Document memory growth and size guardrails. This path may use a cell map or
-  local DOM, but it is not the large worksheet low-memory path.
+- Keep the current `Workbook` convenience surface aligned with code and tests;
+  only widen it when there is a concrete need.
+- Document memory growth and size guardrails. This path now exposes
+  `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`,
+  `Worksheet::cell_count()`, and `Worksheet::estimated_memory_usage()` as
+  diagnostic helpers for the small in-memory creation path, but it is still not
+  the large worksheet low-memory path; these estimates are not process RSS,
+  hard budgets, save-time package assembly peaks, or large-export progress.
+- Keep the current public `WorksheetEditor` slice aligned with code and tests
+  before adding style migration, sharedStrings migration, or broader
+  workbook-level guardrails.
 - Share serialization and package semantics with Streaming/Patch where
   practical: styles, sharedStrings, relationships, document properties, and
   calc metadata.
 
 Validation:
-- Small workbook edit/save tests cover cell edits, sheet edits, invalid ranges,
-  sharedStrings/styles side effects, and preservation when opening an existing
-  package.
+- Small workbook edit/save tests cover cell edits, sheet edits, workbook and
+  worksheet count / memory diagnostics, invalid ranges, sharedStrings/styles
+  side effects, and preservation when opening an existing package.
 - Public API comments clearly state In-memory mode and when to choose
   Streaming or Patch instead.
 

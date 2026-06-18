@@ -105,7 +105,8 @@ Public API 概念矩阵：
 ```text
 概念            Streaming              Small new workbook       Current Patch / Future editor
 创建入口        WorkbookWriter          Workbook                 WorkbookEditor
-sheet 入口      add_worksheet           add_worksheet            worksheet_names / has_worksheet / worksheet / try_worksheet
+sheet 入口      add_worksheet           add_worksheet / remove_worksheet / inspection helpers
+                                                               worksheet_names / has_worksheet / worksheet / try_worksheet
 追加行          append_row(CellView)    append_row(Cell)         replace_sheet_data(rows)；future append_row
 随机写 cell     不支持                  不作为大文件路径承诺      WorksheetEditor::set_cell / erase_cell
 读取 cell       不支持                  可作为小文件能力规划      WorksheetEditor::get_cell / try_cell
@@ -127,7 +128,13 @@ In-memory `WorksheetEditor` 切片：`WorksheetEditorOptions`、
 `WorkbookEditor::worksheet(name, options)`、
 `WorkbookEditor::try_worksheet(name, options)`、
 `WorksheetEditor::try_cell()` / `get_cell()` / `set_cell()` / `erase_cell()`、
-`has_pending_changes()`、`cell_count()` 和 `estimated_memory_usage()`。尚未落地的更宽能力 —— 添加 / 删除
+`has_pending_changes()`、`cell_count()` 和 `estimated_memory_usage()`。Small new-workbook
+`Workbook::rename_worksheet()` / `Workbook::remove_worksheet()` 也已落地，只修改
+当前待生成 workbook 中的 in-memory sheet buffer，并不编辑已有 XLSX；`Workbook` /
+`Worksheet` 上的 `cell_count()` 和 `estimated_memory_usage()` 只是该 buffered creation
+path 的诊断近似值，不是进程 RSS、硬预算、save-time package assembly peak 或
+large-export progress API。尚未落地的
+更宽能力 —— existing-file 添加 / 删除
 worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship repair 和
 大 worksheet 低内存 random edit —— 仍必须标明为未来 public design target。
 
@@ -139,7 +146,7 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 | Area | 当前状态 | 已落地 public 入口 | 暂不宣称 / 未实现 |
 | --- | --- | --- | --- |
 | New workbook streaming | 已公开，继续低风险打磨 | `WorkbookWriter`, `WorksheetWriter`, `CellView`, styles, validations, hyperlinks, tables, conditional formatting, images | 不支持随机回写历史行；不把 convenience API 放进 row hot path |
-| Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::save()` | 不承诺大文件低内存；不作为 existing-file editor |
+| Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::add_worksheet()`, `Workbook::save()`, `worksheet_count()`, `worksheet_names()`, `has_worksheet()`, `worksheet()`, `try_worksheet()`, `rename_worksheet()`, `remove_worksheet()`, `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`, `Worksheet::cell_count()`, `Worksheet::estimated_memory_usage()` | 不承诺大文件低内存；不作为 existing-file editor；`rename_worksheet()` / `remove_worksheet()` 只修改待生成 workbook 中的 buffered sheet，不是 existing-file sheet edit/delete；size diagnostics 是近似观测，不是 RSS、硬预算或 large-export progress |
 | Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `replace_sheet_data()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；不做 relationship repair、sharedStrings/style migration |
 | Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, source-load and mutation `max_cells` / `memory_budget_bytes` guardrails plus max-cells and memory-budget mutation failure/recovery hygiene, missing-erase diagnostic cleanup, explicit blank insertion guardrail coverage, mutation diagnostic replacement/clear ordering, and mixed public edit diagnostic replacement/clear ordering, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `erase_cell()`, strict row/column coordinate guardrails, strict uppercase A1 overloads, default `StyleId{0}` normalization to no style handle, row/column and A1 caller non-default `StyleId` rejection no-state-pollution, source explicit `s="0"` / `s='0'` normalization to no style handle, source `t="str"` scalar-string and formula-string materialization, `WorksheetCellReference`, `WorksheetCellSnapshot`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, pre-/post-save matching-option `worksheet()` / `try_worksheet()` session reacquire reuse, post-save materialized summary and aggregate diagnostic lifecycle, renamed-sheet planned-name materialized diagnostics, guarded source sharedStrings read-only materialization plus absent-table optional-dependency, lazy selected-sheet dependency, and non-critical metadata boundaries, relationship-target, XML/entity/attribute, custom source cell-type, and direct raw cell/worksheet/sheetData/row-text fail-fast hygiene, source inline/sharedStrings rich-text flattening, prefixed source worksheet/inlineStr local-name materialization, namespace-URI non-validation coverage for supported local-names, wrong-namespace unsupported local-name fail-fast hygiene including sharedStrings item/rich-run local-names, malformed source sharedStrings and inline rich metadata failure hygiene, source wrapper metadata dirty-projection boundary, cell-external comment/PI dirty-projection boundary, clean read-only materialized no-op save copy-original boundary, failed-materialization no-op save copy-original boundary, missing `try_worksheet()` no-op save copy-original boundary, `cell_count()`, `estimated_memory_usage()` | 不支持非默认 style id 写入/迁移/合并、sharedStrings writeback / rebuild / migration、sharedStrings XML repair / schema count repair、sharedStrings relationship repair/pruning、external sharedStrings target materialization、date/error/custom cell materialization、namespace URI validation/repair、unsupported local-name import/tolerance、rich-text preservation、malformed rich metadata repair、source wrapper metadata preservation / sync、comment import / XML trivia preservation、tombstones、style-preserving clear、row/column delete/insert、coordinate inference / clamping、semantic metadata sync、clean-session commit semantics、transaction history、dense range reads、streaming sparse iterators 或 large-file low-memory random editing；`memory_budget_bytes` 是 sparse-store estimate guardrail，不是 process RSS 或 save-time package assembly peak |
 | Materialized worksheet foundation | internal + public handoff 底座 | `CellStore`, materialized-session registry, chunked projection, `WorkbookEditor::save_as()` dirty-session auto-flush | internal test hooks 仍不是 public API；不公开 source chunk lifetimes、EditPlan 或 PackageEditor |
@@ -2677,9 +2684,9 @@ header:
 
 该 facade 的边界：
 
-- Future `WorksheetEditor` / random-edit 草案属于 In-memory / future editor 路径，不是
+- `WorksheetEditor` / random-edit 首片属于 In-memory editor 路径，不是
   `WorkbookWriter` 的随机写补丁，也不是当前 `Workbook` 小文件新建 API 的无界扩展。
-- 它不承诺百万行 worksheet 的低内存随机访问；P7.4 之前不能宣称 ready。
+- 它不承诺百万行 worksheet 的低内存随机访问，也不能写成完整 In-memory editor ready。
 - 它不计算公式、不重建 `calcChain.xml`、不自动修复 relationships / content types、
   不迁移 shared string indexes 或 style ids。
 - 已有文件保存仍使用 `save_as(...)` 语义，避免暗示当前支持安全原地覆盖。

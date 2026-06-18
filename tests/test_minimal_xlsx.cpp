@@ -285,6 +285,15 @@ void test_workbook_sheet_addition_uniqueness()
     check_fastxlsx_error(
         [&workbook] { workbook.add_worksheet("Data"); },
         "workbook add_worksheet should reject exact duplicate sheet names");
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet(""); },
+        "workbook add_worksheet should reject empty sheet names without mutation");
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet("Bad/Name"); },
+        "workbook add_worksheet should reject invalid sheet-name characters without mutation");
+    check_fastxlsx_error(
+        [&workbook] { workbook.add_worksheet(std::string(32, 'A')); },
+        "workbook add_worksheet should reject overlong sheet names without mutation");
 
     check(workbook.worksheet_count() == 1, "failed add_worksheet should not change sheet count");
     const std::vector<std::string> names = workbook.worksheet_names();
@@ -292,6 +301,12 @@ void test_workbook_sheet_addition_uniqueness()
         "failed add_worksheet should preserve the existing sheet order");
     check(workbook.worksheet("Data").row_count() == 1,
         "failed add_worksheet should preserve existing sheet rows");
+
+    workbook.add_worksheet("Extra").append_row({fastxlsx::Cell::boolean(true)});
+    check(workbook.worksheet_count() == 2,
+        "valid add_worksheet should still work after rejected sheet names");
+    check(workbook.worksheet_names()[1] == "Extra",
+        "valid add_worksheet should append after rejected sheet names");
 }
 
 void test_workbook_sheet_removal_helpers()
@@ -417,9 +432,15 @@ void test_workbook_sheet_rename_helpers()
     check_fastxlsx_error(
         [&workbook] { workbook.rename_worksheet("Renamed & Data", "Renamed & Data"); },
         "rename_worksheet should reject a no-op same-name rename");
+    check_fastxlsx_error(
+        [&workbook] { workbook.rename_worksheet("Renamed & Data", "Bad/Name"); },
+        "rename_worksheet should reject invalid sheet-name characters");
+    check_fastxlsx_error(
+        [&workbook] { workbook.rename_worksheet("Renamed & Data", std::string(32, 'A')); },
+        "rename_worksheet should reject overlong sheet names");
     const std::vector<std::string> names_after_duplicate_rename = workbook.worksheet_names();
     check(names_after_duplicate_rename == names,
-        "failed duplicate rename_worksheet should not mutate workbook order");
+        "failed rename_worksheet should not mutate workbook order");
 
     workbook.rename_worksheet("renamed & data", "Final Name");
     const std::vector<std::string> renamed_again = workbook.worksheet_names();

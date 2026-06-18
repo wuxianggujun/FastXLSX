@@ -25710,7 +25710,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ## P13 - Phase 3 metadata/styles hardening
 
 状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5、P13.6、P13.7、P13.8、
-P13.9、P13.10 已落地。
+P13.9、P13.10、P13.11 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -25727,6 +25727,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.8 small-workbook example refresh：基础完成。
 - P13.9 README examples lane index：基础完成。
 - P13.10 small-workbook case-insensitive lookup consistency：基础完成。
+- P13.11 small-workbook sheet-name guardrail no-state-pollution：基础完成。
 
 ### P13.7 small-workbook Workbook size diagnostics
 
@@ -25869,6 +25870,43 @@ API 语义割裂。
 
 验证：
 - `fastxlsx.unit` 覆盖大小写 lookup 一致性。
+- 默认 CTest 和 `git diff --check` 通过。
+
+### P13.11 small-workbook sheet-name guardrail no-state-pollution
+
+状态：基础完成。
+
+类型：small new-workbook guardrail regression + task docs；不新增 public API /
+CMake dependency。
+
+目标：锁定 small `Workbook` sheet-name guardrails 的 failure-before-state-change
+语义。无效 sheet name、超长 sheet name、非法字符和 duplicate name 都不能污染
+当前 buffered workbook catalog，也不能阻止后续合法 `add_worksheet()` /
+`rename_worksheet()`。
+
+输入事实：
+- P13.6-P13.10 已经公开 small `Workbook` sheet inspection、rename/remove、size
+  diagnostics 和 ASCII case-insensitive lookup consistency。
+- `validate_sheet_name()` 在 `add_worksheet()` 和 `rename_worksheet()` 的状态变更
+  前运行；现有测试已经覆盖部分 duplicate/missing 失败路径，但缺少无效 name
+  guardrail 后继续可用的直接回归。
+
+范围：
+- 在 `tests/test_minimal_xlsx.cpp` 扩展 small `Workbook` sheet tests：
+  - `add_worksheet("")`、`add_worksheet("Bad/Name")` 和 32 字符 sheet name 失败后，
+    sheet count、sheet order 和既有 rows 保持不变。
+  - 后续合法 `add_worksheet("Extra")` 仍按 workbook order 追加。
+  - `rename_worksheet(..., "Bad/Name")` 和 32 字符新名失败后，sheet order 和
+    existing buffered rows 保持不变。
+- 文档只记录当前 small new-workbook path 的 guardrail 语义。
+
+非目标：
+- 不新增 Unicode / locale-aware validation。
+- 不改变 `WorkbookEditor` / `WorksheetEditor` sheet-name policy。
+- 不新增 public diagnostics API、benchmark、hard memory guardrail 或 package repair。
+
+验证：
+- `fastxlsx.unit` 覆盖 guardrail no-state-pollution。
 - 默认 CTest 和 `git diff --check` 通过。
 
 

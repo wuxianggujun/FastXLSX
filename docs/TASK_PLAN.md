@@ -2186,7 +2186,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       later no-op save. It remains separate from source style parsing and is not
       style migration, merge, or preservation. P8.508 extends the same proof to
       the strict A1 `set_cell()` overload, preserving the existing sparse cell
-      and no-op copy-original save path after rejection.
+      and no-op copy-original save path after rejection. P8.509 materializes
+      source `t="str"` scalar cells as text and `t="str"` formula cells as
+      formulas, keeps clean no-op save on the copy-original path, and projects
+      dirty text/formulas through the current inline/formula sparse-store
+      output without cached values. This is not date/error import, formula
+      evaluation, cached-result preservation, sharedStrings/style migration,
+      wrapper metadata preservation, XML repair, or large-file random editing.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2400,7 +2406,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       queues no pending edit, and leaves no-op save on the copy-original path.
       This is rejection-only, not style migration, merge, preservation, or
       existing-workbook style registry support. P8.508 covers the same
-      non-default style rejection hygiene through the A1 overload. P8.415 pins
+      non-default style rejection hygiene through the A1 overload. P8.509 pins
+      source `t="str"` scalar/formula string materialization through
+      `WorksheetEditor`, with dirty save projecting text as inline strings and
+      formulas without cached values; it does not add date/error materialization,
+      formula evaluation, cached-result preservation, sharedStrings/style
+      migration, XML repair, or large-file random editing. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,

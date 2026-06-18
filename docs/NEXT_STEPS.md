@@ -128,6 +128,14 @@ targets starting with legal ASCII name-start characters such as `_` and `:`
 remain ignored trivia.
 P8.506 pins the positive immediate-terminator form: empty-data ordinary PI
 tokens such as `<?fastxlsx?>` remain ignored trivia.
+P8.509 pins source `t="str"` materialization on the public `WorksheetEditor`
+path: scalar `<v>` payloads become `CellValue::text(...)`, `t="str"` formula
+cells keep the formula text while dropping stale cached values, clean no-op
+save stays copy-original, and dirty save projects scalar text as inline strings
+and formulas as `<f>` without cached values. This is not date/error cell import,
+formula evaluation, cached-result generation, sharedStrings writeback, style
+migration, wrapper metadata preservation, XML repair, or large-file random
+editing.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

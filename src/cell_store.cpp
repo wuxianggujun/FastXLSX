@@ -1315,6 +1315,7 @@ private:
 
 enum class SourceCellType {
     Number,
+    String,
     Boolean,
     InlineString,
     SharedString,
@@ -1326,6 +1327,9 @@ SourceCellType source_cell_type_from_raw_tag(
     const std::optional<std::string_view> type = unqualified_attribute_value(raw_xml, "t");
     if (!type.has_value() || *type == "n") {
         return SourceCellType::Number;
+    }
+    if (*type == "str") {
+        return SourceCellType::String;
     }
     if (*type == "b") {
         return SourceCellType::Boolean;
@@ -1426,6 +1430,11 @@ CellValue materialize_cell_value(
             return CellValue::blank();
         }
         return CellValue::number(parse_cell_number(cell.scalar_text));
+    case SourceCellType::String:
+        if (!cell.saw_scalar_value_element) {
+            return CellValue::blank();
+        }
+        return CellValue::text(cell.scalar_text);
     case SourceCellType::Boolean:
         if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
             return CellValue::blank();
@@ -1468,9 +1477,9 @@ CellValue materialize_cell_value(
 void reject_unsupported_value_shape(const ActiveSourceCell& cell, std::string_view element_name)
 {
     if (element_name == "f") {
-        if (cell.type != SourceCellType::Number) {
+        if (cell.type != SourceCellType::Number && cell.type != SourceCellType::String) {
             throw FastXlsxError(
-                "CellStore worksheet loader found a formula in a non-numeric cell");
+                "CellStore worksheet loader found a formula in a non-numeric cell type without t=\"str\"");
         }
         return;
     }

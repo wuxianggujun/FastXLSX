@@ -2705,7 +2705,7 @@ void test_package_reader_cell_store_loader_rejects_unsupported_source_cell_shape
     const std::filesystem::path unsupported_type_path =
         output_path("fastxlsx-package-reader-cell-store-unsupported-type.xlsx");
     write_source_package(unsupported_type_path,
-        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1" t="str"><v>cached</v></c></row></sheetData></worksheet>)");
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1" t="z"><v>cached</v></c></row></sheetData></worksheet>)");
 
     const fastxlsx::detail::PackageReader unsupported_type_reader =
         fastxlsx::detail::PackageReader::open(unsupported_type_path);
@@ -2716,14 +2716,14 @@ void test_package_reader_cell_store_loader_rejects_unsupported_source_cell_shape
             unsupported_type_reader, "Source");
     } catch (const fastxlsx::FastXlsxError& error) {
         unsupported_type_failed = true;
-        check_contains(error.what(), "unsupported cell type: str",
+        check_contains(error.what(), "unsupported cell type: z",
             "workbook sheet CellStore loader should reject unsupported source cell types");
     }
     check(unsupported_type_failed,
         "workbook sheet CellStore loader should reject unsupported source cell types");
     check(!unsupported_type_store.has_value(),
         "unsupported-type loader failure should not expose a partial CellStore");
-    check_contains(unsupported_type_reader.read_entry("xl/worksheets/sheet1.xml"), R"(t="str")",
+    check_contains(unsupported_type_reader.read_entry("xl/worksheets/sheet1.xml"), R"(t="z")",
         "unsupported-type source loader failure should not poison the PackageReader");
 
     const std::filesystem::path invalid_boolean_path =

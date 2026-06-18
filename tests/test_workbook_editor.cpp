@@ -8717,6 +8717,90 @@ void test_public_worksheet_editor_materializes_source_supported_values()
         "dirty supported source value projection should not create a sharedStrings content type");
 }
 
+void test_public_worksheet_editor_materializes_source_scalar_string_cells()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-source-string-type-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-string-type-noop-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-source-string-type-dirty-output.xlsx");
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-string-type")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-string-type")});
+        writer.close();
+    }
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<sheetData><row r="1">)"
+          R"(<c r="A1" t="str"><v>plain &amp; &lt;text&gt;</v></c>)"
+          R"(<c r="B1" t="str"><f>TEXT(C1,"@")&amp;"!"</f><v>cached &amp; stale</v></c>)"
+          R"(<c r="C1"><v>7</v></c>)"
+          R"(</row></sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), R"(t="str")",
+        "source scalar-string fixture should contain t=str cells");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "plain & <text>",
+        "WorksheetEditor should materialize source t=str scalar cells as text");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Formula
+            && b1->text_value() == "TEXT(C1,\"@\")&\"!\"",
+        "WorksheetEditor should materialize source t=str formula cells as formulas");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Number
+            && c1->number_value() == 7.0,
+        "WorksheetEditor should still materialize numeric siblings beside t=str cells");
+    check(!sheet.has_pending_changes(),
+        "source t=str materialization should start as a clean read-only session");
+    check(!editor.has_pending_changes(),
+        "source t=str materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "source t=str materialization should not queue public Patch edits");
+
+    editor.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after source t=str materialization should copy source entries");
+
+    sheet.set_cell("D2", fastxlsx::CellValue::text("string-type-new-inline"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "dirty source t=str projection should refresh dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>plain &amp; &lt;text&gt;</t></is></c>)",
+        "dirty projection should write source t=str scalar text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1"><f>TEXT(C1,"@")&amp;"!"</f></c>)",
+        "dirty projection should write source t=str formulas without cached values");
+    check_not_contains(worksheet_xml, "cached &amp; stale",
+        "dirty projection should not preserve stale source t=str formula cached values");
+    check_not_contains(worksheet_xml, R"(t="str")",
+        "dirty projection should not preserve source t=str cell type tokens");
+    check_contains(worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>string-type-new-inline</t></is></c>)",
+        "dirty projection should include later edits beside source t=str cells");
+    check(output_entries.find("xl/sharedStrings.xml") == output_entries.end(),
+        "dirty source t=str projection should not create a sharedStrings part");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-string-type",
+        "dirty source t=str projection should preserve untouched sheets");
+}
+
 void test_public_worksheet_editor_flattens_source_inline_rich_text()
 {
     const std::filesystem::path source =
@@ -15599,6 +15683,7 @@ int main(int argc, char* argv[])
 
         if (should_run_workbook_editor_shard(shard, "source-success")) {
         test_public_worksheet_editor_materializes_source_supported_values();
+        test_public_worksheet_editor_materializes_source_scalar_string_cells();
         test_public_worksheet_editor_flattens_source_inline_rich_text();
         test_public_worksheet_editor_materializes_prefixed_source_inline_strings();
         test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled();

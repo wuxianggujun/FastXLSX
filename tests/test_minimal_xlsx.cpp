@@ -733,6 +733,8 @@ void test_internal_cell_store_worksheet_loader()
         R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)"
         R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f><v>999</v></c>)"
         R"(<c r="E1"/>)"
+        R"(<c r="F1" t="str"><v>scalar &amp; text</v></c>)"
+        R"(<c r="G1" t="str"><f>TEXT(A1,"@")&amp;"!"</f><v>stale</v></c>)"
         R"(</row>)"
         R"(<row r="2">)"
         R"(<c r="A2"><v>0</v></c>)"
@@ -743,7 +745,7 @@ void test_internal_cell_store_worksheet_loader()
     const fastxlsx::detail::CellStore store =
         fastxlsx::detail::load_cell_store_from_worksheet_xml(worksheet_xml);
 
-    check(store.cell_count() == 6, "worksheet loader should materialize explicit cells");
+    check(store.cell_count() == 8, "worksheet loader should materialize explicit cells");
     const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
     check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number,
         "worksheet loader should load numeric cells");
@@ -769,7 +771,19 @@ void test_internal_cell_store_worksheet_loader()
     const fastxlsx::detail::CellRecord* blank = store.find_cell(1, 5);
     check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
         "worksheet loader should keep explicit blank cells");
-    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:E2",
+    const fastxlsx::detail::CellRecord* scalar_string = store.find_cell(1, 6);
+    check(scalar_string != nullptr && scalar_string->kind == fastxlsx::CellValueKind::Text,
+        "worksheet loader should load source t=str scalar cells as text");
+    check(scalar_string->text_value == "scalar & text",
+        "worksheet loader should decode source t=str scalar text");
+
+    const fastxlsx::detail::CellRecord* string_formula = store.find_cell(1, 7);
+    check(string_formula != nullptr && string_formula->kind == fastxlsx::CellValueKind::Formula,
+        "worksheet loader should load source t=str formula cells as formulas");
+    check(string_formula->text_value == "TEXT(A1,\"@\")&\"!\"",
+        "worksheet loader should decode source t=str formula text and ignore cached values");
+
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:G2",
         "source-loaded CellStore dimension reference should cover source cell extents");
 
     fastxlsx::detail::CellStore edited_store = store;
@@ -777,7 +791,7 @@ void test_internal_cell_store_worksheet_loader()
     edited_store.erase_cell(1, 2);
     edited_store.erase_cell(1, 3);
     edited_store.set_cell(3, 4, fastxlsx::CellValue::text("new extent"));
-    check(fastxlsx::detail::cell_store_dimension_reference(edited_store) == "A1:E3",
+    check(fastxlsx::detail::cell_store_dimension_reference(edited_store) == "A1:G3",
         "mutated source-loaded CellStore dimension reference should cover edited extents");
 
     const fastxlsx::detail::CellRecord* second_row = store.find_cell(2, 1);
@@ -794,6 +808,13 @@ void test_internal_cell_store_worksheet_loader()
     check(rebuilt_sheet_data.find("<c r=\"D1\"><f>SUM(A1:B1)&amp;\"&lt;ok&gt;\"</f></c>")
             != std::string::npos,
         "worksheet loader round-trip should preserve semantic formula text");
+    check(rebuilt_sheet_data.find(
+              "<c r=\"F1\" t=\"inlineStr\"><is><t>scalar &amp; text</t></is></c>")
+            != std::string::npos,
+        "worksheet loader round-trip should write source t=str scalar text as inline text");
+    check(rebuilt_sheet_data.find("<c r=\"G1\"><f>TEXT(A1,\"@\")&amp;\"!\"</f></c>")
+            != std::string::npos,
+        "worksheet loader round-trip should write source t=str formulas as formula text");
 
     std::size_t chunk_position = 0;
     const fastxlsx::detail::CellStore chunked_store =
@@ -1034,7 +1055,7 @@ void test_internal_cell_store_worksheet_loader()
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" t="str"><v>1</v></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="z"><v>1</v></c></row></sheetData></worksheet>)");
         },
         "worksheet loader should reject unsupported cell types");
 

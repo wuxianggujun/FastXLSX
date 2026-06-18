@@ -35929,7 +35929,7 @@ void test_package_editor_source_loaded_cell_store_payload_failure_preserves_edit
         {
             "fastxlsx-package-editor-source-cellstore-unsupported-type-source.xlsx",
             "fastxlsx-package-editor-source-cellstore-unsupported-type-output.xlsx",
-            R"(<worksheet><sheetData><row r="1"><c r="A1" t="str"><v>1</v></c></row></sheetData></worksheet>)",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="z"><v>1</v></c></row></sheetData></worksheet>)",
             "unsupported cell type",
         },
         {

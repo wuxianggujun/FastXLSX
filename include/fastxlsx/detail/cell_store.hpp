@@ -128,10 +128,11 @@ private:
 ///
 /// This is a first source-backed materialization slice for future small-file
 /// editor work. It consumes worksheet events without building a worksheet DOM
-/// and currently accepts only explicit cell references with number, boolean,
-/// inline-string, formula, and explicit blank cells. Text and formula payloads
-/// are normalized to semantic text by decoding XML entity references; cached
-/// formula values are intentionally ignored. Standalone worksheet XML/chunk
+/// and currently accepts only explicit cell references with number, `t="str"`
+/// scalar string, boolean, inline-string, formula, and explicit blank cells.
+/// Text and formula payloads are normalized to semantic text by decoding XML
+/// entity references; cached formula values are intentionally ignored.
+/// Standalone worksheet XML/chunk
 /// loading still has no workbook-level sharedStrings table context, so
 /// shared-string indexes fail on this generic path. Exact explicit source
 /// `s` attributes whose value is exactly `0` (for example `s="0"`,
@@ -139,10 +140,11 @@ private:
 /// default-like tokens such as empty, valueless, unquoted, unterminated,
 /// padded, signed, leading-zero, or entity-encoded values still fail, as do
 /// duplicate style attributes, qualified style-like attributes such as `x:s`,
-/// non-default style attributes, unsupported cell types, non-finite numeric values, invalid
-/// boolean values, formula cells with non-numeric cell types, missing or invalid
-/// cell references, row/cell reference mismatches, duplicate cell references,
-/// duplicate supported value wrappers, duplicate explicit row numbers,
+/// non-default style attributes, unsupported cell types, non-finite numeric
+/// values, invalid boolean values, formula cells with cell types other than
+/// numeric or `t="str"`, missing or invalid cell references, row/cell
+/// reference mismatches, duplicate cell references, duplicate supported value
+/// wrappers, duplicate explicit row numbers,
 /// duplicate key attributes inspected by this loader, malformed inspected
 /// attributes, XML entity decoding failures, out-of-order explicit row numbers,
 /// out-of-order cell references, formula elements with attributes, empty

@@ -200,8 +200,9 @@ struct WorksheetCellSnapshot {
 /// a standalone worksheet projection.
 /// Source materialization is intentionally narrow and mirrors the maintained
 /// source dependency summary in docs/API_DESIGN_AND_DOCUMENTATION.md: supported
-/// blank, scalar, formula, plain inline, simple inline rich text, and
-/// workbook-backed shared-string cells materialize into CellValue variants;
+/// blank, numeric/boolean/scalar `t="str"`, formula, plain inline, simple
+/// inline rich text, and workbook-backed shared-string cells materialize into
+/// CellValue variants;
 /// sharedStrings are read-only imports that dirty save_as() projects back as
 /// inline strings while preserving the source sharedStrings part; supported
 /// worksheet/inline/sharedStrings/rich-run element names are matched by
@@ -220,8 +221,7 @@ struct WorksheetCellSnapshot {
 /// performed. Missing/unsupported versions, duplicate/unknown declaration
 /// attributes, empty or invalid encoding names, empty or invalid standalone
 /// values, and `encoding` after `standalone` are malformed source XML. An XML
-/// declaration after
-/// leading whitespace text, comment, or ordinary
+/// declaration after leading whitespace text, comment, or ordinary
 /// processing-instruction prolog trivia is also malformed, while ordinary
 /// processing instructions after a valid XML declaration remain trivia.
 /// Case-varied XML-like processing-instruction targets such as `<?XML ...?>`
@@ -238,16 +238,18 @@ struct WorksheetCellSnapshot {
 /// summary is not sharedStrings writeback, style migration, rich-text
 /// preservation, XML repair, namespace repair, relationship repair/pruning,
 /// semantic metadata sync, or large-file low-memory random editing.
-/// Source cells, including blank/scalar cells, empty inline strings, inlineStr
-/// cells without text, simple source inline rich text runs flattened to plain
-/// text, workbook-backed shared string cells (including simple rich shared
-/// string items flattened to plain text), and formula cells with stale cached
-/// scalar values, at legal maximum coordinates such as
-/// `XFD1048576` are materialized sparsely and can be erased like any other
-/// source-backed record.
+/// Source cells, including blank/scalar cells, scalar `t="str"` string cells,
+/// empty inline strings, inlineStr cells without text, simple source inline
+/// rich text runs flattened to plain text, workbook-backed shared string cells
+/// (including simple rich shared string items flattened to plain text), and
+/// formula cells with stale cached scalar values, at legal maximum coordinates
+/// such as `XFD1048576` are materialized sparsely and can be erased like any
+/// other source-backed record.
 ///
 /// This first slice writes text as inline strings, formulas as formula text, and
-/// booleans/numbers as scalar cells. Workbook-backed source `t="s"` cells are
+/// booleans/numbers as scalar cells. Source `t="str"` scalar string cells are
+/// materialized as text, and `t="str"` formula cells keep the formula text
+/// while dropping cached values. Workbook-backed source `t="s"` cells are
 /// read through the existing sharedStrings part and materialized as plain text;
 /// source sharedStrings `xml:space` whitespace is kept in the materialized text,
 /// and simple source sharedStrings rich text runs are flattened to text while

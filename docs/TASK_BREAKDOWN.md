@@ -23753,6 +23753,42 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.509 - Materialize source t="str" cells as WorksheetEditor text/formulas
+
+Status: done.
+
+Type: internal CellStore source-load support, public WorksheetEditor
+source-success regression, Doxygen/API/README/docs sync; no new public symbol,
+no CMake membership change, and no package format expansion.
+
+Goal: let `WorksheetEditor` materialize source worksheet cells marked
+`t="str"` without treating them as unsupported source cell types.
+
+Output:
+- Generic CellStore worksheet loading accepts `t="str"` scalar string cells and
+  decodes `<v>` as `CellValue::text(...)`.
+- `t="str"` formula cells materialize as `CellValue::formula(...)`, and stale
+  cached `<v>` values are ignored.
+- Public source-success regression proves clean materialization stays
+  read-only/no-op save copy-original, while dirty save projects text as
+  inlineStr and formula cells as `<f>` without cached values.
+- Old unsupported-type negative fixtures now use `t="z"` so error/date/custom
+  type tokens remain fail-fast.
+
+Non-goals / boundary:
+- No date/error cell materialization, cached formula preservation,
+  sharedStrings writeback/rebuild/migration, style migration/merge, source
+  wrapper metadata preservation, relationship repair/pruning, XML repair, or
+  large-file low-memory random editing.
+- No formula evaluation or cached result generation.
+
+Acceptance:
+- Focused `fastxlsx.unit`, `fastxlsx.package_reader`,
+  `fastxlsx.package_editor.cellstore-source`, and
+  `fastxlsx.workbook_editor.source-success` pass.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

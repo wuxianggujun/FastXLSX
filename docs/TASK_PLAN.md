@@ -2268,6 +2268,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       with no editor/materialized state pollution, leaves `last_edit_error()`
       unchanged, and later valid replacement/save still works. This is XML
       markup fail-fast hygiene only, not CDATA import or preservation.
+      P8.521 pins the matching cell-internal DOCTYPE-like
+      unsupported-markup branch: source `<t>a<!DOCTYPE fastxlsx>b</t>` fails
+      through public materialization with no editor/materialized state
+      pollution, leaves `last_edit_error()` unchanged, and later valid
+      replacement/save still works. This is markup-declaration fail-fast
+      hygiene only, not DOCTYPE import or XML repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2521,7 +2527,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       no-state-pollution helper and does not block later valid save. P8.520
       proves a source cell-internal CDATA / unsupported-markup declaration
       stays fail-fast through the same public no-state-pollution helper and
-      does not block later valid save. P8.415 pins public row/column
+      does not block later valid save. P8.521 proves a source cell-internal
+      DOCTYPE-like unsupported-markup declaration stays fail-fast through the
+      same public no-state-pollution helper and does not block later valid
+      save. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2666,6 +2675,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `<t>a<![CDATA[hidden]]>b</t>` fails before a public worksheet handle is
       returned, leaves editor/pending/materialized state and `last_edit_error()`
       clean, and does not prevent a later valid save.
+      P8.521 adds cell-internal DOCTYPE-like unsupported-markup failure
+      evidence: `<t>a<!DOCTYPE fastxlsx>b</t>` fails before a public worksheet
+      handle is returned, leaves editor/pending/materialized state and
+      `last_edit_error()` clean, and does not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

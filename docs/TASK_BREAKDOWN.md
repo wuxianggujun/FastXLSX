@@ -24157,6 +24157,38 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.521 - Cover cell-internal DOCTYPE-like markup failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source materialization failure hygiene
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: add direct public coverage for a source DOCTYPE-like markup declaration
+inside a cell payload.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage injects
+  `<t>a<!DOCTYPE fastxlsx>b</t>` inside a source inline string cell.
+- `try_worksheet("Data")` and `worksheet("Data")` both fail with the existing
+  cell-internal comments / processing-instructions / unsupported-markup
+  diagnostic.
+- The failure keeps the editor clean, leaves public pending counts and dirty
+  materialized names empty, and does not update `last_edit_error()`.
+- A later valid `replace_sheet_data()` / `save_as()` still succeeds, proving
+  the failed source materialization did not poison the editor.
+
+Non-goals / boundary:
+- No cell-internal DOCTYPE import, XML markup declaration import, XML trivia
+  preservation, tolerant inline text parsing, XML repair, rich-text
+  preservation, metadata/range sync, or large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

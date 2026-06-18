@@ -10619,6 +10619,30 @@ void test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata
         "sharedStrings item with malformed processing instruction");
 
     expect_public_materialization_failure(
+        "empty-processing-instruction-target-before-root",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<? ?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed processing instruction",
+        "sharedStrings payload with empty processing instruction target before root");
+
+    expect_public_materialization_failure(
+        "empty-processing-instruction-target-inside-item",
+        [](std::map<std::string, std::string>& entries) {
+            entries.at("xl/sharedStrings.xml") =
+                R"(<?xml version="1.0" encoding="UTF-8"?>)"
+                R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+                R"(<si><? ?><t>real</t></si>)"
+                R"(</sst>)";
+        },
+        "CellStore sharedStrings loader found malformed processing instruction",
+        "sharedStrings item with empty processing instruction target");
+
+    expect_public_materialization_failure(
         "xml-declaration-inside-item",
         [](std::map<std::string, std::string>& entries) {
             entries.at("xl/sharedStrings.xml") =

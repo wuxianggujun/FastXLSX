@@ -2284,7 +2284,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       without stylesheet import, relationship handling, or special
       interpretation. P8.499 rejects malformed ordinary processing-instruction
       tokens that are missing the `?>` terminator, without adding a full prolog
-      parser.
+      parser. P8.500 rejects empty-target ordinary PI-like tokens such as
+      `<? ?>` on the same source sharedStrings path.
       P8.399 extends the same public facade coverage
       to source row/cell structure and numeric-payload failures: unsupported
       row/cell metadata attributes, duplicate/out-of-order rows, out-of-order
@@ -2731,6 +2732,8 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       stylesheet import, relationship handling, or special interpretation.
       P8.499 adds failure coverage for malformed ordinary PI tokens missing
       `?>` before the sharedStrings root and inside shared string items.
+      P8.500 adds matching failure coverage for empty-target ordinary PI-like
+      tokens such as `<? ?>`.
       P8.466 normalizes source explicit default style attributes: selected
       source cells with exact `s="0"` / `s='0'` materialize as no style handle
       and dirty projection omits both forms, while non-default source style ids

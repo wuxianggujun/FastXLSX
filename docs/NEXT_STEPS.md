@@ -109,6 +109,8 @@ import, relationship handling, or special interpretation.
 P8.499 tightens malformed ordinary PI hygiene on the same source sharedStrings
 path: processing-instruction trivia must end with `?>`, and unterminated PI-like
 tokens now fail fast instead of being guessed or skipped.
+P8.500 tightens the same ordinary PI boundary further: empty-target PI-like
+tokens such as `<? ?>` now fail fast instead of being accepted as trivia.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

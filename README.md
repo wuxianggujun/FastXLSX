@@ -380,7 +380,7 @@ instruction 仍作为 trivia 忽略，不 materialize。大小写变体的 XML-l
 processing instruction target（例如 `<?XML ...?>` / `<?Xml ...?>`）按 reserved
 target 失败，不作为 ordinary PI trivia 跳过；`<?xml-stylesheet ...?>` 仍按普通
 PI trivia 忽略，不导入或解析 stylesheet；普通 processing instruction 仍必须以
-`?>` 结束，缺失终止符的 malformed PI 会 fail fast。
+`?>` 结束且带非空 target，缺失终止符或空 target 的 malformed PI 会 fail fast。
 prefixed source worksheet / `sheetData` / row / cell / inlineStr wrapper
 element names 也会按 local-name 读取；dirty projection 仍使用 standalone worksheet
 XML，不保留 source prefixes，也不做 namespace repair。该 local-name 路径不检查

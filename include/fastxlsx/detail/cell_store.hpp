@@ -231,7 +231,7 @@ private:
 /// or `<?Xml ...?>` are rejected as reserved targets instead of ordinary
 /// prolog trivia; `<?xml-stylesheet ...?>` remains ordinary PI trivia and is
 /// not imported or interpreted, while malformed ordinary PI tokens missing
-/// `?>` are rejected.
+/// `?>` or lacking a non-empty target are rejected.
 /// Prefixed source worksheet markup, including worksheet, sheetData, row, cell,
 /// inline-string wrappers, rich-run wrappers, formula wrappers, and value
 /// wrappers, is likewise matched by local-name by the shared worksheet loader;

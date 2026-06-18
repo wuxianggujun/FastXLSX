@@ -230,7 +230,20 @@ void validate_shared_strings_xml_declaration(std::string_view raw_tag)
 
 void validate_shared_strings_processing_instruction(std::string_view raw_tag)
 {
-    if (raw_tag.size() < 4 || raw_tag.substr(raw_tag.size() - 2) != "?>") {
+    if (raw_tag.size() < 4 || raw_tag.substr(0, 2) != "<?"
+        || raw_tag.substr(raw_tag.size() - 2) != "?>") {
+        throw FastXlsxError(
+            "CellStore sharedStrings loader found malformed processing instruction");
+    }
+
+    std::size_t position = 2;
+    const std::size_t target_begin = position;
+    while (position < raw_tag.size() && !is_space(raw_tag[position])
+        && raw_tag[position] != '?' && raw_tag[position] != '>') {
+        ++position;
+    }
+
+    if (position == target_begin) {
         throw FastXlsxError(
             "CellStore sharedStrings loader found malformed processing instruction");
     }

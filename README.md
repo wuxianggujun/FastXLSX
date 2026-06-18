@@ -411,7 +411,8 @@ relationship-bearing wrapper metadata（例如 worksheet hyperlinks / tableParts
 range recalculation、relationship pruning、repair 或语义同步。
 `WorksheetEditor::set_cell()` 接受 caller-supplied `StyleId{0}`，但会把它归一化为
 no style handle；dirty output 不写 `s="0"`。非默认 style ids 仍会被拒绝，
-并且失败不会 mutate sparse store、dirty materialized session 或 queue pending edit。
+row/column 和 A1 overload 的失败都不会 mutate sparse store、dirty materialized
+session 或 queue pending edit。
 读取 source worksheet 时，显式默认 `s` 属性值精确为 `0`（例如 `s="0"`、
 `s='0'` 或 `s = "0"`）也会归一化为 no style handle；非默认 source style ids
 仍不导入、不迁移、不合并。这个 source 归一化不做数值宽松解析：空值、缺失值、

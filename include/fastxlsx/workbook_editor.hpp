@@ -361,9 +361,9 @@ struct WorksheetCellSnapshot {
 /// worksheet wrapper metadata during dirty projection, evaluate formulas,
 /// preserve cached formula results, rebuild calcChain, update
 /// tables/drawings/defined names/range metadata, or repair relationships.
-/// Non-default StyleId values are rejected by set_cell() until a public
-/// existing-workbook style policy exists. An explicit default StyleId{0} is
-/// accepted and normalized to no style handle; dirty save_as() output omits
+/// Non-default StyleId values are rejected by both set_cell() overloads until a
+/// public existing-workbook style policy exists. An explicit default StyleId{0}
+/// is accepted and normalized to no style handle; dirty save_as() output omits
 /// `s="0"`. Source cells with an unqualified `s` value exactly equal to `0`
 /// (for example `s="0"`, `s='0'`, or `s = "0"`) are normalized the same way
 /// during materialization; empty, valueless, unquoted, unterminated, padded,

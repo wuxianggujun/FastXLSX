@@ -23717,6 +23717,42 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.508 - Reject styled WorksheetEditor A1 cells without mutation
+
+Status: done.
+
+Type: public `WorksheetEditor::set_cell(std::string_view, ...)`
+style-boundary regression, Doxygen / README/API docs sync, and task-plan
+documentation; no new public symbol, no production code change, no CMake
+membership change, and no package format expansion.
+
+Goal: prove the strict A1 `WorksheetEditor::set_cell()` overload has the same
+caller-supplied non-default `StyleId` rejection hygiene as the row/column
+overload.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage now passes a non-default
+  styled `CellValue` through `sheet.set_cell("A1", ...)` and verifies
+  `FastXlsxError`.
+- The failed A1 call updates `WorkbookEditor::last_edit_error()` while keeping
+  the materialized session clean, aggregate pending state empty, sparse-cell
+  count and estimated sparse memory unchanged, and the existing `A1` source
+  value intact.
+- A later no-op `save_as()` remains on the source copy-original path.
+- Public docs now state that row/column and A1 `set_cell()` overloads share the
+  same non-default style rejection boundary.
+
+Non-goals / boundary:
+- No new A1 grammar, range mutation, style migration, style merge, style
+  preservation, existing-workbook style registry, source style import
+  broadening, relationship repair/pruning, clean-session commit semantics, or
+  large-file random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

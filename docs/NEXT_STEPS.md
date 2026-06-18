@@ -203,8 +203,9 @@ non-default style migration or existing-workbook style registry support.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later
-no-op `save_as()` remains copy-original. This is still rejection-only hygiene,
-not style migration, merge, or preservation.
+no-op `save_as()` remains copy-original. This is covered for both row/column
+and strict A1 `set_cell()` overloads. This is still rejection-only hygiene, not
+style migration, merge, or preservation.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

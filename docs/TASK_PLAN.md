@@ -2184,7 +2184,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `WorksheetEditor::set_cell()` boundary, proving the diagnostic path does
       not mutate, dirty, queue pending edits, or force dirty projection on a
       later no-op save. It remains separate from source style parsing and is not
-      style migration, merge, or preservation.
+      style migration, merge, or preservation. P8.508 extends the same proof to
+      the strict A1 `set_cell()` overload, preserving the existing sparse cell
+      and no-op copy-original save path after rejection.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2397,7 +2399,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       updates the public diagnostic, does not mutate or dirty the sparse store,
       queues no pending edit, and leaves no-op save on the copy-original path.
       This is rejection-only, not style migration, merge, preservation, or
-      existing-workbook style registry support. P8.415 pins public row/column
+      existing-workbook style registry support. P8.508 covers the same
+      non-default style rejection hygiene through the A1 overload. P8.415 pins
+      public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse

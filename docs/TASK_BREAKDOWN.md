@@ -23530,6 +23530,46 @@ Acceptance:
   remains supported.
 - `git diff --check` passes.
 
+## P8.503 - Reject invalid sharedStrings ordinary PI target characters
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` failure regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: make ordinary processing-instruction-like trivia whose target contains an
+obviously invalid ASCII XML name continuation character, such as
+`<?bad^name?>`, fail fast in source `xl/sharedStrings.xml`, instead of being
+accepted as legal PI trivia.
+
+Output:
+- The sharedStrings parser now rejects ASCII PI target continuation characters
+  outside the current narrow XML-name subset: letters, digits, `_`, `:`, `-`,
+  and `.`.
+- Public `WorksheetEditor` failure-hygiene coverage verifies invalid target
+  continuation characters before the sharedStrings root and inside a shared
+  string item fail without dirtying materialized state or blocking later valid
+  Patch edits.
+- Package-backed `CellStore` coverage verifies the same invalid target
+  continuation payloads keep `PackageEditor` edit-plan, manifest, calc policy,
+  and copied output state unchanged.
+
+Non-goals / boundary:
+- No full XML `PITarget` grammar, no non-ASCII XML name validation, no
+  processing-instruction data parser, no prolog schema validation, no XML
+  repair, no PI import/preservation, no stylesheet processing, no sharedStrings
+  writeback/rebuild/migration, no namespace repair, and no relationship
+  repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.package_editor.cellstore-failures` pass.
+- Adjacent source-success shards still pass to prove legal ordinary PI trivia
+  remains supported.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

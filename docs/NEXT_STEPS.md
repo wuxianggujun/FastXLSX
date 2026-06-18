@@ -117,6 +117,9 @@ without turning the source sharedStrings loader into a full XML Name validator.
 P8.502 tightens the ordinary PI target/data boundary: targets must be followed
 by whitespace or immediate `?>`, so `<?target?data?>` now fails fast instead of
 being guessed as ordinary PI trivia.
+P8.503 adds a matching ASCII target-continuation guard: ordinary PI targets
+containing obviously invalid ASCII XML name characters such as `^` now fail
+fast, without adding non-ASCII XML Name validation.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

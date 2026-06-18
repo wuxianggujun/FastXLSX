@@ -229,8 +229,9 @@ struct WorksheetCellSnapshot {
 /// as ordinary trivia; `<?xml-stylesheet ...?>` remains ordinary PI trivia and
 /// is not imported or interpreted, while malformed ordinary PI tokens missing
 /// `?>`, lacking a non-empty target, or starting with an obviously invalid
-/// ASCII name-start character, or lacking whitespace / immediate `?>` after
-/// the target are rejected. This summary is not sharedStrings
+/// ASCII name-start character, containing an obviously invalid ASCII name
+/// continuation character, or lacking whitespace / immediate `?>` after the
+/// target are rejected. This summary is not sharedStrings
 /// writeback, style migration, rich-text preservation, XML repair, namespace
 /// repair, relationship repair/pruning, semantic metadata sync, or large-file
 /// low-memory random editing.
@@ -278,7 +279,8 @@ struct WorksheetCellSnapshot {
 /// as ordinary trivia; `<?xml-stylesheet ...?>` remains ordinary PI trivia and
 /// is not imported or interpreted, while malformed ordinary PI tokens missing
 /// `?>`, lacking a non-empty target, starting with an obviously invalid ASCII
-/// name-start character, or lacking whitespace / immediate `?>` after the
+/// name-start character, containing an obviously invalid ASCII name
+/// continuation character, or lacking whitespace / immediate `?>` after the
 /// target are rejected.
 /// Source workbooks without a sharedStrings part still materialize supported
 /// non-`t="s"` cells and dirty saves do not create
@@ -626,7 +628,8 @@ private:
 /// remains ordinary PI trivia and is not imported or interpreted, while
 /// malformed ordinary PI tokens missing `?>` or lacking a non-empty target are
 /// rejected, as are targets starting with an obviously invalid ASCII name-start
-/// character or lacking whitespace / immediate `?>` after the target.
+/// character, containing an obviously invalid ASCII name continuation
+/// character, or lacking whitespace / immediate `?>` after the target.
 /// Prefixed source worksheet /
 /// sheetData / row / cell element names and inlineStr, rich-run, formula, and
 /// value-wrapper element names are likewise matched by local-name for

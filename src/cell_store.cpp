@@ -66,6 +66,12 @@ bool is_ascii_xml_name_start(char ch)
     return is_ascii_alpha(ch) || ch == '_' || ch == ':';
 }
 
+bool is_ascii_xml_name_char(char ch)
+{
+    return is_ascii_xml_name_start(ch) || is_ascii_digit(ch) || ch == '-'
+        || ch == '.';
+}
+
 bool is_xml_encoding_name(std::string_view value)
 {
     if (value.empty() || !is_ascii_alpha(value.front())) {
@@ -256,6 +262,14 @@ void validate_shared_strings_processing_instruction(std::string_view raw_tag)
         && !is_ascii_xml_name_start(raw_tag[target_begin])) {
         throw FastXlsxError(
             "CellStore sharedStrings loader found malformed processing instruction");
+    }
+    for (std::size_t target_index = target_begin + 1; target_index < position;
+         ++target_index) {
+        if (static_cast<unsigned char>(raw_tag[target_index]) < 0x80u
+            && !is_ascii_xml_name_char(raw_tag[target_index])) {
+            throw FastXlsxError(
+                "CellStore sharedStrings loader found malformed processing instruction");
+        }
     }
     if (raw_tag[position] == '?') {
         if (position + 1 >= raw_tag.size() || raw_tag[position + 1] != '>') {

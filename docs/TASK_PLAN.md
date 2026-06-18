@@ -2328,6 +2328,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       names, and `worksheet_catalog()` remain clean after both
       `try_worksheet()` and `worksheet()`. This is diagnostic evidence only,
       not behavior expansion or source repair.
+      P8.528 extends the same full clean-state check to the no-op `save_as()`
+      copy-original path after failed materialization, proving save-as recovery
+      does not create replacement/materialized diagnostics, pending edit
+      summaries, catalog drift, or `last_edit_error()` changes while the source
+      package bytes remain copied original.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2597,7 +2602,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       ignored. P8.527 proves those public materialization failures also leave
       replacement diagnostics, materialized diagnostics, pending edit summaries,
       source/planned catalog views, and `last_edit_error()` clean after both
-      handle-acquisition APIs. P8.415 pins public row/column
+      handle-acquisition APIs. P8.528 proves the later no-op save-as
+      copy-original path preserves the same diagnostics and catalog views after
+      failed materialization. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2776,6 +2783,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       replacement cells/names/memory, no dirty materialized cells/names/memory,
       no pending worksheet edit summaries, and unchanged source/planned catalog
       diagnostics after both `try_worksheet()` and `worksheet()` failures.
+      P8.528 carries those checks through the later no-op `save_as()` recovery
+      after failed materialization and keeps the byte-level copy-original
+      assertion.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

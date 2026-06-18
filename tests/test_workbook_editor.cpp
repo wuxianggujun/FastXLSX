@@ -194,8 +194,7 @@ void check_public_materialization_failure_clean_state(
     std::string_view stage,
     std::string_view recovery_sheet_name)
 {
-    const std::string prefix =
-        std::string(scenario) + " " + std::string(stage) + " failure";
+    const std::string prefix = std::string(scenario) + " " + std::string(stage);
 
     check(!editor.has_pending_changes(), prefix + " should keep editor clean");
     check(editor.pending_change_count() == 0,
@@ -270,7 +269,7 @@ void check_public_worksheet_materialization_failure_hygiene(
         expected_planned_names,
         expected_catalog,
         scenario,
-        "try_worksheet",
+        "try_worksheet failure",
         recovery_sheet_name);
 
     bool worksheet_failed = false;
@@ -290,7 +289,7 @@ void check_public_worksheet_materialization_failure_hygiene(
         expected_planned_names,
         expected_catalog,
         scenario,
-        "worksheet",
+        "worksheet failure",
         recovery_sheet_name);
 
     editor.replace_sheet_data(std::string(recovery_sheet_name),
@@ -10738,6 +10737,10 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
         "failed materialization no-op should preserve planned sheet catalog");
     check(editor.has_source_worksheet("Data"),
         "failed materialization no-op should preserve source sheet catalog");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
 
     bool try_failed = false;
     try {
@@ -10749,14 +10752,14 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
     }
     check(try_failed,
         "try_worksheet should fail when source materialization rejects style ids");
-    check(!editor.has_pending_changes(),
-        "try_worksheet materialization failure should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        "try_worksheet materialization failure should not queue public edits");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "try_worksheet materialization failure should not leave dirty materialized names");
-    check(!editor.last_edit_error().has_value(),
-        "try_worksheet materialization failure should not update last_edit_error");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "failed materialization no-op",
+        "try_worksheet failure",
+        "Untouched");
 
     bool worksheet_failed = false;
     try {
@@ -10768,25 +10771,25 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
     }
     check(worksheet_failed,
         "worksheet should fail when source materialization rejects style ids");
-    check(!editor.has_pending_changes(),
-        "worksheet materialization failure should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        "worksheet materialization failure should not queue public edits");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "worksheet materialization failure should not leave dirty materialized names");
-    check(!editor.last_edit_error().has_value(),
-        "worksheet materialization failure should not update last_edit_error");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "failed materialization no-op",
+        "worksheet failure",
+        "Untouched");
 
     editor.save_as(output);
 
-    check(!editor.has_pending_changes(),
-        "no-op save_as after failed materialization should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        "no-op save_as after failed materialization should not create public edits");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "no-op save_as after failed materialization should not expose dirty names");
-    check(!editor.last_edit_error().has_value(),
-        "no-op save_as after failed materialization should not update last_edit_error");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "failed materialization no-op",
+        "save_as copy-original",
+        "Untouched");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,

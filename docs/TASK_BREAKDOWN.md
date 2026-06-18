@@ -24440,6 +24440,40 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.528 - Strengthen failed materialization no-op save diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor` no-op save-as diagnostic hygiene regression and
+task-doc sync; no new public symbol, no production CMake target membership
+change, and no package format expansion.
+
+Goal: extend the complete public diagnostic hygiene checks from failed
+worksheet materialization into the no-op `save_as()` copy-original path that
+follows a failed materialization.
+
+Output:
+- `test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy_original()`
+  now snapshots `source_worksheet_names()`, `worksheet_names()`, and
+  `worksheet_catalog()` before the failing materialization attempts.
+- The test reuses the shared clean-state helper after failed
+  `try_worksheet()`, failed `worksheet()`, and the later successful no-op
+  `save_as()` copy-original path.
+- The no-op save-as recovery now proves no replacement diagnostics, no dirty
+  materialized diagnostics, no pending edit summaries, unchanged source/planned
+  catalog diagnostics, and unchanged `last_edit_error()`, while still proving
+  byte-level source package copy-original output.
+
+Non-goals / boundary:
+- No change to source-load behavior, no XML repair, no source metadata
+  preservation beyond copy-original no-op save-as, no sharedStrings/styles
+  migration, no relationship repair, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-success` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

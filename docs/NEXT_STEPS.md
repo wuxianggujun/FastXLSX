@@ -256,6 +256,13 @@ replacement diagnostics, materialized diagnostics, pending edit summaries,
 source/planned worksheet names, `worksheet_catalog()`, and `last_edit_error()`
 remain clean, while the later valid replacement/save recovery still works.
 This is diagnostic evidence only, not behavior expansion or source repair.
+P8.528 extends that complete clean-state check to the failed-materialization
+no-op `save_as()` copy-original path: after the failed `try_worksheet()` /
+`worksheet()` attempts and after the later no-op save, replacement diagnostics,
+materialized diagnostics, pending edit summaries, source/planned catalog views,
+and `last_edit_error()` remain clean while the output package still byte-copies
+the source entries. This is no-op save-as hygiene only, not source repair or
+semantic migration.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

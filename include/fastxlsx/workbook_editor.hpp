@@ -228,10 +228,10 @@ struct WorksheetCellSnapshot {
 /// or `<?Xml ...?>` are rejected as reserved targets instead of being skipped
 /// as ordinary trivia; `<?xml-stylesheet ...?>` remains ordinary PI trivia and
 /// is not imported or interpreted, while malformed ordinary PI tokens missing
-/// `?>` or lacking a non-empty target are rejected. This summary is not
-/// sharedStrings writeback, style migration, rich-text preservation,
-/// XML repair, namespace repair, relationship repair/pruning, semantic
-/// metadata sync, or large-file
+/// `?>`, lacking a non-empty target, or starting with an obviously invalid
+/// ASCII name-start character are rejected. This summary is not sharedStrings
+/// writeback, style migration, rich-text preservation, XML repair, namespace
+/// repair, relationship repair/pruning, semantic metadata sync, or large-file
 /// low-memory random editing.
 /// Source cells, including blank/scalar cells, empty inline strings, inlineStr
 /// cells without text, simple source inline rich text runs flattened to plain
@@ -622,7 +622,8 @@ private:
 /// targets instead of being skipped as ordinary trivia; `<?xml-stylesheet ...?>`
 /// remains ordinary PI trivia and is not imported or interpreted, while
 /// malformed ordinary PI tokens missing `?>` or lacking a non-empty target are
-/// rejected.
+/// rejected, as are targets starting with an obviously invalid ASCII name-start
+/// character.
 /// Prefixed source worksheet /
 /// sheetData / row / cell element names and inlineStr, rich-run, formula, and
 /// value-wrapper element names are likewise matched by local-name for

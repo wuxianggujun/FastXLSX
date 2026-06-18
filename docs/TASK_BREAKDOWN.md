@@ -23454,6 +23454,44 @@ Acceptance:
   remains supported.
 - `git diff --check` passes.
 
+## P8.501 - Reject invalid sharedStrings ordinary PI target starts
+
+Status: done.
+
+Type: source sharedStrings parser hardening, public `WorksheetEditor`
+failure-hygiene regression, package-backed `CellStore` failure regression,
+Doxygen/API docs sync, and task-plan documentation; no new public symbol, no
+CMake membership change, and no package format expansion.
+
+Goal: make ordinary processing-instruction-like trivia whose target starts with
+an obviously invalid ASCII XML name-start character, such as `<?-bad?>`, fail
+fast in source `xl/sharedStrings.xml`, instead of being accepted as legal PI
+trivia.
+
+Output:
+- The sharedStrings parser now rejects non-declaration PI targets starting with
+  invalid ASCII name-start characters before skipping ordinary PI trivia.
+- Public `WorksheetEditor` failure-hygiene coverage verifies invalid target
+  starts before the sharedStrings root and inside a shared string item fail
+  without dirtying materialized state or blocking later valid Patch edits.
+- Package-backed `CellStore` coverage verifies the same invalid target-start
+  payloads keep `PackageEditor` edit-plan, manifest, calc policy, and copied
+  output state unchanged.
+
+Non-goals / boundary:
+- No full XML `PITarget` name grammar, no non-ASCII XML name validation, no
+  processing-instruction data parser, no prolog schema validation, no XML
+  repair, no PI import/preservation, no stylesheet processing, no sharedStrings
+  writeback/rebuild/migration, no namespace repair, and no relationship
+  repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` and
+  `fastxlsx.package_editor.cellstore-failures` pass.
+- Adjacent source-success shards still pass to prove ordinary legal PI trivia
+  remains supported.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

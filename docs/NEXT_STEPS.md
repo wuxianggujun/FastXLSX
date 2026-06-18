@@ -4691,7 +4691,9 @@ Next tasks:
   rename old-name lookup, and remove lookup now match the duplicate-name rule:
   ASCII case-insensitive, with stored sheet name casing preserved. Invalid,
   duplicate, and overlong sheet-name failures must remain failure-before-state-change
-  guardrails so later valid small-workbook edits can proceed.
+  guardrails so later valid small-workbook edits can proceed. Sheet removal is
+  now pinned to subtract erased buffered cells from diagnostics and to avoid
+  stale formula-only `<calcPr>` metadata.
 - Document memory growth and size guardrails. This path now exposes
   `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`,
   `Worksheet::cell_count()`, and `Worksheet::estimated_memory_usage()` as

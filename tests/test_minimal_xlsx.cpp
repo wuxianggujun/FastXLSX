@@ -502,11 +502,36 @@ void test_workbook_memory_diagnostics()
     workbook.rename_worksheet("Data", "Renamed Data");
     check(workbook.cell_count() == 3,
         "worksheet rename should not change buffered cell count");
-    check(workbook.estimated_memory_usage() >= workbook_memory,
+    const std::size_t workbook_memory_after_rename = workbook.estimated_memory_usage();
+    check(workbook_memory_after_rename >= workbook_memory,
         "worksheet rename should not shrink the workbook memory estimate");
     check(workbook.worksheet("Renamed Data").estimated_memory_usage()
             >= data_memory_before_rename,
         "worksheet rename should not shrink the buffered worksheet memory estimate");
+
+    workbook.remove_worksheet("summary");
+    check(workbook.worksheet_count() == 1,
+        "worksheet removal should reduce the workbook sheet count");
+    check(workbook.cell_count() == 2,
+        "worksheet removal should subtract erased buffered cells");
+    check(!workbook.has_worksheet("Summary"),
+        "worksheet removal should hide the erased formula sheet");
+    check(workbook.worksheet("Renamed Data").cell_count() == 2,
+        "worksheet removal should preserve remaining buffered cells");
+    const std::size_t workbook_memory_after_remove = workbook.estimated_memory_usage();
+    check(workbook_memory_after_remove >= empty_memory,
+        "worksheet removal should leave a valid workbook memory estimate");
+    check(workbook_memory_after_remove < workbook_memory_after_rename,
+        "worksheet removal should lower the estimate for erased worksheet storage");
+
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-memory-diagnostics-after-remove.xlsx";
+    workbook.save(output_path);
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.at("xl/workbook.xml").find("<calcPr") == std::string::npos,
+        "removed formula-only sheets should not leave workbook calculation metadata");
+    check(!entries.contains("xl/worksheets/sheet2.xml"),
+        "removed sheets should not leave stale generated worksheet parts");
 }
 
 void test_internal_cell_store_sparse_boundary()

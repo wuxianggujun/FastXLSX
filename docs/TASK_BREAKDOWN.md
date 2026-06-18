@@ -25710,7 +25710,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ## P13 - Phase 3 metadata/styles hardening
 
 状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5、P13.6、P13.7、P13.8、
-P13.9、P13.10、P13.11 已落地。
+P13.9、P13.10、P13.11、P13.12 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -25728,6 +25728,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.9 README examples lane index：基础完成。
 - P13.10 small-workbook case-insensitive lookup consistency：基础完成。
 - P13.11 small-workbook sheet-name guardrail no-state-pollution：基础完成。
+- P13.12 small-workbook diagnostics after sheet removal：基础完成。
 
 ### P13.7 small-workbook Workbook size diagnostics
 
@@ -25908,6 +25909,50 @@ CMake dependency。
 验证：
 - `fastxlsx.unit` 覆盖 guardrail no-state-pollution。
 - 默认 CTest 和 `git diff --check` 通过。
+
+### P13.12 small-workbook diagnostics after sheet removal
+
+状态：基础完成。
+
+类型：small new-workbook diagnostics regression + task docs；不新增 public API /
+CMake dependency。
+
+目标：锁定 small `Workbook` sheet removal 后的 size diagnostics 与 calc metadata
+状态卫生。删除 buffered worksheet 后，`cell_count()` 应扣除被删除 sheet 的 cells，
+`estimated_memory_usage()` 应保持有效并反映 erased worksheet storage 的下降；
+删除唯一公式 sheet 后，生成 workbook 不应保留 stale `<calcPr>`。
+
+输入事实：
+- P13.7 已公开 `Workbook` / `Worksheet` 的 `cell_count()` 和
+  `estimated_memory_usage()` 近似诊断。
+- P13.10 已让 `remove_worksheet(name)` lookup 与 duplicate-name rule 一致，使用
+  ASCII case-insensitive matching。
+- `Workbook::save()` 会根据当前 remaining buffered worksheets 重新生成 worksheet
+  parts、workbook relationships 和 calc metadata。
+
+范围：
+- 在 `tests/test_minimal_xlsx.cpp` 扩展 `test_workbook_memory_diagnostics()`：
+  - 删除公式-only `Summary` sheet 后，workbook sheet count 和 cell count 下降。
+  - remaining `Renamed Data` sheet 的 buffered cells 保留。
+  - workbook memory estimate 保持有效，并低于删除前的估算值。
+  - 保存后不生成 stale `xl/worksheets/sheet2.xml`，且 workbook XML 不包含
+    `<calcPr>`。
+- 文档只记录当前 small new-workbook path 的诊断和状态卫生边界。
+
+非目标：
+- 不新增 hard memory budget、RSS 追踪、large-export progress API 或 benchmark。
+- 不新增 existing-file sheet delete、relationship repair、calcChain rebuild 或
+  package-preservation 语义。
+- 不改变 `estimated_memory_usage()` 的近似口径或 vector capacity 行为。
+
+验证：
+- `fastxlsx.unit` 覆盖 removal 后 diagnostics 和 calc metadata hygiene。
+- 默认 CTest 和 `git diff --check` 通过。
+- 2026-06-19 本地验证：`git diff --check` 通过；
+  `cmake --build --preset windows-nmake-release --target fastxlsx_tests` 通过；
+  `ctest --test-dir build/windows-nmake-release -R fastxlsx.unit --output-on-failure
+  --timeout 60` 通过；`ctest --test-dir build/windows-nmake-release
+  --output-on-failure --timeout 60` 通过 32/32。
 
 
 ### P13.1 default `StyleId{}` clears per-cell style

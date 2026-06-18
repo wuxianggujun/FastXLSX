@@ -24222,6 +24222,40 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.523 - Reject direct source cell text outside value wrappers
+
+Status: done.
+
+Type: `CellStore` source-load hardening, public `WorksheetEditor` source
+materialization failure hygiene regression, Doxygen/API/README/task-doc sync;
+no new public symbol, no CMake membership change, and no package format
+expansion.
+
+Goal: prevent malformed source cells such as `<c r="A1">direct-text</c>` from
+being silently materialized as blank just because the text appears outside
+`<v>` / `<t>` / `<f>` value wrappers.
+
+Output:
+- `CellStoreWorksheetLoader` now rejects non-whitespace `RawText` while a
+  source cell is active unless that text belongs to ignored inline rich
+  metadata.
+- Public `fastxlsx.workbook_editor.source-failure` coverage injects direct
+  cell text and verifies `try_worksheet("Data")` / `worksheet("Data")` fail
+  with the value-text-without-wrapper diagnostic.
+- The failure keeps editor/pending/materialized state clean, leaves
+  `last_edit_error()` unchanged, and still allows a later valid
+  `replace_sheet_data()` / `save_as()` recovery.
+
+Non-goals / boundary:
+- No direct cell text import, wrapper inference, blank coercion, XML repair,
+  schema validation, rich-text preservation, metadata/range sync, or large-file
+  low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-failure` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

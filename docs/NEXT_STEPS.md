@@ -224,6 +224,12 @@ leaves editor/pending/materialized/`last_edit_error()` state clean, and does
 not block a later valid replacement/save on an unrelated sheet. This is
 fail-fast XML prolog hygiene only, not XML declaration import, inline text
 repair, XML repair, or XML trivia preservation.
+P8.523 closes the adjacent raw cell-text gap: source `<c r="A1">direct-text</c>`
+now fails through `try_worksheet()` / `worksheet()` with the CellStore
+value-text-without-wrapper diagnostic, leaves
+editor/pending/materialized/`last_edit_error()` state clean, and still permits a later valid
+replacement/save. This is value-wrapper fail-fast hygiene only, not direct cell
+text import, wrapper inference, blank coercion, or XML repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags
@@ -543,9 +549,11 @@ validation, not row/cell sorting, duplicate merge, metadata preservation,
 numeric coercion, or repair.
 Source value-wrapper hygiene is now pinned too: unsupported scalar `<v>`
 attributes, duplicate scalar wrappers, inline/scalar wrapper mismatches, and
+non-whitespace direct cell text outside `<v>` / `<t>` / `<f>` wrappers, plus
 cell-internal comments / processing instructions / unsupported markup fail
 cleanly without partial sessions. This is strict validation, not wrapper repair,
-duplicate merge, inline/scalar coercion, comment import, or XML repair.
+duplicate merge, inline/scalar coercion, direct text import, comment import, or
+XML repair.
 Source XML/entity/attribute parser hygiene is pinned as well: unterminated
 entities, invalid or out-of-range character references, unquoted attributes, and
 duplicate source attributes fail cleanly without partial sessions. Recovery is
@@ -1447,9 +1455,10 @@ feature completion.
       Package-backed by-name loading now also has payload/state-machine failure
       state-hygiene coverage for shared string indexes, unsupported cell type
       tokens, invalid boolean payloads, duplicate scalar/inline-text wrappers,
-      cell-contained comments / processing instructions / CDATA, nested cell
-      input rejected at the event-reader boundary, and cells outside rows; these
-      remain failure-before-edit-state guardrails.
+      direct raw cell text outside value wrappers, cell-contained comments /
+      processing instructions / CDATA, nested cell input rejected at the
+      event-reader boundary, and cells outside rows; these remain
+      failure-before-edit-state guardrails.
       Package-backed by-name loading now also has coordinate/numeric failure
       state-hygiene coverage for missing or malformed cell references, row/column
       overflow, row/cell mismatches, invalid explicit row numbers, formula
@@ -1492,9 +1501,10 @@ feature completion.
       loadable as plain semantic text only.
       Unsupported inline-string rich text runs and phonetic metadata now also
       fail before materialization instead of being flattened into plain text.
-      Cell-contained comments, processing instructions, and unsupported markup
-      such as CDATA now also fail before materialization instead of being
-      silently dropped from inline text or other source cell payloads.
+      Direct raw cell text outside value wrappers, cell-contained comments,
+      processing instructions, and unsupported markup such as CDATA now also
+      fail before materialization instead of being silently dropped from inline
+      text or other source cell payloads.
       Focused loader coverage now also pins invalid boolean payload rejection.
       Malformed cell reference guardrails now also cover missing `r`,
       out-of-range `r`, zero-row refs, last-row overflow refs,

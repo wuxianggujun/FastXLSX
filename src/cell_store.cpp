@@ -1549,6 +1549,9 @@ public:
         case WorksheetEventKind::CellValue:
             consume_value_text(event);
             break;
+        case WorksheetEventKind::RawText:
+            consume_raw_text(event);
+            break;
         case WorksheetEventKind::CellEnd:
             end_cell();
             break;
@@ -1846,6 +1849,18 @@ private:
         } else if (cell.current_value_element == "t") {
             cell.inline_text += decoded_text;
         }
+    }
+
+    void consume_raw_text(const WorksheetEvent& event) const
+    {
+        if (!active_cell_.has_value() || !has_non_whitespace(event.raw_xml)) {
+            return;
+        }
+        if (active_cell_->type == SourceCellType::InlineString
+            && active_cell_->inline_ignored_metadata_depth > 0) {
+            return;
+        }
+        throw FastXlsxError("CellStore worksheet loader found value text without a value tag");
     }
 
     void end_cell()

@@ -150,6 +150,7 @@ private:
 /// out-of-order cell references, formula elements with attributes, empty
 /// formula text, cells outside row elements, and unsupported row/cell metadata,
 /// value-wrapper attributes, unsupported inline string metadata, or
+/// non-whitespace cell text outside `<v>` / `<t>` / `<f>` wrappers,
 /// cell-contained comments / processing instructions / unsupported markup fail
 /// before a store is returned. Simple source inline rich text runs are
 /// flattened to text; rich formatting is not preserved, and inline phonetic /

@@ -2280,6 +2280,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `last_edit_error()` unchanged, and later valid replacement/save still
       works on an unrelated sheet. This is XML prolog fail-fast hygiene only,
       not XML declaration import or XML repair.
+      P8.523 rejects direct raw source cell text outside value wrappers:
+      source `<c r="A1">direct-text</c>` now fails through public
+      materialization with no editor/materialized state pollution, leaves
+      `last_edit_error()` unchanged, and later valid replacement/save still
+      works. This is value-wrapper fail-fast hygiene only, not direct text
+      import, wrapper inference, blank coercion, or XML repair.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2538,7 +2544,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       same public no-state-pollution helper and does not block later valid
       save. P8.522 proves a source cell-internal true XML declaration token
       stays fail-fast through the same public no-state-pollution helper and
-      does not block later valid save on an unrelated sheet. P8.415 pins public row/column
+      does not block later valid save on an unrelated sheet. P8.523 proves
+      source direct raw cell text outside `<v>` / `<t>` / `<f>` wrappers stays
+      fail-fast instead of being coerced to blank. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2692,6 +2700,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       is returned, leaves editor/pending/materialized state and
       `last_edit_error()` clean, and does not prevent a later valid save on an
       unrelated sheet.
+      P8.523 adds direct raw cell-text failure evidence:
+      `<c r="A1">direct-text</c>` fails before a public worksheet handle is
+      returned instead of materializing as blank, leaves
+      editor/pending/materialized state and `last_edit_error()` clean, and does
+      not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

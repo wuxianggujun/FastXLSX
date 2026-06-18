@@ -354,10 +354,11 @@ struct WorksheetCellSnapshot {
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
 /// or cell metadata attributes, coerce invalid numeric payloads, migrate
 /// sharedStrings indexes, validate or merge non-default style ids, import
-/// unsupported value-wrapper shapes, preserve inline rich text formatting,
-/// import inline phonetic metadata, repair malformed inline rich text metadata,
-/// infer or clamp invalid/out-of-range source coordinates, tolerate
-/// malformed XML/entity text, malformed source attributes, duplicate worksheet
+/// unsupported value-wrapper shapes, tolerate non-whitespace source cell text
+/// outside `<v>` / `<t>` / `<f>` wrappers, preserve inline rich text
+/// formatting, import inline phonetic metadata, repair malformed inline rich
+/// text metadata, infer or clamp invalid/out-of-range source coordinates,
+/// tolerate malformed XML/entity text, malformed source attributes, duplicate worksheet
 /// roots or duplicate sheetData boundaries, repair invalid row/cell nesting,
 /// infer missing row scope for non-empty rows or cells, preserve source
 /// worksheet wrapper metadata during dirty projection, evaluate formulas,
@@ -1002,7 +1003,8 @@ public:
     /// Missing referenced sharedStrings parts, invalid sharedStrings
     /// relationship targets, malformed sharedStrings XML/entity/attribute
     /// syntax, invalid shared string indexes, non-default source style
-    /// attributes, unsupported source cell metadata, and malformed worksheet
+    /// attributes, unsupported source cell metadata, non-whitespace source cell
+    /// text outside `<v>` / `<t>` / `<f>` wrappers, and malformed worksheet
     /// XML fail before returning a handle. Explicit source `s` attributes whose
     /// value is exactly `0` (for example `s="0"`, `s='0'`, or `s = "0"`) are
     /// normalized to no style handle rather than preserved; default-like source

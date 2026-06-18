@@ -13024,6 +13024,12 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
         "source scalar value in inline string cell");
 
     expect_public_value_wrapper_materialization_failure(
+        "direct-cell-text",
+        worksheet_xml(R"(<sheetData><row r="1"><c r="A1">direct-text</c></row></sheetData>)"),
+        "CellStore worksheet loader found value text without a value tag",
+        "source direct cell text without value wrapper");
+
+    expect_public_value_wrapper_materialization_failure(
         "comment-inside-cell",
         worksheet_xml(
             R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a<!--hidden-->b</t></is></c></row></sheetData>)"),

@@ -360,7 +360,8 @@ summary" 保持一致：
 - unsupported source cell type tokens 仍 fail fast，例如 error `t="e"`、
   date-like `t="d"` 和 custom/unknown `t="z"`；这些不会被导入成普通值。
 - cell-internal comments、processing instructions、XML declaration tokens、
-  CDATA / DOCTYPE-like unsupported markup 仍
+  CDATA / DOCTYPE-like unsupported markup，以及 `<v>` / `<t>` / `<f>`
+  wrapper 外的非空 cell raw text 仍
   fail fast；cell-external comment / PI 可以在只读 materialization 时被忽略，
   dirty projection 不保留这类 XML trivia。
 - 非目标保持不变：不做 rich-text preservation、style migration、

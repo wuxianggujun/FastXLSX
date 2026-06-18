@@ -24513,6 +24513,46 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.530 - Strengthen missing worksheet no-op save diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor` missing throwing worksheet lookup diagnostic
+hygiene regression and task-doc sync; no new public symbol, no production
+CMake target membership change, and no package format expansion.
+
+Goal: give the `worksheet("Missing")` throwing lookup path the same
+clean-state/no-op save-as evidence as the missing optional `try_worksheet()`
+path when a prior public edit failure has already populated
+`last_edit_error()`.
+
+Output:
+- Added
+  `test_public_worksheet_missing_throws_and_preserves_diagnostics()`.
+- The test first records a prior public edit diagnostic, snapshots
+  `source_worksheet_names()`, `worksheet_names()`, and `worksheet_catalog()`,
+  and then verifies `worksheet("Missing")` throws a `FastXlsxError` mentioning
+  the missing sheet.
+- The same full clean-state helper now runs after the failed replacement
+  precondition, after the missing throwing lookup, and after the later no-op
+  `save_as()` copy-original path.
+- The missing `worksheet()` lookup/no-op save-as path now proves no replacement
+  diagnostics, no dirty materialized diagnostics, no pending edit summaries,
+  unchanged source/planned catalog diagnostics, and preserved prior
+  `last_edit_error()`, while still proving byte-level source package
+  copy-original output.
+
+Non-goals / boundary:
+- No behavior expansion, no missing-sheet creation, no source repair, no
+  source metadata preservation beyond copy-original no-op save-as, no
+  sharedStrings/styles migration, no relationship repair, and no new public
+  API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

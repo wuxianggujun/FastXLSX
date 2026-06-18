@@ -1812,6 +1812,73 @@ void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
         "no-op save_as after missing try_worksheet should copy source entries");
 }
 
+void test_public_worksheet_missing_throws_and_preserves_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-missing-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-missing-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] {
+        editor.replace_sheet_data("Missing", {{fastxlsx::CellValue::number(1.0)}});
+    }), "precondition failed replacement should record a public diagnostic before worksheet");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "precondition failed replacement should leave last_edit_error populated before worksheet");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "missing worksheet",
+        "after failed replacement precondition",
+        "Missing",
+        prior_error);
+
+    bool missing_threw = false;
+    try {
+        (void)editor.worksheet("Missing");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        missing_threw = true;
+        check_contains(error.what(), "Missing",
+            "worksheet missing-sheet exception should identify the sheet name");
+    }
+    check(missing_threw,
+        "worksheet should throw for a missing planned worksheet");
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "missing worksheet",
+        "after missing lookup",
+        "Missing",
+        prior_error);
+
+    editor.save_as(output);
+
+    check_public_materialization_failure_clean_state(
+        editor,
+        expected_source_names,
+        expected_planned_names,
+        expected_catalog,
+        "missing worksheet",
+        "after no-op save_as",
+        "Missing",
+        prior_error);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after missing worksheet should copy source entries");
+}
+
 void test_public_try_worksheet_existing_handle_reads_mutates_and_saves()
 {
     const std::filesystem::path source =
@@ -16653,6 +16720,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_handles_invalidate_after_move_assignment();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
+        test_public_worksheet_missing_throws_and_preserves_diagnostics();
         test_public_try_worksheet_existing_handle_reads_mutates_and_saves();
         test_public_worksheet_editor_normalizes_explicit_default_style_id();
         test_public_worksheet_editor_rejects_non_default_style_id_without_mutation();

@@ -270,6 +270,13 @@ edit summaries, source/planned catalog views, and the prior `last_edit_error()`
 unchanged while the output package remains byte-for-byte source-copy original.
 This is missing-lookup/no-op save-as hygiene only, not missing-sheet creation,
 source repair, or semantic migration.
+P8.530 applies that same no-op save-as hygiene to the throwing
+`worksheet("Missing")` lookup after a prior public edit failure: the thrown
+`FastXlsxError` identifies the missing sheet, and replacement/materialized
+diagnostics, pending edit summaries, source/planned catalog views, and the
+prior `last_edit_error()` remain unchanged through the later byte-for-byte
+copy-original save. This is throwing-lookup hygiene only, not missing-sheet
+creation, source repair, or semantic migration.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

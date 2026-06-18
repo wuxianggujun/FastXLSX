@@ -2338,6 +2338,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       optional lookup and later no-op save preserve replacement/materialized
       diagnostics, pending edit summaries, source/planned catalog views, and
       the prior `last_edit_error()`.
+      P8.530 applies the same contract to the throwing `worksheet("Missing")`
+      path after a prior public edit failure, proving the exception identifies
+      the missing sheet while diagnostics, catalog views, and prior
+      `last_edit_error()` remain unchanged through no-op save-as.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2612,7 +2616,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       failed materialization. P8.529 proves a missing optional
       `try_worksheet()` lookup after a prior public edit failure also preserves
       those diagnostics, catalog views, and prior `last_edit_error()` through
-      the no-op copy-original save path. P8.415 pins public row/column
+      the no-op copy-original save path. P8.530 proves the analogous throwing
+      `worksheet("Missing")` path keeps the same diagnostics and catalog views
+      unchanged while still exposing a missing-sheet exception. P8.415 pins
+      public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2798,6 +2805,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       recovery after a prior public edit failure, preserving the prior
       `last_edit_error()` while keeping catalog diagnostics and byte-level
       copy-original output unchanged.
+      P8.530 applies the same checks to missing `worksheet()` throwing
+      recovery after a prior public edit failure, preserving the prior
+      `last_edit_error()` and byte-level copy-original output while requiring
+      the exception to identify the missing sheet.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

@@ -12486,6 +12486,18 @@ void test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly
         "source date-like cell");
 
     expect_public_shape_materialization_failure(
+        "custom-cell-type",
+        write_text_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-shape</t></is></c>)",
+                R"(<c r="A1" t="z"><v>custom-token</v></c>)");
+        },
+        "unsupported cell type: z",
+        "source custom cell type");
+
+    expect_public_shape_materialization_failure(
         "invalid-boolean",
         write_boolean_source,
         [](std::map<std::string, std::string>& entries) {

@@ -24062,6 +24062,37 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.518 - Cover custom source cell type failure hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` source materialization failure hygiene
+regression plus API/README/task-doc sync; no new public symbol, no production
+code change, no CMake membership change, and no package format expansion.
+
+Goal: add representative public coverage for an unsupported custom/unknown
+source OpenXML cell type token.
+
+Output:
+- Public `fastxlsx.workbook_editor.public` coverage mutates a source inline text
+  cell into `<c r="A1" t="z"><v>custom-token</v></c>`.
+- `try_worksheet("Data")` and `worksheet("Data")` both fail with
+  `unsupported cell type: z`.
+- The failure keeps the editor clean, leaves public pending counts and dirty
+  materialized names empty, and does not update `last_edit_error()`.
+- A later valid `replace_sheet_data()` / `save_as()` still succeeds, proving
+  the failed source materialization did not poison the editor.
+
+Non-goals / boundary:
+- No custom cell type import, date/error support, tolerant unknown-token import,
+  XML repair, style/sharedStrings migration, metadata/range sync, or large-file
+  low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

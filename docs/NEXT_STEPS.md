@@ -193,6 +193,12 @@ materialized state, and a later successful `replace_sheet_data("Untouched",
 ...)` clears the diagnostic and saves only the valid replacement. This is
 coarse public facade diagnostic ordering only, not error history, rollback,
 save-as/load diagnostics, relationship repair, or semantic dependency sync.
+P8.518 adds the representative custom/unknown source cell type boundary:
+`t="z"` fails through `try_worksheet()` / `worksheet()` with the unsupported
+cell type diagnostic, leaves editor/pending/materialized/`last_edit_error()`
+state clean, and the same editor can still save a later valid replacement.
+This is fail-fast hygiene only, not custom cell type import, tolerant fallback,
+date/error support, or metadata migration.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

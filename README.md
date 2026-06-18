@@ -357,6 +357,8 @@ summary" 保持一致：
 - 支持的 worksheet / inlineStr / formula / value-wrapper / sharedStrings /
   rich-run element names 按 local-name 匹配；namespace URI 不验证。unsupported
   local-name 仍 fail fast。
+- unsupported source cell type tokens 仍 fail fast，例如 error `t="e"`、
+  date-like `t="d"` 和 custom/unknown `t="z"`；这些不会被导入成普通值。
 - 非目标保持不变：不做 rich-text preservation、style migration、
   relationship repair/pruning、XML repair、namespace repair、semantic metadata
   sync 或 large-file low-memory random editing。

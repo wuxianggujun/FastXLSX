@@ -2253,6 +2253,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       is public facade diagnostic ordering only, not rollback, structured error
       history, relationship repair, dependency sync, or large-file random
       editing.
+      P8.518 pins the representative custom source cell type boundary:
+      source `t="z"` fails through public materialization without dirtying
+      editor/materialized state or updating `last_edit_error()`, and later
+      valid replacement/save still works. This is source-shape fail-fast
+      hygiene only, not custom type import or tolerant fallback.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2498,7 +2503,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       proves the same latest-error ordering across mixed public edit surfaces:
       failed replacement, failed rename, and failed `WorksheetEditor` mutation
       replace each other, while a later successful replacement clears the
-      diagnostic and saves only the valid payload. P8.415 pins
+      diagnostic and saves only the valid payload. P8.518 proves a custom
+      unknown source cell type token (`t="z"`) stays fail-fast at public
+      materialization time, without state pollution and without blocking a
+      later valid replacement/save. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2632,6 +2640,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `WorksheetEditor::set_cell()` replace the same public `last_edit_error()`
       slot in order, leave editor/materialized state clean, and a following
       successful replacement clears it.
+      P8.518 adds custom source cell type failure evidence: source `t="z"`
+      fails before a public worksheet handle is returned, leaves
+      editor/pending/materialized state and `last_edit_error()` clean, and does
+      not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

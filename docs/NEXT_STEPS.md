@@ -205,6 +205,12 @@ with the cell comments / processing-instructions / unsupported-markup
 diagnostic, leaves editor/pending/materialized/`last_edit_error()` state clean,
 and does not block a later valid replacement/save. This is fail-fast XML trivia
 hygiene only, not PI import, inline text repair, or XML trivia preservation.
+P8.520 pins the matching cell-internal unsupported-markup branch:
+`<t>a<![CDATA[hidden]]>b</t>` fails through `try_worksheet()` / `worksheet()`
+with the cell comments / processing-instructions / unsupported-markup
+diagnostic, leaves editor/pending/materialized/`last_edit_error()` state clean,
+and does not block a later valid replacement/save. This is fail-fast markup
+hygiene only, not CDATA import, inline text repair, or XML trivia preservation.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

@@ -2263,6 +2263,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       with no editor/materialized state pollution, leaves `last_edit_error()`
       unchanged, and later valid replacement/save still works. This is XML
       trivia fail-fast hygiene only, not PI import or preservation.
+      P8.520 pins the matching cell-internal unsupported-markup branch:
+      source `<t>a<![CDATA[hidden]]>b</t>` fails through public materialization
+      with no editor/materialized state pollution, leaves `last_edit_error()`
+      unchanged, and later valid replacement/save still works. This is XML
+      markup fail-fast hygiene only, not CDATA import or preservation.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2513,8 +2518,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       materialization time, without state pollution and without blocking a
       later valid replacement/save. P8.519 proves a source cell-internal
       processing instruction stays fail-fast through the same public
-      no-state-pollution helper and does not block later valid save. P8.415 pins
-      public row/column
+      no-state-pollution helper and does not block later valid save. P8.520
+      proves a source cell-internal CDATA / unsupported-markup declaration
+      stays fail-fast through the same public no-state-pollution helper and
+      does not block later valid save. P8.415 pins public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
       mutation failures update the diagnostic without dirtying the sparse
@@ -2653,6 +2660,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       not prevent a later valid save.
       P8.519 adds cell-internal processing-instruction failure evidence:
       `<t>a<?fastxlsx hidden?>b</t>` fails before a public worksheet handle is
+      returned, leaves editor/pending/materialized state and `last_edit_error()`
+      clean, and does not prevent a later valid save.
+      P8.520 adds cell-internal CDATA / unsupported-markup failure evidence:
+      `<t>a<![CDATA[hidden]]>b</t>` fails before a public worksheet handle is
       returned, leaves editor/pending/materialized state and `last_edit_error()`
       clean, and does not prevent a later valid save.
       P8.438 pins positive blank/erase projection after that recovery:

@@ -9648,6 +9648,7 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
     std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
     replace_first_or_throw(shared_strings_before, "?><sst",
         "?><?fastxlsx sharedStrings-trivia?>"
+        "<?fastxlsx.data-1:probe legal-target?>"
         "<?xml-stylesheet type=\"text/xsl\" href=\"sharedStrings.xsl\"?><sst");
     rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings_before);
     {
@@ -9677,6 +9678,9 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
     check(shared_strings_before.find("<?fastxlsx sharedStrings-trivia?>")
             != std::string::npos,
         "source sharedStrings success fixture should include prolog processing instruction trivia");
+    check(shared_strings_before.find("<?fastxlsx.data-1:probe legal-target?>")
+            != std::string::npos,
+        "source sharedStrings success fixture should include legal PI target continuation trivia");
     check(shared_strings_before.find("<?xml-stylesheet") != std::string::npos,
         "source sharedStrings success fixture should include xml-stylesheet PI trivia");
     check(shared_strings_before.find(R"(standalone="yes")") != std::string::npos,

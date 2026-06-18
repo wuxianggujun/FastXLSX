@@ -23570,6 +23570,43 @@ Acceptance:
   remains supported.
 - `git diff --check` passes.
 
+## P8.504 - Preserve legal sharedStrings ordinary PI target characters
+
+Status: done.
+
+Type: source sharedStrings parser success regression, public `WorksheetEditor`
+success coverage, package-backed `CellStore` success coverage, Doxygen/API docs
+sync, and task-plan documentation; no new public symbol, no production code
+change, no CMake membership change, and no package format expansion.
+
+Goal: prove the P8.503 ASCII target-continuation guard is narrow: ordinary
+processing-instruction targets using legal ASCII continuation characters such as
+`.`, `-`, digits, and `:` remain ignored source `xl/sharedStrings.xml` PI trivia.
+
+Output:
+- Public `WorksheetEditor` source sharedStrings success coverage now includes a
+  `<?fastxlsx.data-1:probe ...?>` prolog PI and still materializes / dirty
+  projects source shared string cells.
+- Package-backed prefixed sharedStrings success coverage includes the same
+  legal target-continuation shape and still materializes / projection-preserves
+  source sharedStrings bytes.
+- Docs distinguish the narrow invalid-character guard from a broad PI ban or
+  full XML Name validator.
+
+Non-goals / boundary:
+- No full XML `PITarget` grammar, no non-ASCII XML name validation, no
+  processing-instruction data parser, no prolog schema validation, no XML
+  repair, no PI import/preservation, no stylesheet processing, no sharedStrings
+  writeback/rebuild/migration, no namespace repair, and no relationship
+  repair/pruning.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.source-success` and
+  `fastxlsx.package_editor.cellstore-source` pass.
+- Adjacent source-failure shards still pass to prove malformed PI target
+  hardening remains intact.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

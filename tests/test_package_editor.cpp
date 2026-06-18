@@ -34761,6 +34761,7 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_shared_s
     const std::string prefixed_shared_strings =
         R"(<?xml version='1.1' encoding='UTF_8-Test.1' standalone='no'?>)"
         R"(<?xml-stylesheet type="text/xsl" href="prefixed-sharedStrings.xsl"?>)"
+        R"(<?fastxlsx.data-1:probe legal-target?>)"
         R"(<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test" count="2" uniqueCount="2">)"
         R"(<x:si><x:t>package-prefixed-A&amp;B</x:t></x:si>)"
         R"(<x:si><x:r><x:t>rich-</x:t></x:r><x:r><x:t xml:space="preserve"> tail </x:t></x:r>)"
@@ -34775,6 +34776,8 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_shared_s
         "package-backed prefixed sharedStrings fixture should cover legal declaration metadata");
     check_contains(prefixed_shared_strings, "<?xml-stylesheet",
         "package-backed prefixed sharedStrings fixture should cover xml-stylesheet PI trivia");
+    check_contains(prefixed_shared_strings, "<?fastxlsx.data-1:probe",
+        "package-backed prefixed sharedStrings fixture should cover legal PI target continuation trivia");
     rewrite_package_entry_as_stored(source_path, "xl/sharedStrings.xml", prefixed_shared_strings);
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source_path);

@@ -120,6 +120,9 @@ being guessed as ordinary PI trivia.
 P8.503 adds a matching ASCII target-continuation guard: ordinary PI targets
 containing obviously invalid ASCII XML name characters such as `^` now fail
 fast, without adding non-ASCII XML Name validation.
+P8.504 pins the positive side of that guard: ordinary PI targets containing
+legal ASCII continuation characters such as `.`, `-`, digits, and `:` remain
+ignored trivia.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

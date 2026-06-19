@@ -286,6 +286,90 @@ void check_public_saved_materialized_recovery_clean_state(
         prefix + " should preserve the saved materialized value");
 }
 
+void check_public_dirty_materialized_recovery_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& first_handle,
+    fastxlsx::WorksheetEditor& second_handle,
+    const std::vector<std::string>& expected_source_names,
+    const std::vector<std::string>& expected_planned_names,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
+    std::string_view transient_sheet_name,
+    std::string_view scenario,
+    std::size_t expected_pending_change_count,
+    std::size_t expected_cell_count,
+    std::size_t expected_memory_usage)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should not create edit diagnostics");
+    check(editor.has_pending_changes(),
+        prefix + " should preserve dirty public facade state");
+    check(editor.pending_change_count() == expected_pending_change_count,
+        prefix + " should preserve the pre-save public edit count");
+    check(editor.pending_replacement_cell_count() == 0,
+        prefix + " should not invent replacement cells");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        prefix + " should not invent replacement sheet names");
+    check(!editor.has_pending_replacement("Data"),
+        prefix + " should not report a Data replacement");
+    check(!editor.has_pending_replacement(transient_sheet_name),
+        prefix + " should not revive transient replacement state");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        prefix + " should keep replacement memory empty");
+    check(first_handle.has_pending_changes() && second_handle.has_pending_changes(),
+        prefix + " should dirty existing handles");
+    check(first_handle.cell_count() == expected_cell_count &&
+            second_handle.cell_count() == expected_cell_count,
+        prefix + " should expose the expected sparse cell count on both handles");
+    check(first_handle.estimated_memory_usage() == expected_memory_usage &&
+            second_handle.estimated_memory_usage() == expected_memory_usage,
+        prefix + " should expose the expected materialized memory on both handles");
+
+    const std::vector<std::string> materialized_names =
+        editor.pending_materialized_worksheet_names();
+    check(materialized_names.size() == 1 && materialized_names[0] == "Data",
+        prefix + " should report the restored source name as dirty materialized");
+    check(editor.pending_materialized_cell_count() == expected_cell_count,
+        prefix + " should report the expected dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_memory_usage,
+        prefix + " should report the expected dirty materialized memory");
+
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+        editor.pending_worksheet_edits();
+    check(summaries.size() == 1,
+        prefix + " should expose one dirty materialized summary");
+    if (summaries.size() == 1) {
+        const auto& summary = summaries[0];
+        check(summary.source_name == "Data" && summary.planned_name == "Data",
+            prefix + " summary should use restored source/planned names");
+        check(!summary.renamed,
+            prefix + " summary should not be marked renamed");
+        check(!summary.sheet_data_replaced,
+            prefix + " summary should not invent sheetData replacement");
+        check(summary.replacement_cell_count == 0,
+            prefix + " summary should not invent replacement cells");
+        check(summary.estimated_replacement_memory_usage == 0,
+            prefix + " summary should keep replacement memory empty");
+        check(summary.materialized_dirty,
+            prefix + " summary should report dirty materialized state");
+        check(summary.materialized_cell_count == expected_cell_count,
+            prefix + " summary should report the expected materialized cell count");
+        check(summary.estimated_materialized_memory_usage == expected_memory_usage,
+            prefix + " summary should report the expected materialized memory");
+    }
+
+    check(editor.source_worksheet_names() == expected_source_names,
+        prefix + " should preserve source worksheet_names");
+    check(editor.worksheet_names() == expected_planned_names,
+        prefix + " should preserve planned worksheet_names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), expected_catalog),
+        prefix + " should preserve worksheet_catalog");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet(transient_sheet_name),
+        prefix + " should preserve the restored planned catalog name");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -4875,6 +4959,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_
         "matching reacquire before blank/erase should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired blank/erase handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     const fastxlsx::CellValue saved_before_blank_erase = reacquired.get_cell(1, 1);
     check(saved_before_blank_erase.kind() == fastxlsx::CellValueKind::Text &&
@@ -4903,38 +4992,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_
         check(!reacquired.try_cell(2, 1).has_value(),
             "post-recovery existing erase should remove source-backed A2");
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "post-recovery blank/erase dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 2,
-        "post-recovery blank/erase dirty diagnostics should report remaining sparse records");
-    check(editor.estimated_pending_materialized_memory_usage() ==
-            sheet.estimated_memory_usage(),
-        "post-recovery blank/erase dirty memory should match the shared session");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "post-recovery blank/erase mutations should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "post-recovery blank/erase summary should use restored names");
-            check(!summary.renamed,
-                "post-recovery blank/erase summary should not be marked renamed");
-            check(summary.materialized_dirty,
-                "post-recovery blank/erase summary should report dirty materialized state");
-            check(summary.materialized_cell_count == 2,
-                "post-recovery blank/erase summary should report remaining sparse records");
-            check(!summary.sheet_data_replaced,
-                "post-recovery blank/erase summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientBlankErase"),
-        "post-recovery blank/erase mutations should preserve the restored planned catalog name");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientBlankErase",
+        "post-recovery blank/erase mutations",
+        3,
+        2,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),

@@ -322,6 +322,16 @@ diagnostics stable, replacement/materialized diagnostics and pending edit
 summaries empty, catalog views and borrowed handles preserved, and the saved
 materialized value intact. This is missing-erase no-op hygiene only, not erase
 tombstones, source reload, catalog repair, commit, undo, or rollback semantics.
+P8.537 strengthens the positive blank/erase projection after that recovery with
+a dirty-materialized recovery helper: `set_cell("A1", CellValue::blank())` and
+`erase_cell(2, 1)` still drive the existing explicit blank / source-cell erase
+save-as projection, while diagnostics now also prove empty `last_edit_error()`,
+empty replacement diagnostics, restored-name dirty materialized aggregate
+counts/memory, one dirty `pending_worksheet_edits()` summary, unchanged
+source/planned catalog views, transient-name absence, and dirty borrowed
+handles. This is dirty-state diagnostic hygiene only, not new blank/erase
+behavior, source reload, catalog repair, commit, undo, rollback, or erase
+tombstones.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

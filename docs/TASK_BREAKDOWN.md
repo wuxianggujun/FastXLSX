@@ -24788,6 +24788,48 @@ Acceptance:
   flush semantics.
 - `git diff --check` passes.
 
+## P8.537 - Strengthen post-recovery blank/erase dirty-state diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery blank/erase
+dirty-state diagnostic strengthening and task-doc sync; no new public symbol, no
+production CMake target membership change, and no package format expansion.
+
+Goal: upgrade the existing P8.438 positive blank/erase projection regression to
+a shared dirty-materialized recovery helper, while preserving the focused
+explicit-blank and existing source-cell erase projection assertions.
+
+Output:
+- Added `check_public_dirty_materialized_recovery_state()` for the dirty side of
+  rename-back failed-save recovery checks.
+- `test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_erase_projection()`
+  now keeps its semantic checks for explicit blank A1 and erased source-backed
+  A2, then proves `last_edit_error()` stays empty, replacement diagnostics stay
+  empty, dirty materialized worksheet names / cell count / memory match the
+  shared session, `pending_worksheet_edits()` reports one restored-name dirty
+  materialized summary, source/planned catalog views remain unchanged, the
+  transient name stays absent, and both borrowed handles are dirty before the
+  second save.
+- Existing save-as assertions remain focused on `<c r="A1"/>`, B1 preservation,
+  row 2 / `placeholder-a2` omission, dimension refresh to `A1:B1`, and
+  transient planned-name absence.
+
+Non-goals / boundary:
+- No behavior expansion, no source reload, no catalog repair, no source package
+  mutation, no transaction/undo/rollback model, no erase tombstones, no
+  style/sharedStrings migration, no relationship repair, no broad range metadata
+  recalculation, and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish blank/erase dirty-state diagnostics from new
+  behavior, source reload, catalog repair, source mutation, commit, undo,
+  rollback, erase tombstones, sharedStrings/style migration, or relationship
+  repair.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

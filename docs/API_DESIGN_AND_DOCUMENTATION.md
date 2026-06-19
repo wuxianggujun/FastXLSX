@@ -952,6 +952,14 @@ Current F2 gate audit:
   and retain the saved materialized value. This is missing-erase no-op hygiene
   only, not erase tombstones, source reload, catalog repair, source mutation,
   commit, undo, rollback, or diagnostic-triggered flush semantics.
+- P8.537 adds the dirty-state counterpart for positive blank/erase mutations
+  after that recovery: explicit blank A1 and erased source-backed A2 now also
+  prove empty edit/replacement diagnostics, dirty materialized aggregate
+  counts/memory, one restored-name dirty edit summary, unchanged catalog views,
+  transient-name absence, and dirty borrowed handles before save-as. This is
+  helper/diagnostic hygiene for existing projection behavior only, not source
+  reload, catalog repair, source mutation, commit, undo, rollback,
+  sharedStrings/style migration, relationship repair, or erase tombstones.
 - P8.415 pins row/column overload coordinate guardrails for
   `WorksheetEditor::try_cell()`, `get_cell()`, `set_cell()`, and `erase_cell()`.
   Invalid row/column reads throw without updating `last_edit_error()`, invalid
@@ -1123,6 +1131,15 @@ Current F2 gate audit:
   transient planned name. This is sparse-store projection hygiene only, not
   erase tombstones, source wrapper metadata preservation, style/sharedStrings
   migration, source reload, commit, undo, or rollback semantics.
+- P8.537 strengthens that blank/erase projection with a dirty-materialized
+  recovery helper: after explicit blank A1 and source-backed A2 erase, public
+  diagnostics now also prove empty `last_edit_error()`, empty replacement
+  diagnostics, restored-name dirty materialized aggregate count/memory, one
+  dirty `pending_worksheet_edits()` summary, unchanged source/planned catalog
+  views, transient-name absence, and dirty borrowed handles. This is
+  dirty-state diagnostic hygiene only, not new blank/erase behavior, source
+  reload, catalog repair, source mutation, commit, undo, rollback, or erase
+  tombstones.
 - P8.439 pins positive scalar/formula projection after that recovery: number,
   boolean, and formula mutations remain valid dirty sparse-store edits after
   the safe-save/reacquire path. The next `save_as()` writes numeric `<v>`,
@@ -1600,7 +1617,8 @@ Draft `WorksheetEditor` acceptance matrix:
 | Source dependency addenda P8.534 | P8.534 applies the same complete saved-materialized-session clean-state helper to invalid handle-read failures after rename-back failed-save recovery, proving invalid row/column reads, invalid A1 references, and invalid range snapshots preserve sparse counts/memory, prior edit count, `last_edit_error()`, replacement/materialized diagnostics, pending edit summaries, catalog views, borrowed handles, and the saved cell value. | This is invalid-read hygiene only; it does not infer or clamp coordinates, reload source data, repair catalogs, mutate source packages, commit, undo, rollback, flush diagnostics, or add public API. |
 | Source dependency addenda P8.535 | P8.535 applies the same complete saved-materialized-session clean-state helper to invalid handle-mutation failures after rename-back failed-save recovery, proving invalid `set_cell()` / `erase_cell()` calls preserve sparse counts/memory, the expected invalid-mutation `last_edit_error()`, replacement/materialized diagnostics, pending edit summaries, catalog views, borrowed handles, and the saved cell value; the next valid mutation still clears the diagnostic and saves. | This is invalid-mutation hygiene only; it does not infer or clamp coordinates, reload source data, repair catalogs, mutate source packages, commit, undo, rollback, flush diagnostics, or add public API. |
 | Source dependency addenda P8.536 | P8.536 applies the same complete saved-materialized-session clean-state helper to successful missing-cell erase no-ops after rename-back failed-save recovery, proving valid row/column and A1 `erase_cell()` calls targeting absent cells clear a prior mutation diagnostic while preserving sparse counts/memory, replacement/materialized diagnostics, pending edit summaries, catalog views, borrowed handles, and the saved cell value. | This is missing-erase no-op hygiene only; it does not create erase tombstones, reload source data, repair catalogs, mutate source packages, commit, undo, rollback, flush diagnostics, or add public API. |
-| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, P8.411 proves missing optional lookup does not disturb no-op save, P8.529 strengthens missing-lookup no-op save diagnostics after a prior public edit failure, P8.530 adds the same evidence for throwing missing `worksheet()` lookup, P8.531 strengthens post-recovery catalog-query clean-state diagnostics, P8.532 strengthens post-recovery pending-diagnostic clean-state diagnostics, P8.533 strengthens post-recovery handle-read clean-state diagnostics, P8.534 strengthens post-recovery invalid-read clean-state diagnostics, P8.535 strengthens post-recovery invalid-mutation clean-state diagnostics, and P8.536 strengthens post-recovery missing-erase no-op clean-state diagnostics. |
+| Source dependency addenda P8.537 | P8.537 adds a dirty-materialized recovery helper to the positive blank/erase projection after rename-back failed-save recovery, proving explicit blank A1 and erased source-backed A2 keep empty edit/replacement diagnostics, restored-name dirty materialized counts/memory, one dirty pending edit summary, unchanged catalog views, transient-name absence, and dirty borrowed handles before save-as. | This is dirty-state diagnostic hygiene only; it does not add new blank/erase behavior, source reload, catalog repair, source mutation, commit, undo, rollback, erase tombstones, sharedStrings/style migration, relationship repair, or public API. |
+| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, P8.411 proves missing optional lookup does not disturb no-op save, P8.529 strengthens missing-lookup no-op save diagnostics after a prior public edit failure, P8.530 adds the same evidence for throwing missing `worksheet()` lookup, P8.531 strengthens post-recovery catalog-query clean-state diagnostics, P8.532 strengthens post-recovery pending-diagnostic clean-state diagnostics, P8.533 strengthens post-recovery handle-read clean-state diagnostics, P8.534 strengthens post-recovery invalid-read clean-state diagnostics, P8.535 strengthens post-recovery invalid-mutation clean-state diagnostics, P8.536 strengthens post-recovery missing-erase no-op clean-state diagnostics, and P8.537 strengthens post-recovery blank/erase dirty-state diagnostics. |
 | Diagnostics | Errors must identify load vs mutation vs save-as preflight context and preserve recovery guidance. | Materialization failures throw `FastXlsxError` at `try_worksheet()` / `worksheet()` time and do not update public `last_edit_error()`; missing `try_worksheet()` returns empty and preserves prior diagnostics; save-as and queued edit diagnostics remain separate. |
 
 ### Source dependency materialization summary

@@ -2371,6 +2371,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       mutation diagnostic while preserving sparse counts, memory estimates,
       replacement/materialized diagnostics, pending summaries, catalog views,
       borrowed-handle cleanliness, and the saved value.
+      P8.537 adds the parallel dirty-materialized recovery helper to the
+      positive blank/erase projection case, proving empty edit/replacement
+      diagnostics, restored-name dirty aggregate counts/memory, one dirty
+      pending summary, unchanged catalogs, transient-name absence, and dirty
+      borrowed handles while preserving the existing blank/erase save-as XML
+      projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2662,7 +2668,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       avoiding sparse-store/catalog drift until a later valid mutation clears
       the diagnostic. P8.536 applies it to successful missing-cell erase no-ops
       after recovery, while preserving sparse-store/catalog state and clearing a
-      prior mutation diagnostic without creating erase tombstones. P8.415 pins
+      prior mutation diagnostic without creating erase tombstones. P8.537
+      applies a dirty-state variant to the positive blank/erase projection after
+      recovery, preserving explicit blank and existing source-cell erase save-as
+      semantics while hardening materialized diagnostics, summaries, handle
+      dirtiness, transient-name absence, and catalog checks. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2880,6 +2890,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostics without sparse-store drift, diagnostic flushes, source
       reloads, catalog drift, stale handle dirtiness, pending summary creation,
       saved-value reloads, or erase tombstones.
+      P8.537 strengthens the following positive blank/erase case with a shared
+      dirty-materialized recovery helper, proving the dirty diagnostics and
+      catalog state line up with the restored `Data` session without source
+      reloads, relationship repair, sharedStrings/style migration, or new
+      blank/erase semantics.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

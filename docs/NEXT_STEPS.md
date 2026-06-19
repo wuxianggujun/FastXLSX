@@ -469,6 +469,17 @@ caused by unterminated attributes fail without dirtying materialized state or
 blocking later valid Patch edits. This validates generic sharedStrings tag
 attribute syntax but does not add XML repair, schema validation, attribute
 whitelisting, sharedStrings writeback, or migration.
+P8.548 applies the shared materialization-failure hygiene helper to the lazy
+malformed sharedStrings XML boundary where the selected sheet is `Shared` and
+the recovery Patch edit targets `Data`: both `try_worksheet("Shared")` and
+`worksheet("Shared")` now prove the root-missing-`sst` diagnostic, empty dirty
+state, empty replacement/materialized diagnostics, preserved source/planned
+catalog views, unchanged `last_edit_error()`, no target replacement leakage,
+and later valid `replace_sheet_data("Data", ...)` save-as usability. This is
+diagnostic/test-helper hygiene only, not parser behavior expansion, XML repair,
+schema validation, attribute whitelisting, relationship repair,
+sharedStrings rebuild/writeback/pruning/index migration, source reload, commit,
+undo, rollback, or public API.
 Malformed source sharedStrings relationship targets are also pinned at the
 public facade: external, query-qualified, fragment-qualified,
 malformed-percent, decoded-null, and package-root-escaping targets fail through

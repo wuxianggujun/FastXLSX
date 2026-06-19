@@ -25323,6 +25323,48 @@ Acceptance:
   undo, rollback, sharedStrings/style migration, or relationship repair.
 - `git diff --check` passes.
 
+## P8.548 - Strengthen lazy malformed sharedStrings XML failure diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` lazy sharedStrings malformed XML failure
+diagnostic strengthening and task-doc sync; no new public symbol, no
+production CMake target membership change, no parser behavior expansion, and
+no package format expansion.
+
+Goal: reuse the shared public materialization-failure hygiene helper for the
+lazy malformed `xl/sharedStrings.xml` case where the selected sheet with
+`t="s"` cells is `Shared`, while the later valid Patch recovery edit still
+targets `Data`.
+
+Output:
+- `check_public_worksheet_materialization_failure_hygiene()` now accepts a
+  configurable failure target sheet name while preserving the existing default
+  `Data` target for prior source-failure cases.
+- `test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_index_cells()`
+  now uses that helper for the failing `Shared` materialization path, so both
+  `try_worksheet("Shared")` and `worksheet("Shared")` prove the
+  root-missing-`sst` diagnostic, empty dirty state, empty replacement and
+  materialized diagnostics, preserved source/planned catalog views, unchanged
+  `last_edit_error()`, no target replacement leakage, and later valid
+  `replace_sheet_data("Data", ...)` save-as usability.
+
+Non-goals / boundary:
+- No parser behavior expansion, no sharedStrings XML repair, no schema
+  validation, no attribute whitelist, no relationship repair, no
+  sharedStrings rebuild/writeback/pruning/index migration, no source reload,
+  no source package mutation, no transaction/undo/rollback model, no dense
+  allocation, no large-file low-memory random editing claim, and no public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish lazy malformed sharedStrings XML failure
+  diagnostics from parser behavior expansion, XML repair, schema validation,
+  attribute whitelisting, relationship repair, sharedStrings migration or
+  writeback, source reload, commit, undo, rollback, or public API.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

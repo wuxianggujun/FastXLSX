@@ -382,13 +382,18 @@ void check_public_worksheet_materialization_failure_hygiene(
     std::string_view replacement_text,
     std::string_view scenario,
     std::string_view recovery_sheet_name = "Data",
-    std::string_view output_entry_name = "xl/worksheets/sheet1.xml")
+    std::string_view output_entry_name = "xl/worksheets/sheet1.xml",
+    std::string_view target_sheet_name = "Data")
 {
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     check(editor.has_worksheet("Data"),
         std::string(scenario) + " should preserve planned sheet catalog");
     check(editor.has_source_worksheet("Data"),
         std::string(scenario) + " should preserve source sheet catalog");
+    check(editor.has_worksheet(std::string(target_sheet_name)),
+        std::string(scenario) + " should preserve target planned sheet catalog");
+    check(editor.has_source_worksheet(std::string(target_sheet_name)),
+        std::string(scenario) + " should preserve target source sheet catalog");
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
@@ -396,7 +401,7 @@ void check_public_worksheet_materialization_failure_hygiene(
 
     bool try_failed = false;
     try {
-        (void)editor.try_worksheet("Data");
+        (void)editor.try_worksheet(std::string(target_sheet_name));
     } catch (const fastxlsx::FastXlsxError& error) {
         try_failed = true;
         check_contains(error.what(), expected_diagnostic,
@@ -413,10 +418,12 @@ void check_public_worksheet_materialization_failure_hygiene(
         scenario,
         "try_worksheet failure",
         recovery_sheet_name);
+    check(!editor.has_pending_replacement(std::string(target_sheet_name)),
+        std::string(scenario) + " try_worksheet failure should not report a target replacement");
 
     bool worksheet_failed = false;
     try {
-        (void)editor.worksheet("Data");
+        (void)editor.worksheet(std::string(target_sheet_name));
     } catch (const fastxlsx::FastXlsxError& error) {
         worksheet_failed = true;
         check_contains(error.what(), expected_diagnostic,
@@ -433,6 +440,8 @@ void check_public_worksheet_materialization_failure_hygiene(
         scenario,
         "worksheet failure",
         recovery_sheet_name);
+    check(!editor.has_pending_replacement(std::string(target_sheet_name)),
+        std::string(scenario) + " worksheet failure should not report a target replacement");
 
     editor.replace_sheet_data(std::string(recovery_sheet_name),
         {{fastxlsx::CellValue::text(std::string(replacement_text))}});
@@ -10148,6 +10157,8 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-output.xlsx");
+    const std::filesystem::path failure_recovery_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-failure-recovery-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -10187,24 +10198,15 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "lazy malformed sharedStrings XML materialization should not mutate the source package");
 
-    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
-    bool failed_shared_sheet = false;
-    try {
-        (void)failing_editor.worksheet("Shared");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        failed_shared_sheet = true;
-        check_contains(error.what(),
-            "CellStore sharedStrings loader root is missing an sst element",
-            "worksheet with shared string indexes should fail on malformed sharedStrings XML");
-    }
-    check(failed_shared_sheet,
-        "worksheet with shared string indexes should force malformed sharedStrings XML parsing");
-    check(!failing_editor.has_pending_changes(),
-        "failed malformed sharedStrings XML lookup should keep the editor clean");
-    check(failing_editor.pending_materialized_worksheet_names().empty(),
-        "failed malformed sharedStrings XML lookup should not leave a dirty materialized name");
-    check(!failing_editor.last_edit_error().has_value(),
-        "failed malformed sharedStrings XML lookup should not update last_edit_error");
+    check_public_worksheet_materialization_failure_hygiene(
+        source,
+        failure_recovery_output,
+        "CellStore sharedStrings loader root is missing an sst element",
+        "usable-after-lazy-malformed-sharedstrings",
+        "lazy malformed sharedStrings XML",
+        "Data",
+        "xl/worksheets/sheet1.xml",
+        "Shared");
 }
 
 void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until_index_cells()

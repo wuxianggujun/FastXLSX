@@ -3226,6 +3226,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       this validates generic tag attribute syntax but is not XML repair, schema
       validation, attribute whitelisting, sharedStrings migration/writeback, or
       relationship repair.
+      P8.548 reuses the shared materialization-failure hygiene helper for the
+      lazy malformed sharedStrings XML case where `Shared` is the failing
+      selected sheet and `Data` remains the valid recovery edit target, proving
+      `try_worksheet("Shared")` and `worksheet("Shared")` both keep dirty
+      materialized/replacement diagnostics empty, preserve source/planned
+      catalogs and `last_edit_error()`, avoid target replacement leakage, and
+      still allow a later `replace_sheet_data("Data", ...)` save-as without
+      expanding parser behavior, XML repair, schema validation, attribute
+      whitelisting, relationship repair, sharedStrings migration/writeback,
+      source reload, or public API.
       P8.459 pins malformed sharedStrings relationship targets at the same
       public facade: external, query-qualified, fragment-qualified,
       malformed-percent, decoded-null, and package-root-escaping targets fail

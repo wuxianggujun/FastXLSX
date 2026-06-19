@@ -2360,6 +2360,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       coordinates, A1 references, and ranges do not change sparse counts,
       memory estimates, diagnostics, catalog views, handle dirtiness, or the
       saved materialized value.
+      P8.535 applies the helper to invalid handle mutations, proving rejected
+      `set_cell()` / `erase_cell()` calls preserve sparse counts, memory
+      estimates, replacement/materialized diagnostics, pending summaries,
+      catalog views, borrowed-handle cleanliness, the saved value, and the
+      expected invalid-mutation `last_edit_error()` until a later valid mutation
+      clears it.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2645,7 +2651,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       to handle-level read APIs after recovery, including cell reads, sparse
       snapshots, cell count, and memory estimates. P8.534 applies it to invalid
       handle-level read failures after recovery, while keeping coordinate
-      validation fail-fast rather than repair/clamp behavior. P8.415 pins
+      validation fail-fast rather than repair/clamp behavior. P8.535 applies it
+      to invalid handle-level mutations after recovery, while keeping mutation
+      validation fail-fast, preserving the invalid-mutation diagnostic, and
+      avoiding sparse-store/catalog drift until a later valid mutation clears
+      the diagnostic. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2852,6 +2862,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       invalid coordinates/references/ranges fail without sparse-store drift,
       diagnostic flushes, source reloads, catalog drift, stale handle dirtiness,
       pending summary creation, or saved-value reloads.
+      P8.535 applies the same helper to invalid handle-mutation failures,
+      proving rejected `set_cell()` / `erase_cell()` calls fail without
+      sparse-store drift, diagnostic flushes, source reloads, catalog drift,
+      stale handle dirtiness, pending summary creation, or saved-value reloads,
+      while preserving the invalid-mutation `last_edit_error()` until a later
+      valid mutation clears it.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

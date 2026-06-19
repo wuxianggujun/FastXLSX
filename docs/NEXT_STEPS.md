@@ -307,6 +307,14 @@ cell-count/memory diagnostics stable and preserve prior edit count,
 edit summaries, unchanged catalog views, clean borrowed handles, and the saved
 materialized value. This is invalid-read hygiene only, not coordinate repair,
 clamping, source reload, catalog repair, commit, undo, or rollback semantics.
+P8.535 applies the helper to invalid handle mutations after that recovery:
+invalid `set_cell()` / `erase_cell()` calls keep sparse cell-count/memory
+diagnostics stable, preserve the invalid-mutation `last_edit_error()`, keep
+replacement/materialized diagnostics and pending edit summaries empty, preserve
+catalog views and borrowed handles, and retain the saved materialized value.
+The next valid mutation still clears the diagnostic and saves. This is invalid
+mutation hygiene only, not coordinate repair, clamping, source reload, catalog
+repair, commit, undo, or rollback semantics.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

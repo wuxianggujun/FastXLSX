@@ -4500,6 +4500,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_p
         "matching reacquire before invalid mutations should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired invalid-mutation handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     const fastxlsx::CellValue saved_before_invalid_mutations =
         reacquired.get_cell(1, 1);
@@ -4538,7 +4543,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_p
     check(threw_fastxlsx_error([&] { reacquired.erase_cell("A1:B2"); }),
         "post-recovery invalid erase should reject range references");
 
-    check(editor.last_edit_error().has_value(),
+    const std::optional<std::string> invalid_mutation_error = editor.last_edit_error();
+    check(invalid_mutation_error.has_value(),
         "post-recovery invalid mutations should update last_edit_error");
     check(reacquired.cell_count() == baseline_count &&
             sheet.cell_count() == baseline_count,
@@ -4546,27 +4552,20 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_p
     check(reacquired.estimated_memory_usage() == baseline_memory &&
             sheet.estimated_memory_usage() == baseline_memory,
         "post-recovery invalid mutations should not change sparse memory estimates");
-    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
-        "post-recovery invalid mutations should keep saved handles clean");
-    check(editor.pending_change_count() == 3,
-        "post-recovery invalid mutations should not queue another public edit");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "post-recovery invalid mutations should not dirty materialized names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "post-recovery invalid mutations should keep dirty cell count clear");
-    check(editor.estimated_pending_materialized_memory_usage() == 0,
-        "post-recovery invalid mutations should keep dirty memory clear");
-    check(editor.pending_worksheet_edits().empty(),
-        "post-recovery invalid mutations should keep summaries empty");
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientInvalidMutations"),
-        "post-recovery invalid mutations should preserve the restored planned catalog name");
 
-    const fastxlsx::CellValue saved_after_invalid_mutations =
-        reacquired.get_cell(1, 1);
-    check(saved_after_invalid_mutations.kind() == fastxlsx::CellValueKind::Text &&
-            saved_after_invalid_mutations.text_value() ==
-                "rename-back-invalid-mutations-first",
-        "post-recovery invalid mutations should preserve the saved materialized value");
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-invalid-mutations-first",
+        "TransientInvalidMutations",
+        "post-recovery invalid mutations",
+        3,
+        invalid_mutation_error);
+
     const fastxlsx::CellValue unchanged_after_invalid_mutations = sheet.get_cell("A2");
     check(unchanged_after_invalid_mutations.kind() == fastxlsx::CellValueKind::Text &&
             unchanged_after_invalid_mutations.text_value() == "placeholder-a2",

@@ -1435,7 +1435,7 @@ std::string build_merge_cells(const detail::WorksheetWriterState& worksheet)
     }
 
     std::string xml = "<mergeCells count=\"";
-    xml += std::to_string(worksheet.merged_ranges.size());
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(worksheet.merged_ranges.size()));
     xml += "\">";
     for (const CellRange& range : worksheet.merged_ranges) {
         xml += "<mergeCell ref=\"";
@@ -1480,7 +1480,7 @@ void append_conditional_color_scale_xml(std::string& xml, const ConditionalColor
     xml += "<conditionalFormatting sqref=\"";
     xml += detail::sqref(scale.ranges);
     xml += "\"><cfRule type=\"colorScale\" priority=\"";
-    xml += std::to_string(scale.priority);
+    detail::append_unsigned_decimal(xml, scale.priority);
     xml += "\"><colorScale>";
     append_color_scale_point_xml(xml, scale.lower);
     if (scale.midpoint.has_value()) {
@@ -1500,7 +1500,7 @@ void append_conditional_data_bar_xml(std::string& xml, const ConditionalDataBar&
     xml += "<conditionalFormatting sqref=\"";
     xml += detail::sqref(bar.ranges);
     xml += "\"><cfRule type=\"dataBar\" priority=\"";
-    xml += std::to_string(bar.priority);
+    detail::append_unsigned_decimal(xml, bar.priority);
     xml += "\"><dataBar";
     if (!bar.rule.show_value) {
         xml += " showValue=\"0\"";
@@ -1528,7 +1528,7 @@ void append_conditional_icon_set_xml(std::string& xml, const ConditionalIconSet&
     xml += "<conditionalFormatting sqref=\"";
     xml += detail::sqref(icon_set.ranges);
     xml += "\"><cfRule type=\"iconSet\" priority=\"";
-    xml += std::to_string(icon_set.priority);
+    detail::append_unsigned_decimal(xml, icon_set.priority);
     xml += "\"><iconSet iconSet=\"";
     xml += icon_set_style_name(icon_set.rule.style);
     if (!icon_set.rule.show_value) {
@@ -1604,7 +1604,7 @@ std::string build_data_validations(const detail::WorksheetWriterState& worksheet
     }
 
     std::string xml = "<dataValidations count=\"";
-    xml += std::to_string(worksheet.data_validations.size());
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(worksheet.data_validations.size()));
     xml += "\">";
     for (const DataValidation& validation : worksheet.data_validations) {
         xml += "<dataValidation type=\"";

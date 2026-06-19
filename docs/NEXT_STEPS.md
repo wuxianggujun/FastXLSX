@@ -3065,9 +3065,12 @@ Do:
   (`<tableParts count>`, table `id`, `<tableColumns count>`, and
   `<tableColumn id>`). Streaming `xl/styles.xml` unsigned integer attributes
   also use it for counts, custom `numFmtId`, and custom `xf` style ids; this is
-  a local append helper, not benchmark evidence, sharedStrings strategy change,
-  table/styles feature expansion, full styles completion, or broader date
-  encoding.
+  a local append helper. Worksheet suffix metadata counts/priorities
+  (`mergeCells` count, conditional formatting priorities, and
+  `dataValidations` count) also use it without changing metadata ordering or
+  package side effects. This is not benchmark evidence, sharedStrings strategy
+  change, table/styles/metadata feature expansion, full styles or conditional
+  formatting completion, or broader date encoding.
   Current sharedStrings duplicate lookup uses transparent `std::string_view`
   lookup in the workbook-scope index map, so repeated strings avoid an owning
   temporary key before reusing the existing index. The index map stores

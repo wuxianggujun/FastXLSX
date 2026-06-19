@@ -26504,7 +26504,7 @@ rg -n "class WorksheetEditor|struct WorksheetEditor|WorksheetEditorOptions|try_w
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -26517,6 +26517,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.4 shared string index stores string_view keys：基础完成。
 - P12.5 streaming table XML integer append path：基础完成。
 - P12.6 streaming styles XML integer append path：基础完成。
+- P12.7 worksheet suffix metadata integer append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -26893,6 +26894,80 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_styles_excel.ps
   -AlignmentPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx `
   -FontPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx `
   -FillPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-fills.xlsx
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.7 worksheet suffix metadata integer append path
+
+状态：基础完成。
+
+类型：internal worksheet metadata XML append helper usage + existing metadata /
+conditional-formatting structure tests + docs；不新增 public API / CMake dependency。
+
+目标：让 streaming worksheet suffix metadata 中的 unsigned integer attributes 复用
+`detail::append_unsigned_decimal()`，避免这些 append-buffer XML 数字属性构造临时
+decimal string。
+
+范围：
+- `<mergeCells count>`。
+- conditional formatting `<cfRule priority>`：color scale、data bar 和 icon set。
+- `<dataValidations count>`。
+- 文档记录该切片只覆盖 worksheet suffix metadata 的 append-buffer unsigned
+  integer attributes，不改变 metadata ordering、data validation semantics、
+  conditional formatting priority allocation、relationship id allocation、package
+  side effects 或 public API。
+
+验收条件：
+- `fastxlsx.streaming` 继续通过，证明 merge cells、data validations、
+  conditional formatting、suffix ordering、relationship absence / id non-shift 和
+  failure state hygiene 语义不变。
+- 本地 phase3 metadata、data validation 和 conditional formatting QA helpers 继续通过。
+- 文档明确这不是 benchmark 结果、完整 streaming hot-path 优化、完整 data validation、
+  完整 conditional formatting、styles/dxfs 支持或 existing-file editing。
+
+非目标：
+- 不改变 data validation rule validation、multi-range `sqref`、prompt/error metadata、
+  `showDropDown` 语义或 package relationship absence。
+- 不改变 conditional formatting validation、priority allocation、multi-range `sqref`、
+  rule ordering、styles/dxfs/rels/content type/calcPr absence 或 advanced feature
+  boundary。
+- 不替换 package/diagnostic/temporary filename、relationship target/path 或其它
+  metadata 路径中的 `std::to_string()`。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+py tools\verify_phase3_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_phase3_metadata_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+py tools\verify_data_validation_prompts.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-prompts.xlsx `
+  --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-multi-range.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_data_validation_prompts_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-prompts.xlsx `
+  -MultiRangePath build\windows-nmake-release\tests\fastxlsx-streaming-data-validation-multi-range.xlsx
+py tools\verify_conditional_formatting_color_scales.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx `
+  --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-metadata-order.xlsx `
+  --three-color-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-three-color-scale.xlsx `
+  --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-multi-range.xlsx `
+  --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-priorities.xlsx `
+  --work-dir build\qa\conditional-formatting-color-scales
+py tools\verify_conditional_formatting_data_bars.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar.xlsx `
+  --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-metadata-order.xlsx `
+  --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-multi-range.xlsx `
+  --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-data-bar-priorities.xlsx `
+  --work-dir build\qa\conditional-formatting-data-bars
+py tools\verify_conditional_formatting_icon_sets.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set.xlsx `
+  --metadata-order-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-metadata-order.xlsx `
+  --percentile-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-percentile.xlsx `
+  --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx `
+  --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx `
+  --work-dir build\qa\conditional-formatting-icon-sets
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

@@ -5854,6 +5854,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_blan
         "matching reacquire before max-coordinate blank should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired max-coordinate blank handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     reacquired.set_cell("XFD1048576", fastxlsx::CellValue::blank());
     check(!editor.last_edit_error().has_value(),
@@ -5883,31 +5888,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_blan
                 "max-coordinate blank sparse range should preserve the explicit blank value");
         }
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate blank dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 4,
-        "max-coordinate blank dirty diagnostics should report active sparse records");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate blank set should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate blank summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate blank summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
-                "max-coordinate blank summary should report four sparse records");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate blank summary should not invent replacement diagnostics");
-        }
-    }
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateBlank",
+        "post-recovery max-coordinate blank set",
+        3,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
@@ -5943,25 +5935,20 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_blan
         check(edge_cells.empty(),
             "max-coordinate blank sparse range should be empty after erase");
     }
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate blank erase should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate blank erase summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate blank erase summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
-                "max-coordinate blank erase summary should report the shrunken sparse store");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate blank erase summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateBlank"),
-        "max-coordinate blank projection should preserve the restored planned catalog name");
+    check(after_blank_save.estimated_memory_usage() == sheet.estimated_memory_usage(),
+        "max-coordinate blank erase should keep reacquired handle memory aligned");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        after_blank_save,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateBlank",
+        "post-recovery max-coordinate blank erase",
+        4,
+        3,
+        sheet.estimated_memory_usage());
 
     editor.save_as(third_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&

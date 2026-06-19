@@ -25567,6 +25567,45 @@ Acceptance:
   undo, rollback, or public API expansion.
 - `git diff --check` passes.
 
+## P8.554 - Cover file-backed image replacement save failure recovery
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_image(path)` save-time failure recovery
+regression and task-doc sync; no production code change, no new public symbol,
+no CMake target membership change, no drawing mutation, no media insertion, no
+relationship repair, and no content type repair.
+
+Goal: pin the documented file-backed image replacement lifecycle: the
+replacement file is validated during `replace_image(path)` but read again during
+`save_as()`, and a missing staged file at save time must not consume or corrupt
+the queued public edit.
+
+Output:
+- Added a public facade regression that queues a file-backed media-part
+  replacement, deletes the staged replacement file before `save_as()`, verifies
+  save failure, restores the file, and proves the same queued replacement can be
+  saved successfully.
+- The failed `save_as()` path preserves `has_pending_changes()`,
+  `pending_change_count()`, and the existing `last_edit_error()` policy:
+  save failures do not create or replace the public edit diagnostic.
+- The recovered output verifies the target `xl/media/image1.png` bytes match
+  the restored staged replacement bytes.
+
+Non-goals / boundary:
+- No production behavior change, no source package mutation, no image insertion,
+  no drawing XML mutation, no anchor update, no format conversion, no
+  relationship/content-type repair, no transaction/undo/rollback model, and no
+  new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish file-backed image replacement recovery from
+  drawing editing, image insertion, relationship/content-type repair, source
+  reload, commit, undo, rollback, or public API expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

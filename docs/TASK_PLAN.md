@@ -3328,6 +3328,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       semantics, sharedStrings/style migration, worksheet metadata handling,
       relationship/content-type repair, source reload, transaction/undo/
       rollback, or public API shape.
+      P8.554 pins the file-backed image replacement save-time recovery path:
+      `WorkbookEditor::replace_image(path)` validates the replacement file
+      during the call but reads it again during `save_as()`. If that staged file
+      disappears before save, `save_as()` fails without consuming queued public
+      edit state or creating a new `last_edit_error()` diagnostic; restoring the
+      file lets a later `save_as()` write the same queued media replacement
+      bytes. This is recovery evidence only, not production behavior change,
+      image insertion, drawing XML mutation, format conversion,
+      relationship/content-type repair, source reload, transaction/undo/
+      rollback, or public API expansion.
       P8.476 pins prefixed source sharedStrings local-name materialization on
       the positive path: prefixed `sst` / `si` / `t` / `r` markup in
       `xl/sharedStrings.xml` materializes through public `WorksheetEditor` and

@@ -569,6 +569,15 @@ state and replacement diagnostics clean, and a later valid replacement clears
 the diagnostic. This does not change sheetData XML semantics, sharedStrings /
 style migration, worksheet metadata handling, relationship/content-type repair,
 source reload, transaction/undo/rollback, or public API shape.
+P8.554 pins the file-backed image replacement save-time recovery path:
+`WorkbookEditor::replace_image(path)` validates the replacement file during the
+call but reads it again during `save_as()`. If that staged file disappears before
+save, `save_as()` fails without consuming queued public edit state or creating a
+new `last_edit_error()` diagnostic; restoring the file lets a later `save_as()`
+write the same queued media replacement bytes. This is recovery evidence only,
+not production behavior change, image insertion, drawing XML mutation, format
+conversion, relationship/content-type repair, source reload, transaction/undo/
+rollback, or public API expansion.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

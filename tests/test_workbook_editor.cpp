@@ -1157,6 +1157,50 @@ void test_replace_image_failure_diagnostics_include_context()
         "successful image replacement should clear prior failure diagnostics");
 }
 
+void test_replace_image_file_save_failure_preserves_pending_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images(
+            "fastxlsx-workbook-editor-image-file-save-failure-source.xlsx");
+    const std::filesystem::path staged_png_path =
+        artifact("fastxlsx-workbook-editor-image-file-save-failure-staged.png");
+    const std::filesystem::path failed_output =
+        artifact("fastxlsx-workbook-editor-image-file-save-failure-output.xlsx");
+    const std::filesystem::path recovered_output =
+        artifact("fastxlsx-workbook-editor-image-file-save-recovered-output.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::string replacement_png_bytes = fastxlsx::test::read_file(replacement_png_path);
+    write_binary_file(staged_png_path, replacement_png_bytes);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_image("xl/media/image1.png", staged_png_path);
+    check(editor.has_pending_changes(),
+        "file-backed image replacement should queue pending work before save_as");
+    check(editor.pending_change_count() == 1,
+        "file-backed image replacement should increment public pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "successful file-backed image replacement should leave no diagnostic");
+
+    std::filesystem::remove(staged_png_path);
+    check(threw_fastxlsx_error([&] { editor.save_as(failed_output); }),
+        "save_as should fail if the staged replacement image file disappears");
+    check(editor.has_pending_changes(),
+        "failed file-backed image save_as should preserve pending work");
+    check(editor.pending_change_count() == 1,
+        "failed file-backed image save_as should preserve pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "failed save_as should not create last_edit_error for missing staged image file");
+
+    write_binary_file(staged_png_path, replacement_png_bytes);
+    editor.save_as(recovered_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(recovered_output);
+    check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "restored staged image file should let save_as write the queued replacement");
+}
+
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()
 {
     const std::filesystem::path source =
@@ -17244,6 +17288,7 @@ int main(int argc, char* argv[])
         test_replace_image_updates_target_media_bytes_and_preserves_other_parts();
         test_replace_image_rejects_missing_or_mismatched_targets();
         test_replace_image_failure_diagnostics_include_context();
+        test_replace_image_file_save_failure_preserves_pending_state();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();

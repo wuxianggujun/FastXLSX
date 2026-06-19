@@ -6177,6 +6177,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scal
         "matching reacquire before max-coordinate scalar should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired max-coordinate scalar handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     reacquired.set_cell(1048576, 16384, fastxlsx::CellValue::number(42.5));
     check(!editor.last_edit_error().has_value(),
@@ -6209,14 +6214,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scal
                 "max-coordinate number sparse range should preserve scalar value");
         }
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate number dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 4,
-        "max-coordinate number dirty diagnostics should report active sparse records");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateScalar",
+        "post-recovery max-coordinate number set",
+        3,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
@@ -6255,25 +6264,20 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scal
                 !by_position.boolean_value(),
             "max-coordinate boolean should read back through row/column overloads");
     }
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate boolean set should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate boolean summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate boolean summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
-                "max-coordinate boolean summary should report four sparse records");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate boolean summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateScalar"),
-        "max-coordinate scalar projection should preserve the restored planned catalog name");
+    check(after_number_save.estimated_memory_usage() == sheet.estimated_memory_usage(),
+        "max-coordinate boolean overwrite should keep reacquired handle memory aligned");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        after_number_save,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateScalar",
+        "post-recovery max-coordinate boolean set",
+        4,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(third_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&

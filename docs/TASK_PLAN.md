@@ -2409,6 +2409,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostics and catalog checks while preserving the existing formula
       readback, XML escape, recalculation-request, and save-as XML projection
       checks.
+      P8.545 reuses it for the scalar max-coordinate case, proving
+      `set_cell(1048576, 16384, CellValue::number(...))` and the following
+      `set_cell("XFD1048576", CellValue::boolean(false))` share the same dirty
+      diagnostics, catalog checks, and post-overwrite memory alignment while
+      preserving the existing number/boolean save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2740,6 +2745,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       snapshots, escaped `<f>` output, recalculation request, no cached value,
       and save-as semantics while hardening the same materialized diagnostics,
       summaries, handle dirtiness, transient-name absence, and catalog checks.
+      P8.545 applies the same dirty-state helper to the scalar max-coordinate
+      projection after recovery, preserving number readback, boolean overwrite,
+      sparse edge snapshots, scalar XML output, dimension expansion, and
+      save-as semantics while hardening the same materialized diagnostics,
+      summaries, handle dirtiness, transient-name absence, catalog checks, and
+      post-overwrite memory alignment.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -3004,6 +3015,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       evaluation, cached values, calcChain rebuild, dense allocation,
       performance claims, coordinate repair, source reloads, relationship
       repair, or sharedStrings/style migration.
+      P8.545 applies the same shared helper to the scalar max-coordinate case,
+      proving row/column number set, A1 boolean overwrite, scalar readback,
+      sparse edge snapshots, dimension expansion, and preserved source-backed
+      cells line up with the restored `Data` session without date cell typing,
+      non-finite number acceptance, style migration, boolean coercion, dense
+      allocation, performance claims, coordinate repair, source reloads,
+      relationship repair, or sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next
@@ -3068,6 +3086,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       sparse edge record as `t="b"` / `<v>0</v>` without adding date cell
       typing, non-finite number acceptance, style/number-format migration,
       boolean coercion, dense allocation, or a large-file performance claim.
+      P8.545 strengthens that scalar projection with shared dirty-state
+      diagnostics, proving restored-name dirty materialized counts/memory,
+      pending summaries, unchanged catalogs, transient-name absence, dirty
+      borrowed handles, and post-overwrite memory alignment before save-as.
       P8.447 pins saved scalar edge erase shrink at the same boundary: after a
       saved max-coordinate number is overwritten by a saved boolean false,
       `erase_cell(1048576, 16384)` removes the edge record, clears the

@@ -416,6 +416,21 @@ preservation, calcChain rebuild, defined-name/formula dependency rewrite, dense
 allocation, max-coordinate performance evidence, coordinate repair, source
 reload, catalog repair, commit, undo, rollback, sharedStrings/style migration,
 or relationship repair.
+P8.545 applies the same helper to the scalar max-coordinate projection after
+that recovery: `set_cell(1048576, 16384, CellValue::number(...))` still writes
+the last legal Excel cell as a number, A1 boolean overwrite keeps one active
+sparse edge record, row/column and A1 reads expose the current scalar value,
+and save-as expands dimension to `A1:XFD1048576` while writing numeric and
+boolean XML in separate saves, while diagnostics now also prove empty
+`last_edit_error()`, empty replacement diagnostics, restored-name dirty
+materialized aggregate counts/memory, one dirty `pending_worksheet_edits()`
+summary, unchanged source/planned catalog views, transient-name absence, dirty
+borrowed handles, and post-overwrite reacquired-handle memory alignment. This
+is dirty-state diagnostic hygiene only, not date cell typing, non-finite number
+acceptance, style/number-format migration, boolean coercion, dense allocation,
+max-coordinate performance evidence, coordinate repair, source reload, catalog
+repair, commit, undo, rollback, sharedStrings/style migration, or relationship
+repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

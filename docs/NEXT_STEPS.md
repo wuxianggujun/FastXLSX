@@ -3495,6 +3495,15 @@ Accept when:
   confirm `fastxlsx-streaming-table-column-escape.xlsx` preserves table column
   headers containing `"`, `'`, `&`, `<`, and `>` without generating
   `xl/styles.xml` in the FastXLSX package.
+- Local unified table QA is now captured by `tools/verify_tables.py` and
+  `tools/verify_tables_excel.ps1`. The Python helper checks package XML,
+  content types, worksheet relationships, owner-local `rId`, totals metadata,
+  style flags, column attribute escaping, same-worksheet overlap rejection, and
+  `openpyxl` semantics, then optionally creates a `XlsxWriter` reference
+  workbook under `build/qa/tables/`. The Excel COM helper read-only opens the
+  totals, style flags, column escape, and overlap samples and verifies visible
+  `ListObjects`, ranges, totals row, headers, style flags, and adjacent/cross
+  worksheet table visibility.
 
 Do not claim:
 - Full table support, automatic header inference, custom style support,

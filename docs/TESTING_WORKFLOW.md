@@ -230,7 +230,10 @@ Streaming writer hot-path 边界样例应优先做拆包 XML 结构检查：
   `ListObject.ShowTotals` 和 totals row 范围。当前推荐样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-tables.xlsx`，其中
   `InventoryTable` 应保持隐藏 totals row，`TotalsTable` 应显示 totals row 且范围为
-  `A1:B3` / totals row `A3:B3`。
+  `A1:B3` / totals row `A3:B3`。当前首选统一 QA 入口是
+  `tools/verify_tables.py` 和 `tools/verify_tables_excel.ps1`，它们同时覆盖
+  totals row、table style flags、table column attribute escaping 和 same-worksheet
+  range-overlap 样例。
 - conditional formatting 基础切片必须用本机 Excel COM 或人工打开确认无修复弹窗，并检查
   two-/three-color color scale、basic data bar 或 basic 3Arrows icon set 规则可见。当前基础 color scale 样例是
   `build/windows-nmake-release/tests/fastxlsx-streaming-conditional-formatting-two-color-scale.xlsx`
@@ -633,7 +636,34 @@ workbook。Excel helper 只读打开 workbook
 首图 marker offset 对 shape 几何的影响。这些仍是本地 QA artifact，不要提交，也不是
 默认 CTest 或运行时依赖。
 
-当前 table totals-row visibility metadata 样例也有固定本地 QA 脚本：
+当前 table QA 首选统一入口覆盖 totals-row visibility metadata、style flags、
+column attribute escaping 和 same-worksheet range-overlap：
+
+```powershell
+py tools\verify_tables.py `
+  --tables-input build\windows-nmake-release\tests\fastxlsx-streaming-tables.xlsx `
+  --style-flags-input build\windows-nmake-release\tests\fastxlsx-streaming-table-style-flags.xlsx `
+  --column-escape-input build\windows-nmake-release\tests\fastxlsx-streaming-table-column-escape.xlsx `
+  --overlap-input build\windows-nmake-release\tests\fastxlsx-streaming-table-range-overlap.xlsx `
+  --work-dir build\qa\tables
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_tables_excel.ps1 `
+  -TablesPath build\windows-nmake-release\tests\fastxlsx-streaming-tables.xlsx `
+  -StyleFlagsPath build\windows-nmake-release\tests\fastxlsx-streaming-table-style-flags.xlsx `
+  -ColumnEscapePath build\windows-nmake-release\tests\fastxlsx-streaming-table-column-escape.xlsx `
+  -OverlapPath build\windows-nmake-release\tests\fastxlsx-streaming-table-range-overlap.xlsx
+```
+
+Python helper 检查 FastXLSX package XML、content types、worksheet `.rels`、
+owner-local `rId`、`totalsRowShown` / `totalsRowCount`、caller-supplied
+`totalsRowFunction` / `totalsRowLabel`、table style flags、table column attribute
+escape、无 `table5.xml` 的 overlap 拒绝、无 `xl/styles.xml` / `xl/metadata.xml` /
+`xl/calcChain.xml` 副作用，并用 `openpyxl` 读取 table semantics；可用时会在
+`build/qa/tables/` 下创建 `XlsxWriter` 参考 workbook。Excel COM helper 只读打开
+四个样例并核对 `ListObjects`、ranges、headers、totals row、style flags 和相邻 /
+跨 worksheet tables 可见性。它们是本地 QA/排障工具，不接入默认 CTest/CI，也不是
+运行时依赖。
+
+旧的 table totals-row visibility metadata 样例仍可单独运行：
 
 ```powershell
 py tools\verify_table_totals_metadata.py `
@@ -651,7 +681,7 @@ helper 只读打开 workbook 并核对 `InventoryTable.ShowTotals=False`、
 calculation。结构异常时仍以拆包后的 table XML 语义为准。脚本应从项目根目录运行；
 `build/qa/table-totals/` 下的 report 和参考 workbook 只是本地 QA artifact，不提交。
 
-当前 table range-overlap 样例也有固定本地 QA 脚本：
+旧的 table range-overlap 样例也可单独运行：
 
 ```powershell
 py tools\verify_table_overlap_metadata.py `

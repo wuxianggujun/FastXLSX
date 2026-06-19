@@ -4134,6 +4134,12 @@ Validation:
   confirmed worksheet `ListObjects` counts, `InventoryTable` / `TotalsTable`
   names, `A1:C3` / `A1:B3` ranges, header text, `TotalsTable.ShowTotals=True`,
   `TotalsTable` totals row range `A3:B3`, and basic built-in style flags.
+- The preferred local table QA entrypoints are now `tools/verify_tables.py` and
+  `tools/verify_tables_excel.ps1`. They consolidate the totals-row, style flag,
+  column attribute escaping, and same-worksheet range-overlap samples into one
+  Python package/openpyxl/XlsxWriter-reference pass and one Excel COM read-only
+  visual pass. These helpers remain local QA tools only; they are not default
+  CTest/CI entries and do not add runtime dependencies.
 - Reference workbooks from Excel or Python XLSX libraries remain the fallback
   when table XML structure or Excel repair behavior is unclear.
 - `fastxlsx.streaming` image tests under `windows-nmake-release` compare

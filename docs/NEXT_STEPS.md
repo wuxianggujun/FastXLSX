@@ -3072,11 +3072,15 @@ Do:
   for frozen-pane splits and column width min/max bounds also use it without
   changing freeze-pane or column-width semantics. Streaming `xl/workbook.xml`
   sheet catalog `sheetId` attributes also use it without changing sheet ordering,
-  sheet names, relationship ids, or worksheet part paths. This is not benchmark
+  sheet names, relationship ids, or worksheet part paths. Streaming drawing XML
+  geometry values for two-cell marker coordinates, marker EMU offsets, and
+  intrinsic image EMU size also use it without changing anchor ranges,
+  relationship ids, media/drawing paths, content types, or image insertion
+  semantics. This is not benchmark
   evidence, sharedStrings strategy change, table/styles/metadata feature
   expansion, sheet catalog mutation, relationship rewrite, full styles or
-  conditional formatting completion, row/column geometry work, or broader date
-  encoding.
+  conditional formatting completion, row/column resize geometry work,
+  full image support, existing drawing mutation, or broader date encoding.
   Current sharedStrings duplicate lookup uses transparent `std::string_view`
   lookup in the workbook-scope index map, so repeated strings avoid an owning
   temporary key before reusing the existing index. The index map stores

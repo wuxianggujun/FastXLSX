@@ -2016,13 +2016,13 @@ std::string build_drawing_marker_xml(
     xml += "<xdr:";
     xml += element_name;
     xml += "><xdr:col>";
-    xml += std::to_string(column - 1);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(column - 1));
     xml += "</xdr:col><xdr:colOff>";
-    xml += std::to_string(offset.column_emu);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(offset.column_emu));
     xml += "</xdr:colOff><xdr:row>";
-    xml += std::to_string(row - 1);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(row - 1));
     xml += "</xdr:row><xdr:rowOff>";
-    xml += std::to_string(offset.row_emu);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(offset.row_emu));
     xml += "</xdr:rowOff></xdr:";
     xml += element_name;
     xml += ">";
@@ -2085,9 +2085,9 @@ std::string build_drawing_xml(
         xml += drawing_relationship_id(index);
         xml += R"("/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>)";
         xml += R"(<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx=")";
-        xml += std::to_string(width_emu);
+        detail::append_unsigned_decimal(xml, width_emu);
         xml += R"(" cy=")";
-        xml += std::to_string(height_emu);
+        detail::append_unsigned_decimal(xml, height_emu);
         xml += R"("/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>)";
         xml += "</xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>";
     }

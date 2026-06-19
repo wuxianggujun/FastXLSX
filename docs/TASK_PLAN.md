@@ -3633,7 +3633,11 @@ Tasks:
   `max`) also use it without changing freeze-pane or column-width semantics.
   Streaming `xl/workbook.xml` sheet catalog `sheetId` attributes also use it
   without changing sheet ordering, sheet names, relationship ids, or worksheet
-  part paths.
+  part paths. Streaming drawing XML geometry values (`xdr:col` / `xdr:row`
+  0-based marker coordinates, `xdr:colOff` / `xdr:rowOff` EMU offsets, and
+  `a:ext` `cx` / `cy` intrinsic EMU size) also use it without changing anchor
+  ranges, relationship ids, media/drawing paths, content types, or image
+  insertion semantics.
   SharedStrings duplicate
   lookup also uses transparent `std::string_view` lookup before allocating an
   owning key, so repeated strings no longer allocate a temporary key just to
@@ -4626,10 +4630,14 @@ Tasks:
   `dataValidations` count) also use it, as do worksheet prefix metadata
   unsigned integer attributes for frozen-pane splits and column width min/max
   bounds. Streaming `xl/workbook.xml` sheet catalog `sheetId` attributes also
-  use it while relationship ids and worksheet part paths remain unchanged. This
+  use it while relationship ids and worksheet part paths remain unchanged.
+  Streaming drawing XML geometry values for two-cell marker coordinates,
+  marker EMU offsets, and intrinsic image EMU size also use it while anchor
+  ranges, relationship ids, media/drawing paths, content types, and image
+  insertion semantics remain unchanged. This
   is not a benchmark result, sharedStrings strategy change, table/styles/metadata
   feature expansion, sheet catalog mutation, relationship rewrite, full styles
-  or conditional-formatting completion, row/column geometry work, or date
+  or conditional-formatting completion, row/column resize geometry work, or date
   encoding completion.
   Current sharedStrings duplicate lookup also uses transparent `std::string_view`
   lookup in the workbook-scope index map, avoiding an owning temporary key for

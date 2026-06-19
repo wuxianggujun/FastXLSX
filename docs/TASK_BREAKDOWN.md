@@ -26504,7 +26504,7 @@ rg -n "class WorksheetEditor|struct WorksheetEditor|WorksheetEditorOptions|try_w
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 / P12.8 / P12.9 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 / P12.8 / P12.9 / P12.10 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -26520,6 +26520,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.7 worksheet suffix metadata integer append path：基础完成。
 - P12.8 worksheet prefix metadata integer append path：基础完成。
 - P12.9 workbook sheet catalog sheetId append path：基础完成。
+- P12.10 drawing geometry integer append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -27058,6 +27059,61 @@ py tools\verify_phase3_metadata.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_phase3_metadata_excel.ps1 `
   -Path build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.10 drawing geometry integer append path
+
+状态：基础完成。
+
+类型：internal drawing XML append helper usage + existing image metadata
+structure tests + docs；不新增 public API / CMake dependency。
+
+目标：让 streaming drawing XML 中的 two-cell anchor marker coordinates /
+EMU offsets / intrinsic EMU size 复用 `detail::append_unsigned_decimal()`，
+避免这些 append-buffer XML 数字值构造临时 decimal string。
+
+范围：
+- `xdr:col` / `xdr:row` 0-based marker coordinates。
+- `xdr:colOff` / `xdr:rowOff` EMU offsets。
+- `a:ext cx` / `a:ext cy` intrinsic EMU size。
+- 文档记录该切片只覆盖 drawing geometry 的 append-buffer unsigned integer
+  输出，不改变 anchor validation、relationship allocation、media/drawing paths、
+  content types、package side effects 或 public API。
+
+验收条件：
+- `fastxlsx.streaming` 继续通过，证明 image media、drawing XML、worksheet /
+  drawing `.rels`、content types、anchor metadata 和 hyperlink coexistence 语义不变。
+- 本地 image metadata Python / Excel QA helpers 继续通过。
+- 文档明确这不是 benchmark 结果、完整 image support、row/column resize geometry、
+  oneCellAnchor / absoluteAnchor、existing drawing mutation 或 broader drawing work。
+
+非目标：
+- 不替换 image id/name、drawing/table relationship ids、media filename/path、
+  drawing path、drawing `.rels` path 或 table path 中的 `std::to_string()`。
+- 不改变 anchor cell range、offset validation、Excel UI geometry、relationship
+  allocation、content types、package side effects 或 public API。
+- 不宣称 full image support、existing-workbook image preservation、drawing mutation、
+  row/column resize geometry、`oneCellAnchor` 或 `absoluteAnchor` 支持。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+py tools\verify_image_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
+  --basic-input build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
+  --mixed-object-input build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
+  --memory-input build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx `
+  --hyperlink-input build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlinks.xlsx `
+  --mixed-image-hyperlink-input build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_image_metadata_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `
+  -BasicPath build\windows-nmake-release\tests\fastxlsx-streaming-images.xlsx `
+  -MixedObjectPath build\windows-nmake-release\tests\fastxlsx-streaming-mixed-object-rels.xlsx `
+  -MemoryPath build\windows-nmake-release\tests\fastxlsx-streaming-memory-images.xlsx `
+  -HyperlinkPath build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlinks.xlsx `
+  -MixedHyperlinkPath build\windows-nmake-release\tests\fastxlsx-streaming-image-hyperlink-mixed-objects.xlsx
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

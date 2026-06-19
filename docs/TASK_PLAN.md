@@ -2395,6 +2395,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source-backed cells, and dimension shrink share the same dirty
       diagnostics and catalog checks while preserving the existing erase
       save-as XML projection checks.
+      P8.542 reuses it for the strict A1 max-coordinate mutation case, proving
+      `set_cell("XFD1048576", ...)` and `erase_cell("XFD1048576")` share the
+      same dirty diagnostics and catalog checks while preserving the existing
+      A1 set/erase save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2710,6 +2714,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       empty edge sparse range, remaining source-backed cells, dimension shrink,
       and save-as semantics while hardening the same materialized diagnostics,
       summaries, handle dirtiness, transient-name absence, and catalog checks.
+      P8.542 applies the same dirty-state helper to the strict A1
+      max-coordinate mutation projection after recovery, preserving A1
+      set/erase parity, dimension expansion/shrink, and save-as semantics while
+      hardening the same materialized diagnostics, summaries, handle dirtiness,
+      transient-name absence, and catalog checks.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -2954,6 +2963,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       session without dense allocation, performance claims, coordinate repair,
       tombstones, source reloads, relationship repair, or sharedStrings/style
       migration.
+      P8.542 applies the same shared helper to the strict A1 max-coordinate
+      mutation case, proving `set_cell("XFD1048576", ...)` and
+      `erase_cell("XFD1048576")` line up with the restored `Data` session
+      without lowercase reference acceptance, range mutation, dense allocation,
+      performance claims, coordinate repair, tombstones, source reloads,
+      relationship repair, or sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next
@@ -2987,7 +3002,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       safe-save/reacquire path, `erase_cell("XFD1048576")` removes it again, and
       the saved dimensions move from `A1:XFD1048576` back to `A1:B2` without
       adding lowercase references, range mutation, dense allocation, tombstones,
-      or transient planned-name leakage. P8.444 pins explicit blank projection
+      or transient planned-name leakage. P8.542 strengthens the same A1
+      set/erase path with shared dirty-state diagnostics, proving restored-name
+      dirty materialized counts/memory, pending summaries, unchanged catalogs,
+      transient-name absence, and dirty borrowed handles before each save-as.
+      P8.444 pins explicit blank projection
       at the same boundary: `set_cell("XFD1048576", CellValue::blank())` reads
       back as `CellValueKind::Blank`, saves as `<c r="XFD1048576"/>` with
       dimension `A1:XFD1048576`, and a later row/column erase removes it and

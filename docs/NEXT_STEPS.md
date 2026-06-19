@@ -374,6 +374,19 @@ dirty borrowed handles. This is dirty-state diagnostic hygiene only, not dense
 allocation, max-coordinate performance evidence, coordinate repair, tombstone
 or style-preserving clear semantics, source reload, catalog repair, commit,
 undo, rollback, sharedStrings/style migration, or relationship repair.
+P8.542 applies the same helper to the strict A1 max-coordinate mutation
+projection after that recovery: `set_cell("XFD1048576", ...)` still writes the
+last legal Excel cell, the next save-as expands dimension to
+`A1:XFD1048576`, `erase_cell("XFD1048576")` removes it again, and the following
+save-as shrinks dimension back to `A1:B2`, while diagnostics now also prove
+empty `last_edit_error()`, empty replacement diagnostics, restored-name dirty
+materialized aggregate counts/memory, one dirty `pending_worksheet_edits()`
+summary, unchanged source/planned catalog views, transient-name absence, and
+dirty borrowed handles. This is dirty-state diagnostic hygiene only, not new A1
+behavior, lowercase reference acceptance, range mutation, dense allocation,
+max-coordinate performance evidence, coordinate repair, tombstone or
+style-preserving clear semantics, source reload, catalog repair, commit, undo,
+rollback, sharedStrings/style migration, or relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

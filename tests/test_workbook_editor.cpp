@@ -5681,6 +5681,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_a1_m
         "matching reacquire before max-coordinate A1 mutations should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired max-coordinate A1 handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     reacquired.set_cell("XFD1048576",
         fastxlsx::CellValue::text("max-coordinate-a1"));
@@ -5700,29 +5705,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_a1_m
                 by_position.text_value() == "max-coordinate-a1",
             "max-coordinate A1 set_cell should read back through row/column overloads");
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate A1 set dirty diagnostics should use restored source name");
-    }
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate A1 set should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate A1 set summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate A1 set summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
-                "max-coordinate A1 set summary should report four sparse records");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate A1 set summary should not invent replacement diagnostics");
-        }
-    }
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateA1",
+        "post-recovery max-coordinate A1 set",
+        3,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
@@ -5750,33 +5744,20 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_a1_m
     check(threw_fastxlsx_error([&] {
         (void)reacquired.get_cell("XFD1048576");
     }), "A1 get_cell should throw after max-coordinate A1 erase_cell");
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate A1 erase dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 3,
-        "max-coordinate A1 erase dirty diagnostics should report the shrunken sparse store");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate A1 erase should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate A1 erase summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate A1 erase summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
-                "max-coordinate A1 erase summary should report the shrunken sparse store");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate A1 erase summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateA1"),
-        "max-coordinate A1 mutations should preserve the restored planned catalog name");
+    check(reacquired.estimated_memory_usage() == sheet.estimated_memory_usage(),
+        "max-coordinate A1 erase should keep reacquired handle memory aligned");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        after_set_save,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateA1",
+        "post-recovery max-coordinate A1 erase",
+        4,
+        3,
+        sheet.estimated_memory_usage());
 
     editor.save_as(third_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&

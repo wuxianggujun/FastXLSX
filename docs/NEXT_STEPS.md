@@ -1542,6 +1542,16 @@ schema validation.
     `strings`, `10000 x 10 x 1 = 100000` cells per case, repeated/unique
     string patterns, inline/shared strategies, stored-bootstrap ZIP, and
     `openpyxl` read-only checks for all four generated files.
+  - A 2026-06-20 Python writer comparison helper exists:
+    `tools/run_python_writer_benchmarks.py` benchmarks `xlsxwriter`
+    constant-memory and `openpyxl` write-only writers as opt-in local
+    reference tools. The same round records `100000 x 10 x 1 = 1000000`
+    cell FastXLSX vs Python writer evidence in `docs/PERFORMANCE_TARGETS.md`.
+    Python writer libraries, OpenXLSX, and xlnt remain benchmark/reference
+    targets only, not FastXLSX runtime, CMake, vcpkg, CTest, or CI default
+    dependencies. FastXLSX file-size comparison against those Python outputs
+    still needs the opt-in minizip/DEFLATE benchmark path because the current
+    FastXLSX reference numbers are stored/no-compression.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -2073,6 +2083,9 @@ feature completion.
      and expand benchmark/reference evidence before widening support wording.
    - vcpkg / CMakePresets / CI remains 基础: `stb` is default, minizip is opt-in,
      Excel visual verification remains local, and benchmark jobs stay opt-in.
+   - Python writer comparison is now an opt-in support benchmark line; use it
+     for visible throughput/memory reference, then add minizip/DEFLATE and
+     OpenXLSX/xlnt adapter evidence before making broader performance claims.
 
 ## Repository State
 

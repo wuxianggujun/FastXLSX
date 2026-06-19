@@ -738,6 +738,13 @@ the underlying error. Planned staged-chunk failures also expose the owning
   read-only open checks. Current benchmark tooling writes schema v4 with input
   string distribution fields. Treat the record as a small trend snapshot, not
   production readiness, large-file performance, or full low-memory proof.
+- A 2026-06-20 Python writer comparison helper now exists in
+  `tools/run_python_writer_benchmarks.py`. It benchmarks `xlsxwriter`
+  constant-memory and `openpyxl` write-only writers as opt-in local reference
+  tools and records same-shape throughput, memory, output-size, and optional
+  openpyxl read-only checks. Python writer libraries, OpenXLSX, and xlnt remain
+  benchmark/reference targets only, not FastXLSX runtime, CMake, vcpkg, CTest,
+  or CI default dependencies.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -3608,6 +3615,13 @@ Tasks:
   repeated/unique × inline/shared snapshot through `tools/run_benchmark_matrix.py`
   with openpyxl read-only checks. It is evidence for current benchmark tooling,
   not a production-readiness claim.
+- Current 2026-06-20 Python writer comparison adds a `1000000`-cell same-machine
+  reference against `xlsxwriter` constant-memory and `openpyxl` write-only
+  through `tools/run_python_writer_benchmarks.py`. It is evidence that the
+  current FastXLSX stored/no-compression hot path is much faster and lower
+  memory than those Python writer paths at this scale; output-size parity still
+  needs FastXLSX minizip/DEFLATE numbers because the Python writers emit
+  compressed ZIPs.
 - `tools/run_benchmark_matrix.py --self-test` is available as a lightweight
   runner guard for case parsing, expected string distributions, expected cell
   values, and matrix report shape. It does not invoke the benchmark executable,
@@ -4626,6 +4640,10 @@ Current facts:
 - No 10,000,000-cell benchmark result is recorded in this plan.
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.
+- Current Python writer comparison is also a manual opt-in tool, not default
+  CTest / CI and not a runtime dependency. It is a reference baseline for
+  visible throughput and memory only; FastXLSX file-size comparisons should wait
+  for opt-in minizip/DEFLATE benchmark data.
 - The 2026-06-07 repeated/unique sharedStrings benchmark snapshot is only
   `500000` cells with stored-bootstrap ZIP and historical benchmark schema v3
   `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`.

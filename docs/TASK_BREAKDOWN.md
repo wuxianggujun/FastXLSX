@@ -25530,6 +25530,43 @@ Acceptance:
   commit, undo, rollback, or public API expansion.
 - `git diff --check` passes.
 
+## P8.553 - Strengthen WorkbookEditor sheetData replacement diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_sheet_data()` diagnostic strengthening
+and task-doc sync; no new public symbol, no CMake target membership change, no
+sheetData semantics change, no relationship repair, and no content type repair.
+
+Goal: align the existing public sheetData replacement facade with the
+`replace_image()` / `rename_sheet()` diagnostic style by wrapping failures with
+the public API name, requested sheet, replacement input shape, and underlying
+root cause while preserving the existing no-state-pollution contract.
+
+Output:
+- `replace_sheet_data()` failures now report
+  `WorkbookEditor::replace_sheet_data() failed for '<sheet>' with N rows and M cells: ...`.
+- `last_edit_error()` records the same public diagnostic that is thrown, and a
+  later successful sheetData replacement clears it.
+- Regression coverage pins missing-sheet preflight and replacement max-cell
+  guardrail failures, including unchanged `pending_change_count()`, unchanged
+  `has_pending_changes()`, unchanged replacement diagnostics, and preserved
+  root-cause text.
+
+Non-goals / boundary:
+- No sheetData XML semantic change, no random cell editing expansion, no
+  sharedStrings/style migration, no worksheet metadata repair, no
+  relationship/content-type repair, no source reload, no transaction/undo/
+  rollback model, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish sheetData replacement diagnostics from worksheet
+  metadata repair, relationship/content-type repair, source reload, commit,
+  undo, rollback, or public API expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

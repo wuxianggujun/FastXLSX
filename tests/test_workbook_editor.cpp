@@ -15695,6 +15695,79 @@ void test_missing_sheet_throws_and_editor_stays_usable()
         "editor should still apply a valid edit after a rejected one");
 }
 
+void test_replace_sheet_data_failure_diagnostics_include_context()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-sheet-data-diagnostics-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-sheet-data-diagnostics-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    try {
+        editor.replace_sheet_data("Missing",
+            {{fastxlsx::CellValue::number(1.0), fastxlsx::CellValue::number(2.0)},
+                {fastxlsx::CellValue::text("third")}});
+        check(false, "missing-sheet replacement should throw");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        const std::string message = error.what();
+        check_contains(message, "WorkbookEditor::replace_sheet_data() failed",
+            "missing-sheet diagnostic should name the public API");
+        check_contains(message, "Missing",
+            "missing-sheet diagnostic should include the requested sheet");
+        check_contains(message, "with 2 rows and 3 cells",
+            "missing-sheet diagnostic should include the input shape");
+        check_contains(message, "current planned catalog",
+            "missing-sheet diagnostic should preserve the root cause");
+        check(editor.last_edit_error().has_value() && *editor.last_edit_error() == message,
+            "missing-sheet last_edit_error should match the thrown diagnostic");
+    }
+    check(editor.pending_change_count() == 0,
+        "missing-sheet diagnostic failure should not increment pending changes");
+    check(!editor.has_pending_changes(),
+        "missing-sheet diagnostic failure should not queue pending changes");
+    check(editor.pending_replacement_cell_count() == 0,
+        "missing-sheet diagnostic failure should not record replacement cells");
+
+    fastxlsx::WorkbookEditorOptions guard_options;
+    guard_options.max_replacement_cells = 1;
+    fastxlsx::WorkbookEditor guarded_editor =
+        fastxlsx::WorkbookEditor::open(source, guard_options);
+    try {
+        guarded_editor.replace_sheet_data("Data",
+            {{fastxlsx::CellValue::number(1.0), fastxlsx::CellValue::number(2.0)}});
+        check(false, "guarded replacement should throw");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        const std::string message = error.what();
+        check_contains(message, "WorkbookEditor::replace_sheet_data() failed",
+            "guardrail diagnostic should name the public API");
+        check_contains(message, "Data",
+            "guardrail diagnostic should include the requested sheet");
+        check_contains(message, "with 1 rows and 2 cells",
+            "guardrail diagnostic should include the input shape");
+        check_contains(message, "CellStore max_cells guardrail exceeded",
+            "guardrail diagnostic should preserve the root cause");
+        check(guarded_editor.last_edit_error().has_value()
+                && *guarded_editor.last_edit_error() == message,
+            "guardrail last_edit_error should match the thrown diagnostic");
+    }
+    check(guarded_editor.pending_change_count() == 0,
+        "guardrail diagnostic failure should not increment pending changes");
+    check(!guarded_editor.has_pending_changes(),
+        "guardrail diagnostic failure should not queue pending changes");
+    check(guarded_editor.pending_replacement_cell_count() == 0,
+        "guardrail diagnostic failure should not record replacement cells");
+
+    guarded_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(9.0)}});
+    check(!guarded_editor.last_edit_error().has_value(),
+        "successful sheetData replacement should clear prior failure diagnostics");
+    guarded_editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), R"(<v>9</v>)",
+        "editor should remain usable after sheetData replacement diagnostics");
+}
+
 void test_save_as_over_source_throws()
 {
     const std::filesystem::path source =
@@ -17151,6 +17224,7 @@ int main(int argc, char* argv[])
         test_replace_sheet_data_source_xml_failures_preserve_public_state();
         test_replacement_guardrails_and_payload_diagnostics();
         test_missing_sheet_throws_and_editor_stays_usable();
+        test_replace_sheet_data_failure_diagnostics_include_context();
         test_save_as_over_source_throws();
         test_noop_save_as_preserves_source_package_entries();
         test_noop_save_as_preserves_failed_edit_diagnostic();

@@ -3318,6 +3318,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostic. This is not image insertion, drawing XML mutation, anchor
       updates, format conversion, relationship/content-type repair, source
       reload, transaction/undo/rollback, or public API expansion.
+      P8.553 applies the same public diagnostic hardening to
+      `WorkbookEditor::replace_sheet_data()`: failures now include the public
+      API name, requested sheet, replacement input shape (`N` rows / `M` cells),
+      and root cause. Missing-sheet preflight and max-cell guardrail failures
+      prove the thrown diagnostic matches `last_edit_error()`, rejected calls
+      leave pending state and replacement diagnostics clean, and a later valid
+      replacement clears the diagnostic. This does not change sheetData XML
+      semantics, sharedStrings/style migration, worksheet metadata handling,
+      relationship/content-type repair, source reload, transaction/undo/
+      rollback, or public API shape.
       P8.476 pins prefixed source sharedStrings local-name materialization on
       the positive path: prefixed `sst` / `si` / `t` / `r` markup in
       `xl/sharedStrings.xml` materializes through public `WorksheetEditor` and

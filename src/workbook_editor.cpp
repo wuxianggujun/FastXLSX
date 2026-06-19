@@ -724,6 +724,13 @@ void WorkbookEditor::replace_sheet_data(
         throw FastXlsxError("WorkbookEditor is not open");
     }
 
+    const std::string sheet_name_key(sheet_name);
+    const std::size_t row_count = rows.size();
+    std::size_t input_cell_count = 0;
+    for (const std::vector<CellValue>& row : rows) {
+        input_cell_count += row.size();
+    }
+
     try {
         if (!impl_->has_current_worksheet(sheet_name)) {
             throw FastXlsxError(missing_planned_sheet_message(sheet_name));
@@ -756,8 +763,11 @@ void WorkbookEditor::replace_sheet_data(
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
-        impl_->record_last_edit_error(error);
-        throw;
+        FastXlsxError public_error("WorkbookEditor::replace_sheet_data() failed for '"
+            + sheet_name_key + "' with " + std::to_string(row_count) + " rows and "
+            + std::to_string(input_cell_count) + " cells: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
     }
 }
 

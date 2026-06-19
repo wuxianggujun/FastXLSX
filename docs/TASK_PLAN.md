@@ -2347,6 +2347,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       clean-state helper: no replacement/materialized diagnostics, no pending
       edit summaries, unchanged source/planned catalog views, preserved
       borrowed-handle cleanliness, and preserved saved cell value.
+      P8.532 applies that helper to the post-recovery pending-diagnostic query
+      regression, proving read-only pending-state and worksheet-catalog
+      diagnostics preserve prior edit count, `last_edit_error()`, empty
+      diagnostics, source/planned catalog views, clean borrowed handles, and the
+      saved materialized value.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2626,7 +2631,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       unchanged while still exposing a missing-sheet exception. P8.531 tightens
       the rename-back failed-save recovery catalog-query case so the existing
       saved materialized session is checked with the same complete clean-state
-      diagnostics after read-only planned/source catalog queries. P8.415 pins
+      diagnostics after read-only planned/source catalog queries. P8.532
+      applies the same check to read-only pending-state diagnostics and
+      `worksheet_catalog()` inspection after that recovery. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2821,6 +2828,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       post-recovery catalog-query path, proving read-only catalog inspection
       does not create replacement/materialized diagnostics, pending summaries,
       catalog drift, stale handle dirtiness, or saved-value reloads.
+      P8.532 applies the same helper to pending-state diagnostic inspection,
+      proving those read-only diagnostic calls also avoid diagnostic flushes,
+      source reloads, catalog drift, stale handle dirtiness, pending summary
+      creation, or saved-value reloads.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

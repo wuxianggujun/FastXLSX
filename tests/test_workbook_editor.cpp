@@ -3952,6 +3952,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserv
     check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
             saved_value.text_value() == "rename-back-diagnostics-first",
         "matching reacquire before diagnostics should reuse saved materialized state");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     check(editor.has_pending_changes(),
         "post-save recovery should still expose prior public edits as pending facade state");
@@ -3995,51 +4000,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserv
     check_public_inspection_preserves_last_edit_error(editor, editor.last_edit_error());
     (void)editor.has_pending_replacement("TransientDiagnostics");
     (void)editor.has_pending_replacement("Missing");
-    check(!editor.last_edit_error().has_value(),
-        "post-recovery diagnostic queries should not update last_edit_error");
 
-    check(editor.has_pending_changes(),
-        "post-recovery diagnostic queries should preserve pending facade state");
-    check(editor.pending_change_count() == 3,
-        "post-recovery diagnostic queries should not queue another public edit");
-    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
-        "post-recovery diagnostic queries should keep existing handles clean");
-    check(editor.pending_replacement_cell_count() == 0,
-        "post-recovery diagnostic queries should keep replacement cell count empty");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        "post-recovery diagnostic queries should keep replacement names empty");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "post-recovery diagnostic queries should not dirty materialized names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "post-recovery diagnostic queries should keep dirty cell count clear");
-    check(editor.estimated_pending_materialized_memory_usage() == 0,
-        "post-recovery diagnostic queries should keep dirty memory clear");
-    check(!editor.has_pending_replacement("Data") &&
-            !editor.has_pending_replacement("TransientDiagnostics"),
-        "post-recovery diagnostic queries should not revive replacement payloads");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        "post-recovery diagnostic queries should keep replacement memory empty");
-    check(editor.pending_worksheet_edits().empty(),
-        "post-recovery diagnostic queries should keep summaries empty");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog =
-            editor.worksheet_catalog();
-        check(catalog.size() == 2,
-            "post-recovery diagnostic queries should preserve catalog entry count");
-        if (catalog.size() == 2) {
-            check(catalog[0].source_name == "Data" &&
-                    catalog[0].planned_name == "Data" && !catalog[0].renamed,
-                "post-recovery diagnostics should preserve restored Data mapping");
-            check(catalog[1].source_name == "Untouched" &&
-                    catalog[1].planned_name == "Untouched" && !catalog[1].renamed,
-                "post-recovery diagnostics should preserve untouched mapping");
-        }
-    }
-
-    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
-    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
-            preserved_value.text_value() == "rename-back-diagnostics-first",
-        "post-recovery diagnostic queries should preserve the saved materialized value");
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-diagnostics-first",
+        "TransientDiagnostics",
+        "post-recovery diagnostic queries",
+        3);
 
     fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
     check(!matching.has_pending_changes(),

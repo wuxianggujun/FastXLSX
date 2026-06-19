@@ -9993,6 +9993,8 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-dirty-output.xlsx");
+    const std::filesystem::path failure_recovery_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-missing-target-failure-recovery-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -10062,24 +10064,15 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "lazy sharedStrings materialization should not mutate the source package");
 
-    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
-    bool failed_shared_sheet = false;
-    try {
-        (void)failing_editor.worksheet("Shared");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        failed_shared_sheet = true;
-        check_contains(error.what(),
-            "workbook sharedStrings relationship targets an unknown package part",
-            "worksheet with shared string indexes should still fail on the stale relationship");
-    }
-    check(failed_shared_sheet,
-        "worksheet with shared string indexes should force sharedStrings lookup");
-    check(!failing_editor.has_pending_changes(),
-        "failed lazy sharedStrings lookup should keep the editor clean");
-    check(failing_editor.pending_materialized_worksheet_names().empty(),
-        "failed lazy sharedStrings lookup should not leave a dirty materialized name");
-    check(!failing_editor.last_edit_error().has_value(),
-        "failed lazy sharedStrings materialization should not update last_edit_error");
+    check_public_worksheet_materialization_failure_hygiene(
+        source,
+        failure_recovery_output,
+        "workbook sharedStrings relationship targets an unknown package part",
+        "usable-after-lazy-missing-sharedstrings-target",
+        "lazy missing sharedStrings target",
+        "Data",
+        "xl/worksheets/sheet1.xml",
+        "Shared");
 }
 
 void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_until_index_cells()

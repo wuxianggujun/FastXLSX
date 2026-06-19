@@ -3236,6 +3236,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       expanding parser behavior, XML repair, schema validation, attribute
       whitelisting, relationship repair, sharedStrings migration/writeback,
       source reload, or public API.
+      P8.549 applies the same helper to the lazy missing sharedStrings target
+      case where the stale workbook relationship points at a missing
+      `missingSharedStrings.xml` part, proving non-`t="s"` `Data`
+      materialization and dirty inline save-as remain valid while
+      `try_worksheet("Shared")` and `worksheet("Shared")` both keep dirty
+      materialized/replacement diagnostics empty, preserve catalogs and
+      `last_edit_error()`, avoid target replacement leakage, and still allow a
+      later `replace_sheet_data("Data", ...)` save-as without relationship
+      repair, target repair, sharedStrings synthesis/writeback/migration,
+      source reload, or public API.
       P8.459 pins malformed sharedStrings relationship targets at the same
       public facade: external, query-qualified, fragment-qualified,
       malformed-percent, decoded-null, and package-root-escaping targets fail

@@ -25365,6 +25365,46 @@ Acceptance:
   writeback, source reload, commit, undo, rollback, or public API.
 - `git diff --check` passes.
 
+## P8.549 - Strengthen lazy missing sharedStrings target diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` lazy sharedStrings missing-target failure
+diagnostic strengthening and task-doc sync; no new public symbol, no
+production CMake target membership change, no relationship repair, and no
+package format expansion.
+
+Goal: reuse the shared public materialization-failure hygiene helper for the
+lazy stale workbook sharedStrings relationship case where the selected sheet
+with `t="s"` cells is `Shared`, the relationship target points at a missing
+`missingSharedStrings.xml` package part, and the later valid Patch recovery
+edit still targets `Data`.
+
+Output:
+- `test_public_worksheet_editor_defers_source_shared_strings_until_index_cells()`
+  now uses `check_public_worksheet_materialization_failure_hygiene()` for the
+  failing `Shared` materialization path after proving non-`t="s"` `Data`
+  materialization and dirty inline save-as do not force sharedStrings loading.
+- The helper now proves both `try_worksheet("Shared")` and
+  `worksheet("Shared")` expose the missing-target diagnostic, leave dirty
+  materialized and replacement diagnostics empty, preserve source/planned
+  catalog views, keep `last_edit_error()` unchanged, avoid target replacement
+  leakage, and still allow a later `replace_sheet_data("Data", ...)` save-as.
+
+Non-goals / boundary:
+- No relationship repair, no target repair, no sharedStrings part synthesis,
+  no sharedStrings rebuild/writeback/pruning/index migration, no source reload,
+  no source package mutation, no transaction/undo/rollback model, no dense
+  allocation, no large-file low-memory random editing claim, and no public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish lazy missing sharedStrings target diagnostics
+  from relationship repair, target repair, sharedStrings synthesis, migration
+  or writeback, source reload, commit, undo, rollback, or public API.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

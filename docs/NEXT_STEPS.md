@@ -480,6 +480,17 @@ diagnostic/test-helper hygiene only, not parser behavior expansion, XML repair,
 schema validation, attribute whitelisting, relationship repair,
 sharedStrings rebuild/writeback/pruning/index migration, source reload, commit,
 undo, rollback, or public API.
+P8.549 applies the same helper to the lazy missing sharedStrings target
+boundary: the workbook relationship still points at a missing
+`missingSharedStrings.xml` part, non-`t="s"` `Data` materialization and dirty
+inline save-as remain valid, and both `try_worksheet("Shared")` and
+`worksheet("Shared")` prove the missing-target diagnostic, empty dirty state,
+empty replacement/materialized diagnostics, preserved catalogs, unchanged
+`last_edit_error()`, no target replacement leakage, source package immutability,
+and later valid `replace_sheet_data("Data", ...)` save-as usability. This is
+diagnostic/test-helper hygiene only, not relationship repair, target repair,
+sharedStrings synthesis/rebuild/writeback/pruning/index migration, source
+reload, commit, undo, rollback, or public API.
 Malformed source sharedStrings relationship targets are also pinned at the
 public facade: external, query-qualified, fragment-qualified,
 malformed-percent, decoded-null, and package-root-escaping targets fail through

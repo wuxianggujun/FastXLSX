@@ -4702,6 +4702,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
         "matching reacquire before missing erase should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired missing-erase handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     const fastxlsx::CellValue saved_before_missing_erase = reacquired.get_cell(1, 1);
     check(saved_before_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
@@ -4735,25 +4740,19 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
     check(reacquired.estimated_memory_usage() == baseline_memory &&
             sheet.estimated_memory_usage() == baseline_memory,
         "post-recovery missing erase no-op should not change sparse memory estimates");
-    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
-        "post-recovery missing erase no-op should keep saved handles clean");
-    check(editor.pending_change_count() == 3,
-        "post-recovery missing erase no-op should not queue another public edit");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "post-recovery missing erase no-op should not dirty materialized names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "post-recovery missing erase no-op should keep dirty cell count clear");
-    check(editor.estimated_pending_materialized_memory_usage() == 0,
-        "post-recovery missing erase no-op should keep dirty memory clear");
-    check(editor.pending_worksheet_edits().empty(),
-        "post-recovery missing erase no-op should keep summaries empty");
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMissingErase"),
-        "post-recovery missing erase no-op should preserve the restored planned catalog name");
 
-    const fastxlsx::CellValue saved_after_missing_erase = reacquired.get_cell(1, 1);
-    check(saved_after_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
-            saved_after_missing_erase.text_value() == "rename-back-missing-erase-first",
-        "post-recovery missing erase no-op should preserve the saved materialized value");
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-missing-erase-first",
+        "TransientMissingErase",
+        "post-recovery missing erase no-op",
+        3);
+
     const fastxlsx::CellValue unchanged_after_missing_erase = sheet.get_cell("A2");
     check(unchanged_after_missing_erase.kind() == fastxlsx::CellValueKind::Text &&
             unchanged_after_missing_erase.text_value() == "placeholder-a2",

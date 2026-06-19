@@ -315,6 +315,13 @@ catalog views and borrowed handles, and retain the saved materialized value.
 The next valid mutation still clears the diagnostic and saves. This is invalid
 mutation hygiene only, not coordinate repair, clamping, source reload, catalog
 repair, commit, undo, or rollback semantics.
+P8.536 applies the helper to successful missing-cell erase no-ops after that
+recovery: valid row/column and A1 `erase_cell()` calls targeting absent cells
+clear a prior mutation diagnostic while keeping sparse cell-count/memory
+diagnostics stable, replacement/materialized diagnostics and pending edit
+summaries empty, catalog views and borrowed handles preserved, and the saved
+materialized value intact. This is missing-erase no-op hygiene only, not erase
+tombstones, source reload, catalog repair, commit, undo, or rollback semantics.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

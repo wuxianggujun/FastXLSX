@@ -24745,6 +24745,49 @@ Acceptance:
   or diagnostic-triggered flush semantics.
 - `git diff --check` passes.
 
+## P8.536 - Strengthen post-recovery missing erase clean-state checks
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery missing-erase
+no-op strengthening and task-doc sync; no new public symbol, no production
+CMake target membership change, and no package format expansion.
+
+Goal: upgrade the existing P8.437 valid missing-cell erase no-op regression to
+the same complete saved-materialized-session clean-state helper, while
+preserving the expected diagnostic-clearing behavior after a prior invalid
+mutation.
+
+Output:
+- `test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state()`
+  now runs the full saved-session helper after valid row/column and A1
+  `erase_cell()` calls target absent cells.
+- The regression keeps its focused sparse-store checks for unchanged
+  `cell_count()` and `estimated_memory_usage()`, then proves the successful
+  missing-cell erase no-ops clear the prior mutation diagnostic, preserve prior
+  public edit count, replacement diagnostics, dirty materialized diagnostics,
+  `pending_worksheet_edits()`, source/planned catalog views, borrowed-handle
+  cleanliness, and the saved materialized value.
+- The later valid matching-option mutation still dirties the shared handles,
+  saves successfully, and does not leak rejected invalid payloads or the
+  transient planned sheet name.
+
+Non-goals / boundary:
+- No behavior expansion, no diagnostic-triggered flush, no source reload, no
+  catalog repair, no source package mutation, no transaction/undo model, no
+  sheet rename dependency repair, no style/sharedStrings migration, no
+  relationship repair, no erase tombstones, no coordinate inference/clamping,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish successful missing-cell erase no-op diagnostics
+  from invalid mutation diagnostics, source reload, catalog repair, source
+  mutation, commit, undo, rollback, erase tombstones, or diagnostic-triggered
+  flush semantics.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

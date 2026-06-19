@@ -342,6 +342,16 @@ transient-name absence, and dirty borrowed handles. This is dirty-state
 diagnostic hygiene only, not formula evaluation, cached result generation,
 calcChain rebuild, date cell typing, source reload, catalog repair, commit,
 undo, rollback, sharedStrings/style migration, or relationship repair.
+P8.539 applies the same helper to the positive text-escape projection after
+that recovery: whitespace-preserving A1, empty text A2, special-character text
+C3, and preserved source-backed B1 still drive the existing inline-string
+save-as projection, while diagnostics now also prove empty `last_edit_error()`,
+empty replacement diagnostics, restored-name dirty materialized aggregate
+counts/memory, one dirty `pending_worksheet_edits()` summary, unchanged
+source/planned catalog views, transient-name absence, and dirty borrowed
+handles. This is dirty-state diagnostic hygiene only, not new text behavior,
+XML repair, text normalization, source reload, catalog repair, commit, undo,
+rollback, sharedStrings/style migration, or relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

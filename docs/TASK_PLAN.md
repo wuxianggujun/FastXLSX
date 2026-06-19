@@ -2381,6 +2381,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       case, proving numeric, boolean, formula, and preserved source-backed
       cells share the same dirty diagnostics and catalog checks while preserving
       the existing scalar/formula save-as XML projection checks.
+      P8.539 reuses it for the positive text-escape projection case, proving
+      whitespace-preserving, empty-text, special-character, and preserved
+      source-backed cells share the same dirty diagnostics and catalog checks
+      while preserving the existing inline-string save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2681,6 +2685,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       recovery, preserving numeric, boolean, formula, and source-backed cell
       save-as semantics while hardening the same materialized diagnostics,
       summaries, handle dirtiness, transient-name absence, and catalog checks.
+      P8.539 applies the same dirty-state helper to the positive text-escape
+      projection after recovery, preserving whitespace, empty-text,
+      special-character text, and source-backed cell save-as semantics while
+      hardening the same materialized diagnostics, summaries, handle dirtiness,
+      transient-name absence, and catalog checks.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -2908,6 +2917,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       case, proving number / boolean / formula edits and preserved source-backed
       B1 line up with the restored `Data` session without formula evaluation,
       cached result generation, calcChain rebuild, source reloads, relationship
+      repair, or sharedStrings/style migration.
+      P8.539 applies the same shared helper to the following text-escape case,
+      proving whitespace-preserving / empty-text / special-character text edits
+      and preserved source-backed B1 line up with the restored `Data` session
+      without new text behavior, XML repair, source reloads, relationship
       repair, or sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,

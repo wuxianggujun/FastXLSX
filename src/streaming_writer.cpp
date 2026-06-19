@@ -1286,7 +1286,7 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
     const std::size_t number_format_count = custom_number_format_count(styles);
     if (number_format_count > 0) {
         xml += R"(<numFmts count=")";
-        xml += std::to_string(number_format_count);
+        detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(number_format_count));
         xml += R"(">)";
         for (auto style = styles.begin(); style != styles.end(); ++style) {
             if (style->number_format_id == 0) {
@@ -1300,7 +1300,7 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
                 continue;
             }
             xml += R"(<numFmt numFmtId=")";
-            xml += std::to_string(style->number_format_id);
+            detail::append_unsigned_decimal(xml, style->number_format_id);
             xml += R"(" formatCode=")";
             detail::append_escaped_xml_attribute(xml, style->style.number_format);
             xml += R"("/>)";
@@ -1308,7 +1308,7 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
         xml += "</numFmts>";
     }
     xml += R"(<fonts count=")";
-    xml += std::to_string(custom_font_count(styles) + 1);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(custom_font_count(styles) + 1));
     xml += R"("><font>)";
     append_default_font_xml(xml);
     xml += "</font>";
@@ -1327,7 +1327,7 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
     }
     xml += "</fonts>";
     xml += R"(<fills count=")";
-    xml += std::to_string(custom_fill_count(styles) + 2);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(custom_fill_count(styles) + 2));
     xml += R"("><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>)";
     for (auto style = styles.begin(); style != styles.end(); ++style) {
         if (style->fill_id == 0 || !style->style.fill.has_value()) {
@@ -1346,15 +1346,15 @@ std::string build_styles_xml(const std::vector<RegisteredStyle>& styles)
     xml += R"(<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>)";
     xml += R"(<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>)";
     xml += R"(<cellXfs count=")";
-    xml += std::to_string(styles.size() + 1);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(styles.size() + 1));
     xml += R"("><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)";
     for (const RegisteredStyle& style : styles) {
         xml += R"(<xf numFmtId=")";
-        xml += std::to_string(style.number_format_id);
+        detail::append_unsigned_decimal(xml, style.number_format_id);
         xml += R"(" fontId=")";
-        xml += std::to_string(style.font_id);
+        detail::append_unsigned_decimal(xml, style.font_id);
         xml += R"(" fillId=")";
-        xml += std::to_string(style.fill_id);
+        detail::append_unsigned_decimal(xml, style.fill_id);
         xml += R"(" borderId="0" xfId="0")";
         if (style.number_format_id != 0) {
             xml += R"( applyNumberFormat="1")";

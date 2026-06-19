@@ -26504,7 +26504,7 @@ rg -n "class WorksheetEditor|struct WorksheetEditor|WorksheetEditorOptions|try_w
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -26516,6 +26516,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.3 shared string duplicate lookup without temporary key：基础完成。
 - P12.4 shared string index stores string_view keys：基础完成。
 - P12.5 streaming table XML integer append path：基础完成。
+- P12.6 streaming styles XML integer append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -26837,6 +26838,61 @@ cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
 py tools\verify_tables.py --work-dir build\qa\tables
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_tables_excel.ps1
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.6 streaming styles XML integer append path
+
+状态：基础完成。
+
+类型：internal streaming styles XML append helper usage + existing styles structure tests +
+docs；不新增 public API / CMake dependency。
+
+目标：让 streaming-only `xl/styles.xml` 小型 part 中的 unsigned integer
+attributes 复用 `detail::append_unsigned_decimal()`，避免 styles append-buffer
+serialization 为这些数字构造临时 decimal string。
+
+范围：
+- `<numFmts count>` 和 `<numFmt numFmtId>`。
+- `<fonts count>`、`<fills count>` 和 `<cellXfs count>`。
+- custom `<xf numFmtId>`、`fontId` 和 `fillId`。
+- 文档记录该切片只覆盖 styles XML append-buffer unsigned integer attributes，
+  不改变 style registry、style id 分配、style dedup、workbook relationship、
+  content type override 或 worksheet cell `s` 输出语义。
+
+验收条件：
+- `fastxlsx.streaming` styles 结构回归继续通过，证明 `xl/styles.xml`、
+  worksheet `s="N"`、sharedStrings + styles 共存、content type override 和
+  workbook relationship 语义不变。
+- 本地 styles QA helper 继续通过。
+- 文档明确这不是 benchmark 结果、完整 styles、date cell type、full font/fill/
+  border/alignment、existing-file style preservation 或 streaming hot-path 完成。
+
+非目标：
+- 不新增 public style API。
+- 不改变 `StyleId` 语义、style registry dedup、default style skeleton、
+  `xl/styles.xml` structure、relationship/content-type wiring 或 worksheet row/cell
+  style validation。
+- 不替换 package/diagnostic/temporary filename、relationship target/path 或其它
+  metadata 路径中的 `std::to_string()`。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+py tools\verify_styles_number_formats.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx `
+  --shared-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx `
+  --alignment-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx `
+  --font-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx `
+  --fill-input build\windows-nmake-release\tests\fastxlsx-streaming-styles-fills.xlsx `
+  --work-dir build\qa\styles-number-formats
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_styles_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-styles-number-formats.xlsx `
+  -SharedPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-shared-strings.xlsx `
+  -AlignmentPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-alignment.xlsx `
+  -FontPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-fonts.xlsx `
+  -FillPath build\windows-nmake-release\tests\fastxlsx-streaming-styles-fills.xlsx
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

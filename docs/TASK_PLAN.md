@@ -3622,8 +3622,10 @@ Tasks:
   use it instead of `std::to_string()`. SharedStrings string-cell `<v>` indexes
   and streaming table XML integer attributes (`<tableParts count>`, table
   `id`, `<tableColumns count>`, and `<tableColumn id>`) also use the same
-  append helper, so those append-buffer paths avoid per-value temporary decimal
-  strings. SharedStrings duplicate
+  append helper. Streaming `xl/styles.xml` unsigned integer attributes
+  (`numFmts` / `fonts` / `fills` / `cellXfs` counts, custom `numFmtId`,
+  and custom `xf` `numFmtId` / `fontId` / `fillId`) also use it, so those
+  append-buffer paths avoid per-value temporary decimal strings. SharedStrings duplicate
   lookup also uses transparent `std::string_view` lookup before allocating an
   owning key, so repeated strings no longer allocate a temporary key just to
   discover an existing index. The workbook-scope shared string index map stores
@@ -4608,8 +4610,10 @@ Tasks:
   internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
   streaming row numbers, in-memory/streaming style id attributes,
   sharedStrings string-cell indexes, and streaming table XML integer
-  attributes; it is a local hot-path helper, not a benchmark result,
-  sharedStrings strategy change, table feature expansion, or date encoding
+  attributes. Streaming `xl/styles.xml` unsigned integer attributes also use
+  the helper for counts, custom `numFmtId`, and custom `xf` style ids; it is a
+  local hot-path helper, not a benchmark result, sharedStrings strategy change,
+  table or styles feature expansion, full styles completion, or date encoding
   completion.
   Current sharedStrings duplicate lookup also uses transparent `std::string_view`
   lookup in the workbook-scope index map, avoiding an owning temporary key for

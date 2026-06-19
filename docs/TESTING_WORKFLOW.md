@@ -331,6 +331,26 @@ hyperlink 样例
 `build/windows-nmake-release/tests/fastxlsx-streaming-image-hyperlinks.xlsx`。本机
 XML / `openpyxl` / Excel COM 验证可以运行：
 
+Current hyperlink smoke samples have a fixed local Python QA helper:
+
+```powershell
+py tools\verify_hyperlinks.py `
+  --external-input build\windows-nmake-release\tests\fastxlsx-streaming-external-hyperlinks.xlsx `
+  --internal-input build\windows-nmake-release\tests\fastxlsx-streaming-internal-hyperlinks.xlsx `
+  --display-tooltip-input build\windows-nmake-release\tests\fastxlsx-streaming-hyperlink-display-tooltips.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_hyperlinks_excel.ps1 `
+  -ExternalPath build\windows-nmake-release\tests\fastxlsx-streaming-external-hyperlinks.xlsx `
+  -InternalPath build\windows-nmake-release\tests\fastxlsx-streaming-internal-hyperlinks.xlsx `
+  -DisplayTooltipPath build\windows-nmake-release\tests\fastxlsx-streaming-hyperlink-display-tooltips.xlsx
+```
+
+The helper checks package XML, worksheet-owned `.rels`, owner-local `rId`
+allocation, external `target`, internal `location`, `display` / `tooltip`, no
+content type/style/calc side effects, and `openpyxl` hyperlink semantics. It is
+local QA only and is not wired into default CTest/CI. The Excel COM helper opens
+the same samples read-only and checks hyperlink counts, `Address`, `SubAddress`,
+`ScreenTip`, and unchanged cell text / `TextToDisplay`.
+
 ```powershell
 py tools\verify_image_metadata.py `
   --input build\windows-nmake-release\tests\fastxlsx-streaming-image-metadata.xlsx `

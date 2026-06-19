@@ -4035,6 +4035,14 @@ Validation:
   external and internal hyperlinks, attribute XML escaping, display-only,
   tooltip-only, explicitly empty options being omitted, unchanged `.rels`
   semantics, no content type pollution, and no `styles.xml`.
+- `tools/verify_hyperlinks.py` is the local Python QA helper for the external,
+  internal, and display/tooltip hyperlink sample workbooks. It checks package
+  XML, worksheet-owned `.rels`, owner-local `rId` behavior, external `target`,
+  internal `location`, `display` / `tooltip`, no content type/style/calc side
+  effects, and `openpyxl` hyperlink semantics.
+- `tools/verify_hyperlinks_excel.ps1` is the local Excel COM read-only QA helper
+  for the same samples. It checks hyperlink counts, external `Address`, internal
+  `SubAddress`, `ScreenTip`, and unchanged cell text / `TextToDisplay`.
 - Local `openpyxl` 3.1.2 validation passed for
   `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`;
   it read external/internal `display` and `tooltip` fields and confirmed no

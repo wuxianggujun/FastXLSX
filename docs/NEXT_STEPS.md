@@ -3429,6 +3429,15 @@ Accept when:
   internal hyperlinks, XML attribute escaping, display-only, tooltip-only,
   explicitly empty options being omitted, unchanged relationship behavior, and
   no `styles.xml`.
+- Local Python QA helper `tools/verify_hyperlinks.py` checks package XML,
+  worksheet-owned `.rels`, owner-local `rId` behavior, external `target`,
+  internal `location`, `display` / `tooltip`, no content type/style/calc
+  side effects, and `openpyxl` hyperlink semantics for the external, internal,
+  and display/tooltip sample workbooks.
+- Local Excel COM helper `tools/verify_hyperlinks_excel.ps1` opens the same
+  external, internal, and display/tooltip sample workbooks read-only and checks
+  hyperlink counts, `Address`, `SubAddress`, `ScreenTip`, and unchanged cell
+  text / `TextToDisplay`.
 - Local `openpyxl` 3.1.2 and Excel COM validation is recorded for
   `build/windows-nmake-release/tests/fastxlsx-streaming-hyperlink-display-tooltips.xlsx`.
   Excel COM validates `ScreenTip`, external `Address`, internal `SubAddress`,

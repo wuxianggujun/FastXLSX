@@ -3631,6 +3631,9 @@ Tasks:
   without changing metadata ordering or package side effects. Worksheet prefix
   metadata unsigned integer attributes (`pane` x/y splits and column `min` /
   `max`) also use it without changing freeze-pane or column-width semantics.
+  Streaming `xl/workbook.xml` sheet catalog `sheetId` attributes also use it
+  without changing sheet ordering, sheet names, relationship ids, or worksheet
+  part paths.
   SharedStrings duplicate
   lookup also uses transparent `std::string_view` lookup before allocating an
   owning key, so repeated strings no longer allocate a temporary key just to
@@ -4622,9 +4625,12 @@ Tasks:
   (`mergeCells` count, conditional formatting priorities, and
   `dataValidations` count) also use it, as do worksheet prefix metadata
   unsigned integer attributes for frozen-pane splits and column width min/max
-  bounds. This is not a benchmark result, sharedStrings strategy change,
-  table/styles/metadata feature expansion, full styles or conditional-formatting
-  completion, row/column geometry work, or date encoding completion.
+  bounds. Streaming `xl/workbook.xml` sheet catalog `sheetId` attributes also
+  use it while relationship ids and worksheet part paths remain unchanged. This
+  is not a benchmark result, sharedStrings strategy change, table/styles/metadata
+  feature expansion, sheet catalog mutation, relationship rewrite, full styles
+  or conditional-formatting completion, row/column geometry work, or date
+  encoding completion.
   Current sharedStrings duplicate lookup also uses transparent `std::string_view`
   lookup in the workbook-scope index map, avoiding an owning temporary key for
   repeated strings before preserving the existing index. The index map now

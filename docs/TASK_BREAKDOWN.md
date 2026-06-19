@@ -26504,7 +26504,7 @@ rg -n "class WorksheetEditor|struct WorksheetEditor|WorksheetEditorOptions|try_w
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 / P12.8 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 / P12.8 / P12.9 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -26519,6 +26519,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.6 streaming styles XML integer append path：基础完成。
 - P12.7 worksheet suffix metadata integer append path：基础完成。
 - P12.8 worksheet prefix metadata integer append path：基础完成。
+- P12.9 workbook sheet catalog sheetId append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -27005,6 +27006,49 @@ decimal string。
   duplicate/overlap behavior 或 style side effects。
 - 不替换 relationship id/path、package entry name、diagnostic、temporary filename、
   media/drawing/table path 或其它 metadata 路径中的 `std::to_string()`。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+py tools\verify_phase3_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_phase3_metadata_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.9 workbook sheet catalog sheetId append path
+
+状态：基础完成。
+
+类型：internal workbook XML append helper usage + existing package structure tests +
+docs；不新增 public API / CMake dependency。
+
+目标：让 streaming `xl/workbook.xml` sheet catalog 中的 `<sheet sheetId>`
+unsigned integer attribute 复用 `detail::append_unsigned_decimal()`，避免该
+append-buffer XML 数字属性构造临时 decimal string。
+
+范围：
+- `<workbook><sheets><sheet sheetId="...">`。
+- 文档记录该切片只覆盖 workbook sheet catalog 的 `sheetId` XML unsigned integer
+  attribute，不改变 sheet ordering、sheet names、workbook relationship id allocation、
+  worksheet part paths、package entries、content types 或 public API。
+
+验收条件：
+- `fastxlsx.streaming` 继续通过，证明 generated workbook package、worksheet
+  references、relationship ids 和 sheet catalog 结构不变。
+- 本地 phase3 metadata QA helpers 继续通过，证明 Excel/openpyxl 仍能读取 workbook
+  sheet catalog 并打开目标 sheet。
+- 文档明确这不是 benchmark 结果、完整 streaming hot-path 优化、sheet catalog mutation、
+  relationship id/path rewrite、existing-file editing 或 broader workbook metadata work。
+
+非目标：
+- 不替换 workbook sheet catalog `r:id` relationship id suffix。
+- 不替换 worksheet part path、relationship target/path、package entry name、
+  diagnostic、temporary filename、media/drawing/table path 或 sharedStrings stream
+  count write path 中的 `std::to_string()`。
+- 不改变 workbook sheet naming、ordering、relationship registration 或 part layout。
 
 验证命令：
 ```powershell

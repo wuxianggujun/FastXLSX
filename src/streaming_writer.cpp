@@ -1144,7 +1144,7 @@ std::string build_workbook(
         xml += R"(<sheet name=")";
         detail::append_escaped_xml_attribute(xml, worksheets[index]->name);
         xml += R"(" sheetId=")";
-        xml += std::to_string(index + 1);
+        detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(index + 1));
         xml += R"(" r:id="rId)";
         xml += std::to_string(index + 1);
         xml += R"("/>)";

@@ -1094,6 +1094,69 @@ void test_replace_image_rejects_missing_or_mismatched_targets()
         "JPEG replacement should remain usable after rejected attempts");
 }
 
+void test_replace_image_failure_diagnostics_include_context()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images(
+            "fastxlsx-workbook-editor-image-diagnostics-source.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::filesystem::path replacement_jpeg_path =
+        repository_asset("docs/assets/donation/zhifubao.jpg");
+    const std::string replacement_jpeg_bytes = fastxlsx::test::read_file(replacement_jpeg_path);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    try {
+        editor.replace_image("xl/media/missing.png", replacement_png_path);
+        check(false, "missing-target image replacement should throw");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        const std::string message = error.what();
+        check_contains(message, "WorkbookEditor::replace_image() failed",
+            "missing-target diagnostic should name the public API");
+        check_contains(message, "xl/media/missing.png",
+            "missing-target diagnostic should include the requested media part");
+        check_contains(message, replacement_png_path.generic_string(),
+            "missing-target diagnostic should include the replacement file path");
+        check_contains(message, "image target is not present in current package",
+            "missing-target diagnostic should preserve the root cause");
+        check(editor.last_edit_error().has_value() && *editor.last_edit_error() == message,
+            "missing-target last_edit_error should match the thrown diagnostic");
+    }
+    check(editor.pending_change_count() == 0,
+        "missing-target diagnostic failure should not increment pending changes");
+    check(!editor.has_pending_changes(),
+        "missing-target diagnostic failure should not queue pending changes");
+
+    try {
+        editor.replace_image("xl/media/image1.png", as_bytes(replacement_jpeg_bytes));
+        check(false, "memory format-mismatch image replacement should throw");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        const std::string message = error.what();
+        check_contains(message, "WorkbookEditor::replace_image() failed",
+            "memory diagnostic should name the public API");
+        check_contains(message, "xl/media/image1.png",
+            "memory diagnostic should include the requested media part");
+        check_contains(message,
+            std::string("from memory bytes (") + std::to_string(replacement_jpeg_bytes.size())
+                + " bytes)",
+            "memory diagnostic should include the staged byte count");
+        check_contains(message, "image replacement format does not match target media part",
+            "memory diagnostic should preserve the root cause");
+        check(editor.last_edit_error().has_value() && *editor.last_edit_error() == message,
+            "memory last_edit_error should match the thrown diagnostic");
+    }
+    check(editor.pending_change_count() == 0,
+        "memory diagnostic failure should not increment pending changes");
+    check(!editor.has_pending_changes(),
+        "memory diagnostic failure should not queue pending changes");
+
+    editor.replace_image("xl/media/image1.png", replacement_png_path);
+    check(!editor.last_edit_error().has_value(),
+        "successful image replacement should clear prior failure diagnostics");
+}
+
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()
 {
     const std::filesystem::path source =
@@ -17106,6 +17169,7 @@ int main(int argc, char* argv[])
         test_failed_rename_preserves_pending_replacement_diagnostics();
         test_replace_image_updates_target_media_bytes_and_preserves_other_parts();
         test_replace_image_rejects_missing_or_mismatched_targets();
+        test_replace_image_failure_diagnostics_include_context();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();

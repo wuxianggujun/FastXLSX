@@ -551,6 +551,15 @@ diagnostic/test-helper hygiene only, not content type repair, relationship
 repair/pruning, target repair, sharedStrings synthesis/rebuild/writeback,
 pruning/index migration, source reload, source mutation, commit, undo, rollback,
 or public API.
+P8.552 strengthens the existing public image media-part replacement diagnostic:
+`WorkbookEditor::replace_image()` failures now include the public API name, the
+requested target media part, and either the file path or memory byte count before
+the underlying root cause. The thrown diagnostic is also recorded in
+`last_edit_error()`, failed replacements leave pending state clean, and a later
+successful replacement clears the diagnostic. This is diagnostic hardening only,
+not image insertion, drawing XML mutation, anchor updates, format conversion,
+relationship/content-type repair, source reload, transaction/undo/rollback, or
+public API expansion.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

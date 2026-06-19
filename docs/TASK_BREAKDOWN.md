@@ -25491,6 +25491,45 @@ Acceptance:
   rollback, or public API.
 - `git diff --check` passes.
 
+## P8.552 - Strengthen WorkbookEditor image replacement diagnostics
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_image()` diagnostic strengthening and
+task-doc sync; no new public symbol, no CMake target membership change, no
+drawing mutation, no media insertion, no relationship repair, and no content
+type repair.
+
+Goal: make the existing public image media-part replacement facade easier to
+debug by wrapping failures with the public API name, requested target media
+part, input source context, and underlying root cause, while preserving the
+existing no-state-pollution contract for rejected edits.
+
+Output:
+- The file overload now reports failures as
+  `WorkbookEditor::replace_image() failed for '<part>' from file '<path>': ...`.
+- The memory overload now reports failures as
+  `WorkbookEditor::replace_image() failed for '<part>' from memory bytes (N bytes): ...`.
+- `last_edit_error()` records the same public diagnostic that is thrown, and a
+  later successful image replacement clears it.
+- Regression coverage pins missing-target file replacement and memory-source
+  format mismatch failures, including unchanged `pending_change_count()`,
+  unchanged `has_pending_changes()`, and preserved root-cause text.
+
+Non-goals / boundary:
+- No image insertion, no drawing XML mutation, no anchor update, no image format
+  conversion, no content type repair, no relationship repair or pruning, no
+  target discovery, no existing-workbook full image support, no source reload,
+  no transaction/undo/rollback model, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.core` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish media-part replacement diagnostics from drawing
+  editing, image insertion, relationship/content-type repair, source reload,
+  commit, undo, rollback, or public API expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

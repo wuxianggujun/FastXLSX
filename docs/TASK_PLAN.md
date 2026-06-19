@@ -3309,6 +3309,15 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       repair, relationship repair/pruning, target repair, sharedStrings
       synthesis/writeback/migration, source reload, source package mutation, or
       public API.
+      P8.552 strengthens the existing public image media-part replacement
+      diagnostic: `WorkbookEditor::replace_image()` failures now include the
+      public API name, requested target media part, and input source context
+      (file path or memory byte count) before the root cause. The thrown
+      diagnostic is recorded in `last_edit_error()`, rejected replacements keep
+      pending state clean, and a later successful replacement clears the
+      diagnostic. This is not image insertion, drawing XML mutation, anchor
+      updates, format conversion, relationship/content-type repair, source
+      reload, transaction/undo/rollback, or public API expansion.
       P8.476 pins prefixed source sharedStrings local-name materialization on
       the positive path: prefixed `sst` / `si` / `t` / `r` markup in
       `xl/sharedStrings.xml` materializes through public `WorksheetEditor` and

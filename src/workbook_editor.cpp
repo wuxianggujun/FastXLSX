@@ -768,6 +768,9 @@ void WorkbookEditor::replace_image(
         throw FastXlsxError("WorkbookEditor is not open");
     }
 
+    const std::string image_part_name_key(image_part_name);
+    const std::filesystem::path image_path_key = image_path;
+
     try {
         const detail::PartName part_name(image_part_name);
         const detail::PackagePart& target_part =
@@ -792,8 +795,11 @@ void WorkbookEditor::replace_image(
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
-        impl_->record_last_edit_error(error);
-        throw;
+        FastXlsxError public_error("WorkbookEditor::replace_image() failed for '"
+            + image_part_name_key + "' from file '" + image_path_key.generic_string()
+            + "': " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
     }
 }
 
@@ -803,6 +809,9 @@ void WorkbookEditor::replace_image(
     if (impl_ == nullptr) {
         throw FastXlsxError("WorkbookEditor is not open");
     }
+
+    const std::string image_part_name_key(image_part_name);
+    const std::size_t image_byte_count = image_bytes.size();
 
     try {
         const detail::PartName part_name(image_part_name);
@@ -832,8 +841,11 @@ void WorkbookEditor::replace_image(
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
-        impl_->record_last_edit_error(error);
-        throw;
+        FastXlsxError public_error("WorkbookEditor::replace_image() failed for '"
+            + image_part_name_key + "' from memory bytes ("
+            + std::to_string(image_byte_count) + " bytes): " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
     }
 }
 

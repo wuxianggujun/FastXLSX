@@ -2419,6 +2419,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       shares the same dirty diagnostics, catalog checks, and post-erase memory
       alignment while preserving the existing dimension-shrink and scalar
       omission save-as XML projection checks.
+      P8.547 reuses it for the saved formula edge erase-shrink case, proving
+      the formula set and following `erase_cell("XFD1048576")` share the same
+      dirty diagnostics, catalog checks, and post-erase memory alignment while
+      preserving the existing escaped-formula, no-cached-value, dimension-shrink,
+      and formula omission save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2762,6 +2767,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       dimension shrink, and save-as semantics while hardening the same
       materialized diagnostics, summaries, handle dirtiness, transient-name
       absence, catalog checks, and post-erase memory alignment.
+      P8.547 applies the same dirty-state helper to the saved formula
+      max-coordinate erase-shrink projection after recovery, preserving formula
+      readback, sparse edge snapshots, escaped `<f>` output with no cached
+      value, removed edge readback, dimension shrink, and save-as semantics
+      while hardening the same materialized diagnostics, summaries, handle
+      dirtiness, transient-name absence, catalog checks, and post-erase memory
+      alignment.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -3040,6 +3052,15 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       style-preserving clear semantics, dense allocation, performance claims,
       coordinate repair, source reloads, relationship repair, or
       sharedStrings/style migration.
+      P8.547 applies the same shared helper to the saved formula edge erase
+      shrink case, proving formula set/readback, A1 erase, missing edge
+      readback, empty sparse edge snapshots, dimension shrink, and preserved
+      source-backed cells line up with the restored `Data` session without
+      formula evaluation, cached values, calcChain rebuild, defined-name or
+      formula dependency repair, tombstones, blank conversion,
+      style-preserving clear semantics, dense allocation, performance claims,
+      coordinate repair, source reloads, relationship repair, or
+      sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next
@@ -3128,7 +3149,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       A1, and range reads, and the next save shrinks dimension back to `A1:B2`
       without formula evaluation, cached-result generation, calcChain rebuild,
       defined-name/formula dependency rewrite, tombstones, blank conversion,
-      row metadata repair, or transient planned-name leakage. P8.449 splits
+      row metadata repair, or transient planned-name leakage.
+      P8.547 strengthens that saved formula erase-shrink projection with shared
+      dirty-state diagnostics, proving restored-name dirty materialized
+      counts/memory, pending summaries, unchanged catalogs, transient-name
+      absence, dirty borrowed handles, and post-erase memory alignment before
+      save-as without adding formula evaluation, cached values, calcChain
+      rebuild, defined-name or formula dependency repair, tombstones, blank
+      conversion, style-preserving clear semantics, dense allocation,
+      performance claims, coordinate repair, source reloads, relationship
+      repair, or sharedStrings/style migration. P8.449 splits
       the max-coordinate public regression family into
       `fastxlsx.workbook_editor.public-edge` so the general public facade shard
       stays within the default 60s CTest budget without relaxing timeouts,

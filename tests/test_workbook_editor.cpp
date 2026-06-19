@@ -6548,6 +6548,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_form
         "matching reacquire before max-coordinate formula erase should keep both handles clean");
     check(sheet.name() == "Data" && formula_handle.name() == "Data",
         "saved and reacquired max-coordinate formula erase handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     formula_handle.set_cell(1048576, 16384,
         fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<edge-erase>")"));
@@ -6581,33 +6586,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_form
                 "max-coordinate formula erase sparse range should preserve formula text");
         }
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate formula erase dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 4,
-        "max-coordinate formula erase dirty diagnostics should report active sparse records");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate formula erase set should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate formula erase summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate formula erase summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
-                "max-coordinate formula erase summary should report four sparse records");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate formula erase summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientFormulaErase"),
-        "max-coordinate formula erase should preserve the restored planned catalog name");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        formula_handle,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientFormulaErase",
+        "post-recovery max-coordinate formula set before erase",
+        3,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !formula_handle.has_pending_changes(),
@@ -6650,33 +6640,20 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_form
         check(edge_cells.empty(),
             "max-coordinate formula sparse range should be empty after erase");
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate formula erase-after-save dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 3,
-        "max-coordinate formula erase-after-save dirty diagnostics should report the shrunken sparse store");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate formula erase-after-save should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate formula erase-after-save summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate formula erase-after-save summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
-                "max-coordinate formula erase-after-save summary should report the shrunken sparse store");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate formula erase-after-save summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientFormulaErase"),
-        "max-coordinate formula erase-after-save should preserve the restored planned catalog name");
+    check(after_formula_save.estimated_memory_usage() == sheet.estimated_memory_usage(),
+        "max-coordinate formula erase should keep reacquired handle memory aligned");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        after_formula_save,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientFormulaErase",
+        "post-recovery max-coordinate formula erase",
+        4,
+        3,
+        sheet.estimated_memory_usage());
 
     editor.save_as(third_output);
     check(!sheet.has_pending_changes() && !formula_handle.has_pending_changes() &&

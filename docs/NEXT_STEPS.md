@@ -446,6 +446,22 @@ scalar-to-blank conversion, style-preserving clear semantics, dense allocation,
 max-coordinate performance evidence, coordinate repair, source reload, catalog
 repair, commit, undo, rollback, sharedStrings/style migration, or relationship
 repair.
+P8.547 applies the same helper to the saved formula edge erase-shrink
+projection after that recovery: after the escaped formula is saved at
+`XFD1048576` without a cached value, `erase_cell("XFD1048576")` still removes
+the edge record, clears row/column and A1 readback plus the sparse edge range,
+and the next save-as shrinks dimension back to `A1:B2` while omitting the prior
+formula payload, while diagnostics now also prove empty `last_edit_error()`,
+empty replacement diagnostics, restored-name dirty materialized aggregate
+counts/memory, one dirty `pending_worksheet_edits()` summary, unchanged
+source/planned catalog views, transient-name absence, dirty borrowed handles,
+and post-erase reacquired-handle memory alignment. This is dirty-state
+diagnostic hygiene only, not formula evaluation, cached result generation or
+preservation, calcChain rebuild, defined-name/formula dependency rewrite,
+tombstone output, formula-to-blank conversion, style-preserving clear
+semantics, dense allocation, max-coordinate performance evidence, coordinate
+repair, source reload, catalog repair, commit, undo, rollback,
+sharedStrings/style migration, or relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

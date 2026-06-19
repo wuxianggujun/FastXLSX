@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+if(@FASTXLSX_ENABLE_MINIZIP_NG@)
+    find_dependency(minizip-ng CONFIG)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/FastXLSXTargets.cmake")
+
+check_required_components(FastXLSX)

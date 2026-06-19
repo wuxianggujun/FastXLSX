@@ -5,6 +5,7 @@
 #include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
 #include <fastxlsx/detail/xml.hpp>
+#include <fastxlsx/image.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -184,6 +185,62 @@ bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
     std::error_code error;
     const bool directory = std::filesystem::is_directory(parent, error);
     return error || !directory;
+}
+
+std::optional<ImageFormat> image_format_from_content_type(std::string_view content_type)
+{
+    if (content_type == "image/png") {
+        return ImageFormat::Png;
+    }
+    if (content_type == "image/jpeg") {
+        return ImageFormat::Jpeg;
+    }
+    return std::nullopt;
+}
+
+std::optional<ImageFormat> image_format_from_media_part(const detail::PackagePart& part)
+{
+    if (!part.name.value().starts_with("/xl/media/")) {
+        return std::nullopt;
+    }
+
+    const std::optional<ImageFormat> content_type_format =
+        image_format_from_content_type(part.content_type);
+    if (!content_type_format.has_value()) {
+        return std::nullopt;
+    }
+
+    const std::string extension = part.name.extension();
+    std::optional<ImageFormat> extension_format;
+    if (extension == "png") {
+        extension_format = ImageFormat::Png;
+    } else if (extension == "jpg" || extension == "jpeg") {
+        extension_format = ImageFormat::Jpeg;
+    } else {
+        return std::nullopt;
+    }
+
+    if (*extension_format != *content_type_format) {
+        return std::nullopt;
+    }
+    return extension_format;
+}
+
+const detail::PackagePart& require_image_target_part(
+    const detail::PackageManifest& manifest, const detail::PartName& part_name)
+{
+    const detail::PackagePart* part = manifest.find_part(part_name);
+    if (part == nullptr) {
+        throw FastXlsxError("WorkbookEditor image target is not present in current package");
+    }
+
+    if (image_format_from_media_part(*part).has_value()) {
+        return *part;
+    }
+
+    throw FastXlsxError(
+        "WorkbookEditor image target must be an existing PNG/JPEG xl/media part whose "
+        "content type matches its extension");
 }
 
 } // namespace
@@ -696,6 +753,82 @@ void WorkbookEditor::replace_sheet_data(
             sheet_name, sheet_data_source);
         impl_->pending_sheet_data_payloads[std::string(sheet_name)] = {
             store.cell_count(), store.estimated_memory_usage()};
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        impl_->record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorkbookEditor::replace_image(
+    std::string_view image_part_name, std::filesystem::path image_path)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    try {
+        const detail::PartName part_name(image_part_name);
+        const detail::PackagePart& target_part =
+            require_image_target_part(impl_->editor.manifest(), part_name);
+        const ImageInfo replacement_info = read_image_info(image_path);
+        const std::optional<ImageFormat> target_format =
+            image_format_from_media_part(target_part);
+        if (!target_format.has_value()) {
+            throw FastXlsxError(
+                "WorkbookEditor image target must be an existing PNG/JPEG xl/media part whose "
+                "content type matches its extension");
+        }
+        if (replacement_info.format != *target_format) {
+            throw FastXlsxError(
+                "WorkbookEditor image replacement format does not match target media part");
+        }
+
+        impl_->editor.replace_part_chunks(part_name,
+            std::vector<detail::PackageEntryChunk> {
+                detail::PackageEntryChunk::file(std::move(image_path))},
+            "existing-workbook image replacement");
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        impl_->record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorkbookEditor::replace_image(
+    std::string_view image_part_name, std::span<const std::byte> image_bytes)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    try {
+        const detail::PartName part_name(image_part_name);
+        const detail::PackagePart& target_part =
+            require_image_target_part(impl_->editor.manifest(), part_name);
+        const ImageInfo replacement_info = read_image_info(image_bytes);
+        const std::optional<ImageFormat> target_format =
+            image_format_from_media_part(target_part);
+        if (!target_format.has_value()) {
+            throw FastXlsxError(
+                "WorkbookEditor image target must be an existing PNG/JPEG xl/media part whose "
+                "content type matches its extension");
+        }
+        if (replacement_info.format != *target_format) {
+            throw FastXlsxError(
+                "WorkbookEditor image replacement format does not match target media part");
+        }
+
+        std::string copied_bytes;
+        copied_bytes.assign(reinterpret_cast<const char*>(image_bytes.data()),
+            reinterpret_cast<const char*>(image_bytes.data()) + image_bytes.size());
+
+        impl_->editor.replace_part_chunks(part_name,
+            std::vector<detail::PackageEntryChunk> {
+                detail::PackageEntryChunk::memory(std::move(copied_bytes))},
+            "existing-workbook image replacement");
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

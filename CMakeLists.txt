@@ -6,6 +6,9 @@ project(FastXLSX
     LANGUAGES CXX
 )
 
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -74,3 +77,56 @@ if(FASTXLSX_BUILD_BENCHMARKS)
     target_compile_definitions(fastxlsx PRIVATE FASTXLSX_ENABLE_BENCHMARK_METRICS=1)
     add_subdirectory(benchmarks)
 endif()
+
+install(
+    TARGETS fastxlsx
+    EXPORT FastXLSXTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(
+    FILES
+        include/fastxlsx/cell_value.hpp
+        include/fastxlsx/document_properties.hpp
+        include/fastxlsx/fastxlsx.hpp
+        include/fastxlsx/image.hpp
+        include/fastxlsx/streaming_writer.hpp
+        include/fastxlsx/workbook.hpp
+        include/fastxlsx/workbook_editor.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fastxlsx
+)
+
+install(
+    EXPORT FastXLSXTargets
+    NAMESPACE FastXLSX::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FastXLSX
+)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/FastXLSXConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/FastXLSXConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FastXLSX
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/FastXLSXConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(
+    FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/FastXLSXConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/FastXLSXConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/FastXLSX
+)
+
+install(
+    FILES
+        LICENSE
+        THIRD_PARTY_NOTICES.md
+        CHANGELOG.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)

@@ -10,9 +10,11 @@
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/streaming_writer.hpp>
 
+#include "image_test_bytes.hpp"
 #include "zip_test_utils.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
@@ -22,6 +24,7 @@
 #include <map>
 #include <optional>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -373,6 +376,44 @@ void check_public_dirty_materialized_recovery_state(
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
+}
+
+std::filesystem::path repository_root()
+{
+    static const std::filesystem::path root = [] {
+        std::filesystem::path current = std::filesystem::path(__FILE__).parent_path();
+        if (current.is_relative()) {
+            current = std::filesystem::absolute(current);
+        }
+
+        while (true) {
+            const std::filesystem::path marker =
+                current / "docs" / "assets" / "donation" / "weixin.png";
+            if (std::filesystem::exists(marker)) {
+                return current;
+            }
+
+            const std::filesystem::path parent = current.parent_path();
+            if (parent.empty() || parent == current) {
+                break;
+            }
+            current = parent;
+        }
+
+        throw std::runtime_error("failed to locate repository root for workbook editor tests");
+    }();
+
+    return root;
+}
+
+std::filesystem::path repository_asset(std::string_view relative_path)
+{
+    return repository_root() / std::filesystem::path(relative_path);
+}
+
+std::span<const std::byte> as_bytes(std::string_view text)
+{
+    return std::as_bytes(std::span<const char>(text.data(), text.size()));
 }
 
 void check_public_worksheet_materialization_failure_hygiene(
@@ -786,6 +827,49 @@ std::filesystem::path write_two_sheet_source_with_document_properties(std::strin
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_image(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+    }
+    {
+        fastxlsx::WorksheetWriter pictures = writer.add_worksheet("Pictures");
+        pictures.append_row({fastxlsx::CellView::text("image-sheet")});
+        pictures.add_image(fastxlsx::test::tiny_png_bytes(), {1, 1, 2, 2});
+    }
+    writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_two_images(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+    }
+    {
+        fastxlsx::WorksheetWriter pictures = writer.add_worksheet("Pictures");
+        pictures.append_row({fastxlsx::CellView::text("image-sheet")});
+        pictures.add_image(fastxlsx::test::tiny_png_bytes(), {1, 1, 2, 2});
+        pictures.add_image(fastxlsx::test::tiny_jpeg_bytes(), {3, 1, 4, 2});
+    }
+    writer.close();
+
+    return path;
+}
+
 void test_replaces_sheet_data_and_preserves_untouched_parts()
 {
     const std::filesystem::path source =
@@ -831,6 +915,183 @@ void test_replaces_sheet_data_and_preserves_untouched_parts()
         "package relationships bytes should be preserved");
     check(output_entries.at("xl/_rels/workbook.xml.rels") == workbook_rels_before,
         "workbook relationships bytes should be preserved");
+}
+
+void test_replace_sheet_data_preserves_image_sheet_parts()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_image("fastxlsx-workbook-editor-image-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-image-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string picture_sheet_before = source_entries.at("xl/worksheets/sheet2.xml");
+    const std::string picture_sheet_rels_before =
+        source_entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    const std::string drawing_before = source_entries.at("xl/drawings/drawing1.xml");
+    const std::string drawing_rels_before =
+        source_entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    const std::string media_before = source_entries.at("xl/media/image1.png");
+    const std::string content_types_before = source_entries.at("[Content_Types].xml");
+    const std::string package_rels_before = source_entries.at("_rels/.rels");
+    const std::string workbook_rels_before = source_entries.at("xl/_rels/workbook.xml.rels");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_sheet_data("Data",
+        {
+            {fastxlsx::CellValue::number(42.25), fastxlsx::CellValue::text("fresh")},
+            {fastxlsx::CellValue::formula("SUM(A1:A1)")},
+        });
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string data_sheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet_xml, R"(<c r="A1"><v>42.25</v></c>)",
+        "edited data sheet should carry new numeric cell");
+    check_contains(data_sheet_xml, R"(<c r="B1" t="inlineStr"><is><t>fresh</t></is></c>)",
+        "edited data sheet should carry new inline text cell");
+    check_contains(data_sheet_xml, "<f>SUM(A1:A1)</f>",
+        "edited data sheet should carry new formula cell");
+    check_not_contains(data_sheet_xml, "placeholder-a1",
+        "edited data sheet should drop old placeholder data");
+    check_not_contains(data_sheet_xml, "placeholder-a2",
+        "edited data sheet should drop old placeholder data");
+
+    check(output_entries.at("xl/worksheets/sheet2.xml") == picture_sheet_before,
+        "image worksheet bytes should be preserved");
+    check(output_entries.at("xl/worksheets/_rels/sheet2.xml.rels") == picture_sheet_rels_before,
+        "image worksheet relationships bytes should be preserved");
+    check(output_entries.at("xl/drawings/drawing1.xml") == drawing_before,
+        "image drawing XML should be preserved");
+    check(output_entries.at("xl/drawings/_rels/drawing1.xml.rels") == drawing_rels_before,
+        "image drawing relationships should be preserved");
+    check(output_entries.at("xl/media/image1.png") == media_before,
+        "image media bytes should be preserved");
+    check(output_entries.at("[Content_Types].xml") == content_types_before,
+        "content types bytes should be preserved");
+    check(output_entries.at("_rels/.rels") == package_rels_before,
+        "package relationships bytes should be preserved");
+    check(output_entries.at("xl/_rels/workbook.xml.rels") == workbook_rels_before,
+        "workbook relationships bytes should be preserved");
+}
+
+void test_replace_image_updates_target_media_bytes_and_preserves_other_parts()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images("fastxlsx-workbook-editor-image-replace-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-image-replace-output.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::filesystem::path replacement_jpeg_path =
+        repository_asset("docs/assets/donation/zhifubao.jpg");
+    const std::string replacement_png_bytes = fastxlsx::test::read_file(replacement_png_path);
+    const std::string replacement_jpeg_bytes = fastxlsx::test::read_file(replacement_jpeg_path);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string data_sheet_before = source_entries.at("xl/worksheets/sheet1.xml");
+    const std::string picture_sheet_before = source_entries.at("xl/worksheets/sheet2.xml");
+    const std::string picture_sheet_rels_before =
+        source_entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    const std::string drawing_before = source_entries.at("xl/drawings/drawing1.xml");
+    const std::string drawing_rels_before =
+        source_entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    const std::string content_types_before = source_entries.at("[Content_Types].xml");
+    const std::string package_rels_before = source_entries.at("_rels/.rels");
+    const std::string workbook_rels_before = source_entries.at("xl/_rels/workbook.xml.rels");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(threw_fastxlsx_error([&] {
+              editor.replace_image("xl/worksheets/sheet1.xml", replacement_png_path);
+          }),
+        "replacing a non-media target should throw");
+    check(editor.pending_change_count() == 0,
+        "failed image replacement should not increment pending change count");
+    check(!editor.has_pending_changes(),
+        "failed image replacement should not queue pending changes");
+
+    check(threw_fastxlsx_error([&] {
+              editor.replace_image("xl/media/image1.png", replacement_jpeg_path);
+          }),
+        "replacing a PNG target with JPEG bytes should throw");
+    check(editor.pending_change_count() == 0,
+        "failed format-mismatch image replacement should not increment pending change count");
+    check(!editor.has_pending_changes(),
+        "failed format-mismatch image replacement should not queue pending changes");
+    check(editor.last_edit_error().has_value(),
+        "failed image replacement should record a public edit diagnostic");
+
+    editor.replace_image("xl/media/image1.png", replacement_png_path);
+    editor.replace_image("xl/media/image2.jpg", as_bytes(replacement_jpeg_bytes));
+    check(!editor.last_edit_error().has_value(),
+        "successful image replacement should clear the public edit diagnostic");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "PNG media bytes should be replaced from file");
+    check(output_entries.at("xl/media/image2.jpg") == replacement_jpeg_bytes,
+        "JPEG media bytes should be replaced from memory");
+    check(output_entries.at("xl/worksheets/sheet1.xml") == data_sheet_before,
+        "data worksheet bytes should be preserved");
+    check(output_entries.at("xl/worksheets/sheet2.xml") == picture_sheet_before,
+        "picture worksheet bytes should be preserved");
+    check(output_entries.at("xl/worksheets/_rels/sheet2.xml.rels") == picture_sheet_rels_before,
+        "picture worksheet relationships should be preserved");
+    check(output_entries.at("xl/drawings/drawing1.xml") == drawing_before,
+        "drawing XML should be preserved");
+    check(output_entries.at("xl/drawings/_rels/drawing1.xml.rels") == drawing_rels_before,
+        "drawing relationships should be preserved");
+    check(output_entries.at("[Content_Types].xml") == content_types_before,
+        "content types should be preserved");
+    check(output_entries.at("_rels/.rels") == package_rels_before,
+        "package relationships should be preserved");
+    check(output_entries.at("xl/_rels/workbook.xml.rels") == workbook_rels_before,
+        "workbook relationships should be preserved");
+}
+
+void test_replace_image_rejects_missing_or_mismatched_targets()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images("fastxlsx-workbook-editor-image-reject-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-image-reject-output.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::filesystem::path replacement_jpeg_path =
+        repository_asset("docs/assets/donation/zhifubao.jpg");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    check(threw_fastxlsx_error([&] {
+              editor.replace_image("xl/media/missing.png", replacement_png_path);
+          }),
+        "replacing a missing media target should throw");
+    check(editor.pending_change_count() == 0,
+        "missing-target image replacement should not increment pending change count");
+    check(!editor.has_pending_changes(),
+        "missing-target image replacement should not queue pending changes");
+
+    check(threw_fastxlsx_error([&] {
+              editor.replace_image("xl/media/image1.png", replacement_jpeg_path);
+          }),
+        "replacing a PNG target with JPEG bytes should throw");
+    check(editor.pending_change_count() == 0,
+        "format-mismatch image replacement should not increment pending change count");
+    check(!editor.has_pending_changes(),
+        "format-mismatch image replacement should not queue pending changes");
+
+    editor.replace_image("xl/media/image1.png", replacement_png_path);
+    editor.replace_image("xl/media/image2.jpg", replacement_jpeg_path);
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/media/image1.png") == fastxlsx::test::read_file(replacement_png_path),
+        "PNG replacement should remain usable after rejected attempts");
+    check(output_entries.at("xl/media/image2.jpg") == fastxlsx::test::read_file(replacement_jpeg_path),
+        "JPEG replacement should remain usable after rejected attempts");
 }
 
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()
@@ -16643,6 +16904,7 @@ int main(int argc, char* argv[])
 
         if (should_run_workbook_editor_shard(shard, "core")) {
         test_replaces_sheet_data_and_preserves_untouched_parts();
+        test_replace_sheet_data_preserves_image_sheet_parts();
         test_replace_sheet_data_preserves_surrounding_worksheet_metadata();
         test_replace_sheet_data_writes_caller_style_ids_as_is();
         test_replace_sheet_data_distinguishes_blank_cells_from_missing_cells();
@@ -16842,6 +17104,8 @@ int main(int argc, char* argv[])
         test_rename_chain_back_to_source_name_clears_rename_only_summary();
         test_replacement_after_rename_chain_back_failure_uses_restored_name();
         test_failed_rename_preserves_pending_replacement_diagnostics();
+        test_replace_image_updates_target_media_bytes_and_preserves_other_parts();
+        test_replace_image_rejects_missing_or_mismatched_targets();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();

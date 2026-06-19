@@ -228,6 +228,9 @@ sharedStrings 生产就绪、完整低内存、大文件性能或 Google Benchma
 `benchmark-matrix-report.json` 汇总成 Markdown / JSON 报告。它不调用 benchmark exe、
 不生成 workbook、不修改原始 case JSON，也不自动完成 Office/openpyxl 验证；用途是把
 手工性能数据沉淀为可审阅的吞吐量、峰值内存、输出体积和风险提示。
+当输入是目录时，helper 会优先汇总同目录下的 `benchmark-matrix-report.json`，
+避免把矩阵报告和其对应的 raw case JSON 重复统计；单独传入 schema-v4 case JSON 时，
+仍按文件逐个汇总。
 
 ```powershell
 py tools\summarize_benchmark_results.py --self-test

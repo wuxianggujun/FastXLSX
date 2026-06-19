@@ -3011,7 +3011,9 @@ Do:
   openpyxl, or Office validation.
 - Run `py tools/summarize_benchmark_results.py --self-test` when changing the
   benchmark summary helper. It only checks summary parsing/rendering/output
-  guardrails and does not count as performance evidence.
+  guardrails and does not count as performance evidence. The helper now prefers
+  `benchmark-matrix-report.json` over sibling raw case JSON when a directory is
+  passed, so matrix directories are not double-counted.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
 - Record data scale, string strategy, compression setting, package entry source
   mode, string pattern, input string distribution counts, temporary worksheet
@@ -3636,9 +3638,10 @@ Stages:
      equivalent reference workbook with Excel, `openpyxl`, or `XlsxWriter`, then
      unzip both packages and compare OpenXML semantics.
 5. P17.4 - Existing-workbook image read/edit/preservation.
-   - Start only after preservation fixtures prove unmodified
-     media/drawing/chart/VBA and unknown parts remain present and relationships
-     still resolve after unrelated edits.
+   - Preservation baseline is now covered by public-facade regression: unrelated
+     edits keep source media/drawing parts and relationships intact. The
+     remaining work is real existing-workbook image editing, not more
+     preservation-only evidence.
 
 Do:
 - Use `stb` as the image decoding, dimension-reading, channel, and pixel-access
@@ -3718,6 +3721,33 @@ Do not claim:
 Start only after the targeted public surface has code, tests, local validation,
 and documentation.
 
+Current status:
+- Basic CMake install/export packaging is in place for `FastXLSX::fastxlsx`.
+  Installed packages include `FastXLSXConfig.cmake`,
+  `FastXLSXConfigVersion.cmake`, exported targets, `fastxlsx.lib`, the
+  top-level public headers, `LICENSE`, `THIRD_PARTY_NOTICES.md`, and
+  `CHANGELOG.md`.
+- Install rules intentionally install only top-level public headers under
+  `include/fastxlsx`; internal `include/fastxlsx/detail` headers are not part of
+  the installed release surface.
+- Default install/export validation passed with
+  `windows-nmake-release`, `ctest --preset windows-nmake-release
+  --output-on-failure`, install to
+  `build/qa/install-fastxlsx-release-docs-clean`, and a local consumer using
+  `find_package(FastXLSX CONFIG REQUIRED)` / `FastXLSX::fastxlsx`.
+- Opt-in minizip install/export validation passed with
+  `windows-nmake-release-minizip`, `ctest --preset
+  windows-nmake-release-minizip --output-on-failure`, install to
+  `build/qa/install-fastxlsx-release-minizip`, and a local consumer using the
+  installed package plus the resolved vcpkg dependency prefix. In that installed
+  config, `FastXLSXConfig.cmake` correctly requires
+  `find_dependency(minizip-ng CONFIG)`.
+- `FASTXLSX_BUILD_EXAMPLES=ON` currently compiles the
+  `fastxlsx_minimal_writer_example` and `fastxlsx_streaming_writer_example`
+  targets against the public umbrella header.
+- Release docs now include `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`,
+  `docs/DEPENDENCIES.md`, and `docs/DEVELOPMENT_ENVIRONMENT.md`.
+
 Do:
 - Add install/export packaging rules.
 - Decide versioning and changelog workflow.
@@ -3732,7 +3762,11 @@ Accept when:
 - No generated files, local build outputs, or private state are staged.
 
 Do not claim:
-- Stable API or release readiness if public comments or validation are missing.
+- Stable API or release readiness until remote CI, release artifact policy, and
+  final staged-file review are complete.
+- Native chart/VBA generation or editing, complete existing-workbook object
+  lifecycle, relationship repair/pruning, or orphan cleanup from preservation
+  and release-packaging evidence alone.
 
 ## Immediate Repository Tasks
 
@@ -5099,6 +5133,11 @@ py C:\Users\wuxianggujun\.codex\skills\.system\skill-creator\scripts\quick_valid
 - VS2026/NMake build passes.
 - `ctest --preset windows-nmake-release` passes, with the preset/test
   properties enforcing the 60s timeout.
+- CMake install/export passes for default and opt-in minizip presets.
+- Installed-package consumers compile and link with
+  `find_package(FastXLSX CONFIG REQUIRED)` and `FastXLSX::fastxlsx`; minizip
+  consumers must also prove the installed config can resolve
+  `find_dependency(minizip-ng CONFIG)`.
 - GitHub Actions CI runner label and workflow behavior are verified or
   corrected, then CI passes.
 - Key generated `.xlsx` files open in Excel.

@@ -211,13 +211,49 @@ def iter_input_files(path: Path) -> Iterable[Path]:
         yield path
 
 
+def collect_from_directory(path: Path) -> tuple[list[BenchmarkCase], list[str]]:
+    # Prefer benchmark-matrix-report.json over sibling per-case JSON files to avoid
+    # double-counting the same benchmark run when a directory contains both forms.
+    json_paths = sorted(p for p in path.iterdir() if p.suffix.lower() == ".json")
+    classified: list[tuple[Path, str, dict[str, Any]]] = []
+    has_matrix_report = False
+    for json_path in json_paths:
+        data = load_json(json_path)
+        if is_matrix_report(data):
+            classified.append((json_path, "matrix", data))
+            has_matrix_report = True
+        elif is_summary_report(data):
+            classified.append((json_path, "summary", data))
+        elif is_benchmark_result(data):
+            classified.append((json_path, "benchmark", data))
+        else:
+            classified.append((json_path, "other", data))
+
+    cases: list[BenchmarkCase] = []
+    warnings: list[str] = []
+    for json_path, kind, data in classified:
+        if kind == "matrix":
+            cases.extend(collect_from_matrix(json_path, data))
+        elif kind == "benchmark":
+            if not has_matrix_report:
+                cases.append(parse_benchmark_case(json_path, data))
+        elif kind == "other":
+            warnings.append(f"Skipped non-benchmark JSON: {json_path}")
+    require(cases, "no benchmark cases were found")
+    return cases, warnings
+
+
 def collect_cases(paths: list[Path]) -> tuple[list[BenchmarkCase], list[str]]:
     cases: list[BenchmarkCase] = []
     warnings: list[str] = []
     for input_path in paths:
         require(input_path.exists(), f"input path does not exist: {input_path}")
-        for json_path in iter_input_files(input_path):
-            file_cases, file_warnings = collect_from_file(json_path, allow_skip=input_path.is_dir())
+        if input_path.is_dir():
+            file_cases, file_warnings = collect_from_directory(input_path)
+            cases.extend(file_cases)
+            warnings.extend(file_warnings)
+        else:
+            file_cases, file_warnings = collect_from_file(input_path, allow_skip=False)
             cases.extend(file_cases)
             warnings.extend(file_warnings)
     require(cases, "no benchmark cases were found")
@@ -432,8 +468,21 @@ def run_self_test() -> None:
     })
     with tempfile.TemporaryDirectory() as temp:
         temp_dir = Path(temp)
-        (temp_dir / "numeric.json").write_text(json.dumps(sample), encoding="utf-8")
-        (temp_dir / "matrix.json").write_text(json.dumps({
+        raw_dir = temp_dir / "raw"
+        raw_dir.mkdir()
+        (raw_dir / "numeric.json").write_text(json.dumps(sample), encoding="utf-8")
+        (raw_dir / "notes.json").write_text(json.dumps({
+            "not": "a benchmark result",
+        }), encoding="utf-8")
+        raw_cases, raw_warnings = collect_cases([raw_dir])
+        require(len(raw_cases) == 1, "self-test raw directory case count mismatch")
+        require(len(raw_warnings) == 1 and "Skipped non-benchmark JSON" in raw_warnings[0],
+            "self-test raw directory warning mismatch")
+
+        matrix_dir = temp_dir / "matrix"
+        matrix_dir.mkdir()
+        (matrix_dir / "numeric.json").write_text(json.dumps(sample), encoding="utf-8")
+        (matrix_dir / "matrix.json").write_text(json.dumps({
             "benchmark_matrix_schema_version": "1",
             "cases": [{
                 "name": "strings-unique-shared",
@@ -442,21 +491,22 @@ def run_self_test() -> None:
                 "openpyxl": {"status": "opened"},
             }],
         }), encoding="utf-8")
-        (temp_dir / "prior-summary.json").write_text(json.dumps({
+        (matrix_dir / "prior-summary.json").write_text(json.dumps({
             "benchmark_summary_schema_version": "1",
             "cases": [],
         }), encoding="utf-8")
-        (temp_dir / "notes.json").write_text(json.dumps({
+        (matrix_dir / "notes.json").write_text(json.dumps({
             "not": "a benchmark result",
         }), encoding="utf-8")
-        cases, initial_warnings = collect_cases([temp_dir])
-        require(len(cases) == 2, "self-test case count mismatch")
+        cases, initial_warnings = collect_cases([matrix_dir])
+        require(len(cases) == 1, "self-test matrix directory case count mismatch")
+        require(cases[0].name == "strings-unique-shared", "self-test matrix directory case name mismatch")
         require(len(initial_warnings) == 1 and "Skipped non-benchmark JSON" in initial_warnings[0],
-            "self-test directory warning mismatch")
+            "self-test matrix directory warning mismatch")
         warnings = build_warnings(cases, initial_warnings, 64.0, 1024.0)
         require(any("unique strings" in warning for warning in warnings),
             "self-test missing unique sharedStrings warning")
-        summary = build_summary([temp_dir], cases, warnings)
+        summary = build_summary([matrix_dir], cases, warnings)
         markdown = render_markdown(summary)
         require("FastXLSX Benchmark Summary" in markdown, "self-test markdown title mismatch")
         require("strings-unique-shared" in markdown, "self-test markdown case mismatch")

@@ -57,6 +57,8 @@ FastXLSX 的当前定位是：
 - [架构与编辑边界](docs/ARCHITECTURE.md)
 - [编辑模型](docs/EDITING_MODEL.md)
 - [API 设计与文档注释](docs/API_DESIGN_AND_DOCUMENTATION.md)
+- [开发环境](docs/DEVELOPMENT_ENVIRONMENT.md)
+- [依赖边界](docs/DEPENDENCIES.md)
 - [任务计划](docs/TASK_PLAN.md)
 - [任务拆分设计](docs/TASK_BREAKDOWN.md)
 - [下一步推进](docs/NEXT_STEPS.md)
@@ -86,6 +88,30 @@ CTest preset 和测试属性保持 60s 边界。当前手工 benchmark 通过
 `[Content_Types].xml`、relationships、workbook、worksheet、shared strings 和
 styles 等 XML。
 
+## 安装与 CMake 消费
+
+当前仓库提供基础 install/export 包装，用于本地验证和后续发布准备：
+
+```powershell
+cmake --preset windows-nmake-release
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release --output-on-failure
+cmake --install build/windows-nmake-release --prefix build/qa/install-fastxlsx
+```
+
+消费侧使用 CMake config package：
+
+```cmake
+find_package(FastXLSX CONFIG REQUIRED)
+target_link_libraries(your_target PRIVATE FastXLSX::fastxlsx)
+```
+
+安装面只包含 top-level public headers、`fastxlsx.lib`、CMake package
+config/export 文件和 release 文档；`include/fastxlsx/detail` 是 internal
+header 区域，不属于安装发布面。`FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建的安装包会在
+`FastXLSXConfig.cmake` 中要求 `find_dependency(minizip-ng CONFIG)`，因此消费侧还
+需要通过 vcpkg toolchain 或 `CMAKE_PREFIX_PATH` 提供对应依赖前缀。
+
 ## 示例
 
 当前 `examples/` 是 opt-in 构建入口，不进入默认 CTest：
@@ -113,9 +139,13 @@ cmake --build --preset windows-nmake-release --target fastxlsx_streaming_writer_
 
 ```text
 FastXLSX
+├── CHANGELOG.md
+├── THIRD_PARTY_NOTICES.md
 ├── docs
 │   ├── API_DESIGN_AND_DOCUMENTATION.md
 │   ├── ARCHITECTURE.md
+│   ├── DEPENDENCIES.md
+│   ├── DEVELOPMENT_ENVIRONMENT.md
 │   ├── EDITING_MODEL.md
 │   ├── NEXT_STEPS.md
 │   ├── PATCH_PRESERVATION_COVERAGE.md

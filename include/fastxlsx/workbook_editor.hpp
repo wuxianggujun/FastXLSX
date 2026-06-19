@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -1079,6 +1080,55 @@ public:
     /// failure no edit state is mutated and the editor remains usable.
     void replace_sheet_data(
         std::string_view sheet_name, const std::vector<std::vector<CellValue>>& rows);
+
+    /// Replaces an existing workbook image part from a file on disk.
+    ///
+    /// API mode: Patch / existing-workbook media-part rewrite. This queues a
+    /// replacement for one package part and writes the changed bytes during
+    /// save_as(); it never edits the source package in place.
+    ///
+    /// The target must be an existing `xl/media/*` part whose current content
+    /// type is PNG or JPEG. The replacement file must decode to the same image
+    /// format as the target part. This is a narrow media-part rewrite; it does
+    /// not touch worksheet XML, drawings, relationships, anchors, content types,
+    /// EXIF/PNG/JPEG metadata, or any drawing geometry. It is not image
+    /// insertion, drawing editing, relationship repair/pruning, or orphan
+    /// cleanup.
+    ///
+    /// The source image path is read again during save_as(), so the caller must
+    /// keep the file accessible until the edited workbook is written.
+    ///
+    /// @param image_part_name Existing package part path such as
+    /// `xl/media/image1.png`.
+    /// @param image_path Replacement PNG/JPEG file path.
+    /// @throws FastXlsxError if the editor is not open, the target part is
+    /// missing or outside the current PNG/JPEG media-part slice, the replacement
+    /// file cannot be read, or the replacement format does not match the target.
+    /// On failure no edit state is mutated and the editor remains usable.
+    void replace_image(std::string_view image_part_name, std::filesystem::path image_path);
+
+    /// Replaces an existing workbook image part from caller-owned bytes.
+    ///
+    /// API mode: Patch / existing-workbook media-part rewrite. The byte span is
+    /// copied into staged replacement storage during the call, so the caller can
+    /// release the span immediately after the call returns.
+    ///
+    /// The target must be an existing `xl/media/*` part whose current content
+    /// type is PNG or JPEG. The replacement bytes must decode to the same
+    /// image format as the target part. This does not touch worksheet XML,
+    /// drawings, relationships, anchors, content types, EXIF/PNG/JPEG metadata,
+    /// or any drawing geometry; it is not image insertion, drawing editing,
+    /// relationship repair/pruning, or orphan cleanup.
+    ///
+    /// @param image_part_name Existing package part path such as
+    /// `xl/media/image1.png`.
+    /// @param image_bytes Replacement PNG/JPEG bytes. The span is not retained.
+    /// @throws FastXlsxError if the editor is not open, the target part is
+    /// missing or outside the current PNG/JPEG media-part slice, the replacement
+    /// bytes are empty or unreadable, or the replacement format does not match
+    /// the target. On failure no edit state is mutated and the editor remains
+    /// usable.
+    void replace_image(std::string_view image_part_name, std::span<const std::byte> image_bytes);
 
     /// Renames a worksheet's sheet-catalog name for the saved package.
     ///

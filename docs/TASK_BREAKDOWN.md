@@ -24553,6 +24553,43 @@ Acceptance:
 - Full default build and CTest pass.
 - `git diff --check` passes.
 
+## P8.531 - Strengthen post-recovery catalog query clean-state diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery catalog-query
+diagnostic strengthening and task-doc sync; no new public symbol, no production
+CMake target membership change, and no package format expansion.
+
+Goal: upgrade the existing P8.432 catalog-query regression from scattered
+assertions to a complete saved-materialized-session clean-state check.
+
+Output:
+- Added a shared public regression helper for saved materialized recovery
+  sessions after a failed `save_as(source)` and later safe save.
+- `test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_preserve_reacquired_state()`
+  now verifies catalog queries preserve `last_edit_error()`, prior public edit
+  count, replacement diagnostics, materialized dirty diagnostics,
+  `pending_worksheet_edits()`, source/planned worksheet names,
+  `worksheet_catalog()`, borrowed-handle cleanliness, and the saved
+  materialized cell value.
+- The later matching-option reacquire/mutation/save path still proves the
+  session remains usable and does not leak the transient planned sheet name.
+
+Non-goals / boundary:
+- No behavior expansion, no diagnostic-triggered flush, no catalog repair, no
+  source reload, no source package mutation, no transaction/undo model, no
+  sheet rename dependency repair, no style/sharedStrings migration, no
+  relationship repair, and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish read-only catalog-query hygiene from source
+  reload, catalog repair, source mutation, commit, undo, rollback, or
+  diagnostic-triggered flush semantics.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -277,6 +277,14 @@ diagnostics, pending edit summaries, source/planned catalog views, and the
 prior `last_edit_error()` remain unchanged through the later byte-for-byte
 copy-original save. This is throwing-lookup hygiene only, not missing-sheet
 creation, source repair, or semantic migration.
+P8.531 strengthens the post-recovery catalog-query regression by routing the
+existing P8.432 scenario through a complete saved-materialized-session
+clean-state helper: read-only planned/source catalog queries now also prove no
+replacement diagnostics, no dirty materialized diagnostics, no pending edit
+summaries, unchanged source/planned catalog views, preserved borrowed-handle
+cleanliness, and the saved materialized value. This is catalog-query
+diagnostic hygiene only, not source reload, catalog repair, commit, undo, or
+rollback semantics.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

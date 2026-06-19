@@ -229,6 +229,63 @@ void check_public_materialization_failure_clean_state(
         prefix + " should preserve last_edit_error");
 }
 
+void check_public_saved_materialized_recovery_clean_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& saved_handle,
+    fastxlsx::WorksheetEditor& reacquired_handle,
+    const std::vector<std::string>& expected_source_names,
+    const std::vector<std::string>& expected_planned_names,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
+    std::string_view expected_saved_text,
+    std::string_view transient_sheet_name,
+    std::string_view scenario,
+    std::size_t expected_pending_change_count,
+    const std::optional<std::string>& expected_last_error = std::nullopt)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.last_edit_error() == expected_last_error,
+        prefix + " should preserve last_edit_error");
+    check(editor.has_pending_changes(),
+        prefix + " should preserve prior public edit facade state");
+    check(editor.pending_change_count() == expected_pending_change_count,
+        prefix + " should not queue another public edit");
+    check(editor.pending_replacement_cell_count() == 0,
+        prefix + " should not invent replacement cells");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        prefix + " should not invent replacement sheet names");
+    check(!editor.has_pending_replacement("Data"),
+        prefix + " should not report a Data replacement");
+    check(!editor.has_pending_replacement(transient_sheet_name),
+        prefix + " should not revive transient replacement state");
+    check(!editor.has_pending_replacement("Missing"),
+        prefix + " should not report unrelated missing replacements");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        prefix + " should keep replacement memory empty");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        prefix + " should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        prefix + " should keep dirty materialized cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should keep dirty materialized memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should keep worksheet edit summaries empty");
+    check(editor.source_worksheet_names() == expected_source_names,
+        prefix + " should preserve source worksheet_names");
+    check(editor.worksheet_names() == expected_planned_names,
+        prefix + " should preserve planned worksheet_names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), expected_catalog),
+        prefix + " should preserve worksheet_catalog");
+    check(!saved_handle.has_pending_changes() && !reacquired_handle.has_pending_changes(),
+        prefix + " should keep existing handles clean");
+
+    const fastxlsx::CellValue preserved_value = reacquired_handle.get_cell(1, 1);
+    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
+            preserved_value.text_value() == expected_saved_text,
+        prefix + " should preserve the saved materialized value");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -3735,6 +3792,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_pre
     check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
             saved_value.text_value() == "rename-back-catalog-query-first",
         "matching reacquire before catalog queries should reuse saved materialized state");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     {
         const std::vector<std::string> names = editor.worksheet_names();
@@ -3765,25 +3827,17 @@ void test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_pre
     check(!editor.has_source_worksheet("Missing"),
         "source catalog query after recovery should reject absent source names");
 
-    check(!editor.last_edit_error().has_value(),
-        "post-recovery catalog queries should not update last_edit_error");
-    check(editor.pending_change_count() == 3,
-        "post-recovery catalog queries should not queue another public edit");
-    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
-        "post-recovery catalog queries should keep existing handles clean");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "post-recovery catalog queries should not dirty materialized names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "post-recovery catalog queries should keep dirty cell count clear");
-    check(editor.estimated_pending_materialized_memory_usage() == 0,
-        "post-recovery catalog queries should keep dirty memory clear");
-    check(editor.pending_worksheet_edits().empty(),
-        "post-recovery catalog queries should keep summaries empty");
-
-    const fastxlsx::CellValue preserved_value = reacquired.get_cell(1, 1);
-    check(preserved_value.kind() == fastxlsx::CellValueKind::Text &&
-            preserved_value.text_value() == "rename-back-catalog-query-first",
-        "post-recovery catalog queries should preserve the saved materialized value");
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-catalog-query-first",
+        "TransientCatalogQuery",
+        "post-recovery catalog queries",
+        3);
 
     fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
     check(!matching.has_pending_changes(),

@@ -2342,6 +2342,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       path after a prior public edit failure, proving the exception identifies
       the missing sheet while diagnostics, catalog views, and prior
       `last_edit_error()` remain unchanged through no-op save-as.
+      P8.531 strengthens the post-recovery catalog-query regression by
+      checking the same saved materialized session against a complete
+      clean-state helper: no replacement/materialized diagnostics, no pending
+      edit summaries, unchanged source/planned catalog views, preserved
+      borrowed-handle cleanliness, and preserved saved cell value.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2618,7 +2623,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       those diagnostics, catalog views, and prior `last_edit_error()` through
       the no-op copy-original save path. P8.530 proves the analogous throwing
       `worksheet("Missing")` path keeps the same diagnostics and catalog views
-      unchanged while still exposing a missing-sheet exception. P8.415 pins
+      unchanged while still exposing a missing-sheet exception. P8.531 tightens
+      the rename-back failed-save recovery catalog-query case so the existing
+      saved materialized session is checked with the same complete clean-state
+      diagnostics after read-only planned/source catalog queries. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2809,6 +2817,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       recovery after a prior public edit failure, preserving the prior
       `last_edit_error()` and byte-level copy-original output while requiring
       the exception to identify the missing sheet.
+      P8.531 applies the complete saved-session clean-state helper to the
+      post-recovery catalog-query path, proving read-only catalog inspection
+      does not create replacement/materialized diagnostics, pending summaries,
+      catalog drift, stale handle dirtiness, or saved-value reloads.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

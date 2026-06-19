@@ -3628,7 +3628,10 @@ Tasks:
   append-buffer paths avoid per-value temporary decimal strings. Worksheet
   suffix metadata counts/priorities (`mergeCells` count, conditional
   formatting priorities, and `dataValidations` count) now use the same helper
-  without changing metadata ordering or package side effects. SharedStrings duplicate
+  without changing metadata ordering or package side effects. Worksheet prefix
+  metadata unsigned integer attributes (`pane` x/y splits and column `min` /
+  `max`) also use it without changing freeze-pane or column-width semantics.
+  SharedStrings duplicate
   lookup also uses transparent `std::string_view` lookup before allocating an
   owning key, so repeated strings no longer allocate a temporary key just to
   discover an existing index. The workbook-scope shared string index map stores
@@ -4617,9 +4620,11 @@ Tasks:
   the helper for counts, custom `numFmtId`, and custom `xf` style ids; it is a
   local hot-path helper. Worksheet suffix metadata counts/priorities
   (`mergeCells` count, conditional formatting priorities, and
-  `dataValidations` count) also use it. This is not a benchmark result,
-  sharedStrings strategy change, table/styles/metadata feature expansion,
-  full styles or conditional-formatting completion, or date encoding completion.
+  `dataValidations` count) also use it, as do worksheet prefix metadata
+  unsigned integer attributes for frozen-pane splits and column width min/max
+  bounds. This is not a benchmark result, sharedStrings strategy change,
+  table/styles/metadata feature expansion, full styles or conditional-formatting
+  completion, row/column geometry work, or date encoding completion.
   Current sharedStrings duplicate lookup also uses transparent `std::string_view`
   lookup in the workbook-scope index map, avoiding an owning temporary key for
   repeated strings before preserving the existing index. The index map now

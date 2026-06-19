@@ -26504,7 +26504,7 @@ rg -n "class WorksheetEditor|struct WorksheetEditor|WorksheetEditorOptions|try_w
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 / P12.6 / P12.7 / P12.8 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -26518,6 +26518,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.5 streaming table XML integer append path：基础完成。
 - P12.6 streaming styles XML integer append path：基础完成。
 - P12.7 worksheet suffix metadata integer append path：基础完成。
+- P12.8 worksheet prefix metadata integer append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -26968,6 +26969,51 @@ py tools\verify_conditional_formatting_icon_sets.py `
   --multi-range-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-multi-range.xlsx `
   --priorities-input build\windows-nmake-release\tests\fastxlsx-streaming-conditional-formatting-icon-set-priorities.xlsx `
   --work-dir build\qa\conditional-formatting-icon-sets
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.8 worksheet prefix metadata integer append path
+
+状态：基础完成。
+
+类型：internal worksheet metadata XML append helper usage + existing Phase 3
+metadata structure tests + docs；不新增 public API / CMake dependency。
+
+目标：让 streaming worksheet prefix metadata 中的 unsigned integer attributes 复用
+`detail::append_unsigned_decimal()`，避免这些 append-buffer XML 数字属性构造临时
+decimal string。
+
+范围：
+- frozen pane `<pane xSplit>` / `<pane ySplit>`。
+- column width `<col min>` / `<col max>`。
+- 文档记录该切片只覆盖 worksheet prefix metadata 的 append-buffer unsigned
+  integer attributes，不改变 worksheet metadata ordering、freeze pane semantics、
+  column width validation、dimension tracking、relationship id allocation、package side
+  effects 或 public API。
+
+验收条件：
+- `fastxlsx.streaming` 继续通过，证明 frozen panes、column widths、dimension、suffix
+  ordering 和 failure state hygiene 语义不变。
+- 本地 phase3 metadata QA helpers 继续通过。
+- 文档明确这不是 benchmark 结果、完整 streaming hot-path 优化、完整 Phase 3、
+  row/column geometry 计算、styles 支持或 broader metadata feature expansion。
+
+非目标：
+- 不改变 `freeze_panes()` validation、top-left cell calculation、active pane、state
+  semantics 或 Excel UI parity。
+- 不改变 `set_column_width()` validation、width serialization、column range ordering、
+  duplicate/overlap behavior 或 style side effects。
+- 不替换 relationship id/path、package entry name、diagnostic、temporary filename、
+  media/drawing/table path 或其它 metadata 路径中的 `std::to_string()`。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+py tools\verify_phase3_metadata.py `
+  --input build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_phase3_metadata_excel.ps1 `
+  -Path build\windows-nmake-release\tests\fastxlsx-streaming-phase3-metadata.xlsx
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

@@ -1394,12 +1394,12 @@ std::string build_sheet_views(const detail::WorksheetWriterState& worksheet)
     xml += "<sheetViews><sheetView workbookViewId=\"0\"><pane";
     if (column_split > 0) {
         xml += " xSplit=\"";
-        xml += std::to_string(column_split);
+        detail::append_unsigned_decimal(xml, column_split);
         xml += "\"";
     }
     if (row_split > 0) {
         xml += " ySplit=\"";
-        xml += std::to_string(row_split);
+        detail::append_unsigned_decimal(xml, row_split);
         xml += "\"";
     }
     xml += " topLeftCell=\"";
@@ -1417,9 +1417,9 @@ std::string build_columns(const detail::WorksheetWriterState& worksheet)
     std::string xml = "<cols>";
     for (const ColumnWidth& width : worksheet.column_widths) {
         xml += "<col min=\"";
-        xml += std::to_string(width.first_column);
+        detail::append_unsigned_decimal(xml, width.first_column);
         xml += "\" max=\"";
-        xml += std::to_string(width.last_column);
+        detail::append_unsigned_decimal(xml, width.last_column);
         xml += "\" width=\"";
         detail::append_number(xml, width.width);
         xml += "\" customWidth=\"1\"/>";

@@ -2390,6 +2390,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source-backed cells share the same dirty diagnostics and catalog checks
       while preserving the existing sparse max-row save-as XML projection
       checks.
+      P8.541 reuses it for the max-coordinate erase-shrink projection case,
+      proving erased `XFD1048576`, empty edge sparse range, preserved
+      source-backed cells, and dimension shrink share the same dirty
+      diagnostics and catalog checks while preserving the existing erase
+      save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2700,6 +2705,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source-backed cell, dimension, and sparse max-row save-as semantics while
       hardening the same materialized diagnostics, summaries, handle dirtiness,
       transient-name absence, and catalog checks.
+      P8.541 applies the same dirty-state helper to the max-coordinate
+      erase-shrink projection after recovery, preserving erased `XFD1048576`,
+      empty edge sparse range, remaining source-backed cells, dimension shrink,
+      and save-as semantics while hardening the same materialized diagnostics,
+      summaries, handle dirtiness, transient-name absence, and catalog checks.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -2938,6 +2948,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       source-backed B1/A2 line up with the restored `Data` session without
       dense allocation, performance claims, coordinate repair, source reloads,
       relationship repair, or sharedStrings/style migration.
+      P8.541 applies the same shared helper to the following max-coordinate
+      erase-shrink case, proving erased `XFD1048576`, empty edge sparse range,
+      preserved A1/B1/A2, and dimension shrink line up with the restored `Data`
+      session without dense allocation, performance claims, coordinate repair,
+      tombstones, source reloads, relationship repair, or sharedStrings/style
+      migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

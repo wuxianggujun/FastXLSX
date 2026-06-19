@@ -1735,7 +1735,7 @@ std::string build_table_parts(const detail::WorksheetWriterState& worksheet)
     }
 
     std::string xml = "<tableParts count=\"";
-    xml += std::to_string(worksheet.tables.size());
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(worksheet.tables.size()));
     xml += "\">";
     for (std::size_t index = 0; index < worksheet.tables.size(); ++index) {
         xml += "<tablePart r:id=\"";
@@ -1876,7 +1876,7 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
     std::string xml;
     xml += R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>)";
     xml += R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id=")";
-    xml += std::to_string(table_index + 1);
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(table_index + 1));
     xml += R"(" name=")";
     detail::append_escaped_xml_attribute(xml, table.options.name);
     xml += R"(" displayName=")";
@@ -1896,11 +1896,11 @@ std::string build_table_xml(const WorksheetTable& table, std::size_t table_index
     xml += detail::range_reference(auto_filter_range);
     xml += R"("/>)";
     xml += R"(<tableColumns count=")";
-    xml += std::to_string(table.options.column_names.size());
+    detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(table.options.column_names.size()));
     xml += R"(">)";
     for (std::size_t index = 0; index < table.options.column_names.size(); ++index) {
         xml += R"(<tableColumn id=")";
-        xml += std::to_string(index + 1);
+        detail::append_unsigned_decimal(xml, static_cast<std::uint64_t>(index + 1));
         xml += R"(" name=")";
         detail::append_escaped_xml_attribute(xml, table.options.column_names[index]);
         if (!table.options.column_totals_labels.empty()

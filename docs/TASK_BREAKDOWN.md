@@ -26504,7 +26504,7 @@ rg -n "class WorksheetEditor|struct WorksheetEditor|WorksheetEditorOptions|try_w
 
 ## P12 - Streaming writer hot-path work
 
-状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 已落地。
+状态：推进中；P12.1 / P12.2 / P12.3 / P12.4 / P12.5 已落地。
 
 目标：继续硬化 row/cell XML 追加路径，保持 row-order streaming、bounded
 worksheet body buffering 和默认 CTest 轻量；不要把本阶段写成完整性能优化、
@@ -26515,6 +26515,7 @@ date encoding 完成、benchmark 结论或生产级大文件承诺。
 - P12.2 shared string index append path：基础完成。
 - P12.3 shared string duplicate lookup without temporary key：基础完成。
 - P12.4 shared string index stores string_view keys：基础完成。
+- P12.5 streaming table XML integer append path：基础完成。
 
 ### P12.1 unsigned decimal append helper
 
@@ -26793,6 +26794,49 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```powershell
 cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+ctest --preset windows-nmake-release --output-on-failure --timeout 60
+```
+
+### P12.5 streaming table XML integer append path
+
+状态：基础完成。
+
+类型：internal streaming XML append helper usage + existing table structure tests + docs；
+不新增 public API / CMake dependency。
+
+目标：让 streaming-only table XML 中的局部整数属性复用
+`detail::append_unsigned_decimal()`，避免 table append-buffer serialization 为这些
+数字构造临时 decimal string。
+
+范围：
+- worksheet suffix `<tableParts count>`。
+- table root `id`。
+- table XML `<tableColumns count>`。
+- table XML `<tableColumn id>`。
+- 文档记录该切片只覆盖 table XML append-buffer 数字属性，不扩大到 relationship
+  target/path、package entry name、diagnostic 或全局 metadata `std::to_string()`
+  替换。
+
+验收条件：
+- `fastxlsx.streaming` table 结构回归继续通过，证明 table XML、worksheet
+  `<tableParts>`、worksheet `.rels`、content type override 和 owner-local `rId`
+  语义不变。
+- 统一 table QA helper 继续通过。
+- 文档明确这不是 benchmark 结果、完整 streaming hot-path 优化、ZIP/package
+  writer 改造或 table 功能扩展。
+
+非目标：
+- 不替换 relationship target/path 字符串拼接中的 table/drawing/media 编号。
+- 不替换 package/diagnostic/temporary filename 路径中的 `std::to_string()`。
+- 不改变 table public API、OpenXML 结构、relationship id 分配、content type
+  wiring 或 worksheet metadata ordering。
+
+验证命令：
+```powershell
+cmake --build --preset windows-nmake-release
+ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure --timeout 60
+py tools\verify_tables.py --work-dir build\qa\tables
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\verify_tables_excel.ps1
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 

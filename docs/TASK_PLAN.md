@@ -3620,8 +3620,10 @@ Tasks:
   `detail::append_unsigned_decimal()` for append buffers; cell reference row
   suffixes, streaming `<row r>`, and in-memory/streaming style `s` attributes
   use it instead of `std::to_string()`. SharedStrings string-cell `<v>` indexes
-  also use the same append helper, so string-dense row output avoids that
-  per-cell temporary string in the worksheet body path. SharedStrings duplicate
+  and streaming table XML integer attributes (`<tableParts count>`, table
+  `id`, `<tableColumns count>`, and `<tableColumn id>`) also use the same
+  append helper, so those append-buffer paths avoid per-value temporary decimal
+  strings. SharedStrings duplicate
   lookup also uses transparent `std::string_view` lookup before allocating an
   owning key, so repeated strings no longer allocate a temporary key just to
   discover an existing index. The workbook-scope shared string index map stores
@@ -4604,9 +4606,11 @@ Tasks:
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
   temporary reference strings. Current unsigned integer XML append uses
   internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
-  streaming row numbers, in-memory/streaming style id attributes, and
-  sharedStrings string-cell indexes; it is a local hot-path helper, not a
-  benchmark result, sharedStrings strategy change, or date encoding completion.
+  streaming row numbers, in-memory/streaming style id attributes,
+  sharedStrings string-cell indexes, and streaming table XML integer
+  attributes; it is a local hot-path helper, not a benchmark result,
+  sharedStrings strategy change, table feature expansion, or date encoding
+  completion.
   Current sharedStrings duplicate lookup also uses transparent `std::string_view`
   lookup in the workbook-scope index map, avoiding an owning temporary key for
   repeated strings before preserving the existing index. The index map now

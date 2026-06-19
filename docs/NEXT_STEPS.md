@@ -3060,9 +3060,12 @@ Do:
   `detail::cell_reference()` helpers so row/cell append paths avoid per-cell
   temporary reference strings. Current unsigned integer XML append uses
   internal `detail::append_unsigned_decimal()` for cell reference row suffixes,
-  streaming row numbers, in-memory/streaming style id attributes, and
-  sharedStrings string-cell indexes; this is a local append helper, not
-  benchmark evidence, sharedStrings strategy change, or broader date encoding.
+  streaming row numbers, in-memory/streaming style id attributes,
+  sharedStrings string-cell indexes, and streaming table XML integer attributes
+  (`<tableParts count>`, table `id`, `<tableColumns count>`, and
+  `<tableColumn id>`); this is a local append helper, not benchmark evidence,
+  sharedStrings strategy change, table feature expansion, or broader date
+  encoding.
   Current sharedStrings duplicate lookup uses transparent `std::string_view`
   lookup in the workbook-scope index map, so repeated strings avoid an owning
   temporary key before reusing the existing index. The index map stores

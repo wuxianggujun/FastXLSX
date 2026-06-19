@@ -6042,6 +6042,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_form
         "matching reacquire before max-coordinate formula should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired max-coordinate formula handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     reacquired.set_cell(1048576, 16384,
         fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<edge>")"));
@@ -6075,33 +6080,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_form
                 "max-coordinate formula sparse range should preserve formula text");
         }
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate formula dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 4,
-        "max-coordinate formula dirty diagnostics should report active sparse records");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate formula set should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate formula summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate formula summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 4,
-                "max-coordinate formula summary should report four sparse records");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate formula summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinateFormula"),
-        "max-coordinate formula projection should preserve the restored planned catalog name");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinateFormula",
+        "post-recovery max-coordinate formula set",
+        3,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),

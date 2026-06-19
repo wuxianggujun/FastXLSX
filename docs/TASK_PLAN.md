@@ -2404,6 +2404,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       row/column `erase_cell(1048576, 16384)` share the same dirty diagnostics,
       catalog checks, and post-erase memory alignment while preserving the
       existing blank set/erase save-as XML projection checks.
+      P8.544 reuses it for the formula max-coordinate case, proving
+      `set_cell(1048576, 16384, CellValue::formula(...))` shares the same dirty
+      diagnostics and catalog checks while preserving the existing formula
+      readback, XML escape, recalculation-request, and save-as XML projection
+      checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2730,6 +2735,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       and save-as semantics while hardening the same materialized diagnostics,
       summaries, handle dirtiness, transient-name absence, catalog checks, and
       post-erase memory alignment.
+      P8.544 applies the same dirty-state helper to the formula max-coordinate
+      projection after recovery, preserving formula readback, sparse edge
+      snapshots, escaped `<f>` output, recalculation request, no cached value,
+      and save-as semantics while hardening the same materialized diagnostics,
+      summaries, handle dirtiness, transient-name absence, and catalog checks.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -2987,6 +2997,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       synthesis, dense allocation, performance claims, coordinate repair,
       tombstones, source reloads, relationship repair, or sharedStrings/style
       migration.
+      P8.544 applies the same shared helper to the formula max-coordinate case,
+      proving row/column formula set, A1 readback, sparse edge snapshots,
+      formula XML escape, recalculation metadata, and preserved source-backed
+      cells line up with the restored `Data` session without formula
+      evaluation, cached values, calcChain rebuild, dense allocation,
+      performance claims, coordinate repair, source reloads, relationship
+      repair, or sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next
@@ -3040,7 +3057,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       with dimension `A1:XFD1048576`, and does not generate a cached `<v>`
       value, without adding formula evaluation, cached-result preservation,
       calcChain rebuild, defined-name/formula dependency rewrite, dense
-      allocation, or a large-file performance claim. P8.446 pins scalar
+      allocation, or a large-file performance claim. P8.544 strengthens that
+      formula projection with shared dirty-state diagnostics, proving
+      restored-name dirty materialized counts/memory, pending summaries,
+      unchanged catalogs, transient-name absence, and dirty borrowed handles
+      before save-as. P8.446 pins scalar
       projection at the same boundary: `CellValue::number(...)` saves a numeric
       `<v>` at `XFD1048576`, and a later
       `set_cell("XFD1048576", CellValue::boolean(false))` overwrites the same

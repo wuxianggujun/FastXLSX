@@ -401,6 +401,21 @@ behavior, missing-cell synthesis, dense allocation, max-coordinate performance
 evidence, coordinate repair, tombstone or style-preserving clear semantics,
 source reload, catalog repair, commit, undo, rollback, sharedStrings/style
 migration, or relationship repair.
+P8.544 applies the same helper to the formula max-coordinate projection after
+that recovery: `set_cell(1048576, 16384, CellValue::formula(...))` still writes
+the last legal Excel cell as a formula, row/column and A1 reads expose the same
+formula text, sparse edge snapshots remain focused on one active record, and
+save-as expands dimension to `A1:XFD1048576` while escaping `<f>` text and
+requesting recalculation without cached values, while diagnostics now also
+prove empty `last_edit_error()`, empty replacement diagnostics, restored-name
+dirty materialized aggregate counts/memory, one dirty
+`pending_worksheet_edits()` summary, unchanged source/planned catalog views,
+transient-name absence, and dirty borrowed handles. This is dirty-state
+diagnostic hygiene only, not formula evaluation, cached result generation or
+preservation, calcChain rebuild, defined-name/formula dependency rewrite, dense
+allocation, max-coordinate performance evidence, coordinate repair, source
+reload, catalog repair, commit, undo, rollback, sharedStrings/style migration,
+or relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

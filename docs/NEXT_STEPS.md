@@ -578,6 +578,14 @@ write the same queued media replacement bytes. This is recovery evidence only,
 not production behavior change, image insertion, drawing XML mutation, format
 conversion, relationship/content-type repair, source reload, transaction/undo/
 rollback, or public API expansion.
+P8.555 pins the memory-backed image replacement ownership path:
+`WorkbookEditor::replace_image(span)` copies caller bytes during the call, so
+mutating the original caller buffer before `save_as()` does not change the saved
+media part. The regression also confirms successful `save_as()` preserves the
+queued public edit state and does not create `last_edit_error()` when none
+existed. This is byte-lifetime evidence only, not decoded pixel retention, image
+insertion, drawing XML mutation, format conversion, relationship/content-type
+repair, source reload, transaction/undo/rollback, or public API expansion.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

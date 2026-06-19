@@ -1201,6 +1201,45 @@ void test_replace_image_file_save_failure_preserves_pending_state()
         "restored staged image file should let save_as write the queued replacement");
 }
 
+void test_replace_image_memory_source_copies_bytes_before_save_as()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images(
+            "fastxlsx-workbook-editor-image-memory-lifetime-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-image-memory-lifetime-output.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::string replacement_png_bytes = fastxlsx::test::read_file(replacement_png_path);
+    std::string caller_buffer = replacement_png_bytes;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_image("xl/media/image1.png", as_bytes(caller_buffer));
+    check(editor.has_pending_changes(),
+        "memory-backed image replacement should queue pending work before save_as");
+    check(editor.pending_change_count() == 1,
+        "memory-backed image replacement should increment public pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "successful memory-backed image replacement should leave no diagnostic");
+
+    caller_buffer.assign(caller_buffer.size(), '\0');
+    editor.save_as(output);
+
+    check(editor.has_pending_changes(),
+        "successful save_as should preserve memory-backed pending public edit state");
+    check(editor.pending_change_count() == 1,
+        "successful save_as should preserve memory-backed pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "successful memory-backed save_as should not create last_edit_error");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "memory-backed image replacement should copy caller bytes before save_as");
+    check(output_entries.at("xl/media/image1.png") != caller_buffer,
+        "memory-backed image replacement should not observe later caller buffer mutation");
+}
+
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()
 {
     const std::filesystem::path source =
@@ -17289,6 +17328,7 @@ int main(int argc, char* argv[])
         test_replace_image_rejects_missing_or_mismatched_targets();
         test_replace_image_failure_diagnostics_include_context();
         test_replace_image_file_save_failure_preserves_pending_state();
+        test_replace_image_memory_source_copies_bytes_before_save_as();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();

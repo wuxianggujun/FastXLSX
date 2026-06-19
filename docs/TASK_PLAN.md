@@ -2356,6 +2356,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `try_cell()` / `get_cell()` / `cell_count()` / memory estimates /
       `sparse_cells()` preserve the saved session without dirty diagnostics,
       catalog drift, or stale handle dirtiness.
+      P8.534 applies the helper to invalid handle-read failures, proving invalid
+      coordinates, A1 references, and ranges do not change sparse counts,
+      memory estimates, diagnostics, catalog views, handle dirtiness, or the
+      saved materialized value.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2639,7 +2643,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       applies the same check to read-only pending-state diagnostics and
       `worksheet_catalog()` inspection after that recovery. P8.533 applies it
       to handle-level read APIs after recovery, including cell reads, sparse
-      snapshots, cell count, and memory estimates. P8.415 pins
+      snapshots, cell count, and memory estimates. P8.534 applies it to invalid
+      handle-level read failures after recovery, while keeping coordinate
+      validation fail-fast rather than repair/clamp behavior. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2840,6 +2846,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       creation, or saved-value reloads.
       P8.533 applies that helper to handle-level read inspection, proving cell
       reads, range snapshots, counts, and memory estimates avoid the same
+      diagnostic flushes, source reloads, catalog drift, stale handle dirtiness,
+      pending summary creation, or saved-value reloads.
+      P8.534 applies the same helper to invalid handle-read failures, proving
+      invalid coordinates/references/ranges fail without sparse-store drift,
       diagnostic flushes, source reloads, catalog drift, stale handle dirtiness,
       pending summary creation, or saved-value reloads.
       P8.438 pins positive blank/erase projection after that recovery:

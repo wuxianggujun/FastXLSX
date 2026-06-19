@@ -300,6 +300,13 @@ P8.533 applies the same helper to handle-level read APIs after that recovery:
 edit summaries, unchanged source/planned catalog views, clean borrowed handles,
 and the saved materialized value. This is handle-read hygiene only, not source
 reload, catalog repair, commit, undo, rollback, or large-file random editing.
+P8.534 applies the helper to invalid handle-read failures after the same
+recovery: invalid row/column, A1 reference, and range reads keep sparse
+cell-count/memory diagnostics stable and preserve prior edit count,
+`last_edit_error()`, empty replacement/materialized diagnostics, empty pending
+edit summaries, unchanged catalog views, clean borrowed handles, and the saved
+materialized value. This is invalid-read hygiene only, not coordinate repair,
+clamping, source reload, catalog repair, commit, undo, or rollback semantics.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

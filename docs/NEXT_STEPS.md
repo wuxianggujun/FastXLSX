@@ -332,6 +332,16 @@ source/planned catalog views, transient-name absence, and dirty borrowed
 handles. This is dirty-state diagnostic hygiene only, not new blank/erase
 behavior, source reload, catalog repair, commit, undo, rollback, or erase
 tombstones.
+P8.538 applies the same helper to the positive scalar/formula projection after
+that recovery: numeric A1, boolean A2, formula C3, and preserved source-backed
+B1 still drive the existing save-as projection, while diagnostics now also
+prove empty `last_edit_error()`, empty replacement diagnostics, restored-name
+dirty materialized aggregate counts/memory, one dirty
+`pending_worksheet_edits()` summary, unchanged source/planned catalog views,
+transient-name absence, and dirty borrowed handles. This is dirty-state
+diagnostic hygiene only, not formula evaluation, cached result generation,
+calcChain rebuild, date cell typing, source reload, catalog repair, commit,
+undo, rollback, sharedStrings/style migration, or relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

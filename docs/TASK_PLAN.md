@@ -2377,6 +2377,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       pending summary, unchanged catalogs, transient-name absence, and dirty
       borrowed handles while preserving the existing blank/erase save-as XML
       projection checks.
+      P8.538 reuses that helper for the positive scalar/formula projection
+      case, proving numeric, boolean, formula, and preserved source-backed
+      cells share the same dirty diagnostics and catalog checks while preserving
+      the existing scalar/formula save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2672,7 +2676,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       applies a dirty-state variant to the positive blank/erase projection after
       recovery, preserving explicit blank and existing source-cell erase save-as
       semantics while hardening materialized diagnostics, summaries, handle
-      dirtiness, transient-name absence, and catalog checks. P8.415 pins
+      dirtiness, transient-name absence, and catalog checks. P8.538 applies the
+      same dirty-state helper to the positive scalar/formula projection after
+      recovery, preserving numeric, boolean, formula, and source-backed cell
+      save-as semantics while hardening the same materialized diagnostics,
+      summaries, handle dirtiness, transient-name absence, and catalog checks.
+      P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2895,6 +2904,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       catalog state line up with the restored `Data` session without source
       reloads, relationship repair, sharedStrings/style migration, or new
       blank/erase semantics.
+      P8.538 applies the same shared helper to the following scalar/formula
+      case, proving number / boolean / formula edits and preserved source-backed
+      B1 line up with the restored `Data` session without formula evaluation,
+      cached result generation, calcChain rebuild, source reloads, relationship
+      repair, or sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

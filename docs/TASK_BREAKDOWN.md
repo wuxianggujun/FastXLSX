@@ -24830,6 +24830,50 @@ Acceptance:
   repair.
 - `git diff --check` passes.
 
+## P8.538 - Strengthen post-recovery scalar/formula dirty-state diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery scalar/formula
+dirty-state diagnostic strengthening and task-doc sync; no new public symbol, no
+production CMake target membership change, and no package format expansion.
+
+Goal: upgrade the existing P8.439 positive scalar/formula projection regression
+to the shared dirty-materialized recovery helper, while preserving the focused
+number, boolean, formula, and source-backed B1 projection assertions.
+
+Output:
+- `test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_projection()`
+  now reuses `check_public_dirty_materialized_recovery_state()` after the
+  number / boolean / formula mutations.
+- The test keeps semantic checks for numeric A1, preserved source-backed B1,
+  boolean A2, and formula C3, then proves `last_edit_error()` stays empty,
+  replacement diagnostics stay empty, dirty materialized worksheet names / cell
+  count / memory match the shared session, `pending_worksheet_edits()` reports
+  one restored-name dirty materialized summary, source/planned catalog views
+  remain unchanged, the transient name stays absent, and both borrowed handles
+  are dirty before the second save.
+- Existing save-as assertions remain focused on numeric `<v>`, boolean
+  `t="b"` / `1`, escaped formula `<f>` without cached value, B1 preservation,
+  dimension refresh to `A1:C3`, and transient planned-name absence.
+
+Non-goals / boundary:
+- No behavior expansion, no formula evaluation, no cached formula result
+  generation or preservation, no calcChain rebuild, no date cell typing, no
+  source reload, no catalog repair, no source package mutation, no
+  transaction/undo/rollback model, no style/sharedStrings migration, no
+  relationship repair, no broad range metadata recalculation, and no large-file
+  low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish scalar/formula dirty-state diagnostics from new
+  behavior, formula evaluation, cached result generation, calcChain rebuild,
+  source reload, catalog repair, source mutation, commit, undo, rollback,
+  sharedStrings/style migration, or relationship repair.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

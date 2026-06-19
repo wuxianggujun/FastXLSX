@@ -6378,6 +6378,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scal
         "matching reacquire before max-coordinate scalar erase should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired max-coordinate scalar erase handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     reacquired.set_cell(1048576, 16384, fastxlsx::CellValue::number(42.5));
     editor.save_as(second_output);
@@ -6431,33 +6436,20 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_scal
         check(edge_cells.empty(),
             "max-coordinate scalar sparse range should be empty after erase");
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "max-coordinate scalar erase dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 3,
-        "max-coordinate scalar erase dirty diagnostics should report the shrunken sparse store");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "max-coordinate scalar erase should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "max-coordinate scalar erase summary should use restored names");
-            check(!summary.renamed,
-                "max-coordinate scalar erase summary should not be marked renamed");
-            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
-                "max-coordinate scalar erase summary should report the shrunken sparse store");
-            check(!summary.sheet_data_replaced,
-                "max-coordinate scalar erase summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxScalarErase"),
-        "max-coordinate scalar erase should preserve the restored planned catalog name");
+    check(after_boolean_save.estimated_memory_usage() == sheet.estimated_memory_usage(),
+        "max-coordinate scalar erase should keep reacquired handle memory aligned");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        after_boolean_save,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxScalarErase",
+        "post-recovery max-coordinate scalar erase",
+        5,
+        3,
+        sheet.estimated_memory_usage());
 
     editor.save_as(fourth_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&

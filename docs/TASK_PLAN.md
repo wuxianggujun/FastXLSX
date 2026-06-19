@@ -2414,6 +2414,11 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `set_cell("XFD1048576", CellValue::boolean(false))` share the same dirty
       diagnostics, catalog checks, and post-overwrite memory alignment while
       preserving the existing number/boolean save-as XML projection checks.
+      P8.546 reuses it for the saved scalar edge erase-shrink case, proving
+      `erase_cell(1048576, 16384)` after the saved number/boolean edge states
+      shares the same dirty diagnostics, catalog checks, and post-erase memory
+      alignment while preserving the existing dimension-shrink and scalar
+      omission save-as XML projection checks.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2751,6 +2756,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       save-as semantics while hardening the same materialized diagnostics,
       summaries, handle dirtiness, transient-name absence, catalog checks, and
       post-overwrite memory alignment.
+      P8.546 applies the same dirty-state helper to the saved scalar
+      max-coordinate erase-shrink projection after recovery, preserving removed
+      edge readback, empty sparse edge snapshots, scalar XML omission,
+      dimension shrink, and save-as semantics while hardening the same
+      materialized diagnostics, summaries, handle dirtiness, transient-name
+      absence, catalog checks, and post-erase memory alignment.
       P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
@@ -3022,6 +3033,13 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       non-finite number acceptance, style migration, boolean coercion, dense
       allocation, performance claims, coordinate repair, source reloads,
       relationship repair, or sharedStrings/style migration.
+      P8.546 applies the same shared helper to the saved scalar edge erase
+      shrink case, proving row/column erase, missing A1 readback, empty sparse
+      edge snapshots, dimension shrink, and preserved source-backed cells line
+      up with the restored `Data` session without tombstones, blank conversion,
+      style-preserving clear semantics, dense allocation, performance claims,
+      coordinate repair, source reloads, relationship repair, or
+      sharedStrings/style migration.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next
@@ -3095,7 +3113,15 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       `erase_cell(1048576, 16384)` removes the edge record, clears the
       max-boundary range snapshot, and the next save shrinks dimension back to
       `A1:B2` without writing tombstones, converting the scalar to a blank,
-      repairing row metadata, or leaking the transient planned name. P8.448
+      repairing row metadata, or leaking the transient planned name.
+      P8.546 strengthens that saved scalar erase-shrink projection with shared
+      dirty-state diagnostics, proving restored-name dirty materialized
+      counts/memory, pending summaries, unchanged catalogs, transient-name
+      absence, dirty borrowed handles, and post-erase memory alignment before
+      save-as without adding tombstones, blank conversion, style-preserving
+      clear semantics, dense allocation, performance claims, coordinate repair,
+      source reloads, relationship repair, or sharedStrings/style migration.
+      P8.448
       pins saved formula edge erase shrink at the same boundary: after a saved
       formula at `XFD1048576` writes escaped `<f>` text without a cached `<v>`,
       `erase_cell("XFD1048576")` removes the edge record, clears row/column,

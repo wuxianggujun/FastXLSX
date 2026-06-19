@@ -431,6 +431,21 @@ acceptance, style/number-format migration, boolean coercion, dense allocation,
 max-coordinate performance evidence, coordinate repair, source reload, catalog
 repair, commit, undo, rollback, sharedStrings/style migration, or relationship
 repair.
+P8.546 applies the same helper to the saved scalar edge erase-shrink projection
+after that recovery: after the max-coordinate number is saved and overwritten
+by a saved boolean false, `erase_cell(1048576, 16384)` still removes the edge
+record, clears `XFD1048576` readback and the sparse edge range, and the next
+save-as shrinks dimension back to `A1:B2` while omitting the prior
+number/boolean payloads, while diagnostics now also prove empty
+`last_edit_error()`, empty replacement diagnostics, restored-name dirty
+materialized aggregate counts/memory, one dirty `pending_worksheet_edits()`
+summary, unchanged source/planned catalog views, transient-name absence, dirty
+borrowed handles, and post-erase reacquired-handle memory alignment. This is
+dirty-state diagnostic hygiene only, not new erase behavior, tombstone output,
+scalar-to-blank conversion, style-preserving clear semantics, dense allocation,
+max-coordinate performance evidence, coordinate repair, source reload, catalog
+repair, commit, undo, rollback, sharedStrings/style migration, or relationship
+repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

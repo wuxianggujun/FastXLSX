@@ -10081,6 +10081,8 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-output.xlsx");
+    const std::filesystem::path failure_recovery_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-failure-recovery-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -10124,24 +10126,15 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         R"(<c r="B1" t="inlineStr"><is><t>after-duplicate-rel-lazy-load</t></is></c>)",
         "dirty lazy duplicate-rel projection should still write new text as inlineStr");
 
-    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
-    bool failed_shared_sheet = false;
-    try {
-        (void)failing_editor.worksheet("Shared");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        failed_shared_sheet = true;
-        check_contains(error.what(),
-            "workbook sharedStrings lookup found multiple sharedStrings relationships",
-            "worksheet with shared string indexes should fail on duplicate relationship metadata");
-    }
-    check(failed_shared_sheet,
-        "worksheet with shared string indexes should force duplicate relationship validation");
-    check(!failing_editor.has_pending_changes(),
-        "failed duplicate sharedStrings lookup should keep the editor clean");
-    check(failing_editor.pending_materialized_worksheet_names().empty(),
-        "failed duplicate sharedStrings lookup should not leave a dirty materialized name");
-    check(!failing_editor.last_edit_error().has_value(),
-        "failed duplicate sharedStrings lookup should not update last_edit_error");
+    check_public_worksheet_materialization_failure_hygiene(
+        source,
+        failure_recovery_output,
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "usable-after-lazy-duplicate-sharedstrings-relationship",
+        "lazy duplicate sharedStrings relationship",
+        "Data",
+        "xl/worksheets/sheet1.xml",
+        "Shared");
 }
 
 void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_index_cells()

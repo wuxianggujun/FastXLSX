@@ -3281,6 +3281,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       selected `t="s"` sheets still fail fast. This is not duplicate
       relationship repair/pruning, sharedStrings migration/writeback, or source
       package mutation.
+      P8.550 reuses the shared materialization-failure hygiene helper for that
+      lazy duplicate relationship case, proving `try_worksheet("Shared")` and
+      `worksheet("Shared")` both expose the multiple-relationships diagnostic,
+      keep dirty materialized/replacement diagnostics empty, preserve catalogs
+      and `last_edit_error()`, avoid target replacement leakage, and still
+      allow a later `replace_sheet_data("Data", ...)` save-as without
+      duplicate relationship repair/pruning, sharedStrings
+      synthesis/writeback/migration, source reload, or public API.
       P8.464 extends the same on-demand boundary to malformed
       `xl/sharedStrings.xml` payloads: selected non-`t="s"` sheets do not parse
       or repair the malformed table and can still dirty-save, while selected

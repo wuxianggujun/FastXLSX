@@ -521,6 +521,17 @@ the stale relationship.
 Representative duplicate sharedStrings relationship metadata is covered by the
 same lazy boundary: it is bypassed only for selected sheets with no shared
 string indexes and remains a load failure for selected `t="s"` sheets.
+P8.550 applies the shared materialization-failure hygiene helper to that
+duplicate relationship boundary: non-`t="s"` `Data` materialization and dirty
+inline save-as still preserve the duplicate relationship bytes, and both
+`try_worksheet("Shared")` and `worksheet("Shared")` now prove the
+multiple-relationships diagnostic, empty dirty state, empty
+replacement/materialized diagnostics, preserved catalogs, unchanged
+`last_edit_error()`, no target replacement leakage, and later valid
+`replace_sheet_data("Data", ...)` save-as usability. This is diagnostic
+hygiene only, not duplicate relationship repair/pruning, sharedStrings
+synthesis/rebuild/writeback/pruning/index migration, source reload, commit,
+undo, rollback, or public API.
 Malformed `xl/sharedStrings.xml` payloads are also covered by the same
 on-demand behavior: valid non-`t="s"` sheets do not parse or repair the table,
 while selected `t="s"` sheets still fail fast on the malformed sharedStrings

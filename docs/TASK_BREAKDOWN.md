@@ -24627,6 +24627,43 @@ Acceptance:
   diagnostic-triggered flush semantics.
 - `git diff --check` passes.
 
+## P8.533 - Strengthen post-recovery handle read clean-state checks
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery handle-read
+strengthening and task-doc sync; no new public symbol, no production CMake
+target membership change, and no package format expansion.
+
+Goal: upgrade the existing P8.434 handle-level read regression to the same
+complete saved-materialized-session clean-state helper used by the catalog and
+pending-diagnostics strengthening.
+
+Output:
+- `test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preserve_reacquired_state()`
+  now runs the full saved-session helper after `try_cell()`, `get_cell()`,
+  `cell_count()`, `estimated_memory_usage()`, and `sparse_cells()` handle reads.
+- The regression proves handle reads preserve `last_edit_error()`, prior public
+  edit count, replacement diagnostics, dirty materialized diagnostics,
+  `pending_worksheet_edits()`, source/planned catalog views, borrowed-handle
+  cleanliness, and the saved materialized value.
+- The later matching-option reacquire/mutation/save path still proves the
+  session remains usable and does not leak the transient planned sheet name.
+
+Non-goals / boundary:
+- No behavior expansion, no diagnostic-triggered flush, no source reload, no
+  catalog repair, no source package mutation, no transaction/undo model, no
+  sheet rename dependency repair, no style/sharedStrings migration, no
+  relationship repair, and no large-file low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish read-only handle reads from source reload,
+  catalog repair, source mutation, commit, undo, rollback, or
+  diagnostic-triggered flush semantics.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

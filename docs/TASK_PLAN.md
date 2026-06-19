@@ -2352,6 +2352,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       diagnostics preserve prior edit count, `last_edit_error()`, empty
       diagnostics, source/planned catalog views, clean borrowed handles, and the
       saved materialized value.
+      P8.533 applies the same helper to handle-level reads, proving
+      `try_cell()` / `get_cell()` / `cell_count()` / memory estimates /
+      `sparse_cells()` preserve the saved session without dirty diagnostics,
+      catalog drift, or stale handle dirtiness.
       P8.394
       extends the same public facade state-hygiene coverage to unsupported
       source cell shapes and invalid boolean payloads (`t="e"`, `t="d"`, and
@@ -2633,7 +2637,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       saved materialized session is checked with the same complete clean-state
       diagnostics after read-only planned/source catalog queries. P8.532
       applies the same check to read-only pending-state diagnostics and
-      `worksheet_catalog()` inspection after that recovery. P8.415 pins
+      `worksheet_catalog()` inspection after that recovery. P8.533 applies it
+      to handle-level read APIs after recovery, including cell reads, sparse
+      snapshots, cell count, and memory estimates. P8.415 pins
       public row/column
       coordinate guardrails for `WorksheetEditor` reads and mutations: invalid
       coordinates throw, read failures do not update `last_edit_error()`,
@@ -2832,6 +2838,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       proving those read-only diagnostic calls also avoid diagnostic flushes,
       source reloads, catalog drift, stale handle dirtiness, pending summary
       creation, or saved-value reloads.
+      P8.533 applies that helper to handle-level read inspection, proving cell
+      reads, range snapshots, counts, and memory estimates avoid the same
+      diagnostic flushes, source reloads, catalog drift, stale handle dirtiness,
+      pending summary creation, or saved-value reloads.
       P8.438 pins positive blank/erase projection after that recovery:
       `set_cell("A1", CellValue::blank())` writes an explicit blank record,
       `erase_cell(2, 1)` removes existing source-backed A2, and the next

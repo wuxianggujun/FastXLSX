@@ -4124,6 +4124,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preser
         "matching reacquire before handle reads should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
 
     const std::optional<fastxlsx::CellValue> maybe_saved = sheet.try_cell(1, 1);
     check(maybe_saved.has_value() &&
@@ -4193,22 +4198,17 @@ void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preser
         }
     }
 
-    check(!editor.last_edit_error().has_value(),
-        "post-recovery handle reads should not update last_edit_error");
-    check(editor.pending_change_count() == 3,
-        "post-recovery handle reads should not queue another public edit");
-    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
-        "post-recovery handle reads should keep handles clean");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "post-recovery handle reads should not dirty materialized names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "post-recovery handle reads should keep dirty cell count clear");
-    check(editor.estimated_pending_materialized_memory_usage() == 0,
-        "post-recovery handle reads should keep dirty memory clear");
-    check(editor.pending_worksheet_edits().empty(),
-        "post-recovery handle reads should keep summaries empty");
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientHandleReads"),
-        "post-recovery handle reads should preserve the restored planned catalog name");
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-handle-reads-first",
+        "TransientHandleReads",
+        "post-recovery handle reads",
+        3);
 
     fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
     check(!matching.has_pending_changes(),

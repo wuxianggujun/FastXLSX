@@ -539,6 +539,18 @@ XML.
 Wrong sharedStrings content type metadata is covered as well: valid non-`t="s"`
 sheets do not validate or repair that content type, while selected `t="s"`
 sheets still fail fast before materializing shared string indexes.
+P8.551 applies the shared materialization-failure hygiene helper to that wrong
+content type boundary: non-`t="s"` `Data` materialization and dirty inline
+save-as still preserve the wrong content type metadata, and both
+`try_worksheet("Shared")` and `worksheet("Shared")` now prove the
+wrong-content-type diagnostic, empty dirty state, empty replacement/materialized
+diagnostics, preserved catalogs, unchanged `last_edit_error()`, no target
+replacement leakage, source package immutability, and later valid
+`replace_sheet_data("Data", ...)` save-as usability. This is
+diagnostic/test-helper hygiene only, not content type repair, relationship
+repair/pruning, target repair, sharedStrings synthesis/rebuild/writeback,
+pruning/index migration, source reload, source mutation, commit, undo, rollback,
+or public API.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

@@ -25448,6 +25448,49 @@ Acceptance:
   rollback, or public API.
 - `git diff --check` passes.
 
+## P8.551 - Strengthen lazy wrong sharedStrings content type diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` lazy wrong sharedStrings content type failure
+diagnostic strengthening and task-doc sync; no new public symbol, no production
+CMake target membership change, no content type repair, and no package format
+expansion.
+
+Goal: reuse the shared public materialization-failure hygiene helper for the
+representative wrong sharedStrings content type case where the selected sheet
+with `t="s"` cells is `Shared`, while non-`t="s"` `Data` materialization and
+the later valid Patch recovery edit still succeed.
+
+Output:
+- `test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until_index_cells()`
+  now uses `check_public_worksheet_materialization_failure_hygiene()` for the
+  failing `Shared` materialization path after proving non-`t="s"` `Data`
+  materialization and dirty inline save-as preserve the wrong content type
+  metadata.
+- The helper now proves both `try_worksheet("Shared")` and
+  `worksheet("Shared")` expose the wrong-sharedStrings-content-type diagnostic,
+  leave dirty materialized and replacement diagnostics empty, preserve
+  source/planned catalog views, keep `last_edit_error()` unchanged, avoid target
+  replacement leakage, and still allow a later `replace_sheet_data("Data", ...)`
+  save-as.
+
+Non-goals / boundary:
+- No content type repair, no relationship repair or pruning, no target repair,
+  no sharedStrings synthesis/rebuild/writeback/pruning/index migration, no
+  source reload, no source package mutation, no transaction/undo/rollback model,
+  no dense allocation, no large-file low-memory random editing claim, and no
+  public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish lazy wrong sharedStrings content type diagnostics
+  from content type repair, relationship repair/pruning, target repair,
+  sharedStrings synthesis, migration or writeback, source reload, commit, undo,
+  rollback, or public API.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

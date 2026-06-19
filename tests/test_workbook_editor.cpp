@@ -10201,6 +10201,8 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-output.xlsx");
+    const std::filesystem::path failure_recovery_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-failure-recovery-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -10247,24 +10249,15 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "lazy wrong sharedStrings content type materialization should not mutate the source package");
 
-    fastxlsx::WorkbookEditor failing_editor = fastxlsx::WorkbookEditor::open(source);
-    bool failed_shared_sheet = false;
-    try {
-        (void)failing_editor.worksheet("Shared");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        failed_shared_sheet = true;
-        check_contains(error.what(),
-            "workbook sharedStrings relationship target is not a sharedStrings part",
-            "worksheet with shared string indexes should fail on wrong sharedStrings content type");
-    }
-    check(failed_shared_sheet,
-        "worksheet with shared string indexes should force sharedStrings content type validation");
-    check(!failing_editor.has_pending_changes(),
-        "failed wrong sharedStrings content type lookup should keep the editor clean");
-    check(failing_editor.pending_materialized_worksheet_names().empty(),
-        "failed wrong sharedStrings content type lookup should not leave a dirty materialized name");
-    check(!failing_editor.last_edit_error().has_value(),
-        "failed wrong sharedStrings content type lookup should not update last_edit_error");
+    check_public_worksheet_materialization_failure_hygiene(
+        source,
+        failure_recovery_output,
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "usable-after-lazy-wrong-sharedstrings-content-type",
+        "lazy wrong sharedStrings content type",
+        "Data",
+        "xl/worksheets/sheet1.xml",
+        "Shared");
 }
 
 void test_public_worksheet_editor_materializes_empty_source_worksheets()

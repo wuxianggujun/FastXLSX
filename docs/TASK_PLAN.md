@@ -3300,6 +3300,15 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       content type and can still dirty-save, while selected `t="s"` sheets
       still fail fast. This is not content type repair, tolerant shared-string
       fallback, sharedStrings migration/writeback, or source package mutation.
+      P8.551 reuses the shared materialization-failure hygiene helper for that
+      wrong content type case, proving `try_worksheet("Shared")` and
+      `worksheet("Shared")` both expose the wrong-content-type diagnostic, keep
+      dirty materialized/replacement diagnostics empty, preserve catalogs and
+      `last_edit_error()`, avoid target replacement leakage, and still allow a
+      later `replace_sheet_data("Data", ...)` save-as without content type
+      repair, relationship repair/pruning, target repair, sharedStrings
+      synthesis/writeback/migration, source reload, source package mutation, or
+      public API.
       P8.476 pins prefixed source sharedStrings local-name materialization on
       the positive path: prefixed `sst` / `si` / `t` / `r` markup in
       `xl/sharedStrings.xml` materializes through public `WorksheetEditor` and

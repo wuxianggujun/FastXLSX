@@ -24918,6 +24918,52 @@ Acceptance:
   undo, rollback, sharedStrings/style migration, or relationship repair.
 - `git diff --check` passes.
 
+## P8.540 - Strengthen post-recovery max-coordinate dirty-state diagnostics
+
+Status: done.
+
+Type: public `WorksheetEditor` rename-back failed-save recovery max-coordinate
+dirty-state diagnostic strengthening and task-doc sync; no new public symbol, no
+production CMake target membership change, and no package format expansion.
+
+Goal: upgrade the existing P8.441 legal max-coordinate projection regression to
+the shared dirty-materialized recovery helper, while preserving the focused
+`XFD1048576`, source-backed B1/A2, sparse range, dimension, and transient-name
+projection assertions.
+
+Output:
+- `test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_projection()`
+  now reuses `check_public_dirty_materialized_recovery_state()` after the
+  legal max-coordinate mutation.
+- The test keeps semantic checks for row/column and A1 reads of `XFD1048576`,
+  preserved source-backed B1 and A2, and the one-cell sparse range snapshot,
+  then proves `last_edit_error()` stays empty, replacement diagnostics stay
+  empty, dirty materialized worksheet names / cell count / memory match the
+  shared session, `pending_worksheet_edits()` reports one restored-name dirty
+  materialized summary, source/planned catalog views remain unchanged, the
+  transient name stays absent, and both borrowed handles are dirty before the
+  second save.
+- Existing save-as assertions remain focused on dimension refresh to
+  `A1:XFD1048576`, sparse max-row XML output without dense materialization, B1
+  / A2 preservation, setup A1 preservation, and transient planned-name absence.
+
+Non-goals / boundary:
+- No behavior expansion, no dense row/column allocation, no max-coordinate
+  performance or million-row benchmark claim, no coordinate repair or clamping,
+  no source reload, no catalog repair, no source package mutation, no
+  transaction/undo/rollback model, no style/sharedStrings migration, no
+  relationship repair, no broad range metadata recalculation, and no large-file
+  low-memory random editing.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.public` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish max-coordinate dirty-state diagnostics from dense
+  allocation, performance claims, coordinate repair, source reload, catalog
+  repair, source mutation, commit, undo, rollback, sharedStrings/style
+  migration, or relationship repair.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

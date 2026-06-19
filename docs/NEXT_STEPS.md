@@ -352,6 +352,17 @@ source/planned catalog views, transient-name absence, and dirty borrowed
 handles. This is dirty-state diagnostic hygiene only, not new text behavior,
 XML repair, text normalization, source reload, catalog repair, commit, undo,
 rollback, sharedStrings/style migration, or relationship repair.
+P8.540 applies the same helper to the positive max-coordinate projection after
+that recovery: legal `XFD1048576` row/column and A1 reads, sparse range
+snapshot, preserved source-backed B1/A2, dimension refresh, and sparse max-row
+save-as XML remain the semantic focus, while diagnostics now also prove empty
+`last_edit_error()`, empty replacement diagnostics, restored-name dirty
+materialized aggregate counts/memory, one dirty `pending_worksheet_edits()`
+summary, unchanged source/planned catalog views, transient-name absence, and
+dirty borrowed handles. This is dirty-state diagnostic hygiene only, not dense
+row/column allocation, max-coordinate performance evidence, coordinate repair,
+source reload, catalog repair, commit, undo, rollback, sharedStrings/style
+migration, or relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags

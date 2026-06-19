@@ -5396,6 +5396,11 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_proj
         "matching reacquire before max-coordinate edits should keep both handles clean");
     check(sheet.name() == "Data" && reacquired.name() == "Data",
         "saved and reacquired max-coordinate handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
     check(!editor.last_edit_error().has_value(),
         "max-coordinate setup should start without edit diagnostics");
 
@@ -5444,38 +5449,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_proj
                 "max-coordinate sparse range should copy the edge text value");
         }
     }
-    {
-        const std::vector<std::string> names =
-            editor.pending_materialized_worksheet_names();
-        check(names.size() == 1 && names[0] == "Data",
-            "post-recovery max-coordinate dirty diagnostics should use restored source name");
-    }
-    check(editor.pending_materialized_cell_count() == 4,
-        "post-recovery max-coordinate dirty diagnostics should report active sparse records");
-    check(editor.estimated_pending_materialized_memory_usage() ==
-            sheet.estimated_memory_usage(),
-        "post-recovery max-coordinate dirty memory should match the shared session");
-    {
-        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
-            editor.pending_worksheet_edits();
-        check(summaries.size() == 1,
-            "post-recovery max-coordinate mutation should create one dirty summary");
-        if (summaries.size() == 1) {
-            const auto& summary = summaries[0];
-            check(summary.source_name == "Data" && summary.planned_name == "Data",
-                "post-recovery max-coordinate summary should use restored names");
-            check(!summary.renamed,
-                "post-recovery max-coordinate summary should not be marked renamed");
-            check(summary.materialized_dirty,
-                "post-recovery max-coordinate summary should report dirty materialized state");
-            check(summary.materialized_cell_count == 4,
-                "post-recovery max-coordinate summary should report active sparse records");
-            check(!summary.sheet_data_replaced,
-                "post-recovery max-coordinate summary should not invent replacement diagnostics");
-        }
-    }
-    check(editor.has_worksheet("Data") && !editor.has_worksheet("TransientMaxCoordinate"),
-        "post-recovery max-coordinate mutation should preserve the restored planned catalog name");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "TransientMaxCoordinate",
+        "post-recovery max-coordinate mutation",
+        3,
+        4,
+        sheet.estimated_memory_usage());
 
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),

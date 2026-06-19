@@ -979,6 +979,16 @@ Current F2 gate audit:
   hygiene for existing projection behavior only, not new text behavior, XML
   repair, source reload, catalog repair, source mutation, commit, undo,
   rollback, sharedStrings/style migration, or relationship repair.
+- P8.540 applies the same dirty-state helper to positive max-coordinate
+  mutations after that recovery: legal `XFD1048576` row/column and A1 reads,
+  sparse range snapshotting, preserved source-backed B1/A2, dimension refresh,
+  and sparse max-row XML output now share the same empty edit/replacement
+  diagnostics, restored-name dirty aggregate counts/memory, one dirty summary,
+  unchanged catalogs, transient-name absence, and dirty borrowed-handle checks
+  before save-as. This is helper/diagnostic hygiene for existing projection
+  behavior only, not dense allocation, max-coordinate performance evidence,
+  coordinate repair, source reload, catalog repair, source mutation, commit,
+  undo, rollback, sharedStrings/style migration, or relationship repair.
 - P8.415 pins row/column overload coordinate guardrails for
   `WorksheetEditor::try_cell()`, `get_cell()`, `set_cell()`, and `erase_cell()`.
   Invalid row/column reads throw without updating `last_edit_error()`, invalid
@@ -1199,6 +1209,17 @@ Current F2 gate audit:
   diagnostic hygiene only, not new text behavior, XML repair, text
   normalization, source reload, catalog repair, source mutation, commit, undo,
   rollback, sharedStrings/style migration, or relationship repair.
+- P8.540 strengthens that max-coordinate projection with the
+  dirty-materialized recovery helper: after legal `XFD1048576` mutation,
+  row/column and A1 reads, sparse range snapshotting, and source-backed B1/A2
+  preservation, public diagnostics now also prove empty `last_edit_error()`,
+  empty replacement diagnostics, restored-name dirty materialized aggregate
+  count/memory, one dirty `pending_worksheet_edits()` summary, unchanged
+  source/planned catalog views, transient-name absence, and dirty borrowed
+  handles. This is dirty-state diagnostic hygiene only, not dense allocation,
+  max-coordinate performance evidence, coordinate repair, source reload,
+  catalog repair, source mutation, commit, undo, rollback, sharedStrings/style
+  migration, or relationship repair.
 - P8.441 pins legal maximum coordinate projection after that recovery:
   `XFD1048576` remains a valid sparse-store edit after the safe-save/reacquire
   path. It can be written via row/column max values, read back through
@@ -1659,7 +1680,8 @@ Draft `WorksheetEditor` acceptance matrix:
 | Source dependency addenda P8.537 | P8.537 adds a dirty-materialized recovery helper to the positive blank/erase projection after rename-back failed-save recovery, proving explicit blank A1 and erased source-backed A2 keep empty edit/replacement diagnostics, restored-name dirty materialized counts/memory, one dirty pending edit summary, unchanged catalog views, transient-name absence, and dirty borrowed handles before save-as. | This is dirty-state diagnostic hygiene only; it does not add new blank/erase behavior, source reload, catalog repair, source mutation, commit, undo, rollback, erase tombstones, sharedStrings/style migration, relationship repair, or public API. |
 | Source dependency addenda P8.538 | P8.538 reuses the dirty-materialized recovery helper for the positive scalar/formula projection after rename-back failed-save recovery, proving numeric A1, boolean A2, formula C3, and preserved source-backed B1 keep empty edit/replacement diagnostics, restored-name dirty materialized counts/memory, one dirty pending edit summary, unchanged catalog views, transient-name absence, and dirty borrowed handles before save-as. | This is dirty-state diagnostic hygiene only; it does not add formula evaluation, cached result generation/preservation, calcChain rebuild, date cell typing, source reload, catalog repair, source mutation, commit, undo, rollback, sharedStrings/style migration, relationship repair, or public API. |
 | Source dependency addenda P8.539 | P8.539 reuses the dirty-materialized recovery helper for the positive text-escape projection after rename-back failed-save recovery, proving whitespace-preserving A1, empty text A2, special-character text C3, and preserved source-backed B1 keep empty edit/replacement diagnostics, restored-name dirty materialized counts/memory, one dirty pending edit summary, unchanged catalog views, transient-name absence, and dirty borrowed handles before save-as. | This is dirty-state diagnostic hygiene only; it does not add new text behavior, XML repair, text normalization, source reload, catalog repair, source mutation, commit, undo, rollback, sharedStrings/style migration, relationship repair, or public API. |
-| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, P8.411 proves missing optional lookup does not disturb no-op save, P8.529 strengthens missing-lookup no-op save diagnostics after a prior public edit failure, P8.530 adds the same evidence for throwing missing `worksheet()` lookup, P8.531 strengthens post-recovery catalog-query clean-state diagnostics, P8.532 strengthens post-recovery pending-diagnostic clean-state diagnostics, P8.533 strengthens post-recovery handle-read clean-state diagnostics, P8.534 strengthens post-recovery invalid-read clean-state diagnostics, P8.535 strengthens post-recovery invalid-mutation clean-state diagnostics, P8.536 strengthens post-recovery missing-erase no-op clean-state diagnostics, P8.537 strengthens post-recovery blank/erase dirty-state diagnostics, P8.538 strengthens post-recovery scalar/formula dirty-state diagnostics, and P8.539 strengthens post-recovery text-escape dirty-state diagnostics. |
+| Source dependency addenda P8.540 | P8.540 reuses the dirty-materialized recovery helper for the positive max-coordinate projection after rename-back failed-save recovery, proving legal `XFD1048576`, sparse range snapshotting, preserved source-backed B1/A2, dimension refresh, and sparse max-row XML output keep empty edit/replacement diagnostics, restored-name dirty materialized counts/memory, one dirty pending edit summary, unchanged catalog views, transient-name absence, and dirty borrowed handles before save-as. | This is dirty-state diagnostic hygiene only; it does not add dense allocation, max-coordinate performance evidence, coordinate repair, source reload, catalog repair, source mutation, commit, undo, rollback, sharedStrings/style migration, relationship repair, or public API. |
+| Save-as | Dirty materialized edits save through `WorkbookEditor::save_as(output_path)`; clean read-only materialized sessions, missing `try_worksheet()` lookups, and failed materialization attempts with no queued edits stay no-op copy-original. | Public tests prove modified source-loaded cells roundtrip through save-as, P8.409 proves clean read-only materialization does not flush a standalone projection, P8.410 proves failed materialization does not poison no-op copy-original save, P8.411 proves missing optional lookup does not disturb no-op save, P8.529 strengthens missing-lookup no-op save diagnostics after a prior public edit failure, P8.530 adds the same evidence for throwing missing `worksheet()` lookup, P8.531 strengthens post-recovery catalog-query clean-state diagnostics, P8.532 strengthens post-recovery pending-diagnostic clean-state diagnostics, P8.533 strengthens post-recovery handle-read clean-state diagnostics, P8.534 strengthens post-recovery invalid-read clean-state diagnostics, P8.535 strengthens post-recovery invalid-mutation clean-state diagnostics, P8.536 strengthens post-recovery missing-erase no-op clean-state diagnostics, P8.537 strengthens post-recovery blank/erase dirty-state diagnostics, P8.538 strengthens post-recovery scalar/formula dirty-state diagnostics, P8.539 strengthens post-recovery text-escape dirty-state diagnostics, and P8.540 strengthens post-recovery max-coordinate dirty-state diagnostics. |
 | Diagnostics | Errors must identify load vs mutation vs save-as preflight context and preserve recovery guidance. | Materialization failures throw `FastXlsxError` at `try_worksheet()` / `worksheet()` time and do not update public `last_edit_error()`; missing `try_worksheet()` returns empty and preserves prior diagnostics; save-as and queued edit diagnostics remain separate. |
 
 ### Source dependency materialization summary

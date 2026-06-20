@@ -193,6 +193,9 @@ struct CellStyle {
 };
 
 /// Keeps the active ZIP backend default compression policy.
+///
+/// With the minizip-ng backend this delegates to the minizip/zlib default
+/// rather than forcing FastXLSX's measured throughput-first level.
 inline constexpr int default_zip_compression_level = -1;
 /// Requests no-compression/stored ZIP output.
 inline constexpr int min_zip_compression_level = 0;
@@ -209,12 +212,15 @@ struct WorkbookWriterOptions {
 
     /// ZIP compression level for Streaming new-workbook output.
     ///
-    /// `default_zip_compression_level` keeps the active backend default,
+    /// `default_zip_compression_level` keeps the active backend default
+    /// (minizip/zlib default when the minizip-ng backend is enabled),
     /// `min_zip_compression_level` requests no-compression/stored output, and
     /// values `1..max_zip_compression_level` request zlib-compatible DEFLATE
-    /// levels when the minizip-ng backend is enabled. Dependency-free stored
-    /// bootstrap builds can only write no-compression/stored packages, so
-    /// positive DEFLATE levels are rejected before worksheet rows are written.
+    /// levels when the minizip-ng backend is enabled. Callers that prefer
+    /// throughput over smaller output can explicitly pass level 1.
+    /// Dependency-free stored bootstrap builds can only write
+    /// no-compression/stored packages, so positive DEFLATE levels are rejected
+    /// before worksheet rows are written.
     ///
     /// This option affects ZIP close-time CPU cost and output size only. It
     /// does not change worksheet row streaming, does not enable Zip64, and does

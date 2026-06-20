@@ -2458,7 +2458,8 @@ benchmark 仍是本机/手工验证，不作为 CI 强依赖。
   可选择 `-1` backend default、`0` no-compression/stored output 或 `1..9`
   minizip DEFLATE level；public `WorkbookWriterOptions::zip_compression_level`
   只把同一取值范围暴露给 Streaming new-workbook output，stored bootstrap 构建会拒绝
-  positive level；内部 writer
+  positive level；`-1` 必须保留 backend default 语义，不应改成 level 1
+  快速档；内部 writer
   会在打开输出路径前拒绝空 entry list、非法或重复 ZIP entry name、缺失或不可
   stat 的 file-backed chunk、需要 Zip64 的 entry count 或单 entry 未压缩大小，
   超过 ZIP 16-bit 字段的 entry name，以及同一 entry 混用 legacy `data` payload

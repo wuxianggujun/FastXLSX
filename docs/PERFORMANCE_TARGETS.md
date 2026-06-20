@@ -99,10 +99,15 @@ Streaming new-workbook 路径现在通过
 输出体积，不改变 worksheet row/cell streaming，不启用 Zip64，也不是 existing-file
 editing。
 
+默认策略保持生态常见行为：`-1` 委托给当前 backend default（minizip-ng 下即
+minizip/zlib 默认策略），不会因为 P11.8 的吞吐数据而自动切到 level 1。需要更快
+close-time 的调用方应显式传 `zip_compression_level = 1`；需要更小文件的调用方可保留
+`-1` 或显式传 `6`，再按业务数据形态复测。
+
 ```text
-level -1   backend default，用于保留 zlib/minizip 默认策略
+level -1   backend default，用于保留 zlib/minizip 默认策略，不映射为 FastXLSX 快速档
 level 0    no-compression/stored，最快，文件最大
-level 1    当前本机数据下的 throughput-first 推荐值
+level 1    显式 opt-in 的 throughput-first 推荐值
 level 3    repeated strings 场景的速度/体积折中候选
 level 6    zlib 常见默认级别，文件通常更小但 CPU 成本明显更高
 level 9    当前数据下不推荐：显著更慢，体积收益很小甚至可能回退
@@ -539,4 +544,5 @@ backend default 更偏最小体积，适合强体积约束；level 1 是 through
 29.9s / 208.15 MiB，即约 2.1 倍更快但文件约 48.6% 更大。repeated shared strings
 场景可考虑 level 3：10M 下比 level 1 稍快且更小，但仍比 level 6 大约 30%。
 因此当前建议是保留显式可配置策略：吞吐优先用 level 1，重复字符串且体积敏感可试
-level 3/6，避免 level 9；不要把某一个等级写成所有数据形态的无条件默认最优。
+level 3/6，避免 level 9；不要把某一个等级写成所有数据形态的无条件默认最优，也不要把
+FastXLSX 默认从 backend default 改成 level 1。

@@ -774,7 +774,8 @@ the underlying error. Planned staged-chunk failures also expose the owning
   as a repeated-string tradeoff candidate, level 6 / backend default as the
   smaller-file choice, and level 9 as currently not useful. The 50M numeric
   level 1 point ran in 29.9s at about 1.67 M cells/s, 5.13 MB peak, and
-  208.15 MiB output.
+  208.15 MiB output. Keep `-1` mapped to the real backend default; level 1 is
+  an explicit opt-in speed profile, not a new FastXLSX default.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -3589,7 +3590,9 @@ output, or `1..9` for minizip DEFLATE level selection; the stored bootstrap
 remains stored/no-compression. Streaming new-workbook output now exposes the
 same bounded choice through `WorkbookWriterOptions::zip_compression_level`;
 positive levels require the minizip-ng backend and are rejected by stored
-bootstrap builds before rows are written. The internal package writer also preflights
+bootstrap builds before rows are written. The `-1` default remains backend
+default instead of a FastXLSX level-1 override. The internal package writer
+also preflights
 ZIP32 limits and entry-name hygiene, rejecting empty entry lists, entry counts
 above `65535`, entry names beyond the 16-bit ZIP field, invalid entry names,
 duplicate entry names, missing or inaccessible file-backed chunks, and single entry

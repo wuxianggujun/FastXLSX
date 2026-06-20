@@ -200,6 +200,8 @@ Options parse_args(int argc, char** argv)
                 << "--string-strategy inline|shared --string-ratio 0..1 "
                 << "--compression-level -1|0..9 "
                 << "--output file.xlsx --result result.json\n"
+                << "Compression: -1 keeps the backend default, 0 stores, "
+                << "1 is explicit throughput-first, 6 is zlib-default oriented.\n"
                 << "Default output files are written under the benchmark build directory.\n";
             std::exit(0);
         } else {

@@ -3887,10 +3887,12 @@ new-workbook package output：当前 public 入口是
 表示 no-compression/stored output，`1..9` 表示 minizip/zlib-compatible DEFLATE
 level。默认 stored-bootstrap 构建不能产生 DEFLATE 输出，因此 positive level 会在
 rows 写入前拒绝；opt-in minizip 构建会在 package close 阶段按 level 调整 CPU 成本和
-输出体积。该选项不改变 worksheet row/cell streaming，不引入 DOM，不启用 Zip64，
-不保留或编辑 existing-file compression method / timestamps / extra fields，也不是
-public package writer/editor API。benchmark 数据应记录 `compression_level` 和
-实际 backend；不要把某一个 level 写成所有数据形态的无条件默认最优。
+输出体积。`-1` 必须保持 backend default 语义，不能隐式改成 throughput-first
+level 1；需要更快 close-time 的调用方应显式选择 level 1。该选项不改变 worksheet
+row/cell streaming，不引入 DOM，不启用 Zip64，不保留或编辑 existing-file
+compression method / timestamps / extra fields，也不是 public package writer/editor
+API。benchmark 数据应记录 `compression_level` 和实际 backend；不要把某一个
+level 写成所有数据形态的无条件默认最优。
 
 当前组合回归覆盖同一内部 edit 里 docProps 生成与 worksheet
 replacement 的 relationship/content-type 合并、calcChain removal、stale calcChain

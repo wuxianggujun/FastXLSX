@@ -312,9 +312,10 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
   public `WorkbookWriterOptions::zip_compression_level` 可为 Streaming new-workbook
   输出选择 `-1` backend default、`0` no-compression/stored output 或 `1..9`
-  minizip DEFLATE level；stored bootstrap 构建会拒绝 positive level。内部 writer
-  会在写输出前拒绝需要 Zip64 的 entry count 或单 entry 未压缩大小，以及超过
-  ZIP 16-bit 字段的 entry name。
+  minizip DEFLATE level；`-1` 保留 minizip/zlib default，不会自动映射为
+  throughput-first level 1，追求 close-time 吞吐时需要调用方显式选择。stored
+  bootstrap 构建会拒绝 positive level。内部 writer 会在写输出前拒绝需要
+  Zip64 的 entry count 或单 entry 未压缩大小，以及超过 ZIP 16-bit 字段的 entry name。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
   基础单元格编码。
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。

@@ -1577,7 +1577,8 @@ schema validation.
     repeated-string tradeoff candidate, level 6 / backend default as
     smaller-file oriented, and level 9 as currently not useful. The 50M numeric
     level 1 point ran in 29.9s at about 1.67 M cells/s, 5.13 MB peak, and
-    208.15 MiB output.
+    208.15 MiB output. Keep default `-1` on the backend default path; level 1
+    remains a caller-selected fast profile, not the library default.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -2997,7 +2998,9 @@ Do:
   boundary and `WorkbookWriterOptions::zip_compression_level` as the public
   Streaming new-workbook option: `-1` means backend default, `0` requests
   no-compression/stored output, `1..9` selects zlib-compatible minizip DEFLATE
-  levels, and stored bootstrap builds reject positive levels.
+  levels, and stored bootstrap builds reject positive levels. Do not remap
+  `-1` to level 1; callers that want throughput-first output should pass level 1
+  explicitly.
 - Keep the current no-Zip64 and file-backed chunk guardrails: reject empty
   entry lists, package entry counts above `65535`, entry names beyond the
   16-bit ZIP field, invalid entry names, duplicate entry names, missing or
@@ -3054,8 +3057,9 @@ Do:
 - Current P11.8 compression-level sweep is recorded there too. Treat level 1
   as the current throughput-first recommendation, level 3/6 as size tradeoff
   candidates depending on string repetition, and level 9 as not recommended
-  by current data. Keep this as opt-in benchmark evidence, not an Office-suite
-  compatibility result.
+  by current data. Keep this as opt-in benchmark evidence and keep default
+  compression on backend default rather than level 1; this is not an
+  Office-suite compatibility result.
 
 Accept when:
 - CTest passes.

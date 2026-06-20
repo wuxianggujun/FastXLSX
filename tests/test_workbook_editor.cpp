@@ -1277,6 +1277,50 @@ void test_replace_image_file_crc_failure_preserves_pending_state()
         "restored staged image file should write the original queued replacement");
 }
 
+void test_replace_image_same_part_later_replacement_wins()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images(
+            "fastxlsx-workbook-editor-image-replace-latest-source.xlsx");
+    const std::filesystem::path staged_png_path =
+        artifact("fastxlsx-workbook-editor-image-replace-latest-staged.png");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-image-replace-latest-output.xlsx");
+
+    const std::filesystem::path first_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::string first_png_bytes = fastxlsx::test::read_file(first_png_path);
+    const std::span<const std::byte> second_png_span = fastxlsx::test::tiny_png_bytes();
+    std::string second_png_bytes;
+    second_png_bytes.assign(reinterpret_cast<const char*>(second_png_span.data()),
+        reinterpret_cast<const char*>(second_png_span.data()) + second_png_span.size());
+    check(first_png_bytes != second_png_bytes,
+        "same-part image replacement fixtures should have distinct bytes");
+
+    write_binary_file(staged_png_path, first_png_bytes);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_image("xl/media/image1.png", staged_png_path);
+    editor.replace_image("xl/media/image1.png", second_png_span);
+    check(editor.has_pending_changes(),
+        "same-part image replacement override should leave pending work");
+    check(editor.pending_change_count() == 2,
+        "same-part image replacement override should still count both public edit calls");
+    check(!editor.last_edit_error().has_value(),
+        "successful same-part image replacement override should leave no diagnostic");
+
+    std::filesystem::remove(staged_png_path);
+    editor.save_as(output);
+    check(!editor.last_edit_error().has_value(),
+        "successful save_as after same-part override should not create last_edit_error");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/media/image1.png") == second_png_bytes,
+        "later memory-backed image replacement should override earlier file-backed replacement");
+    check(output_entries.at("xl/media/image1.png") != first_png_bytes,
+        "superseded file-backed image replacement should not leak into output");
+}
+
 void test_replace_image_memory_source_copies_bytes_before_save_as()
 {
     const std::filesystem::path source =
@@ -17413,6 +17457,7 @@ int main(int argc, char* argv[])
         test_replace_image_failure_diagnostics_include_context();
         test_replace_image_file_save_failure_preserves_pending_state();
         test_replace_image_file_crc_failure_preserves_pending_state();
+        test_replace_image_same_part_later_replacement_wins();
         test_replace_image_memory_source_copies_bytes_before_save_as();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();

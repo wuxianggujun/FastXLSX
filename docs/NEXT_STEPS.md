@@ -608,6 +608,12 @@ Restoring the original staged bytes lets a later `save_as()` write the queued
 replacement. This is save-time integrity hygiene only, not file watching,
 source reload, commit/close semantics, image insertion, drawing mutation, or
 relationship/content-type repair.
+P8.559 pins same-media repeated image replacement ordering: a later successful
+`WorkbookEditor::replace_image()` for the same `xl/media/*` part replaces the
+previous queued source. A superseded file-backed staged image is no longer read
+by `save_as()`, while `pending_change_count()` still reflects both public edit
+calls. This is queued-source lifecycle evidence only, not transaction/undo
+history, image insertion, drawing mutation, or relationship/content-type repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

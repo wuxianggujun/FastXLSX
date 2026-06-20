@@ -1095,8 +1095,11 @@ public:
     /// insertion, drawing editing, relationship repair/pruning, or orphan
     /// cleanup.
     ///
-    /// The source image path is read again during save_as(), so the caller must
-    /// keep the file accessible until the edited workbook is written.
+    /// The source image path is read again during save_as() while this remains
+    /// the final queued source for the media part, so the caller must keep the
+    /// file accessible until the edited workbook is written. A later successful
+    /// replace_image() call for the same media part supersedes the earlier queued
+    /// source; only the final queued source participates in save_as().
     ///
     /// @param image_part_name Existing package part path such as
     /// `xl/media/image1.png`.
@@ -1119,6 +1122,9 @@ public:
     /// drawings, relationships, anchors, content types, EXIF/PNG/JPEG metadata,
     /// or any drawing geometry; it is not image insertion, drawing editing,
     /// relationship repair/pruning, or orphan cleanup.
+    /// Calling replace_image() again for the same media part replaces the
+    /// previously queued source; only the final queued source participates in
+    /// save_as().
     ///
     /// @param image_part_name Existing package part path such as
     /// `xl/media/image1.png`.

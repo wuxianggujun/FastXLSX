@@ -25771,6 +25771,49 @@ Acceptance:
   expansion.
 - `git diff --check` passes.
 
+## P8.559 - Cover same-part image replacement override semantics
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_image()` queued-source ordering regression
+and docs sync; no production code change, no new public symbol, no CMake target
+membership change, no drawing mutation, no media insertion, no relationship
+repair, and no content type repair.
+
+Goal: pin the current same-media replacement ordering semantics. If a caller
+queues a file-backed replacement for an existing `xl/media/*` part and then
+successfully queues another replacement for the same part, the later queued
+source is the only source used by `save_as()`. A superseded file-backed staged
+source must not be read after it has been replaced.
+
+Output:
+- Added a public facade regression that queues a file-backed PNG replacement
+  for `xl/media/image1.png`, then queues a memory-backed PNG replacement for
+  the same media part.
+- The test deletes the earlier staged file before `save_as()` and verifies the
+  output media bytes match the later memory-backed source, not the earlier
+  file-backed source.
+- The regression keeps `pending_change_count()` at two public edit calls and
+  verifies the successful path leaves `last_edit_error()` empty.
+- Public header and API docs now state that later successful `replace_image()`
+  calls for the same media part supersede the previous queued source; staged
+  file lifetime requirements apply only to the final queued file-backed source.
+
+Non-goals / boundary:
+- No production behavior change, no transaction history, no undo/rollback
+  model, no source package mutation, no image insertion, no drawing XML
+  mutation, no anchor update, no format conversion, no decoded pixel retention,
+  no relationship/content-type repair, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish same-part queued-source override semantics from
+  commit/close semantics, source reload, drawing editing, image insertion,
+  relationship/content-type repair, transaction, undo, rollback, or public API
+  expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

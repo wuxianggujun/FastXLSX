@@ -1215,6 +1215,68 @@ void test_replace_image_file_save_failure_preserves_pending_state()
         "file-backed image replacement should remain reusable for a second save_as");
 }
 
+void test_replace_image_file_crc_failure_preserves_pending_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_two_images(
+            "fastxlsx-workbook-editor-image-file-crc-failure-source.xlsx");
+    const std::filesystem::path staged_png_path =
+        artifact("fastxlsx-workbook-editor-image-file-crc-failure-staged.png");
+    const std::filesystem::path failed_output =
+        artifact("fastxlsx-workbook-editor-image-file-crc-failure-output.xlsx");
+    const std::filesystem::path recovered_output =
+        artifact("fastxlsx-workbook-editor-image-file-crc-recovered-output.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::string replacement_png_bytes = fastxlsx::test::read_file(replacement_png_path);
+    std::string corrupted_png_bytes = replacement_png_bytes;
+    check(!corrupted_png_bytes.empty(),
+        "replacement fixture should contain bytes for CRC mutation");
+    const std::size_t mutation_index = corrupted_png_bytes.size() / 2U;
+    corrupted_png_bytes[mutation_index] = static_cast<char>(
+        static_cast<unsigned char>(corrupted_png_bytes[mutation_index]) ^ 0x01U);
+    write_binary_file(staged_png_path, replacement_png_bytes);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_image("xl/media/image1.png", staged_png_path);
+    check(editor.has_pending_changes(),
+        "file-backed image replacement should queue pending work before CRC failure");
+    check(editor.pending_change_count() == 1,
+        "file-backed image replacement should increment pending count before CRC failure");
+    check(!editor.last_edit_error().has_value(),
+        "successful file-backed image replacement should leave no diagnostic before CRC failure");
+
+    write_binary_file(staged_png_path, corrupted_png_bytes);
+    try {
+        editor.save_as(failed_output);
+        check(false, "save_as should fail if the staged replacement image file changes");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        const std::string message = error.what();
+        check_contains(message, "CRC32 changed after staging",
+            "changed staged image failure should report the CRC contract");
+    }
+    check(editor.has_pending_changes(),
+        "CRC-failed file-backed image save_as should preserve pending work");
+    check(editor.pending_change_count() == 1,
+        "CRC-failed file-backed image save_as should preserve pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "CRC-failed save_as should not create last_edit_error");
+
+    write_binary_file(staged_png_path, replacement_png_bytes);
+    editor.save_as(recovered_output);
+    check(editor.has_pending_changes(),
+        "successful save_as after CRC recovery should preserve pending work");
+    check(editor.pending_change_count() == 1,
+        "successful save_as after CRC recovery should preserve pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "successful save_as after CRC recovery should not create last_edit_error");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(recovered_output);
+    check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "restored staged image file should write the original queued replacement");
+}
+
 void test_replace_image_memory_source_copies_bytes_before_save_as()
 {
     const std::filesystem::path source =
@@ -17350,6 +17412,7 @@ int main(int argc, char* argv[])
         test_replace_image_rejects_missing_or_mismatched_targets();
         test_replace_image_failure_diagnostics_include_context();
         test_replace_image_file_save_failure_preserves_pending_state();
+        test_replace_image_file_crc_failure_preserves_pending_state();
         test_replace_image_memory_source_copies_bytes_before_save_as();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();

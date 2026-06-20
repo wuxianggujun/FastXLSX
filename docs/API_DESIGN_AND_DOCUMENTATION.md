@@ -301,7 +301,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   不校验该 id 是否属于 source workbook，不迁移或合并 styles。
 - `replace_image(image_part_name, path/span)`：只替换当前 package 中已有 PNG/JPEG
   `xl/media/*` part 的 bytes。file path overload 会在 `replace_image(path)` 阶段验证
-  图片格式，并在每次 `save_as()` 写包时重新读取同一个 staged file；memory span
+  图片格式，并在每次 `save_as()` 写包时重新读取同一个 staged file；该 staged file
+  还必须保持 staged size/CRC 一致，丢失或内容变化都会让 `save_as()` 失败但保留
+  queued public edit state。memory span
   overload 会在调用期间复制 caller bytes，后续 `save_as()` 不依赖 caller buffer；
   已复制的 staged bytes 由 FastXLSX 持有，并在 queued state 保留期间可跨多次
   `save_as()` 复用。

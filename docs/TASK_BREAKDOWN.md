@@ -25729,6 +25729,48 @@ Acceptance:
   transaction, undo, rollback, or public API expansion.
 - `git diff --check` passes.
 
+## P8.558 - Cover file-backed image replacement CRC failure recovery
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_image(path)` save-time integrity regression
+and docs sync; no production code change, no new public symbol, no CMake target
+membership change, no drawing mutation, no media insertion, no relationship
+repair, and no content type repair.
+
+Goal: pin the documented staged-file integrity contract for file-backed
+media-part replacement. If the staged image file still exists but its bytes
+change after `replace_image(path)` records the queued replacement, `save_as()`
+must fail on the recorded staged chunk CRC contract without consuming queued
+public edit state or creating a new `last_edit_error()` diagnostic.
+
+Output:
+- Added a public facade regression that queues a file-backed PNG media-part
+  replacement, mutates one byte of the staged file at the same path, and verifies
+  `save_as()` reports a staged CRC failure.
+- The failed save preserves `has_pending_changes()`, `pending_change_count()`,
+  and the empty `last_edit_error()` state.
+- Restoring the original staged bytes lets a later `save_as()` write the queued
+  replacement bytes.
+- Next-step and API docs now spell out that file-backed `replace_image(path)`
+  requires the staged file to remain readable and size/CRC-stable until the
+  queued state is no longer reused.
+
+Non-goals / boundary:
+- No production behavior change, no file watching, no source package mutation,
+  no image insertion, no drawing XML mutation, no anchor update, no format
+  conversion, no decoded pixel retention, no relationship/content-type repair,
+  no transaction/undo/rollback model, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish staged-file CRC integrity from commit/close
+  semantics, source reload, drawing editing, image insertion,
+  relationship/content-type repair, transaction, undo, rollback, or public API
+  expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -600,6 +600,14 @@ replacement can be written again to a second output path without relying on the
 caller buffer. This is memory-backed replacement state hygiene only, not decoded
 pixel retention, image insertion, drawing mutation, source reload,
 transaction/undo/rollback behavior, or relationship/content-type repair.
+P8.558 closes the adjacent file-backed integrity edge: if the staged image file
+still exists but its bytes change after `replace_image(path)` records the
+queued replacement, `save_as()` fails on the recorded staged chunk CRC contract
+without consuming pending public edit state or creating `last_edit_error()`.
+Restoring the original staged bytes lets a later `save_as()` write the queued
+replacement. This is save-time integrity hygiene only, not file watching,
+source reload, commit/close semantics, image insertion, drawing mutation, or
+relationship/content-type repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

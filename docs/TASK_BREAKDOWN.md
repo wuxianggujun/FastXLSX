@@ -25687,6 +25687,48 @@ Acceptance:
   expansion.
 - `git diff --check` passes.
 
+## P8.557 - Cover reusable memory-backed image replacement after successful save
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_image(span)` save-as lifecycle regression
+and docs sync; no production code change, no new public symbol, no CMake target
+membership change, no drawing mutation, no media insertion, no relationship
+repair, and no content type repair.
+
+Goal: pin the current non-commit `save_as()` model for memory-backed media-part
+replacement: a successful `save_as()` does not consume the queued
+FastXLSX-owned staged image bytes, so the same memory-backed replacement can
+still be reused for another safe output path without relying on the caller
+buffer.
+
+Output:
+- Extended the existing memory-backed image replacement lifetime regression:
+  after mutating the caller buffer and successfully saving once, the queued
+  replacement still preserves `has_pending_changes()`, `pending_change_count()`,
+  and the empty `last_edit_error()` state.
+- The same queued replacement is then saved again to a second output path, and
+  the output `xl/media/image1.png` bytes still match the original copied
+  replacement bytes.
+- API design docs now document that memory-backed image replacement staged
+  bytes are FastXLSX-owned and reusable across repeated `save_as()` calls while
+  queued state is retained.
+
+Non-goals / boundary:
+- No production behavior change, no source package mutation, no image insertion,
+  no drawing XML mutation, no anchor update, no format conversion, no decoded
+  pixel retention, no relationship/content-type repair, no transaction/undo/
+  rollback model, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish reusable memory-backed replacement state from
+  caller-buffer lifetime, decoded pixel buffers, commit/close semantics, source
+  reload, drawing editing, image insertion, relationship/content-type repair,
+  transaction, undo, rollback, or public API expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -593,6 +593,13 @@ file-backed replacement can be written again to a second output path. This keeps
 `replace_image(path)` aligned with the current `save_as()` non-commit model; it
 is not a commit/close API, source reload, transaction/undo/rollback behavior,
 image insertion, drawing mutation, or relationship/content-type repair.
+P8.557 applies the same reusable-output lifecycle evidence to memory-backed
+image replacement: `WorkbookEditor::replace_image(span)` keeps FastXLSX-owned
+staged bytes after the first successful `save_as()`, so the same queued
+replacement can be written again to a second output path without relying on the
+caller buffer. This is memory-backed replacement state hygiene only, not decoded
+pixel retention, image insertion, drawing mutation, source reload,
+transaction/undo/rollback behavior, or relationship/content-type repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

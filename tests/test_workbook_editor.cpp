@@ -1252,6 +1252,14 @@ void test_replace_image_memory_source_copies_bytes_before_save_as()
         "memory-backed image replacement should copy caller bytes before save_as");
     check(output_entries.at("xl/media/image1.png") != caller_buffer,
         "memory-backed image replacement should not observe later caller buffer mutation");
+
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-image-memory-lifetime-second-output.xlsx");
+    editor.save_as(second_output);
+
+    const auto second_output_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(second_output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "memory-backed image replacement should remain reusable for a second save_as");
 }
 
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()

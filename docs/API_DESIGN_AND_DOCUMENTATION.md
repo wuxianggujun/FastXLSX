@@ -302,7 +302,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 - `replace_image(image_part_name, path/span)`：只替换当前 package 中已有 PNG/JPEG
   `xl/media/*` part 的 bytes。file path overload 会在 `replace_image(path)` 阶段验证
   图片格式，并在每次 `save_as()` 写包时重新读取同一个 staged file；memory span
-  overload 会在调用期间复制 caller bytes，后续 `save_as()` 不依赖 caller buffer。
+  overload 会在调用期间复制 caller bytes，后续 `save_as()` 不依赖 caller buffer；
+  已复制的 staged bytes 由 FastXLSX 持有，并在 queued state 保留期间可跨多次
+  `save_as()` 复用。
   两个 overload 都不编辑 worksheet XML、drawing XML、anchors、relationships、content
   types、EXIF/PNG/JPEG metadata，也不做 image insertion、target discovery 或 orphan
   cleanup。
@@ -350,7 +352,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   undo 或自动清空 pending state。成功 `save_as()` 也不会消费 queued public edit
   diagnostics，调用方可把同一 planned state 另存到第二个输出路径；若 queued edit
   包含 file-backed `replace_image(path)`，该 staged file 也必须继续可读且匹配 staged
-  size/CRC，直到调用方不再复用该 queued state。`save_as()` 会先做
+  size/CRC，直到调用方不再复用该 queued state；若 queued edit 包含 memory-backed
+  `replace_image(span)`，其 staged bytes 由 FastXLSX 持有，可随同一 queued state
+  重复写入多个输出路径。`save_as()` 会先做
   output path guard preflight，再把 dirty `WorksheetEditor` sessions flush 到 Patch plan；
   path guard 失败不清 dirty state。flush 成功后 dirty session 会变 clean，但同一
   owner 下已有的 `WorksheetEditor` borrowed handle 不会被删除或失效；后续 mutation

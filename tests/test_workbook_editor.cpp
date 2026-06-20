@@ -870,6 +870,43 @@ std::filesystem::path write_two_sheet_source_with_two_images(std::string_view na
     return path;
 }
 
+std::filesystem::path write_public_editing_e2e_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.document_properties.creator = "WorkbookEditor E2E";
+    options.document_properties.last_modified_by = "WorkbookEditor E2E";
+    options.document_properties.title = "Public editing E2E";
+    options.document_properties.subject = "FastXLSX";
+    options.document_properties.description = "WorkbookEditor public editing smoke source";
+    options.document_properties.keywords = "FastXLSX,WorkbookEditor,editing";
+    options.document_properties.category = "tests";
+    options.document_properties.application = "FastXLSX";
+    options.document_properties.app_version = "1.0";
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path, options);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+    }
+    {
+        fastxlsx::WorksheetWriter replace_me = writer.add_worksheet("ReplaceMe");
+        replace_me.append_row({fastxlsx::CellView::text("replace-old"),
+            fastxlsx::CellView::number(5.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter pictures = writer.add_worksheet("Pictures");
+        pictures.append_row({fastxlsx::CellView::text("image-sheet")});
+        pictures.add_image(fastxlsx::test::tiny_png_bytes(), {1, 1, 2, 2});
+    }
+    writer.close();
+
+    return path;
+}
+
 void test_replaces_sheet_data_and_preserves_untouched_parts()
 {
     const std::filesystem::path source =
@@ -1366,6 +1403,113 @@ void test_replace_image_memory_source_copies_bytes_before_save_as()
     const auto second_output_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_output_entries.at("xl/media/image1.png") == replacement_png_bytes,
         "memory-backed image replacement should remain reusable for a second save_as");
+}
+
+void test_public_workbook_editor_editing_end_to_end_smoke()
+{
+    const std::filesystem::path source =
+        write_public_editing_e2e_source("fastxlsx-workbook-editor-editing-e2e-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-editing-e2e-output.xlsx");
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::string replacement_png_bytes = fastxlsx::test::read_file(replacement_png_path);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string picture_sheet_before = source_entries.at("xl/worksheets/sheet3.xml");
+    const std::string picture_sheet_rels_before =
+        source_entries.at("xl/worksheets/_rels/sheet3.xml.rels");
+    const std::string drawing_before = source_entries.at("xl/drawings/drawing1.xml");
+    const std::string drawing_rels_before =
+        source_entries.at("xl/drawings/_rels/drawing1.xml.rels");
+    const std::string content_types_before = source_entries.at("[Content_Types].xml");
+    const std::string package_rels_before = source_entries.at("_rels/.rels");
+    const std::string workbook_rels_before = source_entries.at("xl/_rels/workbook.xml.rels");
+    const std::string core_props_before = source_entries.at("docProps/core.xml");
+    const std::string app_props_before = source_entries.at("docProps/app.xml");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "EditedData");
+
+    fastxlsx::WorksheetEditor edited_data = editor.worksheet("EditedData");
+    check(edited_data.name() == "EditedData",
+        "renamed materialized WorksheetEditor should expose the planned sheet name");
+    edited_data.set_cell(1, 1, fastxlsx::CellValue::text("materialized-edit"));
+    edited_data.set_cell(2, 2, fastxlsx::CellValue::number(42.0));
+
+    editor.replace_sheet_data("ReplaceMe",
+        {{fastxlsx::CellValue::text("sheetdata-final"),
+            fastxlsx::CellValue::number(7.0)}});
+    editor.replace_image("xl/media/image1.png", replacement_png_path);
+
+    check(editor.has_pending_changes(),
+        "combined public editing smoke should expose pending work before save_as");
+    check(editor.pending_change_count() == 3,
+        "combined public editing smoke should count rename, sheetData, and image edits");
+    check(editor.pending_materialized_cell_count() == edited_data.cell_count(),
+        "combined public editing smoke should report dirty materialized cell count");
+    {
+        const std::vector<std::string> pending_names =
+            editor.pending_replacement_worksheet_names();
+        check(pending_names.size() == 1 && pending_names[0] == "ReplaceMe",
+            "combined public editing smoke should track only the replaced sheetData sheet");
+    }
+
+    editor.save_as(output);
+    check(editor.pending_change_count() == 4,
+        "save_as should add the materialized worksheet flush to the public edit count");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string data_sheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string replaced_sheet_xml = output_entries.at("xl/worksheets/sheet2.xml");
+
+    check_contains(workbook_xml, R"(name="EditedData")",
+        "combined public editing smoke should save the renamed sheet catalog entry");
+    check_contains(workbook_xml, R"(name="ReplaceMe")",
+        "combined public editing smoke should preserve the replacement sheet catalog entry");
+    check_contains(workbook_xml, R"(name="Pictures")",
+        "combined public editing smoke should preserve the image sheet catalog entry");
+    check_not_contains(workbook_xml, R"(name="Data")",
+        "combined public editing smoke should remove the old sheet name");
+
+    check_contains(data_sheet_xml, "materialized-edit",
+        "combined public editing smoke should persist materialized text edits");
+    check_contains(data_sheet_xml, R"(<c r="B2"><v>42</v></c>)",
+        "combined public editing smoke should persist materialized numeric edits");
+    check_not_contains(data_sheet_xml, "placeholder-a1",
+        "combined public editing smoke should replace the edited source cell");
+    check_contains(data_sheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "combined public editing smoke should refresh materialized worksheet dimension");
+
+    check_contains(replaced_sheet_xml, "sheetdata-final",
+        "combined public editing smoke should persist sheetData replacement text");
+    check_contains(replaced_sheet_xml, R"(<c r="B1"><v>7</v></c>)",
+        "combined public editing smoke should persist sheetData replacement number");
+    check_not_contains(replaced_sheet_xml, "replace-old",
+        "combined public editing smoke should drop old sheetData rows");
+
+    check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "combined public editing smoke should replace the target media bytes");
+    check(output_entries.at("xl/worksheets/sheet3.xml") == picture_sheet_before,
+        "combined public editing smoke should preserve the picture worksheet XML");
+    check(output_entries.at("xl/worksheets/_rels/sheet3.xml.rels") == picture_sheet_rels_before,
+        "combined public editing smoke should preserve picture worksheet relationships");
+    check(output_entries.at("xl/drawings/drawing1.xml") == drawing_before,
+        "combined public editing smoke should preserve drawing XML");
+    check(output_entries.at("xl/drawings/_rels/drawing1.xml.rels") == drawing_rels_before,
+        "combined public editing smoke should preserve drawing relationships");
+    check(output_entries.at("[Content_Types].xml") == content_types_before,
+        "combined public editing smoke should preserve content types for same-format edits");
+    check(output_entries.at("_rels/.rels") == package_rels_before,
+        "combined public editing smoke should preserve package relationships");
+    check(output_entries.at("xl/_rels/workbook.xml.rels") == workbook_rels_before,
+        "combined public editing smoke should preserve workbook relationships");
+    check(output_entries.at("docProps/core.xml") == core_props_before,
+        "combined public editing smoke should preserve core document properties");
+    check(output_entries.at("docProps/app.xml") == app_props_before,
+        "combined public editing smoke should preserve app document properties");
 }
 
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()
@@ -17459,6 +17603,7 @@ int main(int argc, char* argv[])
         test_replace_image_file_crc_failure_preserves_pending_state();
         test_replace_image_same_part_later_replacement_wins();
         test_replace_image_memory_source_copies_bytes_before_save_as();
+        test_public_workbook_editor_editing_end_to_end_smoke();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();

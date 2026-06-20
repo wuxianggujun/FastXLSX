@@ -614,6 +614,17 @@ previous queued source. A superseded file-backed staged image is no longer read
 by `save_as()`, while `pending_change_count()` still reflects both public edit
 calls. This is queued-source lifecycle evidence only, not transaction/undo
 history, image insertion, drawing mutation, or relationship/content-type repair.
+P8.560 adds a public editing end-to-end smoke and a dedicated editing test
+matrix. The new facade regression combines `rename_sheet()`, materialized
+`WorksheetEditor::set_cell()`, `replace_sheet_data()` on a different sheet,
+`replace_image()`, and `save_as()` in one flow, then verifies workbook catalog
+output, worksheet cell XML, media byte replacement, and preservation of the
+picture sheet, drawing XML/rels, package rels, workbook rels, content types, and
+docProps. `docs/EDITING_TEST_MATRIX.md` now separates proven public facade
+behavior from internal Patch preservation evidence and non-goals. This is test
+coverage and documentation only, not semantic object editing, relationship
+repair/pruning, transaction/undo/rollback, source reload, or complete workbook
+editing.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

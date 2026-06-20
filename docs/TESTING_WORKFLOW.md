@@ -271,6 +271,23 @@ XML 对比结论：
 验证日期：
 ```
 
+## Existing-workbook editing test matrix
+
+The current public editing surface is tracked separately in
+`docs/EDITING_TEST_MATRIX.md`. Use that matrix when deciding whether a change is
+covered by public `WorkbookEditor` facade tests, internal `PackageEditor`
+preservation tests, or still needs a new regression. The matrix also records the
+explicit non-goals: no broad semantic object editing, no relationship
+repair/pruning promise, no transaction/undo/rollback model, and no large-file
+low-memory random editing claim from the current public facade.
+
+For a focused local editing gate, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests
+ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.facade" --output-on-failure --timeout 60
+```
+
 ## Benchmark 本地 QA
 
 Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：

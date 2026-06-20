@@ -25814,6 +25814,49 @@ Acceptance:
   expansion.
 - `git diff --check` passes.
 
+## P8.560 - Cover public editing end-to-end facade smoke
+
+Status: done.
+
+Type: public `WorkbookEditor` / `WorksheetEditor` combined editing regression
+and testing-doc matrix; no production code change, no new public symbol, no
+CMake target membership change, no relationship repair, and no semantic object
+editing.
+
+Goal: prove the currently public editing facade can run one representative
+existing-workbook edit flow that combines the separate public edit surfaces
+without confusing their boundaries. The smoke must keep materialized cell edits
+on one sheet and whole-`sheetData` replacement on another sheet so it does not
+bypass the same-sheet operation-mixing guardrails.
+
+Output:
+- Added `test_public_workbook_editor_editing_end_to_end_smoke()` to the facade
+  shard. The source workbook has three sheets: `Data`, `ReplaceMe`, and
+  `Pictures`, plus document properties and one PNG media part.
+- The test queues `rename_sheet("Data", "EditedData")`, materialized
+  `WorksheetEditor::set_cell()` edits on `EditedData`,
+  `replace_sheet_data("ReplaceMe", ...)`, `replace_image("xl/media/image1.png",
+  ...)`, and one `save_as()`.
+- The output verifies workbook catalog rename, materialized worksheet XML,
+  replaced sheetData XML, target media bytes, and preservation of the picture
+  worksheet XML/rels, drawing XML/rels, content types, package rels, workbook
+  rels, and docProps.
+- Added `docs/EDITING_TEST_MATRIX.md` and linked it from
+  `docs/TESTING_WORKFLOW.md`; `docs/NEXT_STEPS.md` records the P8.560 result.
+
+Non-goals / boundary:
+- No transaction history, no undo/rollback model, no source package mutation, no
+  semantic image/drawing/table/chart editing, no relationship repair/pruning, no
+  sharedStrings/style migration expansion, no source reload, no complete workbook
+  editing, and no large-file low-memory random editing claim.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Editing test documentation distinguishes public facade evidence from internal
+  Patch preservation fixtures and their non-goals.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

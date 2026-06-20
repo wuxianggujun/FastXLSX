@@ -43,9 +43,11 @@ void testing_extract_entry_chunks_to_committed_file(
 //
 // This first slice indexes stored/no-compression ZIP entries, and can also
 // read DEFLATE entries when the opt-in minizip-ng dependency is enabled. It
-// requires ZIP header sizes/CRC and rejects unsupported compression methods,
-// encrypted entries, data-descriptor entries, and local-header
-// CRC/method/name/size mismatches.
+// indexes entries from central-directory sizes/CRC and rejects unsupported
+// compression methods, encrypted entries, and local-header method/name
+// mismatches. When a ZIP entry uses a data descriptor, central-directory
+// sizes/CRC are treated as authoritative and payload CRC is still validated
+// while reading.
 // It is enough to prove that existing package entries, including unknown parts,
 // can be discovered and read without turning the package into a workbook DOM.
 // It also ingests the small OPC metadata parts `[Content_Types].xml` and

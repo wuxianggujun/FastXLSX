@@ -51,9 +51,10 @@ XLSX 是 ZIP + OpenXML parts。编辑已有文件时，基本单位应该是 par
 这个策略能最大程度保留 Excel 文件里的未知结构。
 当前内部 `PackageReader` 覆盖 stored/no-compression ZIP entry reader 基础；
 在 `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建下还可通过 minizip-ng 读取 DEFLATE
-entries，默认构建仍拒绝 compressed input。该 reader 依赖 header 中已有
-size/CRC，读取时校验解压后 payload CRC，并拒绝 local header
-CRC/method/name/size mismatch、encrypted flags、data descriptor entries、Zip64，
+entries，默认构建仍拒绝 compressed input。该 reader 使用 central directory 的
+size/CRC 作为 entry 索引权威，读取时校验解压后 payload CRC，data descriptor
+entries 也按 central directory 元数据读取；它仍拒绝 local header method/name
+mismatch、无 data descriptor 时的 local header CRC/size mismatch、encrypted flags、Zip64，
 以及非法 ZIP entry name（绝对路径、尾部斜杠、反斜杠、query/fragment
 components、空段、dot 段或 parent 段）；它还会在
 OPC metadata ingestion 阶段拒绝冲突 content type default / override 和同一

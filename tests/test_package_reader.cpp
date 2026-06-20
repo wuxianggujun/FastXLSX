@@ -211,6 +211,20 @@ void write_u32(std::string& data, std::size_t offset, std::uint32_t value)
     data[offset + 3] = static_cast<char>((value >> 24u) & 0xffu);
 }
 
+void append_u16(std::string& data, std::uint16_t value)
+{
+    data.push_back(static_cast<char>(value & 0xffu));
+    data.push_back(static_cast<char>((value >> 8u) & 0xffu));
+}
+
+void append_u32(std::string& data, std::uint32_t value)
+{
+    data.push_back(static_cast<char>(value & 0xffu));
+    data.push_back(static_cast<char>((value >> 8u) & 0xffu));
+    data.push_back(static_cast<char>((value >> 16u) & 0xffu));
+    data.push_back(static_cast<char>((value >> 24u) & 0xffu));
+}
+
 std::size_t find_signature(const std::string& data, std::uint32_t signature)
 {
     for (std::size_t offset = 0; offset + 4 <= data.size(); ++offset) {
@@ -299,6 +313,116 @@ ZipEntryLocation find_zip_entry_location(const std::string& data, std::string_vi
     }
 
     throw TestFailure("test ZIP entry not found");
+}
+
+std::string add_data_descriptor_to_entry(std::string data, std::string_view name)
+{
+    const ZipEntryLocation location = find_zip_entry_location(data, name);
+    const std::uint32_t crc32 =
+        fastxlsx::test::read_u32(data, location.central_offset + 16u);
+
+    write_u16(data, location.local_offset + 6u,
+        static_cast<std::uint16_t>(
+            fastxlsx::test::read_u16(data, location.local_offset + 6u) | 0x0008u));
+    write_u32(data, location.local_offset + 14u, 0u);
+    write_u32(data, location.local_offset + 18u, 0u);
+    write_u32(data, location.local_offset + 22u, 0u);
+    write_u16(data, location.central_offset + 8u,
+        static_cast<std::uint16_t>(
+            fastxlsx::test::read_u16(data, location.central_offset + 8u) | 0x0008u));
+
+    std::string descriptor(16u, '\0');
+    write_u32(descriptor, 0u, 0x08074b50u);
+    write_u32(descriptor, 4u, crc32);
+    write_u32(descriptor, 8u, location.compressed_size);
+    write_u32(descriptor, 12u, location.uncompressed_size);
+
+    data.insert(location.data_offset + location.compressed_size, descriptor);
+    const std::size_t eocd_offset = find_end_of_central_directory(data);
+    const std::uint32_t central_offset =
+        fastxlsx::test::read_u32(data, eocd_offset + 16u);
+    write_u32(data, eocd_offset + 16u,
+        central_offset + static_cast<std::uint32_t>(descriptor.size()));
+    return data;
+}
+
+std::string make_directory_local_header(std::string_view name)
+{
+    if (name.size() > std::numeric_limits<std::uint16_t>::max()) {
+        throw TestFailure("test ZIP directory entry name is too long");
+    }
+
+    std::string record;
+    append_u32(record, 0x04034b50u);
+    append_u16(record, 20u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u32(record, 0u);
+    append_u32(record, 0u);
+    append_u32(record, 0u);
+    append_u16(record, static_cast<std::uint16_t>(name.size()));
+    append_u16(record, 0u);
+    record.append(name);
+    return record;
+}
+
+std::string make_directory_central_record(
+    std::string_view name, std::uint32_t local_header_offset)
+{
+    if (name.size() > std::numeric_limits<std::uint16_t>::max()) {
+        throw TestFailure("test ZIP directory entry name is too long");
+    }
+
+    std::string record;
+    append_u32(record, 0x02014b50u);
+    append_u16(record, 20u);
+    append_u16(record, 20u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u32(record, 0u);
+    append_u32(record, 0u);
+    append_u32(record, 0u);
+    append_u16(record, static_cast<std::uint16_t>(name.size()));
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u16(record, 0u);
+    append_u32(record, 0x10u);
+    append_u32(record, local_header_offset);
+    record.append(name);
+    return record;
+}
+
+std::string add_zip_directory_entry(std::string data, std::string_view name)
+{
+    const std::size_t eocd_offset = find_end_of_central_directory(data);
+    const std::uint16_t entry_count = fastxlsx::test::read_u16(data, eocd_offset + 10u);
+    const std::uint32_t central_size = fastxlsx::test::read_u32(data, eocd_offset + 12u);
+    const std::uint32_t central_offset = fastxlsx::test::read_u32(data, eocd_offset + 16u);
+
+    const std::string local_record = make_directory_local_header(name);
+    data.insert(central_offset, local_record);
+
+    const std::uint32_t directory_local_offset = central_offset;
+    const std::uint32_t new_central_offset =
+        central_offset + static_cast<std::uint32_t>(local_record.size());
+    const std::string central_record =
+        make_directory_central_record(name, directory_local_offset);
+    data.insert(new_central_offset + central_size, central_record);
+
+    const std::size_t new_eocd_offset =
+        eocd_offset + local_record.size() + central_record.size();
+    const std::uint16_t new_entry_count = static_cast<std::uint16_t>(entry_count + 1u);
+    write_u16(data, new_eocd_offset + 8u, new_entry_count);
+    write_u16(data, new_eocd_offset + 10u, new_entry_count);
+    write_u32(data, new_eocd_offset + 12u,
+        central_size + static_cast<std::uint32_t>(central_record.size()));
+    write_u32(data, new_eocd_offset + 16u, new_central_offset);
+    return data;
 }
 
 void expect_open_failure(const std::filesystem::path& path, const char* message)
@@ -3453,6 +3577,74 @@ void test_package_reader_rejects_invalid_entry_names()
     }
 }
 
+void test_package_reader_ignores_zip_directory_entries()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-reader-directory-entry-source.xlsx");
+    const std::string content_types =
+        R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)";
+    fastxlsx::detail::write_package(source_path,
+        {
+            {"[Content_Types].xml", content_types},
+            {"xl/workbook.xml", "<workbook/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const std::string data =
+        add_zip_directory_entry(fastxlsx::test::read_file(source_path), "xl/_rels/");
+    const std::filesystem::path path =
+        output_path("fastxlsx-package-reader-directory-entry.xlsx");
+    write_file(path, data);
+
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    check(reader.entries().size() == 2,
+        "PackageReader should ignore ZIP directory entries when indexing parts");
+    check(reader.find_entry("xl/_rels/") == nullptr,
+        "PackageReader should not expose directory entries as package parts");
+    check(reader.read_entry("[Content_Types].xml") == content_types,
+        "PackageReader should still read real parts when directory entries are present");
+}
+
+void test_package_reader_rejects_invalid_zip_directory_entry_names()
+{
+    struct InvalidDirectoryEntryNameCase {
+        std::string_view suffix;
+        std::string entry_name;
+        std::string_view expected_context;
+    };
+
+    const std::vector<InvalidDirectoryEntryNameCase> cases = {
+        {"absolute", "/xl/", "ZIP entry '/xl/'"},
+        {"empty-segment", "xl//", "ZIP entry 'xl//'"},
+        {"dot-segment", "xl/./", "ZIP entry 'xl/./'"},
+        {"parent-segment", "xl/../", "ZIP entry 'xl/../'"},
+    };
+
+    for (const InvalidDirectoryEntryNameCase& test_case : cases) {
+        const std::filesystem::path source_path = output_path(
+            "fastxlsx-package-reader-invalid-directory-entry-source-"
+            + std::string(test_case.suffix) + ".xlsx");
+        fastxlsx::detail::write_package(source_path,
+            {
+                {"[Content_Types].xml",
+                    R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)"},
+                {"xl/workbook.xml", "<workbook/>"},
+            },
+            {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+        const std::filesystem::path path = output_path(
+            "fastxlsx-package-reader-invalid-directory-entry-"
+            + std::string(test_case.suffix) + ".xlsx");
+        write_file(path,
+            add_zip_directory_entry(
+                fastxlsx::test::read_file(source_path), test_case.entry_name));
+
+        expect_open_failure_contains(path, test_case.expected_context,
+            "PackageReader invalid ZIP directory entry-name rejection should include context");
+    }
+}
+
 void test_package_reader_rejects_empty_central_directory_entry_name_with_context()
 {
     const std::string entry_name = "xl/workbook.xml";
@@ -3694,56 +3886,36 @@ void test_package_reader_rejects_local_header_size_mismatch()
         "PackageReader should reject local-header entry size mismatches");
 }
 
-void test_package_reader_rejects_central_data_descriptor_flag()
+void test_package_reader_reads_stored_entry_with_data_descriptor()
 {
     const std::filesystem::path source_path =
-        output_path("fastxlsx-package-reader-central-data-descriptor-source.xlsx");
+        output_path("fastxlsx-package-reader-data-descriptor-source.xlsx");
+    const std::string content_types =
+        R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)";
     fastxlsx::detail::write_package(source_path,
         {
-            {"[Content_Types].xml",
-                R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)"},
-            {"xl/workbook.xml", "<workbook/>"},
+            {"[Content_Types].xml", content_types},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 
-    std::string data = fastxlsx::test::read_file(source_path);
-    const std::size_t central_offset = find_signature(data, 0x02014b50u);
-    write_u16(data, central_offset + 8,
-        static_cast<std::uint16_t>(fastxlsx::test::read_u16(data, central_offset + 8)
-            | 0x0008u));
+    std::string data = add_data_descriptor_to_entry(
+        fastxlsx::test::read_file(source_path), "[Content_Types].xml");
 
     const std::filesystem::path path =
-        output_path("fastxlsx-package-reader-central-data-descriptor.xlsx");
+        output_path("fastxlsx-package-reader-data-descriptor.xlsx");
     write_file(path, data);
 
-    expect_open_failure_contains(path, "ZIP entry '[Content_Types].xml'",
-        "central-directory data descriptor rejection should include the entry name");
-}
-
-void test_package_reader_rejects_local_data_descriptor_flag()
-{
-    const std::filesystem::path source_path =
-        output_path("fastxlsx-package-reader-local-data-descriptor-source.xlsx");
-    fastxlsx::detail::write_package(source_path,
-        {
-            {"[Content_Types].xml",
-                R"(<Types><Default Extension="xml" ContentType="application/xml"/></Types>)"},
-            {"xl/workbook.xml", "<workbook/>"},
-        },
-        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-
-    std::string data = fastxlsx::test::read_file(source_path);
-    const std::size_t local_offset = find_signature(data, 0x04034b50u);
-    write_u16(data, local_offset + 6,
-        static_cast<std::uint16_t>(fastxlsx::test::read_u16(data, local_offset + 6)
-            | 0x0008u));
-
-    const std::filesystem::path path =
-        output_path("fastxlsx-package-reader-local-data-descriptor.xlsx");
-    write_file(path, data);
-
-    expect_open_failure(path,
-        "PackageReader should reject local-header data descriptor flags");
+    const fastxlsx::detail::PackageReader reader =
+        fastxlsx::detail::PackageReader::open(path);
+    const fastxlsx::detail::PackageReaderEntry* entry =
+        reader.find_entry("[Content_Types].xml");
+    check(entry != nullptr, "PackageReader should index data-descriptor entries");
+    check(entry->compressed_size == content_types.size(),
+        "data-descriptor central directory should provide compressed size");
+    check(entry->uncompressed_size == content_types.size(),
+        "data-descriptor central directory should provide uncompressed size");
+    check(reader.read_entry("[Content_Types].xml") == content_types,
+        "PackageReader should read stored data-descriptor entry bytes");
 }
 
 void test_package_reader_rejects_local_header_crc_mismatch()
@@ -4377,6 +4549,8 @@ int main()
         test_package_reader_ingests_unknown_extension_relationships_as_metadata();
         test_package_reader_rejects_duplicate_entries();
         test_package_reader_rejects_invalid_entry_names();
+        test_package_reader_ignores_zip_directory_entries();
+        test_package_reader_rejects_invalid_zip_directory_entry_names();
         test_package_reader_rejects_empty_central_directory_entry_name_with_context();
         test_package_reader_rejects_bad_zip();
         test_package_reader_rejects_central_directory_trailing_data_before_eocd();
@@ -4398,8 +4572,7 @@ int main()
         test_package_reader_rejects_local_header_method_mismatch();
         test_package_reader_rejects_local_header_name_mismatch();
         test_package_reader_rejects_local_header_size_mismatch();
-        test_package_reader_rejects_central_data_descriptor_flag();
-        test_package_reader_rejects_local_data_descriptor_flag();
+        test_package_reader_reads_stored_entry_with_data_descriptor();
         test_package_reader_rejects_local_header_crc_mismatch();
         test_package_reader_rejects_missing_content_types();
         test_package_reader_rejects_bad_content_types_xml();

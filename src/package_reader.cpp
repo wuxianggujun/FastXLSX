@@ -1764,10 +1764,7 @@ void validate_local_header(const std::filesystem::path& path, const PackageReade
         throw FastXlsxError(zip_entry_io_context(
             entry.name, "encrypted ZIP entries are not supported"));
     }
-    if ((flags & data_descriptor_flag) != 0u) {
-        throw FastXlsxError(zip_entry_io_context(
-            entry.name, "ZIP data descriptors are not supported"));
-    }
+    const bool has_data_descriptor = (flags & data_descriptor_flag) != 0u;
     const std::uint16_t local_compression_method = read_u16(local_header, 8);
     if (local_compression_method != entry.compression_method) {
         throw FastXlsxError(zip_entry_io_context(
@@ -1776,7 +1773,7 @@ void validate_local_header(const std::filesystem::path& path, const PackageReade
     if (!is_supported_compression_method(local_compression_method)) {
         throw_unsupported_compression_method(local_compression_method, entry.name);
     }
-    if (read_u32(local_header, 14) != entry.crc32) {
+    if (!has_data_descriptor && read_u32(local_header, 14) != entry.crc32) {
         throw FastXlsxError(zip_entry_io_context(
             entry.name, "ZIP local file header CRC mismatch"));
     }
@@ -1790,8 +1787,9 @@ void validate_local_header(const std::filesystem::path& path, const PackageReade
             entry.name, "ZIP local file header name mismatch"));
     }
 
-    if (read_u32(local_header, 18) != entry.compressed_size
-        || read_u32(local_header, 22) != entry.uncompressed_size) {
+    if (!has_data_descriptor
+        && (read_u32(local_header, 18) != entry.compressed_size
+            || read_u32(local_header, 22) != entry.uncompressed_size)) {
         throw FastXlsxError(zip_entry_io_context(
             entry.name, "ZIP local file header size mismatch"));
     }
@@ -1839,13 +1837,53 @@ std::vector<PackageReaderEntry> read_central_directory(
             "ZIP central directory record is truncated");
 
         std::string name = central_directory.substr(name_offset, name_size);
+        if (!name.empty() && name.back() == '/') {
+            try {
+                validate_zip_directory_entry_name(name);
+            } catch (const std::exception& error) {
+                throw FastXlsxError(zip_entry_io_context(name, error.what()));
+            }
+            if ((flags & encrypted_flag) != 0u) {
+                throw FastXlsxError(zip_entry_io_context(
+                    name, "encrypted ZIP directory entries are not supported"));
+            }
+            if ((flags & data_descriptor_flag) != 0u) {
+                throw FastXlsxError(zip_entry_io_context(
+                    name, "ZIP directory entries cannot use data descriptors"));
+            }
+            if (compression_method != stored_compression_method) {
+                throw FastXlsxError(zip_entry_io_context(
+                    name, "ZIP directory entries must use stored compression"));
+            }
+            if (compressed_size != 0u || uncompressed_size != 0u || crc32 != 0u) {
+                throw FastXlsxError(zip_entry_io_context(
+                    name, "ZIP directory entries must not contain payload bytes"));
+            }
+            if (disk_start != 0) {
+                throw FastXlsxError(zip_entry_io_context(
+                    name, "multi-disk ZIP entries are not supported"));
+            }
+            if (local_header_offset == zip64_u32_sentinel) {
+                throw FastXlsxError(zip_entry_io_context(
+                    name, "Zip64 entries are not supported by PackageReader yet"));
+            }
+
+            const PackageReaderEntry directory_entry {
+                name,
+                compression_method,
+                crc32,
+                compressed_size,
+                uncompressed_size,
+                local_header_offset,
+                0,
+            };
+            validate_local_header(path, directory_entry, file_size);
+            offset += record_size;
+            continue;
+        }
         if ((flags & encrypted_flag) != 0u) {
             throw FastXlsxError(zip_entry_io_context(
                 name, "encrypted ZIP entries are not supported"));
-        }
-        if ((flags & data_descriptor_flag) != 0u) {
-            throw FastXlsxError(zip_entry_io_context(
-                name, "ZIP data descriptors are not supported"));
         }
         if (!is_supported_compression_method(compression_method)) {
             throw_unsupported_compression_method(compression_method, name);

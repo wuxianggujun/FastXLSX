@@ -351,9 +351,13 @@ struct WorksheetCellSnapshot {
 /// Source comments and processing instructions outside cells may be ignored
 /// during materialization and are not preserved by dirty projection; comments
 /// or processing instructions inside cells remain unsupported.
+/// Source cell `ph` phonetic markers are ignored. Formula metadata attributes
+/// `t` / `ref` / `si` are not preserved: formula text is imported as plain
+/// formula text, while metadata-only shared formula cells can only materialize
+/// from cached scalar `<v>` values when present.
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
-/// or cell metadata attributes, coerce invalid numeric payloads, migrate
+/// or unsupported cell metadata attributes, coerce invalid numeric payloads, migrate
 /// sharedStrings indexes, validate or merge source style ids, import
 /// unsupported value-wrapper shapes, tolerate non-whitespace source worksheet
 /// text outside wrapper metadata or sheetData, source sheetData text outside
@@ -365,7 +369,8 @@ struct WorksheetCellSnapshot {
 /// roots or duplicate sheetData boundaries, repair invalid row/cell nesting,
 /// infer missing row scope for non-empty rows or cells, preserve source
 /// worksheet wrapper metadata during dirty projection, evaluate formulas,
-/// preserve cached formula results, rebuild calcChain, update
+/// preserve formula metadata or cached formula results for formula-text cells,
+/// rebuild calcChain, update
 /// tables/drawings/defined names/range metadata, or repair relationships.
 /// Non-default caller-supplied StyleId values are rejected by both set_cell() overloads until a
 /// public existing-workbook style policy exists. An explicit default StyleId{0}
@@ -667,6 +672,10 @@ private:
 /// sharedStrings relationship/content-type metadata or payloads do not block
 /// supported non-shared-string cells, are not repaired, and still fail if
 /// shared string indexes are encountered.
+/// Source cell `ph` phonetic markers are ignored. Formula metadata attributes
+/// `t` / `ref` / `si` are treated as source metadata, not preserved; formulas
+/// with text are projected as plain formula text, and metadata-only shared
+/// formula cells are projected from cached scalar values when available.
 /// Failed worksheet materialization does not queue a dirty session; a later
 /// no-op save_as() remains a copy-original package write unless another edit is
 /// explicitly queued.

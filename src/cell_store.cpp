@@ -1403,6 +1403,7 @@ struct ActiveSourceCell {
     bool saw_inline_text_element = false;
     bool saw_direct_inline_text_element = false;
     bool saw_formula_element = false;
+    bool saw_formula_metadata_attributes = false;
 };
 
 using SharedStringsProvider = std::function<const std::vector<std::string>&()>;
@@ -1448,14 +1449,19 @@ CellValue materialize_cell_value(
 {
     CellValue value = CellValue::blank();
     if (cell.saw_formula_element) {
-        if (cell.formula_text.empty()) {
+        if (!cell.formula_text.empty()) {
+            value = CellValue::formula(cell.formula_text);
+            if (cell.style_id.has_value()) {
+                value = value.with_style(*cell.style_id);
+            }
+            return value;
+        }
+        if (!cell.saw_formula_metadata_attributes) {
             throw FastXlsxError("CellStore worksheet loader found an empty formula text");
         }
-        value = CellValue::formula(cell.formula_text);
-        if (cell.style_id.has_value()) {
-            value = value.with_style(*cell.style_id);
-        }
-        return value;
+        // Shared/array formula metadata is not preserved by CellStore. If a
+        // source cell only carries metadata plus a cached value, materialize
+        // the cached scalar value instead of inventing formula text.
     }
 
     switch (cell.type) {
@@ -1670,7 +1676,7 @@ private:
         const std::optional<StyleId> style_id =
             parse_source_style_attribute_for_load(event.raw_xml);
         if (raw_tag_has_unsupported_attributes(
-                event.raw_xml, "r", std::string_view {"t"}, std::string_view {"s"})) {
+                event.raw_xml, {"r", "t", "s", "ph"})) {
             throw FastXlsxError(
                 "CellStore worksheet loader does not load cell metadata attributes");
         }
@@ -1725,8 +1731,11 @@ private:
 
         reject_unsupported_value_shape(cell, event.element_name);
         if (event.element_name == "f" && raw_tag_has_attributes(event.raw_xml)) {
-            throw FastXlsxError(
-                "CellStore worksheet loader does not load formula attributes");
+            if (raw_tag_has_unsupported_attributes(event.raw_xml, {"t", "ref", "si"})) {
+                throw FastXlsxError(
+                    "CellStore worksheet loader does not load unsupported formula attributes");
+            }
+            cell.saw_formula_metadata_attributes = true;
         }
         if (event.element_name == "v" && raw_tag_has_attributes(event.raw_xml)) {
             throw FastXlsxError(

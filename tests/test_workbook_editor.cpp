@@ -10322,6 +10322,9 @@ void test_public_worksheet_editor_materializes_source_supported_values()
           R"(<c r="C1" t="b"><v>0</v></c>)"
           R"(<c r="D1" t="inlineStr"><is><t></t></is></c>)"
           R"(<c r="E1" t="inlineStr"><is/></c>)"
+          R"(<c r="F1"><f t="array" ref="F1">SUM(B1:C1)</f><v>1</v></c>)"
+          R"(<c r="G1"><f t="shared" si="0"/><v>7</v></c>)"
+          R"(<c r="H1" ph="1"><v>8</v></c>)"
           R"(</row></sheetData></worksheet>)";
     write_stored_zip_entries(source, entries);
 
@@ -10333,7 +10336,10 @@ void test_public_worksheet_editor_materializes_source_supported_values()
     const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
     const std::optional<fastxlsx::CellValue> d1 = sheet.try_cell("D1");
     const std::optional<fastxlsx::CellValue> e1 = sheet.try_cell("E1");
-    check(sheet.cell_count() == 5,
+    const std::optional<fastxlsx::CellValue> f1 = sheet.try_cell("F1");
+    const std::optional<fastxlsx::CellValue> g1 = sheet.try_cell("G1");
+    const std::optional<fastxlsx::CellValue> h1 = sheet.try_cell("H1");
+    check(sheet.cell_count() == 8,
         "WorksheetEditor should count source blank and boolean cells as sparse records");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Blank,
         "WorksheetEditor should materialize self-closing source cells as explicit blank");
@@ -10348,17 +10354,26 @@ void test_public_worksheet_editor_materializes_source_supported_values()
         "WorksheetEditor should materialize empty source inline text as empty text");
     check(e1.has_value() && e1->kind() == fastxlsx::CellValueKind::Blank,
         "WorksheetEditor should materialize inline string cells without text as blank");
+    check(f1.has_value() && f1->kind() == fastxlsx::CellValueKind::Formula
+            && f1->text_value() == "SUM(B1:C1)",
+        "WorksheetEditor should flatten source formula metadata when formula text is present");
+    check(g1.has_value() && g1->kind() == fastxlsx::CellValueKind::Number
+            && g1->number_value() == 7.0,
+        "WorksheetEditor should materialize cached values for metadata-only source formulas");
+    check(h1.has_value() && h1->kind() == fastxlsx::CellValueKind::Number
+            && h1->number_value() == 8.0,
+        "WorksheetEditor should ignore source phonetic cell metadata");
     check(!sheet.has_pending_changes(),
         "read-only supported source value materialization should start clean");
     check(!editor.has_pending_changes(),
         "read-only supported source value materialization should not dirty WorkbookEditor");
 
-    sheet.set_cell("F2", fastxlsx::CellValue::text("supported-values-new-inline"));
+    sheet.set_cell("I2", fastxlsx::CellValue::text("supported-values-new-inline"));
     editor.save_as(output);
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<dimension ref="A1:F2"/>)",
+    check_contains(worksheet_xml, R"(<dimension ref="A1:I2"/>)",
         "flushed supported source values should contribute to projected dimension");
     check_contains(worksheet_xml, R"(<c r="A1"/>)",
         "source blank should be projected as an explicit blank cell");
@@ -10371,8 +10386,14 @@ void test_public_worksheet_editor_materializes_source_supported_values()
         "empty source inline text should remain an explicit empty text cell");
     check_contains(worksheet_xml, R"(<c r="E1"/>)",
         "source inline string without text should be projected as blank");
+    check_contains(worksheet_xml, R"(<c r="F1"><f>SUM(B1:C1)</f></c>)",
+        "source formula metadata should be projected as plain formula text");
+    check_contains(worksheet_xml, R"(<c r="G1"><v>7</v></c>)",
+        "metadata-only source formulas should be projected as cached scalar values");
+    check_contains(worksheet_xml, R"(<c r="H1"><v>8</v></c>)",
+        "source phonetic cell metadata should not be projected");
     check_contains(worksheet_xml,
-        R"(<c r="F2" t="inlineStr"><is><t>supported-values-new-inline</t></is></c>)",
+        R"(<c r="I2" t="inlineStr"><is><t>supported-values-new-inline</t></is></c>)",
         "new WorksheetEditor text should continue to write inline strings");
     check_not_contains(worksheet_xml, R"(t="s")",
         "dirty supported source value projection should not introduce shared string indexes");
@@ -13482,18 +13503,6 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
         },
         "CellStore worksheet loader found duplicate formula elements",
         "duplicate source formula elements");
-
-    expect_public_formula_materialization_failure(
-        "formula-attributes",
-        write_formula_source,
-        [](std::map<std::string, std::string>& entries) {
-            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
-            replace_first_or_throw(worksheet_xml,
-                R"(<c r="A1"><f>A1+1</f></c>)",
-                R"(<c r="A1"><f t="shared" si="0">A1+1</f></c>)");
-        },
-        "CellStore worksheet loader does not load formula attributes",
-        "source formula attributes");
 
     expect_public_formula_materialization_failure(
         "non-numeric-formula",

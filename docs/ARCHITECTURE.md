@@ -68,9 +68,10 @@ XLSX 语义层必须由 FastXLSX 自己实现：
 DEFLATE backend。当前还有内部 `PackageReader` ZIP entry reader 与
 content-types / relationships ingestion 基础；reader 可读 stored/no-compression entries，
 在 `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建下也可读 DEFLATE entries。读取 entry
-时会校验解压后 payload CRC，拒绝非法 ZIP entry name（绝对路径、尾部斜杠、
-反斜杠、query/fragment components、空段、dot 段或 parent 段）、local header CRC/method/name/size mismatch、
-encrypted flags、data descriptor entries、Zip64 和损坏 metadata / payload bytes，并拒绝 owner part 缺失的 source-owned
+时会校验解压后 payload CRC，data descriptor entries 会按 central directory
+size/CRC 读取；reader 拒绝非法 ZIP entry name（绝对路径、尾部斜杠、
+反斜杠、query/fragment components、空段、dot 段或 parent 段）、local header method/name mismatch、
+无 data descriptor 时的 local header CRC/size mismatch、encrypted flags、Zip64 和损坏 metadata / payload bytes，并拒绝 owner part 缺失的 source-owned
 `.rels`，包括根级 `_rels/foo.xml.rels` owner relationship entry；reader-only 覆盖还验证
 冲突 content type default / override 和同一 `.rels` owner 内重复 relationship id 的拒绝，
 metadata attributes 必须未命名空间（namespace declarations 除外），namespaced

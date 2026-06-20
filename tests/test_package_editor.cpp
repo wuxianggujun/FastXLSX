@@ -34888,6 +34888,9 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_s
           R"(<x:c r="A2"><x:v>42</x:v></x:c>)"
           R"(<x:c r="B2" t="b"><x:v>1</x:v></x:c>)"
           R"(<x:c r="C2"><x:f>SUM(A2:A2)</x:f><x:v>999</x:v></x:c>)"
+          R"(<x:c r="D2"><x:f t="array" ref="D2">SUM(A2:A2)</x:f><x:v>42</x:v></x:c>)"
+          R"(<x:c r="E2"><x:f t="shared" si="0"/><x:v>7</x:v></x:c>)"
+          R"(<x:c r="F2" ph="1"><x:v>8</x:v></x:c>)"
           R"(</x:row>)"
           R"(</x:sheetData>)"
           R"(</x:worksheet>)";
@@ -34909,6 +34912,9 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_s
     const fastxlsx::detail::CellRecord* a2 = store.try_cell(2, 1);
     const fastxlsx::detail::CellRecord* b2 = store.try_cell(2, 2);
     const fastxlsx::detail::CellRecord* c2 = store.try_cell(2, 3);
+    const fastxlsx::detail::CellRecord* d2 = store.try_cell(2, 4);
+    const fastxlsx::detail::CellRecord* e2 = store.try_cell(2, 5);
+    const fastxlsx::detail::CellRecord* f2 = store.try_cell(2, 6);
     check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
             && a1->text_value == "package-prefixed-inline",
         "package-backed CellStore should materialize prefixed inline text by local-name");
@@ -34927,8 +34933,17 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_s
     check(c2 != nullptr && c2->kind == fastxlsx::CellValueKind::Formula
             && c2->text_value == "SUM(A2:A2)",
         "package-backed CellStore should materialize prefixed formula wrappers");
+    check(d2 != nullptr && d2->kind == fastxlsx::CellValueKind::Formula
+            && d2->text_value == "SUM(A2:A2)",
+        "package-backed CellStore should flatten prefixed formula metadata attributes");
+    check(e2 != nullptr && e2->kind == fastxlsx::CellValueKind::Number
+            && e2->number_value == 7.0,
+        "package-backed CellStore should materialize cached values for metadata-only formulas");
+    check(f2 != nullptr && f2->kind == fastxlsx::CellValueKind::Number
+            && f2->number_value == 8.0,
+        "package-backed CellStore should ignore source phonetic cell metadata attributes");
 
-    store.set_cell(2, 4, fastxlsx::CellValue::text("package-prefixed-inline-patched"));
+    store.set_cell(2, 7, fastxlsx::CellValue::text("package-prefixed-inline-patched"));
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source_path);
@@ -34956,8 +34971,14 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_s
         "source-loaded CellStore should project prefixed boolean values");
     check_contains(output_worksheet_xml, R"(<c r="C2"><f>SUM(A2:A2)</f></c>)",
         "source-loaded CellStore should project formulas without cached values");
+    check_contains(output_worksheet_xml, R"(<c r="D2"><f>SUM(A2:A2)</f></c>)",
+        "source-loaded CellStore should project flattened formula metadata without cached values");
+    check_contains(output_worksheet_xml, R"(<c r="E2"><v>7</v></c>)",
+        "source-loaded CellStore should project metadata-only shared formulas as cached values");
+    check_contains(output_worksheet_xml, R"(<c r="F2"><v>8</v></c>)",
+        "source-loaded CellStore should project source phonetic cells without ph metadata");
     check_contains(output_worksheet_xml,
-        R"(<c r="D2" t="inlineStr"><is><t>package-prefixed-inline-patched</t></is></c>)",
+        R"(<c r="G2" t="inlineStr"><is><t>package-prefixed-inline-patched</t></is></c>)",
         "source-loaded CellStore should include edits beside prefixed source cells");
     check_not_contains(output_worksheet_xml, "ignored-phonetic",
         "source-loaded CellStore projection should not keep prefixed phonetic text");
@@ -35771,7 +35792,7 @@ void test_package_editor_source_loaded_cell_store_metadata_shape_failure_preserv
         {
             "fastxlsx-package-editor-source-cellstore-formula-attr-source.xlsx",
             "fastxlsx-package-editor-source-cellstore-formula-attr-output.xlsx",
-            R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="0"/></c></row></sheetData></worksheet>)",
+            R"(<worksheet><sheetData><row r="1"><c r="A1"><f foo="1">1</f></c></row></sheetData></worksheet>)",
             "formula attributes",
         },
         {

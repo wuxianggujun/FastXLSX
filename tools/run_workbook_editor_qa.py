@@ -4,12 +4,14 @@
 This helper is intentionally outside CTest. It drives the opt-in
 `fastxlsx_workbook_editor_qa_tool`, then validates the produced workbooks with
 ZIP/XML checks, openpyxl readback, and optional XlsxWriter-generated reference
-workbooks for generated scenarios.
+workbooks for generated scenarios. It can also scan caller-provided external
+fixture directories for a broad materialized-edit smoke pass.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -44,6 +46,13 @@ DEFAULT_XLNT_RENAME_FIXTURES = [
 DEFAULT_XLNT_STRING_FIXTURES = [
     "Issue445_inline_str.xlsx",
     "Issue494_shared_string.xlsx",
+]
+
+EXTERNAL_FIXTURE_SCENARIO = "external_fixture_materialized_smoke"
+FIXTURE_SCENARIOS = [
+    "xlnt_fixture_rename_smoke",
+    "xlnt_fixture_string_smoke",
+    EXTERNAL_FIXTURE_SCENARIO,
 ]
 
 
@@ -100,6 +109,42 @@ def choose_unique_sheet_name(existing: list[str], preferred: str = "QA_Renamed")
             return candidate
 
     raise RuntimeError("failed to allocate a unique worksheet name")
+
+
+def fixture_case_slug(fixture_root: Path, fixture_path: Path) -> str:
+    try:
+        relative = fixture_path.relative_to(fixture_root)
+    except ValueError:
+        relative = fixture_path.name
+
+    text = str(relative).replace("\\", "/")
+    safe = "".join(
+        ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in text
+    )
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    return f"{safe}-{digest}"
+
+
+def discover_external_fixtures(
+    fixture_root: Path,
+    globs: list[str],
+    limit: int,
+) -> list[Path]:
+    discovered: dict[Path, None] = {}
+    for pattern in globs:
+        for fixture_path in fixture_root.glob(pattern):
+            if not fixture_path.is_file():
+                continue
+            if fixture_path.name.startswith("~$"):
+                continue
+            if fixture_path.suffix.lower() != ".xlsx":
+                continue
+            discovered[fixture_path.resolve()] = None
+
+    fixtures = sorted(discovered.keys(), key=lambda path: str(path).lower())
+    if limit > 0:
+        fixtures = fixtures[:limit]
+    return fixtures
 
 
 @dataclass
@@ -572,8 +617,15 @@ def run_fixture_case(
     work_dir: Path,
     fixture_path: Path,
     group_name: str,
+    *,
+    fixture_root: Path | None = None,
 ) -> ScenarioResult:
-    case_dir = work_dir / group_name / fixture_path.stem
+    case_slug = (
+        fixture_case_slug(fixture_root, fixture_path)
+        if fixture_root is not None
+        else fixture_path.stem
+    )
+    case_dir = work_dir / group_name / case_slug
     openpyxl = load_openpyxl()
     workbook = openpyxl.load_workbook(fixture_path, read_only=False, data_only=False)
     try:
@@ -588,9 +640,12 @@ def run_fixture_case(
         if "xl/workbook.xml" in source_names
         else "fixture_materialized_only"
     )
+    case_dir.mkdir(parents=True, exist_ok=True)
+    tool_source_path = case_dir / "source.xlsx"
+    shutil.copyfile(fixture_path, tool_source_path)
 
     tool_kwargs: dict[str, Any] = {
-        "source": fixture_path,
+        "source": tool_source_path,
         "rename_to": rename_to,
     }
     if tool_scenario == "fixture_materialized_only":
@@ -618,8 +673,15 @@ def run_fixture_case(
             output_path,
             actual_source_sheet_name,
         )
+    if fixture_root is not None:
+        try:
+            case_name = f"{group_name}:{fixture_path.relative_to(fixture_root).as_posix()}"
+        except ValueError:
+            case_name = f"{group_name}:{fixture_path.name}"
+    else:
+        case_name = f"{group_name}:{fixture_path.name}"
     return ScenarioResult(
-        name=f"{group_name}:{fixture_path.name}",
+        name=case_name,
         report=tool_report,
         zip_xml=zip_xml,
         openpyxl=openpyxl_report,
@@ -665,12 +727,26 @@ def run_self_test() -> int:
             require(reference_path.exists(), "self-test: xlsxwriter did not produce workbook")
             xlsxwriter_status = "created"
 
+        nested_dir = temp_dir / "fixtures" / "nested"
+        nested_dir.mkdir(parents=True)
+        discovered_workbook = nested_dir / "fixture.xlsx"
+        shutil.copyfile(workbook_path, discovered_workbook)
+        (nested_dir / "~$ignored.xlsx").write_bytes(b"ignored")
+        discovered = discover_external_fixtures(temp_dir / "fixtures", ["**/*.xlsx"], 0)
+        require(discovered == [discovered_workbook.resolve()],
+                f"self-test: fixture discovery mismatch {discovered!r}")
+        unicode_slug = fixture_case_slug(
+            temp_dir / "fixtures", nested_dir / "9_unicode_Λ_😇.xlsx"
+        )
+        require(unicode_slug.isascii(), f"self-test: non-ASCII fixture slug {unicode_slug!r}")
+
         print(
             json.dumps(
                 {
                     "status": "ok",
                     "workbook": str(workbook_path),
                     "xlsxwriter": xlsxwriter_status,
+                    "fixture_discovery": len(discovered),
                 },
                 indent=2,
             )
@@ -751,8 +827,23 @@ def main() -> int:
     parser.add_argument(
         "--scenario",
         action="append",
-        choices=GENERATED_SCENARIOS + ["xlnt_fixture_rename_smoke", "xlnt_fixture_string_smoke"],
+        choices=GENERATED_SCENARIOS + FIXTURE_SCENARIOS,
         help="Scenario group to run. Can be passed multiple times.",
+    )
+    parser.add_argument(
+        "--fixture-glob",
+        action="append",
+        default=None,
+        help=(
+            "Glob pattern under --fixture-root for external_fixture_materialized_smoke. "
+            "Defaults to **/*.xlsx. Can be passed multiple times."
+        ),
+    )
+    parser.add_argument(
+        "--fixture-limit",
+        type=int,
+        default=0,
+        help="Maximum external fixtures to run for external_fixture_materialized_smoke; 0 means no limit.",
     )
     parser.add_argument(
         "--self-test",
@@ -806,8 +897,45 @@ def main() -> int:
 
         require(args.fixture_root is not None,
                 f"{scenario}: --fixture-root is required for fixture scenarios")
-        fixture_root: Path = args.fixture_root
+        fixture_root: Path = args.fixture_root.resolve()
         require(fixture_root.exists(), f"fixture root does not exist: {fixture_root}")
+
+        if scenario == EXTERNAL_FIXTURE_SCENARIO:
+            fixture_globs = args.fixture_glob if args.fixture_glob else ["**/*.xlsx"]
+            fixtures = discover_external_fixtures(fixture_root, fixture_globs, args.fixture_limit)
+            require(fixtures, f"{scenario}: no .xlsx fixtures found under {fixture_root}")
+            for fixture_path in fixtures:
+                try:
+                    results.append(
+                        run_fixture_case(
+                            qa_exe,
+                            work_dir,
+                            fixture_path,
+                            scenario,
+                            fixture_root=fixture_root,
+                        )
+                    )
+                except Exception as exc:
+                    try:
+                        case_name = f"{scenario}:{fixture_path.relative_to(fixture_root).as_posix()}"
+                    except ValueError:
+                        case_name = f"{scenario}:{fixture_path.name}"
+                    results.append(
+                        ScenarioResult(
+                            name=case_name,
+                            report={
+                                "scenario": scenario,
+                                "status": "failed",
+                                "fixture": str(fixture_path),
+                            },
+                            zip_xml={},
+                            openpyxl={},
+                            xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
+                            error=str(exc),
+                        )
+                    )
+            continue
+
         fixture_names = (
             DEFAULT_XLNT_RENAME_FIXTURES
             if scenario == "xlnt_fixture_rename_smoke"

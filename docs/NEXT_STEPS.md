@@ -20,7 +20,17 @@ existing-workbook random cell edits are explicit In-memory mode, and dirty
 materialized worksheet sessions flush through `WorkbookEditor::save_as()`.
 The next editor work should harden this first slice before adding style
 migration, sharedStrings migration, broader workbook-level guardrails, or
-large-file random editing. The current `WorksheetEditor` source loader can now
+large-file random editing. This slice can now be exercised by the opt-in
+workbook-editor QA runner against both generated
+cases and external `.xlsx` fixture directories. `tools/run_workbook_editor_qa.py`
+now keeps the existing xlnt smoke scenarios and adds
+`external_fixture_materialized_smoke`, which discovers `.xlsx` files under a
+caller-provided fixture root, runs the same narrow materialized edit, validates
+outputs with ZIP/XML and `openpyxl`, and can optionally invoke the Excel COM
+sidecar for no-repair open checks. This is local compatibility evidence for the
+covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
+not a broad guarantee for unsupported Excel object models.
+The current `WorksheetEditor` source loader can now
 read source `t="s"` cells through the existing workbook `xl/sharedStrings.xml`
 and materialize them as `CellValue::text(...)`; `save_as()` still writes the
 materialized sparse store as inline strings and preserves the source
@@ -1531,7 +1541,7 @@ schema validation.
     relationships under `CalcChainAction::Preserve`, and workbook `.rels` when
     workbook metadata is rewritten while relationships stay byte-preserved. It does
     not add worksheets or semantically sync sharedStrings/styles/tables/drawings/
-    defined names, support Zip64/data descriptors, or expose a public editing API.
+    defined names, support Zip64, or expose a public editing API.
     When the source is DEFLATE input, this path preserves unmodified part
     payload semantics. Minizip-enabled PackageEditor regressions now cover
     ordinary workbook replacement, unknown-extension target replacement, and the
@@ -1885,19 +1895,24 @@ feature completion.
       Duplicate value wrappers inside one source cell now also fail for scalar
       `<v>`, formula `<f>`, and inline text `<t>` shapes instead of being
       concatenated into ambiguous materialized values.
-      Source formula attributes and empty formula text now also fail before
-      materialization, keeping the loader limited to plain formula text rather
-      than shared/metadata formula migration.
+      Source formula metadata attributes limited to `t`, `ref`, and `si` now
+      load lossily: formula cells with text are projected as plain formula text,
+      and metadata-only shared formula cells can materialize supported cached
+      scalar `<v>` values. Empty formula text and unknown formula attributes
+      still fail before materialization, so this is not shared/array formula
+      migration.
       Cells outside row elements now also fail before materialization, keeping
       source-backed loading scoped to row-contained cells.
-      Unsupported source row/cell metadata attributes now also fail before
-      materialization instead of being silently dropped from the sparse
-      `CellStore`.
+      Unsupported source row/cell metadata attributes still fail before
+      materialization, except source cell `ph` phonetic markers are accepted and
+      ignored instead of being projected into the sparse `CellStore`.
       Unsupported scalar `<v>` and inline text `<t>` value-wrapper attributes
       now also fail before materialization; inline text `xml:space` remains
       loadable as plain semantic text only.
-      Unsupported inline-string rich text runs and phonetic metadata now also
-      fail before materialization instead of being flattened into plain text.
+      Simple inline-string rich text runs now flatten to plain text; inline
+      `rPh` / `phoneticPr` / `extLst` metadata text is ignored. Malformed rich
+      text, unsupported rich-run shapes, and unknown inline metadata still fail
+      before materialization.
       Direct raw cell text outside value wrappers, worksheet-root raw text
       outside wrapper metadata or sheetData, sheetData raw text outside rows,
       row raw text outside cells, cell-contained comments, processing
@@ -2252,11 +2267,15 @@ commit or short series with its own tests and docs update.
       as key-attribute guardrails.
       Duplicate scalar/formula/inline-text wrappers inside one source cell now
       fail as source-shape guardrails.
-      Source formula attributes and empty formula text now fail as formula-shape
-      guardrails.
+      Source formula metadata attributes limited to `t`, `ref`, and `si` are
+      accepted as lossy metadata: formula text is projected as plain formula
+      text, and metadata-only shared formulas can materialize supported cached
+      scalar values. Unknown formula attributes and empty formula text still
+      fail as formula-shape guardrails.
       Cells outside row elements now fail as row-scope guardrails.
-      Unsupported source row/cell metadata attributes now fail as metadata
-      guardrails.
+      Unsupported source row/cell metadata attributes still fail as metadata
+      guardrails, except source cell `ph` phonetic markers are tolerated and
+      ignored.
       Unsupported scalar and inline-text value-wrapper attributes now fail as
       value-wrapper guardrails, with `xml:space` still accepted for plain text.
       Unknown inline string child metadata still fails as a guardrail; simple
@@ -3986,18 +4005,22 @@ Current foundation:
   registered-part removal decisions.
 - Internal `PackageReader` can index and read stored/no-compression package
   entries by name, including unknown entries; minizip-enabled builds can read
-  DEFLATE entries. It rejects encrypted/data descriptor entries and local
-  header CRC/method/name/size mismatches, validate stored entry CRC before
-  returning bytes, reject conflicting content type defaults/overrides and
+  DEFLATE entries. It accepts data-descriptor entries by using
+  central-directory sizes/CRC as authoritative and still validating payload
+  CRC while reading. It rejects encrypted entries, local header method/name
+  mismatches, and local header CRC/size mismatches when no data descriptor is
+  present, validates stored entry CRC before returning bytes, rejects
+  conflicting content type defaults/overrides and
   duplicate relationship ids within one `.rels` owner, reject namespaced
   metadata attributes except namespace declarations, reject duplicate
   unqualified metadata attributes, reject non-whitespace metadata text,
   reject start/end tag QName mismatches, and ingest content types / relationships into internal
   `PartIndex` / `RelationshipGraph` views. It can also resolve the internal
   workbook sheet catalog by first validating package `_rels/.rels` contains
-  exactly one internal `officeDocument` relationship; the current narrow
-  resolver only accepts targets resolving to `/xl/workbook.xml`, and missing,
-  duplicate, external, URI-qualified, or non-fixed targets fail during lookup.
+  exactly one internal `officeDocument` relationship; missing, duplicate,
+  external, or URI-qualified targets fail during lookup, while fixed,
+  root-level, and alternate internal workbook part names are resolved from
+  the package root.
   Relative, absolute, and dot-segment package targets such as
   `xl/./workbook.xml` are resolved from the package root without modeling the
   package root as a real `PartName`.

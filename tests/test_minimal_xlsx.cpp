@@ -1344,6 +1344,16 @@ void test_internal_cell_store_worksheet_loader()
                 && record->number_value == 1.0,
             "worksheet loader should tolerate and ignore common source row metadata attributes");
     }
+    {
+        fastxlsx::detail::CellStore cell_metadata_store =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" ph="1"><v>1</v></c></row></sheetData><phoneticPr fontId="1"/></worksheet>)");
+        const fastxlsx::detail::CellRecord* record =
+            cell_metadata_store.try_cell(1, 1);
+        check(record != nullptr && record->kind == fastxlsx::CellValueKind::Number
+                && record->number_value == 1.0,
+            "worksheet loader should tolerate and ignore source phonetic cell metadata");
+    }
 
     check_fastxlsx_error(
         [&] {
@@ -1443,12 +1453,27 @@ void test_internal_cell_store_worksheet_loader()
         },
         "worksheet loader should reject empty formula text");
 
+    {
+        const fastxlsx::detail::CellStore formula_metadata_store =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="array" ref="A1">PI()</f><v>3.14</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>2</v></c></row></sheetData></worksheet>)");
+        const fastxlsx::detail::CellRecord* array_formula =
+            formula_metadata_store.try_cell(1, 1);
+        check(array_formula != nullptr && array_formula->kind == fastxlsx::CellValueKind::Formula
+                && array_formula->text_value == "PI()",
+            "worksheet loader should flatten formula metadata when formula text is present");
+        const fastxlsx::detail::CellRecord* shared_cached =
+            formula_metadata_store.try_cell(2, 1);
+        check(shared_cached != nullptr && shared_cached->kind == fastxlsx::CellValueKind::Number
+                && shared_cached->number_value == 2.0,
+            "worksheet loader should materialize cached values for metadata-only shared formulas");
+    }
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="0"/></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f foo="1">1</f></c></row></sheetData></worksheet>)");
         },
-        "worksheet loader should reject formula attributes");
+        "worksheet loader should reject unsupported formula attributes");
 
     check_fastxlsx_error(
         [&] {

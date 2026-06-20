@@ -767,6 +767,14 @@ the underlying error. Planned staged-chunk failures also expose the owning
   63.4s, about 0.79 M cells/s, 5.11 MB peak, and 140.06 MiB output.
   `openpyxl` / Office validation was not run for this large scale probe, so it
   remains performance/resource trend evidence rather than compatibility proof.
+- P11.8 exposes Streaming new-workbook compression level through
+  `WorkbookWriterOptions::zip_compression_level`, adds benchmark
+  `--compression-level`, and lets the matrix runner sweep multiple levels.
+  The 10M minizip sweep shows level 1 as the throughput-first choice, level 3
+  as a repeated-string tradeoff candidate, level 6 / backend default as the
+  smaller-file choice, and level 9 as currently not useful. The 50M numeric
+  level 1 point ran in 29.9s at about 1.67 M cells/s, 5.13 MB peak, and
+  208.15 MiB output.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -3578,7 +3586,10 @@ output, and the internal `PackageReader` can read DEFLATE entries in the
 minizip-enabled preset. Internal `PackageWriterOptions::compression_level`
 now accepts `-1` for the backend default, `0` for minizip no-compression/stored
 output, or `1..9` for minizip DEFLATE level selection; the stored bootstrap
-remains stored/no-compression. The internal package writer also preflights
+remains stored/no-compression. Streaming new-workbook output now exposes the
+same bounded choice through `WorkbookWriterOptions::zip_compression_level`;
+positive levels require the minizip-ng backend and are rejected by stored
+bootstrap builds before rows are written. The internal package writer also preflights
 ZIP32 limits and entry-name hygiene, rejecting empty entry lists, entry counts
 above `65535`, entry names beyond the 16-bit ZIP field, invalid entry names,
 duplicate entry names, missing or inaccessible file-backed chunks, and single entry
@@ -3586,7 +3597,7 @@ uncompressed sizes above `UINT32_MAX`, and mixed legacy-data/chunked payload
 entries, invalid memory/file chunk-source combinations, and unknown chunk kinds
 before opening the output path. Zip64,
 data-descriptor input, package streaming, public package editing, public
-compression controls, and performance claims remain planned.
+package editing, and broad performance claims remain planned.
 
 Do this before claiming large-file write performance, real compression,
 Zip64, package streaming, or existing-file edit support.
@@ -3599,8 +3610,9 @@ Tasks:
   builds still use `src/zip_store_writer.*`; opt-in builds use minizip-ng. The
   boundary accepts in-memory and file-backed/chunked entries for new-workbook
   output, but this is not the planned public `PackageWriter`.
-- Keep internal compression level configuration bounded to `src/package_writer.*`
-  without changing worksheet XML generation into a DOM or full-workbook path.
+- Keep compression level configuration bounded to the Streaming/package writer
+  boundary without changing worksheet XML generation into a DOM or full-workbook
+  path.
 - Keep no-Zip64 and file-backed chunk guardrails in the internal package writer,
   and design real Zip64 / large-entry behavior before large workbook tests;
   file-backed/chunked entries alone do not prove large-entry support.
@@ -4704,8 +4716,8 @@ Tasks:
   worksheet DOM.
 - Keep the opt-in minizip backend covered by tests, and decide later whether it
   should become the default after CI/cache/release packaging are verified.
-- Add explicit compression level configuration without making the hot path
-  depend on a DOM or a full workbook object model.
+- Keep explicit Streaming compression level configuration available without
+  making the hot path depend on a DOM or a full workbook object model.
 - Keep the large-data writer row-oriented: row iterator, range, callback, or
   chunk writer input.
 - Ensure already-written rows are never retained as a full worksheet matrix.

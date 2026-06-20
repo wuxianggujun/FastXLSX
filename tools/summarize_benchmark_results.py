@@ -51,6 +51,14 @@ def optional_text(value: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    return None
+
+
 @dataclass(frozen=True)
 class BenchmarkCase:
     name: str
@@ -70,6 +78,7 @@ class BenchmarkCase:
     string_strategy: str
     zip_backend: str
     compression: str
+    compression_level: int | None
     package_entry_source_mode: str
     temporary_worksheet_part_footprint: str
     temporary_worksheet_part_footprint_bytes: int
@@ -141,6 +150,7 @@ def parse_benchmark_case(path: Path, data: dict[str, Any], name: str | None = No
         string_strategy=text(data.get("string_strategy"), "string_strategy"),
         zip_backend=text(data.get("zip_backend"), "zip_backend"),
         compression=text(data.get("compression"), "compression"),
+        compression_level=optional_int(data.get("compression_level")),
         package_entry_source_mode=text(data.get("package_entry_source_mode"), "package_entry_source_mode"),
         temporary_worksheet_part_footprint=text(
             data.get("temporary_worksheet_part_footprint"),
@@ -286,6 +296,7 @@ def benchmark_case_to_dict(case: BenchmarkCase) -> dict[str, Any]:
         "string_dedup_ratio": case.string_dedup_ratio,
         "zip_backend": case.zip_backend,
         "compression": case.compression,
+        "compression_level": case.compression_level,
         "package_entry_source_mode": case.package_entry_source_mode,
         "office_open": case.office_open,
         "openpyxl_status": case.openpyxl_status,
@@ -398,6 +409,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
     for case in cases:
         strings = f"{case['string_pattern']}/{case['string_strategy']}"
         backend = f"{case['zip_backend']}/{case['compression']}"
+        if case["compression_level"] is not None:
+            backend = f"{backend} ({case['compression_level']})"
         lines.append(
             "| "
             f"{case['name']} | "
@@ -445,6 +458,7 @@ def run_self_test() -> None:
         "string_strategy": "inline",
         "zip_backend": "stored-bootstrap",
         "compression": "store",
+        "compression_level": -1,
         "package_entry_source_mode": "worksheet-file-backed-chunked",
         "temporary_worksheet_part_footprint": "worksheet-body-file-bytes",
         "temporary_worksheet_part_footprint_bytes": 1000,

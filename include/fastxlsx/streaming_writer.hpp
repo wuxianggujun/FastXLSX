@@ -192,6 +192,13 @@ struct CellStyle {
     std::optional<CellFill> fill;
 };
 
+/// Keeps the active ZIP backend default compression policy.
+inline constexpr int default_zip_compression_level = -1;
+/// Requests no-compression/stored ZIP output.
+inline constexpr int min_zip_compression_level = 0;
+/// Highest zlib-compatible DEFLATE compression level accepted by the writer.
+inline constexpr int max_zip_compression_level = 9;
+
 /// Options for WorkbookWriter.
 ///
 /// API mode: Streaming. Options are captured by WorkbookWriter::create() and are
@@ -199,6 +206,20 @@ struct CellStyle {
 struct WorkbookWriterOptions {
     /// Controls how string cells are represented in worksheet XML.
     StringStrategy string_strategy = StringStrategy::InlineString;
+
+    /// ZIP compression level for Streaming new-workbook output.
+    ///
+    /// `default_zip_compression_level` keeps the active backend default,
+    /// `min_zip_compression_level` requests no-compression/stored output, and
+    /// values `1..max_zip_compression_level` request zlib-compatible DEFLATE
+    /// levels when the minizip-ng backend is enabled. Dependency-free stored
+    /// bootstrap builds can only write no-compression/stored packages, so
+    /// positive DEFLATE levels are rejected before worksheet rows are written.
+    ///
+    /// This option affects ZIP close-time CPU cost and output size only. It
+    /// does not change worksheet row streaming, does not enable Zip64, and does
+    /// not edit existing XLSX files.
+    int zip_compression_level = default_zip_compression_level;
 
     /// Document metadata written to `docProps/core.xml` and `docProps/app.xml`.
     ///

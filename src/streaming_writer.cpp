@@ -30,6 +30,10 @@ namespace {
 constexpr std::uint32_t max_excel_rows = 1048576;
 constexpr std::uint32_t max_excel_columns = 16384;
 constexpr std::int64_t max_openxml_coordinate = 27273042316900LL;
+static_assert(
+    default_zip_compression_level == detail::package_writer_default_compression_level);
+static_assert(min_zip_compression_level == detail::package_writer_min_compression_level);
+static_assert(max_zip_compression_level == detail::package_writer_max_compression_level);
 
 struct ColumnWidth {
     std::uint32_t first_column = 1;
@@ -814,6 +818,22 @@ bool uses_shared_strings(const detail::WorkbookWriterState& workbook) noexcept
 bool writes_styles(const detail::WorkbookWriterState& workbook) noexcept
 {
     return !workbook.styles.empty();
+}
+
+void validate_workbook_writer_options(const WorkbookWriterOptions& options)
+{
+    if (options.zip_compression_level != default_zip_compression_level
+        && (options.zip_compression_level < min_zip_compression_level
+            || options.zip_compression_level > max_zip_compression_level)) {
+        throw FastXlsxError("ZIP compression level must be -1 or between 0 and 9");
+    }
+
+#ifndef FASTXLSX_HAS_MINIZIP_NG
+    if (options.zip_compression_level > min_zip_compression_level) {
+        throw FastXlsxError(
+            "ZIP compression levels 1..9 require the minizip-ng backend");
+    }
+#endif
 }
 
 bool has_number_format(const CellStyle& style) noexcept
@@ -2659,6 +2679,8 @@ WorkbookWriter::WorkbookWriter(std::unique_ptr<detail::WorkbookWriterState> stat
 
 WorkbookWriter WorkbookWriter::create(std::filesystem::path path, WorkbookWriterOptions options)
 {
+    validate_workbook_writer_options(options);
+
     auto state = std::make_unique<detail::WorkbookWriterState>();
     state->output_path = std::move(path);
     state->options = options;
@@ -2874,7 +2896,9 @@ void WorkbookWriter::close()
         }
     }
 
-    detail::write_package(state_->output_path, entries);
+    detail::PackageWriterOptions package_options;
+    package_options.compression_level = state_->options.zip_compression_level;
+    detail::write_package(state_->output_path, entries, package_options);
     state_->closed = true;
 }
 

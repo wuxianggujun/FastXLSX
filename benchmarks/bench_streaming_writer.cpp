@@ -62,6 +62,7 @@ struct Options {
     std::string scenario = "numeric";
     std::string string_pattern = "mixed";
     std::string string_strategy = "inline";
+    int zip_compression_level = fastxlsx::default_zip_compression_level;
     std::filesystem::path output = default_output_dir() / "fastxlsx-bench-streaming.xlsx";
     std::filesystem::path result = default_output_dir() / "fastxlsx-bench-streaming.json";
 };
@@ -108,6 +109,44 @@ double parse_ratio(std::string_view value)
     return parsed;
 }
 
+int parse_compression_level(std::string_view value)
+{
+    if (value.empty()) {
+        fail("--compression-level cannot be empty");
+    }
+
+    bool negative = false;
+    std::size_t offset = 0;
+    if (value.front() == '-') {
+        negative = true;
+        offset = 1;
+    }
+    if (offset == value.size()) {
+        fail("--compression-level must be -1 or between 0 and 9");
+    }
+
+    int parsed = 0;
+    for (; offset < value.size(); ++offset) {
+        const char ch = value[offset];
+        if (ch < '0' || ch > '9') {
+            fail("--compression-level must be -1 or between 0 and 9");
+        }
+        parsed = parsed * 10 + (ch - '0');
+        if (parsed > fastxlsx::max_zip_compression_level) {
+            fail("--compression-level must be -1 or between 0 and 9");
+        }
+    }
+    if (negative) {
+        parsed = -parsed;
+    }
+    if (parsed != fastxlsx::default_zip_compression_level
+        && (parsed < fastxlsx::min_zip_compression_level
+            || parsed > fastxlsx::max_zip_compression_level)) {
+        fail("--compression-level must be -1 or between 0 and 9");
+    }
+    return parsed;
+}
+
 std::uint64_t checked_cell_count(const Options& options)
 {
     const std::uint64_t rows = options.rows;
@@ -147,6 +186,8 @@ Options parse_args(int argc, char** argv)
             options.string_pattern = std::string(next_value());
         } else if (arg == "--string-strategy") {
             options.string_strategy = std::string(next_value());
+        } else if (arg == "--compression-level") {
+            options.zip_compression_level = parse_compression_level(next_value());
         } else if (arg == "--output") {
             options.output = std::filesystem::path(std::string(next_value()));
         } else if (arg == "--result") {
@@ -157,6 +198,7 @@ Options parse_args(int argc, char** argv)
                 << "--scenario numeric|mixed|strings --rows N --cols N --sheets N "
                 << "--string-pattern mixed|repeated|unique "
                 << "--string-strategy inline|shared --string-ratio 0..1 "
+                << "--compression-level -1|0..9 "
                 << "--output file.xlsx --result result.json\n"
                 << "Default output files are written under the benchmark build directory.\n";
             std::exit(0);
@@ -190,6 +232,11 @@ Options parse_args(int argc, char** argv)
     if (options.sheets > kBenchmarkSheetLimit) {
         fail("--sheets exceeds the benchmark tool limit");
     }
+#ifndef FASTXLSX_BENCH_HAS_MINIZIP_NG
+    if (options.zip_compression_level > fastxlsx::min_zip_compression_level) {
+        fail("--compression-level 1..9 requires a minizip-ng benchmark build");
+    }
+#endif
     checked_cell_count(options);
     return options;
 }
@@ -336,6 +383,23 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
         fail("failed to open benchmark result file");
     }
 
+    auto compression_label = [](int level) {
+#ifdef FASTXLSX_BENCH_HAS_MINIZIP_NG
+        if (level == fastxlsx::default_zip_compression_level) {
+            return std::string("deflate-default");
+        }
+        if (level == fastxlsx::min_zip_compression_level) {
+            return std::string("store-level-0");
+        }
+        return std::string("deflate-level-") + std::to_string(level);
+#else
+        if (level == fastxlsx::min_zip_compression_level) {
+            return std::string("store-level-0");
+        }
+        return std::string("store");
+#endif
+    };
+
     const std::uint64_t cells = checked_cell_count(options);
     out << "{\n";
     out << "  \"benchmark_schema_version\": \"" << kBenchmarkSchemaVersion << "\",\n";
@@ -353,11 +417,11 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
     out << "  \"string_strategy\": \"" << json_escape(options.string_strategy) << "\",\n";
 #ifdef FASTXLSX_BENCH_HAS_MINIZIP_NG
     out << "  \"zip_backend\": \"minizip-ng\",\n";
-    out << "  \"compression\": \"deflate-default\",\n";
 #else
     out << "  \"zip_backend\": \"stored-bootstrap\",\n";
-    out << "  \"compression\": \"store\",\n";
 #endif
+    out << "  \"compression\": \"" << compression_label(options.zip_compression_level) << "\",\n";
+    out << "  \"compression_level\": " << options.zip_compression_level << ",\n";
     out << "  \"package_entry_source_mode\": \"" << kPackageEntrySourceMode << "\",\n";
     out << "  \"temporary_worksheet_part_footprint\": \"" << kTemporaryWorksheetPartFootprint << "\",\n";
     out << "  \"temporary_worksheet_part_footprint_bytes\": "
@@ -380,6 +444,7 @@ void run_benchmark(const Options& options)
     writer_options.string_strategy = options.string_strategy == "shared"
         ? fastxlsx::StringStrategy::SharedString
         : fastxlsx::StringStrategy::InlineString;
+    writer_options.zip_compression_level = options.zip_compression_level;
 
     const auto started = std::chrono::steady_clock::now();
     auto workbook = fastxlsx::WorkbookWriter::create(options.output, writer_options);

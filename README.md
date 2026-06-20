@@ -310,10 +310,11 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
   进入 ZIP backend。默认构建使用 stored/no-compression bootstrap；
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
-  internal `PackageWriterOptions::compression_level` 可选择 `-1` backend default、
-  `0` no-compression/stored output 或 `1..9` minizip DEFLATE level；
-  stored bootstrap 仍不压缩。内部 writer 会在写输出前拒绝需要 Zip64 的
-  entry count 或单 entry 未压缩大小，以及超过 ZIP 16-bit 字段的 entry name。
+  public `WorkbookWriterOptions::zip_compression_level` 可为 Streaming new-workbook
+  输出选择 `-1` backend default、`0` no-compression/stored output 或 `1..9`
+  minizip DEFLATE level；stored bootstrap 构建会拒绝 positive level。内部 writer
+  会在写输出前拒绝需要 Zip64 的 entry count 或单 entry 未压缩大小，以及超过
+  ZIP 16-bit 字段的 entry name。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
   基础单元格编码。
 - CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。

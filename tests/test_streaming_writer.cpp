@@ -323,6 +323,83 @@ void test_streaming_writer_document_properties()
         "streaming document properties app version mismatch");
 }
 
+void test_streaming_writer_zip_compression_level_options()
+{
+    const auto stored_output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-compression-level-0.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.zip_compression_level = fastxlsx::min_zip_compression_level;
+    auto workbook = fastxlsx::WorkbookWriter::create(stored_output_path, options);
+    auto sheet = workbook.add_worksheet("Compression");
+    sheet.append_row({fastxlsx::CellView::text("level 0")});
+    workbook.close();
+
+    const auto stored_entries = fastxlsx::test::read_zip_entries(stored_output_path);
+    check(stored_entries.contains("xl/worksheets/sheet1.xml"),
+        "compression level 0 workbook should be readable");
+
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+    const auto compressed_output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-compression-level-9.xlsx";
+
+    options.zip_compression_level = fastxlsx::max_zip_compression_level;
+    auto compressed_workbook = fastxlsx::WorkbookWriter::create(compressed_output_path, options);
+    auto compressed_sheet = compressed_workbook.add_worksheet("Compression");
+    compressed_sheet.append_row({fastxlsx::CellView::text("level 9")});
+    compressed_workbook.close();
+
+    const auto compressed_entries = fastxlsx::test::read_zip_entries(compressed_output_path);
+    check(compressed_entries.contains("xl/worksheets/sheet1.xml"),
+        "compression level 9 workbook should be readable with minizip");
+#else
+    options.zip_compression_level = fastxlsx::max_zip_compression_level;
+    bool unsupported_level_failed = false;
+    try {
+        (void)fastxlsx::WorkbookWriter::create(
+            fastxlsx::test::artifact_dir() / "fastxlsx-streaming-compression-unsupported.xlsx",
+            options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        unsupported_level_failed = true;
+        check_contains(error.what(), "minizip-ng",
+            "stored bootstrap positive compression-level failure should mention minizip-ng");
+    }
+    check(unsupported_level_failed,
+        "stored bootstrap should reject positive compression levels before writing rows");
+#endif
+
+    auto check_invalid_level = [](int compression_level, std::string_view output_name) {
+        const auto output_path =
+            fastxlsx::test::artifact_dir() / std::filesystem::path(std::string(output_name));
+        const std::string sentinel = "preserve existing invalid-compression output";
+        {
+            std::ofstream output(output_path, std::ios::binary);
+            output << sentinel;
+        }
+
+        fastxlsx::WorkbookWriterOptions invalid_options;
+        invalid_options.zip_compression_level = compression_level;
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::WorkbookWriter::create(output_path, invalid_options);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "ZIP compression level",
+                "invalid compression-level failure should explain the bad option");
+        }
+
+        check(failed, "WorkbookWriter should reject invalid compression levels");
+        check(fastxlsx::test::read_file(output_path) == sentinel,
+            "invalid compression level should fail before overwriting output");
+    };
+
+    check_invalid_level(fastxlsx::default_zip_compression_level - 1,
+        "fastxlsx-streaming-invalid-compression-low.xlsx");
+    check_invalid_level(fastxlsx::max_zip_compression_level + 1,
+        "fastxlsx-streaming-invalid-compression-high.xlsx");
+}
+
 void test_streaming_writer_empty_rows_dimension()
 {
     const auto output_path =
@@ -5620,6 +5697,7 @@ int main()
     try {
         test_streaming_writer_smoke_package();
         test_streaming_writer_document_properties();
+        test_streaming_writer_zip_compression_level_options();
         test_streaming_writer_empty_rows_dimension();
         test_streaming_writer_max_column_boundary();
         test_streaming_writer_max_row_boundary_with_test_hook();

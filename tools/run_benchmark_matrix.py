@@ -30,6 +30,9 @@ DEFAULT_CASES = [
 ]
 
 BENCHMARK_SCHEMA_VERSION = "4"
+DEFAULT_ZIP_COMPRESSION_LEVEL = -1
+MIN_ZIP_COMPRESSION_LEVEL = 0
+MAX_ZIP_COMPRESSION_LEVEL = 9
 
 
 def default_benchmark_exe() -> Path:
@@ -69,6 +72,30 @@ def parse_case(text: str) -> MatrixCase:
     if scenario == "numeric" and string_strategy != "inline":
         raise ValueError("numeric cases should use inline strategy to avoid duplicate no-string runs")
     return MatrixCase(scenario=scenario, string_strategy=string_strategy, string_pattern=string_pattern)
+
+
+def parse_compression_level(text: str) -> int:
+    try:
+        level = int(text, 10)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("compression level must be -1 or between 0 and 9") from exc
+    if level != DEFAULT_ZIP_COMPRESSION_LEVEL and not (
+        MIN_ZIP_COMPRESSION_LEVEL <= level <= MAX_ZIP_COMPRESSION_LEVEL
+    ):
+        raise argparse.ArgumentTypeError("compression level must be -1 or between 0 and 9")
+    return level
+
+
+def compression_level_label(level: int) -> str:
+    if level == DEFAULT_ZIP_COMPRESSION_LEVEL:
+        return "default"
+    return f"level-{level}"
+
+
+def case_run_name(case: MatrixCase, compression_level: int | None) -> str:
+    if compression_level is None:
+        return case.name
+    return f"{case.name}-compression-{compression_level_label(compression_level)}"
 
 
 def expected_string_ratio(case: MatrixCase, mixed_string_ratio: float) -> float:
@@ -153,7 +180,7 @@ def expected_string_distribution(
 
 
 def verify_result_json(path: Path, case: MatrixCase, rows: int, cols: int, sheets: int,
-    mixed_string_ratio: float, output_path: Path) -> dict[str, Any]:
+    mixed_string_ratio: float, output_path: Path, compression_level: int | None) -> dict[str, Any]:
     data = load_json(path)
     require(data.get("benchmark_schema_version") == BENCHMARK_SCHEMA_VERSION,
         "benchmark schema version mismatch")
@@ -164,6 +191,9 @@ def verify_result_json(path: Path, case: MatrixCase, rows: int, cols: int, sheet
     require(data.get("cells") == rows * cols * sheets, f"{case.name} cell count mismatch")
     require(data.get("string_pattern") == case.string_pattern, f"{case.name} string pattern mismatch")
     require(data.get("string_strategy") == case.string_strategy, f"{case.name} string strategy mismatch")
+    if compression_level is not None:
+        require(data.get("compression_level") == compression_level,
+            f"{case.name} compression level mismatch")
     require(
         abs(float(data.get("string_ratio")) - expected_string_ratio(case, mixed_string_ratio)) < 1e-9,
         f"{case.name} string ratio mismatch",
@@ -227,7 +257,8 @@ def verify_workbook_with_openpyxl(path: Path, case: MatrixCase, rows: int, cols:
 
 
 def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int, sheets: int,
-    mixed_string_ratio: float, reports: list[dict[str, Any]]) -> dict[str, Any]:
+    mixed_string_ratio: float, compression_levels: list[int | None],
+    reports: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "benchmark_matrix_schema_version": "1",
         "benchmark_executable": str(bench_exe),
@@ -237,6 +268,7 @@ def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int,
         "sheets": sheets,
         "cells_per_case": rows * cols * sheets,
         "mixed_string_ratio": mixed_string_ratio,
+        "compression_levels": compression_levels,
         "cases": reports,
         "comparison_scope": (
             "Manual opt-in benchmark matrix. Results compare generated schema-v4 JSON "
@@ -247,9 +279,10 @@ def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int,
 
 
 def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, cols: int, sheets: int,
-    mixed_string_ratio: float, verify_openpyxl: bool) -> dict[str, Any]:
-    output_path = output_dir / f"fastxlsx-bench-{case.name}.xlsx"
-    result_path = output_dir / f"fastxlsx-bench-{case.name}.json"
+    mixed_string_ratio: float, verify_openpyxl: bool, compression_level: int | None) -> dict[str, Any]:
+    run_name = case_run_name(case, compression_level)
+    output_path = output_dir / f"fastxlsx-bench-{run_name}.xlsx"
+    result_path = output_dir / f"fastxlsx-bench-{run_name}.json"
     command = [
         str(bench_exe),
         "--scenario",
@@ -271,6 +304,8 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
         "--result",
         str(result_path),
     ]
+    if compression_level is not None:
+        command.extend(["--compression-level", str(compression_level)])
     completed = subprocess.run(command, check=False, text=True, capture_output=True)
     require(completed.returncode == 0,
         f"{case.name} benchmark failed with {completed.returncode}: {completed.stderr.strip()}")
@@ -278,16 +313,18 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
     require(result_path.exists(), f"{case.name} result JSON was not created")
 
     result_json = verify_result_json(
-        result_path, case, rows, cols, sheets, mixed_string_ratio, output_path)
+        result_path, case, rows, cols, sheets, mixed_string_ratio, output_path,
+        compression_level)
     openpyxl_report = verify_workbook_with_openpyxl(
         output_path, case, rows, cols, sheets, mixed_string_ratio) if verify_openpyxl else {
             "status": "not_requested"
         }
     return {
-        "name": case.name,
+        "name": run_name,
         "scenario": case.scenario,
         "string_strategy": case.string_strategy,
         "string_pattern": case.string_pattern,
+        "compression_level": compression_level,
         "command": command,
         "stdout": completed.stdout.strip(),
         "stderr": completed.stderr.strip(),
@@ -321,6 +358,15 @@ def run_self_test() -> None:
     require(mixed.name == "mixed-mixed-shared", "mixed case name mismatch")
     require(repeated.name == "strings-repeated-shared", "repeated case name mismatch")
     require(unique.name == "strings-unique-inline", "unique case name mismatch")
+    require(parse_compression_level("-1") == -1, "compression default parse mismatch")
+    require(parse_compression_level("0") == 0, "compression level 0 parse mismatch")
+    require(parse_compression_level("9") == 9, "compression level 9 parse mismatch")
+    require(case_run_name(repeated, None) == "strings-repeated-shared",
+        "default case run name mismatch")
+    require(case_run_name(repeated, -1) == "strings-repeated-shared-compression-default",
+        "compression default case run name mismatch")
+    require(case_run_name(repeated, 3) == "strings-repeated-shared-compression-level-3",
+        "compression level case run name mismatch")
 
     expect_value_error("numeric:shared:mixed")
     expect_value_error("strings:inline")
@@ -359,7 +405,7 @@ def run_self_test() -> None:
     require(expected_cell_value(parse_case("mixed:inline:mixed"), 1.0, 4, 1) == "repeat",
         "mixed repeated expected cell mismatch")
 
-    report = build_matrix_report(Path("bench"), Path("out"), 2, 3, 2, 0.25, [{
+    report = build_matrix_report(Path("bench"), Path("out"), 2, 3, 2, 0.25, [-1, 3], [{
         "name": repeated.name,
         "expected": {
             "sheet1_first_cell": "repeat",
@@ -369,6 +415,7 @@ def run_self_test() -> None:
     }])
     require(report["benchmark_matrix_schema_version"] == "1", "matrix schema mismatch")
     require(report["cells_per_case"] == 12, "matrix cell count mismatch")
+    require(report["compression_levels"] == [-1, 3], "matrix compression levels mismatch")
     require(report["cases"][0]["name"] == "strings-repeated-shared", "matrix case mismatch")
 
 
@@ -385,6 +432,9 @@ def main() -> int:
     parser.add_argument("--sheets", type=int, default=1, help="Worksheet count.")
     parser.add_argument("--mixed-string-ratio", type=float, default=0.25,
         help="String ratio passed to mixed scenario cases.")
+    parser.add_argument("--compression-level", action="append", dest="compression_levels",
+        type=parse_compression_level,
+        help="ZIP compression level to pass to the benchmark. May be passed multiple times.")
     parser.add_argument("--case", action="append", dest="cases",
         help="Case in scenario:string_strategy:string_pattern format. May be passed multiple times.")
     parser.add_argument("--verify-openpyxl", action="store_true",
@@ -405,16 +455,21 @@ def main() -> int:
 
     raw_cases = args.cases if args.cases else DEFAULT_CASES
     cases = [parse_case(raw_case) for raw_case in raw_cases]
-    names = [case.name for case in cases]
+    compression_levels = args.compression_levels if args.compression_levels else [None]
+    names = [case_run_name(case, compression_level)
+        for compression_level in compression_levels
+        for case in cases]
     require(len(names) == len(set(names)), "benchmark case names must be unique")
 
     reports = [
         run_case(bench_exe, output_dir, case, args.rows, args.cols, args.sheets,
-            args.mixed_string_ratio, args.verify_openpyxl)
+            args.mixed_string_ratio, args.verify_openpyxl, compression_level)
+        for compression_level in compression_levels
         for case in cases
     ]
     report = build_matrix_report(
-        bench_exe, output_dir, args.rows, args.cols, args.sheets, args.mixed_string_ratio, reports)
+        bench_exe, output_dir, args.rows, args.cols, args.sheets, args.mixed_string_ratio,
+        compression_levels, reports)
     report_path = output_dir / "benchmark-matrix-report.json"
     report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))

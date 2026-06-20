@@ -1570,6 +1570,14 @@ schema validation.
     0.79 M cells/s and 5.11 MB peak, shrinking output from 1702.30 MiB to
     140.06 MiB. `openpyxl` / Office validation was intentionally not run for
     this large scale probe.
+  - P11.8 now exposes Streaming new-workbook compression level through
+    `WorkbookWriterOptions::zip_compression_level`, adds benchmark
+    `--compression-level`, and lets the matrix runner sweep multiple levels.
+    The 10M minizip sweep shows level 1 as throughput-first, level 3 as a
+    repeated-string tradeoff candidate, level 6 / backend default as
+    smaller-file oriented, and level 9 as currently not useful. The 50M numeric
+    level 1 point ran in 29.9s at about 1.67 M cells/s, 5.13 MB peak, and
+    208.15 MiB output.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -2979,16 +2987,17 @@ Do not claim:
 
 ### Historical P4 Detail - Production ZIP Backend
 
-Status: minimal opt-in backend and internal compression-level configuration
-landed. Continue with hardening before making it the default.
+Status: minimal opt-in backend and Streaming compression-level configuration
+landed. Continue with hardening before making minizip the default backend.
 
 Do:
 - Keep the verified ZIP/DEFLATE backend wired through
   `FASTXLSX_ENABLE_MINIZIP_NG=ON` and `MINIZIP::minizip-ng`.
 - Keep `PackageWriterOptions::compression_level` internal to the package writer
-  boundary: `-1` means backend default, `0` requests minizip
+  boundary and `WorkbookWriterOptions::zip_compression_level` as the public
+  Streaming new-workbook option: `-1` means backend default, `0` requests
   no-compression/stored output, `1..9` selects zlib-compatible minizip DEFLATE
-  levels, and stored bootstrap output remains stored/no-compression.
+  levels, and stored bootstrap builds reject positive levels.
 - Keep the current no-Zip64 and file-backed chunk guardrails: reject empty
   entry lists, package entry counts above `65535`, entry names beyond the
   16-bit ZIP field, invalid entry names, duplicate entry names, missing or
@@ -2999,9 +3008,8 @@ Do:
 Accept when:
 - Tests pass for package entries without assuming stored/no-compression ZIP.
 - Generated workbooks open in Excel without repair.
-- Docs and API comments describe backend and memory behavior for touched public
-  API. Internal-only backend work must not expose public compression controls
-  just to satisfy this checklist.
+- Docs and API comments describe backend, compression-level, and memory behavior
+  for touched public API.
 
 Do not claim:
 - Large-file performance until benchmarks record scale, time, memory, output
@@ -3043,6 +3051,11 @@ Do:
   FastXLSX hot-path and compression-cost trend evidence: useful for deciding
   the next optimization target, but still not Zip64, 100M+ release readiness,
   or full Office-suite compatibility evidence.
+- Current P11.8 compression-level sweep is recorded there too. Treat level 1
+  as the current throughput-first recommendation, level 3/6 as size tradeoff
+  candidates depending on string repetition, and level 9 as not recommended
+  by current data. Keep this as opt-in benchmark evidence, not an Office-suite
+  compatibility result.
 
 Accept when:
 - CTest passes.

@@ -1195,10 +1195,24 @@ void test_replace_image_file_save_failure_preserves_pending_state()
 
     write_binary_file(staged_png_path, replacement_png_bytes);
     editor.save_as(recovered_output);
+    check(editor.has_pending_changes(),
+        "successful file-backed image save_as should preserve pending work for another save_as");
+    check(editor.pending_change_count() == 1,
+        "successful file-backed image save_as should preserve pending change count");
+    check(!editor.last_edit_error().has_value(),
+        "successful file-backed image save_as should not create last_edit_error");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(recovered_output);
     check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
         "restored staged image file should let save_as write the queued replacement");
+
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-image-file-save-second-output.xlsx");
+    editor.save_as(second_output);
+
+    const auto second_output_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(second_output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "file-backed image replacement should remain reusable for a second save_as");
 }
 
 void test_replace_image_memory_source_copies_bytes_before_save_as()

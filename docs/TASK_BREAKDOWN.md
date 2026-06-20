@@ -25647,6 +25647,46 @@ Acceptance:
   public API expansion.
 - `git diff --check` passes.
 
+## P8.556 - Cover reusable file-backed image replacement after successful save
+
+Status: done.
+
+Type: public `WorkbookEditor::replace_image(path)` save-as lifecycle regression
+and docs sync; no production code change, no new public symbol, no CMake target
+membership change, no drawing mutation, no media insertion, no relationship
+repair, and no content type repair.
+
+Goal: pin the current non-commit `save_as()` model for file-backed media-part
+replacement: a successful `save_as()` does not consume the queued file-backed
+image replacement, so the same staged file can still be reused for another
+safe output path.
+
+Output:
+- Extended the existing file-backed image replacement recovery regression:
+  after a missing staged image file causes `save_as()` to fail, restoring the
+  file and successfully saving preserves `has_pending_changes()`,
+  `pending_change_count()`, and the empty `last_edit_error()` state.
+- The same queued replacement is then saved again to a second output path, and
+  the output `xl/media/image1.png` bytes still match the staged replacement.
+- README and API design docs now list `replace_image()` in the public Patch
+  facade and document the file-backed staged-file lifetime under the current
+  `save_as()` non-commit behavior.
+
+Non-goals / boundary:
+- No production behavior change, no source package mutation, no image insertion,
+  no drawing XML mutation, no anchor update, no format conversion, no decoded
+  pixel retention, no relationship/content-type repair, no transaction/undo/
+  rollback model, and no new public API.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- Full default build and CTest pass.
+- Public/API docs distinguish reusable file-backed replacement state from
+  commit/close semantics, source reload, drawing editing, image insertion,
+  relationship/content-type repair, transaction, undo, rollback, or public API
+  expansion.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

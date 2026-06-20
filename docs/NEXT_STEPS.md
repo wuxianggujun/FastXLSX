@@ -586,6 +586,13 @@ queued public edit state and does not create `last_edit_error()` when none
 existed. This is byte-lifetime evidence only, not decoded pixel retention, image
 insertion, drawing XML mutation, format conversion, relationship/content-type
 repair, source reload, transaction/undo/rollback, or public API expansion.
+P8.556 extends the file-backed image replacement lifecycle evidence: after a
+missing staged file causes `save_as()` to fail and the file is restored, a
+successful `save_as()` still preserves the queued public edit state and the same
+file-backed replacement can be written again to a second output path. This keeps
+`replace_image(path)` aligned with the current `save_as()` non-commit model; it
+is not a commit/close API, source reload, transaction/undo/rollback behavior,
+image insertion, drawing mutation, or relationship/content-type repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

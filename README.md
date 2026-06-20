@@ -261,9 +261,11 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `last_edit_error()`、
   `WorkbookEditorWorksheetCatalogEntry`、`worksheet_catalog()`、
   `WorkbookEditorWorksheetEditSummary`、`pending_worksheet_edits()`、
-  `replace_sheet_data()`、`rename_sheet()` 和 `save_as()`。
+  `replace_sheet_data()`、`replace_image()`、`rename_sheet()` 和 `save_as()`。
   Patch path 只做已有 workbook 的 whole-`<sheetData>` 替换和窄 sheet catalog 改名；
-  不是语义 rename 或 public `PackageEditor`。
+  `replace_image()` 只替换已有 PNG/JPEG `xl/media/*` part bytes，不编辑 drawing /
+  anchors / relationships / content types；这些都不是语义 rename、image insertion
+  或 public `PackageEditor`。
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、

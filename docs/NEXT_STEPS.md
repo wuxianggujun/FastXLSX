@@ -1562,6 +1562,14 @@ schema validation.
     scaling and resource-boundary gates, and 100M+ / multi-sheet belongs to
     release readiness. The current 1M numbers should answer strategy questions,
     not be used as complete large-file proof.
+  - P11.7 now records a FastXLSX-only 10M/50M scale ladder: 10M covers
+    numeric-inline, mixed-inline, repeated-shared, and unique-inline under both
+    stored and minizip/DEFLATE; 50M covers numeric-inline under both backends.
+    The 50M numeric stored path ran in 28.7s at about 1.74 M cells/s and
+    4.50 MB peak; the 50M numeric DEFLATE path ran in 63.4s at about
+    0.79 M cells/s and 5.11 MB peak, shrinking output from 1702.30 MiB to
+    140.06 MiB. `openpyxl` / Office validation was intentionally not run for
+    this large scale probe.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -3031,6 +3039,10 @@ Do:
   memory, Zip64, long-run resource stability, or full Office/WPS/LibreOffice
   compatibility. If C6 benchmark work resumes, run FastXLSX `10M -> 50M`
   first and keep OpenXLSX/xlnt behind timeout-based reference tiers.
+- Current P11.7 FastXLSX scale ladder is recorded there too. Treat it as
+  FastXLSX hot-path and compression-cost trend evidence: useful for deciding
+  the next optimization target, but still not Zip64, 100M+ release readiness,
+  or full Office-suite compatibility evidence.
 
 Accept when:
 - CTest passes.

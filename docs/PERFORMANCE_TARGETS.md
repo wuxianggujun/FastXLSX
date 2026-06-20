@@ -468,3 +468,24 @@ OpenXLSX repeated strings 在 100k workbook-API case 上略快，但峰值内存
 约为 FastXLSX 的 9.6 倍。OpenXLSX unique strings 在 100k 已耗时 34.9s；
 尝试跑 1M C++ reference 全矩阵时，OpenXLSX unique strings 未在本轮等待窗口完成，
 进程已停止并不作为完整 1M C++ reference 矩阵结论。
+
+P11.7 同日按 scale ladder 使用现有本地
+`fastxlsx_bench_streaming_writer.exe` 对 FastXLSX 自身做了 `10M -> 50M` 阶梯探针。
+本轮未运行 `openpyxl` / Excel COM / WPS / LibreOffice 打开验证，所有 case 的
+`office_open` 仍为 `not_run`，`openpyxl_status` 为 `not_requested`；结果只用于
+热路径、压缩成本和资源趋势判断，不是完整 Office 兼容性或 release gate。
+
+| case | cells | store ms / MiB | store M cells/s | store peak MB | deflate ms / MiB | deflate M cells/s | deflate peak MB |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| numeric-inline | 10000000 | 5927 / 352.58 | 1.69 | 4.46 | 13223 / 30.36 | 0.76 | 5.12 |
+| mixed-mixed-inline | 10000000 | 7380 / 413.85 | 1.36 | 4.49 | 14024 / 40.02 | 0.71 | 5.11 |
+| strings-repeated-shared | 10000000 | 6164 / 334.53 | 1.62 | 4.50 | 12051 / 20.60 | 0.83 | 5.13 |
+| strings-unique-inline | 10000000 | 11822 / 610.99 | 0.85 | 4.49 | 15269 / 34.31 | 0.65 | 5.11 |
+| numeric-inline | 50000000 | 28704 / 1702.30 | 1.74 | 4.50 | 63365 / 140.06 | 0.79 | 5.11 |
+
+P11.7 结论：FastXLSX numeric-inline 在 10M 到 50M 的 stored 路径上吞吐基本稳定
+（约 1.69 -> 1.74 M cells/s），峰值内存仍约 4.5 MB；minizip/DEFLATE 路径在
+50M numeric 下仍约 5.1 MB 峰值，输出从 1702.30 MiB 降到 140.06 MiB（约 -91.8%），
+耗时从 28.7s 增到 63.4s（约 +120.8%）。10M strings-repeated-shared 仍保持低内存，
+10M strings-unique-inline 也保持低内存；本轮故意不跑 10M `strings-unique-shared`，
+因为 1M 证据已显示该策略是内存风险，不适合作为默认策略或常规大规模矩阵项。

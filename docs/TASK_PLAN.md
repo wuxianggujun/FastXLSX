@@ -759,6 +759,14 @@ the underlying error. Planned staged-chunk failures also expose the owning
   scaling and resource-boundary gates, and 100M+ / multi-sheet as release
   readiness territory. Do not use the current 1M results as complete large-file,
   Zip64, long-run stability, or full Office compatibility proof.
+- P11.7 records a FastXLSX-only 10M/50M scale ladder. 10M covered
+  numeric-inline, mixed-inline, repeated-shared, and unique-inline on both
+  stored and minizip/DEFLATE backends; 50M covered numeric-inline on both
+  backends. The 50M numeric stored result was 28.7s, about 1.74 M cells/s,
+  4.50 MB peak, and 1702.30 MiB output; the 50M numeric DEFLATE result was
+  63.4s, about 0.79 M cells/s, 5.11 MB peak, and 140.06 MiB output.
+  `openpyxl` / Office validation was not run for this large scale probe, so it
+  remains performance/resource trend evidence rather than compatibility proof.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -3647,6 +3655,10 @@ Tasks:
   bottlenecks, but cannot prove 10M/50M linear scaling, close-time peak memory,
   Zip64 behavior, long-run resource stability, or full Office/WPS/LibreOffice
   compatibility.
+- Current P11.7 FastXLSX scale ladder records 10M stored/minizip representative
+  cases and 50M numeric stored/minizip cases. Treat it as FastXLSX hot-path and
+  compression-cost trend evidence only; it does not add Zip64, 100M+ release
+  readiness, full Office-suite compatibility, or default sharedStrings policy.
 - `tools/run_benchmark_matrix.py --self-test` is available as a lightweight
   runner guard for case parsing, expected string distributions, expected cell
   values, and matrix report shape. It does not invoke the benchmark executable,
@@ -4667,6 +4679,10 @@ Current facts:
   hot-path trend evidence. It is not a minizip/DEFLATE matrix, Zip64 boundary,
   multi-sheet release gate, complete Office compatibility proof, or third-party
   comparison.
+- A 2026-06-20 P11.7 probe supersedes that older single-backend scale note for
+  current planning because it records both stored and minizip/DEFLATE at 10M
+  and 50M representative scales, while keeping the same compatibility and
+  release-readiness limitations.
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.
 - Current Python writer comparison is also a manual opt-in tool, not default

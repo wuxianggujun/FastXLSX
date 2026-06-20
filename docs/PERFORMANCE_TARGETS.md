@@ -259,9 +259,8 @@ workbook，也不替代 Office/openpyxl 检查。
 该 helper 会在独立 worker process 中生成 workbook，记录 worker 内部写入耗时、
 输出文件大小和可用时的进程工作集 / RSS 峰值，并可选用 `openpyxl` 只读打开输出
 验证 `Sheet1` 行列数和首尾单元格。它不会接入默认 CTest / CI，不会安装 Python
-包，不会修改 FastXLSX CMake/vcpkg 依赖，也不代表 OpenXLSX/xlnt 已完成对比。
-OpenXLSX 和 xlnt 应通过后续独立 C++ adapter benchmark 接入，不能作为 FastXLSX
-runtime dependency。
+包，也不会修改 FastXLSX CMake/vcpkg 依赖。OpenXLSX 和 xlnt 通过后续独立
+C++ adapter benchmark 接入，但仍不能作为 FastXLSX runtime dependency。
 
 ```powershell
 py tools\run_python_writer_benchmarks.py --self-test
@@ -281,6 +280,35 @@ py tools\run_python_writer_benchmarks.py `
 writer 通常生成压缩 ZIP。因此吞吐量和峰值内存可以用于判断写入路径强弱，输出文件
 体积不能直接当作 apples-to-apples 结论；需要 minizip/DEFLATE FastXLSX benchmark
 后才能做更公平的体积/压缩成本对比。
+
+### P11 C++ Reference Writer Comparison Helper
+
+`tools/run_cpp_reference_writer_benchmarks.py` 用于对 opt-in C++ XLSX writer
+adapter 做本地对比。当前支持通过 `--adapter name=path` 传入：
+
+- `openxlsx=...fastxlsx_bench_reference_openxlsx.exe`
+- `xlnt=...fastxlsx_bench_reference_xlnt.exe`
+
+这些 adapter 只链接第三方库自己的 public workbook API，用于 benchmark/reference；
+不链接到 FastXLSX runtime library，不接入默认 CTest/CI，也不改变 FastXLSX public API。
+大规模第三方 workbook API case 可能非常慢，runner 支持 `--timeout-seconds` 作为
+每个 adapter/case 的超时护栏；超时子进程会被杀掉并记录为 `timeout`，避免留下长跑
+benchmark 进程。
+
+```powershell
+py tools\run_cpp_reference_writer_benchmarks.py --self-test
+py tools\run_cpp_reference_writer_benchmarks.py `
+  --adapter openxlsx=build\windows-nmake-release-reference-benchmark\benchmarks\fastxlsx_bench_reference_openxlsx.exe `
+  --adapter xlnt=build\windows-nmake-release-reference-benchmark\benchmarks\fastxlsx_bench_reference_xlnt.exe `
+  --rows 10000 --cols 10 --sheets 1 `
+  --verify-openpyxl --strict-missing `
+  --output-dir build\qa\cpp-reference-writer-benchmarks
+```
+
+CMake adapter 入口是 `FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON` 和
+`windows-nmake-release-reference-benchmark` preset；vcpkg feature 为
+`reference-benchmarks`，仅拉取 `openxlsx` / `xlnt` 作为独立 reference benchmark
+依赖。
 
 ## 当前手工 Benchmark 记录
 
@@ -380,6 +408,41 @@ Excel COM/WPS/LibreOffice 验证，FastXLSX benchmark JSON 的 `office_open` 仍
 
 直接结论：在 stored/no-compression 当前路径下，FastXLSX 的 1M cells 写入吞吐
 明显高于 Python 优化写入路径，低内存 inline 场景约 4.5 MB 峰值；Python writer
-输出文件显著更小主要来自 ZIP 压缩，不能据此否定 FastXLSX 写入热路径。下一步若要
-做更公平体积对比，应跑 `windows-nmake-release-benchmark-minizip` 的 FastXLSX
-DEFLATE 结果，并补 OpenXLSX / xlnt 独立 C++ adapter。
+输出文件显著更小主要来自 ZIP 压缩，不能据此否定 FastXLSX 写入热路径。
+
+同日又使用 `windows-nmake-release-benchmark-minizip` 对 FastXLSX 跑了同规模
+`100000 x 10 x 1 = 1000000` cells DEFLATE 矩阵，输出均通过 `openpyxl 3.1.2`
+只读首尾值验证；`office_open` 仍为 benchmark 工具原始 `not_run`。
+
+| case | store ms / MiB | deflate ms / MiB | deflate M cells/s | deflate peak MB | size delta | time delta |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| numeric-inline | 555 / 33.28 | 1884 / 2.98 | 0.53 | 5.48 | -91.0% | +239.5% |
+| mixed-mixed-inline | 864 / 39.45 | 1291 / 3.94 | 0.77 | 5.13 | -90.0% | +49.4% |
+| mixed-mixed-shared | 613 / 39.30 | 1470 / 4.26 | 0.68 | 29.65 | -89.1% | +139.8% |
+| strings-repeated-inline | 820 / 53.39 | 1329 / 2.23 | 0.75 | 5.11 | -95.8% | +62.1% |
+| strings-repeated-shared | 392 / 32.41 | 1258 / 1.99 | 0.79 | 5.11 | -93.9% | +220.9% |
+| strings-unique-inline | 709 / 59.10 | 2547 / 3.43 | 0.39 | 5.11 | -94.2% | +259.2% |
+| strings-unique-shared | 1433 / 63.76 | 3945 / 5.54 | 0.25 | 121.36 | -91.3% | +175.3% |
+
+P11.4 结论：FastXLSX DEFLATE 输出体积已与 Python writer 同量级，部分场景更小；
+压缩 CPU 成本明显，但 1M cells 下仍明显快于 Python writer。`strings-unique-shared`
+仍是内存风险，不适合作默认策略。
+
+P11.5 同日新增 OpenXLSX / xlnt 独立 C++ adapter benchmark，并在
+`10000 x 10 x 1 = 100000` cells 上跑了可完成的同机对比。FastXLSX 选取
+minizip/DEFLATE 下最合理策略：numeric/mixed/unique 使用 inline，repeated strings
+使用 sharedStrings。所有 100k 输出均用 `openpyxl` 只读验证；未运行 Excel
+COM/WPS/LibreOffice。
+
+| case | FastXLSX minizip selected | OpenXLSX workbook API | xlnt workbook API |
+| --- | --- | --- | --- |
+| numeric | 268 ms / 0.37 M/s / 5.11 MB / 0.30 MiB | 304 ms / 0.33 M/s / 44.63 MB / 0.30 MiB | 809 ms / 0.12 M/s / 92.67 MB / 0.30 MiB |
+| mixed-mixed | 387 ms / 0.26 M/s / 5.09 MB / 0.39 MiB | 1061 ms / 0.09 M/s / 51.65 MB / 0.42 MiB | 762 ms / 0.13 M/s / 107.78 MB / 0.44 MiB |
+| strings-repeated | 191 ms / 0.52 M/s / 5.11 MB / 0.20 MiB | 165 ms / 0.61 M/s / 49.12 MB / 0.25 MiB | 929 ms / 0.11 M/s / 92.66 MB / 0.26 MiB |
+| strings-unique | 385 ms / 0.26 M/s / 5.11 MB / 0.34 MiB | 34933 ms / 0.003 M/s / 78.94 MB / 0.56 MiB | 1749 ms / 0.06 M/s / 177.28 MB / 0.54 MiB |
+
+P11.5 结论：FastXLSX 在 numeric、mixed 和 unique strings 上明显更低内存且更快；
+OpenXLSX repeated strings 在 100k workbook-API case 上略快，但峰值内存约 49 MB，
+约为 FastXLSX 的 9.6 倍。OpenXLSX unique strings 在 100k 已耗时 34.9s；
+尝试跑 1M C++ reference 全矩阵时，OpenXLSX unique strings 未在本轮等待窗口完成，
+进程已停止并不作为完整 1M C++ reference 矩阵结论。

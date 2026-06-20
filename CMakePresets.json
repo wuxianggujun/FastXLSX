@@ -76,6 +76,22 @@
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
         "VCPKG_MANIFEST_FEATURES": "planned-runtime"
       }
+    },
+    {
+      "name": "windows-nmake-release-reference-benchmark",
+      "displayName": "Windows NMake Release Reference Benchmarks",
+      "description": "Configure opt-in third-party XLSX writer reference benchmark adapters.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-reference-benchmark",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "OFF",
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_BUILD_BENCHMARKS": "ON",
+        "FASTXLSX_BUILD_REFERENCE_BENCHMARKS": "ON",
+        "VCPKG_MANIFEST_FEATURES": "reference-benchmarks"
+      }
     }
   ],
   "buildPresets": [
@@ -98,6 +114,10 @@
     {
       "name": "windows-nmake-release-benchmark-minizip",
       "configurePreset": "windows-nmake-release-benchmark-minizip"
+    },
+    {
+      "name": "windows-nmake-release-reference-benchmark",
+      "configurePreset": "windows-nmake-release-reference-benchmark"
     }
   ],
   "testPresets": [

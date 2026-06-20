@@ -44,6 +44,20 @@ The `planned-dev` vcpkg feature records future development dependencies:
 Current tests do not use Catch2, and benchmark targets are opt-in through
 `FASTXLSX_BUILD_BENCHMARKS=ON`.
 
+## Optional reference benchmark dependency group
+
+The `reference-benchmarks` vcpkg feature is opt-in and is used only by
+`FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON`:
+
+- `openxlsx`: OpenXLSX reference writer adapter, vcpkg license metadata
+  currently reports BSD-3-Clause.
+- `xlnt`: xlnt reference writer adapter, vcpkg license metadata currently
+  reports MIT AND BSD-3-Clause AND BSD-2-Clause.
+
+These libraries are not FastXLSX runtime dependencies. They are linked only
+into standalone benchmark executables under `benchmarks/`, and generated
+benchmark artifacts stay under ignored `build/qa/` paths.
+
 ## Release packaging notes
 
 - Keep `vcpkg.json` and CMake dependency discovery in sync.

@@ -742,9 +742,18 @@ the underlying error. Planned staged-chunk failures also expose the owning
   `tools/run_python_writer_benchmarks.py`. It benchmarks `xlsxwriter`
   constant-memory and `openpyxl` write-only writers as opt-in local reference
   tools and records same-shape throughput, memory, output-size, and optional
-  openpyxl read-only checks. Python writer libraries, OpenXLSX, and xlnt remain
-  benchmark/reference targets only, not FastXLSX runtime, CMake, vcpkg, CTest,
-  or CI default dependencies.
+  openpyxl read-only checks.
+- P11.4 added same-scale FastXLSX minizip/DEFLATE benchmark evidence for
+  `100000 x 10 x 1 = 1000000` cells. The numbers are recorded in
+  `docs/PERFORMANCE_TARGETS.md` and show the expected tradeoff: roughly
+  89%-96% smaller files than stored output with significant CPU cost, while
+  still remaining well ahead of the Python writer timings at this scale.
+- P11.5 added independent opt-in C++ reference writer adapters for OpenXLSX
+  and xlnt. `FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON`,
+  `windows-nmake-release-reference-benchmark`, and vcpkg feature
+  `reference-benchmarks` are benchmark-only wiring; OpenXLSX and xlnt remain
+  reference dependencies only, not FastXLSX runtime, default CTest, or CI
+  dependencies.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -3619,9 +3628,15 @@ Tasks:
   reference against `xlsxwriter` constant-memory and `openpyxl` write-only
   through `tools/run_python_writer_benchmarks.py`. It is evidence that the
   current FastXLSX stored/no-compression hot path is much faster and lower
-  memory than those Python writer paths at this scale; output-size parity still
-  needs FastXLSX minizip/DEFLATE numbers because the Python writers emit
-  compressed ZIPs.
+  memory than those Python writer paths at this scale.
+- Current 2026-06-20 FastXLSX minizip/DEFLATE matrix closes the output-size
+  parity gap for that Python comparison: 1M-cell DEFLATE outputs are around
+  1.99-5.54 MiB for string cases and 2.98-4.26 MiB for numeric/mixed cases,
+  with all cases `openpyxl` verified and `office_open` still separate.
+- Current 2026-06-20 OpenXLSX/xlnt C++ reference adapter baseline records
+  100k-cell workbook-API results in `docs/PERFORMANCE_TARGETS.md`. It is not a
+  complete 1M C++ reference matrix: OpenXLSX unique strings did not complete in
+  the local waiting window and the leftover process was stopped.
 - `tools/run_benchmark_matrix.py --self-test` is available as a lightweight
   runner guard for case parsing, expected string distributions, expected cell
   values, and matrix report shape. It does not invoke the benchmark executable,

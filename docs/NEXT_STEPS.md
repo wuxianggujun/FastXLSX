@@ -1547,11 +1547,16 @@ schema validation.
     constant-memory and `openpyxl` write-only writers as opt-in local
     reference tools. The same round records `100000 x 10 x 1 = 1000000`
     cell FastXLSX vs Python writer evidence in `docs/PERFORMANCE_TARGETS.md`.
-    Python writer libraries, OpenXLSX, and xlnt remain benchmark/reference
-    targets only, not FastXLSX runtime, CMake, vcpkg, CTest, or CI default
-    dependencies. FastXLSX file-size comparison against those Python outputs
-    still needs the opt-in minizip/DEFLATE benchmark path because the current
-    FastXLSX reference numbers are stored/no-compression.
+  - P11.4 now adds the matching FastXLSX minizip/DEFLATE `100000 x 10 x 1`
+    matrix, closing the stored-vs-compressed file-size fairness gap for the
+    Python comparison. It records 7 cases, all `openpyxl` verified, with
+    `office_open` still left to separate Office/WPS/LibreOffice validation.
+  - P11.5 now adds OpenXLSX / xlnt independent C++ reference writer adapters
+    behind `FASTXLSX_BUILD_REFERENCE_BENCHMARKS`,
+    `windows-nmake-release-reference-benchmark`, and vcpkg
+    `reference-benchmarks`. These libraries remain benchmark/reference targets
+    only, not FastXLSX runtime, CMake default, CTest, or CI default
+    dependencies.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -2083,9 +2088,10 @@ feature completion.
      and expand benchmark/reference evidence before widening support wording.
    - vcpkg / CMakePresets / CI remains 基础: `stb` is default, minizip is opt-in,
      Excel visual verification remains local, and benchmark jobs stay opt-in.
-   - Python writer comparison is now an opt-in support benchmark line; use it
-     for visible throughput/memory reference, then add minizip/DEFLATE and
-     OpenXLSX/xlnt adapter evidence before making broader performance claims.
+   - Python writer, FastXLSX minizip/DEFLATE, and OpenXLSX/xlnt adapter
+     evidence now exist as opt-in support benchmark lines. Use
+     `docs/PERFORMANCE_TARGETS.md` as the canonical data record before making
+     broader performance claims.
 
 ## Repository State
 
@@ -3007,6 +3013,13 @@ Do:
   wording.
 - Current local small benchmark snapshot is recorded in `docs/PERFORMANCE_TARGETS.md`;
   expand scale and backends before changing production wording.
+- Current 2026-06-20 minizip/DEFLATE 1M-cell matrix is also recorded there:
+  it proves compressed-output size is now comparable with Python writer outputs,
+  but the CPU cost is explicit and `office_open` remains separate validation.
+- Current 2026-06-20 OpenXLSX/xlnt adapter baseline is recorded there at
+  100k cells. Treat it as workbook-API reference evidence, not a complete 1M
+  C++ reference matrix, because OpenXLSX unique strings did not complete in the
+  local waiting window.
 
 Accept when:
 - CTest passes.
@@ -3063,6 +3076,8 @@ Do:
   `benchmark-matrix-report.json` over sibling raw case JSON when a directory is
   passed, so matrix directories are not double-counted.
 - Keep benchmark dependencies behind planned/dev or opt-in configuration.
+- Keep OpenXLSX/xlnt behind the `reference-benchmarks` vcpkg feature and
+  `FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON`; they are not runtime dependencies.
 - Record data scale, string strategy, compression setting, package entry source
   mode, string pattern, input string distribution counts, temporary worksheet
   part footprint availability, time, peak memory, output size, and

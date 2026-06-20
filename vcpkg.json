@@ -31,6 +31,13 @@
         "catch2",
         "benchmark"
       ]
+    },
+    "reference-benchmarks": {
+      "description": "Opt-in third-party XLSX writer libraries used only by standalone benchmark adapters.",
+      "dependencies": [
+        "openxlsx",
+        "xlnt"
+      ]
     }
   }
 }

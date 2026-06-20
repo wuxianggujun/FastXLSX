@@ -35,6 +35,9 @@ detection.
 - `windows-nmake-release-benchmark`: opt-in benchmark build.
 - `windows-nmake-release-benchmark-minizip`: opt-in benchmark build with the
   minizip backend.
+- `windows-nmake-release-reference-benchmark`: opt-in third-party C++ writer
+  adapter benchmark build. It enables `FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON`
+  and the vcpkg `reference-benchmarks` feature for OpenXLSX / xlnt adapters.
 
 ## Install/export validation
 

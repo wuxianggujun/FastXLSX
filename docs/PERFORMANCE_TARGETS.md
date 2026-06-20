@@ -310,6 +310,28 @@ CMake adapter 入口是 `FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON` 和
 `reference-benchmarks`，仅拉取 `openxlsx` / `xlnt` 作为独立 reference benchmark
 依赖。
 
+### Benchmark Scale Interpretation
+
+当前 `1,000,000` cells 规模是筛选级 / 对比级 benchmark，不是 release 级大文件
+证明。它足以暴露写入热路径、字符串策略、压缩成本和参考库明显瓶颈，但不能替代
+更大规模的线性扩展、长时间运行和 Zip64 / Office 兼容性验证。
+
+| scale | 推荐用途 | 能说明什么 | 不能说明什么 |
+| --- | --- | --- | --- |
+| `100k` cells | adapter smoke / API 对齐 | 第三方 adapter 是否能跑通、输出是否可读、明显 API/内存差异 | 大文件能力、线性扩展、默认策略 |
+| `1M` cells | 策略筛选 / 同机对比 | inline/sharedStrings 方向性、DEFLATE 体积收益和 CPU 成本、参考库早期瓶颈、`openpyxl` 基本可读性 | 10M/50M 线性扩展、close-time 峰值、Zip64、长时间稳定性、完整 Office/WPS/LibreOffice 兼容性 |
+| `10M` cells | FastXLSX 自身线性扩展门 | row/cell 热路径是否近似线性、压缩路径是否出现明显拐点、临时 worksheet body footprint 趋势 | release 级超大文件承诺、Zip64 边界、多 sheet 长跑稳定性 |
+| `50M` cells | 大文件压力 / 资源边界 | worksheet temp footprint、close-time package assembly 是否退化、长时间写出资源回收 | 100M+ / multi-sheet 生产门禁、全办公套件体验 |
+| `100M+` cells 或 multi-sheet | release gate / 超大文件验收 | Zip64 边界、长时间稳定性、多 sheet 资源管理、代表性 Office/WPS/LibreOffice 打开体验 | 不能由低一级 benchmark 外推替代 |
+
+因此，当前 1M 记录的正确结论是：FastXLSX 热路径可用，DEFLATE 体积已公平，
+唯一字符串 sharedStrings 有明确内存风险，OpenXLSX / xlnt 在小中规模已暴露
+部分瓶颈。它的错误用法是把 1M 当成“真正大文件能力已证明”或把
+`worksheet-body-file-bytes` 当成完整 RSS / package temp footprint。
+
+后续如果继续 C6 benchmark 线，优先跑 FastXLSX 自身 `10M -> 50M` 阶梯；
+第三方库按 `100k -> 1M with timeout` 分层记录，不强行等待完整大矩阵。
+
 ## 当前手工 Benchmark 记录
 
 2026-06-07 本机 VS2026 / NMake release benchmark preset 下，使用

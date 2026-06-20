@@ -1557,6 +1557,11 @@ schema validation.
     `reference-benchmarks`. These libraries remain benchmark/reference targets
     only, not FastXLSX runtime, CMake default, CTest, or CI default
     dependencies.
+  - P11.6 now records the benchmark scale ladder: 100k is adapter smoke, 1M is
+    strategy screening / same-machine comparison, 10M and 50M are FastXLSX
+    scaling and resource-boundary gates, and 100M+ / multi-sheet belongs to
+    release readiness. The current 1M numbers should answer strategy questions,
+    not be used as complete large-file proof.
 - Local Excel visual verification has been performed for:
   - `build/windows-nmake-release/tests/fastxlsx-phase1-minimal.xlsx`
   - `build/windows-nmake-release/tests/fastxlsx-streaming-smoke.xlsx`
@@ -3020,6 +3025,12 @@ Do:
   100k cells. Treat it as workbook-API reference evidence, not a complete 1M
   C++ reference matrix, because OpenXLSX unique strings did not complete in the
   local waiting window.
+- Current scale interpretation is also recorded there: 1M cells can expose
+  hot-path viability, sharedStrings risk, DEFLATE cost and early reference
+  library bottlenecks; it cannot prove 10M/50M linear scaling, close-time peak
+  memory, Zip64, long-run resource stability, or full Office/WPS/LibreOffice
+  compatibility. If C6 benchmark work resumes, run FastXLSX `10M -> 50M`
+  first and keep OpenXLSX/xlnt behind timeout-based reference tiers.
 
 Accept when:
 - CTest passes.

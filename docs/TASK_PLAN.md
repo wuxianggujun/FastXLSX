@@ -754,6 +754,11 @@ the underlying error. Planned staged-chunk failures also expose the owning
   `reference-benchmarks` are benchmark-only wiring; OpenXLSX and xlnt remain
   reference dependencies only, not FastXLSX runtime, default CTest, or CI
   dependencies.
+- P11.6 documents the benchmark scale ladder. Treat 100k as adapter smoke,
+  1M as strategy screening / same-machine comparison, 10M and 50M as FastXLSX
+  scaling and resource-boundary gates, and 100M+ / multi-sheet as release
+  readiness territory. Do not use the current 1M results as complete large-file,
+  Zip64, long-run stability, or full Office compatibility proof.
 - Basic configurable `docProps/core.xml` and `docProps/app.xml` package wiring
   is visible in the current files through `DocumentProperties`,
   `Workbook::set_document_properties()`, and
@@ -3637,6 +3642,11 @@ Tasks:
   100k-cell workbook-API results in `docs/PERFORMANCE_TARGETS.md`. It is not a
   complete 1M C++ reference matrix: OpenXLSX unique strings did not complete in
   the local waiting window and the leftover process was stopped.
+- Current P11.6 scale interpretation records that 1M cells can expose hot-path
+  viability, sharedStrings risk, DEFLATE cost, and early reference library
+  bottlenecks, but cannot prove 10M/50M linear scaling, close-time peak memory,
+  Zip64 behavior, long-run resource stability, or full Office/WPS/LibreOffice
+  compatibility.
 - `tools/run_benchmark_matrix.py --self-test` is available as a lightweight
   runner guard for case parsing, expected string distributions, expected cell
   values, and matrix report shape. It does not invoke the benchmark executable,
@@ -4652,13 +4662,17 @@ Current facts:
   opens the workbook read-only through local Excel COM and checks
   `NoStrings!A1:C1`. These helpers are manual QA, not default CTest/CI or
   runtime dependencies.
-- No 10,000,000-cell benchmark result is recorded in this plan.
+- A 2026-06-15 FastXLSX stored/no-compression numeric probe includes 10M and
+  50M cells in `docs/PERFORMANCE_TARGETS.md`; treat it only as FastXLSX stored
+  hot-path trend evidence. It is not a minizip/DEFLATE matrix, Zip64 boundary,
+  multi-sheet release gate, complete Office compatibility proof, or third-party
+  comparison.
 - Current benchmark entry is a manual opt-in tool, not a Google Benchmark
   integration and not a CTest test.
 - Current Python writer comparison is also a manual opt-in tool, not default
   CTest / CI and not a runtime dependency. It is a reference baseline for
-  visible throughput and memory only; FastXLSX file-size comparisons should wait
-  for opt-in minizip/DEFLATE benchmark data.
+  visible throughput and memory only; P11.4 provides the matching FastXLSX
+  minizip/DEFLATE 1M size comparison, but still not a large-file release gate.
 - The 2026-06-07 repeated/unique sharedStrings benchmark snapshot is only
   `500000` cells with stored-bootstrap ZIP and historical benchmark schema v3
   `temporary_worksheet_part_footprint="worksheet-body-file-bytes"`.

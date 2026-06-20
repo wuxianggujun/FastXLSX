@@ -2214,13 +2214,14 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       non-critical `count` / `uniqueCount` metadata does not drive
       materialization, and standalone worksheet XML/chunk loaders still reject
       `t="s"` without workbook-level context.
-      P8.393 pins the matching public facade failure hygiene for non-default
-      source style ids: non-default source styles throw without dirtying
-      materialized state, without updating `last_edit_error()`, and without
-      blocking later valid Patch edits. P8.466 supersedes the former explicit
-      default failure boundary: source `s="0"` now materializes as no style
-      handle and dirty projection omits `s="0"`. P8.467 pins that this is an
-      exact-value exception only: empty, padded, signed, leading-zero,
+      Source style ids are now handled as narrow numeric passthrough: canonical
+      non-zero source style ids materialize and are written back when the source
+      styles part is preserved, while caller-supplied non-default `StyleId`
+      values are still rejected by `WorksheetEditor::set_cell()`. P8.466
+      supersedes the former explicit default failure boundary: source `s="0"`
+      now materializes as no style handle and dirty projection omits `s="0"`.
+      P8.467 pins that this is an exact-value exception only: empty, padded,
+      signed, leading-zero,
       entity-encoded, or duplicate default-like source style attributes still
       fail fast instead of being coerced to default style. P8.468 adds public
       facade hygiene for duplicate `s="0" s="0"` source style attributes,
@@ -2668,8 +2669,9 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       runtime behavior or relaxing test timeouts. P8.414 normalizes
       caller-supplied explicit default `StyleId{0}` in materialized
       `WorksheetEditor` cells to no style handle, so readback, sparse snapshots,
-      and dirty projection omit `s="0"` while non-default style ids remain
-      unsupported. P8.507 pins the corresponding non-default `StyleId`
+      and dirty projection omit `s="0"` while caller-supplied non-default
+      style ids remain unsupported. P8.507 pins the corresponding non-default
+      `StyleId`
       rejection hygiene for `WorksheetEditor::set_cell()`: the failed call
       updates the public diagnostic, does not mutate or dirty the sparse store,
       queues no pending edit, and leaves no-op save on the copy-original path.
@@ -3462,10 +3464,12 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       coverage for empty-data ordinary PI tokens such as `<?fastxlsx?>`.
       P8.466 normalizes source explicit default style attributes: selected
       source cells with exact `s="0"` / `s='0'` materialize as no style handle
-      and dirty projection omits both forms, while non-default source style ids
-      remain fail-fast. P8.467 locks that boundary to exact values: empty, padded,
-      signed, leading-zero, entity-encoded, or duplicate default-like source
-      style attributes remain load failures. P8.468 lifts duplicate exact
+      and dirty projection omits both forms; canonical non-zero source style ids
+      now materialize as numeric passthrough handles and are written back when
+      the source styles part is preserved. P8.467 locks the malformed-token
+      boundary: empty, padded, signed, leading-zero, entity-encoded, or
+      duplicate source style attributes remain load failures. P8.468 lifts
+      duplicate exact
       default-style attributes to the public facade hygiene matrix. P8.469
       rejects qualified style-like attributes such as `x:s="0"` as unsupported
       cell metadata. P8.470 pins both XML quote forms on the public success

@@ -2363,17 +2363,14 @@ void test_package_reader_cell_store_loader_rejects_styles_and_loads_shared_strin
 
     const fastxlsx::detail::PackageReader styled_reader =
         fastxlsx::detail::PackageReader::open(styled_path);
-    bool styled_failed = false;
-    try {
-        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(styled_reader, "Source");
-    } catch (const fastxlsx::FastXlsxError& error) {
-        styled_failed = true;
-        check_contains(error.what(), "does not load style id references",
-            "workbook sheet CellStore loader should reject source style ids");
-    }
-    check(styled_failed, "workbook sheet CellStore loader should reject styled source cells");
+    fastxlsx::detail::CellStore styled_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(styled_reader, "Source");
+    const fastxlsx::detail::CellRecord* styled_record = styled_store.try_cell(1, 1);
+    check(styled_record != nullptr && styled_record->style_id.has_value()
+            && styled_record->style_id->value() == 1,
+        "workbook sheet CellStore loader should materialize source style ids");
     check_contains(styled_reader.read_entry("xl/worksheets/sheet1.xml"), R"(s="1")",
-        "styled source loader failure should not poison the PackageReader");
+        "styled source loader should not poison the PackageReader");
 
     const std::filesystem::path explicit_default_style_path =
         output_path("fastxlsx-package-reader-cell-store-explicit-default-style-source.xlsx");
@@ -2937,9 +2934,54 @@ void test_package_reader_rejects_invalid_workbook_sheet_catalog()
             {"xl/worksheets/sheet1.xml", "<worksheet/>"},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
-    expect_workbook_sheets_failure_contains(alternate_office_document_path,
-        "workbook sheet catalog only supports officeDocument target xl/workbook.xml",
-        "workbook sheet catalog should reject non-fixed officeDocument targets");
+    {
+        const fastxlsx::detail::PackageReader alternate_reader =
+            fastxlsx::detail::PackageReader::open(alternate_office_document_path);
+        check(alternate_reader.workbook_part()
+                == fastxlsx::detail::PartName("/xl/altWorkbook.xml"),
+            "workbook sheet catalog should expose the actual officeDocument target");
+        const std::vector<fastxlsx::detail::WorkbookSheetReference> sheets =
+            alternate_reader.workbook_sheets();
+        check(sheets.size() == 1 && sheets[0].name == "Sheet1"
+                && sheets[0].part_name
+                    == fastxlsx::detail::PartName("/xl/worksheets/sheet1.xml"),
+            "workbook sheet catalog should accept non-fixed officeDocument targets");
+    }
+
+    const std::string root_content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)";
+    const std::filesystem::path root_office_document_path =
+        output_path("fastxlsx-package-reader-workbook-sheets-root-office-document.xlsx");
+    fastxlsx::detail::write_package(root_office_document_path,
+        {
+            {"[Content_Types].xml", root_content_types},
+            {"_rels/.rels",
+                R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+                R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="workbook.xml"/>)"
+                R"(</Relationships>)"},
+            {"workbook.xml",
+                R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="1" sheetId="1" r:id="rId1"/></sheets></workbook>)"},
+            {"_rels/workbook.xml.rels",
+                R"(<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="sheet1.xml"/></Relationships>)"},
+            {"sheet1.xml", "<worksheet/>"},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    {
+        const fastxlsx::detail::PackageReader root_reader =
+            fastxlsx::detail::PackageReader::open(root_office_document_path);
+        check(root_reader.workbook_part() == fastxlsx::detail::PartName("/workbook.xml"),
+            "workbook sheet catalog should expose root-level officeDocument targets");
+        const std::vector<fastxlsx::detail::WorkbookSheetReference> sheets =
+            root_reader.workbook_sheets();
+        check(sheets.size() == 1 && sheets[0].name == "1"
+                && sheets[0].part_name == fastxlsx::detail::PartName("/sheet1.xml"),
+            "workbook sheet catalog should resolve root-level worksheet targets from the workbook part");
+    }
 
     const std::filesystem::path missing_id_path =
         output_path("fastxlsx-package-reader-workbook-sheets-missing-id.xlsx");

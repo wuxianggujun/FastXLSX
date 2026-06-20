@@ -1625,11 +1625,6 @@ std::string read_materialized_metadata_entry(
 std::string read_materialized_workbook_catalog_xml(
     const PackageReader& reader, const PartName& workbook_part)
 {
-    if (workbook_part.zip_path() != "xl/workbook.xml") {
-        throw FastXlsxError(
-            "PackageReader workbook catalog materialization only supports xl/workbook.xml");
-    }
-
     if (const PackageReaderEntry* entry = reader.find_entry(workbook_part.zip_path());
         entry != nullptr && entry->uncompressed_size > workbook_catalog_materialization_byte_limit) {
         throw FastXlsxError(
@@ -2008,18 +2003,13 @@ PartName resolve_workbook_part_from_package_relationships(
     }
 
     const PartName workbook_part(workbook_target);
-    if (workbook_part != PartName("/xl/workbook.xml")) {
-        throw FastXlsxError(
-            "workbook sheet catalog only supports officeDocument target xl/workbook.xml");
-    }
     return workbook_part;
 }
 
 std::vector<WorkbookSheetReference> parse_workbook_sheets(
     std::string_view workbook_xml, const RelationshipSet& workbook_relationships,
-    const PartIndex& part_index)
+    const PartIndex& part_index, const PartName& workbook_part)
 {
-    const PartName workbook_part("/xl/workbook.xml");
     std::vector<WorkbookSheetReference> sheets;
     std::vector<XmlNamespaceScope> namespace_stack;
     bool inside_workbook_root = false;
@@ -2397,12 +2387,16 @@ RelationshipGraph PackageReader::relationship_graph() const
     return graph;
 }
 
+PartName PackageReader::workbook_part() const
+{
+    return resolve_workbook_part_from_package_relationships(package_relationships_);
+}
+
 std::vector<WorkbookSheetReference> PackageReader::workbook_sheets() const
 {
-    const PartName workbook_part =
-        resolve_workbook_part_from_package_relationships(package_relationships_);
+    const PartName workbook_part = this->workbook_part();
     if (find_entry(workbook_part.zip_path()) == nullptr) {
-        throw FastXlsxError("workbook sheet catalog requires xl/workbook.xml");
+        throw FastXlsxError("workbook sheet catalog requires workbook package part");
     }
 
     const RelationshipSet* workbook_relationships = relationships_for(workbook_part);
@@ -2411,21 +2405,21 @@ std::vector<WorkbookSheetReference> PackageReader::workbook_sheets() const
     }
 
     return parse_workbook_sheets(read_materialized_workbook_catalog_xml(*this, workbook_part),
-        *workbook_relationships, part_index_);
+        *workbook_relationships, part_index_, workbook_part);
 }
 
 std::vector<WorkbookSheetReference> PackageReader::workbook_sheets_from_xml(
     std::string_view workbook_xml) const
 {
-    const PartName workbook_part =
-        resolve_workbook_part_from_package_relationships(package_relationships_);
+    const PartName workbook_part = this->workbook_part();
 
     const RelationshipSet* workbook_relationships = relationships_for(workbook_part);
     if (workbook_relationships == nullptr) {
         throw FastXlsxError("workbook sheet catalog requires workbook relationships");
     }
 
-    return parse_workbook_sheets(workbook_xml, *workbook_relationships, part_index_);
+    return parse_workbook_sheets(
+        workbook_xml, *workbook_relationships, part_index_, workbook_part);
 }
 
 PartName PackageReader::worksheet_part_by_sheet_name(std::string_view sheet_name) const

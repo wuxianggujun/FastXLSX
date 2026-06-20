@@ -27,6 +27,8 @@ namespace {
 
 constexpr std::string_view content_type_worksheet =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
+constexpr std::string_view content_type_workbook =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
 constexpr std::string_view content_type_shared_strings =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 constexpr std::string_view content_type_core_properties =
@@ -2797,9 +2799,10 @@ void require_materialized_metadata_xml_size(std::uint64_t byte_size,
 
 void require_materialized_part_replacement_payload_size(
     const PartName& part_name, std::uint64_t byte_size, PartWriteMode write_mode,
-    std::string_view purpose)
+    std::string_view purpose, const PartName* workbook_part = nullptr)
 {
-    if (part_name.value() == "/xl/workbook.xml") {
+    if ((workbook_part != nullptr && part_name == *workbook_part)
+        || (workbook_part == nullptr && part_name.value() == "/xl/workbook.xml")) {
         require_materialized_workbook_xml_size(byte_size, purpose);
         return;
     }
@@ -2837,10 +2840,10 @@ void remove_part_replacement(
 
 void upsert_part_replacement(std::vector<PackagePartReplacement>& replacements,
     PartName part_name, std::string materialized_small_xml, PartWriteMode write_mode,
-    std::string reason)
+    std::string reason, const PartName* workbook_part = nullptr)
 {
     require_materialized_part_replacement_payload_size(part_name,
-        materialized_small_xml.size(), write_mode, "package-part replacement");
+        materialized_small_xml.size(), write_mode, "package-part replacement", workbook_part);
 
     if (auto* replacement = find_replacement(replacements, part_name)) {
         replacement->materialized_small_xml = std::move(materialized_small_xml);
@@ -3114,7 +3117,7 @@ void merge_removed_part_audit(
 std::string read_materialized_source_workbook_xml(
     const PackageReader& reader, std::string_view purpose)
 {
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader.workbook_part();
     if (const PackageReaderEntry* entry = reader.find_entry(workbook_part.zip_path())) {
         require_materialized_workbook_xml_size(entry->uncompressed_size, purpose);
     }
@@ -3144,7 +3147,7 @@ std::string current_planned_materialized_workbook_xml(const PackageReader& reade
     const std::vector<PackagePartReplacement>& replacements,
     std::string_view purpose)
 {
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader.workbook_part();
     if (const auto* replacement = find_replacement(replacements, workbook_part.zip_path())) {
         if (!replacement->chunks.empty()) {
             throw FastXlsxError(
@@ -3491,11 +3494,11 @@ PartName resolve_worksheet_part_by_name_for_patch(const PackageReader& reader,
     const PackageManifest& manifest, const std::vector<PackagePartReplacement>& replacements,
     std::string_view sheet_name)
 {
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader.workbook_part();
     if (manifest.find_part(workbook_part) == nullptr) {
         throw FastXlsxError(
             "worksheet by-name patch requires a planned workbook sheet catalog; "
-            "xl/workbook.xml has been removed");
+            "the source officeDocument workbook part has been removed");
     }
     if (find_replacement(replacements, workbook_part.zip_path()) != nullptr) {
         return reader.worksheet_part_by_sheet_name_from_xml(
@@ -4211,7 +4214,7 @@ const PackagePart* source_part_for_entry_name(
 bool package_part_is_materialized_small_xml_boundary(
     const PackagePart& package_part) noexcept
 {
-    return package_part.name.value() == "/xl/workbook.xml"
+    return package_part.content_type == content_type_workbook
         || package_part.content_type == content_type_core_properties
         || package_part.content_type == content_type_extended_properties;
 }
@@ -4292,7 +4295,7 @@ std::string materialized_part_replacement_reason(
         return "active disallowed source package part materialized replacement would be rejected before planned output";
     }
 
-    if (replacement.part_name.value() == "/xl/workbook.xml") {
+    if (source_part != nullptr && source_part->content_type == content_type_workbook) {
         return "active workbook small-XML package part replacement uses materialized payload";
     }
     if (replacement.write_mode == PartWriteMode::GenerateSmallXml) {
@@ -5184,10 +5187,10 @@ void validate_worksheet_replacement_preconditions(const PackageManifest& manifes
         throw FastXlsxError("calcChain rebuild is not implemented for worksheet replacement");
     }
 
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader.workbook_part();
     if (manifest.find_part(workbook_part) == nullptr
         || reader.find_entry(workbook_part.zip_path()) == nullptr) {
-        throw FastXlsxError("worksheet replacement requires xl/workbook.xml");
+        throw FastXlsxError("worksheet replacement requires the officeDocument workbook part");
     }
 }
 
@@ -5355,7 +5358,6 @@ void PackageEditor::replace_part(
         throw FastXlsxError("metadata package entries cannot be replaced as ordinary parts");
     }
 
-    const PartName workbook_part("/xl/workbook.xml");
     const PackagePart* planned_part = manifest_.find_part(part_name);
     const PackagePart* source_part = nullptr;
     if (planned_part == nullptr) {
@@ -5370,6 +5372,10 @@ void PackageEditor::replace_part(
     }
 
     const PackagePart* target_part = planned_part != nullptr ? planned_part : source_part;
+    std::optional<PartName> workbook_part;
+    if (target_part != nullptr && target_part->content_type == content_type_workbook) {
+        workbook_part = reader_.workbook_part();
+    }
     const bool stage_ordinary_worksheet_replacement =
         target_part != nullptr && target_part->content_type == content_type_worksheet;
     if (stage_ordinary_worksheet_replacement) {
@@ -5386,11 +5392,14 @@ void PackageEditor::replace_part(
     require_materialized_source_part_replacement_allowed(reader_, part_name);
 
     const std::string_view size_guard_purpose =
-        part_name == workbook_part ? std::string_view("workbook package-part replacement")
-                                   : std::string_view("package-part replacement");
+        workbook_part.has_value() && part_name == *workbook_part
+        ? std::string_view("workbook package-part replacement")
+        : std::string_view("package-part replacement");
     require_materialized_part_replacement_payload_size(part_name,
-        materialized_small_xml.size(), write_mode, size_guard_purpose);
-    if (part_name == workbook_part && edit_plan_.full_calculation_on_load()) {
+        materialized_small_xml.size(), write_mode, size_guard_purpose,
+        workbook_part.has_value() ? &*workbook_part : nullptr);
+    if (workbook_part.has_value() && part_name == *workbook_part
+        && edit_plan_.full_calculation_on_load()) {
         materialized_small_xml =
             request_full_calculation_in_workbook_xml(std::move(materialized_small_xml));
         require_materialized_workbook_xml_size(
@@ -5404,8 +5413,8 @@ void PackageEditor::replace_part(
         }
     }
 
-    upsert_part_replacement(
-        replacements_, part_name, std::move(materialized_small_xml), write_mode, reason);
+    upsert_part_replacement(replacements_, part_name, std::move(materialized_small_xml),
+        write_mode, reason, workbook_part.has_value() ? &*workbook_part : nullptr);
     manifest_.set_part_write_mode(part_name, write_mode);
     edit_plan_.set_part(part_name, write_mode, reason);
     restore_active_part_entry_state_after_replacement(edit_plan_, entry_replacements_,
@@ -5637,7 +5646,7 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     const EditPlan worksheet_plan =
         PartRewritePlanner(manifest_).plan_worksheet_stream_rewrite(worksheet_part, policy);
     PackageManifest updated_manifest = manifest_;
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader_.workbook_part();
 
     std::string updated_workbook_xml;
     if (worksheet_plan.full_calculation_on_load()) {
@@ -5685,7 +5694,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             "workbook calcPr fullCalcOnLoad updated for worksheet rewrite; definedNames preserved for policy review");
         upsert_part_replacement(replacements_, workbook_part,
             std::move(updated_workbook_xml), PartWriteMode::LocalDomRewrite,
-            "workbook calcPr fullCalcOnLoad updated for worksheet rewrite; definedNames preserved for policy review");
+            "workbook calcPr fullCalcOnLoad updated for worksheet rewrite; definedNames preserved for policy review",
+            &workbook_part);
         remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
         remove_omitted_entry(omitted_entries_, workbook_part.zip_path());
         if (!rewrite_workbook_relationships) {
@@ -6089,10 +6099,10 @@ void PackageEditor::rename_sheet_catalog_entry(
 {
     validate_sheet_catalog_rename_target(new_name);
 
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader_.workbook_part();
     if (manifest_.find_part(workbook_part) == nullptr) {
         throw FastXlsxError(
-            "workbook sheet catalog rename requires xl/workbook.xml in the planned package");
+            "workbook sheet catalog rename requires the officeDocument workbook part in the planned package");
     }
 
     std::string workbook_xml = current_planned_materialized_workbook_xml(
@@ -6145,7 +6155,8 @@ void PackageEditor::rename_sheet_catalog_entry(
         PartWriteMode::LocalDomRewrite,
         "workbook sheet catalog name attribute local-DOM rewrite; definedNames, "
         "formulas, tables, drawings, charts, hyperlinks, and relationship targets "
-        "are preserved for caller review");
+        "are preserved for caller review",
+        &workbook_part);
     remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
     remove_omitted_entry(omitted_entries_, workbook_part.zip_path());
     manifest_.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
@@ -6158,10 +6169,10 @@ void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
         throw FastXlsxError("calcChain rebuild is not implemented for workbook calc metadata");
     }
 
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader_.workbook_part();
     if (manifest_.find_part(workbook_part) == nullptr
         || reader_.find_entry(workbook_part.zip_path()) == nullptr) {
-        throw FastXlsxError("request_full_calculation requires xl/workbook.xml");
+        throw FastXlsxError("request_full_calculation requires the officeDocument workbook part");
     }
 
     std::string updated_workbook_xml = request_full_calculation_in_workbook_xml(
@@ -6213,7 +6224,8 @@ void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
     });
     upsert_part_replacement(replacements_, workbook_part,
         std::move(updated_workbook_xml), PartWriteMode::LocalDomRewrite,
-        "workbook calcPr fullCalcOnLoad updated by workbook metadata helper; definedNames preserved for policy review");
+        "workbook calcPr fullCalcOnLoad updated by workbook metadata helper; definedNames preserved for policy review",
+        &workbook_part);
     remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
     remove_omitted_entry(omitted_entries_, workbook_part.zip_path());
     updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);

@@ -35741,7 +35741,7 @@ void test_package_editor_source_loaded_cell_store_metadata_shape_failure_preserv
         {
             "fastxlsx-package-editor-source-cellstore-row-metadata-source.xlsx",
             "fastxlsx-package-editor-source-cellstore-row-metadata-output.xlsx",
-            R"(<worksheet><sheetData><row r="1" ht="20"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
+            R"(<worksheet><sheetData><row r="1" unsupportedRowMetadata="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)",
             "row metadata attributes",
         },
         {
@@ -36539,7 +36539,7 @@ void test_package_editor_source_loaded_cell_store_failure_preserves_editor_state
     CalcSourcePackage source =
         write_calc_source_package("fastxlsx-package-editor-source-cellstore-failure-source.xlsx");
     source.worksheet =
-        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1" s="1"><v>22</v></c></row></sheetData></worksheet>)";
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1" s="+1"><v>22</v></c></row></sheetData></worksheet>)";
     rewrite_calc_source_package(source);
 
     const fastxlsx::detail::PackageReader source_reader =
@@ -36560,7 +36560,7 @@ void test_package_editor_source_loaded_cell_store_failure_preserves_editor_state
             "source-backed CellStore load failure should identify the worksheet part");
         check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
             "source-backed CellStore load failure should identify the worksheet ZIP entry");
-        check_contains(error.what(), "style id references",
+        check_contains(error.what(), "invalid style id reference",
             "source-backed CellStore load failure should report the unsupported source semantic");
     }
     check(failed, "source-backed CellStore load should fail on unsupported source semantics");
@@ -37340,14 +37340,6 @@ void test_package_editor_source_loaded_cell_store_office_document_catalog_preser
             "workbook sheet catalog officeDocument target must be a package part",
         },
         {
-            "fastxlsx-package-editor-source-cellstore-alternate-office-document-source.xlsx",
-            "fastxlsx-package-editor-source-cellstore-alternate-office-document-output.xlsx",
-            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
-            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/altWorkbook.xml"/>)"
-            R"(</Relationships>)",
-            "workbook sheet catalog only supports officeDocument target xl/workbook.xml",
-        },
-        {
             "fastxlsx-package-editor-source-cellstore-invalid-percent-office-document-source.xlsx",
             "fastxlsx-package-editor-source-cellstore-invalid-percent-office-document-output.xlsx",
             R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
@@ -37440,6 +37432,76 @@ void test_package_editor_source_loaded_cell_store_office_document_catalog_preser
         check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
             "source-backed CellStore officeDocument catalog output should preserve unknown bytes");
     }
+
+    const std::filesystem::path root_source =
+        output_path("fastxlsx-package-editor-source-cellstore-root-office-document-source.xlsx");
+    const std::filesystem::path root_output =
+        output_path("fastxlsx-package-editor-source-cellstore-root-office-document-output.xlsx");
+    const std::string root_content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)";
+    const std::string root_package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="workbook.xml"/>)"
+        R"(</Relationships>)";
+    const std::string root_workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="sheet1.xml"/>)"
+        R"(</Relationships>)";
+    const std::string root_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<calcPr calcId="1" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+    const std::string root_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c></row></sheetData></worksheet>)";
+    const std::string root_unknown = std::string("root-office-document\0opaque", 27);
+    fastxlsx::detail::write_package(root_source,
+        {
+            {"[Content_Types].xml", root_content_types},
+            {"_rels/.rels", root_package_relationships},
+            {"workbook.xml", root_workbook},
+            {"_rels/workbook.xml.rels", root_workbook_relationships},
+            {"sheet1.xml", root_worksheet},
+            {"custom/opaque.bin", root_unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader root_reader =
+        fastxlsx::detail::PackageReader::open(root_source);
+    fastxlsx::detail::CellStore root_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(root_reader, "Sheet1");
+    const fastxlsx::detail::CellRecord* a1 = root_store.try_cell(1, 1);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Number
+            && a1->number_value == 11.0,
+        "source-backed CellStore should load root-level officeDocument worksheets");
+    root_store.set_cell(1, 2, fastxlsx::CellValue::text("root-edited"));
+
+    fastxlsx::detail::PackageEditor root_editor =
+        fastxlsx::detail::PackageEditor::open(root_source);
+    root_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", fastxlsx::detail::cell_store_sheet_data_chunk_source(root_store));
+    root_editor.save_as(root_output);
+
+    const fastxlsx::detail::PackageReader root_output_reader =
+        fastxlsx::detail::PackageReader::open(root_output);
+    check(root_output_reader.workbook_part() == fastxlsx::detail::PartName("/workbook.xml"),
+        "PackageEditor output should preserve the root-level officeDocument target");
+    check_contains(root_output_reader.read_entry("sheet1.xml"),
+        R"(<c r="B1" t="inlineStr"><is><t>root-edited</t></is></c>)",
+        "PackageEditor should patch root-level worksheet sheetData by name");
+    check_contains(root_output_reader.read_entry("workbook.xml"), R"(fullCalcOnLoad="1")",
+        "PackageEditor should request recalculation in the root-level workbook part");
+    check(root_output_reader.read_entry("_rels/workbook.xml.rels")
+            == root_workbook_relationships,
+        "PackageEditor should preserve root-level workbook relationships without stale calcChain");
+    check(root_output_reader.read_entry("custom/opaque.bin") == root_unknown,
+        "PackageEditor should preserve unrelated unknown bytes in root-level packages");
 }
 
 void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
@@ -39405,7 +39467,7 @@ void test_package_editor_rejects_sheet_catalog_rename_without_state_changes()
         removed_workbook_editor.rename_sheet_catalog_entry("Sheet1", "Renamed");
     } catch (const std::exception& error) {
         removed_workbook_failed = true;
-        check_contains(error.what(), "requires xl/workbook.xml",
+        check_contains(error.what(), "requires the officeDocument workbook part",
             "workbook removal should make sheet catalog rename fail before state changes");
     }
     check(removed_workbook_failed,
@@ -47172,7 +47234,7 @@ void test_package_editor_rejects_worksheet_rewrite_without_workbook_metadata()
         replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, "<worksheet/>");
     } catch (const std::exception& error) {
         failed = true;
-        check_contains(error.what(), "xl/workbook.xml",
+        check_contains(error.what(), "officeDocument relationship",
             "missing workbook failure should report workbook metadata requirement");
     }
     check(failed,

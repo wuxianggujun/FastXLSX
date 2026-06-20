@@ -1,0 +1,314 @@
+param(
+    [string]$ReportPath = "build\qa\workbook-editor\report.json",
+    [string]$OfficeReportPath = ""
+)
+
+$ErrorActionPreference = "Stop"
+
+function Assert-Equal {
+    param(
+        [AllowNull()]
+        [object]$Actual,
+        [AllowNull()]
+        [object]$Expected,
+        [string]$Message
+    )
+
+    if ([string]$Actual -ne [string]$Expected) {
+        throw "$Message expected '$Expected', got '$Actual'"
+    }
+}
+
+function Assert-True {
+    param(
+        [bool]$Condition,
+        [string]$Message
+    )
+
+    if (-not $Condition) {
+        throw $Message
+    }
+}
+
+function Resolve-WorkbookPath {
+    param(
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "case did not provide an output workbook path"
+    }
+    return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Get-WorksheetNames {
+    param(
+        [object]$Workbook
+    )
+
+    $names = @()
+    foreach ($worksheet in @($Workbook.Worksheets)) {
+        $names += [string]$worksheet.Name
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($worksheet)
+    }
+    return $names
+}
+
+function Get-Worksheet {
+    param(
+        [object]$Workbook,
+        [string]$Name
+    )
+
+    return $Workbook.Worksheets.Item($Name)
+}
+
+function Assert-CellValue {
+    param(
+        [object]$Worksheet,
+        [string]$Address,
+        [AllowNull()]
+        [object]$Expected,
+        [string]$Message
+    )
+
+    $value = $Worksheet.Range($Address).Value2
+    Assert-Equal $value $Expected $Message
+}
+
+function Verify-GeneratedRenameMaterialized {
+    param([object]$Workbook)
+
+    $edited = $null
+    $untouched = $null
+    try {
+        $edited = Get-Worksheet $Workbook "EditedData"
+        $untouched = Get-Worksheet $Workbook "Untouched"
+        Assert-CellValue $edited "A1" "materialized-edit" "EditedData!A1"
+        Assert-CellValue $edited "B2" 42 "EditedData!B2"
+        Assert-CellValue $untouched "A1" "keep-me" "Untouched!A1"
+    }
+    finally {
+        foreach ($object in @($untouched, $edited)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-GeneratedStylePassthrough {
+    param([object]$Workbook)
+
+    $sheet = $null
+    try {
+        $sheet = Get-Worksheet $Workbook "Data"
+        Assert-CellValue $sheet "A1" 9.5 "Data!A1"
+        Assert-CellValue $sheet "B1" "explicit default" "Data!B1"
+        Assert-Equal $sheet.Range("A1").NumberFormat "0.00" "Data!A1 NumberFormat"
+    }
+    finally {
+        if ($null -ne $sheet) {
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($sheet)
+        }
+    }
+}
+
+function Verify-GeneratedImageReplace {
+    param([object]$Workbook)
+
+    $pictures = $null
+    try {
+        $pictures = Get-Worksheet $Workbook "Pictures"
+        Assert-CellValue $pictures "A1" "image-sheet" "Pictures!A1"
+        Assert-Equal $pictures.Shapes.Count 1 "Pictures shape count"
+    }
+    finally {
+        if ($null -ne $pictures) {
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($pictures)
+        }
+    }
+}
+
+function Verify-GeneratedPublicE2E {
+    param([object]$Workbook)
+
+    $edited = $null
+    $replaceMe = $null
+    $pictures = $null
+    try {
+        $edited = Get-Worksheet $Workbook "EditedData"
+        $replaceMe = Get-Worksheet $Workbook "ReplaceMe"
+        $pictures = Get-Worksheet $Workbook "Pictures"
+        Assert-CellValue $edited "A1" "materialized-edit" "EditedData!A1"
+        Assert-CellValue $edited "B2" 42 "EditedData!B2"
+        Assert-CellValue $replaceMe "A1" "sheetdata-final" "ReplaceMe!A1"
+        Assert-CellValue $replaceMe "B1" 7 "ReplaceMe!B1"
+        Assert-Equal $pictures.Shapes.Count 1 "Pictures shape count"
+    }
+    finally {
+        foreach ($object in @($pictures, $replaceMe, $edited)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-GeneratedStyleRejection {
+    param([object]$Workbook)
+
+    $sheet = $null
+    try {
+        $sheet = Get-Worksheet $Workbook "Data"
+        Assert-CellValue $sheet "A1" "placeholder-a1" "Data!A1"
+        Assert-CellValue $sheet "B1" 1 "Data!B1"
+    }
+    finally {
+        if ($null -ne $sheet) {
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($sheet)
+        }
+    }
+}
+
+function Verify-FixtureCase {
+    param(
+        [object]$Workbook,
+        [object]$ToolReport
+    )
+
+    $sheetName = [string]$ToolReport.renamed_sheet_name
+    if ([string]::IsNullOrWhiteSpace($sheetName)) {
+        $sheetName = [string]$ToolReport.source_sheet_name
+    }
+    Assert-True (-not [string]::IsNullOrWhiteSpace($sheetName)) "fixture case did not report a worksheet name"
+
+    $sheet = $null
+    try {
+        $sheet = Get-Worksheet $Workbook $sheetName
+        Assert-CellValue $sheet "A1" "fixture-materialized-edit" "$sheetName!A1"
+        Assert-CellValue $sheet "B2" 42 "$sheetName!B2"
+    }
+    finally {
+        if ($null -ne $sheet) {
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($sheet)
+        }
+    }
+}
+
+function Verify-Case {
+    param(
+        [object]$Excel,
+        [object]$Case
+    )
+
+    $toolReport = $Case.tool_report
+    $path = Resolve-WorkbookPath ([string]$toolReport.output)
+    $workbook = $null
+
+    try {
+        $workbook = $Excel.Workbooks.Open($path, 0, $true)
+        $sheetNames = Get-WorksheetNames $workbook
+        $scenario = [string]$toolReport.scenario
+
+        switch ($scenario) {
+            "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
+            "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }
+            "generated_image_replace" { Verify-GeneratedImageReplace $workbook }
+            "generated_public_e2e" { Verify-GeneratedPublicE2E $workbook }
+            "generated_non_default_style_rejection" { Verify-GeneratedStyleRejection $workbook }
+            "fixture_rename_materialized" { Verify-FixtureCase $workbook $toolReport }
+            "fixture_materialized_only" { Verify-FixtureCase $workbook $toolReport }
+            default { throw "unsupported workbook-editor QA Excel scenario '$scenario'" }
+        }
+
+        return [ordered]@{
+            name = [string]$Case.name
+            status = "ok"
+            path = $path
+            sheetnames = @($sheetNames)
+        }
+    }
+    finally {
+        if ($null -ne $workbook) {
+            $workbook.Close($false) | Out-Null
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($workbook)
+        }
+    }
+}
+
+$resolvedReportPath = (Resolve-Path -LiteralPath $ReportPath).Path
+if ([string]::IsNullOrWhiteSpace($OfficeReportPath)) {
+    $OfficeReportPath = Join-Path (Split-Path -Parent $resolvedReportPath) "office-report.json"
+}
+
+$existingExcelPids = @{}
+foreach ($process in @(Get-Process EXCEL -ErrorAction SilentlyContinue)) {
+    $existingExcelPids[[int]$process.Id] = $true
+}
+
+$report = Get-Content -Encoding UTF8 -Raw -LiteralPath $resolvedReportPath | ConvertFrom-Json
+$excel = $null
+$caseReports = @()
+
+try {
+    $excel = New-Object -ComObject Excel.Application
+    $excel.Visible = $false
+    $excel.DisplayAlerts = $false
+    $excel.AskToUpdateLinks = $false
+
+    foreach ($case in @($report.cases)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$case.error)) {
+            $caseReports += [ordered]@{
+                name = [string]$case.name
+                status = "skipped"
+                reason = "case failed before Excel verification"
+            }
+            continue
+        }
+
+        try {
+            $caseReports += Verify-Case $excel $case
+        }
+        catch {
+            $caseReports += [ordered]@{
+                name = [string]$case.name
+                status = "failed"
+                error = [string]$_.Exception.Message
+            }
+        }
+    }
+}
+finally {
+    if ($null -ne $excel) {
+        $excel.Quit() | Out-Null
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel)
+    }
+    [System.GC]::Collect()
+    [System.GC]::WaitForPendingFinalizers()
+    Start-Sleep -Milliseconds 500
+
+    foreach ($process in @(Get-Process EXCEL -ErrorAction SilentlyContinue)) {
+        if (-not $existingExcelPids.ContainsKey([int]$process.Id)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+$failedCases = @($caseReports | Where-Object { $_.status -eq "failed" } | ForEach-Object { $_.name })
+$officeReport = [ordered]@{
+    status = if ($failedCases.Count -eq 0) { "ok" } else { "failed" }
+    report = $resolvedReportPath
+    case_count = $caseReports.Count
+    failed_cases = $failedCases
+    cases = $caseReports
+}
+
+$officeReportJson = $officeReport | ConvertTo-Json -Depth 8
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OfficeReportPath) | Out-Null
+Set-Content -Encoding UTF8 -LiteralPath $OfficeReportPath -Value $officeReportJson
+Write-Host $officeReportJson
+
+if ($failedCases.Count -ne 0) {
+    throw "Excel workbook-editor QA failed for cases: $($failedCases -join ', ')"
+}

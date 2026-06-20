@@ -17,11 +17,13 @@
 
 namespace fastxlsx {
 
+class StyleId;
 class WorksheetWriter;
 
 namespace detail {
 struct WorkbookWriterState;
 struct WorksheetWriterState;
+[[nodiscard]] StyleId make_source_style_id(std::uint32_t value) noexcept;
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 void testing_set_worksheet_row_count(WorksheetWriter& worksheet, std::uint32_t row_count);
@@ -71,6 +73,7 @@ public:
 private:
     friend class WorkbookWriter;
     friend class WorksheetWriter;
+    friend StyleId detail::make_source_style_id(std::uint32_t value) noexcept;
 
     explicit StyleId(std::uint32_t value, std::uintptr_t owner_token) noexcept;
 

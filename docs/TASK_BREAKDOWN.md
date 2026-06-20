@@ -409,10 +409,11 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   materialization / failure-before-state-change guardrail 场景或小型 save-as handoff
   缺口。当前策略先冻结为：
   `erase_cell()` 只是移除 sparse record，不是 tombstone；`CellValue::blank()` 是显式
-  blank replacement cell；non-default source style ids 当前 fail，explicit source
-  `s="0"` 归一化为 no style handle，但只有 exact token 被接受；empty / padded /
-  signed / leading-zero / entity-encoded / duplicate default-like source style
-  attributes 仍 fail，不做 preserve / migrate / merge。
+  blank replacement cell；canonical non-zero source style ids 只做 numeric
+  passthrough，explicit source `s="0"` 归一化为 no style handle，但只有 exact
+  token 被接受；empty / padded / signed / leading-zero / entity-encoded /
+  duplicate / qualified source style attributes 仍 fail，不做 styles.xml
+  validation / migrate / merge。
   当前已固定的 source dependency/shape fail policy 不能写成 migration、repair 或
   preservation。仍只做内部回归，不公开 `WorksheetEditor`，不处理 sharedStrings/style
   migration 或 relationship repair。
@@ -665,8 +666,8 @@ In-memory random editor 仍未实现。
    只覆盖有限 cell value，不处理完整 worksheet 语义。当前首片完成。
 3. random mutation model：`try_cell` / `set_cell` / `erase_cell` / blank 已有
    internal store 语义；tombstone / style-preservation 当前策略已冻结为
-   erase-removes-record、blank-writes-empty-cell、non-default source style ids
-   fail、source `s="0"` normalizes to no style handle。
+   erase-removes-record、blank-writes-empty-cell、canonical non-zero source style
+   ids numeric passthrough、source `s="0"` normalizes to no style handle。
 4. internal save-as handoff smoke：把 source worksheet load、small mutation 和
    existing by-name `sheetData` Patch helper 串成一条内部回归。当前首片完成。
 5. public `WorksheetEditor` 首片：只在上述 guardrail 和 save-as contract 有测试后进入。
@@ -12887,10 +12888,11 @@ Scope:
 - Document that current `CellValue::blank()` is an explicit blank replacement
   cell, and the existing source-loaded handoff writes it as an empty `<c>` when
   projected into replacement `<sheetData>`.
-- Document that non-default source worksheet style ids currently fail during
-  loader materialization; explicit default `s="0"` is now normalized to no
-  style handle by P8.466. Source style ids are not preserved, migrated, merged,
-  or validated against source `xl/styles.xml`.
+- Document that canonical non-zero source worksheet style ids now materialize
+  as numeric passthrough handles and are written back when the source styles
+  part is preserved; explicit default `s="0"` is normalized to no style handle
+  by P8.466. Source style ids are still not validated against source
+  `xl/styles.xml`, migrated, or merged.
 - Keep the next implementation gate internal until focused tests cover the
   chosen tombstone/style policy.
 
@@ -19036,20 +19038,23 @@ Type: public `WorksheetEditor` source-load failure-state regression tests and
 docs; no new public symbol, no CMake membership change, and no package format
 expansion.
 
-Goal: prove non-default source worksheet style attributes still reach the
-public `WorkbookEditor::try_worksheet()` / `worksheet()` facade as clean
-materialization failures, without becoming partial sessions or blocking later
+Goal: prove source worksheet style attributes have a narrow, explicit boundary:
+canonical non-zero numeric source style ids materialize as passthrough handles,
+while malformed or qualified style attributes still reach the public
+`WorkbookEditor::try_worksheet()` / `worksheet()` facade as clean
+materialization failures without becoming partial sessions or blocking later
 Patch edits.
 
 Output:
 - `fastxlsx.workbook_editor` now covers a non-default source style id generated
-  by the writer. This section originally also pinned an explicit default
-  `s="0"` source style attribute as a failure; P8.466 supersedes that narrow
-  default-style boundary by normalizing source `s="0"` to no style handle, and
-  later P8.467/P8.471 keep that exception exact-value-only.
-- For non-default source style ids, both `try_worksheet("Data")` and
-  `worksheet("Data")` throw with the existing
-  `CellStore worksheet loader does not load style id references` diagnostic.
+  by the writer and proves dirty projection writes the same numeric `s` id back
+  while preserving `xl/styles.xml`. This section originally also pinned an
+  explicit default `s="0"` source style attribute as a failure; P8.466
+  supersedes that narrow default-style boundary by normalizing source `s="0"`
+  to no style handle, and later P8.467/P8.471 keep the malformed-token boundary
+  exact.
+- For malformed source style ids, both `try_worksheet("Data")` and
+  `worksheet("Data")` throw with the current invalid style id diagnostic.
 - Failures preserve source/planned catalog inspection, leave no pending edits
   or dirty materialized sessions, and do not update `last_edit_error()`.
 - The same editor remains usable after failure: a later `replace_sheet_data()`
@@ -19704,10 +19709,9 @@ Output:
   untouched sheet bytes remain preserved by the no-op output.
 
 Non-goals / boundary:
-- No tolerant import of non-default source style ids, style migration, style
-  merge, XML repair, recovery materialization, dirty projection, relationship
-  repair, semantic worksheet validation during no-op copy, or save-as
-  diagnostic conversion.
+- No source style id validation against styles.xml, style migration, style
+  merge, XML repair, recovery materialization, relationship repair, semantic
+  worksheet validation during no-op copy, or save-as diagnostic conversion.
 - This does not change the existing failure behavior for unsupported source
   metadata; it only pins the state and no-op save boundary after that failure.
 
@@ -22080,15 +22084,16 @@ clarification, and task-plan sync; no new public symbol, no CMake membership
 change, no package format expansion, and no dependency change.
 
 Goal: accept source worksheet cells that explicitly carry the default style
-attribute `s="0"` and materialize them as unstyled `CellValue` records, while
-continuing to reject non-default source style ids until a real existing-file
-style policy exists.
+attribute `s="0"` and materialize them as unstyled `CellValue` records; later
+source-style passthrough support accepts canonical non-zero numeric source
+style ids without claiming full existing-file style policy support.
 
 Output:
 - `CellStore` source loaders now accept exact source `s="0"` and normalize it
   to no style handle.
-- Non-default source style ids such as `s="1"` still fail with the existing
-  style-id diagnostic and preserve failure-before-handle state hygiene.
+- Canonical non-zero source style ids such as `s="1"` now materialize as
+  numeric passthrough handles; malformed style tokens still fail before a
+  handle is returned.
 - Public `fastxlsx.workbook_editor.source-success` coverage now proves a
   workbook-backed source `s="0"` cell materializes as text with no style handle,
   starts clean, and dirty save-as omits `s="0"`.

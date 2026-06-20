@@ -11440,7 +11440,7 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
         R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
         R"(<sheetData><row r="1">)"
-        R"(<c r="A1" s="1" t="inlineStr"><is><t>invalid-style-source</t></is></c>)"
+        R"(<c r="A1" s="+1" t="inlineStr"><is><t>invalid-style-source</t></is></c>)"
         R"(</row></sheetData>)"
         R"(</worksheet>)";
     write_stored_zip_entries(source, entries);
@@ -11461,11 +11461,11 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
         (void)editor.try_worksheet("Data");
     } catch (const fastxlsx::FastXlsxError& error) {
         try_failed = true;
-        check_contains(error.what(), "does not load style id references",
+        check_contains(error.what(), "invalid style id reference",
             "try_worksheet should expose failed materialization diagnostic");
     }
     check(try_failed,
-        "try_worksheet should fail when source materialization rejects style ids");
+        "try_worksheet should fail when source materialization rejects invalid style ids");
     check_public_materialization_failure_clean_state(
         editor,
         expected_source_names,
@@ -11480,11 +11480,11 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
         (void)editor.worksheet("Data");
     } catch (const fastxlsx::FastXlsxError& error) {
         worksheet_failed = true;
-        check_contains(error.what(), "does not load style id references",
+        check_contains(error.what(), "invalid style id reference",
             "worksheet should expose failed materialization diagnostic");
     }
     check(worksheet_failed,
-        "worksheet should fail when source materialization rejects style ids");
+        "worksheet should fail when source materialization rejects invalid style ids");
     check_public_materialization_failure_clean_state(
         editor,
         expected_source_names,
@@ -11508,8 +11508,8 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after failed materialization should copy source entries");
-    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), R"(s="1")",
-        "no-op save_as after failed materialization should preserve rejected source style id");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), R"(s="+1")",
+        "no-op save_as after failed materialization should preserve rejected invalid source style id");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "invalid-style-source",
         "no-op save_as after failed materialization should preserve rejected source worksheet bytes");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
@@ -12960,7 +12960,7 @@ void test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata
         "sharedStrings tag with unterminated attribute value");
 }
 
-void test_public_worksheet_editor_rejects_source_style_ids_without_dirtying_state()
+void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malformed_style_attributes()
 {
     const auto expect_public_style_materialization_failure =
         [](std::string_view tag,
@@ -12981,23 +12981,52 @@ void test_public_worksheet_editor_rejects_source_style_ids_without_dirtying_stat
                 expected_diagnostic, replacement_text, scenario);
         };
 
-    expect_public_style_materialization_failure(
-        "non-default",
-        [](std::string_view name) {
-            const std::filesystem::path source = artifact(name);
+    {
+        const std::filesystem::path source = artifact(
+            "fastxlsx-workbook-editor-public-source-style-non-default-source.xlsx");
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-source-style-non-default-output.xlsx");
+        fastxlsx::StyleId number_style;
+        {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
-            const fastxlsx::StyleId number_style =
-                writer.add_style(fastxlsx::CellStyle {"0.00"});
+            number_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
             fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
             data.append_row({fastxlsx::CellView::text("styled-source")
                     .with_style(number_style)});
             fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
             untouched.append_row({fastxlsx::CellView::text("keep-source-style")});
             writer.close();
-            return source;
-        },
-        "does not load style id references",
-        "non-default source style id");
+        }
+
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+        check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+                && a1->text_value() == "styled-source" && a1->has_style()
+                && a1->style_id().value() == number_style.value(),
+            "WorksheetEditor should materialize non-default source style ids");
+        check(!sheet.has_pending_changes(),
+            "source style materialization should start as a clean read-only session");
+        check(!editor.has_pending_changes(),
+            "source style materialization should not dirty WorkbookEditor");
+
+        sheet.set_cell("B1", fastxlsx::CellValue::text("style-passthrough-edit"));
+        editor.save_as(output);
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+            "dirty source-style projection should preserve styles.xml bytes");
+        const std::string output_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(output_xml,
+            R"(<c r="A1" s="1" t="inlineStr"><is><t>styled-source</t></is></c>)",
+            "dirty source-style projection should preserve materialized source style ids");
+        check_contains(output_xml,
+            R"(<c r="B1" t="inlineStr"><is><t>style-passthrough-edit</t></is></c>)",
+            "dirty source-style projection should write new unstyled edits");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-source-style",
+            "dirty source-style projection should preserve untouched sheets");
+    }
 
     const auto write_source_with_style_attribute = [](std::string_view style_attribute) {
         return [style_attribute = std::string(style_attribute)](std::string_view name) {
@@ -13058,27 +13087,27 @@ void test_public_worksheet_editor_rejects_source_style_ids_without_dirtying_stat
     expect_public_style_materialization_failure(
         "empty-default-like",
         write_source_with_style_attribute(R"(s="")"),
-        "does not load style id references",
+        "invalid style id reference",
         "empty default-like source style id");
     expect_public_style_materialization_failure(
         "leading-zero-default-like",
         write_source_with_style_attribute(R"(s="00")"),
-        "does not load style id references",
+        "invalid style id reference",
         "leading-zero default-like source style id");
     expect_public_style_materialization_failure(
         "signed-zero-default-like",
         write_source_with_style_attribute(R"(s="+0")"),
-        "does not load style id references",
+        "invalid style id reference",
         "signed-zero default-like source style id");
     expect_public_style_materialization_failure(
         "whitespace-default-like",
         write_source_with_style_attribute(R"(s=" 0 ")"),
-        "does not load style id references",
+        "invalid style id reference",
         "whitespace-padded default-like source style id");
     expect_public_style_materialization_failure(
         "entity-default-like",
         write_source_with_style_attribute(R"(s="&#48;")"),
-        "does not load style id references",
+        "invalid style id reference",
         "entity-encoded default-like source style id");
     expect_public_style_materialization_failure(
         "valueless-default-like",
@@ -13683,12 +13712,42 @@ void test_public_worksheet_editor_rejects_source_row_cell_structure_cleanly()
                 source, output, expected_diagnostic, replacement_text, scenario);
         };
 
-    expect_public_structure_materialization_failure(
-        "row-metadata",
-        worksheet_xml(
-            R"(<sheetData><row r="1" ht="20"><c r="A1"><v>1</v></c></row></sheetData>)"),
-        "CellStore worksheet loader does not load row metadata attributes",
-        "source row metadata attributes");
+    {
+        const std::filesystem::path source = write_source(
+            "fastxlsx-workbook-editor-public-source-row-cell-structure-row-metadata-source.xlsx");
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-source-row-cell-structure-row-metadata-output.xlsx");
+        std::map<std::string, std::string> entries =
+            fastxlsx::test::read_zip_entries(source);
+        entries.at("xl/worksheets/sheet1.xml") = worksheet_xml(
+            R"(<sheetData><row r="1" spans="1:13" s="4" customFormat="1" ht="20" customHeight="1"><c r="A1"><v>1</v></c></row></sheetData>)");
+        write_stored_zip_entries(source, entries);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+        check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+                && a1->number_value() == 1.0,
+            "WorksheetEditor should tolerate common source row metadata attributes");
+        sheet.set_cell("B1", fastxlsx::CellValue::text("row-metadata-edited"));
+        editor.save_as(output);
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string output_worksheet_xml =
+            output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(output_worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+            "dirty row-metadata projection should keep materialized source cells");
+        check_contains(output_worksheet_xml,
+            R"(<c r="B1" t="inlineStr"><is><t>row-metadata-edited</t></is></c>)",
+            "dirty row-metadata projection should write the new edit");
+        check_not_contains(output_worksheet_xml, "customFormat",
+            "dirty materialized projection should not claim to preserve source row metadata");
+        check_not_contains(output_worksheet_xml, "spans=",
+            "dirty materialized projection should drop source row span metadata");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+            "keep-row-cell-structure",
+            "dirty row-metadata projection should preserve untouched sheets");
+    }
 
     expect_public_structure_materialization_failure(
         "cell-metadata",
@@ -17525,7 +17584,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy_original();
         test_public_worksheet_editor_rejects_invalid_source_shared_string_index();
         test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata();
-        test_public_worksheet_editor_rejects_source_style_ids_without_dirtying_state();
+        test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malformed_style_attributes();
         test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly();
         test_public_worksheet_editor_rejects_malformed_source_worksheet_xml_cleanly();
         test_public_worksheet_editor_rejects_source_cell_reference_issues_cleanly();

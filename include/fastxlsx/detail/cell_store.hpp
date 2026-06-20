@@ -137,12 +137,15 @@ private:
 /// shared-string indexes fail on this generic path. Exact explicit source
 /// `s` attributes whose value is exactly `0` (for example `s="0"`,
 /// `s='0'`, or `s = "0"`) are accepted and normalized to no style handle;
+/// canonical non-zero unsigned decimal `s` values are materialized as
+/// workbook-local numeric style handles so dirty projection can write the same
+/// style id back when the source styles part is preserved;
 /// default-like tokens such as empty, valueless, unquoted, unterminated,
 /// padded, signed, leading-zero, or entity-encoded values still fail, as do
 /// duplicate style attributes, qualified style-like attributes such as `x:s`,
-/// non-default style attributes, unsupported cell types, non-finite numeric
-/// values, invalid boolean values, formula cells with cell types other than
-/// numeric or `t="str"`, missing or invalid cell references, row/cell
+/// unsupported cell types, non-finite numeric values, invalid boolean values,
+/// formula cells with cell types other than numeric or `t="str"`, missing or
+/// invalid cell references, row/cell
 /// reference mismatches, duplicate cell references, duplicate supported value
 /// wrappers, duplicate explicit row numbers,
 /// duplicate key attributes inspected by this loader, malformed inspected
@@ -171,9 +174,9 @@ private:
 /// repair, or schema validation. Unsupported local-names still fail fast even
 /// when their namespace URI is ignored. The
 /// supplied CellStoreOptions are enforced during loading. This does not migrate
-/// sharedStrings, merge styles, repair relationships, recalculate formulas,
-/// preserve cached formula results, preserve inline rich text formatting, or
-/// expose a public WorksheetEditor.
+/// sharedStrings, validate source style ids against styles.xml, merge styles,
+/// repair relationships, recalculate formulas, preserve cached formula results,
+/// preserve inline rich text formatting, or expose a public WorksheetEditor.
 [[nodiscard]] CellStore load_cell_store_from_worksheet_chunks(
     const WorksheetInputChunkCallback& read_next_chunk,
     CellStoreOptions options = {},
@@ -260,11 +263,12 @@ private:
 /// targets, and invalid indexes fail rather than being repaired or guessed.
 /// Failures are wrapped with sheet-name, worksheet part, and ZIP-entry context
 /// where available. This does not rebuild, migrate, or write back
-/// sharedStrings indexes, and it does not migrate, validate, merge, or preserve
-/// non-default style ids; only unqualified source `s` values exactly equal to
-/// `0` (`s="0"`, `s='0'`, or `s = "0"`) are normalized to no style handle,
-/// while malformed/default-like style tokens and qualified style-like
-/// attributes still fail.
+/// sharedStrings indexes. Source style ids are only numeric passthrough: `s="0"`
+/// is normalized to no style handle, canonical non-zero unsigned decimal source
+/// style ids are written back by dirty projection when styles.xml is preserved,
+/// and malformed/default-like style tokens or qualified style-like attributes
+/// still fail. This is not source style validation, style migration, style
+/// merge, or existing-workbook style registry support.
 [[nodiscard]] CellStore load_cell_store_from_workbook_sheet(
     const PackageReader& reader, std::string_view sheet_name,
     CellStoreOptions options = {}, WorksheetEventReaderOptions reader_options = {});

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <exception>
 #include <functional>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -27,6 +28,11 @@ bool operator<(const CellPosition& left, const CellPosition& right) noexcept
         return left.row < right.row;
     }
     return left.column < right.column;
+}
+
+StyleId make_source_style_id(std::uint32_t value) noexcept
+{
+    return StyleId(value, 0);
 }
 
 namespace {
@@ -918,7 +924,7 @@ std::vector<std::string> parse_shared_strings_xml(std::string_view xml)
 std::optional<std::vector<std::string>> load_shared_strings_from_workbook(
     const PackageReader& reader)
 {
-    const PartName workbook_part("/xl/workbook.xml");
+    const PartName workbook_part = reader.workbook_part();
     const RelationshipSet* workbook_relationships = reader.relationships_for(workbook_part);
     if (workbook_relationships == nullptr) {
         return std::nullopt;
@@ -978,19 +984,13 @@ bool raw_tag_has_attributes(std::string_view raw_tag)
 
 bool is_allowed_attribute_name(
     std::string_view name,
-    std::string_view allowed_first,
-    std::optional<std::string_view> allowed_second,
-    std::optional<std::string_view> allowed_third)
+    std::initializer_list<std::string_view> allowed_names)
 {
-    return name == allowed_first || (allowed_second.has_value() && name == *allowed_second)
-        || (allowed_third.has_value() && name == *allowed_third);
+    return std::find(allowed_names.begin(), allowed_names.end(), name) != allowed_names.end();
 }
 
 bool raw_tag_has_unsupported_attributes(
-    std::string_view raw_tag,
-    std::string_view allowed_first,
-    std::optional<std::string_view> allowed_second = std::nullopt,
-    std::optional<std::string_view> allowed_third = std::nullopt)
+    std::string_view raw_tag, std::initializer_list<std::string_view> allowed_names)
 {
     std::string_view body = tag_body(raw_tag);
     std::size_t position = 0;
@@ -1012,7 +1012,7 @@ bool raw_tag_has_unsupported_attributes(
             ++position;
         }
         const std::string_view name = body.substr(name_begin, position - name_begin);
-        if (!is_allowed_attribute_name(name, allowed_first, allowed_second, allowed_third)) {
+        if (!is_allowed_attribute_name(name, allowed_names)) {
             return true;
         }
 
@@ -1046,17 +1046,45 @@ bool raw_tag_has_unsupported_attributes(
     return false;
 }
 
-void validate_source_style_attribute_for_load(std::string_view raw_tag)
+bool raw_tag_has_unsupported_attributes(
+    std::string_view raw_tag,
+    std::string_view allowed_first,
+    std::optional<std::string_view> allowed_second = std::nullopt,
+    std::optional<std::string_view> allowed_third = std::nullopt)
+{
+    if (allowed_second.has_value() && allowed_third.has_value()) {
+        return raw_tag_has_unsupported_attributes(
+            raw_tag, {allowed_first, *allowed_second, *allowed_third});
+    }
+    if (allowed_second.has_value()) {
+        return raw_tag_has_unsupported_attributes(raw_tag, {allowed_first, *allowed_second});
+    }
+    return raw_tag_has_unsupported_attributes(raw_tag, {allowed_first});
+}
+
+std::optional<StyleId> parse_source_style_attribute_for_load(std::string_view raw_tag)
 {
     const std::optional<std::string_view> style_id =
         unqualified_attribute_value(raw_tag, "s");
     if (!style_id.has_value()) {
-        return;
+        return std::nullopt;
     }
-    if (*style_id != "0") {
+
+    std::uint64_t parsed_style_id = 0;
+    const char* const begin = style_id->data();
+    const char* const end = begin + style_id->size();
+    const auto result = std::from_chars(begin, end, parsed_style_id);
+    if (style_id->empty() || result.ec != std::errc {} || result.ptr != end
+        || parsed_style_id > std::numeric_limits<std::uint32_t>::max()
+        || (style_id->size() > 1 && style_id->front() == '0')) {
         throw FastXlsxError(
-            "CellStore worksheet loader does not load style id references");
+            "CellStore worksheet loader found an invalid style id reference");
     }
+
+    if (parsed_style_id == 0) {
+        return std::nullopt;
+    }
+    return make_source_style_id(static_cast<std::uint32_t>(parsed_style_id));
 }
 
 struct ParsedCellReference {
@@ -1361,6 +1389,7 @@ bool is_closing_raw_tag(std::string_view raw_xml)
 struct ActiveSourceCell {
     CellPosition position;
     SourceCellType type = SourceCellType::Number;
+    std::optional<StyleId> style_id;
     std::string current_value_element;
     std::string scalar_text;
     std::string inline_text;
@@ -1417,34 +1446,43 @@ bool parse_cell_boolean(std::string_view value)
 CellValue materialize_cell_value(
     const ActiveSourceCell& cell, const SharedStringsProvider* shared_strings_provider)
 {
+    CellValue value = CellValue::blank();
     if (cell.saw_formula_element) {
         if (cell.formula_text.empty()) {
             throw FastXlsxError("CellStore worksheet loader found an empty formula text");
         }
-        return CellValue::formula(cell.formula_text);
+        value = CellValue::formula(cell.formula_text);
+        if (cell.style_id.has_value()) {
+            value = value.with_style(*cell.style_id);
+        }
+        return value;
     }
 
     switch (cell.type) {
     case SourceCellType::Number:
         if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
-            return CellValue::blank();
+            break;
         }
-        return CellValue::number(parse_cell_number(cell.scalar_text));
+        value = CellValue::number(parse_cell_number(cell.scalar_text));
+        break;
     case SourceCellType::String:
         if (!cell.saw_scalar_value_element) {
-            return CellValue::blank();
+            break;
         }
-        return CellValue::text(cell.scalar_text);
+        value = CellValue::text(cell.scalar_text);
+        break;
     case SourceCellType::Boolean:
         if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
-            return CellValue::blank();
+            break;
         }
-        return CellValue::boolean(parse_cell_boolean(cell.scalar_text));
+        value = CellValue::boolean(parse_cell_boolean(cell.scalar_text));
+        break;
     case SourceCellType::InlineString:
         if (!cell.saw_inline_text_element) {
-            return CellValue::blank();
+            break;
         }
-        return CellValue::text(cell.inline_text);
+        value = CellValue::text(cell.inline_text);
+        break;
     case SourceCellType::SharedString:
         if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
             throw FastXlsxError(
@@ -1467,11 +1505,15 @@ CellValue materialize_cell_value(
                 throw FastXlsxError(
                     "CellStore worksheet loader found a shared string index out of range");
             }
-            return CellValue::text(shared_strings[static_cast<std::size_t>(index)]);
+            value = CellValue::text(shared_strings[static_cast<std::size_t>(index)]);
+            break;
         }
     }
 
-    throw FastXlsxError("CellStore worksheet loader found an unsupported internal cell state");
+    if (cell.style_id.has_value()) {
+        value = value.with_style(*cell.style_id);
+    }
+    return value;
 }
 
 void reject_unsupported_value_shape(const ActiveSourceCell& cell, std::string_view element_name)
@@ -1535,7 +1577,10 @@ public:
                 throw FastXlsxError("CellStore worksheet loader found a row outside sheetData");
             }
             inside_row_ = true;
-            if (raw_tag_has_unsupported_attributes(event.raw_xml, "r")) {
+            if (raw_tag_has_unsupported_attributes(event.raw_xml,
+                    {"r", "spans", "s", "customFormat", "ht", "customHeight", "hidden",
+                        "outlineLevel", "collapsed", "thickTop", "thickBot", "ph",
+                        "x14ac:dyDescent"})) {
                 throw FastXlsxError(
                     "CellStore worksheet loader does not load row metadata attributes");
             }
@@ -1622,7 +1667,8 @@ private:
         if (!inside_row_) {
             throw FastXlsxError("CellStore worksheet loader found a cell outside a row");
         }
-        validate_source_style_attribute_for_load(event.raw_xml);
+        const std::optional<StyleId> style_id =
+            parse_source_style_attribute_for_load(event.raw_xml);
         if (raw_tag_has_unsupported_attributes(
                 event.raw_xml, "r", std::string_view {"t"}, std::string_view {"s"})) {
             throw FastXlsxError(
@@ -1651,6 +1697,7 @@ private:
         last_source_cell_ = cell.position;
         cell.type = source_cell_type_from_raw_tag(
             event.raw_xml, shared_strings_provider_ != nullptr);
+        cell.style_id = style_id;
         active_cell_ = std::move(cell);
     }
 

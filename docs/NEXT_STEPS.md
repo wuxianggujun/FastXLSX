@@ -1691,15 +1691,17 @@ feature completion.
      missing vs explicit blank; F2.3 now has a first internal source-loaded
      `CellStore` -> by-name `sheetData` Patch handoff smoke, plus a focused
      blank-vs-erase projection smoke; F2.4 now has the first loader dependency
-     guardrail regressions rejecting non-default source style ids, unsupported
-      cell types, and invalid boolean payloads. Explicit source `s` values are
-      now normalized to no style handle only when the unqualified value is
-      exactly `0` (`s="0"`, `s='0'`, or `s = "0"`); empty, valueless,
-      unquoted, unterminated, padded, signed, leading-zero, entity-encoded, or
-      duplicate default-like source style attributes still fail, with duplicate
-      exact default-style attributes covered through the public facade hygiene
-      path. Qualified style-like attributes such as `x:s="0"` stay unsupported
-      metadata. Workbook-backed source sharedStrings
+     guardrail regressions rejecting malformed source style attributes,
+      unsupported cell types, and invalid boolean payloads. Explicit source `s`
+      values are now normalized to no style handle only when the unqualified
+      value is exactly `0` (`s="0"`, `s='0'`, or `s = "0"`); canonical
+      non-zero unsigned decimal source style ids materialize as numeric
+      passthrough handles and are written back when the source styles part is
+      preserved. Empty, valueless, unquoted, unterminated, padded, signed,
+      leading-zero, entity-encoded, or duplicate source style attributes still
+      fail, with duplicate exact default-style attributes covered through the
+      public facade hygiene path. Qualified style-like attributes such as
+      `x:s="0"` stay unsupported metadata. Workbook-backed source sharedStrings
       now materialize valid `t="s"` cells as plain text. Non-critical
       `count` / `uniqueCount` metadata and well-formed unknown attributes do
       not drive materialization; malformed sharedStrings structures/targets or
@@ -1912,13 +1914,15 @@ feature completion.
       Loader state-machine guardrails now reject nested cells.
       Tombstone / style-preservation policy is now explicitly frozen for the
       next gate: `erase_cell()` removes the sparse record, `CellValue::blank()`
-      is the explicit blank replacement cell, and non-default source style ids
-      still fail instead of being preserved, migrated, or merged. Explicit
+      is the explicit blank replacement cell, and source style ids are numeric
+      passthrough only rather than validated, migrated, or merged. Explicit
       default source style references are normalized to no style handle, but
       only for unqualified `s` values exactly equal to `0` (`s="0"`, `s='0'`,
-      or `s = "0"`); empty, valueless, unquoted, unterminated, padded, signed,
-      leading-zero, entity-encoded, duplicate, or qualified default-like source
-      style attributes remain load failures. The internal loader declaration now
+      or `s = "0"`); canonical non-zero unsigned decimal source style ids are
+      written back when the source styles part is preserved. Empty, valueless,
+      unquoted, unterminated, padded, signed, leading-zero, entity-encoded,
+      duplicate, or qualified source style attributes remain load failures. The
+      internal loader declaration now
       mirrors these source
       materialization guardrails, including cached formula value omission,
       entity/attribute failures, duplicate references/wrappers, and load-time
@@ -2214,10 +2218,11 @@ commit or short series with its own tests and docs update.
      `sheetData` Patch helper can consume mutated source-backed sparse cells;
      focused blank-vs-erase coverage now fixes current projection behavior:
      explicit blank writes an empty cell, erase omits the cell. F2.4 first
-      guardrail coverage now rejects non-default source worksheet style ids,
-      standalone shared string indexes, unsupported cell types, and invalid
-      boolean payloads before pretending migration, repair, or preservation
-      exists; explicit source `s="0"` is normalized to no style handle. These
+      guardrail coverage now rejects malformed source worksheet style
+      attributes, standalone shared string indexes, unsupported cell types, and
+      invalid boolean payloads before pretending migration or repair exists;
+      explicit source `s="0"` is normalized to no style handle, and canonical
+      non-zero source style ids are passthrough only. These
       failure paths
       do not expose a partial `CellStore`, and `CellStore` coordinate validation
       failures now also have no-state-pollution coverage.

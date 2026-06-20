@@ -354,7 +354,7 @@ struct WorksheetCellSnapshot {
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
 /// or cell metadata attributes, coerce invalid numeric payloads, migrate
-/// sharedStrings indexes, validate or merge non-default style ids, import
+/// sharedStrings indexes, validate or merge source style ids, import
 /// unsupported value-wrapper shapes, tolerate non-whitespace source worksheet
 /// text outside wrapper metadata or sheetData, source sheetData text outside
 /// rows, source row text outside cells, or source cell text outside `<v>` /
@@ -367,15 +367,19 @@ struct WorksheetCellSnapshot {
 /// worksheet wrapper metadata during dirty projection, evaluate formulas,
 /// preserve cached formula results, rebuild calcChain, update
 /// tables/drawings/defined names/range metadata, or repair relationships.
-/// Non-default StyleId values are rejected by both set_cell() overloads until a
+/// Non-default caller-supplied StyleId values are rejected by both set_cell() overloads until a
 /// public existing-workbook style policy exists. An explicit default StyleId{0}
 /// is accepted and normalized to no style handle; dirty save_as() output omits
 /// `s="0"`. Source cells with an unqualified `s` value exactly equal to `0`
 /// (for example `s="0"`, `s='0'`, or `s = "0"`) are normalized the same way
-/// during materialization; empty, valueless, unquoted, unterminated, padded,
-/// signed, leading-zero, or entity-encoded default-like source style tokens,
-/// duplicate style attributes, qualified style-like attributes such as `x:s`,
-/// and non-default source style ids remain unsupported.
+/// during materialization. Canonical non-zero unsigned decimal source style ids
+/// are materialized as numeric passthrough handles and written back by dirty
+/// projection when the source styles part is preserved. This does not validate
+/// those ids against styles.xml, merge styles, or allow caller-supplied foreign
+/// style handles. Empty, valueless, unquoted, unterminated, padded, signed,
+/// leading-zero, or entity-encoded source style tokens, duplicate style
+/// attributes, and qualified style-like attributes such as `x:s` remain
+/// unsupported.
 class WorksheetEditor {
 public:
     /// Returns the planned worksheet name for this borrowed handle.
@@ -1005,17 +1009,19 @@ public:
     /// shared string indexes are encountered.
     /// Missing referenced sharedStrings parts, invalid sharedStrings
     /// relationship targets, malformed sharedStrings XML/entity/attribute
-    /// syntax, invalid shared string indexes, non-default source style
+    /// syntax, invalid shared string indexes, malformed source style
     /// attributes, unsupported source cell metadata, non-whitespace source cell
     /// text outside `<v>` / `<t>` / `<f>` wrappers, and malformed worksheet
     /// XML fail before returning a handle. Explicit source `s` attributes whose
     /// value is exactly `0` (for example `s="0"`, `s='0'`, or `s = "0"`) are
-    /// normalized to no style handle rather than preserved; default-like source
-    /// style tokens such as empty values, valueless or unquoted syntax,
-    /// unterminated attributes, `s="00"`, `s="+0"`, padded values,
-    /// entity-encoded values, or duplicate attributes are still rejected.
-    /// Qualified style-like attributes such as `x:s` are unsupported cell
-    /// metadata, not default-style attributes.
+    /// normalized to no style handle rather than preserved. Canonical non-zero
+    /// unsigned decimal source style ids are materialized as numeric passthrough
+    /// handles and written back by dirty projection when styles.xml is
+    /// preserved; they are not validated or migrated. Source style tokens such
+    /// as empty values, valueless or unquoted syntax, unterminated attributes,
+    /// `s="00"`, `s="+0"`, padded values, entity-encoded values, or duplicate
+    /// attributes are still rejected. Qualified style-like attributes such as
+    /// `x:s` are unsupported cell metadata, not source style attributes.
     ///
     /// Operation mixing: a worksheet with a queued replace_sheet_data() payload
     /// cannot be materialized, and replace_sheet_data() / rename_sheet() reject

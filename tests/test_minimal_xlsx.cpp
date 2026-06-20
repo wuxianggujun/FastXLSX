@@ -1239,9 +1239,9 @@ void test_internal_cell_store_worksheet_loader()
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" s="1"><v>1</v></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1" s="+1"><v>1</v></c></row></sheetData></worksheet>)");
         },
-        "worksheet loader should reject style references");
+        "worksheet loader should reject invalid style references");
 
     const fastxlsx::detail::CellStore explicit_default_style_store =
         fastxlsx::detail::load_cell_store_from_worksheet_xml(
@@ -1272,6 +1272,28 @@ void test_internal_cell_store_worksheet_loader()
     check(spaced_default_style_record != nullptr
             && !spaced_default_style_record->to_value().has_style(),
         "worksheet loader should accept exact default style references with whitespace around equals");
+
+    {
+        fastxlsx::detail::CellStore source_style_store =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" s="7" t="inlineStr"><is><t>styled source</t></is></c></row></sheetData></worksheet>)");
+        const fastxlsx::detail::CellRecord* source_style_record =
+            source_style_store.find_cell(1, 1);
+        check(source_style_record != nullptr && source_style_record->style_id.has_value()
+                && source_style_record->style_id->value() == 7,
+            "worksheet loader should materialize non-default source style ids");
+        auto source_style_chunks =
+            fastxlsx::detail::cell_store_sheet_data_chunk_source(source_style_store);
+        std::string source_style_xml;
+        std::string source_style_chunk;
+        while (source_style_chunks(source_style_chunk)) {
+            source_style_xml += source_style_chunk;
+        }
+        check(source_style_xml.find(
+                  R"(<c r="A1" s="7" t="inlineStr"><is><t>styled source</t></is></c>)")
+                != std::string::npos,
+            "CellStore sheetData projection should write materialized source style ids");
+    }
 
     const auto expect_rejected_style_token = [](std::string_view style_attribute,
                                                 const char* scenario) {
@@ -1312,12 +1334,16 @@ void test_internal_cell_store_worksheet_loader()
     expect_rejected_style_token(R"(x:s="1")",
         "worksheet loader should reject qualified non-default style references");
 
-    check_fastxlsx_error(
-        [&] {
-            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1" ht="20"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
-        },
-        "worksheet loader should reject unsupported row metadata attributes");
+    {
+        fastxlsx::detail::CellStore row_metadata_store =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1" spans="1:13" s="4" customFormat="1" ht="20" customHeight="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+        const fastxlsx::detail::CellRecord* record =
+            row_metadata_store.try_cell(1, 1);
+        check(record != nullptr && record->kind == fastxlsx::CellValueKind::Number
+                && record->number_value == 1.0,
+            "worksheet loader should tolerate and ignore common source row metadata attributes");
+    }
 
     check_fastxlsx_error(
         [&] {

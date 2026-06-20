@@ -72,6 +72,7 @@ public:
     [[nodiscard]] const RelationshipSet* relationships_for(
         const PartName& source_part) const noexcept;
     [[nodiscard]] RelationshipGraph relationship_graph() const;
+    [[nodiscard]] PartName workbook_part() const;
     [[nodiscard]] std::vector<WorkbookSheetReference> workbook_sheets() const;
     [[nodiscard]] std::vector<WorkbookSheetReference> workbook_sheets_from_xml(
         std::string_view workbook_xml) const;

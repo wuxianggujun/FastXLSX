@@ -316,6 +316,20 @@ text, whole-row/whole-column references, and bracket tokens are not rewritten;
 sheet-qualified A1 references after the sheet token still translate under the
 documented A1-only rule.
 
+For an Office/LibreOffice-like generated shared-formula shape smoke, run:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_shared_formula_office_like_materialization `
+  --work-dir build\qa\workbook-editor-shared-formula-office-like
+```
+
+This generated case patches a workbook to contain 2D shared formula `ref`
+ranges, multiple `si` groups in one worksheet, interleaved ordinary formulas
+and values, and stale cached formula results. The output check requires all
+formula cells to become ordinary `<f>...</f>` elements, with 0 shared formula
+metadata elements and no stale cached `<v>` values.
+
 To smoke-test third-party fixture workbooks such as xlnt or OpenXLSX samples,
 keep them outside the repository and pass a fixture root explicitly. These
 fixtures are local QA inputs only, not FastXLSX runtime dependencies and not

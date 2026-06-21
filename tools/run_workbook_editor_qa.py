@@ -35,6 +35,7 @@ GENERATED_SCENARIOS = [
     "generated_rename_materialized",
     "generated_shared_formula_materialization",
     "generated_shared_formula_boundary_materialization",
+    "generated_shared_formula_office_like_materialization",
     "generated_style_passthrough",
     "generated_image_replace",
     "generated_public_e2e",
@@ -500,6 +501,12 @@ def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[st
     for stale_value in ["9", "14", "15", "23"]:
         require(f"<v>{stale_value}</v>" not in worksheet_xml,
                 f"generated shared formula: stale cached formula value {stale_value} remained")
+    formula_summary = formula_summary_for_sheet(path, "SharedFormula")
+    require(formula_summary["formula_count"] == 6,
+            f"generated shared formula: formula count mismatch {formula_summary!r}")
+    require(formula_summary["shared_formula_count"] == 0,
+            f"generated shared formula: shared metadata remained {formula_summary!r}")
+    zip_report["formula_output"] = formula_summary
     zip_report["formulas"] = ["C1", "C2", "C3", "D1", "D2", "D3"]
     zip_report["stale_cached_values"] = "absent"
 
@@ -598,6 +605,86 @@ def verify_generated_shared_formula_boundary_materialization(path: Path) -> tupl
             "SharedBoundaries!C2": worksheet["C2"].value,
             "SharedBoundaries!E2": worksheet["E2"].value,
             "SharedBoundaries!F4": worksheet["F4"].value,
+            "Untouched!A1": untouched["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_shared_formula_office_like_materialization(
+    path: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated office-like shared formula: missing workbook.xml")
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('t="shared"' not in worksheet_xml,
+            "generated office-like shared formula: stale shared metadata remained in output")
+
+    formulas = worksheet_formula_cells(path, "OfficeLikeShared")
+    expected_formulas = {
+        "C1": "A1+B1",
+        "D1": "B1+C1",
+        "C2": "A2+B2",
+        "D2": "B2+C2",
+        "C3": "A3+B3",
+        "D3": "B3+C3",
+        "E1": "A1*2",
+        "F2": "SUM($A2:B2)+C$1",
+        "G2": "SUM($A2:C2)+D$1",
+        "F3": "SUM($A3:B3)+C$1",
+        "G3": "SUM($A3:C3)+D$1",
+    }
+    for reference, expected in expected_formulas.items():
+        require(
+            formulas.get(reference) == expected,
+            f"generated office-like shared formula: {reference} formula mismatch "
+            f"{formulas.get(reference)!r}",
+        )
+    require("H6" not in formulas, "generated office-like shared formula: H6 should be text")
+
+    for stale_value in range(9901, 9912):
+        require(f"<v>{stale_value}</v>" not in worksheet_xml,
+                f"generated office-like shared formula: stale cached value {stale_value} remained")
+    require(
+        R'<c r="H6" t="inlineStr"><is><t>office-like-shared-formula-edit</t></is></c>'
+        in worksheet_xml,
+        "generated office-like shared formula: missing H6 edit",
+    )
+
+    formula_summary = formula_summary_for_sheet(path, "OfficeLikeShared")
+    require(formula_summary["formula_count"] == len(expected_formulas),
+            f"generated office-like shared formula: formula count mismatch {formula_summary!r}")
+    require(formula_summary["shared_formula_count"] == 0,
+            f"generated office-like shared formula: shared metadata remained {formula_summary!r}")
+    zip_report["formula_output"] = formula_summary
+    zip_report["formulas"] = expected_formulas
+    zip_report["stale_cached_values"] = "absent"
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["OfficeLikeShared", "Untouched"],
+                f"generated office-like shared formula: unexpected sheetnames {workbook.sheetnames!r}")
+        worksheet = workbook["OfficeLikeShared"]
+        untouched = workbook["Untouched"]
+        for reference, expected in expected_formulas.items():
+            require(
+                worksheet[reference].value == "=" + expected,
+                f"generated office-like shared formula: {reference} mismatch "
+                f"{worksheet[reference].value!r}",
+            )
+        require(worksheet["H6"].value == "office-like-shared-formula-edit",
+                "generated office-like shared formula: H6 edit mismatch")
+        require(untouched["A1"].value == "keep-office-like-shared-formula-qa",
+                "generated office-like shared formula: untouched sheet mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "OfficeLikeShared!D3": worksheet["D3"].value,
+            "OfficeLikeShared!G3": worksheet["G3"].value,
+            "OfficeLikeShared!H6": worksheet["H6"].value,
             "Untouched!A1": untouched["A1"].value,
         }
     finally:
@@ -887,6 +974,24 @@ def create_xlsxwriter_reference(
                     f"=SUM(A{excel_row}:B{excel_row})+$A{excel_row}+A$1+$A$1")
             shared.write("E4", "shared-formula-qa-edit")
             untouched.write("A1", "keep-shared-formula-qa")
+        elif scenario == "generated_shared_formula_office_like_materialization":
+            shared = workbook.add_worksheet("OfficeLikeShared")
+            untouched = workbook.add_worksheet("Untouched")
+            values = [(1, 2), (10, 20), (100, 200)]
+            for row_index, (left, right) in enumerate(values):
+                excel_row = row_index + 1
+                shared.write_number(row_index, 0, left)
+                shared.write_number(row_index, 1, right)
+                shared.write_formula(row_index, 2, f"=A{excel_row}+B{excel_row}")
+                shared.write_formula(row_index, 3, f"=B{excel_row}+C{excel_row}")
+            shared.write_formula(0, 4, "=A1*2")
+            shared.write("E2", "between-shared-groups")
+            shared.write_formula(1, 5, "=SUM($A2:B2)+C$1")
+            shared.write_formula(1, 6, "=SUM($A2:C2)+D$1")
+            shared.write_formula(2, 5, "=SUM($A3:B3)+C$1")
+            shared.write_formula(2, 6, "=SUM($A3:C3)+D$1")
+            shared.write("H6", "office-like-shared-formula-edit")
+            untouched.write("A1", "keep-office-like-shared-formula-qa")
         elif scenario == "generated_style_passthrough":
             data = workbook.add_worksheet("Data")
             style = workbook.add_format({"num_format": "0.00"})
@@ -944,6 +1049,8 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_shared_formula_materialization(output_path)
     elif scenario == "generated_shared_formula_boundary_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_boundary_materialization(output_path)
+    elif scenario == "generated_shared_formula_office_like_materialization":
+        zip_xml, openpyxl_report = verify_generated_shared_formula_office_like_materialization(output_path)
     elif scenario == "generated_style_passthrough":
         zip_xml, openpyxl_report = verify_generated_style_passthrough(output_path)
     elif scenario == "generated_image_replace":

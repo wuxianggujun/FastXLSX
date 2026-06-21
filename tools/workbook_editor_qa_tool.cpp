@@ -397,6 +397,49 @@ std::filesystem::path write_shared_formula_boundary_source(const std::filesystem
     return path;
 }
 
+std::filesystem::path write_shared_formula_office_like_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    {
+        WorkbookWriter writer = WorkbookWriter::create(path);
+        WorksheetWriter data = writer.add_worksheet("OfficeLikeShared");
+        data.append_row({CellView::number(1.0), CellView::number(2.0),
+            CellView::formula("A1+B1")});
+        data.append_row({CellView::number(10.0), CellView::number(20.0)});
+        data.append_row({CellView::number(100.0), CellView::number(200.0)});
+        WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({CellView::text("keep-office-like-shared-formula-qa")});
+        writer.close();
+    }
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1:H6"/>)"
+        R"(<sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c>)"
+        R"(<c r="C1"><f t="shared" ref="C1:D3" si="40">A1+B1</f><v>9901</v></c>)"
+        R"(<c r="D1"><f t="shared" si="40"/><v>9902</v></c>)"
+        R"(<c r="E1"><f>A1*2</f><v>9903</v></c></row>)"
+        R"(<row r="2"><c r="A2"><v>10</v></c><c r="B2"><v>20</v></c>)"
+        R"(<c r="C2"><f t="shared" si="40"/><v>9904</v></c>)"
+        R"(<c r="D2"><f t="shared" si="40"/><v>9905</v></c>)"
+        R"(<c r="E2" t="inlineStr"><is><t>between-shared-groups</t></is></c>)"
+        R"(<c r="F2"><f t="shared" ref="F2:G3" si="41">SUM($A2:B2)+C$1</f><v>9906</v></c>)"
+        R"(<c r="G2"><f t="shared" si="41"/><v>9907</v></c></row>)"
+        R"(<row r="3"><c r="A3"><v>100</v></c><c r="B3"><v>200</v></c>)"
+        R"(<c r="C3"><f t="shared" si="40"/><v>9908</v></c>)"
+        R"(<c r="D3"><f t="shared" si="40"/><v>9909</v></c>)"
+        R"(<c r="F3"><f t="shared" si="41"/><v>9910</v></c>)"
+        R"(<c r="G3"><f t="shared" si="41"/><v>9911</v></c></row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+    fastxlsx::test::rewrite_package_entry_as_stored(
+        path, "xl/worksheets/sheet1.xml", worksheet_xml);
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_image(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -591,6 +634,50 @@ Report run_generated_shared_formula_boundary_materialization(const CliOptions& o
     }
 
     sheet.set_cell(4, 6, CellValue::text("shared-formula-boundary-edit"));
+    editor.save_as(report.output);
+    return report;
+}
+
+Report run_generated_shared_formula_office_like_materialization(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_shared_formula_office_like_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-shared-formula-office-like-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-shared-formula-office-like-output.xlsx");
+    report.source_sheet_name = "OfficeLikeShared";
+    report.mutations = {
+        "worksheet(OfficeLikeShared).try_cell(C1:D3,F2:G3,E1):expect_office_like_shared_formulas",
+        "worksheet(OfficeLikeShared).set_cell(H6,text)",
+    };
+    report.notes = {
+        "Two shared formula si groups should coexist on the same worksheet",
+        "2D shared formula refs should materialize every follower as ordinary formula text",
+        "Interleaved ordinary formulas and values should survive dirty projection",
+        "Stale cached formula values should be absent from dirty output",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor sheet = editor.worksheet("OfficeLikeShared");
+    require_formula_cell(sheet, "C1", "A1+B1");
+    require_formula_cell(sheet, "D1", "B1+C1");
+    require_formula_cell(sheet, "C2", "A2+B2");
+    require_formula_cell(sheet, "D2", "B2+C2");
+    require_formula_cell(sheet, "C3", "A3+B3");
+    require_formula_cell(sheet, "D3", "B3+C3");
+    require_formula_cell(sheet, "E1", "A1*2");
+    require_formula_cell(sheet, "F2", "SUM($A2:B2)+C$1");
+    require_formula_cell(sheet, "G2", "SUM($A2:C2)+D$1");
+    require_formula_cell(sheet, "F3", "SUM($A3:B3)+C$1");
+    require_formula_cell(sheet, "G3", "SUM($A3:C3)+D$1");
+    if (sheet.has_pending_changes() || editor.has_pending_changes()) {
+        throw std::runtime_error(
+            "read-only office-like shared formula materialization dirtied editor state");
+    }
+
+    sheet.set_cell(6, 8, CellValue::text("office-like-shared-formula-edit"));
     editor.save_as(report.output);
     return report;
 }
@@ -821,6 +908,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_shared_formula_boundary_materialization") {
         return run_generated_shared_formula_boundary_materialization(options);
+    }
+    if (options.scenario == "generated_shared_formula_office_like_materialization") {
+        return run_generated_shared_formula_office_like_materialization(options);
     }
     if (options.scenario == "generated_style_passthrough") {
         return run_generated_style_passthrough(options);

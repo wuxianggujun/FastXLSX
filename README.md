@@ -450,7 +450,9 @@ shared formula cell 仍只在有 supported cached scalar `<v>` 时按旧边界 m
 dirty projection 输出普通 `<f>...</f>`，不保留 shared formula metadata、cached
 formula results，不计算公式、不重建 calcChain。
 本地兼容 QA 可以用 `tools/run_workbook_editor_qa.py --scenario
-generated_shared_formula_boundary_materialization` 跑生成型边界样本，或用
+generated_shared_formula_boundary_materialization` 跑生成型边界样本，用
+`--scenario generated_shared_formula_office_like_materialization` 跑 2D shared
+formula `ref` / 多 `si` / 普通公式穿插 / stale cached value 清理样本，或用
 `--scenario external_formula_fixture_materialized_smoke` 扫描 xlnt/OpenXLSX 等外部
 fixture 目录中的公式 worksheet；加 `--formula-shared-only` 时只跑含 shared
 formula metadata 的样本。该入口只生成本地证据，不引入运行时依赖，也不进入默认 CI。

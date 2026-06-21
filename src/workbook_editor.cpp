@@ -7,6 +7,7 @@
 #include "workbook_editor_pending_edits.hpp"
 #include "workbook_editor_save_as_policy.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
+#include "workbook_editor_sheet_data_replacement.hpp"
 #include "workbook_editor_worksheet_access.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
@@ -433,48 +434,27 @@ void WorkbookEditor::replace_sheet_data(
     }
 
     const std::string sheet_name_key(sheet_name);
-    const std::size_t row_count = rows.size();
-    std::size_t input_cell_count = 0;
-    for (const std::vector<CellValue>& row : rows) {
-        input_cell_count += row.size();
-    }
+    const detail::WorkbookEditorSheetDataReplacementInputDiagnostic input =
+        detail::workbook_editor_sheet_data_replacement_input_diagnostic(rows);
 
     try {
-        if (!impl_->has_current_worksheet(sheet_name)) {
-            throw FastXlsxError(
-                detail::workbook_editor_missing_planned_sheet_message(sheet_name));
-        }
-        impl_->materialized_sessions.preflight_no_materialized_session(
-            sheet_name, "replace sheet data");
-
-        detail::CellStore store(cell_store_options_from_editor_options(impl_->options));
-        std::uint32_t row_index = 1;
-        for (const std::vector<CellValue>& row : rows) {
-            std::uint32_t column_index = 1;
-            for (const CellValue& value : row) {
-                store.set_cell(row_index, column_index, value);
-                ++column_index;
-            }
-            ++row_index;
-        }
-
-        // Reuse the landed internal CellStore -> standalone <sheetData> chunk
-        // source and the bounded by-name sheetData Patch helper. CellStore::set_cell
-        // skips no positions, so an empty row vector still advances the row index,
-        // leaving a gap that the emitter renders as a missing row rather than an
-        // empty one.
-        const detail::WorksheetInputChunkCallback sheet_data_source =
-            detail::cell_store_sheet_data_chunk_source(store);
-        impl_->editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            sheet_name, sheet_data_source);
-        impl_->pending_sheet_data_payloads.record(
-            std::string(sheet_name), store.cell_count(), store.estimated_memory_usage());
+        const detail::WorkbookEditorSheetDataReplacementResult result =
+            detail::replace_workbook_editor_sheet_data_from_rows(
+                impl_->editor,
+                impl_->sheet_catalog,
+                impl_->materialized_sessions,
+                impl_->pending_sheet_data_payloads,
+                sheet_name,
+                rows,
+                cell_store_options_from_editor_options(impl_->options),
+                input);
+        (void)result;
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         FastXlsxError public_error("WorkbookEditor::replace_sheet_data() failed for '"
-            + sheet_name_key + "' with " + std::to_string(row_count) + " rows and "
-            + std::to_string(input_cell_count) + " cells: " + error.what());
+            + sheet_name_key + "' with " + std::to_string(input.row_count) + " rows and "
+            + std::to_string(input.cell_count) + " cells: " + error.what());
         impl_->record_last_edit_error(public_error);
         throw public_error;
     }

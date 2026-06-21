@@ -300,6 +300,10 @@ covers the source/planned worksheet catalog plan state directly.
 replacement diagnostic state directly: same-sheet diagnostic replacement,
 aggregate cell/memory totals, current-catalog ordered pending names, orphan
 diagnostic fallback ordering, and rename migration.
+`fastxlsx.workbook_editor_sheet_data_replacement` covers the extracted
+whole-`<sheetData>` replacement adapter directly: input row/cell diagnostics,
+ragged rows with empty-row sparse gaps, `CellStore` guardrail enforcement, and
+current-catalog / materialized-session target preflight.
 `fastxlsx.workbook_editor_worksheet_access` covers strict uppercase A1
 single-cell parsing, Excel row/column and range guardrails, and public snapshot
 mapping from materialized cells. `fastxlsx.workbook_editor_save_as_policy`

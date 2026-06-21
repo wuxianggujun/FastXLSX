@@ -821,6 +821,16 @@ lives with the workbook sheet catalog helper, so materialized flush and public
 facade paths use one message source. This is semantic implementation-boundary
 cleanup only; it does not add transaction history, rollback, large-file random
 editing, relationship repair, or formula/metadata synchronization.
+P8.582 moves public whole-`<sheetData>` row replacement orchestration behind
+`src/workbook_editor_sheet_data_replacement.*`: the helper owns rows-to-`CellStore`
+projection, input row/cell diagnostics, current-catalog target preflight,
+materialized-session conflict preflight, by-name `<sheetData>` chunk handoff,
+and pending payload diagnostic recording. `WorkbookEditor::replace_sheet_data()`
+now only wraps public error context, increments the public edit count, and
+clears/records the facade diagnostic. This is semantic implementation-boundary
+cleanup only; it does not add sharedStrings/style migration, metadata sync,
+relationship repair, formula calculation, undo/rollback, or large-file random
+editing.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

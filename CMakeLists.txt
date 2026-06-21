@@ -44,6 +44,8 @@ add_library(fastxlsx
     src/workbook_editor_sheet_catalog.cpp
     src/workbook_editor_sheet_data_replacement.cpp
     src/workbook_editor_sheet_rename.cpp
+    src/workbook_editor_testing_hooks.cpp
+    src/workbook_editor_worksheet_facade.cpp
     src/workbook_editor_worksheet_access.cpp
     src/xml.cpp
     src/zip_store_writer.cpp

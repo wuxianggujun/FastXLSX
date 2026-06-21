@@ -92,6 +92,20 @@ formula dependency graph.
 The audit scanner/matcher and definedName extraction logic now live behind the
 internal `detail/formula_reference_audit` semantic API instead of being embedded
 in the public `WorkbookEditor` facade implementation.
+The `WorkbookEditor` implementation has now been split along semantic
+boundaries instead of file-only churn: `src/workbook_editor_state.hpp` owns the
+private editor state and catalog/pending-summary projections,
+`src/workbook_editor_worksheet_facade.cpp` owns the public `WorksheetEditor`
+handle methods, and `src/workbook_editor_testing_hooks.cpp` owns
+`FASTXLSX_ENABLE_TEST_HOOKS` materialized-session helpers. The remaining
+`src/workbook_editor.cpp` is now primarily the public `WorkbookEditor` facade
+and cross-feature orchestration. `fastxlsx.workbook_editor_state` covers the
+state projection helpers directly; this is architecture hardening, not a new
+public API surface.
+The definedName formula audit scanner now also rejects mismatched or unclosed
+workbook XML tags instead of silently draining the element stack. This keeps
+definedName diagnostics fail-fast for malformed workbook metadata; it is not
+XML repair, schema validation, formula evaluation, or definedName rewrite.
 Array and dataTable formula metadata now follows the same lossy materialization
 boundary: source formula text in `<f t="array">` / `<f t="dataTable">`
 materializes as plain formula text, metadata-only cells fall back to supported

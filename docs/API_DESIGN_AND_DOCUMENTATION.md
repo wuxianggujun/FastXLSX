@@ -305,7 +305,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `rename_sheet()` 改名的 source sheet。它只 materialize 小型 workbook metadata part，
   不 materialize worksheet、不扫描 cell formulas、不解析完整 Excel 公式语法、不求值、
   不改写 definedNames、不修复 workbook metadata、不 rebuild calcChain、不验证外部
-  workbook target 或 3D 引用语义，也不更新 `last_edit_error()`。
+  workbook target 或 3D 引用语义，也不更新 `last_edit_error()`。Malformed workbook
+  metadata with mismatched or unclosed XML tags fails the diagnostic scan
+  instead of being balanced or repaired.
 - `replace_sheet_data(name, rows)`：按 sheet name 替换整个 `<sheetData>`，输入是
   `CellValue` 行；这是 bounded local rewrite，不是 random cell editing。若当前 editor
   已成功 `rename_sheet()`，follow-up replacement lookup 使用 planned 新 sheet name，
@@ -579,6 +581,19 @@ Current F2 gate audit:
   fail through `try_worksheet()` / `worksheet()` without dirtying state. This is
   formula-text import only, not formula evaluation, shared/array formula
   support, cached-value preservation, or calcChain rebuild.
+- P8.397a splits the remaining public editor implementation by semantic
+  responsibility: `src/workbook_editor_state.hpp` owns private editor state and
+  public projection helpers, `src/workbook_editor_worksheet_facade.cpp` owns
+  `WorksheetEditor` handle behavior, and
+  `src/workbook_editor_testing_hooks.cpp` owns test-only materialized-session
+  hooks. `fastxlsx.workbook_editor_state` covers state projection helpers
+  directly. This is internal maintainability hardening, not a new public API,
+  not a behavior change, and not broad workbook editing completion.
+- P8.397b hardens the workbook definedName formula diagnostic scanner by
+  rejecting mismatched and unclosed workbook XML tag structure. The scanner
+  still targets direct `definedNames` formula diagnostics only; it does not
+  repair XML, validate the full workbook schema, evaluate formulas, rewrite
+  definedNames, or build a formula dependency graph.
 - P8.398 adds public facade state-hygiene coverage for source inline text/XML
   entity failures: unknown XML entities, unsupported inline `<t>` attributes,
   duplicate direct inline text elements, and unknown inline string metadata

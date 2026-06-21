@@ -294,8 +294,12 @@ Shared formula materialization is covered by default CTest through
 formula reference scanner/translator boundary, raw sheet qualifier span
 metadata for unquoted / quoted / external-workbook / 3D-like qualifiers, direct
 `detail/formula_reference_audit` semantic audit coverage for formula text and
-workbook definedName formulas, and `fastxlsx.workbook_editor_sheet_catalog`
-covers the source/planned worksheet catalog plan state directly.
+workbook definedName formulas, including malformed workbook XML mismatch /
+unclosed-tag fail-fast coverage. `fastxlsx.workbook_editor_state` covers the
+private `WorkbookEditor` state projection helpers that now sit between the
+public facade and the feature adapters, and
+`fastxlsx.workbook_editor_sheet_catalog` covers the source/planned worksheet
+catalog plan state directly.
 `fastxlsx.workbook_editor_pending_edits` covers queued whole-`<sheetData>`
 replacement diagnostic state directly: same-sheet diagnostic replacement,
 aggregate cell/memory totals, current-catalog ordered pending names, orphan
@@ -313,6 +317,11 @@ single-cell parsing, Excel row/column and range guardrails, and public snapshot
 mapping from materialized cells. `fastxlsx.workbook_editor_save_as_policy`
 covers output path preflight for empty output, existing directory,
 missing-parent, and source-overwrite rejection. The extracted
+`src/workbook_editor_state.hpp`, `src/workbook_editor_worksheet_facade.cpp`,
+and `src/workbook_editor_testing_hooks.cpp` split keeps private editor state,
+public worksheet handles, and test hooks in separate semantic modules while
+the default workbook-editor family verifies the same integration behavior.
+The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized
 formula-cell audits and source workbook definedName formula diagnostics through

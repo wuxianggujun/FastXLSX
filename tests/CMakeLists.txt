@@ -29,6 +29,22 @@ set_tests_properties(fastxlsx.formula PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_workbook_editor_state_tests
+    test_workbook_editor_state.cpp
+)
+
+target_link_libraries(fastxlsx_workbook_editor_state_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_workbook_editor_state_tests PRIVATE cxx_std_20)
+
+add_test(
+    NAME fastxlsx.workbook_editor_state
+    COMMAND fastxlsx_workbook_editor_state_tests
+)
+set_tests_properties(fastxlsx.workbook_editor_state PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_workbook_editor_sheet_catalog_tests
     test_workbook_editor_sheet_catalog.cpp
 )

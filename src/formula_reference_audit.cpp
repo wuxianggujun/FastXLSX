@@ -425,16 +425,20 @@ std::vector<SourceDefinedNameFormula> scan_workbook_defined_name_formulas(
         if (marker == '/') {
             const std::string_view closing_name =
                 xml_local_name(closing_tag_name(workbook_xml, tag));
+            if (element_stack.empty()) {
+                throw FastXlsxError(
+                    "workbook definedName formula audit found an unmatched XML closing tag");
+            }
+            if (element_stack.back() != closing_name) {
+                throw FastXlsxError(
+                    "workbook definedName formula audit found mismatched XML tags");
+            }
             if (inside_defined_names) {
                 if (defined_names_child_depth == 0 && closing_name == "definedNames") {
                     inside_defined_names = false;
                 } else if (defined_names_child_depth > 0) {
                     --defined_names_child_depth;
                 }
-            }
-            if (element_stack.empty()) {
-                throw FastXlsxError(
-                    "workbook definedName formula audit found an unmatched XML closing tag");
             }
             if (element_stack.size() == 1 && closing_name == "workbook") {
                 inside_workbook = false;
@@ -510,6 +514,10 @@ std::vector<SourceDefinedNameFormula> scan_workbook_defined_name_formulas(
             element_stack.emplace_back(local_name);
         }
         offset = close + 1;
+    }
+
+    if (!element_stack.empty()) {
+        throw FastXlsxError("workbook definedName formula audit found unclosed XML tags");
     }
 
     return defined_names;

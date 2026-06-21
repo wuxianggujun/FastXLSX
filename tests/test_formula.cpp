@@ -21,6 +21,16 @@ void check(bool condition, const char* message)
     }
 }
 
+bool throws_exception(auto&& callable)
+{
+    try {
+        callable();
+    } catch (const std::exception&) {
+        return true;
+    }
+    return false;
+}
+
 void check_equal(std::string_view actual, std::string_view expected, const char* message)
 {
     if (actual != expected) {
@@ -328,6 +338,24 @@ void test_scan_workbook_defined_name_formulas()
         "definedName audit should classify external workbook references");
 }
 
+void test_scan_workbook_defined_name_formulas_rejects_malformed_structure()
+{
+    const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
+        {"Sheet1", "Sheet1"},
+    };
+
+    check(throws_exception([&] {
+        (void)fastxlsx::detail::scan_workbook_defined_name_formulas(
+            R"xml(<workbook><definedNames></workbook>)xml", catalog);
+    }), "definedName scanner should reject mismatched workbook XML tags");
+
+    check(throws_exception([&] {
+        (void)fastxlsx::detail::scan_workbook_defined_name_formulas(
+            R"xml(<workbook><definedNames><definedName name="A">Sheet1!A1</definedName></definedNames>)xml",
+            catalog);
+    }), "definedName scanner should reject unclosed workbook XML tags");
+}
+
 } // namespace
 
 int main()
@@ -340,6 +368,7 @@ int main()
         test_zero_delta_preserves_formula();
         test_formula_reference_audit_fields();
         test_scan_workbook_defined_name_formulas();
+        test_scan_workbook_defined_name_formulas_rejects_malformed_structure();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

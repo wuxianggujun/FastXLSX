@@ -34492,6 +34492,7 @@ void test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name(
         R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)"
         R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f><v>999</v></c>)"
         R"(<c r="E1"/>)"
+        R"(<c r="F1" t="e"><v>#VALUE!</v></c>)"
         R"(</row><row r="2"><c r="A2"><v>0</v></c></row></sheetData></worksheet>)";
     rewrite_calc_source_package(source);
     const std::filesystem::path output =
@@ -34502,7 +34503,7 @@ void test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name(
     const fastxlsx::detail::CellStore store =
         fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
 
-    check(store.cell_count() == 6,
+    check(store.cell_count() == 7,
         "package-backed CellStore semantic loader should materialize explicit source cells");
     const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
     check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number,
@@ -34527,6 +34528,11 @@ void test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name(
     const fastxlsx::detail::CellRecord* blank = store.find_cell(1, 5);
     check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
         "package-backed CellStore semantic loader should keep explicit blank cells");
+    const fastxlsx::detail::CellRecord* error = store.find_cell(1, 6);
+    check(error != nullptr && error->kind == fastxlsx::CellValueKind::Error,
+        "package-backed CellStore semantic loader should load error cells");
+    check(error->text_value == "#VALUE!",
+        "package-backed CellStore semantic loader error payload mismatch");
     const fastxlsx::detail::CellRecord* zero = store.find_cell(2, 1);
     check(zero != nullptr && zero->kind == fastxlsx::CellValueKind::Number
             && zero->number_value == 0.0,
@@ -34556,6 +34562,8 @@ void test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name(
         "package-backed CellStore semantic output should write semantic formula text without cached value");
     check_contains(worksheet_xml, R"(<c r="E1"/>)",
         "package-backed CellStore semantic output should preserve explicit blank cells");
+    check_contains(worksheet_xml, R"(<c r="F1" t="e"><v>#VALUE!</v></c>)",
+        "package-backed CellStore semantic output should write error cells");
     check_contains(worksheet_xml, R"(<c r="A2"><v>0</v></c>)",
         "package-backed CellStore semantic output should preserve zero numeric cells");
     check_not_contains(worksheet_xml, "<v>999</v>",
@@ -36458,10 +36466,16 @@ void test_package_editor_source_loaded_cell_store_cell_type_shape_failure_preser
 
     const CellTypeShapeFailureCase cases[] = {
         {
-            "fastxlsx-package-editor-source-cellstore-error-cell-source.xlsx",
-            "fastxlsx-package-editor-source-cellstore-error-cell-output.xlsx",
-            R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"><v>#DIV/0!</v></c></row></sheetData></worksheet>)",
-            "unsupported cell type",
+            "fastxlsx-package-editor-source-cellstore-missing-error-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-missing-error-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"/></row></sheetData></worksheet>)",
+            "invalid error cell value",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-empty-error-cell-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-empty-error-cell-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"><v></v></c></row></sheetData></worksheet>)",
+            "invalid error cell value",
         },
         {
             "fastxlsx-package-editor-source-cellstore-date-cell-source.xlsx",
@@ -36520,7 +36534,7 @@ void test_package_editor_source_loaded_cell_store_cell_type_shape_failure_preser
             }
         }
         check(failed,
-            "package-backed CellStore load should fail on unsupported cell type or inline-string shapes");
+            "package-backed CellStore load should fail on unsupported cell type, invalid error value, or inline-string shapes");
 
         check(editor.edit_plan().size() == initial_plan_size,
             "package-backed CellStore cell-type failure should not mutate edit-plan parts");

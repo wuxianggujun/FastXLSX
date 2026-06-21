@@ -186,6 +186,12 @@ void test_cell_value_public_boundary()
     check(formula.kind() == fastxlsx::CellValueKind::Formula, "formula CellValue kind mismatch");
     check(formula.text_value() == "SUM(A1:B1)", "formula CellValue payload mismatch");
 
+    std::string error_payload = "#VALUE!";
+    const fastxlsx::CellValue error = fastxlsx::CellValue::error(std::move(error_payload));
+    check(error.kind() == fastxlsx::CellValueKind::Error, "error CellValue kind mismatch");
+    check(error.text_value() == "#VALUE!", "error CellValue payload mismatch");
+    check(!error.to_cell().has_value(), "error CellValue should not have a Cell representation");
+
     const fastxlsx::Cell source_number = fastxlsx::Cell::number(7.5);
     const fastxlsx::CellValue converted_number = fastxlsx::CellValue::from_cell(source_number);
     check(converted_number.kind() == fastxlsx::CellValueKind::Number,
@@ -577,8 +583,22 @@ void test_internal_cell_store_sparse_boundary()
     check(!round_tripped_formula.has_style(),
         "CellRecord should round trip normalized default StyleId as no style");
 
+    store.set_cell(3, 4, fastxlsx::CellValue::error("#DIV/0!"));
+    const fastxlsx::detail::CellRecord* error = store.find_cell(3, 4);
+    check(error != nullptr, "CellStore should find an inserted error cell");
+    check(error->kind == fastxlsx::CellValueKind::Error,
+        "CellStore error record kind mismatch");
+    check(error->text_value == "#DIV/0!", "CellStore error payload mismatch");
+    const fastxlsx::CellValue round_tripped_error = error->to_value();
+    check(round_tripped_error.kind() == fastxlsx::CellValueKind::Error,
+        "CellRecord should convert back to an error CellValue");
+    check(round_tripped_error.text_value() == "#DIV/0!",
+        "CellRecord error round trip payload mismatch");
+    check(!round_tripped_error.to_cell().has_value(),
+        "CellRecord error should round trip without a Cell representation");
+
     store.set_cell(2, 1, fastxlsx::CellValue::boolean(false));
-    check(store.cell_count() == 3, "CellStore overwrite should not grow the sparse index");
+    check(store.cell_count() == 4, "CellStore overwrite should not grow the sparse index");
     const fastxlsx::detail::CellRecord* boolean = store.find_cell(2, 1);
     check(boolean != nullptr, "CellStore should find an overwritten boolean cell");
     check(boolean->kind == fastxlsx::CellValueKind::Boolean,
@@ -604,11 +624,11 @@ void test_internal_cell_store_sparse_boundary()
     check(blank != missing, "CellStore explicit blank should differ from missing cells");
     check(!blank->to_value().to_cell().has_value(),
         "CellStore blank record should round trip without a Cell representation");
-    check(store.cell_count() == 4, "CellStore blank record should count as an active record");
+    check(store.cell_count() == 5, "CellStore blank record should count as an active record");
 
     store.erase_cell(4, 1);
     check(store.try_cell(4, 1) == nullptr, "CellStore erase should remove the sparse record");
-    check(store.cell_count() == 3, "CellStore erase should reduce the active record count");
+    check(store.cell_count() == 4, "CellStore erase should reduce the active record count");
 
     store.set_cell(5, 1, fastxlsx::CellValue::text(std::string(128, 'x')));
     check(store.estimated_memory_usage() > empty_memory,
@@ -621,7 +641,7 @@ void test_internal_cell_store_sparse_boundary()
         "CellStore should reject columns beyond Excel's limit");
     check_fastxlsx_error([&store] { store.erase_cell(1048577, 1); },
         "CellStore should reject rows beyond Excel's limit");
-    check(store.cell_count() == 4,
+    check(store.cell_count() == 5,
         "CellStore coordinate validation failures should not change the sparse index");
     const fastxlsx::detail::CellRecord* preserved_after_invalid_coordinate =
         store.try_cell(5, 1);
@@ -937,6 +957,7 @@ void test_internal_cell_store_sheet_data_serialization()
     const fastxlsx::StyleId caller_style = style_owner.add_style(fastxlsx::CellStyle {"0.0"});
     check(caller_style.value() == 1, "first caller-owned style id should be 1");
     store.set_cell(4, 2, fastxlsx::CellValue::text("styled").with_style(caller_style));
+    store.set_cell(4, 3, fastxlsx::CellValue::error("#VALUE!"));
 
     auto read_next_chunk = fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
     std::vector<std::string> chunks;
@@ -953,7 +974,7 @@ void test_internal_cell_store_sheet_data_serialization()
                " text &amp; &lt;tag&gt; </t></is></c></row><row r=\"3\">"
                 "<c r=\"A3\"><f>SUM(A1:C1)&amp;\"&lt;ok&gt;\"</f></c>"
                 "<c r=\"B3\"/></row><row r=\"4\"><c r=\"B4\" s=\"1\" t=\"inlineStr\">"
-                "<is><t>styled</t></is></c></row></sheetData>",
+                "<is><t>styled</t></is></c><c r=\"C4\" t=\"e\"><v>#VALUE!</v></c></row></sheetData>",
         "CellStore sheetData serialization should group sparse rows and escape payloads");
     check(xml.find("s=\"0\"") == std::string::npos,
         "CellStore sheetData should omit explicit default style attributes");
@@ -967,12 +988,15 @@ void test_internal_cell_store_sheet_data_serialization()
               "<c r=\"B4\" s=\"1\" t=\"inlineStr\"><is><t>styled</t></is></c>")
             != chunks.end(),
         "CellStore sheetData chunk source should emit styled cells as individual cell chunks");
+    check(std::find(chunks.begin(), chunks.end(), "<c r=\"C4\" t=\"e\"><v>#VALUE!</v></c>")
+            != chunks.end(),
+        "CellStore sheetData chunk source should emit error cells as individual cell chunks");
     check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:C4",
         "CellStore dimension reference should cover emitted sparse record extents");
 
     store.erase_cell(1, 1);
     store.erase_cell(1, 3);
-    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A2:B4",
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A2:C4",
         "CellStore dimension reference should shrink after erasing edge records");
 
     store.set_cell(5, 5, fastxlsx::CellValue::blank());
@@ -1037,6 +1061,7 @@ void test_internal_cell_store_worksheet_loader()
         R"(<c r="E1"/>)"
         R"(<c r="F1" t="str"><v>scalar &amp; text</v></c>)"
         R"(<c r="G1" t="str"><f>TEXT(A1,"@")&amp;"!"</f><v>stale</v></c>)"
+        R"(<c r="H1" t="e"><v>#VALUE!</v></c>)"
         R"(</row>)"
         R"(<row r="2">)"
         R"(<c r="A2"><v>0</v></c>)"
@@ -1047,7 +1072,7 @@ void test_internal_cell_store_worksheet_loader()
     const fastxlsx::detail::CellStore store =
         fastxlsx::detail::load_cell_store_from_worksheet_xml(worksheet_xml);
 
-    check(store.cell_count() == 8, "worksheet loader should materialize explicit cells");
+    check(store.cell_count() == 9, "worksheet loader should materialize explicit cells");
     const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
     check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number,
         "worksheet loader should load numeric cells");
@@ -1085,7 +1110,13 @@ void test_internal_cell_store_worksheet_loader()
     check(string_formula->text_value == "TEXT(A1,\"@\")&\"!\"",
         "worksheet loader should decode source t=str formula text and ignore cached values");
 
-    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:G2",
+    const fastxlsx::detail::CellRecord* error = store.find_cell(1, 8);
+    check(error != nullptr && error->kind == fastxlsx::CellValueKind::Error,
+        "worksheet loader should load source t=e error cells");
+    check(error->text_value == "#VALUE!",
+        "worksheet loader should preserve source error token text");
+
+    check(fastxlsx::detail::cell_store_dimension_reference(store) == "A1:H2",
         "source-loaded CellStore dimension reference should cover source cell extents");
 
     fastxlsx::detail::CellStore edited_store = store;
@@ -1093,7 +1124,7 @@ void test_internal_cell_store_worksheet_loader()
     edited_store.erase_cell(1, 2);
     edited_store.erase_cell(1, 3);
     edited_store.set_cell(3, 4, fastxlsx::CellValue::text("new extent"));
-    check(fastxlsx::detail::cell_store_dimension_reference(edited_store) == "A1:G3",
+    check(fastxlsx::detail::cell_store_dimension_reference(edited_store) == "A1:H3",
         "mutated source-loaded CellStore dimension reference should cover edited extents");
 
     const fastxlsx::detail::CellRecord* second_row = store.find_cell(2, 1);
@@ -1117,6 +1148,9 @@ void test_internal_cell_store_worksheet_loader()
     check(rebuilt_sheet_data.find("<c r=\"G1\"><f>TEXT(A1,\"@\")&amp;\"!\"</f></c>")
             != std::string::npos,
         "worksheet loader round-trip should write source t=str formulas as formula text");
+    check(rebuilt_sheet_data.find("<c r=\"H1\" t=\"e\"><v>#VALUE!</v></c>")
+            != std::string::npos,
+        "worksheet loader round-trip should write source t=e error cells");
 
     std::size_t chunk_position = 0;
     const fastxlsx::detail::CellStore chunked_store =
@@ -1400,9 +1434,16 @@ void test_internal_cell_store_worksheet_loader()
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"><v>#DIV/0!</v></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"/></row></sheetData></worksheet>)");
         },
-        "worksheet loader should reject error cell payloads");
+        "worksheet loader should reject missing error cell payloads");
+
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="e"><v></v></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject empty error cell payloads");
 
     check_fastxlsx_error(
         [&] {
@@ -1739,12 +1780,17 @@ void test_internal_cell_store_worksheet_loader()
         },
         "worksheet loader should reject non-numeric row numbers");
 
-    check_fastxlsx_error(
-        [&] {
-            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><f>1</f></c></row></sheetData></worksheet>)");
-        },
-        "worksheet loader should reject formulas in non-numeric cells");
+    {
+        const fastxlsx::detail::CellStore formula_cached_result_store =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><f>TRUE()</f><v>1</v></c></row></sheetData></worksheet>)");
+        const fastxlsx::detail::CellRecord* formula =
+            formula_cached_result_store.find_cell(1, 1);
+        check(formula != nullptr && formula->kind == fastxlsx::CellValueKind::Formula,
+            "worksheet loader should materialize typed cached-result formula cells as formulas");
+        check(formula->text_value == "TRUE()",
+            "worksheet loader should preserve formula text and ignore typed cached results");
+    }
 
     check_fastxlsx_error(
         [&] {

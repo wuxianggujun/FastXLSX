@@ -19204,7 +19204,9 @@ Output:
 - A source formula cell with a stale cached `<v>` loads formula text and the
   later materialized `save_as()` projection omits that cached value.
 - Public facade failure hygiene now covers empty formula text, duplicate
-  formula elements, formula attributes, and formulas in non-numeric cells.
+  formula elements, unsupported formula attributes, and unsupported non-formula
+  scalar cell shapes; typed cached-result formula cells are materialized as
+  formula text and their cached `<v>` values are ignored.
 - Failures preserve catalog inspection, leave no pending edits or dirty
   materialized sessions, and do not update `last_edit_error()`.
 
@@ -19476,9 +19478,9 @@ Output:
   `save_as()` using the current sparse `CellStore` projection.
 
 Non-goals / boundary:
-- No new source cell type, date/error support, style migration, sharedStrings
-  migration, rich-text preservation, cached formula preservation, metadata
-  synchronization, or large-file random editing.
+- No date/custom source cell type import, Excel error-token validation, style
+  migration, sharedStrings migration, rich-text preservation, cached formula
+  preservation, metadata synchronization, or large-file random editing.
 - The save projection still writes sparse-store text as inline strings and
   explicit blank records as empty `<c/>` cells.
 
@@ -23807,14 +23809,14 @@ Output:
 - Public source-success regression proves clean materialization stays
   read-only/no-op save copy-original, while dirty save projects text as
   inlineStr and formula cells as `<f>` without cached values.
-- Old unsupported-type negative fixtures now use `t="z"` so error/date/custom
-  type tokens remain fail-fast.
+- Old unsupported-type negative fixtures now use `t="z"` so date/custom and
+  unknown type tokens remain fail-fast.
 
 Non-goals / boundary:
-- No date/error cell materialization, cached formula preservation,
-  sharedStrings writeback/rebuild/migration, style migration/merge, source
-  wrapper metadata preservation, relationship repair/pruning, XML repair, or
-  large-file low-memory random editing.
+- No date/custom cell materialization, Excel error-token validation, cached
+  formula preservation, sharedStrings writeback/rebuild/migration, style
+  migration/merge, source wrapper metadata preservation, relationship
+  repair/pruning, XML repair, or large-file low-memory random editing.
 - No formula evaluation or cached result generation.
 
 Acceptance:
@@ -24119,9 +24121,9 @@ Output:
   the failed source materialization did not poison the editor.
 
 Non-goals / boundary:
-- No custom cell type import, date/error support, tolerant unknown-token import,
-  XML repair, style/sharedStrings migration, metadata/range sync, or large-file
-  low-memory random editing.
+- No custom/date cell type import, Excel error-token validation, tolerant
+  unknown-token import, XML repair, style/sharedStrings migration,
+  metadata/range sync, or large-file low-memory random editing.
 
 Acceptance:
 - Focused `fastxlsx.workbook_editor.public` passes.

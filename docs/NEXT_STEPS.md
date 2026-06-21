@@ -191,8 +191,8 @@ P8.509 pins source `t="str"` materialization on the public `WorksheetEditor`
 path: scalar `<v>` payloads become `CellValue::text(...)`, `t="str"` formula
 cells keep the formula text while dropping stale cached values, clean no-op
 save stays copy-original, and dirty save projects scalar text as inline strings
-and formulas as `<f>` without cached values. This is not date/error cell import,
-formula evaluation, cached-result generation, sharedStrings writeback, style
+and formulas as `<f>` without cached values. This is not date cell import,
+error-token validation, formula evaluation, cached-result generation, sharedStrings writeback, style
 migration, wrapper metadata preservation, XML repair, or large-file random
 editing.
 P8.510 adds the matching public memory-budget guardrail evidence for source
@@ -257,7 +257,7 @@ P8.518 adds the representative custom/unknown source cell type boundary:
 cell type diagnostic, leaves editor/pending/materialized/`last_edit_error()`
 state clean, and the same editor can still save a later valid replacement.
 This is fail-fast hygiene only, not custom cell type import, tolerant fallback,
-date/error support, or metadata migration.
+date support, error-token validation, or metadata migration.
 P8.519 pins the explicit cell-internal processing-instruction branch:
 `<t>a<?fastxlsx hidden?>b</t>` fails through `try_worksheet()` / `worksheet()`
 with the cell comments / processing-instructions / unsupported-markup
@@ -935,10 +935,10 @@ keep source bytes on no-op `save_as()`, and erase back to `A1:B2` while
 preserving `xl/sharedStrings.xml`. This is not rich text preservation,
 sharedStrings rebuild/writeback/index migration, relationship repair, or
 large-file random editing.
-Unsupported source cell shape failure hygiene is pinned as well: source error
-cells, date-like cells, and invalid boolean payloads fail through the public
-facade without leaving partial materialized sessions or blocking later Patch
-edits.
+Unsupported source cell shape failure hygiene is pinned as well: date-like
+cells, custom/unknown type tokens, and invalid boolean payloads fail through
+the public facade without leaving partial materialized sessions or blocking
+later Patch edits.
 Malformed source worksheet XML now has the same public facade hygiene coverage:
 missing closing worksheet root fails cleanly without partial materialized state.
 The same malformed worksheet still blocks same-sheet Patch preflight, so
@@ -998,7 +998,7 @@ Supported source value materialization has positive coverage too: self-closing
 source cells and inline-string cells without text become explicit blank records,
 `t="b"` source cells become booleans, and empty inline text remains
 `CellValue::text("")`. This documents the current supported-value floor without
-implying date/error support, rich-text preservation, style/sharedStrings
+implying date support, error-token validation, rich-text preservation, style/sharedStrings
 migration, cached formula preservation, or metadata synchronization.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
@@ -1786,8 +1786,9 @@ feature completion.
        smoke for number, boolean, inline text entity decoding, formula text,
        explicit blank, and zero numeric cells flowing through the existing
        `CellStore` chunk-source `sheetData` handoff.
-       Error cells (`t="e"`) and date-like cells (`t="d"`) are now pinned as
-       unsupported cell type failures, not loaded values.
+       Error cells (`t="e"`) now materialize as opaque `CellValueKind::Error`
+       tokens, while date-like cells (`t="d"`) remain unsupported cell type
+       failures.
       The source-backed package path now also has a state-hygiene regression:
       if a loadable source cell is followed by unsupported source semantics,
       loading fails before any caller-visible `CellStore` is returned and a
@@ -1938,8 +1939,9 @@ feature completion.
       state-hygiene coverage for unknown entities, unterminated entities,
       invalid character references, and Unicode range overflow.
       Package-backed by-name loading now also has cell-type/inline-shape failure
-      state-hygiene coverage for error cells, date-like cells, inline payloads
-      in non-inline cells, and ordinary values in inline-string cells.
+      state-hygiene coverage for missing/empty error-cell values, date-like
+      cells, inline payloads in non-inline cells, and ordinary values in
+      inline-string cells.
       Duplicate source cell references now also fail before returning a
       `CellStore`, instead of letting sparse-store insertion silently overwrite
       the earlier source XML payload.
@@ -2304,8 +2306,8 @@ commit or short series with its own tests and docs update.
       failure paths
       do not expose a partial `CellStore`, and `CellStore` coordinate validation
       failures now also have no-state-pollution coverage.
-      Error cells (`t="e"`) and date-like cells (`t="d"`) remain explicit
-      unsupported cell type failures.
+      Error cells (`t="e"`) now materialize as opaque tokens; missing/empty
+      error payloads and date-like cells (`t="d"`) remain explicit failures.
       The package/source-backed loader path now also proves an unsupported
       semantic after an earlier loadable cell does not expose a partial
       `CellStore` or mutate `PackageEditor` state.

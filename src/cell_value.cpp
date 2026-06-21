@@ -39,6 +39,8 @@ std::optional<Cell> CellValue::to_cell() const
         return Cell::boolean(boolean_value_);
     case CellValueKind::Formula:
         return Cell::formula(text_value_);
+    case CellValueKind::Error:
+        return std::nullopt;
     }
 
     return std::nullopt;
@@ -76,6 +78,14 @@ CellValue CellValue::formula(std::string value)
 {
     CellValue cell;
     cell.kind_ = CellValueKind::Formula;
+    cell.text_value_ = std::move(value);
+    return cell;
+}
+
+CellValue CellValue::error(std::string value)
+{
+    CellValue cell;
+    cell.kind_ = CellValueKind::Error;
     cell.text_value_ = std::move(value);
     return cell;
 }

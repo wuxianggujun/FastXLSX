@@ -14,23 +14,25 @@ namespace fastxlsx {
 /// long-lived CellStore representation, does not imply random worksheet editing
 /// is implemented, and does not make large worksheet paths DOM-based. Formula
 /// values are stored as text only; FastXLSX does not parse, evaluate, cache, or
-/// rebuild calculation-chain metadata through this type.
+/// rebuild calculation-chain metadata through this type. Error values carry an
+/// opaque source token only; FastXLSX does not validate Excel error semantics.
 enum class CellValueKind {
     Blank,
     Number,
     Text,
     Boolean,
     Formula,
+    Error,
 };
 
 /// Public owning value used to describe one cell's semantic payload.
 ///
-/// This first slice models blank, finite number, text, boolean, and formula
-/// values plus an optional workbook-local StyleId handle. Non-default style ids
-/// are only handles; a future workbook/editor style registry is responsible for
-/// validating whether a non-default id belongs to the target workbook. This type
-/// does not migrate shared-string indexes, merge styles, repair relationships,
-/// or provide a worksheet cell store.
+/// This first slice models blank, finite number, text, boolean, formula, and
+/// opaque error-token values plus an optional workbook-local StyleId handle.
+/// Non-default style ids are only handles; a future workbook/editor style
+/// registry is responsible for validating whether a non-default id belongs to
+/// the target workbook. This type does not migrate shared-string indexes, merge
+/// styles, repair relationships, or provide a worksheet cell store.
 class CellValue {
 public:
     /// Creates an explicit blank / clear candidate value.
@@ -58,6 +60,12 @@ public:
     /// Creates an owning formula text value.
     static CellValue formula(std::string value);
 
+    /// Creates an owning opaque Excel error token value, such as "#VALUE!".
+    ///
+    /// The token is stored as text and is not parsed, validated, evaluated, or
+    /// mapped to an Excel error enum by FastXLSX.
+    static CellValue error(std::string value);
+
     /// Returns a copy of this value with an explicit workbook-local style id.
     ///
     /// The id is copied as an opaque handle. Non-default ids still need to be
@@ -73,7 +81,7 @@ public:
     /// Returns the numeric payload when kind() is CellValueKind::Number.
     [[nodiscard]] double number_value() const noexcept;
 
-    /// Returns the owned text or formula payload.
+    /// Returns the owned text, formula, or error-token payload.
     [[nodiscard]] const std::string& text_value() const noexcept;
 
     /// Returns the boolean payload when kind() is CellValueKind::Boolean.

@@ -12168,6 +12168,63 @@ void test_public_worksheet_editor_materializes_source_formulas()
         "flushed WorksheetEditor source formula sheet should include later text edits");
 }
 
+void test_public_worksheet_editor_materializes_source_error_cells()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-source-error-cells-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-error-cells-output.xlsx");
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1" t="e"><v>#VALUE!</v></c>)"
+        R"(<c r="B1" t="e"><v>#DIV/0!</v></c>)"
+        R"(<c r="C1" t="e"><v>#N/A</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Error
+            && a1->text_value() == "#VALUE!",
+        "WorksheetEditor should materialize source #VALUE! error cells");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Error
+            && b1->text_value() == "#DIV/0!",
+        "WorksheetEditor should materialize source #DIV/0! error cells");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Error
+            && c1->text_value() == "#N/A",
+        "WorksheetEditor should materialize source #N/A error cells");
+    check(!sheet.has_pending_changes(),
+        "source error cell read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "source error cell read-only materialization should not dirty the workbook editor");
+
+    sheet.set_cell("D2", fastxlsx::CellValue::text("after-source-error"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml, R"(<c r="A1" t="e"><v>#VALUE!</v></c>)",
+        "dirty projection should write materialized #VALUE! as t=e");
+    check_contains(output_worksheet_xml, R"(<c r="B1" t="e"><v>#DIV/0!</v></c>)",
+        "dirty projection should write materialized #DIV/0! as t=e");
+    check_contains(output_worksheet_xml, R"(<c r="C1" t="e"><v>#N/A</v></c>)",
+        "dirty projection should write materialized #N/A as t=e");
+    check_contains(output_worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>after-source-error</t></is></c>)",
+        "dirty projection should include edits beside source error cells");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "dirty source error projection should preserve untouched sheets");
+}
+
 void test_public_worksheet_editor_ignores_formula_cached_result_types()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -12183,6 +12240,7 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         R"(<c r="A1"><f>A2+1</f><v>999</v></c>)"
         R"(<c r="B1" t="str"><f>TEXT(A1,"@")</f><v>stale-string</v></c>)"
         R"(<c r="C1" t="b"><f>A1&gt;0</f><v>1</v></c>)"
+        R"(<c r="D1" t="e"><f>NA()</f><v>#N/A</v></c>)"
         R"(</row></sheetData></worksheet>)";
     rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
 
@@ -12192,6 +12250,7 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
     const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> d1 = sheet.try_cell("D1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Formula
             && a1->text_value() == "A2+1",
         "WorksheetEditor should ignore numeric cached results when source formula text exists");
@@ -12201,6 +12260,9 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
     check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Formula
             && c1->text_value() == "A1>0",
         "WorksheetEditor should ignore boolean cached results when source formula text exists");
+    check(d1.has_value() && d1->kind() == fastxlsx::CellValueKind::Formula
+            && d1->text_value() == "NA()",
+        "WorksheetEditor should ignore error cached results when source formula text exists");
     check(!sheet.has_pending_changes(),
         "formula cached-result materialization should start clean");
     check(!editor.has_pending_changes(),
@@ -12217,12 +12279,16 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         "dirty projection should write t=str-cached formulas without stale values");
     check_contains(output_worksheet_xml, R"(<c r="C1"><f>A1&gt;0</f></c>)",
         "dirty projection should write boolean-cached formulas without stale values");
+    check_contains(output_worksheet_xml, R"(<c r="D1"><f>NA()</f></c>)",
+        "dirty projection should write error-cached formulas without stale values");
     check_not_contains(output_worksheet_xml, "<v>999</v>",
         "dirty projection should drop stale numeric cached formula values");
     check_not_contains(output_worksheet_xml, "stale-string",
         "dirty projection should drop stale string cached formula values");
     check_not_contains(output_worksheet_xml, "<v>1</v>",
         "dirty projection should drop stale boolean cached formula values");
+    check_not_contains(output_worksheet_xml, "<v>#N/A</v>",
+        "dirty projection should drop stale error cached formula values");
     check_contains(output_worksheet_xml,
         R"(<c r="D2" t="inlineStr"><is><t>cached-result-types-edit</t></is></c>)",
         "dirty projection should include later edits beside cached-result formulas");
@@ -13649,18 +13715,6 @@ void test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly
             check_public_worksheet_materialization_failure_hygiene(
                 source, output, expected_diagnostic, replacement_text, scenario);
         };
-
-    expect_public_shape_materialization_failure(
-        "error-cell",
-        write_text_source,
-        [](std::map<std::string, std::string>& entries) {
-            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
-            replace_first_or_throw(worksheet_xml,
-                R"(<c r="A1" t="inlineStr"><is><t>source-shape</t></is></c>)",
-                R"(<c r="A1" t="e"><v>#VALUE!</v></c>)");
-        },
-        "unsupported cell type: e",
-        "source error cell");
 
     expect_public_shape_materialization_failure(
         "date-cell",
@@ -17942,6 +17996,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_materializes_source_shared_strings_xml_space_and_projects_inline();
         test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes();
         test_public_worksheet_editor_materializes_source_formulas();
+        test_public_worksheet_editor_materializes_source_error_cells();
         test_public_worksheet_editor_ignores_formula_cached_result_types();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();

@@ -129,9 +129,10 @@ private:
 /// This is a first source-backed materialization slice for future small-file
 /// editor work. It consumes worksheet events without building a worksheet DOM
 /// and currently accepts only explicit cell references with number, `t="str"`
-/// scalar string, boolean, inline-string, formula, and explicit blank cells.
-/// Text and formula payloads are normalized to semantic text by decoding XML
-/// entity references; cached formula values are intentionally ignored.
+/// scalar string, boolean, inline-string, formula, `t="e"` opaque error-token,
+/// and explicit blank cells. Text, formula, and error payloads are normalized
+/// to semantic text by decoding XML entity references; cached formula values
+/// are intentionally ignored.
 /// Standalone worksheet XML/chunk
 /// loading still has no workbook-level sharedStrings table context, so
 /// shared-string indexes fail on this generic path. Exact explicit source
@@ -143,7 +144,8 @@ private:
 /// default-like tokens such as empty, valueless, unquoted, unterminated,
 /// padded, signed, leading-zero, or entity-encoded values still fail, as do
 /// duplicate style attributes, qualified style-like attributes such as `x:s`,
-/// unsupported cell types, non-finite numeric values, invalid boolean values,
+/// unsupported cell types such as date/custom tokens, non-finite numeric values,
+/// invalid boolean values, invalid empty or missing error cell values,
 /// formula cells with cell types other than numeric or `t="str"`, missing or
 /// invalid cell references, row/cell
 /// reference mismatches, duplicate cell references, duplicate supported value

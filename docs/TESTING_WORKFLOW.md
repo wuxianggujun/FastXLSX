@@ -294,11 +294,13 @@ Office-like public `WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,
 untouched sheet preservation, and lossy array/dataTable formula metadata
 materialization. The same default path also covers default/numeric, `t="str"`,
-and `t="b"` cached-result formula cells whose formula text materializes as plain
-`CellValue::formula(...)`. Array/dataTable formula text is projected as plain
-formula text, metadata-only array/dataTable cells use supported cached scalar
-fallback, and dirty output drops stale cached formula values plus formula
-metadata. For
+`t="b"`, and `t="e"` cached-result formula cells whose formula text materializes
+as plain `CellValue::formula(...)`, plus source scalar `t="e"` error cells that
+materialize as opaque `CellValueKind::Error` tokens and project back as `t="e"`
+`<v>` payloads. Array/dataTable formula text is projected as plain formula text,
+metadata-only array/dataTable cells use supported cached scalar fallback, and
+dirty output drops stale cached formula values plus formula metadata. Missing or
+empty source error-cell `<v>` payloads remain strict failure cases. For
 the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
 run the focused generated scenario:
 

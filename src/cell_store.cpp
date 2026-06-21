@@ -1436,6 +1436,11 @@ void append_cell_xml(std::string& xml, const CellPosition& position, const CellR
         append_escaped_xml_text(xml, record.text_value);
         xml += "</f></c>";
         break;
+    case CellValueKind::Error:
+        xml += " t=\"e\"><v>";
+        append_escaped_xml_text(xml, record.text_value);
+        xml += "</v></c>";
+        break;
     }
 }
 
@@ -1571,6 +1576,7 @@ enum class SourceCellType {
     Boolean,
     InlineString,
     SharedString,
+    Error,
 };
 
 SourceCellType source_cell_type_from_raw_tag(
@@ -1588,6 +1594,9 @@ SourceCellType source_cell_type_from_raw_tag(
     }
     if (*type == "inlineStr") {
         return SourceCellType::InlineString;
+    }
+    if (*type == "e") {
+        return SourceCellType::Error;
     }
     if (*type == "s") {
         if (!allow_shared_strings) {
@@ -1737,6 +1746,13 @@ CellValue materialize_cell_value(
             break;
         }
         value = CellValue::text(cell.inline_text);
+        break;
+    case SourceCellType::Error:
+        if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
+            throw FastXlsxError(
+                "CellStore worksheet loader found an invalid error cell value");
+        }
+        value = CellValue::error(cell.scalar_text);
         break;
     case SourceCellType::SharedString:
         if (!cell.saw_scalar_value_element || cell.scalar_text.empty()) {
@@ -2317,6 +2333,9 @@ CellValue CellRecord::to_value() const
         break;
     case CellValueKind::Formula:
         value = CellValue::formula(text_value);
+        break;
+    case CellValueKind::Error:
+        value = CellValue::error(text_value);
         break;
     }
 

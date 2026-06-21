@@ -55,12 +55,14 @@ DEFAULT_XLNT_STRING_FIXTURES = [
 
 EXTERNAL_FIXTURE_SCENARIO = "external_fixture_materialized_smoke"
 FORMULA_FIXTURE_SCENARIO = "external_formula_fixture_materialized_smoke"
+DEFINED_NAME_FIXTURE_SCENARIO = "external_defined_name_fixture_smoke"
 IMAGE_FIXTURE_SCENARIO = "external_fixture_image_replace_smoke"
 FIXTURE_SCENARIOS = [
     "xlnt_fixture_rename_smoke",
     "xlnt_fixture_string_smoke",
     EXTERNAL_FIXTURE_SCENARIO,
     FORMULA_FIXTURE_SCENARIO,
+    DEFINED_NAME_FIXTURE_SCENARIO,
     IMAGE_FIXTURE_SCENARIO,
 ]
 
@@ -248,6 +250,38 @@ class ImageFixtureInfo:
             "fixture": fixture_name,
             "sheet_name": self.sheet_name,
             "image_part_name": self.image_part_name,
+        }
+
+
+@dataclass(frozen=True)
+class DefinedNameFixtureInfo:
+    fixture_path: Path
+    sheet_name: str
+    defined_name_count: int
+    formula_like_count: int
+    local_sheet_scoped_count: int
+    external_reference_count: int
+    three_d_reference_count: int
+    sample_names: tuple[str, ...]
+
+    def as_report(self, fixture_root: Path | None = None) -> dict[str, Any]:
+        try:
+            fixture_name = (
+                self.fixture_path.relative_to(fixture_root).as_posix()
+                if fixture_root is not None
+                else self.fixture_path.name
+            )
+        except ValueError:
+            fixture_name = self.fixture_path.name
+        return {
+            "fixture": fixture_name,
+            "sheet_name": self.sheet_name,
+            "defined_name_count": self.defined_name_count,
+            "formula_like_count": self.formula_like_count,
+            "local_sheet_scoped_count": self.local_sheet_scoped_count,
+            "external_reference_count": self.external_reference_count,
+            "three_d_reference_count": self.three_d_reference_count,
+            "sample_names": list(self.sample_names),
         }
 
 
@@ -439,6 +473,109 @@ def discover_formula_fixture_infos(
             infos.append(info)
             if limit > 0 and len(infos) >= limit:
                 return infos
+    return infos
+
+
+def workbook_defined_name_records_from_xml(workbook_xml: bytes) -> list[dict[str, Any]]:
+    root = ElementTree.fromstring(workbook_xml)
+    records: list[dict[str, Any]] = []
+    for defined_names_element in root:
+        if xml_local_name(defined_names_element.tag) != "definedNames":
+            continue
+        for element in defined_names_element:
+            if xml_local_name(element.tag) != "definedName":
+                continue
+            attributes = {key: element.attrib[key] for key in sorted(element.attrib)}
+            records.append(
+                {
+                    "name": attributes.get("name", ""),
+                    "attributes": attributes,
+                    "text": "".join(element.itertext()),
+                }
+            )
+    return records
+
+
+def workbook_defined_name_records(path: Path) -> list[dict[str, Any]]:
+    names = zip_names(path)
+    if "xl/workbook.xml" not in names:
+        return []
+    return workbook_defined_name_records_from_xml(read_zip_bytes(path, "xl/workbook.xml"))
+
+
+def canonical_defined_name_records(records: list[dict[str, Any]]) -> list[str]:
+    return sorted(json.dumps(record, sort_keys=True) for record in records)
+
+
+def defined_name_has_three_d_reference(text: str) -> bool:
+    if "!" not in text:
+        return False
+    qualifier = text.split("!", 1)[0].strip()
+    if qualifier.startswith("="):
+        qualifier = qualifier[1:].strip()
+    if "]" in qualifier:
+        qualifier = qualifier.rsplit("]", 1)[1]
+    return ":" in qualifier
+
+
+def summarize_defined_name_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    texts = [str(record.get("text", "")).strip() for record in records]
+    return {
+        "defined_name_count": len(records),
+        "formula_like_count": sum(
+            1 for text in texts if text.startswith("=") or "!" in text or "(" in text
+        ),
+        "local_sheet_scoped_count": sum(
+            1 for record in records if "localSheetId" in record.get("attributes", {})
+        ),
+        "external_reference_count": sum(1 for text in texts if "[" in text and "]" in text),
+        "three_d_reference_count": sum(
+            1 for text in texts if defined_name_has_three_d_reference(text)
+        ),
+        "sample_names": [
+            str(record.get("name", "")) for record in records[:5] if record.get("name", "")
+        ],
+    }
+
+
+def defined_name_fixture_info(path: Path) -> DefinedNameFixtureInfo | None:
+    records = workbook_defined_name_records(path)
+    if not records:
+        return None
+
+    sheet_names = workbook_sheetnames(path)
+    if not sheet_names:
+        return None
+
+    summary = summarize_defined_name_records(records)
+    return DefinedNameFixtureInfo(
+        fixture_path=path,
+        sheet_name=sheet_names[0],
+        defined_name_count=summary["defined_name_count"],
+        formula_like_count=summary["formula_like_count"],
+        local_sheet_scoped_count=summary["local_sheet_scoped_count"],
+        external_reference_count=summary["external_reference_count"],
+        three_d_reference_count=summary["three_d_reference_count"],
+        sample_names=tuple(summary["sample_names"]),
+    )
+
+
+def discover_defined_name_fixture_infos(
+    fixture_root: Path,
+    globs: list[str],
+    limit: int,
+) -> list[DefinedNameFixtureInfo]:
+    infos: list[DefinedNameFixtureInfo] = []
+    for fixture_path in discover_external_fixtures(fixture_root, globs, 0):
+        try:
+            info = defined_name_fixture_info(fixture_path)
+        except Exception:
+            continue
+        if info is None:
+            continue
+        infos.append(info)
+        if limit > 0 and len(infos) >= limit:
+            return infos
     return infos
 
 
@@ -1096,6 +1233,22 @@ def verify_fixture_materialized_only(
     return zip_report, openpyxl_report
 
 
+def verify_defined_names_preserved(source_path: Path, output_path: Path) -> dict[str, Any]:
+    source_records = workbook_defined_name_records(source_path)
+    output_records = workbook_defined_name_records(output_path)
+    require(source_records, "definedName fixture: source workbook has no definedName records")
+    require(
+        canonical_defined_name_records(source_records)
+        == canonical_defined_name_records(output_records),
+        "definedName fixture: definedName records changed after materialized edit",
+    )
+    return {
+        "source": summarize_defined_name_records(source_records),
+        "output": summarize_defined_name_records(output_records),
+        "records_preserved": len(output_records),
+    }
+
+
 def create_xlsxwriter_reference(
     scenario: str,
     reference_path: Path,
@@ -1443,6 +1596,56 @@ def run_formula_fixture_case(
     )
 
 
+def run_defined_name_fixture_case(
+    qa_exe: Path,
+    work_dir: Path,
+    defined_name_info: DefinedNameFixtureInfo,
+    group_name: str,
+    *,
+    fixture_root: Path,
+) -> ScenarioResult:
+    fixture_path = defined_name_info.fixture_path
+    case_slug = fixture_case_slug(fixture_root, fixture_path) + "__defined"
+    case_dir = work_dir / group_name / case_slug
+    case_dir.mkdir(parents=True, exist_ok=True)
+    tool_source_path = case_dir / "source.xlsx"
+    shutil.copyfile(fixture_path, tool_source_path)
+
+    tool_report = run_tool(
+        qa_exe,
+        "fixture_materialized_only",
+        case_dir,
+        source=tool_source_path,
+    )
+    output_path = Path(tool_report["output"])
+    actual_source_sheet_name = tool_report.get("source_sheet_name") or defined_name_info.sheet_name
+    zip_xml, openpyxl_report = verify_fixture_materialized_only(
+        fixture_path,
+        output_path,
+        actual_source_sheet_name,
+    )
+    zip_xml["defined_name_scan"] = defined_name_info.as_report(fixture_root)
+    zip_xml["defined_name_preservation"] = verify_defined_names_preserved(
+        fixture_path,
+        output_path,
+    )
+    openpyxl_report["defined_name_count"] = zip_xml["defined_name_preservation"]["output"][
+        "defined_name_count"
+    ]
+
+    try:
+        case_name = f"{group_name}:{fixture_path.relative_to(fixture_root).as_posix()}"
+    except ValueError:
+        case_name = f"{group_name}:{fixture_path.name}"
+    return ScenarioResult(
+        name=case_name,
+        report=tool_report,
+        zip_xml=zip_xml,
+        openpyxl=openpyxl_report,
+        xlsxwriter_reference={"status": "skipped", "reason": "definedName fixture scenario"},
+    )
+
+
 def run_self_test() -> int:
     openpyxl = load_openpyxl()
     temp_dir = Path(tempfile.mkdtemp(prefix="fastxlsx-workbook-editor-qa-selftest-"))
@@ -1552,6 +1755,62 @@ def run_self_test() -> int:
         require(shared_summary["metadata_only_shared_count"] == 1,
                 f"self-test: shared follower count mismatch {shared_summary!r}")
 
+        defined_source_path = temp_dir / "defined-source.xlsx"
+        defined_path = temp_dir / "defined-names.xlsx"
+        defined_workbook = openpyxl.Workbook()
+        try:
+            defined_sheet = defined_workbook.active
+            defined_sheet.title = "Data"
+            defined_sheet["A1"] = "named"
+            other_sheet = defined_workbook.create_sheet("Other Sheet")
+            other_sheet["A1"] = "other"
+            defined_workbook.save(defined_source_path)
+        finally:
+            defined_workbook.close()
+        defined_names_xml = (
+            "<definedNames>"
+            '<definedName name="ReportRange">Data!$A$1:$B$2</definedName>'
+            '<definedName name="ScopedRange" localSheetId="1">\'Other Sheet\'!$A$1</definedName>'
+            '<definedName name="ExternalRef">[Book.xlsx]Data!A1</definedName>'
+            '<definedName name="ThreeDRef">Data:\'Other Sheet\'!A1</definedName>'
+            "</definedNames>"
+        )
+        with zipfile.ZipFile(defined_source_path, "r") as source_archive:
+            with zipfile.ZipFile(defined_path, "w", zipfile.ZIP_DEFLATED) as target_archive:
+                for info in source_archive.infolist():
+                    payload = source_archive.read(info.filename)
+                    if info.filename == "xl/workbook.xml":
+                        workbook_xml = payload.decode("utf-8")
+                        if "<definedNames/>" in workbook_xml:
+                            workbook_xml = workbook_xml.replace("<definedNames/>", defined_names_xml, 1)
+                        elif "<definedNames />" in workbook_xml:
+                            workbook_xml = workbook_xml.replace("<definedNames />", defined_names_xml, 1)
+                        elif "<calcPr" in workbook_xml:
+                            workbook_xml = workbook_xml.replace("<calcPr", defined_names_xml + "<calcPr", 1)
+                        else:
+                            require("</workbook>" in workbook_xml,
+                                    "self-test: workbook close tag missing")
+                            workbook_xml = workbook_xml.replace(
+                                "</workbook>", defined_names_xml + "</workbook>", 1
+                            )
+                        payload = workbook_xml.encode("utf-8")
+                    target_archive.writestr(info, payload)
+        defined_records = workbook_defined_name_records(defined_path)
+        require(len(defined_records) == 4,
+                f"self-test: definedName record count mismatch {defined_records!r}")
+        defined_summary = summarize_defined_name_records(defined_records)
+        require(defined_summary["local_sheet_scoped_count"] == 1,
+                f"self-test: definedName local scope mismatch {defined_summary!r}")
+        require(defined_summary["external_reference_count"] == 1,
+                f"self-test: definedName external reference mismatch {defined_summary!r}")
+        require(defined_summary["three_d_reference_count"] == 1,
+                f"self-test: definedName 3D reference mismatch {defined_summary!r}")
+        defined_infos = discover_defined_name_fixture_infos(temp_dir, ["defined-names.xlsx"], 0)
+        require(len(defined_infos) == 1,
+                f"self-test: definedName fixture discovery mismatch {defined_infos!r}")
+        require(defined_infos[0].sheet_name == "Data",
+                f"self-test: definedName fixture sheet mismatch {defined_infos[0].sheet_name!r}")
+
         print(
             json.dumps(
                 {
@@ -1560,6 +1819,7 @@ def run_self_test() -> int:
                     "xlsxwriter": xlsxwriter_status,
                     "fixture_discovery": len(discovered),
                     "formula_scan": len(formula_infos),
+                    "defined_name_scan": len(defined_infos),
                 },
                 indent=2,
             )
@@ -1656,7 +1916,7 @@ def main() -> int:
         "--fixture-limit",
         type=int,
         default=0,
-        help="Maximum external fixtures or formula worksheets to run; 0 means no limit.",
+        help="Maximum external fixtures, formula worksheets, or definedName workbooks to run; 0 means no limit.",
     )
     parser.add_argument(
         "--formula-shared-only",
@@ -1799,6 +2059,50 @@ def main() -> int:
                                 "sheet_name": formula_info.sheet_name,
                             },
                             zip_xml={"formula_scan": formula_info.as_report(fixture_root)},
+                            openpyxl={},
+                            xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
+                            error=str(exc),
+                        )
+                    )
+            continue
+
+        if scenario == DEFINED_NAME_FIXTURE_SCENARIO:
+            fixture_globs = args.fixture_glob if args.fixture_glob else ["**/*.xlsx"]
+            defined_name_infos = discover_defined_name_fixture_infos(
+                fixture_root,
+                fixture_globs,
+                args.fixture_limit,
+            )
+            require(
+                defined_name_infos,
+                f"{scenario}: no definedName-bearing .xlsx workbooks found under {fixture_root}",
+            )
+            for defined_name_info in defined_name_infos:
+                try:
+                    results.append(
+                        run_defined_name_fixture_case(
+                            qa_exe,
+                            work_dir,
+                            defined_name_info,
+                            scenario,
+                            fixture_root=fixture_root,
+                        )
+                    )
+                except Exception as exc:
+                    try:
+                        fixture_name = defined_name_info.fixture_path.relative_to(fixture_root).as_posix()
+                    except ValueError:
+                        fixture_name = defined_name_info.fixture_path.name
+                    results.append(
+                        ScenarioResult(
+                            name=f"{scenario}:{fixture_name}",
+                            report={
+                                "scenario": scenario,
+                                "status": "failed",
+                                "fixture": str(defined_name_info.fixture_path),
+                                "sheet_name": defined_name_info.sheet_name,
+                            },
+                            zip_xml={"defined_name_scan": defined_name_info.as_report(fixture_root)},
                             openpyxl={},
                             xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
                             error=str(exc),

@@ -127,7 +127,19 @@ narrows the run to worksheets with shared formula metadata. Current local xlnt
 evidence includes `18_formulae.xlsx:Sheet1` with 15 formula elements, 3 shared
 formula elements, 1 definition, and 2 metadata-only followers; the dirty output
 target sheet keeps 15 ordinary formula elements and 0 shared formula metadata
-elements. xlnt/OpenXLSX samples remain caller-supplied `--fixture-root` inputs
+elements. The runner now also includes
+`external_defined_name_fixture_smoke`: it scans caller-provided fixture
+workbooks for direct `xl/workbook.xml` `definedNames`, records workbook-scoped
+and `localSheetId` scoped counts plus external/3D-like reference indicators,
+runs a materialized-only edit smoke, and verifies the definedName records remain
+semantically preserved. Current local xlnt evidence covers
+`19_defined_names.xlsx` (6 direct definedName records),
+`Issue18_defined_name_with_workbook_scope.xlsx` (1 workbook-scoped record), and
+`issue90_debug_test_file.xlsx` (3 local-sheet-scoped print-area records on the
+Chinese sheet name `封面`), with ZIP/XML, `openpyxl`, and Excel COM passing.
+The scenario deliberately avoids sheet rename because current
+`WorkbookEditor::rename_sheet()` still does not rewrite definedName formulas.
+xlnt/OpenXLSX samples remain caller-supplied `--fixture-root` inputs
 rather than runtime dependencies or default CI fixtures. Current local
 compatibility smoke also covers OpenXLSX benchmark fixtures, xlnt reference
 fixtures, xlnt default smoke fixtures, and Python writer benchmark fixtures;
@@ -840,6 +852,13 @@ the public edit count, and clears/records the facade diagnostic. This is
 semantic implementation-boundary cleanup only; it does not add formula or
 definedName rewrites, table/drawing/chart relationship updates, sheet add/delete,
 transaction history, rollback, or broader workbook relationship repair.
+P8.584 extends the opt-in workbook-editor fixture QA runner with
+`external_defined_name_fixture_smoke`: the Python layer scans external fixture
+packages for direct workbook `definedNames`, runs a materialized-only public
+editor smoke, compares definedName records before/after at ZIP/XML level, and
+can reuse the Excel COM sidecar. This is compatibility evidence for supplied
+fixtures only; it is not definedName editing, rename synchronization,
+name-manager support, or formula evaluation.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

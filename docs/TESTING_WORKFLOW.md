@@ -431,6 +431,33 @@ output target sheet still has 15 formula elements and 0 shared formula metadata
 elements. This remains local compatibility evidence only; fixture repositories
 are not vendored, not runtime dependencies, and not default CI inputs.
 
+For named range / definedNames fixture coverage, use the opt-in definedName
+scanner scenario. It reads direct workbook `definedNames` records from
+`xl/workbook.xml`, records workbook-scoped, local-sheet-scoped,
+external-reference, and 3D-reference counts, then runs a materialized-only edit
+smoke and verifies the definedName records are semantically preserved in the
+output workbook. This intentionally avoids a sheet rename in the fixture smoke,
+because current `WorkbookEditor::rename_sheet()` does not rewrite definedName
+formula text:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --fixture-root C:\path\to\xlnt\tests\data `
+  --scenario external_defined_name_fixture_smoke `
+  --fixture-glob "*.xlsx" `
+  --excel-verify `
+  --work-dir build\qa\workbook-editor-defined-name-fixtures
+```
+
+Current local xlnt evidence covers `19_defined_names.xlsx` with 6 direct
+definedName records, `Issue18_defined_name_with_workbook_scope.xlsx` with 1
+workbook-scoped definedName, and `issue90_debug_test_file.xlsx` with 3
+local-sheet-scoped print-area definedNames on a Chinese sheet name (`封面`).
+All three outputs preserve the definedName records and pass Excel COM no-repair
+open smoke. This is fixture QA evidence only; it does not add definedName
+rewrite, name-manager editing, external link validation, or sheet-rename
+formula synchronization.
+
 ## Benchmark 本地 QA
 
 Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：

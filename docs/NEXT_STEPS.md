@@ -66,7 +66,10 @@ generated source/output smoke. It also includes
 formula `ref` ranges, multiple `si` groups in one worksheet, ordinary formulas
 and values interleaved with shared formula followers, and stale cached formula
 result cleanup; the dirty output is checked as ordinary formula elements with
-0 shared formula metadata elements. It also has an opt-in
+0 shared formula metadata elements. The same Office-like shape is now also
+covered by the default public `fastxlsx.workbook_editor.source-success` CTest
+path, so shared formula materialization regressions are not limited to opt-in
+local QA. It also has an opt-in
 `external_formula_fixture_materialized_smoke` scanner that maps workbook sheet
 names to worksheet XML parts, records formula/shared-formula counts, and runs
 the materialized edit smoke on the exact formula-bearing sheet; `--formula-shared-only`

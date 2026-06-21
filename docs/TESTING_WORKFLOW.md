@@ -289,9 +289,11 @@ ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.facade" --ou
 ```
 
 Shared formula materialization is covered by default CTest through
-`fastxlsx.unit` and `fastxlsx.workbook_editor.source-success`. For the local
-openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and run the
-focused generated scenario:
+`fastxlsx.unit` and `fastxlsx.workbook_editor.source-success`, including an
+Office-like public `WorksheetEditor` shape with 2D shared formula ranges,
+multiple `si` groups, ordinary formula interleaving, stale cached value removal,
+and untouched sheet preservation. For the local openpyxl / optional XlsxWriter
+QA layer, build the opt-in QA tool and run the focused generated scenario:
 
 ```powershell
 cmake --preset windows-nmake-release -DFASTXLSX_BUILD_QA_TOOLS=ON

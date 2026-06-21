@@ -12302,6 +12302,96 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         "source-order shared formula matrix should not mutate untouched source sheet bytes");
 }
 
+void test_public_worksheet_editor_materializes_office_like_shared_formula_shape()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-office-like-shared-formula-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-office-like-shared-formula-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1:H6"/>)"
+        R"(<sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c>)"
+        R"(<c r="C1"><f t="shared" ref="C1:D3" si="40">A1+B1</f><v>9901</v></c>)"
+        R"(<c r="D1"><f t="shared" si="40"/><v>9902</v></c>)"
+        R"(<c r="E1"><f>A1*2</f><v>9903</v></c></row>)"
+        R"(<row r="2"><c r="A2"><v>10</v></c><c r="B2"><v>20</v></c>)"
+        R"(<c r="C2"><f t="shared" si="40"/><v>9904</v></c>)"
+        R"(<c r="D2"><f t="shared" si="40"/><v>9905</v></c>)"
+        R"(<c r="E2" t="inlineStr"><is><t>between-shared-groups</t></is></c>)"
+        R"(<c r="F2"><f t="shared" ref="F2:G3" si="41">SUM($A2:B2)+C$1</f><v>9906</v></c>)"
+        R"(<c r="G2"><f t="shared" si="41"/><v>9907</v></c></row>)"
+        R"(<row r="3"><c r="A3"><v>100</v></c><c r="B3"><v>200</v></c>)"
+        R"(<c r="C3"><f t="shared" si="40"/><v>9908</v></c>)"
+        R"(<c r="D3"><f t="shared" si="40"/><v>9909</v></c>)"
+        R"(<c r="F3"><f t="shared" si="41"/><v>9910</v></c>)"
+        R"(<c r="G3"><f t="shared" si="41"/><v>9911</v></c></row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const auto expect_formula = [&](std::string_view reference, std::string_view expected,
+                                    std::string_view message) {
+        const std::optional<fastxlsx::CellValue> value = sheet.try_cell(reference);
+        check(value.has_value() && value->kind() == fastxlsx::CellValueKind::Formula
+                && value->text_value() == expected,
+            message);
+    };
+    expect_formula("C1", "A1+B1",
+        "WorksheetEditor should materialize the first 2D shared formula definition");
+    expect_formula("D1", "B1+C1",
+        "WorksheetEditor should translate a same-row 2D shared formula follower");
+    expect_formula("C2", "A2+B2",
+        "WorksheetEditor should translate a same-column 2D shared formula follower");
+    expect_formula("D3", "B3+C3",
+        "WorksheetEditor should translate a diagonal 2D shared formula follower");
+    expect_formula("E1", "A1*2",
+        "WorksheetEditor should preserve ordinary formulas interleaved with shared formulas");
+    expect_formula("F2", "SUM($A2:B2)+C$1",
+        "WorksheetEditor should materialize the second shared formula definition");
+    expect_formula("G2", "SUM($A2:C2)+D$1",
+        "WorksheetEditor should translate column-offset followers in the second shared formula group");
+    expect_formula("G3", "SUM($A3:C3)+D$1",
+        "WorksheetEditor should translate row and column offsets in the second shared formula group");
+    check(!sheet.has_pending_changes(),
+        "office-like shared formula read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "office-like shared formula read-only materialization should not dirty the workbook editor");
+
+    sheet.set_cell("H6", fastxlsx::CellValue::text("office-like-shared-formula-edit"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml, R"(<c r="C1"><f>A1+B1</f></c>)",
+        "flushed WorksheetEditor should write 2D shared formula definition as plain formula text");
+    check_contains(output_worksheet_xml, R"(<c r="D1"><f>B1+C1</f></c>)",
+        "flushed WorksheetEditor should write same-row 2D follower as plain formula text");
+    check_contains(output_worksheet_xml, R"(<c r="D3"><f>B3+C3</f></c>)",
+        "flushed WorksheetEditor should write diagonal 2D follower as plain formula text");
+    check_contains(output_worksheet_xml, R"(<c r="G3"><f>SUM($A3:C3)+D$1</f></c>)",
+        "flushed WorksheetEditor should write the second shared formula group follower");
+    check_contains(output_worksheet_xml,
+        R"(<c r="H6" t="inlineStr"><is><t>office-like-shared-formula-edit</t></is></c>)",
+        "flushed WorksheetEditor office-like shared formula sheet should include later text edits");
+    check_not_contains(output_worksheet_xml, R"(t="shared")",
+        "flushed WorksheetEditor office-like shared formula sheet should not preserve shared metadata");
+    for (int stale_value = 9901; stale_value <= 9911; ++stale_value) {
+        check_not_contains(output_worksheet_xml, "<v>" + std::to_string(stale_value) + "</v>",
+            "flushed WorksheetEditor office-like shared formula sheet should drop stale cached values");
+    }
+    check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "office-like shared formula rewrite should not mutate untouched source sheet bytes");
+}
+
 void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()
 {
     const std::filesystem::path source =
@@ -17722,6 +17812,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_materializes_source_formulas();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
+        test_public_worksheet_editor_materializes_office_like_shared_formula_shape();
         }
 
         if (should_run_workbook_editor_shard(shard, "source-failure")

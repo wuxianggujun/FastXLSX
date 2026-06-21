@@ -330,6 +330,39 @@ std::filesystem::path write_two_sheet_source(const std::filesystem::path& path)
     return path;
 }
 
+std::filesystem::path write_shared_formula_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    {
+        WorkbookWriter writer = WorkbookWriter::create(path);
+        WorksheetWriter data = writer.add_worksheet("SharedFormula");
+        data.append_row({CellView::number(1.0), CellView::number(2.0),
+            CellView::formula("A1+B1")});
+        data.append_row({CellView::number(4.0), CellView::number(5.0),
+            CellView::formula("A2+B2")});
+        data.append_row({CellView::number(7.0), CellView::number(8.0),
+            CellView::formula("A3+B3")});
+        WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({CellView::text("keep-shared-formula-qa")});
+        writer.close();
+    }
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1:E4"/>)"
+        R"(<sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c><c r="C1"><f t="shared" ref="C1:C3" si="10">A1+B1</f><v>3</v></c><c r="D1"><f t="shared" ref="D1:D3" si="11">SUM(A1:B1)+$A1+A$1+$A$1</f><v>5</v></c></row>)"
+        R"(<row r="2"><c r="A2"><v>4</v></c><c r="B2"><v>5</v></c><c r="C2"><f t="shared" si="10"/><v>9</v></c><c r="D2"><f t="shared" si="11"/><v>14</v></c></row>)"
+        R"(<row r="3"><c r="A3"><v>7</v></c><c r="B3"><v>8</v></c><c r="C3"><f t="shared" si="10"/><v>15</v></c><c r="D3"><f t="shared" si="11"/><v>23</v></c></row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+    fastxlsx::test::rewrite_package_entry_as_stored(
+        path, "xl/worksheets/sheet1.xml", worksheet_xml);
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_image(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -347,6 +380,27 @@ std::filesystem::path write_two_sheet_source_with_image(const std::filesystem::p
     }
     writer.close();
     return path;
+}
+
+void require_formula_cell(
+    WorksheetEditor& sheet,
+    std::string_view reference,
+    std::string_view expected)
+{
+    const std::optional<CellValue> value = sheet.try_cell(reference);
+    if (!value.has_value() || value->kind() != fastxlsx::CellValueKind::Formula
+        || value->text_value() != expected) {
+        std::ostringstream message;
+        message << "shared formula materialization mismatch at " << reference
+                << ": expected " << expected;
+        if (value.has_value()) {
+            message << ", got kind=" << static_cast<int>(value->kind())
+                    << " text=" << value->text_value();
+        } else {
+            message << ", got empty";
+        }
+        throw std::runtime_error(message.str());
+    }
 }
 
 std::filesystem::path write_public_editing_e2e_source(const std::filesystem::path& path)
@@ -426,6 +480,43 @@ Report run_generated_rename_materialized(const CliOptions& options)
         "EditedData!B2 should be 42",
         "Untouched sheet should remain preserved",
     };
+    return report;
+}
+
+Report run_generated_shared_formula_materialization(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_shared_formula_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-shared-formula-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-shared-formula-output.xlsx");
+    report.source_sheet_name = "SharedFormula";
+    report.mutations = {
+        "worksheet(SharedFormula).try_cell(C1:C3,D1:D3):expect_formula_materialized",
+        "worksheet(SharedFormula).set_cell(E4,text)",
+    };
+    report.notes = {
+        "C1:C3 and D1:D3 should be ordinary formula cells after materialization",
+        "Shared formula metadata and stale cached values should be absent from dirty output",
+        "Untouched sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor sheet = editor.worksheet("SharedFormula");
+    require_formula_cell(sheet, "C1", "A1+B1");
+    require_formula_cell(sheet, "C2", "A2+B2");
+    require_formula_cell(sheet, "C3", "A3+B3");
+    require_formula_cell(sheet, "D1", "SUM(A1:B1)+$A1+A$1+$A$1");
+    require_formula_cell(sheet, "D2", "SUM(A2:B2)+$A2+A$1+$A$1");
+    require_formula_cell(sheet, "D3", "SUM(A3:B3)+$A3+A$1+$A$1");
+    if (sheet.has_pending_changes() || editor.has_pending_changes()) {
+        throw std::runtime_error("read-only shared formula materialization dirtied editor state");
+    }
+
+    sheet.set_cell(4, 5, CellValue::text("shared-formula-qa-edit"));
+    editor.save_as(report.output);
     return report;
 }
 
@@ -649,6 +740,9 @@ Report run_scenario(const CliOptions& options)
 {
     if (options.scenario == "generated_rename_materialized") {
         return run_generated_rename_materialized(options);
+    }
+    if (options.scenario == "generated_shared_formula_materialization") {
+        return run_generated_shared_formula_materialization(options);
     }
     if (options.scenario == "generated_style_passthrough") {
         return run_generated_style_passthrough(options);

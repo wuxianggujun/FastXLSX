@@ -49,6 +49,17 @@ text, drops stale cached results, and still does not preserve shared formula
 metadata, evaluate formulas, rebuild calcChain, or implement a complete Excel
 formula parser. Unresolved metadata-only shared formula cells continue to fall
 back to supported cached scalar `<v>` values when present.
+The current regression matrix now also pins multiple followers per `si`,
+interleaved shared formula indexes, latest source-order definition behavior for
+later followers, function/name-like token boundaries, structured-reference and
+whole-row/whole-column non-rewrites, invalid shared formula index forms, public
+`WorksheetEditor` clean readback, and dirty save projection without stale
+cached formula values. The opt-in workbook-editor QA runner includes
+`generated_shared_formula_materialization`, which creates a generated shared
+formula source workbook, verifies materialization through the public C++ tool,
+then checks the output with ZIP/XML and `openpyxl`; xlnt/OpenXLSX samples remain
+caller-supplied `--fixture-root` inputs rather than runtime dependencies or
+default CI fixtures.
 Source sharedStrings text with `xml:space="preserve"` is now pinned at the
 public facade as read-only materialized whitespace: plain shared-string text and
 simple rich shared-string runs keep leading/trailing whitespace in

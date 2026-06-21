@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -11,6 +12,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
 #include <mz.h>
@@ -64,6 +66,18 @@ inline std::string read_file(const std::filesystem::path& path)
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
+inline void write_file(const std::filesystem::path& path, std::string_view data)
+{
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        throw std::runtime_error("failed to create generated xlsx");
+    }
+    stream.write(data.data(), static_cast<std::streamsize>(data.size()));
+    if (!stream) {
+        throw std::runtime_error("failed to write generated xlsx");
+    }
+}
+
 inline std::uint16_t read_u16(const std::string& data, std::size_t offset)
 {
     return static_cast<std::uint16_t>(
@@ -77,6 +91,65 @@ inline std::uint32_t read_u32(const std::string& data, std::size_t offset)
         | (static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset + 2])) << 16u)
         | (static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset + 1])) << 8u)
         | static_cast<std::uint32_t>(static_cast<unsigned char>(data[offset]));
+}
+
+inline void append_u16(std::string& output, std::uint16_t value)
+{
+    output.push_back(static_cast<char>(value & 0xffu));
+    output.push_back(static_cast<char>((value >> 8u) & 0xffu));
+}
+
+inline void append_u32(std::string& output, std::uint32_t value)
+{
+    output.push_back(static_cast<char>(value & 0xffu));
+    output.push_back(static_cast<char>((value >> 8u) & 0xffu));
+    output.push_back(static_cast<char>((value >> 16u) & 0xffu));
+    output.push_back(static_cast<char>((value >> 24u) & 0xffu));
+}
+
+inline std::uint16_t checked_zip_u16(std::size_t value, std::string_view field)
+{
+    if (value > 0xffffu) {
+        throw std::runtime_error(std::string("test ZIP field exceeds uint16: ")
+            + std::string(field));
+    }
+    return static_cast<std::uint16_t>(value);
+}
+
+inline std::uint32_t checked_zip_u32(std::size_t value, std::string_view field)
+{
+    if (value > 0xffffffffu) {
+        throw std::runtime_error(std::string("test ZIP field exceeds uint32: ")
+            + std::string(field));
+    }
+    return static_cast<std::uint32_t>(value);
+}
+
+inline const std::array<std::uint32_t, 256>& test_crc32_table()
+{
+    static const std::array<std::uint32_t, 256> table = [] {
+        std::array<std::uint32_t, 256> values {};
+        constexpr std::uint32_t polynomial = 0xedb88320u;
+        for (std::uint32_t i = 0; i < values.size(); ++i) {
+            std::uint32_t crc = i;
+            for (int bit = 0; bit < 8; ++bit) {
+                crc = (crc & 1u) != 0u ? (crc >> 1u) ^ polynomial : crc >> 1u;
+            }
+            values[i] = crc;
+        }
+        return values;
+    }();
+    return table;
+}
+
+inline std::uint32_t test_crc32(std::string_view data)
+{
+    std::uint32_t crc = 0xffffffffu;
+    const auto& table = test_crc32_table();
+    for (unsigned char byte : data) {
+        crc = (crc >> 8u) ^ table[(crc ^ byte) & 0xffu];
+    }
+    return crc ^ 0xffffffffu;
 }
 
 inline std::map<std::string, std::string> read_stored_zip_entries(
@@ -139,6 +212,84 @@ inline std::map<std::string, std::string> read_stored_zip_entries(
     }
 
     return entries;
+}
+
+inline void write_stored_zip_entries(
+    const std::filesystem::path& path,
+    const std::map<std::string, std::string>& entries)
+{
+    struct CentralRecord {
+        std::string name;
+        std::uint32_t crc = 0;
+        std::uint32_t size = 0;
+        std::uint32_t local_header_offset = 0;
+    };
+
+    std::string archive;
+    std::vector<CentralRecord> central_records;
+    central_records.reserve(entries.size());
+
+    for (const auto& [name, payload] : entries) {
+        const std::uint16_t name_size = checked_zip_u16(name.size(), "entry name");
+        const std::uint32_t payload_size = checked_zip_u32(payload.size(), "entry payload");
+        const std::uint32_t local_header_offset =
+            checked_zip_u32(archive.size(), "local header offset");
+        const std::uint32_t crc = test_crc32(payload);
+
+        append_u32(archive, 0x04034b50u);
+        append_u16(archive, 20);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u32(archive, crc);
+        append_u32(archive, payload_size);
+        append_u32(archive, payload_size);
+        append_u16(archive, name_size);
+        append_u16(archive, 0);
+        archive.append(name);
+        archive.append(payload);
+
+        central_records.push_back({name, crc, payload_size, local_header_offset});
+    }
+
+    const std::uint32_t central_directory_offset =
+        checked_zip_u32(archive.size(), "central directory offset");
+    for (const CentralRecord& record : central_records) {
+        const std::uint16_t name_size = checked_zip_u16(record.name.size(), "entry name");
+        append_u32(archive, 0x02014b50u);
+        append_u16(archive, 20);
+        append_u16(archive, 20);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u32(archive, record.crc);
+        append_u32(archive, record.size);
+        append_u32(archive, record.size);
+        append_u16(archive, name_size);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u16(archive, 0);
+        append_u32(archive, 0);
+        append_u32(archive, record.local_header_offset);
+        archive.append(record.name);
+    }
+
+    const std::uint32_t central_directory_size =
+        checked_zip_u32(archive.size() - central_directory_offset, "central directory size");
+    const std::uint16_t entry_count = checked_zip_u16(entries.size(), "entry count");
+    append_u32(archive, 0x06054b50u);
+    append_u16(archive, 0);
+    append_u16(archive, 0);
+    append_u16(archive, entry_count);
+    append_u16(archive, entry_count);
+    append_u32(archive, central_directory_size);
+    append_u32(archive, central_directory_offset);
+    append_u16(archive, 0);
+
+    write_file(path, archive);
 }
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
@@ -223,6 +374,20 @@ inline std::map<std::string, std::string> read_zip_entries(const std::filesystem
 #else
     return read_stored_zip_entries(path);
 #endif
+}
+
+inline void rewrite_package_entry_as_stored(
+    const std::filesystem::path& path,
+    std::string_view entry_name,
+    std::string replacement)
+{
+    std::map<std::string, std::string> entries = read_zip_entries(path);
+    auto entry = entries.find(std::string(entry_name));
+    if (entry == entries.end()) {
+        throw std::runtime_error("test package entry to rewrite was not found");
+    }
+    entry->second = std::move(replacement);
+    write_stored_zip_entries(path, entries);
 }
 
 } // namespace fastxlsx::test

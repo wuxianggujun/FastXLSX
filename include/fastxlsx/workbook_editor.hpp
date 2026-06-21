@@ -361,11 +361,14 @@ struct WorksheetCellSnapshot {
 /// formula text by translating A1-style relative references from the source
 /// definition cell to the follower cell. The translator honors `$` absolute
 /// row/column markers, emits `#REF!` for translated references outside Excel
-/// bounds, and skips double-quoted strings, quoted sheet-name tokens, and
-/// bracketed external/structured-reference tokens. This remains a narrow
-/// translator, not a complete Excel formula parser. Unresolved metadata-only
-/// shared formula cells can only materialize from cached scalar `<v>` values
-/// when present.
+/// bounds, and skips double-quoted strings, quoted sheet-name tokens
+/// themselves, and bracketed external/structured-reference tokens. A1
+/// references after a sheet qualifier are still handled as ordinary relative
+/// references by this narrow translator. Whole-row/whole-column references,
+/// function names, named ranges, and structured-reference contents are left
+/// unchanged rather than parsed. This remains a narrow translator, not a
+/// complete Excel formula parser. Unresolved metadata-only shared formula cells
+/// can only materialize from cached scalar `<v>` values when present.
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
 /// or unsupported cell metadata attributes, coerce invalid numeric payloads, migrate

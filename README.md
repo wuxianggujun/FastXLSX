@@ -442,11 +442,13 @@ plain `CellValue::text(...)`；dirty `save_as()` 仍把 materialized text 写成
 strings，并保留 source sharedStrings part，而不是重建或回写 string table。
 source shared formula definition 会按公式文本导入；source-order follower 会基于
 definition cell 到 follower cell 的偏移平移 A1-style 引用后导入为普通公式文本。
-平移会跳过双引号字符串、quoted sheet-name token 和 bracketed
-external/structured-reference token；未能解析到 definition 的 metadata-only shared
-formula cell 仍只在有 supported cached scalar `<v>` 时按旧边界 materialize。dirty
-projection 输出普通 `<f>...</f>`，不保留 shared formula metadata、cached formula
-results，不计算公式、不重建 calcChain。
+平移会跳过双引号字符串、quoted sheet-name token 本身和 bracketed
+external/structured-reference token；sheet qualifier 后面的 A1 引用仍按窄规则平移。
+whole-row/whole-column reference、函数名、named range 和 structured-reference
+内容保持原样，不做完整 parser 解析。未能解析到 definition 的 metadata-only
+shared formula cell 仍只在有 supported cached scalar `<v>` 时按旧边界 materialize。
+dirty projection 输出普通 `<f>...</f>`，不保留 shared formula metadata、cached
+formula results，不计算公式、不重建 calcChain。
 prefixed source sharedStrings element names (`sst` / `si` / `t` / `r`) 会按
 local-name 参与该只读 materialization；这不是 namespace URI validation、namespace
 repair 或 schema validation。unsupported sharedStrings item/rich-run local-name

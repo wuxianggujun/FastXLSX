@@ -12229,6 +12229,79 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         "source shared formula rewrite should not mutate untouched source sheet bytes");
 }
 
+void test_public_worksheet_editor_materializes_source_order_shared_formula_matrix()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-source-shared-formula-matrix-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-shared-formula-matrix-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData>)"
+        R"(<row r="1">)"
+        R"(<c r="A1"><f t="shared" ref="A1:C2" si="1">A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)</f><v>1</v></c>)"
+        R"(<c r="B1"><f t="shared" ref="B1:D1" si="2">C1+D$1+$C1+$C$1</f><v>2</v></c>)"
+        R"(<c r="C1"><f t="shared" si="1"/><v>777</v></c>)"
+        R"(<c r="D1"><f t="shared" si="2"/><v>888</v></c>)"
+        R"(</row>)"
+        R"(<row r="2"><c r="A2"><f t="shared" si="1"/><v>999</v></c></row>)"
+        R"(<row r="3"><c r="A3"><f t="shared" ref="A3:B3" si="1">Z3+1</f><v>3</v></c><c r="B3"><f t="shared" si="1"/><v>4</v></c></row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const auto expect_formula = [&](std::string_view reference, std::string_view expected,
+                                    std::string_view message) {
+        const std::optional<fastxlsx::CellValue> value = sheet.try_cell(reference);
+        check(value.has_value() && value->kind() == fastxlsx::CellValueKind::Formula
+                && value->text_value() == expected,
+            message);
+    };
+    expect_formula("C1",
+        "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)",
+        "WorksheetEditor should translate multiple shared formula followers without formula-name false positives");
+    expect_formula("D1", "E1+F$1+$C1+$C$1",
+        "WorksheetEditor should keep interleaved shared formula indexes independent");
+    expect_formula("A2",
+        "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)",
+        "WorksheetEditor should translate row-offset shared formula followers");
+    expect_formula("B3", "AA3+1",
+        "WorksheetEditor should use the latest source-order shared formula definition for later followers");
+    check(!sheet.has_pending_changes(),
+        "source-order shared formula read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "source-order shared formula read-only materialization should not dirty the workbook editor");
+
+    sheet.set_cell("E4", fastxlsx::CellValue::text("shared-formula-matrix-edit"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="C1"><f>C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)</f></c>)",
+        "flushed WorksheetEditor should write translated source-order shared formula C1 as plain formula text");
+    check_contains(output_worksheet_xml, R"(<c r="D1"><f>E1+F$1+$C1+$C$1</f></c>)",
+        "flushed WorksheetEditor should write interleaved shared formula D1 as plain formula text");
+    check_contains(output_worksheet_xml, R"(<c r="B3"><f>AA3+1</f></c>)",
+        "flushed WorksheetEditor should write latest-definition shared formula B3 as plain formula text");
+    check_not_contains(output_worksheet_xml, R"(t="shared")",
+        "flushed WorksheetEditor should not preserve shared formula metadata");
+    check_not_contains(output_worksheet_xml, "<v>999</v>",
+        "flushed WorksheetEditor should drop stale shared formula cached values");
+    check_contains(output_worksheet_xml,
+        R"(<c r="E4" t="inlineStr"><is><t>shared-formula-matrix-edit</t></is></c>)",
+        "flushed WorksheetEditor shared formula matrix should include later text edits");
+    check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "source-order shared formula matrix should not mutate untouched source sheet bytes");
+}
+
 void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()
 {
     const std::filesystem::path source =
@@ -17648,6 +17721,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes();
         test_public_worksheet_editor_materializes_source_formulas();
         test_public_worksheet_editor_materializes_source_shared_formulas();
+        test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         }
 
         if (should_run_workbook_editor_shard(shard, "source-failure")

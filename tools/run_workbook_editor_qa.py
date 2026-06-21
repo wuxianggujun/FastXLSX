@@ -31,6 +31,7 @@ NAMESPACES = {
 
 GENERATED_SCENARIOS = [
     "generated_rename_materialized",
+    "generated_shared_formula_materialization",
     "generated_style_passthrough",
     "generated_image_replace",
     "generated_public_e2e",
@@ -256,6 +257,66 @@ def verify_generated_rename_materialized(path: Path) -> tuple[dict[str, Any], di
             "sheetnames": workbook.sheetnames,
             "EditedData!A1": edited["A1"].value,
             "EditedData!B2": edited["B2"].value,
+            "Untouched!A1": untouched["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated shared formula: missing workbook.xml")
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('t="shared"' not in worksheet_xml,
+            "generated shared formula: stale shared formula metadata remained in output")
+    expected_fragments = [
+        R'<c r="C1"><f>A1+B1</f></c>',
+        R'<c r="C2"><f>A2+B2</f></c>',
+        R'<c r="C3"><f>A3+B3</f></c>',
+        R'<c r="D2"><f>SUM(A2:B2)+$A2+A$1+$A$1</f></c>',
+        R'<c r="D3"><f>SUM(A3:B3)+$A3+A$1+$A$1</f></c>',
+        R'<c r="E4" t="inlineStr"><is><t>shared-formula-qa-edit</t></is></c>',
+    ]
+    for fragment in expected_fragments:
+        require(fragment in worksheet_xml,
+                f"generated shared formula: missing worksheet XML fragment {fragment!r}")
+    for stale_value in ["9", "14", "15", "23"]:
+        require(f"<v>{stale_value}</v>" not in worksheet_xml,
+                f"generated shared formula: stale cached formula value {stale_value} remained")
+    zip_report["formulas"] = ["C1", "C2", "C3", "D1", "D2", "D3"]
+    zip_report["stale_cached_values"] = "absent"
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["SharedFormula", "Untouched"],
+                f"generated shared formula: unexpected sheetnames {workbook.sheetnames!r}")
+        worksheet = workbook["SharedFormula"]
+        untouched = workbook["Untouched"]
+        require(worksheet["A1"].value == 1, "generated shared formula: A1 mismatch")
+        require(worksheet["B3"].value == 8, "generated shared formula: B3 mismatch")
+        require(worksheet["C1"].value == "=A1+B1",
+                f"generated shared formula: C1 formula mismatch {worksheet['C1'].value!r}")
+        require(worksheet["C2"].value == "=A2+B2",
+                f"generated shared formula: C2 formula mismatch {worksheet['C2'].value!r}")
+        require(worksheet["D2"].value == "=SUM(A2:B2)+$A2+A$1+$A$1",
+                f"generated shared formula: D2 formula mismatch {worksheet['D2'].value!r}")
+        require(worksheet["D3"].value == "=SUM(A3:B3)+$A3+A$1+$A$1",
+                f"generated shared formula: D3 formula mismatch {worksheet['D3'].value!r}")
+        require(worksheet["E4"].value == "shared-formula-qa-edit",
+                "generated shared formula: E4 edit mismatch")
+        require(untouched["A1"].value == "keep-shared-formula-qa",
+                "generated shared formula: untouched sheet mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "SharedFormula!C1": worksheet["C1"].value,
+            "SharedFormula!C2": worksheet["C2"].value,
+            "SharedFormula!D2": worksheet["D2"].value,
+            "SharedFormula!D3": worksheet["D3"].value,
+            "SharedFormula!E4": worksheet["E4"].value,
             "Untouched!A1": untouched["A1"].value,
         }
     finally:
@@ -532,6 +593,19 @@ def create_xlsxwriter_reference(
             edited.write("A1", "materialized-edit")
             edited.write_number("B2", 42)
             untouched.write("A1", "keep-me")
+        elif scenario == "generated_shared_formula_materialization":
+            shared = workbook.add_worksheet("SharedFormula")
+            untouched = workbook.add_worksheet("Untouched")
+            for row_index, (left, right) in enumerate([(1, 2), (4, 5), (7, 8)]):
+                excel_row = row_index + 1
+                shared.write_number(row_index, 0, left)
+                shared.write_number(row_index, 1, right)
+                shared.write_formula(row_index, 2, f"=A{excel_row}+B{excel_row}")
+                shared.write_formula(
+                    row_index, 3,
+                    f"=SUM(A{excel_row}:B{excel_row})+$A{excel_row}+A$1+$A$1")
+            shared.write("E4", "shared-formula-qa-edit")
+            untouched.write("A1", "keep-shared-formula-qa")
         elif scenario == "generated_style_passthrough":
             data = workbook.add_worksheet("Data")
             style = workbook.add_format({"num_format": "0.00"})
@@ -585,6 +659,8 @@ def run_generated_case(
 
     if scenario == "generated_rename_materialized":
         zip_xml, openpyxl_report = verify_generated_rename_materialized(output_path)
+    elif scenario == "generated_shared_formula_materialization":
+        zip_xml, openpyxl_report = verify_generated_shared_formula_materialization(output_path)
     elif scenario == "generated_style_passthrough":
         zip_xml, openpyxl_report = verify_generated_style_passthrough(output_path)
     elif scenario == "generated_image_replace":

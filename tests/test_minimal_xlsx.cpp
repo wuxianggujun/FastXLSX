@@ -1487,12 +1487,57 @@ void test_internal_cell_store_worksheet_loader()
                 && shared_edge_follower->text_value == "#REF!+$XFD6+#REF!+$XFD$5",
             "worksheet loader should translate out-of-range relative shared formula references to #REF!");
     }
-    check_fastxlsx_error(
-        [&] {
-            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="bad">1</f></c></row></sheetData></worksheet>)");
-        },
-        "worksheet loader should reject invalid shared formula indexes");
+    {
+        const fastxlsx::detail::CellStore shared_formula_matrix =
+            fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData>)"
+                R"(<row r="1">)"
+                R"(<c r="A1"><f t="shared" ref="A1:C2" si="1">A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)</f><v>1</v></c>)"
+                R"(<c r="B1"><f t="shared" ref="B1:D1" si="2">C1+D$1+$C1+$C$1</f><v>2</v></c>)"
+                R"(<c r="C1"><f t="shared" si="1"/><v>777</v></c>)"
+                R"(<c r="D1"><f t="shared" si="2"/><v>888</v></c>)"
+                R"(</row>)"
+                R"(<row r="2"><c r="A2"><f t="shared" si="1"/><v>999</v></c></row>)"
+                R"(<row r="3"><c r="A3"><f t="shared" ref="A3:B3" si="1">Z3+1</f><v>3</v></c><c r="B3"><f t="shared" si="1"/><v>4</v></c></row>)"
+                R"(<row r="4"><c r="A4"><f t="shared" si="77"/><v>77</v></c></row>)"
+                R"(</sheetData></worksheet>)");
+        const auto expect_formula = [&](std::uint32_t row, std::uint32_t column,
+                                        std::string_view expected, const char* message) {
+            const fastxlsx::detail::CellRecord* record =
+                shared_formula_matrix.try_cell(row, column);
+            check(record != nullptr && record->kind == fastxlsx::CellValueKind::Formula
+                    && record->text_value == expected,
+                message);
+        };
+        expect_formula(1, 3,
+            "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)",
+            "worksheet loader should translate multiple followers without touching names, structured refs, or whole-row/column refs");
+        expect_formula(1, 4, "E1+F$1+$C1+$C$1",
+            "worksheet loader should isolate interleaved shared formula indexes");
+        expect_formula(2, 1,
+            "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)",
+            "worksheet loader should translate row-offset shared formula followers");
+        expect_formula(3, 2, "AA3+1",
+            "worksheet loader should use the latest source-order shared formula definition for later followers");
+        const fastxlsx::detail::CellRecord* unresolved =
+            shared_formula_matrix.try_cell(4, 1);
+        check(unresolved != nullptr && unresolved->kind == fastxlsx::CellValueKind::Number
+                && unresolved->number_value == 77.0,
+            "worksheet loader should keep unresolved shared formula followers on cached scalar fallback");
+    }
+    const std::vector<std::string_view> invalid_shared_formula_indexes {
+        "", "-1", "+1", "1.0", "18446744073709551616"};
+    for (std::string_view invalid_index : invalid_shared_formula_indexes) {
+        const std::string xml =
+            std::string(R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si=")")
+            + std::string(invalid_index)
+            + R"(">1</f></c></row></sheetData></worksheet>)";
+        check_fastxlsx_error(
+            [&] {
+                (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(xml);
+            },
+            "worksheet loader should reject invalid shared formula indexes");
+    }
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(

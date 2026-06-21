@@ -288,6 +288,32 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_t
 ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.facade" --output-on-failure --timeout 60
 ```
 
+Shared formula materialization is covered by default CTest through
+`fastxlsx.unit` and `fastxlsx.workbook_editor.source-success`. For the local
+openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and run the
+focused generated scenario:
+
+```powershell
+cmake --preset windows-nmake-release -DFASTXLSX_BUILD_QA_TOOLS=ON
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_shared_formula_materialization `
+  --work-dir build\qa\workbook-editor-shared-formula
+```
+
+To smoke-test third-party fixture workbooks such as xlnt or OpenXLSX samples,
+keep them outside the repository and pass a fixture root explicitly. These
+fixtures are local QA inputs only, not FastXLSX runtime dependencies and not
+default CI data:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --fixture-root C:\path\to\xlnt\tests\data `
+  --scenario external_fixture_materialized_smoke `
+  --fixture-limit 25 `
+  --work-dir build\qa\workbook-editor-xlnt-fixtures
+```
+
 ## Benchmark 本地 QA
 
 Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：

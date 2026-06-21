@@ -798,6 +798,10 @@ single-cell parsing, row/column and range guardrails, and projection from
 internal materialized-cell snapshots to public `WorksheetCellSnapshot` values.
 `WorkbookEditor` / `WorksheetEditor` still own lifecycle, session lookup,
 mutation ordering, and save-as orchestration.
+P8.579 moves `WorkbookEditor::save_as()` output path safety behind
+`src/workbook_editor_save_as_policy.*`: the helper owns empty output, existing
+directory, missing-parent, and source-overwrite rejection. The facade still owns
+dirty materialized-session flush ordering and package save orchestration.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

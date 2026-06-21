@@ -3,6 +3,7 @@
 #include "package_editor.hpp"
 #include "workbook_editor_image_edit.hpp"
 #include "workbook_editor_pending_edits.hpp"
+#include "workbook_editor_save_as_policy.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
 #include "workbook_editor_worksheet_access.hpp"
 
@@ -62,21 +63,6 @@ std::vector<std::string> source_sheet_names_from_workbook_sheets(
     return message;
 }
 
-bool same_existing_path(
-    const std::filesystem::path& left, const std::filesystem::path& right) noexcept
-{
-    std::error_code error;
-    const bool same = std::filesystem::equivalent(left, right, error);
-    return !error && same;
-}
-
-bool path_is_existing_directory(const std::filesystem::path& path) noexcept
-{
-    std::error_code error;
-    const bool directory = std::filesystem::is_directory(path, error);
-    return !error && directory;
-}
-
 std::vector<WorkbookEditorWorksheetCatalogEntry> public_catalog_from_detail_catalog(
     const std::vector<detail::WorkbookEditorSheetCatalogEntry>& detail_catalog)
 {
@@ -123,18 +109,6 @@ void copy_formula_reference_audit_fields(
     audit.matched_planned_sheet_name = fields.matched_planned_sheet_name;
     audit.references_renamed_source_name = fields.references_renamed_source_name;
     audit.references_planned_sheet_name = fields.references_planned_sheet_name;
-}
-
-bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
-{
-    const std::filesystem::path parent = path.parent_path();
-    if (parent.empty()) {
-        return false;
-    }
-
-    std::error_code error;
-    const bool directory = std::filesystem::is_directory(parent, error);
-    return error || !directory;
 }
 
 } // namespace
@@ -212,22 +186,6 @@ struct WorkbookEditor::Impl {
                 session->clear_dirty();
             }
             ++pending_public_edit_count;
-        }
-    }
-
-    void preflight_save_as_path(const std::filesystem::path& path) const
-    {
-        if (path.empty()) {
-            throw FastXlsxError("PackageEditor output path cannot be empty");
-        }
-        if (path_is_existing_directory(path)) {
-            throw FastXlsxError("PackageEditor output path is an existing directory");
-        }
-        if (path_parent_is_not_directory(path)) {
-            throw FastXlsxError("PackageEditor output parent path is not an existing directory");
-        }
-        if (same_existing_path(editor.reader().path(), path)) {
-            throw FastXlsxError("PackageEditor cannot save over the source package");
         }
     }
 
@@ -770,7 +728,7 @@ void WorkbookEditor::save_as(const std::filesystem::path& path)
         throw FastXlsxError("WorkbookEditor is not open");
     }
 
-    impl_->preflight_save_as_path(path);
+    detail::validate_workbook_editor_save_as_path(impl_->editor.reader().path(), path);
     impl_->flush_dirty_materialized_sessions_to_patch_plan();
     impl_->editor.save_as(path);
 }

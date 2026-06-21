@@ -2,6 +2,7 @@
 
 #include <fastxlsx/cell_value.hpp>
 
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <string_view>

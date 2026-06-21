@@ -36140,10 +36140,10 @@ void test_package_editor_source_loaded_cell_store_reference_failure_preserves_ed
             "invalid row number",
         },
         {
-            "fastxlsx-package-editor-source-cellstore-formula-bool-source.xlsx",
-            "fastxlsx-package-editor-source-cellstore-formula-bool-output.xlsx",
-            R"(<worksheet><sheetData><row r="1"><c r="A1" t="b"><f>1</f></c></row></sheetData></worksheet>)",
-            "formula in a non-numeric cell",
+            "fastxlsx-package-editor-source-cellstore-formula-inline-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-formula-inline-output.xlsx",
+            R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><f>1</f></c></row></sheetData></worksheet>)",
+            "formula in an unsupported cell type",
         },
         {
             "fastxlsx-package-editor-source-cellstore-nonfinite-number-source.xlsx",

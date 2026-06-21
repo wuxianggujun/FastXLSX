@@ -1774,9 +1774,11 @@ CellValue materialize_cell_value(
 void reject_unsupported_value_shape(const ActiveSourceCell& cell, std::string_view element_name)
 {
     if (element_name == "f") {
-        if (cell.type != SourceCellType::Number && cell.type != SourceCellType::String) {
+        // Formula text owns the cell value; supported cached-result shapes are ignored.
+        if (cell.type == SourceCellType::InlineString
+            || cell.type == SourceCellType::SharedString) {
             throw FastXlsxError(
-                "CellStore worksheet loader found a formula in a non-numeric cell type without t=\"str\"");
+                "CellStore worksheet loader found a formula in an unsupported cell type");
         }
         return;
     }

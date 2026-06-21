@@ -45,10 +45,12 @@ definition cell to the follower cell; `$` absolute row/column anchors are kept,
 out-of-bounds relative references become `#REF!`, and quoted strings, quoted
 sheet-name tokens, and bracketed external/structured-reference tokens are not
 rewritten. Dirty `WorksheetEditor` save writes ordinary `<f>...</f>` formula
-text, drops stale cached results, and still does not preserve shared formula
-metadata, evaluate formulas, rebuild calcChain, or implement a complete Excel
-formula parser. Unresolved metadata-only shared formula cells continue to fall
-back to supported cached scalar `<v>` values when present.
+text, treats formula text as authoritative for default/numeric, `t="str"`, and
+`t="b"` cached-result formula cells, drops stale cached results, and still does
+not preserve shared formula metadata, evaluate formulas, rebuild calcChain, or
+implement a complete Excel formula parser. Unresolved metadata-only shared
+formula cells continue to fall back to supported cached scalar `<v>` values when
+present.
 Array and dataTable formula metadata now follows the same lossy materialization
 boundary: source formula text in `<f t="array">` / `<f t="dataTable">`
 materializes as plain formula text, metadata-only cells fall back to supported
@@ -945,11 +947,12 @@ described as XML repair.
 Source cell-reference failure hygiene is now pinned at the public facade as
 well: missing source cell `r` and row/cell reference mismatch fail cleanly
 without partial sessions and do not prevent later valid Patch edits.
-Source formula behavior is pinned too: formula cells load as
+Source formula behavior is pinned too: supported formula cells load as
 `CellValue::formula(...)`, stale cached scalar values are dropped by the
 materialized save-as projection, and empty/duplicate/attribute-bearing or
-non-numeric formula shapes fail cleanly without poisoning the editor. This is
-formula text import only, not formula evaluation or calcChain rebuild.
+unsupported inline/shared-string formula shapes fail cleanly without poisoning
+the editor. This is formula text import only, not formula evaluation or
+calcChain rebuild.
 Source inline text failure hygiene is now pinned at the same facade: unknown XML
 entities, unsupported inline `<t>` attributes, duplicate direct inline text
 elements, and unknown inline string metadata fail cleanly without partial

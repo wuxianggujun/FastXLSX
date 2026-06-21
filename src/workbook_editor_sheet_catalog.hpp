@@ -8,6 +8,9 @@
 
 namespace fastxlsx::detail {
 
+[[nodiscard]] std::string workbook_editor_missing_planned_sheet_message(
+    std::string_view sheet_name);
+
 struct WorkbookEditorSheetCatalogEntry {
     std::string source_name;
     std::string planned_name;

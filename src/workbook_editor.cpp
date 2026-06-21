@@ -3,6 +3,7 @@
 #include "package_editor.hpp"
 #include "workbook_editor_image_edit.hpp"
 #include "workbook_editor_formula_diagnostics.hpp"
+#include "workbook_editor_materialized_edits.hpp"
 #include "workbook_editor_pending_edits.hpp"
 #include "workbook_editor_save_as_policy.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
@@ -51,16 +52,6 @@ std::vector<std::string> source_sheet_names_from_workbook_sheets(
         names.push_back(sheet.name);
     }
     return names;
-}
-
-[[nodiscard]] std::string missing_planned_sheet_message(std::string_view sheet_name)
-{
-    std::string message = "WorkbookEditor worksheet is not present in current planned catalog";
-    if (!sheet_name.empty()) {
-        message += ": ";
-        message += sheet_name;
-    }
-    return message;
 }
 
 std::vector<WorkbookEditorWorksheetCatalogEntry> public_catalog_from_detail_catalog(
@@ -128,32 +119,12 @@ struct WorkbookEditor::Impl {
         return sheet_catalog.source_name_for_current(sheet_name);
     }
 
-    void preflight_materialized_flush_targets(
-        const std::vector<detail::MaterializedWorksheetProjection>& projections) const
-    {
-        for (const detail::MaterializedWorksheetProjection& projection : projections) {
-            if (!has_current_worksheet(projection.planned_name)) {
-                throw FastXlsxError(missing_planned_sheet_message(projection.planned_name));
-            }
-        }
-    }
-
     void flush_dirty_materialized_sessions_to_patch_plan()
     {
-        const std::vector<detail::MaterializedWorksheetProjection> projections =
-            materialized_sessions.dirty_worksheet_chunk_sources();
-        preflight_materialized_flush_targets(projections);
-        for (const detail::MaterializedWorksheetProjection& projection : projections) {
-            editor.replace_worksheet_part_from_chunk_source_by_name(
-                projection.planned_name, projection.read_next_chunk);
-
-            detail::MaterializedWorksheetSession* session =
-                materialized_sessions.try_session(projection.planned_name);
-            if (session != nullptr) {
-                session->clear_dirty();
-            }
-            ++pending_public_edit_count;
-        }
+        const detail::WorkbookEditorMaterializedFlushResult result =
+            detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+                editor, materialized_sessions, sheet_catalog);
+        pending_public_edit_count += result.flushed_worksheet_count;
     }
 
     [[nodiscard]] bool has_pending_sheet_data_payload(std::string_view sheet_name) const noexcept
@@ -168,15 +139,8 @@ struct WorkbookEditor::Impl {
 
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
     {
-        std::vector<std::string> names;
-        for (const std::string& sheet_name : current_worksheet_names()) {
-            const detail::MaterializedWorksheetSession* session =
-                materialized_sessions.try_session(sheet_name);
-            if (session != nullptr && session->dirty()) {
-                names.push_back(sheet_name);
-            }
-        }
-        return names;
+        return detail::workbook_editor_pending_materialized_worksheet_names(
+            sheet_catalog, materialized_sessions);
     }
 
     [[nodiscard]] std::size_t pending_materialized_cell_count() const noexcept
@@ -427,7 +391,7 @@ WorksheetEditor WorkbookEditor::worksheet(
     }
 
     if (!impl_->has_current_worksheet(sheet_name)) {
-        throw FastXlsxError(missing_planned_sheet_message(sheet_name));
+        throw FastXlsxError(detail::workbook_editor_missing_planned_sheet_message(sheet_name));
     }
     if (impl_->has_pending_sheet_data_payload(sheet_name)) {
         throw FastXlsxError(
@@ -437,7 +401,7 @@ WorksheetEditor WorkbookEditor::worksheet(
     const std::optional<std::string> source_name =
         impl_->source_name_for_current_worksheet(sheet_name);
     if (!source_name.has_value()) {
-        throw FastXlsxError(missing_planned_sheet_message(sheet_name));
+        throw FastXlsxError(detail::workbook_editor_missing_planned_sheet_message(sheet_name));
     }
 
     const detail::CellStoreOptions store_options =
@@ -477,7 +441,8 @@ void WorkbookEditor::replace_sheet_data(
 
     try {
         if (!impl_->has_current_worksheet(sheet_name)) {
-            throw FastXlsxError(missing_planned_sheet_message(sheet_name));
+            throw FastXlsxError(
+                detail::workbook_editor_missing_planned_sheet_message(sheet_name));
         }
         impl_->materialized_sessions.preflight_no_materialized_session(
             sheet_name, "replace sheet data");

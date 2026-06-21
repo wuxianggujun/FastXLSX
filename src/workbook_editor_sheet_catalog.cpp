@@ -8,6 +8,16 @@
 
 namespace fastxlsx::detail {
 
+std::string workbook_editor_missing_planned_sheet_message(std::string_view sheet_name)
+{
+    std::string message = "WorkbookEditor worksheet is not present in current planned catalog";
+    if (!sheet_name.empty()) {
+        message += ": ";
+        message += sheet_name;
+    }
+    return message;
+}
+
 WorkbookEditorSheetCatalogPlan::WorkbookEditorSheetCatalogPlan(
     std::vector<std::string> source_names)
     : source_names_(std::move(source_names))

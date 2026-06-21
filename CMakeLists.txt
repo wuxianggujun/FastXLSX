@@ -38,6 +38,7 @@ add_library(fastxlsx
     src/worksheet_event_reader.cpp
     src/worksheet_transformer.cpp
     src/workbook_editor_image_edit.cpp
+    src/workbook_editor_materialized_edits.cpp
     src/workbook_editor_pending_edits.cpp
     src/workbook_editor_save_as_policy.cpp
     src/workbook_editor_sheet_catalog.cpp

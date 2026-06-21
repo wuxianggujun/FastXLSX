@@ -308,7 +308,11 @@ missing-parent, and source-overwrite rejection. The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized
 formula-cell audits and source workbook definedName formula diagnostics through
-the public API. The workbook-editor CTest
+the public API. `fastxlsx.workbook_editor_materialized_edits` covers the
+extracted materialized-edit helper directly: dirty materialized worksheet names
+follow the current planned catalog order, clean sessions are skipped, and flush
+target preflight rejects sessions outside the current catalog. The
+workbook-editor CTest
 family still covers the public facade integration, plus an Office-like public
 `WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,

@@ -811,6 +811,16 @@ source `xl/workbook.xml` reads for definedName formula diagnostics.
 results. This is semantic implementation-boundary cleanup only; it does not add
 formula evaluation, rewrite, dependency graphing, calcChain rebuild, or workbook
 metadata repair.
+P8.581 moves materialized worksheet edit flush helpers behind
+`src/workbook_editor_materialized_edits.*`: the helper owns dirty materialized
+worksheet name diagnostics, current-catalog flush target preflight, dirty
+session projection handoff to `PackageEditor`, and clearing flushed sessions.
+`WorkbookEditor` still owns lifecycle, public edit count aggregation, and
+save-as orchestration. The shared missing-planned-sheet diagnostic string now
+lives with the workbook sheet catalog helper, so materialized flush and public
+facade paths use one message source. This is semantic implementation-boundary
+cleanup only; it does not add transaction history, rollback, large-file random
+editing, relationship repair, or formula/metadata synchronization.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

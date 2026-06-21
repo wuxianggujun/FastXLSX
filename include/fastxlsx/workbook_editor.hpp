@@ -224,6 +224,93 @@ struct WorkbookEditorFormulaReferenceAudit {
     /// True when the qualifier used Excel's single-quoted sheet-name form.
     bool qualifier_quoted = false;
 
+    /// True when the qualifier appears to name an external workbook, such as
+    /// `[Book.xlsx]Sheet1!A1` or `'[Book.xlsx]Sheet1'!A1`.
+    bool external_workbook_qualifier = false;
+
+    /// True when the qualifier appears to be a 3D sheet range, such as
+    /// `Sheet1:Sheet3!A1`. This is reported for audit only; FastXLSX does not
+    /// interpret the sheet range semantics.
+    bool sheet_range_qualifier = false;
+
+    /// True when referenced_sheet_name matched a source or planned sheet in the
+    /// current workbook catalog using the same ASCII case-insensitive rule as
+    /// sheet names.
+    bool matched_current_workbook_sheet = false;
+
+    /// Matched source sheet name when matched_current_workbook_sheet is true.
+    std::string matched_source_sheet_name;
+
+    /// Matched current planned sheet name when matched_current_workbook_sheet
+    /// is true.
+    std::string matched_planned_sheet_name;
+
+    /// True when the qualifier still names a source sheet whose current planned
+    /// name differs, for example after rename_sheet("Data", "RenamedData").
+    bool references_renamed_source_name = false;
+
+    /// True when the qualifier names the matched sheet's current planned name.
+    bool references_planned_sheet_name = false;
+};
+
+/// Public diagnostic for a workbook definedName formula's sheet-qualified reference.
+///
+/// API mode: Patch / read-only source workbook inspection. This value reports
+/// formula text references such as `Data!$A$1` or `'Other Sheet'!$A$1:$B$2`
+/// found in source workbook `<definedNames><definedName>...</definedName>`
+/// entries. It is a dependency-risk diagnostic for narrow edits such as
+/// rename_sheet(); it does not evaluate formulas, rewrite definedName text,
+/// validate all Excel formula grammar, rebuild calcChain, or scan worksheet
+/// formula cells.
+struct WorkbookEditorDefinedNameFormulaReferenceAudit {
+    /// The unqualified definedName `name` attribute. Empty only when absent.
+    std::string defined_name;
+
+    /// Raw formula text stored in the definedName element body, without a
+    /// leading '='.
+    std::string formula_text;
+
+    /// True when the definedName has a `localSheetId` attribute.
+    bool local_sheet_scope = false;
+
+    /// Raw `localSheetId` attribute text when local_sheet_scope is true.
+    std::string local_sheet_id_text;
+
+    /// True when localSheetId resolved to the current workbook catalog order.
+    bool local_sheet_scope_resolved = false;
+
+    /// Source sheet name for a resolved localSheetId scope.
+    std::string scope_sheet_source_name;
+
+    /// Current planned sheet name for a resolved localSheetId scope.
+    std::string scope_sheet_planned_name;
+
+    /// Raw sheet qualifier text, including quotes when present and trailing '!'.
+    std::string sheet_qualifier_text;
+
+    /// Raw reference token after the sheet qualifier, for example `A1`,
+    /// `$A$1:$B$2`, `A:C`, or `1:3`.
+    std::string reference_text;
+
+    /// Raw qualifier plus reference text, for example `Data!$A$1` or
+    /// `'Other Sheet'!$A$1:$B$2`.
+    std::string qualified_reference_text;
+
+    /// Decoded sheet-name token from the qualifier, excluding quotes and '!'.
+    std::string referenced_sheet_name;
+
+    /// True when the qualifier used Excel's single-quoted sheet-name form.
+    bool qualifier_quoted = false;
+
+    /// True when the qualifier appears to name an external workbook, such as
+    /// `[Book.xlsx]Sheet1!A1` or `'[Book.xlsx]Sheet1'!A1`.
+    bool external_workbook_qualifier = false;
+
+    /// True when the qualifier appears to be a 3D sheet range, such as
+    /// `Sheet1:Sheet3!A1`. This is reported for audit only; FastXLSX does not
+    /// interpret the sheet range semantics.
+    bool sheet_range_qualifier = false;
+
     /// True when referenced_sheet_name matched a source or planned sheet in the
     /// current workbook catalog using the same ASCII case-insensitive rule as
     /// sheet names.
@@ -1053,18 +1140,43 @@ public:
     /// WorksheetEditor path. It scans the formula text currently held in
     /// WorkbookEditor-owned materialized sparse sessions and reports references
     /// whose formula text contains a sheet qualifier, for example `Data!A1`,
-    /// `'Other Sheet'!B2`, or `Data!A:C`. It also compares the decoded
-    /// qualifier token with the current source-to-planned worksheet catalog so
-    /// callers can detect formula text that still names a source sheet after
-    /// rename_sheet() has changed that sheet's planned catalog name.
+    /// `'Other Sheet'!B2`, `Data!A:C`, `[Book.xlsx]Data!A1`, or
+    /// `Sheet1:Sheet3!A1`. It also compares ordinary decoded qualifier tokens
+    /// with the current source-to-planned worksheet catalog so callers can
+    /// detect formula text that still names a source sheet after rename_sheet()
+    /// has changed that sheet's planned catalog name. External workbook and 3D
+    /// sheet-range qualifiers are classified for audit and are not matched to a
+    /// single local workbook sheet.
     ///
     /// This method intentionally does not materialize worksheets, scan
     /// non-materialized worksheet parts, parse the full Excel formula grammar,
-    /// evaluate formulas, rewrite formulas, rebuild calcChain, repair defined
-    /// names, or update last_edit_error(). It returns an empty vector for a
-    /// moved-from editor.
+    /// evaluate formulas, validate external workbook targets or 3D sheet range
+    /// semantics, rewrite formulas, rebuild calcChain, repair defined names, or
+    /// update last_edit_error(). It returns an empty vector for a moved-from
+    /// editor.
     [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
     formula_reference_audits() const;
+
+    /// Returns sheet-qualified formula references from workbook definedNames.
+    ///
+    /// This is a read-only dependency-risk diagnostic for source workbook
+    /// metadata. It materializes only the small `xl/workbook.xml` metadata part,
+    /// scans direct `<definedNames><definedName>` entries, and reports
+    /// sheet-qualified references found in their formula text. It compares
+    /// ordinary decoded qualifier tokens with the current source-to-planned
+    /// worksheet catalog so callers can detect definedNames that still name a
+    /// source sheet after rename_sheet() has changed that sheet's planned
+    /// catalog name. External workbook and 3D sheet-range qualifiers are
+    /// classified for audit and are not matched to a single local workbook
+    /// sheet.
+    ///
+    /// This method intentionally does not materialize worksheets, scan cell
+    /// formulas, parse the full Excel formula grammar, evaluate formulas,
+    /// validate external workbook targets or 3D sheet range semantics, rewrite
+    /// definedNames, rebuild calcChain, repair workbook metadata, or update
+    /// last_edit_error(). It returns an empty vector for a moved-from editor.
+    [[nodiscard]] std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
+    defined_name_formula_reference_audits() const;
 
     /// Materializes an existing worksheet for small-file random cell editing.
     ///

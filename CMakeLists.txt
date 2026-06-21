@@ -25,6 +25,7 @@ add_library(fastxlsx
     src/cell_store.cpp
     src/cell_value.cpp
     src/formula.cpp
+    src/formula_reference_audit.cpp
     src/image.cpp
     src/opc.cpp
     src/package_editor.cpp
@@ -35,6 +36,8 @@ add_library(fastxlsx
     src/workbook_editor.cpp
     src/worksheet_event_reader.cpp
     src/worksheet_transformer.cpp
+    src/workbook_editor_image_edit.cpp
+    src/workbook_editor_sheet_catalog.cpp
     src/xml.cpp
     src/zip_store_writer.cpp
 )

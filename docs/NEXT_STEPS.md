@@ -78,6 +78,20 @@ formula references including the raw reference token and whether they still
 name a source sheet after
 `rename_sheet()` changed that sheet's planned name, and intentionally does not
 scan non-materialized worksheet parts or rewrite formulas.
+It now also classifies external-workbook and 3D sheet-range qualifiers as
+audit-only cases so they are not mistaken for one local workbook sheet.
+The same audit boundary now extends to source workbook defined names through
+`WorkbookEditor::defined_name_formula_reference_audits()`: it materializes only
+the small `xl/workbook.xml` metadata part, scans direct
+`<definedNames><definedName>` formula text, reports exact sheet-qualified
+reference tokens, maps ordinary sheet qualifiers against the current
+source-to-planned catalog, and classifies external-workbook / 3D sheet-range
+qualifiers without local-sheet matching. It still does not rewrite defined
+names, validate external targets, interpret 3D semantics, or implement a
+formula dependency graph.
+The audit scanner/matcher and definedName extraction logic now live behind the
+internal `detail/formula_reference_audit` semantic API instead of being embedded
+in the public `WorkbookEditor` facade implementation.
 Array and dataTable formula metadata now follows the same lossy materialization
 boundary: source formula text in `<f t="array">` / `<f t="dataTable">`
 materializes as plain formula text, metadata-only cells fall back to supported
@@ -737,6 +751,40 @@ formula text that still references a renamed source sheet. The facade regression
 also proves save-as keeps the formula text unchanged. This is read-only audit
 evidence only, not full-workbook formula scanning, formula rewrite, dependency
 graphing, calcChain rebuild, or a complete formula engine.
+P8.572 keeps that same public diagnostic conservative for non-local sheet
+qualifiers: external workbook qualifiers such as `[Book.xlsx]Data!A1` and 3D
+sheet-range qualifiers such as `Data:Formula!A1` are reported with exact tokens
+and explicit classification flags, but are not matched to a single current
+workbook sheet and are not validated, dereferenced, or rewritten.
+P8.573 extends formula dependency diagnostics to source workbook
+`definedNames`: `WorkbookEditor::defined_name_formula_reference_audits()`
+scans direct `xl/workbook.xml` definedName formula text, reports workbook- and
+local-sheet-scoped name context, maps ordinary sheet qualifiers against the
+current source/planned catalog, flags source-name references after
+`rename_sheet()`, and keeps external-workbook / 3D qualifiers audit-only. It
+does not update definedName formulas, repair workbook metadata, validate
+external targets, interpret 3D semantics, or become a formula engine.
+P8.574 moves formula dependency audit behind a semantic detail boundary:
+`include/fastxlsx/detail/formula_reference_audit.hpp` exposes
+`audit_formula_references()` and
+`audit_workbook_defined_name_formula_references()` as domain operations over
+formula text / workbook XML plus a source-to-planned sheet catalog.
+`WorkbookEditor` no longer drives `scan_formula_references()` directly; it only
+gathers editor-owned state, calls the domain audit operation, and maps detail
+results into public audit structs.
+P8.575 applies the same rule to existing-workbook image replacement:
+`src/workbook_editor_image_edit.*` owns media-part target resolution, PNG/JPEG
+content-type / extension matching, and replacement-format validation.
+`WorkbookEditor::replace_image()` now only reads caller-provided replacement
+bytes, asks the image-edit domain helper to validate target semantics, and
+queues the package part rewrite.
+P8.576 moves source/planned worksheet catalog state behind
+`src/workbook_editor_sheet_catalog.*`: `WorkbookEditorSheetCatalogPlan` owns
+source sheet names, chained rename state, source/current lookup,
+source-to-planned catalog entries, and revert-to-source-name behavior.
+`WorkbookEditor`
+now asks this plan for catalog views instead of storing a raw
+source-name-to-planned-name map in the facade implementation.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

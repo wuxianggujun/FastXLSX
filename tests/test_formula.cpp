@@ -1,4 +1,5 @@
 #include <fastxlsx/detail/formula.hpp>
+#include <fastxlsx/detail/formula_reference_audit.hpp>
 
 #include <iostream>
 #include <stdexcept>
@@ -198,6 +199,135 @@ void test_zero_delta_preserves_formula()
         "formula translator should preserve text for zero delta");
 }
 
+void test_formula_reference_audit_fields()
+{
+    const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
+        {"Old Sheet", "New Sheet"},
+        {"Data", "Data"},
+    };
+
+    {
+        const std::string formula = "'Old Sheet'!B2";
+        const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+            fastxlsx::detail::audit_formula_references(formula, catalog);
+        check(audits.size() == 1,
+            "formula audit should report quoted sheet references through semantic API");
+
+        const fastxlsx::detail::FormulaReferenceAuditFields& fields = audits.front();
+        check_equal(fields.formula_text, formula,
+            "formula audit should preserve full formula text");
+        check_equal(fields.sheet_qualifier_text, "'Old Sheet'!",
+            "formula audit should preserve exact sheet qualifier text");
+        check_equal(fields.reference_text, "B2",
+            "formula audit should preserve exact reference text");
+        check_equal(fields.qualified_reference_text, "'Old Sheet'!B2",
+            "formula audit should preserve exact qualified reference text");
+        check_equal(fields.referenced_sheet_name, "Old Sheet",
+            "formula audit should decode quoted sheet names");
+        check(fields.qualifier_quoted, "formula audit should mark quoted qualifiers");
+        check(fields.matched_current_workbook_sheet,
+            "formula audit should match ordinary local sheet qualifiers");
+        check_equal(fields.matched_source_sheet_name, "Old Sheet",
+            "formula audit should report matched source sheet");
+        check_equal(fields.matched_planned_sheet_name, "New Sheet",
+            "formula audit should report matched planned sheet");
+        check(fields.references_renamed_source_name,
+            "formula audit should flag stale source-name references");
+        check(!fields.references_planned_sheet_name,
+            "formula audit should not treat source-name references as planned-name refs");
+    }
+
+    {
+        const std::string formula = "[Book.xlsx]Data!A1";
+        const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+            fastxlsx::detail::audit_formula_references(formula, catalog);
+        check(audits.size() == 1,
+            "formula audit should report external workbook refs through semantic API");
+        const fastxlsx::detail::FormulaReferenceAuditFields& fields = audits.front();
+        check(fields.external_workbook_qualifier,
+            "formula audit should classify external workbook qualifiers");
+        check(!fields.matched_current_workbook_sheet,
+            "formula audit should not match external workbook qualifiers locally");
+    }
+
+    {
+        const std::string formula = "Data:Other!C3";
+        const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+            fastxlsx::detail::audit_formula_references(formula, catalog);
+        check(audits.size() == 1,
+            "formula audit should report 3D sheet-range refs through semantic API");
+        const fastxlsx::detail::FormulaReferenceAuditFields& fields = audits.front();
+        check(fields.sheet_range_qualifier,
+            "formula audit should classify 3D sheet-range qualifiers");
+        check(!fields.matched_current_workbook_sheet,
+            "formula audit should not match 3D sheet-range qualifiers locally");
+    }
+}
+
+void test_scan_workbook_defined_name_formulas()
+{
+    const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
+        {"Old Sheet", "New Sheet"},
+        {"Data", "Data"},
+    };
+    const std::string workbook_xml =
+        R"xml(<?xml version="1.0"?>)xml"
+        R"xml(<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)xml"
+        R"xml(<sheets><sheet name="Old Sheet" sheetId="1" r:id="rId1"/></sheets>)xml"
+        R"xml(<definedNames>)xml"
+        R"xml(<definedName name="Global">Data!A1</definedName>)xml"
+        R"xml(<definedName name="Scoped" localSheetId="0">'Old Sheet'!B2</definedName>)xml"
+        R"xml(<definedName name="Unresolved" localSheetId="bad">[Book.xlsx]Data!A1</definedName>)xml"
+        R"xml(</definedNames></workbook>)xml";
+
+    const std::vector<fastxlsx::detail::SourceDefinedNameFormula> defined_names =
+        fastxlsx::detail::scan_workbook_defined_name_formulas(workbook_xml, catalog);
+
+    check(defined_names.size() == 3,
+        "definedName scanner should report direct definedName formula entries");
+    check_equal(defined_names[0].name, "Global",
+        "definedName scanner should preserve workbook-scope name");
+    check(!defined_names[0].local_sheet_scope,
+        "definedName scanner should leave workbook-scope names unscoped");
+    check_equal(defined_names[0].formula_text, "Data!A1",
+        "definedName scanner should preserve formula text");
+
+    check_equal(defined_names[1].name, "Scoped",
+        "definedName scanner should preserve local scoped name");
+    check(defined_names[1].local_sheet_scope,
+        "definedName scanner should expose localSheetId scope");
+    check_equal(defined_names[1].local_sheet_id_text, "0",
+        "definedName scanner should preserve localSheetId text");
+    check(defined_names[1].local_sheet_scope_resolved,
+        "definedName scanner should resolve valid localSheetId against catalog order");
+    check_equal(defined_names[1].scope_sheet_source_name, "Old Sheet",
+        "definedName scanner should report scoped source sheet");
+    check_equal(defined_names[1].scope_sheet_planned_name, "New Sheet",
+        "definedName scanner should report scoped planned sheet");
+
+    check(defined_names[2].local_sheet_scope,
+        "definedName scanner should expose unresolved localSheetId scopes");
+    check(!defined_names[2].local_sheet_scope_resolved,
+        "definedName scanner should leave malformed localSheetId unresolved");
+
+    const std::vector<fastxlsx::detail::DefinedNameFormulaReferenceAudit> reference_audits =
+        fastxlsx::detail::audit_workbook_defined_name_formula_references(workbook_xml, catalog);
+    check(reference_audits.size() == 3,
+        "definedName audit should combine name extraction and formula reference audit");
+    check_equal(reference_audits[0].defined_name.name, "Global",
+        "definedName audit should preserve workbook-scope name context");
+    check_equal(reference_audits[0].reference.qualified_reference_text, "Data!A1",
+        "definedName audit should preserve workbook-scope qualified reference text");
+    check(reference_audits[0].reference.matched_current_workbook_sheet,
+        "definedName audit should match local sheet references");
+    check_equal(reference_audits[1].defined_name.scope_sheet_planned_name, "New Sheet",
+        "definedName audit should preserve resolved localSheetId context");
+    check(reference_audits[1].reference.references_renamed_source_name,
+        "definedName audit should flag stale source-name references");
+    check(reference_audits[2].reference.external_workbook_qualifier,
+        "definedName audit should classify external workbook references");
+}
+
 } // namespace
 
 int main()
@@ -208,6 +338,8 @@ int main()
         test_translate_formula_references();
         test_translate_formula_out_of_bounds();
         test_zero_delta_preserves_formula();
+        test_formula_reference_audit_fields();
+        test_scan_workbook_defined_name_formulas();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

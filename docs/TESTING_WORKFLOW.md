@@ -292,7 +292,10 @@ Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal
 formula reference scanner/translator boundary, raw sheet qualifier span
-metadata for unquoted / quoted / external-workbook / 3D-like qualifiers, plus an
+metadata for unquoted / quoted / external-workbook / 3D-like qualifiers, direct
+`detail/formula_reference_audit` semantic audit coverage for formula text and
+workbook definedName formulas, and `fastxlsx.workbook_editor_sheet_catalog`
+covers the source/planned worksheet catalog plan state directly, plus an
 Office-like public `WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,
 untouched sheet preservation, and lossy array/dataTable formula metadata
@@ -311,9 +314,15 @@ validate sheet names, external workbook targets, or 3D formula semantics. For
 the public editor diagnostic boundary, `fastxlsx.workbook_editor.facade` also
 covers `WorkbookEditor::formula_reference_audits()`: only already-materialized
 worksheets are scanned, quoted and escaped sheet qualifiers are decoded for
-catalog matching, exact reference tokens are exposed, a `rename_sheet()`
-source-name reference is reported as a stale risk, and `save_as()` still does
-not rewrite the formula text. For
+catalog matching, exact reference tokens are exposed, external workbook and 3D
+sheet-range qualifiers are classified without local-sheet matching, a
+`rename_sheet()` source-name reference is reported as a stale risk, and
+`save_as()` still does not rewrite the formula text. The same facade shard also
+covers `WorkbookEditor::defined_name_formula_reference_audits()` for source
+workbook `definedNames`: workbook-scope and `localSheetId` scoped names expose
+their exact formula reference tokens, source-name references are flagged after
+`rename_sheet()`, external-workbook / 3D qualifiers remain audit-only, and
+`save_as()` still does not rewrite definedName formula text. For
 the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
 run the focused generated scenario:
 

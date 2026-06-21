@@ -1,9 +1,11 @@
 #include <fastxlsx/workbook_editor.hpp>
 
 #include "package_editor.hpp"
+#include "workbook_editor_image_edit.hpp"
+#include "workbook_editor_sheet_catalog.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
-#include <fastxlsx/detail/formula.hpp>
+#include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
@@ -50,32 +52,15 @@ struct WorksheetEditorCellCoordinate {
     std::uint32_t column = 0;
 };
 
-struct FormulaSheetCatalogMatch {
-    WorkbookEditorWorksheetCatalogEntry entry;
-    bool source_name_matched = false;
-    bool planned_name_matched = false;
-};
-
-char ascii_lower(char ch) noexcept
+std::vector<std::string> source_sheet_names_from_workbook_sheets(
+    const std::vector<detail::WorkbookSheetReference>& sheets)
 {
-    if (ch >= 'A' && ch <= 'Z') {
-        return static_cast<char>(ch - 'A' + 'a');
+    std::vector<std::string> names;
+    names.reserve(sheets.size());
+    for (const detail::WorkbookSheetReference& sheet : sheets) {
+        names.push_back(sheet.name);
     }
-    return ch;
-}
-
-bool ascii_equals_ignoring_case(std::string_view lhs, std::string_view rhs) noexcept
-{
-    if (lhs.size() != rhs.size()) {
-        return false;
-    }
-
-    for (std::size_t index = 0; index < lhs.size(); ++index) {
-        if (ascii_lower(lhs[index]) != ascii_lower(rhs[index])) {
-            return false;
-        }
-    }
-    return true;
+    return names;
 }
 
 void migrate_pending_sheet_data_payload_diagnostic(
@@ -204,55 +189,52 @@ std::vector<WorksheetCellSnapshot> public_snapshots_from_internal(
     return snapshots;
 }
 
-std::string decoded_formula_sheet_name(
-    std::string_view formula, const detail::FormulaSheetQualifier& qualifier)
+std::vector<WorkbookEditorWorksheetCatalogEntry> public_catalog_from_detail_catalog(
+    const std::vector<detail::WorkbookEditorSheetCatalogEntry>& detail_catalog)
 {
-    std::string decoded;
-    const std::string_view raw_name =
-        formula.substr(qualifier.name_offset, qualifier.name_length);
-    decoded.reserve(raw_name.size());
-
-    for (std::size_t index = 0; index < raw_name.size(); ++index) {
-        if (qualifier.quoted && raw_name[index] == '\'' && index + 1 < raw_name.size()
-            && raw_name[index + 1] == '\'') {
-            decoded += '\'';
-            ++index;
-            continue;
-        }
-        decoded += raw_name[index];
+    std::vector<WorkbookEditorWorksheetCatalogEntry> public_catalog;
+    public_catalog.reserve(detail_catalog.size());
+    for (const detail::WorkbookEditorSheetCatalogEntry& entry : detail_catalog) {
+        public_catalog.push_back(WorkbookEditorWorksheetCatalogEntry {
+            entry.source_name,
+            entry.planned_name,
+            entry.renamed,
+        });
     }
-
-    return decoded;
+    return public_catalog;
 }
 
-std::optional<FormulaSheetCatalogMatch> match_formula_sheet_catalog_entry(
-    const std::vector<WorkbookEditorWorksheetCatalogEntry>& catalog,
-    std::string_view referenced_sheet_name)
+std::vector<detail::FormulaAuditSheetCatalogEntry> formula_audit_catalog_from_sheet_catalog(
+    const std::vector<detail::WorkbookEditorSheetCatalogEntry>& catalog)
 {
-    std::optional<FormulaSheetCatalogMatch> match;
-    for (const WorkbookEditorWorksheetCatalogEntry& entry : catalog) {
-        const bool source_name_matched =
-            ascii_equals_ignoring_case(entry.source_name, referenced_sheet_name);
-        const bool planned_name_matched =
-            ascii_equals_ignoring_case(entry.planned_name, referenced_sheet_name);
-        if (!source_name_matched && !planned_name_matched) {
-            continue;
-        }
-
-        if (match.has_value()
-            && (match->entry.source_name != entry.source_name
-                || match->entry.planned_name != entry.planned_name)) {
-            return std::nullopt;
-        }
-
-        if (!match.has_value()) {
-            match = FormulaSheetCatalogMatch {entry, source_name_matched, planned_name_matched};
-        } else {
-            match->source_name_matched = match->source_name_matched || source_name_matched;
-            match->planned_name_matched = match->planned_name_matched || planned_name_matched;
-        }
+    std::vector<detail::FormulaAuditSheetCatalogEntry> audit_catalog;
+    audit_catalog.reserve(catalog.size());
+    for (const detail::WorkbookEditorSheetCatalogEntry& entry : catalog) {
+        audit_catalog.push_back(detail::FormulaAuditSheetCatalogEntry {
+            entry.source_name,
+            entry.planned_name,
+        });
     }
-    return match;
+    return audit_catalog;
+}
+
+template <typename PublicAudit>
+void copy_formula_reference_audit_fields(
+    PublicAudit& audit, const detail::FormulaReferenceAuditFields& fields)
+{
+    audit.formula_text = fields.formula_text;
+    audit.sheet_qualifier_text = fields.sheet_qualifier_text;
+    audit.reference_text = fields.reference_text;
+    audit.qualified_reference_text = fields.qualified_reference_text;
+    audit.referenced_sheet_name = fields.referenced_sheet_name;
+    audit.qualifier_quoted = fields.qualifier_quoted;
+    audit.external_workbook_qualifier = fields.external_workbook_qualifier;
+    audit.sheet_range_qualifier = fields.sheet_range_qualifier;
+    audit.matched_current_workbook_sheet = fields.matched_current_workbook_sheet;
+    audit.matched_source_sheet_name = fields.matched_source_sheet_name;
+    audit.matched_planned_sheet_name = fields.matched_planned_sheet_name;
+    audit.references_renamed_source_name = fields.references_renamed_source_name;
+    audit.references_planned_sheet_name = fields.references_planned_sheet_name;
 }
 
 bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
@@ -267,153 +249,54 @@ bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
     return error || !directory;
 }
 
-std::optional<ImageFormat> image_format_from_content_type(std::string_view content_type)
-{
-    if (content_type == "image/png") {
-        return ImageFormat::Png;
-    }
-    if (content_type == "image/jpeg") {
-        return ImageFormat::Jpeg;
-    }
-    return std::nullopt;
-}
-
-std::optional<ImageFormat> image_format_from_media_part(const detail::PackagePart& part)
-{
-    if (!part.name.value().starts_with("/xl/media/")) {
-        return std::nullopt;
-    }
-
-    const std::optional<ImageFormat> content_type_format =
-        image_format_from_content_type(part.content_type);
-    if (!content_type_format.has_value()) {
-        return std::nullopt;
-    }
-
-    const std::string extension = part.name.extension();
-    std::optional<ImageFormat> extension_format;
-    if (extension == "png") {
-        extension_format = ImageFormat::Png;
-    } else if (extension == "jpg" || extension == "jpeg") {
-        extension_format = ImageFormat::Jpeg;
-    } else {
-        return std::nullopt;
-    }
-
-    if (*extension_format != *content_type_format) {
-        return std::nullopt;
-    }
-    return extension_format;
-}
-
-const detail::PackagePart& require_image_target_part(
-    const detail::PackageManifest& manifest, const detail::PartName& part_name)
-{
-    const detail::PackagePart* part = manifest.find_part(part_name);
-    if (part == nullptr) {
-        throw FastXlsxError("WorkbookEditor image target is not present in current package");
-    }
-
-    if (image_format_from_media_part(*part).has_value()) {
-        return *part;
-    }
-
-    throw FastXlsxError(
-        "WorkbookEditor image target must be an existing PNG/JPEG xl/media part whose "
-        "content type matches its extension");
-}
-
 } // namespace
 
 struct WorkbookEditor::Impl {
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
         , options(std::move(options))
+        , sheet_catalog(source_sheet_names_from_workbook_sheets(
+              this->editor.reader().workbook_sheets()))
     {
     }
 
     detail::PackageEditor editor;
     WorkbookEditorOptions options;
+    detail::WorkbookEditorSheetCatalogPlan sheet_catalog;
     detail::MaterializedWorksheetSessionRegistry materialized_sessions;
     std::size_t pending_public_edit_count = 0;
-    std::map<std::string, std::string> planned_sheet_names_by_source;
     std::map<std::string, PendingSheetDataPayloadDiagnostic> pending_sheet_data_payloads;
     std::optional<std::string> last_public_edit_error;
 
     [[nodiscard]] std::vector<std::string> source_worksheet_names() const
     {
-        std::vector<std::string> names;
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            names.push_back(sheet.name);
-        }
-        return names;
+        return sheet_catalog.source_names();
     }
 
     [[nodiscard]] std::vector<std::string> current_worksheet_names() const
     {
-        std::vector<std::string> names;
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            const auto planned_name = planned_sheet_names_by_source.find(sheet.name);
-            names.push_back(planned_name == planned_sheet_names_by_source.end()
-                    ? sheet.name
-                    : planned_name->second);
-        }
-        return names;
+        return sheet_catalog.current_names();
     }
 
     [[nodiscard]] std::vector<WorkbookEditorWorksheetCatalogEntry> worksheet_catalog() const
     {
-        std::vector<WorkbookEditorWorksheetCatalogEntry> entries;
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            const auto planned_name = planned_sheet_names_by_source.find(sheet.name);
-            const std::string& current_name =
-                planned_name == planned_sheet_names_by_source.end()
-                ? sheet.name
-                : planned_name->second;
-
-            WorkbookEditorWorksheetCatalogEntry entry;
-            entry.source_name = sheet.name;
-            entry.planned_name = current_name;
-            entry.renamed = current_name != sheet.name;
-            entries.push_back(std::move(entry));
-        }
-        return entries;
+        return public_catalog_from_detail_catalog(sheet_catalog.entries());
     }
 
     [[nodiscard]] bool has_source_worksheet(std::string_view sheet_name) const
     {
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            if (sheet.name == sheet_name) {
-                return true;
-            }
-        }
-        return false;
+        return sheet_catalog.has_source(sheet_name);
     }
 
     [[nodiscard]] bool has_current_worksheet(std::string_view sheet_name) const
     {
-        for (const std::string& name : current_worksheet_names()) {
-            if (name == sheet_name) {
-                return true;
-            }
-        }
-        return false;
+        return sheet_catalog.has_current(sheet_name);
     }
 
     [[nodiscard]] std::optional<std::string> source_name_for_current_worksheet(
         std::string_view sheet_name) const
     {
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            const auto planned_name = planned_sheet_names_by_source.find(sheet.name);
-            const std::string& current_name =
-                planned_name == planned_sheet_names_by_source.end()
-                ? sheet.name
-                : planned_name->second;
-            if (current_name == sheet_name) {
-                return sheet.name;
-            }
-        }
-        return std::nullopt;
+        return sheet_catalog.source_name_for_current(sheet_name);
     }
 
     void preflight_materialized_flush_targets(
@@ -517,28 +400,24 @@ struct WorkbookEditor::Impl {
     {
         std::vector<WorkbookEditorWorksheetEditSummary> summaries;
 
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            const auto planned_name = planned_sheet_names_by_source.find(sheet.name);
-            const std::string& current_name =
-                planned_name == planned_sheet_names_by_source.end()
-                ? sheet.name
-                : planned_name->second;
+        for (const detail::WorkbookEditorSheetCatalogEntry& catalog_entry :
+             sheet_catalog.entries()) {
+            const std::string& current_name = catalog_entry.planned_name;
             const auto pending_payload = pending_sheet_data_payloads.find(current_name);
             const detail::MaterializedWorksheetSession* materialized_session =
                 materialized_sessions.try_session(current_name);
-            const bool renamed = current_name != sheet.name;
             const bool sheet_data_replaced =
                 pending_payload != pending_sheet_data_payloads.end();
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
-            if (!renamed && !sheet_data_replaced && !materialized_dirty) {
+            if (!catalog_entry.renamed && !sheet_data_replaced && !materialized_dirty) {
                 continue;
             }
 
             WorkbookEditorWorksheetEditSummary summary;
-            summary.source_name = sheet.name;
+            summary.source_name = catalog_entry.source_name;
             summary.planned_name = current_name;
-            summary.renamed = renamed;
+            summary.renamed = catalog_entry.renamed;
             summary.sheet_data_replaced = sheet_data_replaced;
             summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {
@@ -560,10 +439,13 @@ struct WorkbookEditor::Impl {
     [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit> formula_reference_audits()
         const
     {
-        const std::vector<WorkbookEditorWorksheetCatalogEntry> catalog = worksheet_catalog();
+        const std::vector<detail::WorkbookEditorSheetCatalogEntry> catalog =
+            sheet_catalog.entries();
+        const std::vector<detail::FormulaAuditSheetCatalogEntry> formula_catalog =
+            formula_audit_catalog_from_sheet_catalog(catalog);
         std::vector<WorkbookEditorFormulaReferenceAudit> audits;
 
-        for (const WorkbookEditorWorksheetCatalogEntry& formula_sheet : catalog) {
+        for (const detail::WorkbookEditorSheetCatalogEntry& formula_sheet : catalog) {
             const detail::MaterializedWorksheetSession* session =
                 materialized_sessions.try_session(formula_sheet.planned_name);
             if (session == nullptr) {
@@ -575,13 +457,9 @@ struct WorkbookEditor::Impl {
                     continue;
                 }
 
-                const std::vector<detail::FormulaReference> references =
-                    detail::scan_formula_references(record.text_value);
-                for (const detail::FormulaReference& reference : references) {
-                    if (!reference.sheet.present) {
-                        continue;
-                    }
-
+                const std::vector<detail::FormulaReferenceAuditFields> formula_audits =
+                    detail::audit_formula_references(record.text_value, formula_catalog);
+                for (const detail::FormulaReferenceAuditFields& fields : formula_audits) {
                     WorkbookEditorFormulaReferenceAudit audit;
                     audit.formula_sheet_source_name = formula_sheet.source_name;
                     audit.formula_sheet_planned_name = formula_sheet.planned_name;
@@ -589,28 +467,7 @@ struct WorkbookEditor::Impl {
                         position.row,
                         position.column,
                     };
-                    audit.formula_text = record.text_value;
-                    audit.sheet_qualifier_text = std::string(record.text_value.substr(
-                        reference.sheet.offset, reference.sheet.length));
-                    audit.reference_text = std::string(record.text_value.substr(
-                        reference.offset, reference.length));
-                    audit.qualified_reference_text = std::string(record.text_value.substr(
-                        reference.sheet.offset,
-                        reference.offset + reference.length - reference.sheet.offset));
-                    audit.referenced_sheet_name =
-                        decoded_formula_sheet_name(record.text_value, reference.sheet);
-                    audit.qualifier_quoted = reference.sheet.quoted;
-
-                    const std::optional<FormulaSheetCatalogMatch> match =
-                        match_formula_sheet_catalog_entry(catalog, audit.referenced_sheet_name);
-                    if (match.has_value()) {
-                        audit.matched_current_workbook_sheet = true;
-                        audit.matched_source_sheet_name = match->entry.source_name;
-                        audit.matched_planned_sheet_name = match->entry.planned_name;
-                        audit.references_planned_sheet_name = match->planned_name_matched;
-                        audit.references_renamed_source_name = match->source_name_matched
-                            && match->entry.source_name != match->entry.planned_name;
-                    }
+                    copy_formula_reference_audit_fields(audit, fields);
 
                     audits.push_back(std::move(audit));
                 }
@@ -620,27 +477,51 @@ struct WorkbookEditor::Impl {
         return audits;
     }
 
-    void record_planned_sheet_rename(std::string_view old_name, std::string_view new_name)
+    [[nodiscard]] std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
+    defined_name_formula_reference_audits() const
     {
-        for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
-            const auto planned_name = planned_sheet_names_by_source.find(sheet.name);
-            const std::string& current_name =
-                planned_name == planned_sheet_names_by_source.end()
-                ? sheet.name
-                : planned_name->second;
-            if (current_name != old_name) {
-                continue;
-            }
-
-            if (new_name == sheet.name) {
-                planned_sheet_names_by_source.erase(sheet.name);
-            } else {
-                planned_sheet_names_by_source[sheet.name] = std::string(new_name);
-            }
-            return;
+        const std::vector<detail::WorkbookEditorSheetCatalogEntry> catalog =
+            sheet_catalog.entries();
+        const std::vector<detail::FormulaAuditSheetCatalogEntry> formula_catalog =
+            formula_audit_catalog_from_sheet_catalog(catalog);
+        const detail::PartName workbook_part = editor.reader().workbook_part();
+        if (const detail::PackageReaderEntry* entry =
+                editor.reader().find_entry(workbook_part.zip_path());
+            entry != nullptr
+            && entry->uncompressed_size
+                > detail::package_editor_workbook_xml_materialization_byte_limit) {
+            throw FastXlsxError(
+                "source workbook definedName formula audit exceeds small workbook XML limit");
         }
 
-        planned_sheet_names_by_source[std::string(old_name)] = std::string(new_name);
+        std::string workbook_xml;
+        try {
+            workbook_xml = editor.reader().read_entry(workbook_part.zip_path());
+        } catch (const std::exception& error) {
+            throw FastXlsxError(
+                "failed to read source workbook XML for definedName formula audit: "
+                + std::string(error.what()));
+        }
+
+        std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit> audits;
+        const std::vector<detail::DefinedNameFormulaReferenceAudit> defined_name_audits =
+            detail::audit_workbook_defined_name_formula_references(workbook_xml, formula_catalog);
+        for (const detail::DefinedNameFormulaReferenceAudit& defined_name_audit :
+             defined_name_audits) {
+            const detail::SourceDefinedNameFormula& defined_name =
+                defined_name_audit.defined_name;
+            WorkbookEditorDefinedNameFormulaReferenceAudit audit;
+            audit.defined_name = defined_name.name;
+            audit.local_sheet_scope = defined_name.local_sheet_scope;
+            audit.local_sheet_id_text = defined_name.local_sheet_id_text;
+            audit.local_sheet_scope_resolved = defined_name.local_sheet_scope_resolved;
+            audit.scope_sheet_source_name = defined_name.scope_sheet_source_name;
+            audit.scope_sheet_planned_name = defined_name.scope_sheet_planned_name;
+            copy_formula_reference_audit_fields(audit, defined_name_audit.reference);
+            audits.push_back(std::move(audit));
+        }
+
+        return audits;
     }
 
     void clear_last_edit_error()
@@ -827,6 +708,15 @@ std::vector<WorkbookEditorFormulaReferenceAudit> WorkbookEditor::formula_referen
     return impl_->formula_reference_audits();
 }
 
+std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
+WorkbookEditor::defined_name_formula_reference_audits() const
+{
+    if (impl_ == nullptr) {
+        return {};
+    }
+    return impl_->defined_name_formula_reference_audits();
+}
+
 WorksheetEditor WorkbookEditor::worksheet(
     std::string_view sheet_name, WorksheetEditorOptions options)
 {
@@ -934,23 +824,14 @@ void WorkbookEditor::replace_image(
     const std::filesystem::path image_path_key = image_path;
 
     try {
-        const detail::PartName part_name(image_part_name);
-        const detail::PackagePart& target_part =
-            require_image_target_part(impl_->editor.manifest(), part_name);
+        const detail::WorkbookEditorImageTarget target =
+            detail::resolve_workbook_editor_image_target(
+                impl_->editor.manifest(), image_part_name);
         const ImageInfo replacement_info = read_image_info(image_path);
-        const std::optional<ImageFormat> target_format =
-            image_format_from_media_part(target_part);
-        if (!target_format.has_value()) {
-            throw FastXlsxError(
-                "WorkbookEditor image target must be an existing PNG/JPEG xl/media part whose "
-                "content type matches its extension");
-        }
-        if (replacement_info.format != *target_format) {
-            throw FastXlsxError(
-                "WorkbookEditor image replacement format does not match target media part");
-        }
+        detail::validate_workbook_editor_image_replacement_format(
+            target.format, replacement_info.format);
 
-        impl_->editor.replace_part_chunks(part_name,
+        impl_->editor.replace_part_chunks(target.part_name,
             std::vector<detail::PackageEntryChunk> {
                 detail::PackageEntryChunk::file(std::move(image_path))},
             "existing-workbook image replacement");
@@ -976,27 +857,18 @@ void WorkbookEditor::replace_image(
     const std::size_t image_byte_count = image_bytes.size();
 
     try {
-        const detail::PartName part_name(image_part_name);
-        const detail::PackagePart& target_part =
-            require_image_target_part(impl_->editor.manifest(), part_name);
+        const detail::WorkbookEditorImageTarget target =
+            detail::resolve_workbook_editor_image_target(
+                impl_->editor.manifest(), image_part_name);
         const ImageInfo replacement_info = read_image_info(image_bytes);
-        const std::optional<ImageFormat> target_format =
-            image_format_from_media_part(target_part);
-        if (!target_format.has_value()) {
-            throw FastXlsxError(
-                "WorkbookEditor image target must be an existing PNG/JPEG xl/media part whose "
-                "content type matches its extension");
-        }
-        if (replacement_info.format != *target_format) {
-            throw FastXlsxError(
-                "WorkbookEditor image replacement format does not match target media part");
-        }
+        detail::validate_workbook_editor_image_replacement_format(
+            target.format, replacement_info.format);
 
         std::string copied_bytes;
         copied_bytes.assign(reinterpret_cast<const char*>(image_bytes.data()),
             reinterpret_cast<const char*>(image_bytes.data()) + image_bytes.size());
 
-        impl_->editor.replace_part_chunks(part_name,
+        impl_->editor.replace_part_chunks(target.part_name,
             std::vector<detail::PackageEntryChunk> {
                 detail::PackageEntryChunk::memory(std::move(copied_bytes))},
             "existing-workbook image replacement");
@@ -1029,7 +901,7 @@ void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_nam
         // rewrites only the workbook sheet@name attribute and preserves worksheet
         // parts, relationships, content types, and unknown entries.
         impl_->editor.rename_sheet_catalog_entry(old_name, std::move(new_name));
-        impl_->record_planned_sheet_rename(old_name_key, new_name_key);
+        impl_->sheet_catalog.record_rename(old_name_key, new_name_key);
         migrate_pending_sheet_data_payload_diagnostic(
             impl_->pending_sheet_data_payloads, old_name_key, new_name_key);
         ++impl_->pending_public_edit_count;

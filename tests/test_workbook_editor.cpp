@@ -190,6 +190,10 @@ void check_public_inspection_preserves_last_edit_error(
     (void)editor.formula_reference_audits();
     check(editor.last_edit_error() == expected,
         "formula_reference_audits should not update last_edit_error");
+
+    (void)editor.defined_name_formula_reference_audits();
+    check(editor.last_edit_error() == expected,
+        "defined_name_formula_reference_audits should not update last_edit_error");
 }
 
 void check_public_materialization_failure_clean_state(
@@ -817,9 +821,42 @@ std::filesystem::path write_formula_reference_source(std::string_view name)
     {
         fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula");
         formulas.append_row({fastxlsx::CellView::formula(
-            R"(Data!A1+'Other Sheet'!A1+'O''Brien'!A1+"Data!Z9")")});
+            R"(Data!A1+'Other Sheet'!A1+'O''Brien'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9")")});
     }
     writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_defined_name_reference_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter other = writer.add_worksheet("Other Sheet");
+        other.append_row({fastxlsx::CellView::number(2.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula");
+        formulas.append_row({fastxlsx::CellView::formula("Data!A1")});
+    }
+    writer.close();
+
+    std::string workbook_xml =
+        fastxlsx::test::read_zip_entries(path).at("xl/workbook.xml");
+    replace_first_or_throw(workbook_xml, "</workbook>",
+        R"(<definedNames>)"
+        R"(<definedName name="ReportRange">Data!$A$1:$B$2</definedName>)"
+        R"(<definedName name="ScopedRange" localSheetId="2">'Other Sheet'!$A$1</definedName>)"
+        R"(<definedName name="ExternalRef">[Book.xlsx]Data!A1</definedName>)"
+        R"(<definedName name="ThreeDRef">Data:Formula!A1</definedName>)"
+        R"(</definedNames></workbook>)");
+    rewrite_package_entry_as_stored(path, "xl/workbook.xml", std::move(workbook_xml));
 
     return path;
 }
@@ -830,6 +867,21 @@ const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_formula_reference_audi
 {
     for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
         if (audit.referenced_sheet_name == referenced_sheet_name) {
+            return &audit;
+        }
+    }
+    return nullptr;
+}
+
+const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit*
+find_defined_name_formula_reference_audit(
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>& audits,
+    std::string_view defined_name,
+    std::string_view referenced_sheet_name)
+{
+    for (const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit& audit : audits) {
+        if (audit.defined_name == defined_name
+            && audit.referenced_sheet_name == referenced_sheet_name) {
             return &audit;
         }
     }
@@ -17216,7 +17268,7 @@ void test_formula_reference_audits_report_renamed_source_sheet_risk()
     (void)editor.worksheet("Formula");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
         editor.formula_reference_audits();
-    check(initial_audits.size() == 3,
+    check(initial_audits.size() == 5,
         "materialized formula sheet should expose all sheet-qualified references");
     {
         const fastxlsx::WorkbookEditorFormulaReferenceAudit* data =
@@ -17258,12 +17310,42 @@ void test_formula_reference_audits_report_renamed_source_sheet_risk()
                     apostrophe->matched_source_sheet_name == "O'Brien",
                 "formula audit should match decoded quoted sheet names");
         }
+
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+            find_formula_reference_audit(initial_audits, "[Book.xlsx]Data");
+        check(external != nullptr,
+            "formula audit should include external workbook sheet qualifiers");
+        if (external != nullptr) {
+            check(external->external_workbook_qualifier &&
+                    !external->sheet_range_qualifier,
+                "formula audit should classify external workbook qualifiers");
+            check(external->reference_text == "A1" &&
+                    external->qualified_reference_text == "[Book.xlsx]Data!A1",
+                "formula audit should expose exact external reference text");
+            check(!external->matched_current_workbook_sheet,
+                "formula audit should not match external workbook qualifiers to local sheets");
+        }
+
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+            find_formula_reference_audit(initial_audits, "Data:Formula");
+        check(sheet_range != nullptr,
+            "formula audit should include 3D sheet-range qualifiers");
+        if (sheet_range != nullptr) {
+            check(!sheet_range->external_workbook_qualifier &&
+                    sheet_range->sheet_range_qualifier,
+                "formula audit should classify 3D sheet-range qualifiers");
+            check(sheet_range->reference_text == "A1" &&
+                    sheet_range->qualified_reference_text == "Data:Formula!A1",
+                "formula audit should expose exact 3D reference text");
+            check(!sheet_range->matched_current_workbook_sheet,
+                "formula audit should not match 3D sheet ranges to one local sheet");
+        }
     }
 
     editor.rename_sheet("Data", "RenamedData");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
         editor.formula_reference_audits();
-    check(renamed_audits.size() == 3,
+    check(renamed_audits.size() == 5,
         "rename should not drop materialized formula reference audit entries");
     {
         const fastxlsx::WorkbookEditorFormulaReferenceAudit* data =
@@ -17310,6 +17392,119 @@ void test_formula_reference_audits_report_renamed_source_sheet_risk()
         "formula reference audit should not rewrite formula text during save");
     check_not_contains(formula_sheet_xml, "RenamedData!A1",
         "formula reference audit should not silently repair renamed sheet formulas");
+}
+
+void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-defined-name-reference-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-defined-name-reference-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit> initial_audits =
+        editor.defined_name_formula_reference_audits();
+    check(initial_audits.size() == 4,
+        "definedName audit should expose all sheet-qualified definedName references");
+    {
+        const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* report =
+            find_defined_name_formula_reference_audit(initial_audits, "ReportRange", "Data");
+        check(report != nullptr,
+            "definedName audit should include workbook-scope Data reference");
+        if (report != nullptr) {
+            check(report->defined_name == "ReportRange" &&
+                    report->formula_text == "Data!$A$1:$B$2",
+                "definedName audit should report name and formula text");
+            check(!report->local_sheet_scope &&
+                    !report->local_sheet_scope_resolved,
+                "workbook-scope definedName should not report local sheet scope");
+            check(report->sheet_qualifier_text == "Data!" &&
+                    report->reference_text == "$A$1:$B$2" &&
+                    report->qualified_reference_text == "Data!$A$1:$B$2",
+                "definedName audit should expose exact reference text");
+            check(report->matched_current_workbook_sheet &&
+                    report->matched_source_sheet_name == "Data" &&
+                    report->matched_planned_sheet_name == "Data",
+                "definedName audit should match source and planned sheet names before rename");
+            check(!report->references_renamed_source_name &&
+                    report->references_planned_sheet_name,
+                "definedName audit should not flag unchanged workbook-scope references");
+        }
+
+        const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* scoped =
+            find_defined_name_formula_reference_audit(
+                initial_audits, "ScopedRange", "Other Sheet");
+        check(scoped != nullptr,
+            "definedName audit should include locally scoped references");
+        if (scoped != nullptr) {
+            check(scoped->local_sheet_scope &&
+                    scoped->local_sheet_id_text == "2" &&
+                    scoped->local_sheet_scope_resolved,
+                "definedName audit should expose resolved localSheetId scope");
+            check(scoped->scope_sheet_source_name == "Formula" &&
+                    scoped->scope_sheet_planned_name == "Formula",
+                "definedName audit should map localSheetId through catalog order");
+            check(scoped->qualifier_quoted &&
+                    scoped->qualified_reference_text == "'Other Sheet'!$A$1",
+                "definedName audit should preserve quoted reference text");
+        }
+
+        const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* external =
+            find_defined_name_formula_reference_audit(
+                initial_audits, "ExternalRef", "[Book.xlsx]Data");
+        check(external != nullptr,
+            "definedName audit should include external workbook references");
+        if (external != nullptr) {
+            check(external->external_workbook_qualifier &&
+                    !external->sheet_range_qualifier &&
+                    !external->matched_current_workbook_sheet,
+                "definedName audit should classify external references without local matching");
+        }
+
+        const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* three_d =
+            find_defined_name_formula_reference_audit(initial_audits, "ThreeDRef", "Data:Formula");
+        check(three_d != nullptr,
+            "definedName audit should include 3D sheet-range references");
+        if (three_d != nullptr) {
+            check(!three_d->external_workbook_qualifier &&
+                    three_d->sheet_range_qualifier &&
+                    !three_d->matched_current_workbook_sheet,
+                "definedName audit should classify 3D ranges without local matching");
+        }
+    }
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit> renamed_audits =
+        editor.defined_name_formula_reference_audits();
+    check(renamed_audits.size() == 4,
+        "rename should not drop definedName formula reference audit entries");
+    {
+        const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* report =
+            find_defined_name_formula_reference_audit(renamed_audits, "ReportRange", "Data");
+        check(report != nullptr,
+            "renamed definedName audit should still expose source-name formula text");
+        if (report != nullptr) {
+            check(report->matched_current_workbook_sheet &&
+                    report->matched_source_sheet_name == "Data" &&
+                    report->matched_planned_sheet_name == "RenamedData",
+                "renamed definedName audit should map source name to planned sheet name");
+            check(report->references_renamed_source_name &&
+                    !report->references_planned_sheet_name,
+                "renamed definedName audit should flag source-name references as stale");
+        }
+    }
+
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+
+    editor.save_as(output);
+    const std::string workbook_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "rename should still update the workbook catalog");
+    check_contains(workbook_xml, "Data!$A$1:$B$2",
+        "definedName audit should not rewrite definedName formula text during save");
+    check_not_contains(workbook_xml, "RenamedData!$A$1:$B$2",
+        "definedName audit should not silently repair workbook definedNames");
 }
 
 void test_rename_sheet_changes_catalog_name_and_preserves_parts()
@@ -18248,6 +18443,7 @@ int main(int argc, char* argv[])
         test_text_uses_inline_strings_and_preserves_shared_strings();
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
         test_formula_reference_audits_report_renamed_source_sheet_risk();
+        test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();
         test_rename_back_to_source_name_restores_public_diagnostics();

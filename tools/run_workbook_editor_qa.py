@@ -118,6 +118,15 @@ def choose_unique_sheet_name(existing: list[str], preferred: str = "QA_Renamed")
     raise RuntimeError("failed to allocate a unique worksheet name")
 
 
+def compact_slug_component(text: str, *, max_length: int = 24) -> str:
+    safe = "".join(
+        ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in text
+    )
+    if len(safe) > max_length:
+        safe = safe[:max_length].rstrip("._-")
+    return safe or "fixture"
+
+
 def fixture_case_slug(fixture_root: Path, fixture_path: Path) -> str:
     try:
         relative = fixture_path.relative_to(fixture_root)
@@ -125,9 +134,7 @@ def fixture_case_slug(fixture_root: Path, fixture_path: Path) -> str:
         relative = fixture_path.name
 
     text = str(relative).replace("\\", "/")
-    safe = "".join(
-        ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in text
-    )
+    safe = compact_slug_component(fixture_path.stem, max_length=12)
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
     return f"{safe}-{digest}"
 
@@ -137,9 +144,7 @@ def formula_fixture_case_slug(
     fixture_path: Path,
     sheet_name: str,
 ) -> str:
-    safe_sheet = "".join(
-        ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in sheet_name
-    )
+    safe_sheet = compact_slug_component(sheet_name, max_length=10)
     digest = hashlib.sha1(sheet_name.encode("utf-8")).hexdigest()[:8]
     return f"{fixture_case_slug(fixture_root, fixture_path)}__{safe_sheet}-{digest}"
 
@@ -1286,6 +1291,23 @@ def run_self_test() -> int:
             temp_dir / "fixtures", nested_dir / "9_unicode_Λ_😇.xlsx"
         )
         require(unicode_slug.isascii(), f"self-test: non-ASCII fixture slug {unicode_slug!r}")
+        long_fixture_slug = fixture_case_slug(
+            temp_dir / "fixtures",
+            nested_dir / ("x" * 120 + ".xlsx"),
+        )
+        require(
+            len(long_fixture_slug) <= 24,
+            f"self-test: fixture slug too long {long_fixture_slug!r}",
+        )
+        long_formula_slug = formula_fixture_case_slug(
+            temp_dir / "fixtures",
+            nested_dir / ("x" * 120 + ".xlsx"),
+            "VeryLongWorksheetNameForPathBudget",
+        )
+        require(
+            len(long_formula_slug) <= 48,
+            f"self-test: formula fixture slug too long {long_formula_slug!r}",
+        )
 
         formula_path = temp_dir / "formula.xlsx"
         formula_workbook = openpyxl.Workbook()

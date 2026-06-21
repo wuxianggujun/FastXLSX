@@ -357,6 +357,11 @@ py tools\run_workbook_editor_qa.py `
   --work-dir build\qa\workbook-editor-xlnt-fixtures
 ```
 
+The runner now shortens fixture case slugs to keep Windows paths under control
+for deeply nested reference corpora. If a new fixture root still approaches the
+path limit, move the work dir closer to the repo root before treating the
+failure as a workbook-edit regression.
+
 For formula-focused fixture coverage, use the opt-in formula scanner scenario.
 It maps workbook sheet names to worksheet XML parts, records formula/shared
 formula counts per selected sheet, then runs the same materialized edit smoke on

@@ -802,6 +802,15 @@ P8.579 moves `WorkbookEditor::save_as()` output path safety behind
 `src/workbook_editor_save_as_policy.*`: the helper owns empty output, existing
 directory, missing-parent, and source-overwrite rejection. The facade still owns
 dirty materialized-session flush ordering and package save orchestration.
+P8.580 moves public formula-diagnostic adapter logic behind
+`src/workbook_editor_formula_diagnostics.*`: the helper owns conversion from the
+source/planned workbook sheet catalog to formula-audit catalog entries,
+materialized formula-cell scanning, public audit field mapping, and bounded
+source `xl/workbook.xml` reads for definedName formula diagnostics.
+`WorkbookEditor` now only supplies editor-owned state and returns the adapter
+results. This is semantic implementation-boundary cleanup only; it does not add
+formula evaluation, rewrite, dependency graphing, calcChain rebuild, or workbook
+metadata repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

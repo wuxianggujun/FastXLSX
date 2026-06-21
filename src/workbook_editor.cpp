@@ -2,13 +2,13 @@
 
 #include "package_editor.hpp"
 #include "workbook_editor_image_edit.hpp"
+#include "workbook_editor_formula_diagnostics.hpp"
 #include "workbook_editor_pending_edits.hpp"
 #include "workbook_editor_save_as_policy.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
 #include "workbook_editor_worksheet_access.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
-#include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
@@ -76,39 +76,6 @@ std::vector<WorkbookEditorWorksheetCatalogEntry> public_catalog_from_detail_cata
         });
     }
     return public_catalog;
-}
-
-std::vector<detail::FormulaAuditSheetCatalogEntry> formula_audit_catalog_from_sheet_catalog(
-    const std::vector<detail::WorkbookEditorSheetCatalogEntry>& catalog)
-{
-    std::vector<detail::FormulaAuditSheetCatalogEntry> audit_catalog;
-    audit_catalog.reserve(catalog.size());
-    for (const detail::WorkbookEditorSheetCatalogEntry& entry : catalog) {
-        audit_catalog.push_back(detail::FormulaAuditSheetCatalogEntry {
-            entry.source_name,
-            entry.planned_name,
-        });
-    }
-    return audit_catalog;
-}
-
-template <typename PublicAudit>
-void copy_formula_reference_audit_fields(
-    PublicAudit& audit, const detail::FormulaReferenceAuditFields& fields)
-{
-    audit.formula_text = fields.formula_text;
-    audit.sheet_qualifier_text = fields.sheet_qualifier_text;
-    audit.reference_text = fields.reference_text;
-    audit.qualified_reference_text = fields.qualified_reference_text;
-    audit.referenced_sheet_name = fields.referenced_sheet_name;
-    audit.qualifier_quoted = fields.qualifier_quoted;
-    audit.external_workbook_qualifier = fields.external_workbook_qualifier;
-    audit.sheet_range_qualifier = fields.sheet_range_qualifier;
-    audit.matched_current_workbook_sheet = fields.matched_current_workbook_sheet;
-    audit.matched_source_sheet_name = fields.matched_source_sheet_name;
-    audit.matched_planned_sheet_name = fields.matched_planned_sheet_name;
-    audit.references_renamed_source_name = fields.references_renamed_source_name;
-    audit.references_planned_sheet_name = fields.references_planned_sheet_name;
 }
 
 } // namespace
@@ -266,89 +233,15 @@ struct WorkbookEditor::Impl {
     [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit> formula_reference_audits()
         const
     {
-        const std::vector<detail::WorkbookEditorSheetCatalogEntry> catalog =
-            sheet_catalog.entries();
-        const std::vector<detail::FormulaAuditSheetCatalogEntry> formula_catalog =
-            formula_audit_catalog_from_sheet_catalog(catalog);
-        std::vector<WorkbookEditorFormulaReferenceAudit> audits;
-
-        for (const detail::WorkbookEditorSheetCatalogEntry& formula_sheet : catalog) {
-            const detail::MaterializedWorksheetSession* session =
-                materialized_sessions.try_session(formula_sheet.planned_name);
-            if (session == nullptr) {
-                continue;
-            }
-
-            for (const auto& [position, record] : session->store().records()) {
-                if (record.kind != CellValueKind::Formula) {
-                    continue;
-                }
-
-                const std::vector<detail::FormulaReferenceAuditFields> formula_audits =
-                    detail::audit_formula_references(record.text_value, formula_catalog);
-                for (const detail::FormulaReferenceAuditFields& fields : formula_audits) {
-                    WorkbookEditorFormulaReferenceAudit audit;
-                    audit.formula_sheet_source_name = formula_sheet.source_name;
-                    audit.formula_sheet_planned_name = formula_sheet.planned_name;
-                    audit.formula_cell = WorksheetCellReference {
-                        position.row,
-                        position.column,
-                    };
-                    copy_formula_reference_audit_fields(audit, fields);
-
-                    audits.push_back(std::move(audit));
-                }
-            }
-        }
-
-        return audits;
+        return detail::workbook_editor_formula_reference_audits(
+            sheet_catalog.entries(), materialized_sessions);
     }
 
     [[nodiscard]] std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
     defined_name_formula_reference_audits() const
     {
-        const std::vector<detail::WorkbookEditorSheetCatalogEntry> catalog =
-            sheet_catalog.entries();
-        const std::vector<detail::FormulaAuditSheetCatalogEntry> formula_catalog =
-            formula_audit_catalog_from_sheet_catalog(catalog);
-        const detail::PartName workbook_part = editor.reader().workbook_part();
-        if (const detail::PackageReaderEntry* entry =
-                editor.reader().find_entry(workbook_part.zip_path());
-            entry != nullptr
-            && entry->uncompressed_size
-                > detail::package_editor_workbook_xml_materialization_byte_limit) {
-            throw FastXlsxError(
-                "source workbook definedName formula audit exceeds small workbook XML limit");
-        }
-
-        std::string workbook_xml;
-        try {
-            workbook_xml = editor.reader().read_entry(workbook_part.zip_path());
-        } catch (const std::exception& error) {
-            throw FastXlsxError(
-                "failed to read source workbook XML for definedName formula audit: "
-                + std::string(error.what()));
-        }
-
-        std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit> audits;
-        const std::vector<detail::DefinedNameFormulaReferenceAudit> defined_name_audits =
-            detail::audit_workbook_defined_name_formula_references(workbook_xml, formula_catalog);
-        for (const detail::DefinedNameFormulaReferenceAudit& defined_name_audit :
-             defined_name_audits) {
-            const detail::SourceDefinedNameFormula& defined_name =
-                defined_name_audit.defined_name;
-            WorkbookEditorDefinedNameFormulaReferenceAudit audit;
-            audit.defined_name = defined_name.name;
-            audit.local_sheet_scope = defined_name.local_sheet_scope;
-            audit.local_sheet_id_text = defined_name.local_sheet_id_text;
-            audit.local_sheet_scope_resolved = defined_name.local_sheet_scope_resolved;
-            audit.scope_sheet_source_name = defined_name.scope_sheet_source_name;
-            audit.scope_sheet_planned_name = defined_name.scope_sheet_planned_name;
-            copy_formula_reference_audit_fields(audit, defined_name_audit.reference);
-            audits.push_back(std::move(audit));
-        }
-
-        return audits;
+        return detail::workbook_editor_defined_name_formula_reference_audits(
+            sheet_catalog.entries(), editor.reader());
     }
 
     void clear_last_edit_error()

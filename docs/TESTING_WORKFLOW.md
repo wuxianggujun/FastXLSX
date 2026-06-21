@@ -304,7 +304,11 @@ diagnostic fallback ordering, and rename migration.
 single-cell parsing, Excel row/column and range guardrails, and public snapshot
 mapping from materialized cells. `fastxlsx.workbook_editor_save_as_policy`
 covers output path preflight for empty output, existing directory,
-missing-parent, and source-overwrite rejection. The workbook-editor CTest
+missing-parent, and source-overwrite rejection. The extracted
+`src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
+through `fastxlsx.workbook_editor.facade`, which exercises both materialized
+formula-cell audits and source workbook definedName formula diagnostics through
+the public API. The workbook-editor CTest
 family still covers the public facade integration, plus an Office-like public
 `WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,

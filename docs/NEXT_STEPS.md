@@ -57,7 +57,11 @@ whole-row/whole-column non-rewrites, invalid shared formula index forms, public
 cached formula values. The opt-in workbook-editor QA runner includes
 `generated_shared_formula_materialization`, which creates a generated shared
 formula source workbook, verifies materialization through the public C++ tool,
-then checks the output with ZIP/XML and `openpyxl`. It also has an opt-in
+then checks the output with ZIP/XML and `openpyxl`; it also includes
+`generated_shared_formula_boundary_materialization`, which pins quoted strings,
+structured references, name-like tokens, R1C1-like text, whole-row/whole-column
+references, bracketed tokens, and sheet-qualified A1 translation boundaries in a
+generated source/output smoke. It also has an opt-in
 `external_formula_fixture_materialized_smoke` scanner that maps workbook sheet
 names to worksheet XML parts, records formula/shared-formula counts, and runs
 the materialized edit smoke on the exact formula-bearing sheet; `--formula-shared-only`

@@ -363,6 +363,40 @@ std::filesystem::path write_shared_formula_source(const std::filesystem::path& p
     return path;
 }
 
+std::filesystem::path write_shared_formula_boundary_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    {
+        WorkbookWriter writer = WorkbookWriter::create(path);
+        WorksheetWriter data = writer.add_worksheet("SharedBoundaries");
+        data.append_row({CellView::number(1.0), CellView::number(2.0),
+            CellView::formula("A1+B1")});
+        data.append_row({CellView::number(3.0), CellView::number(4.0),
+            CellView::formula("A2+B2")});
+        WorksheetWriter other = writer.add_worksheet("Other Sheet");
+        other.append_row({CellView::number(10.0)});
+        WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({CellView::text("keep-shared-formula-boundary-qa")});
+        writer.close();
+    }
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1:F4"/>)"
+        R"(<sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c>)"
+        R"(<c r="C1"><f t="shared" ref="C1:C2" si="30">A1+SharedBoundaries!A1+'Other Sheet'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&amp;&quot;A1&quot;+[Book.xlsx]Sheet1!A1</f><v>0</v></c>)"
+        R"(<c r="D1"><f t="shared" ref="D1:E2" si="31">C1+D$1+$C1+$C$1</f><v>0</v></c></row>)"
+        R"(<row r="2"><c r="A2"><v>3</v></c><c r="B2"><v>4</v></c><c r="C2"><f t="shared" si="30"/><v>999</v></c><c r="E2"><f t="shared" si="31"/><v>888</v></c></row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+    fastxlsx::test::rewrite_package_entry_as_stored(
+        path, "xl/worksheets/sheet1.xml", worksheet_xml);
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_image(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -516,6 +550,47 @@ Report run_generated_shared_formula_materialization(const CliOptions& options)
     }
 
     sheet.set_cell(4, 5, CellValue::text("shared-formula-qa-edit"));
+    editor.save_as(report.output);
+    return report;
+}
+
+Report run_generated_shared_formula_boundary_materialization(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_shared_formula_boundary_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-shared-formula-boundary-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-shared-formula-boundary-output.xlsx");
+    report.source_sheet_name = "SharedBoundaries";
+    report.mutations = {
+        "worksheet(SharedBoundaries).try_cell(C1:C2,D1,E2):expect_formula_boundaries",
+        "worksheet(SharedBoundaries).set_cell(F4,text)",
+    };
+    report.notes = {
+        "Shared formula boundary followers should become ordinary formula text",
+        "Quoted strings, structured references, names, whole rows, and whole columns should not be rewritten",
+        "Sheet-qualified references after the sheet token should still translate under the narrow A1 rule",
+    };
+
+    constexpr std::string_view expected_c1 =
+        R"(A1+SharedBoundaries!A1+'Other Sheet'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"+[Book.xlsx]Sheet1!A1)";
+    constexpr std::string_view expected_c2 =
+        R"(A2+SharedBoundaries!A2+'Other Sheet'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"+[Book.xlsx]Sheet1!A2)";
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor sheet = editor.worksheet("SharedBoundaries");
+    require_formula_cell(sheet, "C1", expected_c1);
+    require_formula_cell(sheet, "C2", expected_c2);
+    require_formula_cell(sheet, "D1", "C1+D$1+$C1+$C$1");
+    require_formula_cell(sheet, "E2", "D2+E$1+$C2+$C$1");
+    if (sheet.has_pending_changes() || editor.has_pending_changes()) {
+        throw std::runtime_error(
+            "read-only shared formula boundary materialization dirtied editor state");
+    }
+
+    sheet.set_cell(4, 6, CellValue::text("shared-formula-boundary-edit"));
     editor.save_as(report.output);
     return report;
 }
@@ -743,6 +818,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_shared_formula_materialization") {
         return run_generated_shared_formula_materialization(options);
+    }
+    if (options.scenario == "generated_shared_formula_boundary_materialization") {
+        return run_generated_shared_formula_boundary_materialization(options);
     }
     if (options.scenario == "generated_style_passthrough") {
         return run_generated_style_passthrough(options);

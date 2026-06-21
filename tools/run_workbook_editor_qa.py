@@ -34,6 +34,7 @@ NAMESPACES = {
 GENERATED_SCENARIOS = [
     "generated_rename_materialized",
     "generated_shared_formula_materialization",
+    "generated_shared_formula_boundary_materialization",
     "generated_style_passthrough",
     "generated_image_replace",
     "generated_public_e2e",
@@ -348,6 +349,27 @@ def formula_summary_for_sheet(path: Path, sheet_name: str) -> dict[str, Any]:
     return summary
 
 
+def worksheet_formula_cells(path: Path, sheet_name: str) -> dict[str, str]:
+    sheet_entries = workbook_sheet_entry_map(path)
+    worksheet_entry = sheet_entries.get(sheet_name)
+    require(worksheet_entry is not None, f"formula cells: sheet not found: {sheet_name}")
+    root = ElementTree.fromstring(read_zip_bytes(path, worksheet_entry))
+    formulas: dict[str, str] = {}
+    for cell in root.iter():
+        if xml_local_name(cell.tag) != "c":
+            continue
+        reference = cell.attrib.get("r")
+        if not reference:
+            continue
+        formula = next(
+            (child for child in cell if xml_local_name(child.tag) == "f"),
+            None,
+        )
+        if formula is not None:
+            formulas[reference] = "".join(formula.itertext())
+    return formulas
+
+
 def discover_formula_fixture_infos(
     fixture_root: Path,
     globs: list[str],
@@ -509,6 +531,73 @@ def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[st
             "SharedFormula!D2": worksheet["D2"].value,
             "SharedFormula!D3": worksheet["D3"].value,
             "SharedFormula!E4": worksheet["E4"].value,
+            "Untouched!A1": untouched["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_shared_formula_boundary_materialization(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated shared formula boundaries: missing workbook.xml")
+    worksheet_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
+    require('t="shared"' not in worksheet_xml,
+            "generated shared formula boundaries: stale shared metadata remained in output")
+
+    formulas = worksheet_formula_cells(path, "SharedBoundaries")
+    expected_formulas = {
+        "C1": (
+            "A1+SharedBoundaries!A1+'Other Sheet'!A1+SUM(A1:B1)+LOG10(A1)"
+            '+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"'
+            "+[Book.xlsx]Sheet1!A1"
+        ),
+        "C2": (
+            "A2+SharedBoundaries!A2+'Other Sheet'!A2+SUM(A2:B2)+LOG10(A2)"
+            '+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"'
+            "+[Book.xlsx]Sheet1!A2"
+        ),
+        "D1": "C1+D$1+$C1+$C$1",
+        "E2": "D2+E$1+$C2+$C$1",
+    }
+    for reference, expected in expected_formulas.items():
+        require(
+            formulas.get(reference) == expected,
+            f"generated shared formula boundaries: {reference} formula mismatch "
+            f"{formulas.get(reference)!r}",
+        )
+    require("F4" not in formulas, "generated shared formula boundaries: F4 should be text, not formula")
+
+    formula_summary = formula_summary_for_sheet(path, "SharedBoundaries")
+    require(formula_summary["formula_count"] == 4,
+            f"generated shared formula boundaries: formula count mismatch {formula_summary!r}")
+    require(formula_summary["shared_formula_count"] == 0,
+            f"generated shared formula boundaries: shared metadata remained {formula_summary!r}")
+    zip_report["formula_output"] = formula_summary
+    zip_report["formulas"] = expected_formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["SharedBoundaries", "Other Sheet", "Untouched"],
+                f"generated shared formula boundaries: unexpected sheetnames {workbook.sheetnames!r}")
+        worksheet = workbook["SharedBoundaries"]
+        untouched = workbook["Untouched"]
+        require(worksheet["C2"].value == "=" + expected_formulas["C2"],
+                f"generated shared formula boundaries: C2 mismatch {worksheet['C2'].value!r}")
+        require(worksheet["E2"].value == "=" + expected_formulas["E2"],
+                f"generated shared formula boundaries: E2 mismatch {worksheet['E2'].value!r}")
+        require(worksheet["F4"].value == "shared-formula-boundary-edit",
+                "generated shared formula boundaries: F4 edit mismatch")
+        require(untouched["A1"].value == "keep-shared-formula-boundary-qa",
+                "generated shared formula boundaries: untouched sheet mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "SharedBoundaries!C2": worksheet["C2"].value,
+            "SharedBoundaries!E2": worksheet["E2"].value,
+            "SharedBoundaries!F4": worksheet["F4"].value,
             "Untouched!A1": untouched["A1"].value,
         }
     finally:
@@ -853,6 +942,8 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_rename_materialized(output_path)
     elif scenario == "generated_shared_formula_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_materialization(output_path)
+    elif scenario == "generated_shared_formula_boundary_materialization":
+        zip_xml, openpyxl_report = verify_generated_shared_formula_boundary_materialization(output_path)
     elif scenario == "generated_style_passthrough":
         zip_xml, openpyxl_report = verify_generated_style_passthrough(output_path)
     elif scenario == "generated_image_replace":

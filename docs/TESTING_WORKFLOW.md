@@ -301,6 +301,21 @@ py tools\run_workbook_editor_qa.py `
   --work-dir build\qa\workbook-editor-shared-formula
 ```
 
+For the generated shared-formula translator boundary smoke, run:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_shared_formula_boundary_materialization `
+  --work-dir build\qa\workbook-editor-shared-formula-boundaries
+```
+
+This generated case verifies that dirty output materializes shared formula
+metadata into ordinary formula cells while preserving the current narrow
+translator boundaries: quoted strings, structured references, names, R1C1-like
+text, whole-row/whole-column references, and bracket tokens are not rewritten;
+sheet-qualified A1 references after the sheet token still translate under the
+documented A1-only rule.
+
 To smoke-test third-party fixture workbooks such as xlnt or OpenXLSX samples,
 keep them outside the repository and pass a fixture root explicitly. These
 fixtures are local QA inputs only, not FastXLSX runtime dependencies and not

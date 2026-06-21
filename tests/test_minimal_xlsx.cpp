@@ -1572,6 +1572,12 @@ void test_internal_cell_store_worksheet_loader()
                 && unresolved->number_value == 77.0,
             "worksheet loader should keep unresolved shared formula followers on cached scalar fallback");
     }
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="0"/></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject formula cells without a materializable value");
     const std::vector<std::string_view> invalid_shared_formula_indexes {
         "", "-1", "+1", "1.0", "18446744073709551616"};
     for (std::string_view invalid_index : invalid_shared_formula_indexes) {

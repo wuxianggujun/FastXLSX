@@ -1781,6 +1781,10 @@ CellValue materialize_cell_value(
         }
     }
 
+    if (cell.saw_formula_element && value.kind() == CellValueKind::Blank) {
+        throw FastXlsxError(
+            "CellStore worksheet loader found a formula without a materializable value");
+    }
     if (cell.style_id.has_value()) {
         value = value.with_style(*cell.style_id);
     }

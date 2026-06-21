@@ -13933,6 +13933,18 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
         },
         "CellStore worksheet loader found a formula in an unsupported cell type",
         "formula in unsupported source cell");
+
+    expect_public_formula_materialization_failure(
+        "missing-materializable-value",
+        write_formula_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1"><f>A1+1</f></c>)",
+                R"(<c r="A1"><f t="shared" si="0"/></c>)");
+        },
+        "CellStore worksheet loader found a formula without a materializable value",
+        "formula without a materializable value");
 }
 
 void test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly()

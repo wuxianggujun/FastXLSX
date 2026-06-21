@@ -12392,6 +12392,75 @@ void test_public_worksheet_editor_materializes_office_like_shared_formula_shape(
         "office-like shared formula rewrite should not mutate untouched source sheet bytes");
 }
 
+void test_public_worksheet_editor_materializes_array_and_datatable_formula_metadata()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-array-datatable-formula-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-array-datatable-formula-output.xlsx");
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1"><f t="array" ref="A1:B1">SUM(B1:C1)</f><v>123</v></c>)"
+        R"(<c r="B1"><f t="array" ref="A1:B1"/><v>456</v></c>)"
+        R"(<c r="C1"><f t="dataTable" ref="C1:D1">A1+1</f><v>789</v></c>)"
+        R"(<c r="D1"><f t="dataTable" ref="C1:D1"/><v>321</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> array_formula = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> array_cached = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> datatable_formula = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> datatable_cached = sheet.try_cell("D1");
+    check(array_formula.has_value() && array_formula->kind() == fastxlsx::CellValueKind::Formula
+            && array_formula->text_value() == "SUM(B1:C1)",
+        "WorksheetEditor should flatten source array formula text to plain formula");
+    check(array_cached.has_value() && array_cached->kind() == fastxlsx::CellValueKind::Number
+            && array_cached->number_value() == 456.0,
+        "WorksheetEditor should use cached scalar fallback for metadata-only array formulas");
+    check(datatable_formula.has_value()
+            && datatable_formula->kind() == fastxlsx::CellValueKind::Formula
+            && datatable_formula->text_value() == "A1+1",
+        "WorksheetEditor should flatten source dataTable formula text to plain formula");
+    check(datatable_cached.has_value() && datatable_cached->kind() == fastxlsx::CellValueKind::Number
+            && datatable_cached->number_value() == 321.0,
+        "WorksheetEditor should use cached scalar fallback for metadata-only dataTable formulas");
+    check(!sheet.has_pending_changes(),
+        "array/dataTable formula read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "array/dataTable formula read-only materialization should not dirty the workbook editor");
+
+    sheet.set_cell("F2", fastxlsx::CellValue::text("array-datatable-edit"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml, R"(<c r="A1"><f>SUM(B1:C1)</f></c>)",
+        "dirty projection should write array formula text as plain formula");
+    check_contains(output_worksheet_xml, R"(<c r="B1"><v>456</v></c>)",
+        "dirty projection should retain array metadata-only cached scalar fallback");
+    check_contains(output_worksheet_xml, R"(<c r="C1"><f>A1+1</f></c>)",
+        "dirty projection should write dataTable formula text as plain formula");
+    check_contains(output_worksheet_xml, R"(<c r="D1"><v>321</v></c>)",
+        "dirty projection should retain dataTable metadata-only cached scalar fallback");
+    check_contains(output_worksheet_xml,
+        R"(<c r="F2" t="inlineStr"><is><t>array-datatable-edit</t></is></c>)",
+        "dirty projection should include later edits after array/dataTable materialization");
+    check_not_contains(output_worksheet_xml, R"(t="array")",
+        "dirty projection should not preserve array formula metadata");
+    check_not_contains(output_worksheet_xml, R"(t="dataTable")",
+        "dirty projection should not preserve dataTable formula metadata");
+    check_not_contains(output_worksheet_xml, "<v>123</v>",
+        "dirty projection should drop stale array formula cached values");
+    check_not_contains(output_worksheet_xml, "<v>789</v>",
+        "dirty projection should drop stale dataTable formula cached values");
+}
+
 void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()
 {
     const std::filesystem::path source =
@@ -17813,6 +17882,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         test_public_worksheet_editor_materializes_office_like_shared_formula_shape();
+        test_public_worksheet_editor_materializes_array_and_datatable_formula_metadata();
         }
 
         if (should_run_workbook_editor_shard(shard, "source-failure")

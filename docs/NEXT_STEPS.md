@@ -49,6 +49,12 @@ text, drops stale cached results, and still does not preserve shared formula
 metadata, evaluate formulas, rebuild calcChain, or implement a complete Excel
 formula parser. Unresolved metadata-only shared formula cells continue to fall
 back to supported cached scalar `<v>` values when present.
+Array and dataTable formula metadata now follows the same lossy materialization
+boundary: source formula text in `<f t="array">` / `<f t="dataTable">`
+materializes as plain formula text, metadata-only cells fall back to supported
+cached scalar values, and dirty projection does not preserve array/dataTable
+formula metadata or stale cached formula results. This is not dynamic array
+spill support, data table recalculation, or formula dependency graphing.
 The current regression matrix now also pins multiple followers per `si`,
 interleaved shared formula indexes, latest source-order definition behavior for
 later followers, function/name-like token boundaries, structured-reference and

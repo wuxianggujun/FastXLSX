@@ -3415,6 +3415,16 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       and drops source prefixes / ignored inline metadata / stale cached formula
       values. This is not namespace URI validation, namespace repair, schema
       validation, metadata preservation, XML repair, or rich text preservation.
+      P8.561 pins source shared formula materialization on the same public and
+      package-backed paths: source-order shared formula definitions import as
+      plain formula text, source-order followers import translated formula
+      text, and dirty save writes ordinary `<f>...</f>` without stale cached
+      follower values. Internal loader coverage also pins `$` absolute anchors,
+      range endpoint translation, skipped quoted/bracketed tokens, invalid
+      `si` rejection, and `#REF!` output for out-of-bounds relative
+      references. This is not shared formula metadata preservation, formula
+      evaluation, calcChain rebuild, dependency graphing, sharedStrings/style
+      migration, relationship repair, or a complete formula parser.
       P8.478 pins namespace-URI non-validation for this local-name path:
       supported worksheet and sharedStrings local-names may be bound to a
       deliberately non-spreadsheetml URI and still materialize through the

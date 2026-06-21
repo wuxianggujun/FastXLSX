@@ -297,10 +297,14 @@ struct WorksheetCellSnapshot {
 /// resolved lazily for the selected worksheet: stale or malformed sharedStrings
 /// relationship/content-type metadata or payloads do not block supported
 /// non-`t="s"` cells, but still fail fast if an actual source `t="s"` cell is
-/// encountered. Source formula cells
-/// are materialized as `CellValue::formula(...)` and stale cached scalar values
-/// are ignored. Source blank cells materialize as explicit blank records, source
-/// booleans materialize as `CellValue::boolean(...)`. Simple source inline rich
+/// encountered. Source formula cells are materialized as
+/// `CellValue::formula(...)` and stale cached scalar values are ignored.
+/// Source shared formula definitions and source-order followers are
+/// materialized as plain formula text with narrow A1-style relative-reference
+/// translation; unresolved metadata-only shared formula followers can still
+/// fall back to supported cached scalar values. Source blank cells materialize
+/// as explicit blank records, source booleans materialize as
+/// `CellValue::boolean(...)`. Simple source inline rich
 /// text runs are flattened to ordinary text; inline rich formatting is not
 /// preserved, and inline phonetic / extension metadata text is ignored.
 /// Opaque nested markup inside inline `rPh` / `phoneticPr` / `extLst` is
@@ -353,8 +357,15 @@ struct WorksheetCellSnapshot {
 /// or processing instructions inside cells remain unsupported.
 /// Source cell `ph` phonetic markers are ignored. Formula metadata attributes
 /// `t` / `ref` / `si` are not preserved: formula text is imported as plain
-/// formula text, while metadata-only shared formula cells can only materialize
-/// from cached scalar `<v>` values when present.
+/// formula text. Source-order shared formula followers are imported as plain
+/// formula text by translating A1-style relative references from the source
+/// definition cell to the follower cell. The translator honors `$` absolute
+/// row/column markers, emits `#REF!` for translated references outside Excel
+/// bounds, and skips double-quoted strings, quoted sheet-name tokens, and
+/// bracketed external/structured-reference tokens. This remains a narrow
+/// translator, not a complete Excel formula parser. Unresolved metadata-only
+/// shared formula cells can only materialize from cached scalar `<v>` values
+/// when present.
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
 /// or unsupported cell metadata attributes, coerce invalid numeric payloads, migrate
@@ -370,7 +381,7 @@ struct WorksheetCellSnapshot {
 /// infer missing row scope for non-empty rows or cells, preserve source
 /// worksheet wrapper metadata during dirty projection, evaluate formulas,
 /// preserve formula metadata or cached formula results for formula-text cells,
-/// rebuild calcChain, update
+/// implement a complete formula parser, rebuild calcChain, update
 /// tables/drawings/defined names/range metadata, or repair relationships.
 /// Non-default caller-supplied StyleId values are rejected by both set_cell() overloads until a
 /// public existing-workbook style policy exists. An explicit default StyleId{0}
@@ -674,8 +685,10 @@ private:
 /// shared string indexes are encountered.
 /// Source cell `ph` phonetic markers are ignored. Formula metadata attributes
 /// `t` / `ref` / `si` are treated as source metadata, not preserved; formulas
-/// with text are projected as plain formula text, and metadata-only shared
-/// formula cells are projected from cached scalar values when available.
+/// with text are projected as plain formula text, and source-order shared
+/// formula followers are projected as translated plain formula text. Unresolved
+/// metadata-only shared formula cells are projected from cached scalar values
+/// when available.
 /// Failed worksheet materialization does not queue a dirty session; a later
 /// no-op save_as() remains a copy-original package write unless another edit is
 /// explicitly queued.

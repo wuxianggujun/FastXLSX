@@ -1151,6 +1151,230 @@ ParsedCellReference parse_cell_reference_for_load(std::string_view reference)
         static_cast<std::uint32_t>(row), static_cast<std::uint32_t>(column)};
 }
 
+struct FormulaReferenceToken {
+    std::size_t length = 0;
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+    bool row_absolute = false;
+    bool column_absolute = false;
+};
+
+bool is_formula_name_char(char ch)
+{
+    return is_ascii_alpha(ch) || is_ascii_digit(ch) || ch == '_' || ch == '.';
+}
+
+bool has_formula_reference_left_boundary(std::string_view formula, std::size_t position)
+{
+    if (position == 0) {
+        return true;
+    }
+    return !is_formula_name_char(formula[position - 1]);
+}
+
+bool has_formula_reference_right_boundary(std::string_view formula, std::size_t position)
+{
+    if (position >= formula.size()) {
+        return true;
+    }
+    const char next = formula[position];
+    return !is_formula_name_char(next) && next != '(' && next != '!';
+}
+
+std::optional<FormulaReferenceToken> parse_formula_reference_token(
+    std::string_view formula, std::size_t position)
+{
+    const std::size_t start = position;
+    if (!has_formula_reference_left_boundary(formula, start)) {
+        return std::nullopt;
+    }
+
+    bool column_absolute = false;
+    if (position < formula.size() && formula[position] == '$') {
+        column_absolute = true;
+        ++position;
+    }
+
+    std::uint64_t column = 0;
+    std::size_t column_letters = 0;
+    while (position < formula.size() && is_ascii_alpha(formula[position])) {
+        column = column * 26U + uppercase_column_value(formula[position]);
+        ++column_letters;
+        ++position;
+    }
+    if (column_letters == 0 || column == 0 || column > 16384U) {
+        return std::nullopt;
+    }
+
+    bool row_absolute = false;
+    if (position < formula.size() && formula[position] == '$') {
+        row_absolute = true;
+        ++position;
+    }
+
+    const std::size_t row_begin = position;
+    std::uint64_t row = 0;
+    while (position < formula.size() && is_ascii_digit(formula[position])) {
+        row = row * 10U + static_cast<std::uint32_t>(formula[position] - '0');
+        ++position;
+    }
+    if (position == row_begin || row == 0 || row > 1048576U) {
+        return std::nullopt;
+    }
+    if (!has_formula_reference_right_boundary(formula, position)) {
+        return std::nullopt;
+    }
+
+    return FormulaReferenceToken {position - start, static_cast<std::uint32_t>(row),
+        static_cast<std::uint32_t>(column), row_absolute, column_absolute};
+}
+
+void append_formula_column_reference(std::string& output, std::uint32_t column)
+{
+    char letters[3] {};
+    std::size_t count = 0;
+    while (column > 0) {
+        --column;
+        letters[count] = static_cast<char>('A' + (column % 26U));
+        ++count;
+        column /= 26U;
+    }
+    while (count > 0) {
+        --count;
+        output += letters[count];
+    }
+}
+
+std::optional<std::uint32_t> translate_formula_axis(
+    std::uint32_t value, std::int64_t delta, bool absolute, std::uint32_t limit)
+{
+    if (absolute) {
+        return value;
+    }
+    const std::int64_t translated = static_cast<std::int64_t>(value) + delta;
+    if (translated < 1 || translated > static_cast<std::int64_t>(limit)) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint32_t>(translated);
+}
+
+void append_translated_formula_reference(
+    std::string& output,
+    const FormulaReferenceToken& token,
+    std::int64_t row_delta,
+    std::int64_t column_delta)
+{
+    const std::optional<std::uint32_t> translated_column = translate_formula_axis(
+        token.column, column_delta, token.column_absolute, 16384U);
+    const std::optional<std::uint32_t> translated_row = translate_formula_axis(
+        token.row, row_delta, token.row_absolute, 1048576U);
+    if (!translated_column.has_value() || !translated_row.has_value()) {
+        output += "#REF!";
+        return;
+    }
+
+    if (token.column_absolute) {
+        output += '$';
+    }
+    append_formula_column_reference(output, *translated_column);
+    if (token.row_absolute) {
+        output += '$';
+    }
+    append_unsigned_decimal(output, *translated_row);
+}
+
+void append_quoted_formula_string(
+    std::string& output, std::string_view formula, std::size_t& position)
+{
+    output += formula[position++];
+    while (position < formula.size()) {
+        output += formula[position];
+        if (formula[position] == '"') {
+            ++position;
+            if (position < formula.size() && formula[position] == '"') {
+                output += formula[position++];
+                continue;
+            }
+            return;
+        }
+        ++position;
+    }
+}
+
+void append_quoted_sheet_name(
+    std::string& output, std::string_view formula, std::size_t& position)
+{
+    output += formula[position++];
+    while (position < formula.size()) {
+        output += formula[position];
+        if (formula[position] == '\'') {
+            ++position;
+            if (position < formula.size() && formula[position] == '\'') {
+                output += formula[position++];
+                continue;
+            }
+            return;
+        }
+        ++position;
+    }
+}
+
+void append_bracketed_formula_token(
+    std::string& output, std::string_view formula, std::size_t& position)
+{
+    output += formula[position++];
+    while (position < formula.size()) {
+        output += formula[position];
+        const bool closed = formula[position] == ']';
+        ++position;
+        if (closed) {
+            return;
+        }
+    }
+}
+
+std::string translate_shared_formula_text(
+    std::string_view formula, CellPosition base, CellPosition target)
+{
+    const std::int64_t row_delta =
+        static_cast<std::int64_t>(target.row) - static_cast<std::int64_t>(base.row);
+    const std::int64_t column_delta =
+        static_cast<std::int64_t>(target.column) - static_cast<std::int64_t>(base.column);
+    if (row_delta == 0 && column_delta == 0) {
+        return std::string(formula);
+    }
+
+    std::string translated;
+    translated.reserve(formula.size());
+    std::size_t position = 0;
+    while (position < formula.size()) {
+        if (formula[position] == '"') {
+            append_quoted_formula_string(translated, formula, position);
+            continue;
+        }
+        if (formula[position] == '\'') {
+            append_quoted_sheet_name(translated, formula, position);
+            continue;
+        }
+        if (formula[position] == '[') {
+            append_bracketed_formula_token(translated, formula, position);
+            continue;
+        }
+
+        const std::optional<FormulaReferenceToken> token =
+            parse_formula_reference_token(formula, position);
+        if (token.has_value()) {
+            append_translated_formula_reference(
+                translated, *token, row_delta, column_delta);
+            position += token->length;
+            continue;
+        }
+
+        translated += formula[position++];
+    }
+    return translated;
+}
+
 bool needs_space_preserve(std::string_view value)
 {
     return !value.empty()
@@ -1394,6 +1618,7 @@ struct ActiveSourceCell {
     std::string scalar_text;
     std::string inline_text;
     std::string formula_text;
+    std::optional<std::uint64_t> shared_formula_index;
     std::size_t inline_rich_run_depth = 0;
     std::size_t inline_rich_properties_depth = 0;
     std::size_t inline_ignored_metadata_depth = 0;
@@ -1404,9 +1629,17 @@ struct ActiveSourceCell {
     bool saw_direct_inline_text_element = false;
     bool saw_formula_element = false;
     bool saw_formula_metadata_attributes = false;
+    bool formula_type_is_shared = false;
 };
 
 using SharedStringsProvider = std::function<const std::vector<std::string>&()>;
+
+struct SharedFormulaDefinition {
+    CellPosition base;
+    std::string formula_text;
+};
+
+using SharedFormulaDefinitions = std::map<std::uint64_t, SharedFormulaDefinition>;
 
 bool parse_shared_string_index(
     std::string_view value, std::uint64_t& index, const char* error_message)
@@ -1445,7 +1678,9 @@ bool parse_cell_boolean(std::string_view value)
 }
 
 CellValue materialize_cell_value(
-    const ActiveSourceCell& cell, const SharedStringsProvider* shared_strings_provider)
+    const ActiveSourceCell& cell,
+    const SharedStringsProvider* shared_strings_provider,
+    const SharedFormulaDefinitions& shared_formula_definitions)
 {
     CellValue value = CellValue::blank();
     if (cell.saw_formula_element) {
@@ -1456,12 +1691,26 @@ CellValue materialize_cell_value(
             }
             return value;
         }
+        if (cell.formula_type_is_shared && cell.shared_formula_index.has_value()) {
+            const auto definition =
+                shared_formula_definitions.find(*cell.shared_formula_index);
+            if (definition != shared_formula_definitions.end()) {
+                value = CellValue::formula(translate_shared_formula_text(
+                    definition->second.formula_text, definition->second.base,
+                    cell.position));
+                if (cell.style_id.has_value()) {
+                    value = value.with_style(*cell.style_id);
+                }
+                return value;
+            }
+        }
         if (!cell.saw_formula_metadata_attributes) {
             throw FastXlsxError("CellStore worksheet loader found an empty formula text");
         }
         // Shared/array formula metadata is not preserved by CellStore. If a
-        // source cell only carries metadata plus a cached value, materialize
-        // the cached scalar value instead of inventing formula text.
+        // source cell cannot be resolved through a source-order shared formula
+        // definition and carries a cached value, materialize that scalar value
+        // instead of inventing formula text.
     }
 
     switch (cell.type) {
@@ -1735,6 +1984,22 @@ private:
                 throw FastXlsxError(
                     "CellStore worksheet loader does not load unsupported formula attributes");
             }
+            if (const std::optional<std::string_view> formula_type =
+                    unqualified_attribute_value(event.raw_xml, "t");
+                formula_type.has_value() && *formula_type == "shared") {
+                cell.formula_type_is_shared = true;
+            }
+            if (const std::optional<std::string_view> shared_index =
+                    unqualified_attribute_value(event.raw_xml, "si")) {
+                std::uint64_t index = 0;
+                if (!parse_shared_string_index(
+                        *shared_index, index,
+                        "CellStore worksheet loader found an invalid shared formula index")) {
+                    throw FastXlsxError(
+                        "CellStore worksheet loader found an invalid shared formula index");
+                }
+                cell.shared_formula_index = index;
+            }
             cell.saw_formula_metadata_attributes = true;
         }
         if (event.element_name == "v" && raw_tag_has_attributes(event.raw_xml)) {
@@ -1996,7 +2261,13 @@ private:
         }
         store_.set_cell(
             cell.position.row, cell.position.column,
-            materialize_cell_value(cell, shared_strings_provider_));
+            materialize_cell_value(
+                cell, shared_strings_provider_, shared_formula_definitions_));
+        if (cell.formula_type_is_shared && cell.shared_formula_index.has_value()
+            && !cell.formula_text.empty()) {
+            shared_formula_definitions_[*cell.shared_formula_index] =
+                SharedFormulaDefinition {cell.position, cell.formula_text};
+        }
     }
 
     CellStore store_;
@@ -2008,6 +2279,7 @@ private:
     bool inside_sheet_data_ = false;
     bool inside_row_ = false;
     std::optional<ActiveSourceCell> active_cell_;
+    SharedFormulaDefinitions shared_formula_definitions_;
 };
 
 } // namespace

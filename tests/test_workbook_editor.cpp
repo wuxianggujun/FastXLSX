@@ -12168,6 +12168,67 @@ void test_public_worksheet_editor_materializes_source_formulas()
         "flushed WorksheetEditor source formula sheet should include later text edits");
 }
 
+void test_public_worksheet_editor_materializes_source_shared_formulas()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-source-shared-formula-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-source-shared-formula-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData>)"
+        R"(<row r="1">)"
+        R"(<c r="A1"><f t="shared" ref="A1:B2" si="5">A1+B$1+$A1+$A$1+SUM(A1:B1)&amp;"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1]</f><v>123</v></c>)"
+        R"(</row>)"
+        R"(<row r="2">)"
+        R"(<c r="B2"><f t="shared" si="5"/><v>999</v></c>)"
+        R"(</row>)"
+        R"(</sheetData>)"
+        R"(</worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> base = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> follower = sheet.try_cell("B2");
+    check(base.has_value() && base->kind() == fastxlsx::CellValueKind::Formula
+            && base->text_value()
+                == R"(A1+B$1+$A1+$A$1+SUM(A1:B1)&"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1])",
+        "WorksheetEditor should materialize shared formula definitions as formula text");
+    check(follower.has_value() && follower->kind() == fastxlsx::CellValueKind::Formula
+            && follower->text_value()
+                == R"(B2+C$1+$A2+$A$1+SUM(B2:C2)&"A1"+'Other Sheet'!B2+[Book.xlsx]Sheet1!B2+Table1[A1])",
+        "WorksheetEditor should materialize shared formula followers with translated references");
+    check(!sheet.has_pending_changes(),
+        "source shared formula read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "source shared formula read-only materialization should not dirty the workbook editor");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("shared-formula-new-inline"));
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A1"><f>A1+B$1+$A1+$A$1+SUM(A1:B1)&amp;"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1]</f></c>)",
+        "flushed WorksheetEditor shared formula base should write plain formula text");
+    check_contains(output_worksheet_xml,
+        R"(<c r="B2"><f>B2+C$1+$A2+$A$1+SUM(B2:C2)&amp;"A1"+'Other Sheet'!B2+[Book.xlsx]Sheet1!B2+Table1[A1]</f></c>)",
+        "flushed WorksheetEditor shared formula follower should write translated formula text");
+    check_not_contains(output_worksheet_xml, "<v>999</v>",
+        "flushed WorksheetEditor shared formula follower should not preserve stale cached values");
+    check_contains(output_worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>shared-formula-new-inline</t></is></c>)",
+        "flushed WorksheetEditor shared formula sheet should include later text edits");
+    check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "source shared formula rewrite should not mutate untouched source sheet bytes");
+}
+
 void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()
 {
     const std::filesystem::path source =
@@ -17586,6 +17647,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_materializes_source_shared_strings_xml_space_and_projects_inline();
         test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes();
         test_public_worksheet_editor_materializes_source_formulas();
+        test_public_worksheet_editor_materializes_source_shared_formulas();
         }
 
         if (should_run_workbook_editor_shard(shard, "source-failure")

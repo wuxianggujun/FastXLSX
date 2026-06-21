@@ -38,6 +38,17 @@ sharedStrings part instead of rebuilding, migrating, or writing it back. The
 failure matrix is also pinned: duplicate or invalid sharedStrings
 relationships/targets, missing or wrong-typed parts, malformed sharedStrings
 XML, and invalid indexes fail fast instead of being repaired or guessed.
+The same source materialization path now reads ordinary formula cells and
+source-order shared formula followers into `CellValue::formula(...)`. Shared
+formula followers use a narrow A1-style relative-reference translator from the
+definition cell to the follower cell; `$` absolute row/column anchors are kept,
+out-of-bounds relative references become `#REF!`, and quoted strings, quoted
+sheet-name tokens, and bracketed external/structured-reference tokens are not
+rewritten. Dirty `WorksheetEditor` save writes ordinary `<f>...</f>` formula
+text, drops stale cached results, and still does not preserve shared formula
+metadata, evaluate formulas, rebuild calcChain, or implement a complete Excel
+formula parser. Unresolved metadata-only shared formula cells continue to fall
+back to supported cached scalar `<v>` values when present.
 Source sharedStrings text with `xml:space="preserve"` is now pinned at the
 public facade as read-only materialized whitespace: plain shared-string text and
 simple rich shared-string runs keep leading/trailing whitespace in
@@ -635,6 +646,17 @@ behavior from internal Patch preservation evidence and non-goals. This is test
 coverage and documentation only, not semantic object editing, relationship
 repair/pruning, transaction/undo/rollback, source reload, or complete workbook
 editing.
+P8.561 materializes source shared formula followers in the public
+`WorksheetEditor` path: source-order definitions keep their formula text, later
+followers import translated plain formula text, stale cached follower values are
+dropped on dirty save, and the source package remains untouched until
+`save_as()`. The internal loader regression also pins `$` absolute anchors,
+range endpoint translation, skipped quoted/bracketed tokens, invalid `si`
+diagnostics, and `#REF!` output for out-of-bounds relative references. This is
+read-only source materialization and lossy dirty projection only, not formula
+evaluation, formula dependency graphing, shared formula metadata preservation,
+calcChain rebuild, sharedStrings/style migration, or a complete Excel formula
+parser.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for
@@ -1897,10 +1919,12 @@ feature completion.
       concatenated into ambiguous materialized values.
       Source formula metadata attributes limited to `t`, `ref`, and `si` now
       load lossily: formula cells with text are projected as plain formula text,
-      and metadata-only shared formula cells can materialize supported cached
-      scalar `<v>` values. Empty formula text and unknown formula attributes
-      still fail before materialization, so this is not shared/array formula
-      migration.
+      source-order shared formula followers can materialize translated plain
+      formula text, and unresolved metadata-only shared formula cells can
+      materialize supported cached scalar `<v>` values. Empty formula text,
+      invalid shared formula indexes, and unknown formula attributes still fail
+      before materialization, so this is not shared/array formula metadata
+      preservation or a full formula parser.
       Cells outside row elements now also fail before materialization, keeping
       source-backed loading scoped to row-contained cells.
       Unsupported source row/cell metadata attributes still fail before
@@ -2269,9 +2293,11 @@ commit or short series with its own tests and docs update.
       fail as source-shape guardrails.
       Source formula metadata attributes limited to `t`, `ref`, and `si` are
       accepted as lossy metadata: formula text is projected as plain formula
-      text, and metadata-only shared formulas can materialize supported cached
-      scalar values. Unknown formula attributes and empty formula text still
-      fail as formula-shape guardrails.
+      text, source-order shared formula followers are materialized as translated
+      plain formula text, and unresolved metadata-only shared formulas can
+      materialize supported cached scalar values. Unknown formula attributes,
+      invalid shared formula indexes, and empty formula text still fail as
+      formula-shape guardrails.
       Cells outside row elements now fail as row-scope guardrails.
       Unsupported source row/cell metadata attributes still fail as metadata
       guardrails, except source cell `ph` phonetic markers are tolerated and

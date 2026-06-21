@@ -1456,7 +1456,7 @@ void test_internal_cell_store_worksheet_loader()
     {
         const fastxlsx::detail::CellStore formula_metadata_store =
             fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="array" ref="A1">PI()</f><v>3.14</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>2</v></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="array" ref="A1">PI()</f><v>3.14</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>2</v></c></row><row r="3"><c r="A3"><f t="shared" ref="A3:B4" si="3">A3+B$3+$A3+$A$3+SUM(A3:B3)&amp;"A3"+'Other Sheet'!A3+[Book.xlsx]Sheet1!A3+Table1[A3]</f><v>1</v></c></row><row r="4"><c r="B4"><f t="shared" si="3"/><v>999</v></c></row><row r="5"><c r="A5"><f t="shared" ref="A5:B6" si="4">XFD5+$XFD5+XFD$5+$XFD$5</f></c></row><row r="6"><c r="B6"><f t="shared" si="4"/><v>111</v></c></row></sheetData></worksheet>)");
         const fastxlsx::detail::CellRecord* array_formula =
             formula_metadata_store.try_cell(1, 1);
         check(array_formula != nullptr && array_formula->kind == fastxlsx::CellValueKind::Formula
@@ -1466,8 +1466,33 @@ void test_internal_cell_store_worksheet_loader()
             formula_metadata_store.try_cell(2, 1);
         check(shared_cached != nullptr && shared_cached->kind == fastxlsx::CellValueKind::Number
                 && shared_cached->number_value == 2.0,
-            "worksheet loader should materialize cached values for metadata-only shared formulas");
+            "worksheet loader should materialize cached values for unresolved metadata-only shared formulas");
+        const fastxlsx::detail::CellRecord* shared_base =
+            formula_metadata_store.try_cell(3, 1);
+        check(shared_base != nullptr && shared_base->kind == fastxlsx::CellValueKind::Formula
+                && shared_base->text_value
+                    == R"(A3+B$3+$A3+$A$3+SUM(A3:B3)&"A3"+'Other Sheet'!A3+[Book.xlsx]Sheet1!A3+Table1[A3])",
+            "worksheet loader should materialize shared formula definitions as plain formula text");
+        const fastxlsx::detail::CellRecord* shared_follower =
+            formula_metadata_store.try_cell(4, 2);
+        check(shared_follower != nullptr
+                && shared_follower->kind == fastxlsx::CellValueKind::Formula
+                && shared_follower->text_value
+                    == R"(B4+C$3+$A4+$A$3+SUM(B4:C4)&"A3"+'Other Sheet'!B4+[Book.xlsx]Sheet1!B4+Table1[A3])",
+            "worksheet loader should translate shared formula followers while preserving absolute refs and skipped tokens");
+        const fastxlsx::detail::CellRecord* shared_edge_follower =
+            formula_metadata_store.try_cell(6, 2);
+        check(shared_edge_follower != nullptr
+                && shared_edge_follower->kind == fastxlsx::CellValueKind::Formula
+                && shared_edge_follower->text_value == "#REF!+$XFD6+#REF!+$XFD$5",
+            "worksheet loader should translate out-of-range relative shared formula references to #REF!");
     }
+    check_fastxlsx_error(
+        [&] {
+            (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="shared" si="bad">1</f></c></row></sheetData></worksheet>)");
+        },
+        "worksheet loader should reject invalid shared formula indexes");
     check_fastxlsx_error(
         [&] {
             (void)fastxlsx::detail::load_cell_store_from_worksheet_xml(

@@ -162,9 +162,13 @@ private:
 /// flattened to text; rich formatting is not preserved, and inline phonetic /
 /// extension metadata text and source cell `ph` phonetic markers are ignored.
 /// Formula metadata attributes `t` / `ref` / `si` are not preserved: formula
-/// text is flattened to a plain `<f>` on projection, while metadata-only
-/// shared formula cells materialize from cached scalar `<v>` values when
-/// present. Opaque nested markup inside inline
+/// text is flattened to a plain `<f>` on projection. Source-order shared
+/// formula definitions and followers materialize as plain formula text through
+/// a narrow A1-style relative-reference translator that honors `$` row/column
+/// anchors and skips quoted string text, quoted sheet-name tokens, and
+/// bracketed external/structured-reference tokens. Metadata-only shared formula
+/// followers without a resolved source-order definition still materialize from
+/// cached scalar `<v>` values when present. Opaque nested markup inside inline
 /// `rPh` / `phoneticPr` / `extLst` is ignored for text materialization, and
 /// self-closing ignored metadata is treated as empty metadata; nested `<si>`
 /// decoys, markup inside text wrappers, orphan closing tags, and unclosed
@@ -180,9 +184,10 @@ private:
 /// when their namespace URI is ignored. The
 /// supplied CellStoreOptions are enforced during loading. This does not migrate
 /// sharedStrings, validate source style ids against styles.xml, merge styles,
-/// repair relationships, recalculate formulas, preserve formula metadata or
-/// cached formula results for formula-text cells, preserve inline rich text
-/// formatting, or expose a public WorksheetEditor.
+/// repair relationships, recalculate formulas, implement a complete formula
+/// parser, preserve formula metadata or cached formula results for formula-text
+/// cells, preserve inline rich text formatting, or expose a public
+/// WorksheetEditor.
 [[nodiscard]] CellStore load_cell_store_from_worksheet_chunks(
     const WorksheetInputChunkCallback& read_next_chunk,
     CellStoreOptions options = {},

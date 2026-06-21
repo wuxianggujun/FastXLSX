@@ -412,6 +412,9 @@ summary" 保持一致：
   （包含 `t="str"` formula cells 且丢弃 stale cached values）、
   plain inline string、simple inline rich text flatten，以及 workbook-backed
   `t="s"` shared string indexes。
+- 支持读取 source shared formula definition 和 source-order follower：follower
+  会 materialize 为普通 `CellValue::formula(...)`，并对 A1-style 相对引用做窄平移；
+  `$` 绝对行/列保持不动，越界平移写成 `#REF!`，但这不是完整 Excel formula parser。
 - sharedStrings 只做 read-only import；dirty projection 继续写 inline strings，
   并保留 source `xl/sharedStrings.xml`，不 rebuild / writeback / migrate。
 - source sharedStrings 和 inline rich text 中 `rPh` / `phoneticPr` / `extLst`
@@ -437,6 +440,13 @@ summary" 保持一致：
 workbook-backed source `t="s"` cells 会通过现有 `xl/sharedStrings.xml` 只读解析成
 plain `CellValue::text(...)`；dirty `save_as()` 仍把 materialized text 写成 inline
 strings，并保留 source sharedStrings part，而不是重建或回写 string table。
+source shared formula definition 会按公式文本导入；source-order follower 会基于
+definition cell 到 follower cell 的偏移平移 A1-style 引用后导入为普通公式文本。
+平移会跳过双引号字符串、quoted sheet-name token 和 bracketed
+external/structured-reference token；未能解析到 definition 的 metadata-only shared
+formula cell 仍只在有 supported cached scalar `<v>` 时按旧边界 materialize。dirty
+projection 输出普通 `<f>...</f>`，不保留 shared formula metadata、cached formula
+results，不计算公式、不重建 calcChain。
 prefixed source sharedStrings element names (`sst` / `si` / `t` / `r`) 会按
 local-name 参与该只读 materialization；这不是 namespace URI validation、namespace
 repair 或 schema validation。unsupported sharedStrings item/rich-run local-name

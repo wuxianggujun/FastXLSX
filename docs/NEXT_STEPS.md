@@ -792,6 +792,12 @@ names, same-sheet replacement of diagnostics, and rename migration of pending
 payload diagnostics. `WorkbookEditor` still orchestrates materialized sessions
 and public edit summaries, but no longer stores raw pending replacement maps in
 the facade implementation.
+P8.578 moves `WorksheetEditor` cell-access validation behind
+`src/workbook_editor_worksheet_access.*`: the helper owns strict uppercase A1
+single-cell parsing, row/column and range guardrails, and projection from
+internal materialized-cell snapshots to public `WorksheetCellSnapshot` values.
+`WorkbookEditor` / `WorksheetEditor` still own lifecycle, session lookup,
+mutation ordering, and save-as orchestration.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

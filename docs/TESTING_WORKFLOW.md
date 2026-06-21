@@ -299,8 +299,11 @@ covers the source/planned worksheet catalog plan state directly.
 `fastxlsx.workbook_editor_pending_edits` covers queued whole-`<sheetData>`
 replacement diagnostic state directly: same-sheet diagnostic replacement,
 aggregate cell/memory totals, current-catalog ordered pending names, orphan
-diagnostic fallback ordering, and rename migration. The workbook-editor CTest
-family still covers the public facade integration, plus an Office-like public
+diagnostic fallback ordering, and rename migration.
+`fastxlsx.workbook_editor_worksheet_access` covers strict uppercase A1
+single-cell parsing, Excel row/column and range guardrails, and public snapshot
+mapping from materialized cells. The workbook-editor CTest family still covers
+the public facade integration, plus an Office-like public
 `WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,
 untouched sheet preservation, and lossy array/dataTable formula metadata

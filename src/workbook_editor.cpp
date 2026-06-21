@@ -4,6 +4,7 @@
 #include "workbook_editor_image_edit.hpp"
 #include "workbook_editor_pending_edits.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
+#include "workbook_editor_worksheet_access.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/detail/formula_reference_audit.hpp>
@@ -12,7 +13,6 @@
 #include <fastxlsx/image.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -40,11 +40,6 @@ detail::CellStoreOptions cell_store_options_from_worksheet_options(
     store_options.memory_budget_bytes = options.memory_budget_bytes;
     return store_options;
 }
-
-struct WorksheetEditorCellCoordinate {
-    std::uint32_t row = 0;
-    std::uint32_t column = 0;
-};
 
 std::vector<std::string> source_sheet_names_from_workbook_sheets(
     const std::vector<detail::WorkbookSheetReference>& sheets)
@@ -80,86 +75,6 @@ bool path_is_existing_directory(const std::filesystem::path& path) noexcept
     std::error_code error;
     const bool directory = std::filesystem::is_directory(path, error);
     return !error && directory;
-}
-
-bool is_ascii_digit(char ch) noexcept
-{
-    return ch >= '0' && ch <= '9';
-}
-
-WorksheetEditorCellCoordinate parse_strict_a1_cell_reference(
-    std::string_view cell_reference)
-{
-    constexpr std::uint32_t max_excel_rows = 1048576;
-    constexpr std::uint32_t max_excel_columns = 16384;
-
-    if (cell_reference.empty()) {
-        throw FastXlsxError("WorksheetEditor cell reference is empty");
-    }
-
-    std::uint64_t column = 0;
-    std::size_t position = 0;
-    while (position < cell_reference.size()) {
-        const char ch = cell_reference[position];
-        if (ch < 'A' || ch > 'Z') {
-            break;
-        }
-        column = column * 26U + static_cast<std::uint32_t>(ch - 'A' + 1);
-        if (column > max_excel_columns) {
-            throw FastXlsxError("WorksheetEditor cell reference column exceeds Excel limits");
-        }
-        ++position;
-    }
-    if (position == 0 || position >= cell_reference.size()) {
-        throw FastXlsxError("WorksheetEditor cell reference is invalid");
-    }
-    if (cell_reference[position] == '0') {
-        throw FastXlsxError("WorksheetEditor cell reference is invalid");
-    }
-
-    std::uint64_t row = 0;
-    while (position < cell_reference.size() && is_ascii_digit(cell_reference[position])) {
-        row = row * 10U + static_cast<std::uint32_t>(cell_reference[position] - '0');
-        if (row > max_excel_rows) {
-            throw FastXlsxError("WorksheetEditor cell reference row exceeds Excel limits");
-        }
-        ++position;
-    }
-    if (position != cell_reference.size() || row == 0 || column == 0) {
-        throw FastXlsxError("WorksheetEditor cell reference is invalid");
-    }
-
-    return WorksheetEditorCellCoordinate {
-        static_cast<std::uint32_t>(row), static_cast<std::uint32_t>(column)};
-}
-
-void validate_worksheet_editor_cell_range(const CellRange& range)
-{
-    (void)detail::range_reference(range);
-}
-
-void validate_worksheet_editor_cell_coordinate(std::uint32_t row, std::uint32_t column)
-{
-    try {
-        (void)detail::cell_reference(row, column);
-    } catch (const FastXlsxError& error) {
-        throw FastXlsxError(
-            "WorksheetEditor cell coordinate is invalid: " + std::string(error.what()));
-    }
-}
-
-std::vector<WorksheetCellSnapshot> public_snapshots_from_internal(
-    const std::vector<detail::MaterializedCellSnapshot>& internal_snapshots)
-{
-    std::vector<WorksheetCellSnapshot> snapshots;
-    snapshots.reserve(internal_snapshots.size());
-    for (const detail::MaterializedCellSnapshot& snapshot : internal_snapshots) {
-        snapshots.push_back(WorksheetCellSnapshot {
-            WorksheetCellReference {snapshot.position.row, snapshot.position.column},
-            snapshot.value,
-        });
-    }
-    return snapshots;
 }
 
 std::vector<WorkbookEditorWorksheetCatalogEntry> public_catalog_from_detail_catalog(
@@ -905,7 +820,7 @@ std::optional<CellValue> WorksheetEditor::try_cell(
     std::uint32_t row, std::uint32_t column) const
 {
     const WorkbookEditor::Impl& state = *owner().impl_;
-    validate_worksheet_editor_cell_coordinate(row, column);
+    detail::validate_worksheet_editor_cell_coordinate(row, column);
     const detail::MaterializedWorksheetSession* session =
         state.materialized_sessions.try_session(planned_name_);
     if (session == nullptr) {
@@ -921,8 +836,8 @@ std::optional<CellValue> WorksheetEditor::try_cell(
 
 std::optional<CellValue> WorksheetEditor::try_cell(std::string_view cell_reference) const
 {
-    const WorksheetEditorCellCoordinate coordinate =
-        parse_strict_a1_cell_reference(cell_reference);
+    const detail::WorksheetEditorCellCoordinate coordinate =
+        detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
     return try_cell(coordinate.row, coordinate.column);
 }
 
@@ -937,8 +852,8 @@ CellValue WorksheetEditor::get_cell(std::uint32_t row, std::uint32_t column) con
 
 CellValue WorksheetEditor::get_cell(std::string_view cell_reference) const
 {
-    const WorksheetEditorCellCoordinate coordinate =
-        parse_strict_a1_cell_reference(cell_reference);
+    const detail::WorksheetEditorCellCoordinate coordinate =
+        detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
     return get_cell(coordinate.row, coordinate.column);
 }
 
@@ -946,7 +861,7 @@ void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const Ce
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
-        validate_worksheet_editor_cell_coordinate(row, column);
+        detail::validate_worksheet_editor_cell_coordinate(row, column);
         if (value.has_style() && value.style_id().value() != 0) {
             throw FastXlsxError(
                 "WorksheetEditor::set_cell() does not support non-default StyleId values");
@@ -969,8 +884,8 @@ void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue&
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
-        const WorksheetEditorCellCoordinate coordinate =
-            parse_strict_a1_cell_reference(cell_reference);
+        const detail::WorksheetEditorCellCoordinate coordinate =
+            detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
         set_cell(coordinate.row, coordinate.column, value);
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -982,7 +897,7 @@ void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
-        validate_worksheet_editor_cell_coordinate(row, column);
+        detail::validate_worksheet_editor_cell_coordinate(row, column);
         detail::MaterializedWorksheetSession* session =
             state.materialized_sessions.try_session(planned_name_);
         if (session == nullptr) {
@@ -1000,8 +915,8 @@ void WorksheetEditor::erase_cell(std::string_view cell_reference)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
-        const WorksheetEditorCellCoordinate coordinate =
-            parse_strict_a1_cell_reference(cell_reference);
+        const detail::WorksheetEditorCellCoordinate coordinate =
+            detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
         erase_cell(coordinate.row, coordinate.column);
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -1042,12 +957,12 @@ std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells() const
 
     const std::vector<detail::MaterializedCellSnapshot> internal_snapshots =
         session->sparse_cell_snapshots();
-    return public_snapshots_from_internal(internal_snapshots);
+    return detail::public_snapshots_from_materialized_cells(internal_snapshots);
 }
 
 std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(CellRange range) const
 {
-    validate_worksheet_editor_cell_range(range);
+    detail::validate_worksheet_editor_cell_range(range);
 
     const WorkbookEditor::Impl& state = *owner().impl_;
     const detail::MaterializedWorksheetSession* session =
@@ -1058,7 +973,7 @@ std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(CellRange range
 
     const std::vector<detail::MaterializedCellSnapshot> internal_snapshots =
         session->sparse_cell_snapshots(range);
-    return public_snapshots_from_internal(internal_snapshots);
+    return detail::public_snapshots_from_materialized_cells(internal_snapshots);
 }
 
 std::size_t WorksheetEditor::estimated_memory_usage() const

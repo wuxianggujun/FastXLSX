@@ -39,6 +39,7 @@ add_library(fastxlsx
     src/workbook_editor_image_edit.cpp
     src/workbook_editor_pending_edits.cpp
     src/workbook_editor_sheet_catalog.cpp
+    src/workbook_editor_worksheet_access.cpp
     src/xml.cpp
     src/zip_store_writer.cpp
 )

@@ -969,3 +969,26 @@ xl/worksheets/_rels/sheet*.xml.rels
 5. 内存异常：检查是否引入 DOM、完整 cell matrix、cell map 或跨行缓存。
 6. 性能回退：检查 XML 编码、escape、数字转换、cell reference、压缩等级、
    sharedStrings 去重和 row buffer。
+### workbook-editor fixture image QA
+
+`tools/run_workbook_editor_qa.py` 现在还支持外部图片 fixture smoke。它会扫描
+`xl/media/*.png|jpg|jpeg`，找到实际含图 worksheet 后用窄 `WorkbookEditor::replace_image()`
+路径替换目标 media part，再用 ZIP / `openpyxl` / Excel COM 验证：
+
+- 只有目标 image part bytes 变化
+- 其它 package entry 保持不变
+- worksheet 仍可被 Excel 打开，shape 计数正常
+
+推荐 fixture 为
+`C:\Users\wuxianggujun\CodeSpace\CMakeProjects\xlnt\tests\data\14_images.xlsx`。
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --fixture-root C:\Users\wuxianggujun\CodeSpace\CMakeProjects\xlnt\tests\data `
+  --scenario external_fixture_image_replace_smoke `
+  --fixture-glob 14_images.xlsx `
+  --fixture-limit 1 `
+  --excel-verify
+```
+
+这是本地 QA 入口，不接入默认 CTest/CI。

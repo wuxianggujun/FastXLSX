@@ -196,6 +196,27 @@ function Verify-FixtureCase {
     }
 }
 
+function Verify-FixtureImageReplace {
+    param(
+        [object]$Workbook,
+        [object]$ToolReport
+    )
+
+    $sheetName = [string]$ToolReport.source_sheet_name
+    Assert-True (-not [string]::IsNullOrWhiteSpace($sheetName)) "fixture image replace did not report a worksheet name"
+
+    $sheet = $null
+    try {
+        $sheet = Get-Worksheet $Workbook $sheetName
+        Assert-True ($sheet.Shapes.Count -ge 1) "$sheetName shape count"
+    }
+    finally {
+        if ($null -ne $sheet) {
+            [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($sheet)
+        }
+    }
+}
+
 function Verify-Case {
     param(
         [object]$Excel,
@@ -219,6 +240,7 @@ function Verify-Case {
             "generated_non_default_style_rejection" { Verify-GeneratedStyleRejection $workbook }
             "fixture_rename_materialized" { Verify-FixtureCase $workbook $toolReport }
             "fixture_materialized_only" { Verify-FixtureCase $workbook $toolReport }
+            "fixture_image_replace" { Verify-FixtureImageReplace $workbook $toolReport }
             default { throw "unsupported workbook-editor QA Excel scenario '$scenario'" }
         }
 

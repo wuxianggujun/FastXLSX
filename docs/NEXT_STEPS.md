@@ -38,6 +38,16 @@ sharedStrings part instead of rebuilding, migrating, or writing it back. The
 failure matrix is also pinned: duplicate or invalid sharedStrings
 relationships/targets, missing or wrong-typed parts, malformed sharedStrings
 XML, and invalid indexes fail fast instead of being repaired or guessed.
+The same opt-in workbook-editor QA runner now also has an external image
+fixture smoke path: `external_fixture_image_replace_smoke` scans caller
+fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
+image, replaces that media part through the narrow `WorkbookEditor::replace_image()`
+path, and verifies the output with ZIP/XML, `openpyxl`, and optional Excel COM.
+The current local xlnt evidence uses `C:\Users\wuxianggujun\CodeSpace\CMakeProjects\xlnt\tests\data\14_images.xlsx`
+and confirms a single `xl/media/image1.jpg` replacement while preserving the
+rest of the package bytes. This is QA coverage only; it is not a broadened
+image-editing API, not default CI, and not a general preservation claim for all
+embedded drawing models.
 The same source materialization path now reads ordinary formula cells and
 source-order shared formula followers into `CellValue::formula(...)`. Shared
 formula followers use a narrow A1-style relative-reference translator from the

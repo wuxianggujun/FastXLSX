@@ -55,11 +55,13 @@ DEFAULT_XLNT_STRING_FIXTURES = [
 
 EXTERNAL_FIXTURE_SCENARIO = "external_fixture_materialized_smoke"
 FORMULA_FIXTURE_SCENARIO = "external_formula_fixture_materialized_smoke"
+IMAGE_FIXTURE_SCENARIO = "external_fixture_image_replace_smoke"
 FIXTURE_SCENARIOS = [
     "xlnt_fixture_rename_smoke",
     "xlnt_fixture_string_smoke",
     EXTERNAL_FIXTURE_SCENARIO,
     FORMULA_FIXTURE_SCENARIO,
+    IMAGE_FIXTURE_SCENARIO,
 ]
 
 
@@ -101,6 +103,22 @@ def resolve_default_qa_exe() -> Path | None:
 
 def resolve_default_excel_script() -> Path:
     return Path(__file__).resolve().with_name("verify_workbook_editor_qa_excel.ps1")
+
+
+def repository_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def repository_asset(relative_path: str) -> Path:
+    return repository_root() / Path(relative_path)
+
+
+def workspace_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def workspace_asset(relative_path: str) -> Path:
+    return workspace_root() / Path(relative_path)
 
 
 def choose_unique_sheet_name(existing: list[str], preferred: str = "QA_Renamed") -> str:
@@ -211,6 +229,28 @@ class FormulaWorksheetInfo:
         }
 
 
+@dataclass(frozen=True)
+class ImageFixtureInfo:
+    fixture_path: Path
+    sheet_name: str
+    image_part_name: str
+
+    def as_report(self, fixture_root: Path | None = None) -> dict[str, Any]:
+        try:
+            fixture_name = (
+                self.fixture_path.relative_to(fixture_root).as_posix()
+                if fixture_root is not None
+                else self.fixture_path.name
+            )
+        except ValueError:
+            fixture_name = self.fixture_path.name
+        return {
+            "fixture": fixture_name,
+            "sheet_name": self.sheet_name,
+            "image_part_name": self.image_part_name,
+        }
+
+
 def load_openpyxl():
     try:
         import openpyxl  # type: ignore
@@ -229,6 +269,10 @@ def load_xlsxwriter():
 
 def openpyxl_image_count(worksheet: Any) -> int:
     return len(getattr(worksheet, "_images", []))
+
+
+def openpyxl_total_image_count(workbook: Any) -> int:
+    return sum(openpyxl_image_count(worksheet) for worksheet in workbook.worksheets)
 
 
 def xml_local_name(tag: str) -> str:
@@ -398,6 +442,56 @@ def discover_formula_fixture_infos(
     return infos
 
 
+def pick_image_part_name(path: Path) -> str | None:
+    names = sorted(zip_names(path))
+    for name in names:
+        lowered = name.lower()
+        if not lowered.startswith("xl/media/"):
+            continue
+        if lowered.endswith(".png") or lowered.endswith(".jpg") or lowered.endswith(".jpeg"):
+            return name
+    return None
+
+
+def discover_image_fixture_infos(
+    fixture_root: Path,
+    globs: list[str],
+    limit: int,
+) -> list[ImageFixtureInfo]:
+    openpyxl = load_openpyxl()
+    infos: list[ImageFixtureInfo] = []
+    for fixture_path in discover_external_fixtures(fixture_root, globs, 0):
+        image_part_name = pick_image_part_name(fixture_path)
+        if image_part_name is None:
+            continue
+
+        try:
+            workbook = openpyxl.load_workbook(fixture_path, read_only=False, data_only=False)
+        except Exception:
+            continue
+        try:
+            image_sheet_name: str | None = None
+            for worksheet in workbook.worksheets:
+                if openpyxl_image_count(worksheet) > 0:
+                    image_sheet_name = worksheet.title
+                    break
+            if image_sheet_name is None:
+                continue
+            infos.append(
+                ImageFixtureInfo(
+                    fixture_path=fixture_path,
+                    sheet_name=image_sheet_name,
+                    image_part_name=image_part_name,
+                )
+            )
+        finally:
+            workbook.close()
+
+        if limit > 0 and len(infos) >= limit:
+            return infos
+    return infos
+
+
 def run_tool(
     qa_exe: Path,
     scenario: str,
@@ -408,6 +502,7 @@ def run_tool(
     sheet_name: str | None = None,
     rename_to: str | None = None,
     replacement_image: Path | None = None,
+    image_part_name: str | None = None,
 ) -> dict[str, Any]:
     case_dir.mkdir(parents=True, exist_ok=True)
     report_path = case_dir / "tool-report.json"
@@ -429,6 +524,8 @@ def run_tool(
         args.extend(["--rename-to", rename_to])
     if replacement_image is not None:
         args.extend(["--replacement-image", str(replacement_image)])
+    if image_part_name:
+        args.extend(["--image-part", image_part_name])
 
     completed = subprocess.run(
         args,
@@ -752,6 +849,57 @@ def verify_generated_image_replace(path: Path, replacement_image: Path) -> tuple
             "Pictures.image_count": openpyxl_image_count(pictures),
         }
         require(pictures["A1"].value == "image-sheet", "generated image replace: Pictures!A1 mismatch")
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_fixture_image_replace(
+    source_path: Path,
+    output_path: Path,
+    sheet_name: str,
+    image_part_name: str,
+    replacement_image: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    source_names = zip_names(source_path)
+    output_names = zip_names(output_path)
+    require(image_part_name in source_names,
+            f"fixture image replace: missing source image part {image_part_name}")
+    require(image_part_name in output_names,
+            f"fixture image replace: missing output image part {image_part_name}")
+    require(source_names == output_names,
+            "fixture image replace: output ZIP entry set changed unexpectedly")
+
+    expected_bytes = replacement_image.read_bytes()
+    actual_bytes = read_zip_bytes(output_path, image_part_name)
+    require(actual_bytes == expected_bytes,
+            f"fixture image replace: {image_part_name} bytes mismatch")
+    for entry_name in source_names:
+        if entry_name == image_part_name:
+            continue
+        require(
+            read_zip_bytes(source_path, entry_name) == read_zip_bytes(output_path, entry_name),
+            f"fixture image replace: preserved entry changed unexpectedly: {entry_name}",
+        )
+
+    zip_report["image_part"] = image_part_name
+    zip_report["preserved_entries"] = len(source_names) - 1
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(output_path, read_only=False, data_only=False)
+    try:
+        require(sheet_name in workbook.sheetnames,
+                f"fixture image replace: sheet missing from {workbook.sheetnames!r}")
+        worksheet = workbook[sheet_name]
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            f"{sheet_name}.image_count": openpyxl_image_count(worksheet),
+            "workbook.image_count": openpyxl_total_image_count(workbook),
+        }
+        require(openpyxl_total_image_count(workbook) >= 1,
+                "fixture image replace: openpyxl did not load any images")
     finally:
         workbook.close()
 
@@ -1160,6 +1308,60 @@ def run_fixture_case(
     )
 
 
+def run_fixture_image_replace_case(
+    qa_exe: Path,
+    work_dir: Path,
+    image_info: ImageFixtureInfo,
+    group_name: str,
+    *,
+    fixture_root: Path,
+) -> ScenarioResult:
+    fixture_path = image_info.fixture_path
+    case_slug = fixture_case_slug(fixture_root, fixture_path) + "__image"
+    case_dir = work_dir / group_name / case_slug
+    replacement_image = (
+        repository_asset("docs/assets/donation/zhifubao.jpg")
+        if image_info.image_part_name.lower().endswith((".jpg", ".jpeg"))
+        else repository_asset("docs/assets/donation/weixin.png")
+    )
+    if not replacement_image.exists():
+        raise RuntimeError(f"replacement image asset not found: {replacement_image}")
+
+    case_dir.mkdir(parents=True, exist_ok=True)
+    tool_source_path = case_dir / "source.xlsx"
+    shutil.copyfile(fixture_path, tool_source_path)
+    tool_report = run_tool(
+        qa_exe,
+        "fixture_image_replace",
+        case_dir,
+        source=tool_source_path,
+        sheet_name=image_info.sheet_name,
+        image_part_name=image_info.image_part_name,
+    )
+    output_path = Path(tool_report["output"])
+    actual_sheet_name = tool_report.get("source_sheet_name") or image_info.sheet_name
+    actual_image_part_name = tool_report.get("image_part_name") or image_info.image_part_name
+    zip_xml, openpyxl_report = verify_fixture_image_replace(
+        fixture_path,
+        output_path,
+        actual_sheet_name,
+        actual_image_part_name,
+        replacement_image,
+    )
+
+    try:
+        case_name = f"{group_name}:{fixture_path.relative_to(fixture_root).as_posix()}:{actual_image_part_name}"
+    except ValueError:
+        case_name = f"{group_name}:{fixture_path.name}:{actual_image_part_name}"
+    return ScenarioResult(
+        name=case_name,
+        report=tool_report,
+        zip_xml=zip_xml,
+        openpyxl=openpyxl_report,
+        xlsxwriter_reference={"status": "skipped", "reason": "fixture image scenario"},
+    )
+
+
 def run_formula_fixture_case(
     qa_exe: Path,
     work_dir: Path,
@@ -1308,6 +1510,15 @@ def run_self_test() -> int:
             len(long_formula_slug) <= 48,
             f"self-test: formula fixture slug too long {long_formula_slug!r}",
         )
+
+        image_fixture = workspace_asset("xlnt/tests/data/14_images.xlsx")
+        require(image_fixture.exists(), f"self-test: image fixture missing {image_fixture}")
+        image_infos = discover_image_fixture_infos(image_fixture.parent, ["14_images.xlsx"], 0)
+        require(len(image_infos) == 1, f"self-test: image fixture discovery mismatch {image_infos!r}")
+        require(image_infos[0].sheet_name == "1",
+                f"self-test: image fixture sheet mismatch {image_infos[0].sheet_name!r}")
+        require(image_infos[0].image_part_name.lower().endswith(".jpg"),
+                f"self-test: image fixture part mismatch {image_infos[0].image_part_name!r}")
 
         formula_path = temp_dir / "formula.xlsx"
         formula_workbook = openpyxl.Workbook()
@@ -1485,7 +1696,11 @@ def main() -> int:
 
     selected = list(args.scenario) if args.scenario else list(GENERATED_SCENARIOS)
     if args.fixture_root is not None and not args.scenario:
-        selected.extend(["xlnt_fixture_rename_smoke", "xlnt_fixture_string_smoke"])
+        selected.extend([
+            "xlnt_fixture_rename_smoke",
+            "xlnt_fixture_string_smoke",
+            IMAGE_FIXTURE_SCENARIO,
+        ])
 
     results: list[ScenarioResult] = []
     for scenario in selected:
@@ -1584,6 +1799,51 @@ def main() -> int:
                                 "sheet_name": formula_info.sheet_name,
                             },
                             zip_xml={"formula_scan": formula_info.as_report(fixture_root)},
+                            openpyxl={},
+                            xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
+                            error=str(exc),
+                        )
+                    )
+            continue
+
+        if scenario == IMAGE_FIXTURE_SCENARIO:
+            fixture_globs = args.fixture_glob if args.fixture_glob else ["**/*.xlsx"]
+            image_infos = discover_image_fixture_infos(
+                fixture_root,
+                fixture_globs,
+                args.fixture_limit,
+            )
+            require(
+                image_infos,
+                f"{scenario}: no image-bearing .xlsx worksheets found under {fixture_root}",
+            )
+            for image_info in image_infos:
+                try:
+                    results.append(
+                        run_fixture_image_replace_case(
+                            qa_exe,
+                            work_dir,
+                            image_info,
+                            scenario,
+                            fixture_root=fixture_root,
+                        )
+                    )
+                except Exception as exc:
+                    try:
+                        fixture_name = image_info.fixture_path.relative_to(fixture_root).as_posix()
+                    except ValueError:
+                        fixture_name = image_info.fixture_path.name
+                    results.append(
+                        ScenarioResult(
+                            name=f"{scenario}:{fixture_name}:{image_info.image_part_name}",
+                            report={
+                                "scenario": scenario,
+                                "status": "failed",
+                                "fixture": str(image_info.fixture_path),
+                                "sheet_name": image_info.sheet_name,
+                                "image_part_name": image_info.image_part_name,
+                            },
+                            zip_xml={"image_scan": image_info.as_report(fixture_root)},
                             openpyxl={},
                             xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
                             error=str(exc),

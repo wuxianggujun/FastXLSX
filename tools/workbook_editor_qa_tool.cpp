@@ -37,6 +37,7 @@ struct CliOptions {
     std::filesystem::path output;
     std::filesystem::path report;
     std::filesystem::path replacement_image;
+    std::string image_part_name;
     std::string sheet_name;
     std::string rename_to;
 };
@@ -113,19 +114,29 @@ resolve_output_path(const CliOptions& options, std::string_view fallback_name)
     return fastxlsx::test::artifact_path(fallback_name);
 }
 
-[[nodiscard]] std::filesystem::path resolve_replacement_png_path(const CliOptions& options)
+[[nodiscard]] std::string to_lower_ascii(std::string_view text);
+
+[[nodiscard]] bool is_jpeg_image_part_name(std::string_view image_part_name)
+{
+    const std::string lowered = to_lower_ascii(image_part_name);
+    return lowered.ends_with(".jpg") || lowered.ends_with(".jpeg");
+}
+
+[[nodiscard]] std::filesystem::path resolve_replacement_image_path(
+    const CliOptions& options, std::string_view image_part_name)
 {
     if (!options.replacement_image.empty()) {
         return options.replacement_image;
     }
 
-    const std::filesystem::path asset = repository_asset("docs/assets/donation/weixin.png");
+    const std::filesystem::path asset = is_jpeg_image_part_name(image_part_name)
+        ? repository_asset("docs/assets/donation/zhifubao.jpg")
+        : repository_asset("docs/assets/donation/weixin.png");
     if (std::filesystem::exists(asset)) {
         return asset;
     }
 
-    throw std::runtime_error(
-        "missing replacement PNG asset; pass --replacement-image explicitly");
+    throw std::runtime_error("missing replacement image asset; pass --replacement-image explicitly");
 }
 
 [[nodiscard]] std::string json_escape(std::string_view value)
@@ -297,6 +308,8 @@ void write_report(const Report& report)
             options.report = require_value(arg);
         } else if (arg == "--replacement-image") {
             options.replacement_image = require_value(arg);
+        } else if (arg == "--image-part") {
+            options.image_part_name = require_value(arg);
         } else if (arg == "--sheet") {
             options.sheet_name = require_value(arg);
         } else if (arg == "--rename-to") {
@@ -718,16 +731,48 @@ Report run_generated_image_replace(const CliOptions& options)
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
+    report.image_part_name =
+        options.image_part_name.empty() ? "xl/media/image1.png" : options.image_part_name;
     report.source = write_two_sheet_source_with_image(
         resolve_generated_source(options, "fastxlsx-workbook-editor-qa-image-source.xlsx"));
     report.output = resolve_output_path(
         options, "fastxlsx-workbook-editor-qa-image-output.xlsx");
-    report.replacement_image = resolve_replacement_png_path(options);
-    report.image_part_name = "xl/media/image1.png";
-    report.mutations = {"replace_image:xl/media/image1.png"};
+    report.replacement_image = resolve_replacement_image_path(options, report.image_part_name);
+    report.mutations = {std::string("replace_image:") + report.image_part_name};
     report.notes = {
         "Pictures worksheet and drawing XML should remain readable",
-        "xl/media/image1.png bytes should match replacement_image",
+        report.image_part_name + " bytes should match replacement_image",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    editor.replace_image(report.image_part_name, report.replacement_image);
+    editor.save_as(report.output);
+    return report;
+}
+
+Report run_fixture_image_replace(const CliOptions& options)
+{
+    if (options.source.empty()) {
+        throw std::runtime_error("fixture_image_replace requires --source");
+    }
+    if (options.image_part_name.empty()) {
+        throw std::runtime_error("fixture_image_replace requires --image-part");
+    }
+
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = options.source;
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-fixture-image-output.xlsx");
+    report.replacement_image =
+        resolve_replacement_image_path(options, options.image_part_name);
+    report.source_sheet_name = options.sheet_name;
+    report.image_part_name = options.image_part_name;
+    report.mutations = {std::string("replace_image:") + report.image_part_name};
+    report.notes = {
+        "The selected media part bytes should match replacement_image",
+        "Unchanged workbook parts should remain copy-preserved",
     };
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
@@ -745,7 +790,8 @@ Report run_generated_public_e2e(const CliOptions& options)
         resolve_generated_source(options, "fastxlsx-workbook-editor-qa-e2e-source.xlsx"));
     report.output = resolve_output_path(
         options, "fastxlsx-workbook-editor-qa-e2e-output.xlsx");
-    report.replacement_image = resolve_replacement_png_path(options);
+    report.replacement_image =
+        resolve_replacement_image_path(options, report.image_part_name);
     report.source_sheet_name = "Data";
     report.renamed_sheet_name = "EditedData";
     report.image_part_name = "xl/media/image1.png";
@@ -929,6 +975,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "fixture_materialized_only") {
         return run_fixture_materialized_only(options);
+    }
+    if (options.scenario == "fixture_image_replace") {
+        return run_fixture_image_replace(options);
     }
 
     throw std::runtime_error("unknown scenario: " + options.scenario);

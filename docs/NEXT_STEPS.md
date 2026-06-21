@@ -831,6 +831,15 @@ clears/records the facade diagnostic. This is semantic implementation-boundary
 cleanup only; it does not add sharedStrings/style migration, metadata sync,
 relationship repair, formula calculation, undo/rollback, or large-file random
 editing.
+P8.583 moves public sheet rename orchestration behind
+`src/workbook_editor_sheet_rename.*`: the helper owns materialized-session
+rename preflight, package sheet-catalog rename handoff, source/planned catalog
+state update, and pending whole-`<sheetData>` payload diagnostic migration.
+`WorkbookEditor::rename_sheet()` now only wraps public error context, increments
+the public edit count, and clears/records the facade diagnostic. This is
+semantic implementation-boundary cleanup only; it does not add formula or
+definedName rewrites, table/drawing/chart relationship updates, sheet add/delete,
+transaction history, rollback, or broader workbook relationship repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

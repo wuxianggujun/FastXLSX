@@ -304,6 +304,10 @@ diagnostic fallback ordering, and rename migration.
 whole-`<sheetData>` replacement adapter directly: input row/cell diagnostics,
 ragged rows with empty-row sparse gaps, `CellStore` guardrail enforcement, and
 current-catalog / materialized-session target preflight.
+`fastxlsx.workbook_editor_sheet_rename` covers the extracted sheet-rename
+adapter directly: materialized-session rename preflight, source/planned catalog
+state update, pending whole-`<sheetData>` payload migration, and rename-back
+state restoration.
 `fastxlsx.workbook_editor_worksheet_access` covers strict uppercase A1
 single-cell parsing, Excel row/column and range guardrails, and public snapshot
 mapping from materialized cells. `fastxlsx.workbook_editor_save_as_policy`

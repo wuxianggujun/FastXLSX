@@ -8,6 +8,7 @@
 #include "workbook_editor_save_as_policy.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
 #include "workbook_editor_sheet_data_replacement.hpp"
+#include "workbook_editor_sheet_rename.hpp"
 #include "workbook_editor_worksheet_access.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
@@ -540,16 +541,15 @@ void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_nam
     const std::string new_name_key = new_name;
 
     try {
-        impl_->materialized_sessions.preflight_no_materialized_session(
-            old_name_key, "rename sheet");
-
-        // Narrow sheet-catalog name rewrite. Delegates to the internal helper with
-        // the default ReferencePolicy; the facade does not expose policy. The helper
-        // rewrites only the workbook sheet@name attribute and preserves worksheet
-        // parts, relationships, content types, and unknown entries.
-        impl_->editor.rename_sheet_catalog_entry(old_name, std::move(new_name));
-        impl_->sheet_catalog.record_rename(old_name_key, new_name_key);
-        impl_->pending_sheet_data_payloads.migrate(old_name_key, new_name_key);
+        const detail::WorkbookEditorSheetRenameResult result =
+            detail::rename_workbook_editor_sheet(
+                impl_->editor,
+                impl_->sheet_catalog,
+                impl_->materialized_sessions,
+                impl_->pending_sheet_data_payloads,
+                old_name,
+                std::move(new_name));
+        (void)result;
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

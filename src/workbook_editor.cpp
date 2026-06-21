@@ -3,6 +3,7 @@
 #include "package_editor.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
+#include <fastxlsx/detail/formula.hpp>
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
@@ -48,6 +49,34 @@ struct WorksheetEditorCellCoordinate {
     std::uint32_t row = 0;
     std::uint32_t column = 0;
 };
+
+struct FormulaSheetCatalogMatch {
+    WorkbookEditorWorksheetCatalogEntry entry;
+    bool source_name_matched = false;
+    bool planned_name_matched = false;
+};
+
+char ascii_lower(char ch) noexcept
+{
+    if (ch >= 'A' && ch <= 'Z') {
+        return static_cast<char>(ch - 'A' + 'a');
+    }
+    return ch;
+}
+
+bool ascii_equals_ignoring_case(std::string_view lhs, std::string_view rhs) noexcept
+{
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        if (ascii_lower(lhs[index]) != ascii_lower(rhs[index])) {
+            return false;
+        }
+    }
+    return true;
+}
 
 void migrate_pending_sheet_data_payload_diagnostic(
     std::map<std::string, PendingSheetDataPayloadDiagnostic>& pending_payloads,
@@ -173,6 +202,57 @@ std::vector<WorksheetCellSnapshot> public_snapshots_from_internal(
         });
     }
     return snapshots;
+}
+
+std::string decoded_formula_sheet_name(
+    std::string_view formula, const detail::FormulaSheetQualifier& qualifier)
+{
+    std::string decoded;
+    const std::string_view raw_name =
+        formula.substr(qualifier.name_offset, qualifier.name_length);
+    decoded.reserve(raw_name.size());
+
+    for (std::size_t index = 0; index < raw_name.size(); ++index) {
+        if (qualifier.quoted && raw_name[index] == '\'' && index + 1 < raw_name.size()
+            && raw_name[index + 1] == '\'') {
+            decoded += '\'';
+            ++index;
+            continue;
+        }
+        decoded += raw_name[index];
+    }
+
+    return decoded;
+}
+
+std::optional<FormulaSheetCatalogMatch> match_formula_sheet_catalog_entry(
+    const std::vector<WorkbookEditorWorksheetCatalogEntry>& catalog,
+    std::string_view referenced_sheet_name)
+{
+    std::optional<FormulaSheetCatalogMatch> match;
+    for (const WorkbookEditorWorksheetCatalogEntry& entry : catalog) {
+        const bool source_name_matched =
+            ascii_equals_ignoring_case(entry.source_name, referenced_sheet_name);
+        const bool planned_name_matched =
+            ascii_equals_ignoring_case(entry.planned_name, referenced_sheet_name);
+        if (!source_name_matched && !planned_name_matched) {
+            continue;
+        }
+
+        if (match.has_value()
+            && (match->entry.source_name != entry.source_name
+                || match->entry.planned_name != entry.planned_name)) {
+            return std::nullopt;
+        }
+
+        if (!match.has_value()) {
+            match = FormulaSheetCatalogMatch {entry, source_name_matched, planned_name_matched};
+        } else {
+            match->source_name_matched = match->source_name_matched || source_name_matched;
+            match->planned_name_matched = match->planned_name_matched || planned_name_matched;
+        }
+    }
+    return match;
 }
 
 bool path_parent_is_not_directory(const std::filesystem::path& path) noexcept
@@ -477,6 +557,69 @@ struct WorkbookEditor::Impl {
         return summaries;
     }
 
+    [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit> formula_reference_audits()
+        const
+    {
+        const std::vector<WorkbookEditorWorksheetCatalogEntry> catalog = worksheet_catalog();
+        std::vector<WorkbookEditorFormulaReferenceAudit> audits;
+
+        for (const WorkbookEditorWorksheetCatalogEntry& formula_sheet : catalog) {
+            const detail::MaterializedWorksheetSession* session =
+                materialized_sessions.try_session(formula_sheet.planned_name);
+            if (session == nullptr) {
+                continue;
+            }
+
+            for (const auto& [position, record] : session->store().records()) {
+                if (record.kind != CellValueKind::Formula) {
+                    continue;
+                }
+
+                const std::vector<detail::FormulaReference> references =
+                    detail::scan_formula_references(record.text_value);
+                for (const detail::FormulaReference& reference : references) {
+                    if (!reference.sheet.present) {
+                        continue;
+                    }
+
+                    WorkbookEditorFormulaReferenceAudit audit;
+                    audit.formula_sheet_source_name = formula_sheet.source_name;
+                    audit.formula_sheet_planned_name = formula_sheet.planned_name;
+                    audit.formula_cell = WorksheetCellReference {
+                        position.row,
+                        position.column,
+                    };
+                    audit.formula_text = record.text_value;
+                    audit.sheet_qualifier_text = std::string(record.text_value.substr(
+                        reference.sheet.offset, reference.sheet.length));
+                    audit.reference_text = std::string(record.text_value.substr(
+                        reference.offset, reference.length));
+                    audit.qualified_reference_text = std::string(record.text_value.substr(
+                        reference.sheet.offset,
+                        reference.offset + reference.length - reference.sheet.offset));
+                    audit.referenced_sheet_name =
+                        decoded_formula_sheet_name(record.text_value, reference.sheet);
+                    audit.qualifier_quoted = reference.sheet.quoted;
+
+                    const std::optional<FormulaSheetCatalogMatch> match =
+                        match_formula_sheet_catalog_entry(catalog, audit.referenced_sheet_name);
+                    if (match.has_value()) {
+                        audit.matched_current_workbook_sheet = true;
+                        audit.matched_source_sheet_name = match->entry.source_name;
+                        audit.matched_planned_sheet_name = match->entry.planned_name;
+                        audit.references_planned_sheet_name = match->planned_name_matched;
+                        audit.references_renamed_source_name = match->source_name_matched
+                            && match->entry.source_name != match->entry.planned_name;
+                    }
+
+                    audits.push_back(std::move(audit));
+                }
+            }
+        }
+
+        return audits;
+    }
+
     void record_planned_sheet_rename(std::string_view old_name, std::string_view new_name)
     {
         for (const detail::WorkbookSheetReference& sheet : editor.reader().workbook_sheets()) {
@@ -673,6 +816,15 @@ std::vector<WorkbookEditorWorksheetCatalogEntry> WorkbookEditor::worksheet_catal
         return {};
     }
     return impl_->worksheet_catalog();
+}
+
+std::vector<WorkbookEditorFormulaReferenceAudit> WorkbookEditor::formula_reference_audits()
+    const
+{
+    if (impl_ == nullptr) {
+        return {};
+    }
+    return impl_->formula_reference_audits();
 }
 
 WorksheetEditor WorkbookEditor::worksheet(

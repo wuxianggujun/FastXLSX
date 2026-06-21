@@ -50,17 +50,34 @@ image-editing API, not default CI, and not a general preservation claim for all
 embedded drawing models.
 The same source materialization path now reads ordinary formula cells and
 source-order shared formula followers into `CellValue::formula(...)`. Shared
-formula followers use a narrow A1-style relative-reference translator from the
-definition cell to the follower cell; `$` absolute row/column anchors are kept,
-out-of-bounds relative references become `#REF!`, and quoted strings, quoted
+formula followers use a narrow A1-style / whole-axis relative-reference
+translator from the definition cell to the follower cell; `$` absolute
+row/column anchors are kept, whole-row/whole-column ranges are translated within
+Excel bounds, out-of-bounds relative references become `#REF!`, and quoted strings, quoted
 sheet-name tokens, and bracketed external/structured-reference tokens are not
-rewritten. Dirty `WorksheetEditor` save writes ordinary `<f>...</f>` formula
+rewritten. The internal scanner also exposes raw sheet qualifier spans for
+unquoted, quoted, external-workbook, and 3D-like qualifiers as dependency-audit
+metadata, but it still does not validate sheet names, external workbook
+targets, or 3D semantics. Dirty `WorksheetEditor` save writes ordinary
+`<f>...</f>` formula
 text, treats formula text as authoritative for default/numeric, `t="str"`, and
 `t="b"` cached-result formula cells, drops stale cached results, and still does
 not preserve shared formula metadata, evaluate formulas, rebuild calcChain, or
 implement a complete Excel formula parser. Unresolved metadata-only shared
 formula cells continue to fall back to supported cached scalar `<v>` values when
-present.
+present. The narrow scanner/translator now lives in internal
+`include/fastxlsx/detail/formula.hpp` / `src/formula.cpp`, with
+`fastxlsx.formula` covering scanner boundaries, raw sheet qualifier spans, and
+reference translation; this is a reusable foundation for later dependency
+graphing, sheet-rename formula sync, and calcChain policy work, not a formula
+engine.
+The public editor now exposes the first narrow read-only dependency diagnostic
+on top of that scanner: `WorkbookEditor::formula_reference_audits()` scans only
+already-materialized `WorksheetEditor` sessions, reports sheet-qualified
+formula references including the raw reference token and whether they still
+name a source sheet after
+`rename_sheet()` changed that sheet's planned name, and intentionally does not
+scan non-materialized worksheet parts or rewrite formulas.
 Array and dataTable formula metadata now follows the same lossy materialization
 boundary: source formula text in `<f t="array">` / `<f t="dataTable">`
 materializes as plain formula text, metadata-only cells fall back to supported
@@ -70,7 +87,8 @@ spill support, data table recalculation, or formula dependency graphing.
 The current regression matrix now also pins multiple followers per `si`,
 interleaved shared formula indexes, latest source-order definition behavior for
 later followers, function/name-like token boundaries, structured-reference and
-whole-row/whole-column non-rewrites, invalid shared formula index forms, public
+whole-row/whole-column range translation, escaped quoted sheet qualifiers,
+raw 3D-like sheet qualifier spans, invalid shared formula index forms, public
 `WorksheetEditor` clean readback, and dirty save projection without stale
 cached formula values. The opt-in workbook-editor QA runner includes
 `generated_shared_formula_materialization`, which creates a generated shared
@@ -78,8 +96,8 @@ formula source workbook, verifies materialization through the public C++ tool,
 then checks the output with ZIP/XML and `openpyxl`; it also includes
 `generated_shared_formula_boundary_materialization`, which pins quoted strings,
 structured references, name-like tokens, R1C1-like text, whole-row/whole-column
-references, bracketed tokens, and sheet-qualified A1 translation boundaries in a
-generated source/output smoke. It also includes
+references, bracketed tokens, and sheet-qualified A1 / whole-axis translation
+boundaries in a generated source/output smoke. It also includes
 `generated_shared_formula_office_like_materialization`, which pins 2D shared
 formula `ref` ranges, multiple `si` groups in one worksheet, ordinary formulas
 and values interleaved with shared formula followers, and stale cached formula
@@ -710,6 +728,15 @@ read-only source materialization and lossy dirty projection only, not formula
 evaluation, formula dependency graphing, shared formula metadata preservation,
 calcChain rebuild, sharedStrings/style migration, or a complete Excel formula
 parser.
+P8.571 exposes a narrow public formula dependency diagnostic:
+`WorkbookEditor::formula_reference_audits()` scans only already-materialized
+worksheet sessions, reports sheet-qualified formula references with decoded
+sheet names and raw reference tokens, maps them against the current
+source/planned catalog, and flags
+formula text that still references a renamed source sheet. The facade regression
+also proves save-as keeps the formula text unchanged. This is read-only audit
+evidence only, not full-workbook formula scanning, formula rewrite, dependency
+graphing, calcChain rebuild, or a complete formula engine.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

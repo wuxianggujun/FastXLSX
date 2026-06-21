@@ -186,6 +186,10 @@ void check_public_inspection_preserves_last_edit_error(
     (void)editor.worksheet_catalog();
     check(editor.last_edit_error() == expected,
         "worksheet_catalog should not update last_edit_error");
+
+    (void)editor.formula_reference_audits();
+    check(editor.last_edit_error() == expected,
+        "formula_reference_audits should not update last_edit_error");
 }
 
 void check_public_materialization_failure_clean_state(
@@ -791,6 +795,45 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     writer.close();
 
     return path;
+}
+
+std::filesystem::path write_formula_reference_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter other = writer.add_worksheet("Other Sheet");
+        other.append_row({fastxlsx::CellView::number(2.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter apostrophe = writer.add_worksheet("O'Brien");
+        apostrophe.append_row({fastxlsx::CellView::number(3.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula");
+        formulas.append_row({fastxlsx::CellView::formula(
+            R"(Data!A1+'Other Sheet'!A1+'O''Brien'!A1+"Data!Z9")")});
+    }
+    writer.close();
+
+    return path;
+}
+
+const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_formula_reference_audit(
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+    std::string_view referenced_sheet_name)
+{
+    for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
+        if (audit.referenced_sheet_name == referenced_sheet_name) {
+            return &audit;
+        }
+    }
+    return nullptr;
 }
 
 // Writes a source workbook with document properties so patch tests can verify
@@ -12375,7 +12418,7 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
         R"(<sheetData>)"
         R"(<row r="1">)"
-        R"(<c r="A1"><f t="shared" ref="A1:C2" si="1">A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)</f><v>1</v></c>)"
+        R"(<c r="A1"><f t="shared" ref="A1:C2" si="1">A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)+SUM(Sheet1!A:A)+SUM('Other Sheet'!1:1)+SUM($A:B)+SUM($1:2)</f><v>1</v></c>)"
         R"(<c r="B1"><f t="shared" ref="B1:D1" si="2">C1+D$1+$C1+$C$1</f><v>2</v></c>)"
         R"(<c r="C1"><f t="shared" si="1"/><v>777</v></c>)"
         R"(<c r="D1"><f t="shared" si="2"/><v>888</v></c>)"
@@ -12397,12 +12440,12 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
             message);
     };
     expect_formula("C1",
-        "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)",
+        "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(C:C)+SUM(1:1)+SUM(Sheet1!C:C)+SUM('Other Sheet'!1:1)+SUM($A:D)+SUM($1:2)",
         "WorksheetEditor should translate multiple shared formula followers without formula-name false positives");
     expect_formula("D1", "E1+F$1+$C1+$C$1",
         "WorksheetEditor should keep interleaved shared formula indexes independent");
     expect_formula("A2",
-        "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)",
+        "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(2:2)+SUM(Sheet1!A:A)+SUM('Other Sheet'!2:2)+SUM($A:B)+SUM($1:3)",
         "WorksheetEditor should translate row-offset shared formula followers");
     expect_formula("B3", "AA3+1",
         "WorksheetEditor should use the latest source-order shared formula definition for later followers");
@@ -12417,7 +12460,7 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(output_worksheet_xml,
-        R"(<c r="C1"><f>C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)</f></c>)",
+        R"(<c r="C1"><f>C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(C:C)+SUM(1:1)+SUM(Sheet1!C:C)+SUM('Other Sheet'!1:1)+SUM($A:D)+SUM($1:2)</f></c>)",
         "flushed WorksheetEditor should write translated source-order shared formula C1 as plain formula text");
     check_contains(output_worksheet_xml, R"(<c r="D1"><f>E1+F$1+$C1+$C$1</f></c>)",
         "flushed WorksheetEditor should write interleaved shared formula D1 as plain formula text");
@@ -17159,6 +17202,116 @@ void test_calc_metadata_requests_recalculation_without_inventing_calcchain()
         "editor should not invent a calcChain when the source has none");
 }
 
+void test_formula_reference_audits_report_renamed_source_sheet_risk()
+{
+    const std::filesystem::path source = write_formula_reference_source(
+        "fastxlsx-workbook-editor-formula-reference-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-formula-reference-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.formula_reference_audits().empty(),
+        "formula reference audit should not scan non-materialized worksheets");
+
+    (void)editor.worksheet("Formula");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
+        editor.formula_reference_audits();
+    check(initial_audits.size() == 3,
+        "materialized formula sheet should expose all sheet-qualified references");
+    {
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* data =
+            find_formula_reference_audit(initial_audits, "Data");
+        check(data != nullptr,
+            "formula audit should include the unquoted Data sheet reference");
+        if (data != nullptr) {
+            check(data->formula_sheet_source_name == "Formula" &&
+                    data->formula_sheet_planned_name == "Formula",
+                "formula audit should report the formula sheet context");
+            check(data->formula_cell.row == 1 && data->formula_cell.column == 1,
+                "formula audit should report the formula cell coordinate");
+            check(data->sheet_qualifier_text == "Data!" && !data->qualifier_quoted,
+                "formula audit should keep the raw unquoted qualifier text");
+            check(data->reference_text == "A1" &&
+                    data->qualified_reference_text == "Data!A1",
+                "formula audit should expose the exact unquoted reference token");
+            check(data->matched_current_workbook_sheet &&
+                    data->matched_source_sheet_name == "Data" &&
+                    data->matched_planned_sheet_name == "Data",
+                "formula audit should match source and planned names before rename");
+            check(!data->references_renamed_source_name &&
+                    data->references_planned_sheet_name,
+                "formula audit should not flag unchanged sheet references as stale");
+        }
+
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* apostrophe =
+            find_formula_reference_audit(initial_audits, "O'Brien");
+        check(apostrophe != nullptr,
+            "formula audit should decode escaped apostrophes in quoted sheet names");
+        if (apostrophe != nullptr) {
+            check(apostrophe->sheet_qualifier_text == "'O''Brien'!" &&
+                    apostrophe->qualifier_quoted,
+                "formula audit should preserve quoted qualifier text");
+            check(apostrophe->reference_text == "A1" &&
+                    apostrophe->qualified_reference_text == "'O''Brien'!A1",
+                "formula audit should expose the exact quoted reference token");
+            check(apostrophe->matched_current_workbook_sheet &&
+                    apostrophe->matched_source_sheet_name == "O'Brien",
+                "formula audit should match decoded quoted sheet names");
+        }
+    }
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
+        editor.formula_reference_audits();
+    check(renamed_audits.size() == 3,
+        "rename should not drop materialized formula reference audit entries");
+    {
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* data =
+            find_formula_reference_audit(renamed_audits, "Data");
+        check(data != nullptr,
+            "renamed audit should still include the formula text's source-name reference");
+        if (data != nullptr) {
+            check(data->matched_current_workbook_sheet &&
+                    data->matched_source_sheet_name == "Data" &&
+                    data->matched_planned_sheet_name == "RenamedData",
+                "renamed audit should map the source name to the current planned name");
+            check(data->references_renamed_source_name,
+                "renamed audit should flag formulas that still reference the source sheet name");
+            check(!data->references_planned_sheet_name,
+                "renamed audit should distinguish source-name references from planned-name references");
+        }
+
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* other =
+            find_formula_reference_audit(renamed_audits, "Other Sheet");
+        check(other != nullptr,
+            "renamed audit should keep unrelated quoted sheet references");
+        if (other != nullptr) {
+            check(other->matched_current_workbook_sheet &&
+                    other->matched_source_sheet_name == "Other Sheet" &&
+                    other->matched_planned_sheet_name == "Other Sheet",
+                "renamed audit should keep unchanged sheet mappings");
+            check(other->reference_text == "A1" &&
+                    other->qualified_reference_text == "'Other Sheet'!A1",
+                "renamed audit should keep exact unchanged quoted reference text");
+            check(!other->references_renamed_source_name &&
+                    other->references_planned_sheet_name,
+                "renamed audit should not flag unchanged quoted sheet references");
+        }
+    }
+
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "rename should still update only the workbook catalog");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(formula_sheet_xml, "Data!A1",
+        "formula reference audit should not rewrite formula text during save");
+    check_not_contains(formula_sheet_xml, "RenamedData!A1",
+        "formula reference audit should not silently repair renamed sheet formulas");
+}
+
 void test_rename_sheet_changes_catalog_name_and_preserves_parts()
 {
     const std::filesystem::path source =
@@ -18094,6 +18247,7 @@ int main(int argc, char* argv[])
         test_empty_rows_emit_empty_sheet_data();
         test_text_uses_inline_strings_and_preserves_shared_strings();
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
+        test_formula_reference_audits_report_renamed_source_sheet_risk();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();
         test_rename_back_to_source_name_restores_public_diagnostics();

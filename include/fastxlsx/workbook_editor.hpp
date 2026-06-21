@@ -186,6 +186,64 @@ struct WorksheetCellSnapshot {
     CellValue value;
 };
 
+/// Public diagnostic for a materialized formula's sheet-qualified reference.
+///
+/// API mode: In-memory inspection over already-materialized worksheets. This
+/// value reports formula text references such as `Data!A1` or
+/// `'Other Sheet'!B2` found in materialized WorksheetEditor sessions. It is a
+/// dependency-risk diagnostic for narrow edits such as rename_sheet(); it does
+/// not evaluate formulas, rewrite formula text, validate all Excel formula
+/// grammar, rebuild calcChain, or scan non-materialized worksheet parts.
+struct WorkbookEditorFormulaReferenceAudit {
+    /// Source workbook sheet containing the formula cell.
+    std::string formula_sheet_source_name;
+
+    /// Current planned sheet name containing the formula cell.
+    std::string formula_sheet_planned_name;
+
+    /// Coordinate of the materialized formula cell.
+    WorksheetCellReference formula_cell;
+
+    /// Materialized formula text as stored by FastXLSX, without a leading '='.
+    std::string formula_text;
+
+    /// Raw sheet qualifier text, including quotes when present and trailing '!'.
+    std::string sheet_qualifier_text;
+
+    /// Raw reference token after the sheet qualifier, for example `A1`,
+    /// `A1:B2`, `A:C`, or `1:3`.
+    std::string reference_text;
+
+    /// Raw qualifier plus reference text, for example `Data!A1` or
+    /// `'Other Sheet'!A1:B2`.
+    std::string qualified_reference_text;
+
+    /// Decoded sheet-name token from the qualifier, excluding quotes and '!'.
+    std::string referenced_sheet_name;
+
+    /// True when the qualifier used Excel's single-quoted sheet-name form.
+    bool qualifier_quoted = false;
+
+    /// True when referenced_sheet_name matched a source or planned sheet in the
+    /// current workbook catalog using the same ASCII case-insensitive rule as
+    /// sheet names.
+    bool matched_current_workbook_sheet = false;
+
+    /// Matched source sheet name when matched_current_workbook_sheet is true.
+    std::string matched_source_sheet_name;
+
+    /// Matched current planned sheet name when matched_current_workbook_sheet
+    /// is true.
+    std::string matched_planned_sheet_name;
+
+    /// True when the qualifier still names a source sheet whose current planned
+    /// name differs, for example after rename_sheet("Data", "RenamedData").
+    bool references_renamed_source_name = false;
+
+    /// True when the qualifier names the matched sheet's current planned name.
+    bool references_planned_sheet_name = false;
+};
+
 /// Borrowed random cell editor for one WorkbookEditor-owned materialized sheet.
 ///
 /// API mode: In-memory / existing-workbook small-file editing. WorksheetEditor
@@ -360,16 +418,20 @@ struct WorksheetCellSnapshot {
 /// `del1` / `del2` / `r1` / `r2` are accepted but not preserved: formula text
 /// is imported as plain formula text. Unknown formula attributes still fail
 /// fast. Source-order shared formula followers are imported as plain formula
-/// text by translating A1-style relative references from the source definition
-/// cell to the follower cell. The translator honors `$` absolute
-/// row/column markers, emits `#REF!` for translated references outside Excel
+/// text by translating A1-style and whole-axis relative references from the
+/// source definition cell to the follower cell. The translator honors `$` absolute
+/// row/column markers, translates whole-column / whole-row ranges such as
+/// `A:A` and `1:1`, emits `#REF!` for translated references outside Excel
 /// bounds, and skips double-quoted strings, quoted sheet-name tokens
-/// themselves, and bracketed external/structured-reference tokens. A1
-/// references after a sheet qualifier are still handled as ordinary relative
-/// references by this narrow translator. Whole-row/whole-column references,
-/// function names, named ranges, and structured-reference contents are left
-/// unchanged rather than parsed. This remains a narrow translator, not a
-/// complete Excel formula parser. Unresolved metadata-only shared formula cells
+/// themselves, and bracketed external/structured-reference tokens. A1 and
+/// whole-axis references after a sheet qualifier are still handled as ordinary
+/// relative references by this narrow translator. Internally, raw sheet
+/// qualifier spans are exposed for later dependency-audit work, but sheet names,
+/// external workbook targets, and 3D reference semantics are not validated.
+/// Function names, named ranges, and structured-reference contents are left
+/// unchanged rather than parsed.
+/// This remains a narrow translator, not a complete Excel formula parser.
+/// Unresolved metadata-only shared formula cells
 /// can only materialize from cached scalar `<v>` values when present.
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
@@ -587,6 +649,8 @@ private:
 ///   sheet name, from caller-supplied CellValue rows,
 /// - rename a worksheet's sheet-catalog name (the `<sheets><sheet name="...">`
 ///   attribute written into the saved package),
+/// - inspect sheet-qualified formula references in already-materialized
+///   worksheets as a conservative dependency-risk diagnostic,
 /// - write the edited workbook to a new path with save_as().
 ///
 /// What this facade does for a replaced sheet:
@@ -696,6 +760,10 @@ private:
 /// formula followers are projected as translated plain formula text. Unresolved
 /// metadata-only shared formula cells are projected from cached scalar values
 /// when available.
+/// formula_reference_audits() can inspect already-materialized formula cells
+/// and report sheet-qualified references plus whether those references still
+/// point at a renamed source sheet. It does not scan the whole source package
+/// by itself and does not rewrite formulas.
 /// Failed worksheet materialization does not queue a dirty session; a later
 /// no-op save_as() remains a copy-original package write unless another edit is
 /// explicitly queued.
@@ -978,6 +1046,25 @@ public:
     /// materialized WorksheetEditor sessions, mutate source or planned package
     /// state, or update last_edit_error().
     [[nodiscard]] std::vector<WorkbookEditorWorksheetCatalogEntry> worksheet_catalog() const;
+
+    /// Returns sheet-qualified formula references from materialized worksheets.
+    ///
+    /// This is a read-only dependency-risk diagnostic for the small-file
+    /// WorksheetEditor path. It scans the formula text currently held in
+    /// WorkbookEditor-owned materialized sparse sessions and reports references
+    /// whose formula text contains a sheet qualifier, for example `Data!A1`,
+    /// `'Other Sheet'!B2`, or `Data!A:C`. It also compares the decoded
+    /// qualifier token with the current source-to-planned worksheet catalog so
+    /// callers can detect formula text that still names a source sheet after
+    /// rename_sheet() has changed that sheet's planned catalog name.
+    ///
+    /// This method intentionally does not materialize worksheets, scan
+    /// non-materialized worksheet parts, parse the full Excel formula grammar,
+    /// evaluate formulas, rewrite formulas, rebuild calcChain, repair defined
+    /// names, or update last_edit_error(). It returns an empty vector for a
+    /// moved-from editor.
+    [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
+    formula_reference_audits() const;
 
     /// Materializes an existing worksheet for small-file random cell editing.
     ///

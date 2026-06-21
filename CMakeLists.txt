@@ -24,6 +24,7 @@ option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZI
 add_library(fastxlsx
     src/cell_store.cpp
     src/cell_value.cpp
+    src/formula.cpp
     src/image.cpp
     src/opc.cpp
     src/package_editor.cpp

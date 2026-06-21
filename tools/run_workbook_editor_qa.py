@@ -665,7 +665,7 @@ def verify_generated_shared_formula_boundary_materialization(path: Path) -> tupl
         ),
         "C2": (
             "A2+SharedBoundaries!A2+'Other Sheet'!A2+SUM(A2:B2)+LOG10(A2)"
-            '+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"'
+            '+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(2:2)&"A1"'
             "+[Book.xlsx]Sheet1!A2"
         ),
         "D1": "C1+D$1+$C1+$C$1",

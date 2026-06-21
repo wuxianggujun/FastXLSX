@@ -289,7 +289,10 @@ ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.facade" --ou
 ```
 
 Shared formula materialization is covered by default CTest through
-`fastxlsx.unit` and `fastxlsx.workbook_editor.source-success`, including an
+`fastxlsx.formula`, `fastxlsx.unit`, and
+`fastxlsx.workbook_editor.source-success`, including the internal
+formula reference scanner/translator boundary, raw sheet qualifier span
+metadata for unquoted / quoted / external-workbook / 3D-like qualifiers, plus an
 Office-like public `WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,
 untouched sheet preservation, and lossy array/dataTable formula metadata
@@ -303,7 +306,14 @@ materialize as opaque `CellValueKind::Error` tokens and project back as `t="e"`
 metadata-only array/dataTable cells use supported cached scalar fallback, and
 dirty output drops stale cached formula values plus formula metadata. Missing or
 empty source error-cell `<v>` payloads and unknown formula attributes remain
-strict failure cases. For
+strict failure cases. The qualifier spans are audit metadata only; they do not
+validate sheet names, external workbook targets, or 3D formula semantics. For
+the public editor diagnostic boundary, `fastxlsx.workbook_editor.facade` also
+covers `WorkbookEditor::formula_reference_audits()`: only already-materialized
+worksheets are scanned, quoted and escaped sheet qualifiers are decoded for
+catalog matching, exact reference tokens are exposed, a `rename_sheet()`
+source-name reference is reported as a stale risk, and `save_as()` still does
+not rewrite the formula text. For
 the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
 run the focused generated scenario:
 
@@ -326,9 +336,11 @@ py tools\run_workbook_editor_qa.py `
 This generated case verifies that dirty output materializes shared formula
 metadata into ordinary formula cells while preserving the current narrow
 translator boundaries: quoted strings, structured references, names, R1C1-like
-text, whole-row/whole-column references, and bracket tokens are not rewritten;
-sheet-qualified A1 references after the sheet token still translate under the
-documented A1-only rule.
+text, and bracket tokens are not rewritten; sheet-qualified A1 references and
+whole-row/whole-column ranges still translate under the documented narrow
+shared-formula materializer rule. The dedicated `fastxlsx.formula` test covers
+the scanner-side raw sheet qualifier spans; the generated QA scenario focuses on
+dirty workbook output compatibility.
 
 For an Office/LibreOffice-like generated shared-formula shape smoke, run:
 

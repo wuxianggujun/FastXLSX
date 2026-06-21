@@ -16,6 +16,19 @@ set_tests_properties(fastxlsx.unit PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_formula_tests
+    test_formula.cpp
+)
+
+target_link_libraries(fastxlsx_formula_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_formula_tests PRIVATE cxx_std_20)
+
+add_test(NAME fastxlsx.formula COMMAND fastxlsx_formula_tests)
+set_tests_properties(fastxlsx.formula PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_streaming_writer_tests
     test_streaming_writer.cpp
 )

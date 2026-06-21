@@ -168,9 +168,10 @@ private:
 /// not preserved: formula text is flattened to a plain `<f>` on projection.
 /// Unknown formula attributes still fail fast. Source-order shared
 /// formula definitions and followers materialize as plain formula text through
-/// a narrow A1-style relative-reference translator that honors `$` row/column
-/// anchors and skips quoted string text, quoted sheet-name tokens, and
-/// bracketed external/structured-reference tokens. Metadata-only shared formula
+/// a narrow A1-style / whole-axis relative-reference translator that honors
+/// `$` row/column anchors, translates whole-row / whole-column ranges, and
+/// skips quoted string text, quoted sheet-name tokens, and bracketed
+/// external/structured-reference tokens. Metadata-only shared formula
 /// followers without a resolved source-order definition still materialize from
 /// cached scalar `<v>` values when present. Opaque nested markup inside inline
 /// `rPh` / `phoneticPr` / `extLst` is ignored for text materialization, and

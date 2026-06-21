@@ -626,14 +626,14 @@ Report run_generated_shared_formula_boundary_materialization(const CliOptions& o
     };
     report.notes = {
         "Shared formula boundary followers should become ordinary formula text",
-        "Quoted strings, structured references, names, whole rows, and whole columns should not be rewritten",
-        "Sheet-qualified references after the sheet token should still translate under the narrow A1 rule",
+        "Quoted strings, structured references, names, and R1C1-like text should not be rewritten",
+        "Sheet-qualified A1 references and whole-row/whole-column ranges should still translate under the narrow materializer rule",
     };
 
     constexpr std::string_view expected_c1 =
         R"(A1+SharedBoundaries!A1+'Other Sheet'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"+[Book.xlsx]Sheet1!A1)";
     constexpr std::string_view expected_c2 =
-        R"(A2+SharedBoundaries!A2+'Other Sheet'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"+[Book.xlsx]Sheet1!A2)";
+        R"(A2+SharedBoundaries!A2+'Other Sheet'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(2:2)&"A1"+[Book.xlsx]Sheet1!A2)";
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor sheet = editor.worksheet("SharedBoundaries");

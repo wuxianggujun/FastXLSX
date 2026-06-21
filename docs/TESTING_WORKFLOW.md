@@ -314,6 +314,28 @@ py tools\run_workbook_editor_qa.py `
   --work-dir build\qa\workbook-editor-xlnt-fixtures
 ```
 
+For formula-focused fixture coverage, use the opt-in formula scanner scenario.
+It maps workbook sheet names to worksheet XML parts, records formula/shared
+formula counts per selected sheet, then runs the same materialized edit smoke on
+that exact sheet. Use `--formula-shared-only` to target only worksheets whose
+XML contains shared formula metadata:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --fixture-root C:\path\to\xlnt\tests\data `
+  --scenario external_formula_fixture_materialized_smoke `
+  --fixture-glob "*formula*.xlsx" `
+  --formula-shared-only `
+  --work-dir build\qa\workbook-editor-shared-formula-fixtures
+```
+
+Current local xlnt `tests\data` shared-formula smoke evidence covers
+`18_formulae.xlsx:Sheet1` with 15 formula elements, 3 shared formula elements,
+1 definition, and 2 metadata-only followers; after dirty materialized save the
+output target sheet still has 15 formula elements and 0 shared formula metadata
+elements. This remains local compatibility evidence only; fixture repositories
+are not vendored, not runtime dependencies, and not default CI inputs.
+
 ## Benchmark 本地 QA
 
 Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：

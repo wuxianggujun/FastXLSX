@@ -57,9 +57,16 @@ whole-row/whole-column non-rewrites, invalid shared formula index forms, public
 cached formula values. The opt-in workbook-editor QA runner includes
 `generated_shared_formula_materialization`, which creates a generated shared
 formula source workbook, verifies materialization through the public C++ tool,
-then checks the output with ZIP/XML and `openpyxl`; xlnt/OpenXLSX samples remain
-caller-supplied `--fixture-root` inputs rather than runtime dependencies or
-default CI fixtures.
+then checks the output with ZIP/XML and `openpyxl`. It also has an opt-in
+`external_formula_fixture_materialized_smoke` scanner that maps workbook sheet
+names to worksheet XML parts, records formula/shared-formula counts, and runs
+the materialized edit smoke on the exact formula-bearing sheet; `--formula-shared-only`
+narrows the run to worksheets with shared formula metadata. Current local xlnt
+evidence includes `18_formulae.xlsx:Sheet1` with 15 formula elements, 3 shared
+formula elements, 1 definition, and 2 metadata-only followers; the dirty output
+target sheet keeps 15 ordinary formula elements and 0 shared formula metadata
+elements. xlnt/OpenXLSX samples remain caller-supplied `--fixture-root` inputs
+rather than runtime dependencies or default CI fixtures.
 Source sharedStrings text with `xml:space="preserve"` is now pinned at the
 public facade as read-only materialized whitespace: plain shared-string text and
 simple rich shared-string runs keep leading/trailing whitespace in

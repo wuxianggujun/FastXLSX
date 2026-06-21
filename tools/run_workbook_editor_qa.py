@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import posixpath
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,7 @@ from xml.etree import ElementTree
 
 NAMESPACES = {
     "main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
+    "office_rel": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
 
 GENERATED_SCENARIOS = [
@@ -50,10 +52,12 @@ DEFAULT_XLNT_STRING_FIXTURES = [
 ]
 
 EXTERNAL_FIXTURE_SCENARIO = "external_fixture_materialized_smoke"
+FORMULA_FIXTURE_SCENARIO = "external_formula_fixture_materialized_smoke"
 FIXTURE_SCENARIOS = [
     "xlnt_fixture_rename_smoke",
     "xlnt_fixture_string_smoke",
     EXTERNAL_FIXTURE_SCENARIO,
+    FORMULA_FIXTURE_SCENARIO,
 ]
 
 
@@ -126,6 +130,18 @@ def fixture_case_slug(fixture_root: Path, fixture_path: Path) -> str:
     return f"{safe}-{digest}"
 
 
+def formula_fixture_case_slug(
+    fixture_root: Path,
+    fixture_path: Path,
+    sheet_name: str,
+) -> str:
+    safe_sheet = "".join(
+        ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in sheet_name
+    )
+    digest = hashlib.sha1(sheet_name.encode("utf-8")).hexdigest()[:8]
+    return f"{fixture_case_slug(fixture_root, fixture_path)}__{safe_sheet}-{digest}"
+
+
 def discover_external_fixtures(
     fixture_root: Path,
     globs: list[str],
@@ -158,6 +174,36 @@ class ScenarioResult:
     error: str = ""
 
 
+@dataclass(frozen=True)
+class FormulaWorksheetInfo:
+    fixture_path: Path
+    sheet_name: str
+    worksheet_entry: str
+    formula_count: int
+    shared_formula_count: int
+    shared_definition_count: int
+    metadata_only_shared_count: int
+
+    def as_report(self, fixture_root: Path | None = None) -> dict[str, Any]:
+        try:
+            fixture_name = (
+                self.fixture_path.relative_to(fixture_root).as_posix()
+                if fixture_root is not None
+                else self.fixture_path.name
+            )
+        except ValueError:
+            fixture_name = self.fixture_path.name
+        return {
+            "fixture": fixture_name,
+            "sheet_name": self.sheet_name,
+            "worksheet_entry": self.worksheet_entry,
+            "formula_count": self.formula_count,
+            "shared_formula_count": self.shared_formula_count,
+            "shared_definition_count": self.shared_definition_count,
+            "metadata_only_shared_count": self.metadata_only_shared_count,
+        }
+
+
 def load_openpyxl():
     try:
         import openpyxl  # type: ignore
@@ -176,6 +222,152 @@ def load_xlsxwriter():
 
 def openpyxl_image_count(worksheet: Any) -> int:
     return len(getattr(worksheet, "_images", []))
+
+
+def xml_local_name(tag: str) -> str:
+    if tag.startswith("{"):
+        return tag.rsplit("}", 1)[1]
+    return tag
+
+
+def relationship_target_to_entry(owner_entry: str, target: str, target_mode: str = "") -> str | None:
+    if target_mode.lower() == "external":
+        return None
+    if "://" in target or "?" in target or "#" in target:
+        return None
+
+    if target.startswith("/"):
+        candidate = posixpath.normpath(target.lstrip("/"))
+    else:
+        candidate = posixpath.normpath(posixpath.join(posixpath.dirname(owner_entry), target))
+
+    if candidate in ("", ".") or candidate == ".." or candidate.startswith("../"):
+        return None
+    return candidate
+
+
+def workbook_sheet_entry_map(path: Path) -> dict[str, str]:
+    names = zip_names(path)
+    if "xl/workbook.xml" not in names or "xl/_rels/workbook.xml.rels" not in names:
+        return {}
+
+    workbook_root = ElementTree.fromstring(read_zip_bytes(path, "xl/workbook.xml"))
+    rels_root = ElementTree.fromstring(read_zip_bytes(path, "xl/_rels/workbook.xml.rels"))
+    rels: dict[str, tuple[str, str]] = {}
+    for relationship in rels_root:
+        if xml_local_name(relationship.tag) != "Relationship":
+            continue
+        relationship_id = relationship.attrib.get("Id")
+        target = relationship.attrib.get("Target")
+        if not relationship_id or not target:
+            continue
+        rels[relationship_id] = (target, relationship.attrib.get("TargetMode", ""))
+
+    sheet_entries: dict[str, str] = {}
+    sheets_element = next(
+        (child for child in workbook_root if xml_local_name(child.tag) == "sheets"),
+        None,
+    )
+    if sheets_element is None:
+        return sheet_entries
+
+    for sheet in sheets_element:
+        if xml_local_name(sheet.tag) != "sheet":
+            continue
+        sheet_name = sheet.attrib.get("name")
+        relationship_id = sheet.attrib.get(f"{{{NAMESPACES['office_rel']}}}id")
+        if not sheet_name or not relationship_id or relationship_id not in rels:
+            continue
+        target, target_mode = rels[relationship_id]
+        worksheet_entry = relationship_target_to_entry("xl/workbook.xml", target, target_mode)
+        if worksheet_entry:
+            sheet_entries[sheet_name] = worksheet_entry
+    return sheet_entries
+
+
+def worksheet_formula_summary(worksheet_xml: bytes) -> dict[str, int]:
+    root = ElementTree.fromstring(worksheet_xml)
+    summary = {
+        "formula_count": 0,
+        "shared_formula_count": 0,
+        "shared_definition_count": 0,
+        "metadata_only_shared_count": 0,
+    }
+    for element in root.iter():
+        if xml_local_name(element.tag) != "f":
+            continue
+        summary["formula_count"] += 1
+        if element.attrib.get("t") != "shared":
+            continue
+        summary["shared_formula_count"] += 1
+        formula_text = "".join(element.itertext()).strip()
+        if formula_text:
+            summary["shared_definition_count"] += 1
+        else:
+            summary["metadata_only_shared_count"] += 1
+    return summary
+
+
+def formula_worksheet_infos(path: Path) -> list[FormulaWorksheetInfo]:
+    sheet_entries = workbook_sheet_entry_map(path)
+    if not sheet_entries:
+        return []
+
+    infos: list[FormulaWorksheetInfo] = []
+    names = zip_names(path)
+    for sheet_name, worksheet_entry in sheet_entries.items():
+        if worksheet_entry not in names:
+            continue
+        summary = worksheet_formula_summary(read_zip_bytes(path, worksheet_entry))
+        if summary["formula_count"] == 0:
+            continue
+        infos.append(
+            FormulaWorksheetInfo(
+                fixture_path=path,
+                sheet_name=sheet_name,
+                worksheet_entry=worksheet_entry,
+                formula_count=summary["formula_count"],
+                shared_formula_count=summary["shared_formula_count"],
+                shared_definition_count=summary["shared_definition_count"],
+                metadata_only_shared_count=summary["metadata_only_shared_count"],
+            )
+        )
+    return infos
+
+
+def formula_summary_for_sheet(path: Path, sheet_name: str) -> dict[str, Any]:
+    sheet_entries = workbook_sheet_entry_map(path)
+    worksheet_entry = sheet_entries.get(sheet_name)
+    require(worksheet_entry is not None, f"formula summary: sheet not found: {sheet_name}")
+    names = zip_names(path)
+    require(worksheet_entry in names,
+            f"formula summary: worksheet entry missing for {sheet_name}: {worksheet_entry}")
+    summary: dict[str, Any] = dict(worksheet_formula_summary(read_zip_bytes(path, worksheet_entry)))
+    summary["sheet_name"] = sheet_name
+    summary["worksheet_entry"] = worksheet_entry
+    return summary
+
+
+def discover_formula_fixture_infos(
+    fixture_root: Path,
+    globs: list[str],
+    limit: int,
+    *,
+    shared_only: bool,
+) -> list[FormulaWorksheetInfo]:
+    infos: list[FormulaWorksheetInfo] = []
+    for fixture_path in discover_external_fixtures(fixture_root, globs, 0):
+        try:
+            fixture_infos = formula_worksheet_infos(fixture_path)
+        except Exception:
+            continue
+        for info in fixture_infos:
+            if shared_only and info.shared_formula_count == 0:
+                continue
+            infos.append(info)
+            if limit > 0 and len(infos) >= limit:
+                return infos
+    return infos
 
 
 def run_tool(
@@ -765,6 +957,87 @@ def run_fixture_case(
     )
 
 
+def run_formula_fixture_case(
+    qa_exe: Path,
+    work_dir: Path,
+    formula_info: FormulaWorksheetInfo,
+    group_name: str,
+    *,
+    fixture_root: Path,
+) -> ScenarioResult:
+    fixture_path = formula_info.fixture_path
+    case_slug = formula_fixture_case_slug(fixture_root, fixture_path, formula_info.sheet_name)
+    case_dir = work_dir / group_name / case_slug
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(fixture_path, read_only=False, data_only=False)
+    try:
+        rename_to = choose_unique_sheet_name(list(workbook.sheetnames))
+    finally:
+        workbook.close()
+
+    source_names = zip_names(fixture_path)
+    tool_scenario = (
+        "fixture_rename_materialized"
+        if "xl/workbook.xml" in source_names
+        else "fixture_materialized_only"
+    )
+    case_dir.mkdir(parents=True, exist_ok=True)
+    tool_source_path = case_dir / "source.xlsx"
+    shutil.copyfile(fixture_path, tool_source_path)
+
+    tool_report = run_tool(
+        qa_exe,
+        tool_scenario,
+        case_dir,
+        source=tool_source_path,
+        sheet_name=formula_info.sheet_name,
+        rename_to=rename_to,
+    )
+    output_path = Path(tool_report["output"])
+    actual_source_sheet_name = tool_report.get("source_sheet_name") or formula_info.sheet_name
+    actual_renamed_sheet_name = tool_report.get("renamed_sheet_name") or rename_to
+    if tool_scenario == "fixture_rename_materialized":
+        zip_xml, openpyxl_report = verify_fixture_rename_materialized(
+            fixture_path,
+            output_path,
+            actual_source_sheet_name,
+            actual_renamed_sheet_name,
+        )
+    else:
+        zip_xml, openpyxl_report = verify_fixture_materialized_only(
+            fixture_path,
+            output_path,
+            actual_source_sheet_name,
+        )
+    zip_xml["formula_scan"] = formula_info.as_report(fixture_root)
+    output_formula_summary = formula_summary_for_sheet(
+        output_path,
+        actual_renamed_sheet_name if tool_scenario == "fixture_rename_materialized"
+        else actual_source_sheet_name,
+    )
+    if formula_info.shared_formula_count > 0:
+        require(
+            output_formula_summary["shared_formula_count"] == 0,
+            "formula fixture smoke: stale shared formula metadata remained in dirty output",
+        )
+    zip_xml["formula_output"] = output_formula_summary
+
+    try:
+        case_name = (
+            f"{group_name}:{fixture_path.relative_to(fixture_root).as_posix()}"
+            f":{formula_info.sheet_name}"
+        )
+    except ValueError:
+        case_name = f"{group_name}:{fixture_path.name}:{formula_info.sheet_name}"
+    return ScenarioResult(
+        name=case_name,
+        report=tool_report,
+        zip_xml=zip_xml,
+        openpyxl=openpyxl_report,
+        xlsxwriter_reference={"status": "skipped", "reason": "formula fixture scenario"},
+    )
+
+
 def run_self_test() -> int:
     openpyxl = load_openpyxl()
     temp_dir = Path(tempfile.mkdtemp(prefix="fastxlsx-workbook-editor-qa-selftest-"))
@@ -816,6 +1089,38 @@ def run_self_test() -> int:
         )
         require(unicode_slug.isascii(), f"self-test: non-ASCII fixture slug {unicode_slug!r}")
 
+        formula_path = temp_dir / "formula.xlsx"
+        formula_workbook = openpyxl.Workbook()
+        try:
+            formula_sheet = formula_workbook.active
+            formula_sheet.title = "FormulaSheet"
+            formula_sheet["A1"] = 1
+            formula_sheet["B1"] = "=A1+1"
+            formula_workbook.save(formula_path)
+        finally:
+            formula_workbook.close()
+        formula_infos = formula_worksheet_infos(formula_path)
+        require(len(formula_infos) == 1, f"self-test: formula scan mismatch {formula_infos!r}")
+        require(formula_infos[0].sheet_name == "FormulaSheet",
+                f"self-test: formula sheet mismatch {formula_infos[0].sheet_name!r}")
+        require(formula_infos[0].formula_count == 1,
+                f"self-test: formula count mismatch {formula_infos[0].formula_count!r}")
+
+        shared_summary = worksheet_formula_summary(
+            b"""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">"""
+            b"""<sheetData><row r="1"><c r="A1"><f t="shared" si="1">B1+C1</f></c>"""
+            b"""<c r="A2"><f t="shared" si="1"/></c><c r="B1"><f>A1+1</f></c>"""
+            b"""</row></sheetData></worksheet>"""
+        )
+        require(shared_summary["formula_count"] == 3,
+                f"self-test: shared summary formula count mismatch {shared_summary!r}")
+        require(shared_summary["shared_formula_count"] == 2,
+                f"self-test: shared formula count mismatch {shared_summary!r}")
+        require(shared_summary["shared_definition_count"] == 1,
+                f"self-test: shared definition count mismatch {shared_summary!r}")
+        require(shared_summary["metadata_only_shared_count"] == 1,
+                f"self-test: shared follower count mismatch {shared_summary!r}")
+
         print(
             json.dumps(
                 {
@@ -823,6 +1128,7 @@ def run_self_test() -> int:
                     "workbook": str(workbook_path),
                     "xlsxwriter": xlsxwriter_status,
                     "fixture_discovery": len(discovered),
+                    "formula_scan": len(formula_infos),
                 },
                 indent=2,
             )
@@ -911,7 +1217,7 @@ def main() -> int:
         action="append",
         default=None,
         help=(
-            "Glob pattern under --fixture-root for external_fixture_materialized_smoke. "
+            "Glob pattern under --fixture-root for external fixture scenarios. "
             "Defaults to **/*.xlsx. Can be passed multiple times."
         ),
     )
@@ -919,7 +1225,15 @@ def main() -> int:
         "--fixture-limit",
         type=int,
         default=0,
-        help="Maximum external fixtures to run for external_fixture_materialized_smoke; 0 means no limit.",
+        help="Maximum external fixtures or formula worksheets to run; 0 means no limit.",
+    )
+    parser.add_argument(
+        "--formula-shared-only",
+        action="store_true",
+        help=(
+            "For external_formula_fixture_materialized_smoke, only run worksheets "
+            "whose XML contains shared formula metadata."
+        ),
     )
     parser.add_argument(
         "--self-test",
@@ -1005,6 +1319,51 @@ def main() -> int:
                                 "fixture": str(fixture_path),
                             },
                             zip_xml={},
+                            openpyxl={},
+                            xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
+                            error=str(exc),
+                        )
+                    )
+            continue
+
+        if scenario == FORMULA_FIXTURE_SCENARIO:
+            fixture_globs = args.fixture_glob if args.fixture_glob else ["**/*.xlsx"]
+            formula_infos = discover_formula_fixture_infos(
+                fixture_root,
+                fixture_globs,
+                args.fixture_limit,
+                shared_only=args.formula_shared_only,
+            )
+            require(
+                formula_infos,
+                f"{scenario}: no formula-bearing .xlsx worksheets found under {fixture_root}",
+            )
+            for formula_info in formula_infos:
+                try:
+                    results.append(
+                        run_formula_fixture_case(
+                            qa_exe,
+                            work_dir,
+                            formula_info,
+                            scenario,
+                            fixture_root=fixture_root,
+                        )
+                    )
+                except Exception as exc:
+                    try:
+                        fixture_name = formula_info.fixture_path.relative_to(fixture_root).as_posix()
+                    except ValueError:
+                        fixture_name = formula_info.fixture_path.name
+                    results.append(
+                        ScenarioResult(
+                            name=f"{scenario}:{fixture_name}:{formula_info.sheet_name}",
+                            report={
+                                "scenario": scenario,
+                                "status": "failed",
+                                "fixture": str(formula_info.fixture_path),
+                                "sheet_name": formula_info.sheet_name,
+                            },
+                            zip_xml={"formula_scan": formula_info.as_report(fixture_root)},
                             openpyxl={},
                             xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
                             error=str(exc),

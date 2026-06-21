@@ -2620,9 +2620,10 @@ consumption, C6 is the support line, and C7 is the release / packaging gate.
       recovery, same-sheet Patch bypass, or XML repair. P8.404 pins positive
       materialization for supported source values: blank/self-closing cells,
       boolean cells, empty inline text, and inline-string cells without text
-      map to current `CellValue` variants without implying date/error support,
-      style/sharedStrings migration, rich-text preservation, cached formula
-      preservation, metadata synchronization, or type coercion. P8.405 pins
+      map to current `CellValue` variants without implying date/custom support,
+      Excel error-token validation, style/sharedStrings migration, rich-text
+      preservation, cached formula preservation, metadata synchronization, or
+      type coercion. P8.405 pins
       empty source worksheet materialization: no `sheetData` and self-closing
       `<sheetData/>` load as empty sparse stores and can later save through the
       standalone CellStore worksheet projection without implying XML repair,

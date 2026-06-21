@@ -146,13 +146,13 @@ private:
 /// duplicate style attributes, qualified style-like attributes such as `x:s`,
 /// unsupported cell types such as date/custom tokens, non-finite numeric values,
 /// invalid boolean values, invalid empty or missing error cell values,
-/// formula cells with cell types other than numeric or `t="str"`, missing or
-/// invalid cell references, row/cell
+/// formula cells with unsupported cached-result cell types, missing or invalid
+/// cell references, row/cell
 /// reference mismatches, duplicate cell references, duplicate supported value
 /// wrappers, duplicate explicit row numbers,
 /// duplicate key attributes inspected by this loader, malformed inspected
 /// attributes, XML entity decoding failures, out-of-order explicit row numbers,
-/// out-of-order cell references, unsupported formula attributes, empty
+/// out-of-order cell references, unknown formula attributes, empty
 /// formula text without metadata/cached-value fallback, cells outside row
 /// elements, non-whitespace worksheet text outside wrapper metadata or
 /// sheetData, non-whitespace sheetData text outside rows, non-whitespace row
@@ -163,8 +163,10 @@ private:
 /// before a store is returned. Simple source inline rich text runs are
 /// flattened to text; rich formatting is not preserved, and inline phonetic /
 /// extension metadata text and source cell `ph` phonetic markers are ignored.
-/// Formula metadata attributes `t` / `ref` / `si` are not preserved: formula
-/// text is flattened to a plain `<f>` on projection. Source-order shared
+/// Known formula metadata attributes `t` / `ref` / `si` / `aca` / `ca` /
+/// `bx` / `dt2D` / `dtr` / `del1` / `del2` / `r1` / `r2` are accepted but
+/// not preserved: formula text is flattened to a plain `<f>` on projection.
+/// Unknown formula attributes still fail fast. Source-order shared
 /// formula definitions and followers materialize as plain formula text through
 /// a narrow A1-style relative-reference translator that honors `$` row/column
 /// anchors and skips quoted string text, quoted sheet-name tokens, and

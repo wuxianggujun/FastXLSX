@@ -1958,13 +1958,14 @@ feature completion.
       Duplicate value wrappers inside one source cell now also fail for scalar
       `<v>`, formula `<f>`, and inline text `<t>` shapes instead of being
       concatenated into ambiguous materialized values.
-      Source formula metadata attributes limited to `t`, `ref`, and `si` now
-      load lossily: formula cells with text are projected as plain formula text,
-      source-order shared formula followers can materialize translated plain
-      formula text, and unresolved metadata-only shared formula cells can
-      materialize supported cached scalar `<v>` values. Empty formula text,
-      invalid shared formula indexes, and unknown formula attributes still fail
-      before materialization, so this is not shared/array formula metadata
+      Known source formula metadata attributes `t`, `ref`, `si`, `aca`, `ca`,
+      `bx`, `dt2D`, `dtr`, `del1`, `del2`, `r1`, and `r2` now load lossily:
+      formula cells with text are projected as plain formula text, source-order
+      shared formula followers can materialize translated plain formula text,
+      and unresolved metadata-only shared formula cells can materialize
+      supported cached scalar `<v>` values. Empty formula text, invalid shared
+      formula indexes, and unknown formula attributes still fail before
+      materialization, so this is not shared/array/dataTable formula metadata
       preservation or a full formula parser.
       Cells outside row elements now also fail before materialization, keeping
       source-backed loading scoped to row-contained cells.
@@ -2332,13 +2333,14 @@ commit or short series with its own tests and docs update.
       as key-attribute guardrails.
       Duplicate scalar/formula/inline-text wrappers inside one source cell now
       fail as source-shape guardrails.
-      Source formula metadata attributes limited to `t`, `ref`, and `si` are
-      accepted as lossy metadata: formula text is projected as plain formula
-      text, source-order shared formula followers are materialized as translated
-      plain formula text, and unresolved metadata-only shared formulas can
-      materialize supported cached scalar values. Unknown formula attributes,
-      invalid shared formula indexes, and empty formula text still fail as
-      formula-shape guardrails.
+      Known source formula metadata attributes `t`, `ref`, `si`, `aca`, `ca`,
+      `bx`, `dt2D`, `dtr`, `del1`, `del2`, `r1`, and `r2` are accepted as
+      lossy metadata: formula text is projected as plain formula text,
+      source-order shared formula followers are materialized as translated plain
+      formula text, and unresolved metadata-only shared formulas can materialize
+      supported cached scalar values. Unknown formula attributes, invalid shared
+      formula indexes, and empty formula text still fail as formula-shape
+      guardrails.
       Cells outside row elements now fail as row-scope guardrails.
       Unsupported source row/cell metadata attributes still fail as metadata
       guardrails, except source cell `ph` phonetic markers are tolerated and

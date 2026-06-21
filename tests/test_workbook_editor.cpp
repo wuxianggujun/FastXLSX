@@ -12310,10 +12310,10 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
         R"(<sheetData>)"
         R"(<row r="1">)"
-        R"(<c r="A1"><f t="shared" ref="A1:B2" si="5">A1+B$1+$A1+$A$1+SUM(A1:B1)&amp;"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1]</f><v>123</v></c>)"
+        R"(<c r="A1"><f t="shared" ref="A1:B2" si="5" ca="1">A1+B$1+$A1+$A$1+SUM(A1:B1)&amp;"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1]</f><v>123</v></c>)"
         R"(</row>)"
         R"(<row r="2">)"
-        R"(<c r="B2"><f t="shared" si="5"/><v>999</v></c>)"
+        R"(<c r="B2"><f t="shared" si="5" aca="1" bx="1"/><v>999</v></c>)"
         R"(</row>)"
         R"(</sheetData>)"
         R"(</worksheet>)";
@@ -12350,6 +12350,10 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         "flushed WorksheetEditor shared formula follower should write translated formula text");
     check_not_contains(output_worksheet_xml, "<v>999</v>",
         "flushed WorksheetEditor shared formula follower should not preserve stale cached values");
+    check_not_contains(output_worksheet_xml, R"(ca="1")",
+        "flushed WorksheetEditor shared formulas should not preserve calc metadata attributes");
+    check_not_contains(output_worksheet_xml, R"(aca="1")",
+        "flushed WorksheetEditor shared formula followers should not preserve metadata attributes");
     check_contains(output_worksheet_xml,
         R"(<c r="C3" t="inlineStr"><is><t>shared-formula-new-inline</t></is></c>)",
         "flushed WorksheetEditor shared formula sheet should include later text edits");
@@ -12532,10 +12536,10 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
         R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
         R"(<sheetData><row r="1">)"
-        R"(<c r="A1"><f t="array" ref="A1:B1">SUM(B1:C1)</f><v>123</v></c>)"
+        R"(<c r="A1"><f t="array" ref="A1:B1" aca="1" ca="1" bx="1">SUM(B1:C1)</f><v>123</v></c>)"
         R"(<c r="B1"><f t="array" ref="A1:B1"/><v>456</v></c>)"
-        R"(<c r="C1"><f t="dataTable" ref="C1:D1">A1+1</f><v>789</v></c>)"
-        R"(<c r="D1"><f t="dataTable" ref="C1:D1"/><v>321</v></c>)"
+        R"(<c r="C1"><f t="dataTable" ref="C1:D1" dt2D="1" dtr="1" del1="0" del2="0" r1="A1" r2="B1">A1+1</f><v>789</v></c>)"
+        R"(<c r="D1"><f t="dataTable" ref="C1:D1" ca="1"/><v>321</v></c>)"
         R"(</row></sheetData></worksheet>)";
     rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
 
@@ -12584,6 +12588,10 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
         "dirty projection should not preserve array formula metadata");
     check_not_contains(output_worksheet_xml, R"(t="dataTable")",
         "dirty projection should not preserve dataTable formula metadata");
+    check_not_contains(output_worksheet_xml, R"(ca="1")",
+        "dirty projection should not preserve known formula calculation metadata");
+    check_not_contains(output_worksheet_xml, R"(dt2D="1")",
+        "dirty projection should not preserve dataTable formula attributes");
     check_not_contains(output_worksheet_xml, "<v>123</v>",
         "dirty projection should drop stale array formula cached values");
     check_not_contains(output_worksheet_xml, "<v>789</v>",

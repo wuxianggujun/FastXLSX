@@ -355,11 +355,13 @@ struct WorksheetCellSnapshot {
 /// Source comments and processing instructions outside cells may be ignored
 /// during materialization and are not preserved by dirty projection; comments
 /// or processing instructions inside cells remain unsupported.
-/// Source cell `ph` phonetic markers are ignored. Formula metadata attributes
-/// `t` / `ref` / `si` are not preserved: formula text is imported as plain
-/// formula text. Source-order shared formula followers are imported as plain
-/// formula text by translating A1-style relative references from the source
-/// definition cell to the follower cell. The translator honors `$` absolute
+/// Source cell `ph` phonetic markers are ignored. Known formula metadata
+/// attributes `t` / `ref` / `si` / `aca` / `ca` / `bx` / `dt2D` / `dtr` /
+/// `del1` / `del2` / `r1` / `r2` are accepted but not preserved: formula text
+/// is imported as plain formula text. Unknown formula attributes still fail
+/// fast. Source-order shared formula followers are imported as plain formula
+/// text by translating A1-style relative references from the source definition
+/// cell to the follower cell. The translator honors `$` absolute
 /// row/column markers, emits `#REF!` for translated references outside Excel
 /// bounds, and skips double-quoted strings, quoted sheet-name tokens
 /// themselves, and bracketed external/structured-reference tokens. A1
@@ -686,9 +688,11 @@ private:
 /// sharedStrings relationship/content-type metadata or payloads do not block
 /// supported non-shared-string cells, are not repaired, and still fail if
 /// shared string indexes are encountered.
-/// Source cell `ph` phonetic markers are ignored. Formula metadata attributes
-/// `t` / `ref` / `si` are treated as source metadata, not preserved; formulas
-/// with text are projected as plain formula text, and source-order shared
+/// Source cell `ph` phonetic markers are ignored. Known formula metadata
+/// attributes `t` / `ref` / `si` / `aca` / `ca` / `bx` / `dt2D` / `dtr` /
+/// `del1` / `del2` / `r1` / `r2` are treated as source metadata, not
+/// preserved; unknown formula attributes still fail. Formulas with text are
+/// projected as plain formula text, and source-order shared
 /// formula followers are projected as translated plain formula text. Unresolved
 /// metadata-only shared formula cells are projected from cached scalar values
 /// when available.

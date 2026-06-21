@@ -297,10 +297,13 @@ materialization. The same default path also covers default/numeric, `t="str"`,
 `t="b"`, and `t="e"` cached-result formula cells whose formula text materializes
 as plain `CellValue::formula(...)`, plus source scalar `t="e"` error cells that
 materialize as opaque `CellValueKind::Error` tokens and project back as `t="e"`
-`<v>` payloads. Array/dataTable formula text is projected as plain formula text,
+`<v>` payloads. Known formula metadata attributes `aca`, `ca`, `bx`, `dt2D`,
+`dtr`, `del1`, `del2`, `r1`, and `r2` are accepted lossily beside `t` / `ref` /
+`si`; array/dataTable formula text is projected as plain formula text,
 metadata-only array/dataTable cells use supported cached scalar fallback, and
 dirty output drops stale cached formula values plus formula metadata. Missing or
-empty source error-cell `<v>` payloads remain strict failure cases. For
+empty source error-cell `<v>` payloads and unknown formula attributes remain
+strict failure cases. For
 the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
 run the focused generated scenario:
 

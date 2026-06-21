@@ -1998,7 +1998,9 @@ private:
 
         reject_unsupported_value_shape(cell, event.element_name);
         if (event.element_name == "f" && raw_tag_has_attributes(event.raw_xml)) {
-            if (raw_tag_has_unsupported_attributes(event.raw_xml, {"t", "ref", "si"})) {
+            if (raw_tag_has_unsupported_attributes(event.raw_xml,
+                    {"t", "ref", "si", "aca", "ca", "bx", "dt2D", "dtr", "del1",
+                        "del2", "r1", "r2"})) {
                 throw FastXlsxError(
                     "CellStore worksheet loader does not load unsupported formula attributes");
             }

@@ -34896,8 +34896,8 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_s
           R"(<x:c r="A2"><x:v>42</x:v></x:c>)"
           R"(<x:c r="B2" t="b"><x:v>1</x:v></x:c>)"
           R"(<x:c r="C2"><x:f>SUM(A2:A2)</x:f><x:v>999</x:v></x:c>)"
-          R"(<x:c r="D2"><x:f t="array" ref="D2">SUM(A2:A2)</x:f><x:v>42</x:v></x:c>)"
-          R"(<x:c r="E2"><x:f t="shared" si="0"/><x:v>7</x:v></x:c>)"
+          R"(<x:c r="D2"><x:f t="array" ref="D2" aca="1" ca="1" bx="1">SUM(A2:A2)</x:f><x:v>42</x:v></x:c>)"
+          R"(<x:c r="E2"><x:f t="shared" si="0" dt2D="1" dtr="1" del1="0" del2="0" r1="A1" r2="B1"/><x:v>7</x:v></x:c>)"
           R"(<x:c r="F2" ph="1"><x:v>8</x:v></x:c>)"
           R"(</x:row>)"
           R"(</x:sheetData>)"
@@ -34998,6 +34998,10 @@ void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_s
         "source-loaded CellStore projection should not keep nested ignored extension text");
     check_not_contains(output_worksheet_xml, "<x:v>999</x:v>",
         "source-loaded CellStore projection should not keep stale cached values");
+    check_not_contains(output_worksheet_xml, R"(ca="1")",
+        "source-loaded CellStore projection should not preserve formula calc metadata");
+    check_not_contains(output_worksheet_xml, R"(dt2D="1")",
+        "source-loaded CellStore projection should not preserve dataTable formula metadata");
     check(output_reader.read_entry("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "prefixed inline CellStore output should preserve untouched sheets");

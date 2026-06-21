@@ -79,8 +79,9 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   no style handle；workbook-backed source sharedStrings
   当前可只读 materialize 为 plain text，invalid sharedStrings metadata / indexes
   仍 fail fast，standalone generic worksheet loaders 仍因缺少 workbook-level
-  sharedStrings context 而拒绝 `t="s"`；error and date-like source cell types are
-  also pinned as unsupported；internal
+  sharedStrings context 而拒绝 `t="s"`；date-like/custom source cell types remain
+  unsupported while source `t="e"` error tokens are opaque materialized values；
+  internal
   mutation guardrail 还覆盖坐标校验失败不污染已有 sparse records；
   loader XML entity decoding guardrail 已覆盖 unknown entity、unterminated
   entity、invalid character reference 和 out-of-range character reference 的
@@ -96,7 +97,7 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   inline-text value wrappers；key attribute guardrail 已覆盖 duplicate `r` / `t`
   attributes inspected by the loader；row/cell-order guardrail 已覆盖
   out-of-order explicit row numbers 和 out-of-order source cell references；
-  formula-shape guardrail 已覆盖 source formula attributes 和 empty formula text；
+  formula-shape guardrail 已覆盖 unknown source formula attributes 和 empty formula text；
   row-scope guardrail 已覆盖 source cells outside row elements；
   metadata-attribute guardrail 已覆盖 unsupported source row/cell metadata
   attributes；
@@ -640,9 +641,9 @@ In-memory random editor 仍未实现。
 - Focused loader cell-order coverage now rejects source cell references that
   move backwards instead of letting sparse-store emission silently sort source
   cells.
-- Focused loader formula-shape coverage now rejects source formula attributes
-  and empty formula text instead of materializing shared/metadata formula shapes
-  as ordinary empty formulas.
+- Focused loader formula-shape coverage now rejects unknown source formula
+  attributes and empty formula text instead of materializing unsupported
+  metadata shapes as ordinary empty formulas.
 - Focused loader row-scope coverage now rejects source cells outside row
   elements instead of materializing schema-invalid loose cells.
 - Focused loader metadata-attribute coverage now rejects unsupported source
@@ -19204,7 +19205,7 @@ Output:
 - A source formula cell with a stale cached `<v>` loads formula text and the
   later materialized `save_as()` projection omits that cached value.
 - Public facade failure hygiene now covers empty formula text, duplicate
-  formula elements, unsupported formula attributes, and unsupported non-formula
+  formula elements, unknown formula attributes, and unsupported non-formula
   scalar cell shapes; typed cached-result formula cells are materialized as
   formula text and their cached `<v>` values are ignored.
 - Failures preserve catalog inspection, leave no pending edits or dirty

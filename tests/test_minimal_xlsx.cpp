@@ -1497,7 +1497,7 @@ void test_internal_cell_store_worksheet_loader()
     {
         const fastxlsx::detail::CellStore formula_metadata_store =
             fastxlsx::detail::load_cell_store_from_worksheet_xml(
-                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="array" ref="A1">PI()</f><v>3.14</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>2</v></c></row><row r="3"><c r="A3"><f t="shared" ref="A3:B4" si="3">A3+B$3+$A3+$A$3+SUM(A3:B3)&amp;"A3"+'Other Sheet'!A3+[Book.xlsx]Sheet1!A3+Table1[A3]</f><v>1</v></c></row><row r="4"><c r="B4"><f t="shared" si="3"/><v>999</v></c></row><row r="5"><c r="A5"><f t="shared" ref="A5:B6" si="4">XFD5+$XFD5+XFD$5+$XFD$5</f></c></row><row r="6"><c r="B6"><f t="shared" si="4"/><v>111</v></c></row></sheetData></worksheet>)");
+                R"(<worksheet><sheetData><row r="1"><c r="A1"><f t="array" ref="A1" aca="1" ca="1" bx="1">PI()</f><v>3.14</v></c></row><row r="2"><c r="A2"><f t="shared" si="0"/><v>2</v></c></row><row r="3"><c r="A3"><f t="shared" ref="A3:B4" si="3" ca="1">A3+B$3+$A3+$A$3+SUM(A3:B3)&amp;"A3"+'Other Sheet'!A3+[Book.xlsx]Sheet1!A3+Table1[A3]</f><v>1</v></c></row><row r="4"><c r="B4"><f t="shared" si="3" aca="1" bx="1"/><v>999</v></c></row><row r="5"><c r="A5"><f t="shared" ref="A5:B6" si="4">XFD5+$XFD5+XFD$5+$XFD$5</f></c></row><row r="6"><c r="B6"><f t="shared" si="4"/><v>111</v></c></row><row r="7"><c r="A7"><f t="dataTable" ref="A7:B8" dt2D="1" dtr="1" del1="0" del2="0" r1="A1" r2="B1">TABLE(A1,B1)</f><v>5</v></c></row></sheetData></worksheet>)");
         const fastxlsx::detail::CellRecord* array_formula =
             formula_metadata_store.try_cell(1, 1);
         check(array_formula != nullptr && array_formula->kind == fastxlsx::CellValueKind::Formula
@@ -1527,6 +1527,12 @@ void test_internal_cell_store_worksheet_loader()
                 && shared_edge_follower->kind == fastxlsx::CellValueKind::Formula
                 && shared_edge_follower->text_value == "#REF!+$XFD6+#REF!+$XFD$5",
             "worksheet loader should translate out-of-range relative shared formula references to #REF!");
+        const fastxlsx::detail::CellRecord* data_table_formula =
+            formula_metadata_store.try_cell(7, 1);
+        check(data_table_formula != nullptr
+                && data_table_formula->kind == fastxlsx::CellValueKind::Formula
+                && data_table_formula->text_value == "TABLE(A1,B1)",
+            "worksheet loader should tolerate known dataTable formula metadata attributes");
     }
     {
         const fastxlsx::detail::CellStore shared_formula_matrix =

@@ -2,6 +2,7 @@
 
 #include "package_editor.hpp"
 #include "workbook_editor_image_edit.hpp"
+#include "workbook_editor_pending_edits.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
@@ -10,10 +11,8 @@
 #include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -42,11 +41,6 @@ detail::CellStoreOptions cell_store_options_from_worksheet_options(
     return store_options;
 }
 
-struct PendingSheetDataPayloadDiagnostic {
-    std::size_t cell_count = 0;
-    std::size_t estimated_memory_usage = 0;
-};
-
 struct WorksheetEditorCellCoordinate {
     std::uint32_t row = 0;
     std::uint32_t column = 0;
@@ -61,27 +55,6 @@ std::vector<std::string> source_sheet_names_from_workbook_sheets(
         names.push_back(sheet.name);
     }
     return names;
-}
-
-void migrate_pending_sheet_data_payload_diagnostic(
-    std::map<std::string, PendingSheetDataPayloadDiagnostic>& pending_payloads,
-    const std::string& old_name,
-    const std::string& new_name)
-{
-    if (old_name == new_name) {
-        return;
-    }
-
-    auto pending_payload = pending_payloads.extract(old_name);
-    if (pending_payload.empty()) {
-        return;
-    }
-
-    pending_payload.key() = new_name;
-    auto insert_result = pending_payloads.insert(std::move(pending_payload));
-    if (!insert_result.inserted && !insert_result.node.empty()) {
-        insert_result.position->second = insert_result.node.mapped();
-    }
 }
 
 [[nodiscard]] std::string missing_planned_sheet_message(std::string_view sheet_name)
@@ -265,7 +238,7 @@ struct WorkbookEditor::Impl {
     detail::WorkbookEditorSheetCatalogPlan sheet_catalog;
     detail::MaterializedWorksheetSessionRegistry materialized_sessions;
     std::size_t pending_public_edit_count = 0;
-    std::map<std::string, PendingSheetDataPayloadDiagnostic> pending_sheet_data_payloads;
+    detail::WorkbookEditorPendingSheetDataPayloads pending_sheet_data_payloads;
     std::optional<std::string> last_public_edit_error;
 
     [[nodiscard]] std::vector<std::string> source_worksheet_names() const
@@ -345,31 +318,12 @@ struct WorkbookEditor::Impl {
 
     [[nodiscard]] bool has_pending_sheet_data_payload(std::string_view sheet_name) const noexcept
     {
-        for (const auto& [pending_sheet_name, diagnostic] : pending_sheet_data_payloads) {
-            (void)diagnostic;
-            if (pending_sheet_name == sheet_name) {
-                return true;
-            }
-        }
-        return false;
+        return pending_sheet_data_payloads.contains(sheet_name);
     }
 
     [[nodiscard]] std::vector<std::string> pending_replacement_worksheet_names() const
     {
-        std::vector<std::string> names;
-        for (const std::string& sheet_name : current_worksheet_names()) {
-            if (has_pending_sheet_data_payload(sheet_name)) {
-                names.push_back(sheet_name);
-            }
-        }
-
-        for (const auto& [sheet_name, diagnostic] : pending_sheet_data_payloads) {
-            (void)diagnostic;
-            if (std::find(names.begin(), names.end(), sheet_name) == names.end()) {
-                names.push_back(sheet_name);
-            }
-        }
-        return names;
+        return pending_sheet_data_payloads.worksheet_names(current_worksheet_names());
     }
 
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
@@ -403,11 +357,11 @@ struct WorkbookEditor::Impl {
         for (const detail::WorkbookEditorSheetCatalogEntry& catalog_entry :
              sheet_catalog.entries()) {
             const std::string& current_name = catalog_entry.planned_name;
-            const auto pending_payload = pending_sheet_data_payloads.find(current_name);
+            const detail::WorkbookEditorPendingSheetDataPayloadDiagnostic* pending_payload =
+                pending_sheet_data_payloads.find(current_name);
             const detail::MaterializedWorksheetSession* materialized_session =
                 materialized_sessions.try_session(current_name);
-            const bool sheet_data_replaced =
-                pending_payload != pending_sheet_data_payloads.end();
+            const bool sheet_data_replaced = pending_payload != nullptr;
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
             if (!catalog_entry.renamed && !sheet_data_replaced && !materialized_dirty) {
@@ -421,9 +375,9 @@ struct WorkbookEditor::Impl {
             summary.sheet_data_replaced = sheet_data_replaced;
             summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {
-                summary.replacement_cell_count = pending_payload->second.cell_count;
+                summary.replacement_cell_count = pending_payload->cell_count;
                 summary.estimated_replacement_memory_usage =
-                    pending_payload->second.estimated_memory_usage;
+                    pending_payload->estimated_memory_usage;
             }
             if (materialized_dirty) {
                 summary.materialized_cell_count = materialized_session->cell_count();
@@ -618,16 +572,7 @@ std::size_t WorkbookEditor::pending_change_count() const noexcept
 
 std::size_t WorkbookEditor::pending_replacement_cell_count() const noexcept
 {
-    if (impl_ == nullptr) {
-        return 0;
-    }
-
-    std::size_t total = 0;
-    for (const auto& [sheet_name, diagnostic] : impl_->pending_sheet_data_payloads) {
-        (void)sheet_name;
-        total += diagnostic.cell_count;
-    }
-    return total;
+    return impl_ == nullptr ? 0 : impl_->pending_sheet_data_payloads.cell_count();
 }
 
 std::vector<std::string> WorkbookEditor::pending_replacement_worksheet_names() const
@@ -663,16 +608,7 @@ bool WorkbookEditor::has_pending_replacement(std::string_view sheet_name) const 
 
 std::size_t WorkbookEditor::estimated_pending_replacement_memory_usage() const noexcept
 {
-    if (impl_ == nullptr) {
-        return 0;
-    }
-
-    std::size_t total = 0;
-    for (const auto& [sheet_name, diagnostic] : impl_->pending_sheet_data_payloads) {
-        (void)sheet_name;
-        total += diagnostic.estimated_memory_usage;
-    }
-    return total;
+    return impl_ == nullptr ? 0 : impl_->pending_sheet_data_payloads.estimated_memory_usage();
 }
 
 std::optional<std::string> WorkbookEditor::last_edit_error() const
@@ -800,8 +736,8 @@ void WorkbookEditor::replace_sheet_data(
             detail::cell_store_sheet_data_chunk_source(store);
         impl_->editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
             sheet_name, sheet_data_source);
-        impl_->pending_sheet_data_payloads[std::string(sheet_name)] = {
-            store.cell_count(), store.estimated_memory_usage()};
+        impl_->pending_sheet_data_payloads.record(
+            std::string(sheet_name), store.cell_count(), store.estimated_memory_usage());
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
@@ -902,8 +838,7 @@ void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_nam
         // parts, relationships, content types, and unknown entries.
         impl_->editor.rename_sheet_catalog_entry(old_name, std::move(new_name));
         impl_->sheet_catalog.record_rename(old_name_key, new_name_key);
-        migrate_pending_sheet_data_payload_diagnostic(
-            impl_->pending_sheet_data_payloads, old_name_key, new_name_key);
+        impl_->pending_sheet_data_payloads.migrate(old_name_key, new_name_key);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

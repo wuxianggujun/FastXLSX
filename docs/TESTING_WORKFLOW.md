@@ -295,8 +295,13 @@ formula reference scanner/translator boundary, raw sheet qualifier span
 metadata for unquoted / quoted / external-workbook / 3D-like qualifiers, direct
 `detail/formula_reference_audit` semantic audit coverage for formula text and
 workbook definedName formulas, and `fastxlsx.workbook_editor_sheet_catalog`
-covers the source/planned worksheet catalog plan state directly, plus an
-Office-like public `WorksheetEditor` shape with 2D shared formula ranges,
+covers the source/planned worksheet catalog plan state directly.
+`fastxlsx.workbook_editor_pending_edits` covers queued whole-`<sheetData>`
+replacement diagnostic state directly: same-sheet diagnostic replacement,
+aggregate cell/memory totals, current-catalog ordered pending names, orphan
+diagnostic fallback ordering, and rename migration. The workbook-editor CTest
+family still covers the public facade integration, plus an Office-like public
+`WorksheetEditor` shape with 2D shared formula ranges,
 multiple `si` groups, ordinary formula interleaving, stale cached value removal,
 untouched sheet preservation, and lossy array/dataTable formula metadata
 materialization. The same default path also covers default/numeric, `t="str"`,

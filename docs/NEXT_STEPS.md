@@ -785,6 +785,13 @@ source-to-planned catalog entries, and revert-to-source-name behavior.
 `WorkbookEditor`
 now asks this plan for catalog views instead of storing a raw
 source-name-to-planned-name map in the facade implementation.
+P8.577 moves pending whole-`<sheetData>` replacement diagnostics behind
+`src/workbook_editor_pending_edits.*`: the pending-edit state object owns
+replacement cell/memory totals, current-catalog ordered pending worksheet
+names, same-sheet replacement of diagnostics, and rename migration of pending
+payload diagnostics. `WorkbookEditor` still orchestrates materialized sessions
+and public edit summaries, but no longer stores raw pending replacement maps in
+the facade implementation.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

@@ -828,6 +828,34 @@ std::filesystem::path write_formula_reference_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_multi_formula_reference_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula One");
+        formulas.append_row(
+            {fastxlsx::CellView::formula("Data!A1+Data!A1")});
+    }
+    {
+        fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula Two");
+        formulas.append_row({fastxlsx::CellView::formula(
+            "Data!A1+'Data'!A1+[Book.xlsx]Data!A1")});
+    }
+    {
+        fastxlsx::WorksheetWriter plain = writer.add_worksheet("Plain");
+        plain.append_row({fastxlsx::CellView::text("no formula")});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_defined_name_reference_source(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -871,6 +899,19 @@ const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_formula_reference_audi
         }
     }
     return nullptr;
+}
+
+std::size_t count_formula_reference_audits(
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+    std::string_view referenced_sheet_name)
+{
+    std::size_t count = 0;
+    for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
+        if (audit.referenced_sheet_name == referenced_sheet_name) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit*
@@ -17646,6 +17687,81 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
         "reopened output should expose the rewritten materialized formula text");
 }
 
+void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
+{
+    const std::filesystem::path source = write_multi_formula_reference_source(
+        "fastxlsx-workbook-editor-multi-materialized-formula-rewrite-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-multi-materialized-formula-rewrite-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_one = editor.worksheet("Formula One");
+    fastxlsx::WorksheetEditor formula_two = editor.worksheet("Formula Two");
+    fastxlsx::WorksheetEditor plain = editor.worksheet("Plain");
+    check(!formula_one.has_pending_changes() && !formula_two.has_pending_changes()
+            && !plain.has_pending_changes(),
+        "multi-formula rewrite fixture should materialize all sessions cleanly");
+    check(editor.formula_reference_audits().size() == 5,
+        "multi-formula rewrite fixture should expose all pre-rename formula references");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "RenamedData", options);
+
+    const std::string expected_one = "'RenamedData'!A1+'RenamedData'!A1";
+    const std::string expected_two =
+        "'RenamedData'!A1+'RenamedData'!A1+[Book.xlsx]Data!A1";
+    check(formula_one.get_cell("A1").text_value() == expected_one,
+        "opt-in rename should rewrite repeated direct references in first materialized sheet");
+    check(formula_two.get_cell("A1").text_value() == expected_two,
+        "opt-in rename should rewrite quoted and unquoted references in second materialized sheet");
+    check(formula_one.has_pending_changes() && formula_two.has_pending_changes(),
+        "formula rewrite should dirty every changed materialized formula session");
+    check(!plain.has_pending_changes(),
+        "formula rewrite should not dirty unrelated materialized sessions");
+
+    const std::vector<std::string> dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 2 && dirty_names[0] == "Formula One"
+            && dirty_names[1] == "Formula Two",
+        "formula rewrite should expose only changed materialized sessions as dirty");
+    check(editor.pending_materialized_cell_count()
+            == formula_one.cell_count() + formula_two.cell_count(),
+        "formula rewrite dirty cell count should aggregate only changed formula sessions");
+    check(editor.pending_change_count() == 1,
+        "formula rewrite should count the public rename once before save_as flush");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(audits, "RenamedData") == 4,
+        "formula audit should expose all rewritten local references under the planned name");
+    check(count_formula_reference_audits(audits, "Data") == 0,
+        "formula audit should not report stale local source-name references after rewrite");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(audits, "[Book.xlsx]Data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "formula rewrite should preserve external workbook references in multi-session rewrite");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "multi-session formula rewrite should still update workbook catalog");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), expected_one,
+        "first materialized formula sheet should persist rewritten formula text");
+    check_contains(output_entries.at("xl/worksheets/sheet3.xml"), expected_two,
+        "second materialized formula sheet should persist rewritten formula text");
+    check_contains(output_entries.at("xl/worksheets/sheet4.xml"), "no formula",
+        "unrelated materialized plain sheet should remain preserved");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.worksheet("Formula One").get_cell("A1").text_value() == expected_one,
+        "reopened output should expose first rewritten materialized formula");
+    check(reopened.worksheet("Formula Two").get_cell("A1").text_value() == expected_two,
+        "reopened output should expose second rewritten materialized formula");
+}
+
 void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()
 {
     const std::filesystem::path source = write_formula_reference_source(
@@ -18679,6 +18795,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
+        test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();

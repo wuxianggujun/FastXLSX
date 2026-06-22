@@ -112,6 +112,12 @@ The boundary scenario intentionally uses synthetic parser-boundary formula text,
 so it is validated with ZIP/XML and `openpyxl`; it is not an Excel UI
 compatibility smoke.
 
+The generated shared-formula QA reports now include explicit formula evidence:
+`formula_output.shared_metadata_removed`, `cached_formula_values_removed`,
+`stale_cached_values_removed`, `checked_formula_cells`, `output_formula_cells`,
+and `openpyxl.formula_cells`. This keeps the shared-formula materialization
+claim auditable from the JSON report without manually unpacking the workbook.
+
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:
 

@@ -410,7 +410,11 @@ py tools\run_workbook_editor_qa.py `
 
 The Excel verifier now opens this generated output read-only and checks the
 materialized ordinary formula cells plus the untouched sheet. This is the
-Excel-compatible shared-formula materialization smoke.
+Excel-compatible shared-formula materialization smoke. The Python report also
+records `checked_formula_cells`, `output_formula_cells`,
+`openpyxl.formula_cells`, `formula_output.shared_metadata_removed`, and
+`cached_formula_values_removed` so the exact materialized formulas and removed
+stale cache state are visible without unpacking the workbook manually.
 
 For the source-worksheet formula reference diagnostic smoke, run:
 
@@ -444,7 +448,9 @@ the scanner-side raw sheet qualifier spans; the generated QA scenario focuses on
 dirty workbook output compatibility. This synthetic boundary case is validated
 by ZIP/XML and `openpyxl`; the Excel COM verifier reports it as skipped because
 some deliberately inserted parser-boundary tokens are not intended to be an
-Excel UI compatibility smoke.
+Excel UI compatibility smoke. The same JSON report fields document that this is
+`excel_ui_smoke=not_run_synthetic_parser_boundary` while still proving 0 shared
+formula metadata and no cached formula `<v>` values in the dirty output.
 
 For an Office/LibreOffice-like generated shared-formula shape smoke, run:
 
@@ -461,7 +467,8 @@ and values, and stale cached formula results. The output check requires all
 formula cells to become ordinary `<f>...</f>` elements, with 0 shared formula
 metadata elements and no stale cached `<v>` values. The Excel verifier opens
 this output read-only and checks representative materialized formulas plus the
-untouched sheet.
+untouched sheet. The Python report now lists all checked Office-like formula
+cells and the openpyxl readback formulas, not only representative cells.
 
 To smoke-test third-party fixture workbooks such as xlnt or OpenXLSX samples,
 keep them outside the repository and pass a fixture root explicitly. These

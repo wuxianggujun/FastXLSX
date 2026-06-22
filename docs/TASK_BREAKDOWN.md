@@ -25947,6 +25947,49 @@ Acceptance:
 - Resource check after local verification shows no lingering Excel/build/test
   processes.
 
+## P8.587 - Strengthen generated shared-formula QA report evidence
+
+Status: done.
+
+Type: opt-in local QA reporting hardening for shared formula materialization;
+no production behavior change, no public API change, no CMake target membership
+change, and no runtime dependency.
+
+Goal: make the generated shared-formula QA scenarios self-describing from
+`report.json`, so reviewers can see the exact materialized formulas, shared
+metadata cleanup, stale cached-value cleanup, and openpyxl readback without
+manually unpacking the output workbook.
+
+Output:
+- Extended `tools/run_workbook_editor_qa.py` with shared formula report helpers
+  that record `checked_formula_cells`, `output_formula_cells`,
+  `openpyxl.formula_cells`, `formula_output.shared_metadata_removed`,
+  `cached_formula_values_removed`, `stale_cached_values_removed`, and
+  `excel_ui_smoke`.
+- Applied the reporting helper to `generated_shared_formula_materialization`,
+  `generated_shared_formula_boundary_materialization`, and
+  `generated_shared_formula_office_like_materialization`.
+- The helper now asserts that dirty shared-formula outputs contain no cached
+  formula `<v>` values, not only no selected stale values.
+- Updated `docs/FORMULA_SUPPORT.md`, `docs/NEXT_STEPS.md`,
+  `docs/TESTING_WORKFLOW.md`, `docs/EDITING_TEST_MATRIX.md`, and
+  `docs/API_DESIGN_AND_DOCUMENTATION.md` to document the QA evidence.
+
+Non-goals / boundary:
+- No formula evaluation, cached result generation, calcChain rebuild, formula
+  dependency graph, shared formula metadata preservation, relationship repair,
+  sharedStrings/style migration, runtime Python dependency, or complete Excel
+  formula parser.
+
+Acceptance:
+- `py tools\run_workbook_editor_qa.py --self-test` passes.
+- The three generated shared-formula QA scenarios pass with a built
+  `fastxlsx_workbook_editor_qa_tool`.
+- Focused formula/workbook-editor CTest still passes.
+- `git diff --check` passes.
+- Resource check after local verification shows no lingering Excel/build/test
+  processes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

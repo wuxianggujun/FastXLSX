@@ -476,6 +476,93 @@ def worksheet_formula_cells(path: Path, sheet_name: str) -> dict[str, str]:
     return formulas
 
 
+def worksheet_formula_cached_values(path: Path, sheet_name: str) -> dict[str, list[str]]:
+    sheet_entries = workbook_sheet_entry_map(path)
+    worksheet_entry = sheet_entries.get(sheet_name)
+    require(worksheet_entry is not None, f"formula cached values: sheet not found: {sheet_name}")
+    root = ElementTree.fromstring(read_zip_bytes(path, worksheet_entry))
+    cached_values: dict[str, list[str]] = {}
+    for cell in root.iter():
+        if xml_local_name(cell.tag) != "c":
+            continue
+        reference = cell.attrib.get("r")
+        if not reference:
+            continue
+        formula = next(
+            (child for child in cell if xml_local_name(child.tag) == "f"),
+            None,
+        )
+        if formula is None:
+            continue
+        values = [
+            "".join(child.itertext())
+            for child in cell
+            if xml_local_name(child.tag) == "v"
+        ]
+        if values:
+            cached_values[reference] = values
+    return cached_values
+
+
+def sorted_string_mapping(values: dict[str, str]) -> dict[str, str]:
+    return {key: values[key] for key in sorted(values)}
+
+
+def attach_shared_formula_report(
+    zip_report: dict[str, Any],
+    path: Path,
+    sheet_name: str,
+    expected_formula_cells: dict[str, str],
+    *,
+    stale_cached_values_removed: bool,
+    excel_ui_smoke: str,
+) -> dict[str, Any]:
+    formula_summary = formula_summary_for_sheet(path, sheet_name)
+    formula_cells = worksheet_formula_cells(path, sheet_name)
+    for reference, expected in expected_formula_cells.items():
+        require(
+            formula_cells.get(reference) == expected,
+            f"{sheet_name}: {reference} formula mismatch {formula_cells.get(reference)!r}",
+        )
+    require(
+        formula_summary["formula_count"] == len(expected_formula_cells),
+        f"{sheet_name}: formula count mismatch {formula_summary!r}",
+    )
+    require(
+        formula_summary["shared_formula_count"] == 0,
+        f"{sheet_name}: shared formula metadata remained {formula_summary!r}",
+    )
+
+    formula_summary["ordinary_formula_count"] = formula_summary["formula_count"]
+    cached_formula_values = worksheet_formula_cached_values(path, sheet_name)
+    require(
+        not cached_formula_values,
+        f"{sheet_name}: cached formula values remained {cached_formula_values!r}",
+    )
+    formula_summary["shared_metadata_removed"] = True
+    formula_summary["stale_cached_values_removed"] = stale_cached_values_removed
+    zip_report["formula_output"] = formula_summary
+    zip_report["output_formula_cells"] = sorted_string_mapping(formula_cells)
+    zip_report["checked_formula_cells"] = sorted_string_mapping(expected_formula_cells)
+    zip_report["cached_formula_values_removed"] = True
+    zip_report["shared_metadata_removed"] = True
+    zip_report["stale_cached_values_removed"] = stale_cached_values_removed
+    zip_report["excel_ui_smoke"] = excel_ui_smoke
+    return formula_summary
+
+
+def openpyxl_formula_cells(worksheet: Any, expected_formula_cells: dict[str, str]) -> dict[str, str]:
+    formula_cells: dict[str, str] = {}
+    for reference, expected in expected_formula_cells.items():
+        value = worksheet[reference].value
+        require(
+            value == "=" + expected,
+            f"openpyxl formula mismatch at {reference}: {value!r}",
+        )
+        formula_cells[reference] = value
+    return sorted_string_mapping(formula_cells)
+
+
 def discover_formula_fixture_infos(
     fixture_root: Path,
     globs: list[str],
@@ -824,13 +911,23 @@ def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[st
     for stale_value in ["9", "14", "15", "23"]:
         require(f"<v>{stale_value}</v>" not in worksheet_xml,
                 f"generated shared formula: stale cached formula value {stale_value} remained")
-    formula_summary = formula_summary_for_sheet(path, "SharedFormula")
-    require(formula_summary["formula_count"] == 6,
-            f"generated shared formula: formula count mismatch {formula_summary!r}")
-    require(formula_summary["shared_formula_count"] == 0,
-            f"generated shared formula: shared metadata remained {formula_summary!r}")
-    zip_report["formula_output"] = formula_summary
-    zip_report["formulas"] = ["C1", "C2", "C3", "D1", "D2", "D3"]
+    expected_formula_cells = {
+        "C1": "A1+B1",
+        "C2": "A2+B2",
+        "C3": "A3+B3",
+        "D1": "SUM(A1:B1)+$A1+A$1+$A$1",
+        "D2": "SUM(A2:B2)+$A2+A$1+$A$1",
+        "D3": "SUM(A3:B3)+$A3+A$1+$A$1",
+    }
+    attach_shared_formula_report(
+        zip_report,
+        path,
+        "SharedFormula",
+        expected_formula_cells,
+        stale_cached_values_removed=True,
+        excel_ui_smoke="excel_com_supported",
+    )
+    zip_report["formulas"] = sorted(expected_formula_cells)
     zip_report["stale_cached_values"] = "absent"
 
     openpyxl = load_openpyxl()
@@ -842,24 +939,14 @@ def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[st
         untouched = workbook["Untouched"]
         require(worksheet["A1"].value == 1, "generated shared formula: A1 mismatch")
         require(worksheet["B3"].value == 8, "generated shared formula: B3 mismatch")
-        require(worksheet["C1"].value == "=A1+B1",
-                f"generated shared formula: C1 formula mismatch {worksheet['C1'].value!r}")
-        require(worksheet["C2"].value == "=A2+B2",
-                f"generated shared formula: C2 formula mismatch {worksheet['C2'].value!r}")
-        require(worksheet["D2"].value == "=SUM(A2:B2)+$A2+A$1+$A$1",
-                f"generated shared formula: D2 formula mismatch {worksheet['D2'].value!r}")
-        require(worksheet["D3"].value == "=SUM(A3:B3)+$A3+A$1+$A$1",
-                f"generated shared formula: D3 formula mismatch {worksheet['D3'].value!r}")
+        openpyxl_formula_report = openpyxl_formula_cells(worksheet, expected_formula_cells)
         require(worksheet["E4"].value == "shared-formula-qa-edit",
                 "generated shared formula: E4 edit mismatch")
         require(untouched["A1"].value == "keep-shared-formula-qa",
                 "generated shared formula: untouched sheet mismatch")
         openpyxl_report = {
             "sheetnames": workbook.sheetnames,
-            "SharedFormula!C1": worksheet["C1"].value,
-            "SharedFormula!C2": worksheet["C2"].value,
-            "SharedFormula!D2": worksheet["D2"].value,
-            "SharedFormula!D3": worksheet["D3"].value,
+            "formula_cells": openpyxl_formula_report,
             "SharedFormula!E4": worksheet["E4"].value,
             "Untouched!A1": untouched["A1"].value,
         }
@@ -900,12 +987,14 @@ def verify_generated_shared_formula_boundary_materialization(path: Path) -> tupl
         )
     require("F4" not in formulas, "generated shared formula boundaries: F4 should be text, not formula")
 
-    formula_summary = formula_summary_for_sheet(path, "SharedBoundaries")
-    require(formula_summary["formula_count"] == 4,
-            f"generated shared formula boundaries: formula count mismatch {formula_summary!r}")
-    require(formula_summary["shared_formula_count"] == 0,
-            f"generated shared formula boundaries: shared metadata remained {formula_summary!r}")
-    zip_report["formula_output"] = formula_summary
+    attach_shared_formula_report(
+        zip_report,
+        path,
+        "SharedBoundaries",
+        expected_formulas,
+        stale_cached_values_removed=True,
+        excel_ui_smoke="not_run_synthetic_parser_boundary",
+    )
     zip_report["formulas"] = expected_formulas
 
     openpyxl = load_openpyxl()
@@ -915,18 +1004,14 @@ def verify_generated_shared_formula_boundary_materialization(path: Path) -> tupl
                 f"generated shared formula boundaries: unexpected sheetnames {workbook.sheetnames!r}")
         worksheet = workbook["SharedBoundaries"]
         untouched = workbook["Untouched"]
-        require(worksheet["C2"].value == "=" + expected_formulas["C2"],
-                f"generated shared formula boundaries: C2 mismatch {worksheet['C2'].value!r}")
-        require(worksheet["E2"].value == "=" + expected_formulas["E2"],
-                f"generated shared formula boundaries: E2 mismatch {worksheet['E2'].value!r}")
+        openpyxl_formula_report = openpyxl_formula_cells(worksheet, expected_formulas)
         require(worksheet["F4"].value == "shared-formula-boundary-edit",
                 "generated shared formula boundaries: F4 edit mismatch")
         require(untouched["A1"].value == "keep-shared-formula-boundary-qa",
                 "generated shared formula boundaries: untouched sheet mismatch")
         openpyxl_report = {
             "sheetnames": workbook.sheetnames,
-            "SharedBoundaries!C2": worksheet["C2"].value,
-            "SharedBoundaries!E2": worksheet["E2"].value,
+            "formula_cells": openpyxl_formula_report,
             "SharedBoundaries!F4": worksheet["F4"].value,
             "Untouched!A1": untouched["A1"].value,
         }
@@ -977,12 +1062,14 @@ def verify_generated_shared_formula_office_like_materialization(
         "generated office-like shared formula: missing H6 edit",
     )
 
-    formula_summary = formula_summary_for_sheet(path, "OfficeLikeShared")
-    require(formula_summary["formula_count"] == len(expected_formulas),
-            f"generated office-like shared formula: formula count mismatch {formula_summary!r}")
-    require(formula_summary["shared_formula_count"] == 0,
-            f"generated office-like shared formula: shared metadata remained {formula_summary!r}")
-    zip_report["formula_output"] = formula_summary
+    attach_shared_formula_report(
+        zip_report,
+        path,
+        "OfficeLikeShared",
+        expected_formulas,
+        stale_cached_values_removed=True,
+        excel_ui_smoke="excel_com_supported",
+    )
     zip_report["formulas"] = expected_formulas
     zip_report["stale_cached_values"] = "absent"
 
@@ -993,20 +1080,14 @@ def verify_generated_shared_formula_office_like_materialization(
                 f"generated office-like shared formula: unexpected sheetnames {workbook.sheetnames!r}")
         worksheet = workbook["OfficeLikeShared"]
         untouched = workbook["Untouched"]
-        for reference, expected in expected_formulas.items():
-            require(
-                worksheet[reference].value == "=" + expected,
-                f"generated office-like shared formula: {reference} mismatch "
-                f"{worksheet[reference].value!r}",
-            )
+        openpyxl_formula_report = openpyxl_formula_cells(worksheet, expected_formulas)
         require(worksheet["H6"].value == "office-like-shared-formula-edit",
                 "generated office-like shared formula: H6 edit mismatch")
         require(untouched["A1"].value == "keep-office-like-shared-formula-qa",
                 "generated office-like shared formula: untouched sheet mismatch")
         openpyxl_report = {
             "sheetnames": workbook.sheetnames,
-            "OfficeLikeShared!D3": worksheet["D3"].value,
-            "OfficeLikeShared!G3": worksheet["G3"].value,
+            "formula_cells": openpyxl_formula_report,
             "OfficeLikeShared!H6": worksheet["H6"].value,
             "Untouched!A1": untouched["A1"].value,
         }

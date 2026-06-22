@@ -182,6 +182,15 @@ formula `ref` ranges, multiple `si` groups in one worksheet, ordinary formulas
 and values interleaved with shared formula followers, and stale cached formula
 result cleanup; the dirty output is checked as ordinary formula elements with
 0 shared formula metadata elements, and is opened by the Excel COM verifier.
+P8.587 strengthens those generated shared-formula QA reports without changing
+runtime behavior: each generated shared-formula scenario now records
+`checked_formula_cells`, `output_formula_cells`, `openpyxl.formula_cells`,
+`formula_output.shared_metadata_removed`, `cached_formula_values_removed`, and
+whether the scenario is an Excel UI smoke or a synthetic parser-boundary ZIP/XML
+smoke. This makes shared metadata removal, stale cached-value cleanup, and exact
+materialized formula text reviewable directly from `report.json`; it is still
+not formula evaluation, cached result generation, calcChain rebuild, or a
+complete Excel formula parser.
 The same Office-like shape is now also covered by the default public
 `fastxlsx.workbook_editor.source-success` CTest path, so shared formula
 materialization regressions are not limited to opt-in local QA. It also has an

@@ -33,6 +33,7 @@ NAMESPACES = {
 
 GENERATED_SCENARIOS = [
     "generated_rename_materialized",
+    "generated_source_formula_audit",
     "generated_shared_formula_materialization",
     "generated_shared_formula_boundary_materialization",
     "generated_shared_formula_office_like_materialization",
@@ -54,6 +55,7 @@ DEFAULT_XLNT_STRING_FIXTURES = [
 ]
 
 EXTERNAL_FIXTURE_SCENARIO = "external_fixture_materialized_smoke"
+SOURCE_FORMULA_FIXTURE_SCENARIO = "external_source_formula_fixture_audit_smoke"
 FORMULA_FIXTURE_SCENARIO = "external_formula_fixture_materialized_smoke"
 DEFINED_NAME_FIXTURE_SCENARIO = "external_defined_name_fixture_smoke"
 IMAGE_FIXTURE_SCENARIO = "external_fixture_image_replace_smoke"
@@ -61,6 +63,7 @@ FIXTURE_SCENARIOS = [
     "xlnt_fixture_rename_smoke",
     "xlnt_fixture_string_smoke",
     EXTERNAL_FIXTURE_SCENARIO,
+    SOURCE_FORMULA_FIXTURE_SCENARIO,
     FORMULA_FIXTURE_SCENARIO,
     DEFINED_NAME_FIXTURE_SCENARIO,
     IMAGE_FIXTURE_SCENARIO,
@@ -719,6 +722,68 @@ def verify_generated_rename_materialized(path: Path) -> tuple[dict[str, Any], di
     return zip_report, openpyxl_report
 
 
+def verify_generated_source_formula_audit(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    workbook_xml = read_zip_text(path, "xl/workbook.xml")
+    formula_sheet_xml = read_zip_text(path, "xl/worksheets/sheet4.xml")
+
+    require('name="RenamedData"' in workbook_xml,
+            "generated source formula audit: missing renamed sheet catalog entry")
+    require('name="Data"' not in workbook_xml,
+            "generated source formula audit: old Data sheet catalog entry remained")
+    require("Data!A1" in formula_sheet_xml,
+            "generated source formula audit: original formula text was unexpectedly rewritten")
+    require("RenamedData!A1" not in formula_sheet_xml,
+            "generated source formula audit: non-materialized formula was silently repaired")
+
+    require(tool_report.get("source_formula_audit_count") == 5,
+            f"generated source formula audit: count mismatch {tool_report!r}")
+    require(tool_report.get("source_formula_rename_risk_count") == 1,
+            f"generated source formula audit: rename-risk count mismatch {tool_report!r}")
+    require(tool_report.get("source_formula_external_count") == 1,
+            f"generated source formula audit: external count mismatch {tool_report!r}")
+    require(tool_report.get("source_formula_sheet_range_count") == 1,
+            f"generated source formula audit: 3D count mismatch {tool_report!r}")
+    require(tool_report.get("source_formula_matched_count") == 3,
+            f"generated source formula audit: matched count mismatch {tool_report!r}")
+    references = tool_report.get("source_formula_audit_references", [])
+    require("Data!A1" in references,
+            f"generated source formula audit: missing Data!A1 reference {references!r}")
+    require("[Book.xlsx]Data!A1" in references,
+            f"generated source formula audit: missing external reference {references!r}")
+    require("Data:Formula!A1" in references,
+            f"generated source formula audit: missing 3D reference {references!r}")
+    zip_report["source_formula_audit"] = {
+        "count": tool_report["source_formula_audit_count"],
+        "rename_risk_count": tool_report["source_formula_rename_risk_count"],
+        "external_count": tool_report["source_formula_external_count"],
+        "sheet_range_count": tool_report["source_formula_sheet_range_count"],
+        "matched_count": tool_report["source_formula_matched_count"],
+        "references": references,
+    }
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["RenamedData", "Other Sheet", "O'Brien", "Formula"],
+                f"generated source formula audit: unexpected sheetnames {workbook.sheetnames!r}")
+        formula_sheet = workbook["Formula"]
+        require(formula_sheet["A1"].value is not None and "Data!A1" in formula_sheet["A1"].value,
+                f"generated source formula audit: Formula!A1 mismatch {formula_sheet['A1'].value!r}")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Formula!A1": formula_sheet["A1"].value,
+            "source_formula_audit_count": tool_report["source_formula_audit_count"],
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
 def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     zip_report: dict[str, Any] = {}
     names = zip_names(path)
@@ -1257,6 +1322,8 @@ def create_xlsxwriter_reference(
     xlsxwriter = load_xlsxwriter()
     if xlsxwriter is None:
         return {"status": "skipped", "reason": "xlsxwriter not installed"}
+    if scenario == "generated_source_formula_audit":
+        return {"status": "skipped", "reason": f"no xlsxwriter reference for {scenario}"}
 
     reference_path.parent.mkdir(parents=True, exist_ok=True)
     workbook = xlsxwriter.Workbook(reference_path)
@@ -1351,6 +1418,11 @@ def run_generated_case(
 
     if scenario == "generated_rename_materialized":
         zip_xml, openpyxl_report = verify_generated_rename_materialized(output_path)
+    elif scenario == "generated_source_formula_audit":
+        zip_xml, openpyxl_report = verify_generated_source_formula_audit(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_shared_formula_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_materialization(output_path)
     elif scenario == "generated_shared_formula_boundary_materialization":
@@ -1593,6 +1665,76 @@ def run_formula_fixture_case(
         zip_xml=zip_xml,
         openpyxl=openpyxl_report,
         xlsxwriter_reference={"status": "skipped", "reason": "formula fixture scenario"},
+    )
+
+
+def run_source_formula_fixture_audit_case(
+    qa_exe: Path,
+    work_dir: Path,
+    formula_info: FormulaWorksheetInfo,
+    group_name: str,
+    *,
+    fixture_root: Path,
+) -> ScenarioResult:
+    fixture_path = formula_info.fixture_path
+    case_slug = formula_fixture_case_slug(
+        fixture_root, fixture_path, formula_info.sheet_name
+    ) + "__source_audit"
+    case_dir = work_dir / group_name / case_slug
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(fixture_path, read_only=False, data_only=False)
+    try:
+        rename_to = choose_unique_sheet_name(list(workbook.sheetnames))
+    finally:
+        workbook.close()
+
+    case_dir.mkdir(parents=True, exist_ok=True)
+    tool_source_path = case_dir / "source.xlsx"
+    shutil.copyfile(fixture_path, tool_source_path)
+    tool_report = run_tool(
+        qa_exe,
+        "fixture_source_formula_audit",
+        case_dir,
+        source=tool_source_path,
+        sheet_name=formula_info.sheet_name,
+        rename_to=rename_to,
+    )
+    require(
+        "source_formula_audit_count" in tool_report,
+        "source formula fixture audit: tool report missing audit count",
+    )
+    zip_xml = {
+        "formula_scan": formula_info.as_report(fixture_root),
+        "source_formula_audit": {
+            "count": tool_report["source_formula_audit_count"],
+            "rename_risk_count": tool_report["source_formula_rename_risk_count"],
+            "external_count": tool_report["source_formula_external_count"],
+            "sheet_range_count": tool_report["source_formula_sheet_range_count"],
+            "matched_count": tool_report["source_formula_matched_count"],
+            "references": tool_report.get("source_formula_audit_references", []),
+        },
+    }
+    openpyxl_report = {
+        "sheet_name": formula_info.sheet_name,
+        "formula_count": formula_info.formula_count,
+        "shared_formula_count": formula_info.shared_formula_count,
+        "source_formula_audit_count": tool_report["source_formula_audit_count"],
+        "rename_to": rename_to,
+    }
+
+    try:
+        case_name = (
+            f"{group_name}:{fixture_path.relative_to(fixture_root).as_posix()}"
+            f":{formula_info.sheet_name}"
+        )
+    except ValueError:
+        case_name = f"{group_name}:{fixture_path.name}:{formula_info.sheet_name}"
+    return ScenarioResult(
+        name=case_name,
+        report=tool_report,
+        zip_xml=zip_xml,
+        openpyxl=openpyxl_report,
+        xlsxwriter_reference={"status": "skipped", "reason": "source formula fixture audit"},
     )
 
 
@@ -2037,6 +2179,51 @@ def main() -> int:
                 try:
                     results.append(
                         run_formula_fixture_case(
+                            qa_exe,
+                            work_dir,
+                            formula_info,
+                            scenario,
+                            fixture_root=fixture_root,
+                        )
+                    )
+                except Exception as exc:
+                    try:
+                        fixture_name = formula_info.fixture_path.relative_to(fixture_root).as_posix()
+                    except ValueError:
+                        fixture_name = formula_info.fixture_path.name
+                    results.append(
+                        ScenarioResult(
+                            name=f"{scenario}:{fixture_name}:{formula_info.sheet_name}",
+                            report={
+                                "scenario": scenario,
+                                "status": "failed",
+                                "fixture": str(formula_info.fixture_path),
+                                "sheet_name": formula_info.sheet_name,
+                            },
+                            zip_xml={"formula_scan": formula_info.as_report(fixture_root)},
+                            openpyxl={},
+                            xlsxwriter_reference={"status": "skipped", "reason": "case failed"},
+                            error=str(exc),
+                        )
+                    )
+            continue
+
+        if scenario == SOURCE_FORMULA_FIXTURE_SCENARIO:
+            fixture_globs = args.fixture_glob if args.fixture_glob else ["**/*.xlsx"]
+            formula_infos = discover_formula_fixture_infos(
+                fixture_root,
+                fixture_globs,
+                args.fixture_limit,
+                shared_only=False,
+            )
+            require(
+                formula_infos,
+                f"{scenario}: no formula-bearing .xlsx worksheets found under {fixture_root}",
+            )
+            for formula_info in formula_infos:
+                try:
+                    results.append(
+                        run_source_formula_fixture_audit_case(
                             qa_exe,
                             work_dir,
                             formula_info,

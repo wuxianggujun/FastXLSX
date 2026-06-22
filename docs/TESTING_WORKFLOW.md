@@ -382,6 +382,20 @@ py tools\run_workbook_editor_qa.py `
   --work-dir build\qa\workbook-editor-shared-formula
 ```
 
+For the source-worksheet formula reference diagnostic smoke, run:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_source_formula_audit `
+  --work-dir build\qa\workbook-editor-source-formula-audit
+```
+
+This generated case calls `WorkbookEditor::source_formula_reference_audits()`
+without materializing any `WorksheetEditor`, then renames `Data` to
+`RenamedData` and confirms the audit reports the stale `Data!A1` source-name
+risk while leaving source worksheet formula text unchanged in the saved output.
+External workbook qualifiers and 3D sheet-range qualifiers remain audit-only.
+
 For the generated shared-formula translator boundary smoke, run:
 
 ```powershell
@@ -452,6 +466,29 @@ Current local xlnt `tests\data` shared-formula smoke evidence covers
 output target sheet still has 15 formula elements and 0 shared formula metadata
 elements. This remains local compatibility evidence only; fixture repositories
 are not vendored, not runtime dependencies, and not default CI inputs.
+
+For read-only source formula audit fixture coverage, use:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --fixture-root C:\path\to\xlnt\tests\data `
+  --scenario external_source_formula_fixture_audit_smoke `
+  --fixture-glob "*formula*.xlsx" `
+  --fixture-limit 5 `
+  --work-dir build\qa\workbook-editor-source-formula-audit-fixtures
+```
+
+This fixture scenario scans formula-bearing worksheets, then runs the C++ QA
+tool in read-only `fixture_source_formula_audit` mode. It records how many
+sheet-qualified source formula references the new source audit reports, plus
+rename-risk, external-workbook, 3D sheet-range, and local-match counts. A
+fixture can legitimately report zero audit references when its formulas contain
+only unqualified references; the generated scenario above is the deterministic
+nonzero assertion.
+Current local xlnt evidence for this read-only audit covers
+`18_formulae.xlsx:Sheet1`: 15 formula elements, 3 shared formula elements, 1
+definition, 2 metadata-only followers, and 0 source formula audit references
+because the fixture formulas are unqualified.
 
 For named range / definedNames fixture coverage, use the opt-in definedName
 scanner scenario. It reads direct workbook `definedNames` records from

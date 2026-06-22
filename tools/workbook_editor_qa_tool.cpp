@@ -55,6 +55,12 @@ struct Report {
     std::string error_message;
     std::vector<std::string> mutations;
     std::vector<std::string> notes;
+    int source_formula_audit_count = 0;
+    int source_formula_rename_risk_count = 0;
+    int source_formula_external_count = 0;
+    int source_formula_sheet_range_count = 0;
+    int source_formula_matched_count = 0;
+    std::vector<std::string> source_formula_audit_references;
 };
 
 [[nodiscard]] std::filesystem::path repository_root()
@@ -231,6 +237,19 @@ void append_json_vector_field(
     json << "]";
 }
 
+void append_json_number_field(
+    std::ostringstream& json,
+    std::string_view key,
+    int value,
+    bool& first)
+{
+    if (!first) {
+        json << ",\n";
+    }
+    first = false;
+    json << "  " << json_quote(key) << ": " << value;
+}
+
 [[nodiscard]] std::string build_report_json(const Report& report)
 {
     std::ostringstream json;
@@ -248,6 +267,18 @@ void append_json_vector_field(
     append_json_string_field(json, "error_message", report.error_message, first);
     append_json_vector_field(json, "mutations", report.mutations, first);
     append_json_vector_field(json, "notes", report.notes, first);
+    append_json_number_field(
+        json, "source_formula_audit_count", report.source_formula_audit_count, first);
+    append_json_number_field(json, "source_formula_rename_risk_count",
+        report.source_formula_rename_risk_count, first);
+    append_json_number_field(
+        json, "source_formula_external_count", report.source_formula_external_count, first);
+    append_json_number_field(json, "source_formula_sheet_range_count",
+        report.source_formula_sheet_range_count, first);
+    append_json_number_field(
+        json, "source_formula_matched_count", report.source_formula_matched_count, first);
+    append_json_vector_field(json, "source_formula_audit_references",
+        report.source_formula_audit_references, first);
     json << "\n}\n";
     return json.str();
 }
@@ -340,6 +371,33 @@ std::filesystem::path write_two_sheet_source(const std::filesystem::path& path)
         untouched.append_row({CellView::text("keep-me"), CellView::number(99.0)});
     }
     writer.close();
+    return path;
+}
+
+std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({CellView::number(1.0)});
+    }
+    {
+        WorksheetWriter other = writer.add_worksheet("Other Sheet");
+        other.append_row({CellView::number(2.0)});
+    }
+    {
+        WorksheetWriter apostrophe = writer.add_worksheet("O'Brien");
+        apostrophe.append_row({CellView::number(3.0)});
+    }
+    {
+        WorksheetWriter formulas = writer.add_worksheet("Formula");
+        formulas.append_row({CellView::formula(
+            R"(Data!A1+'Other Sheet'!A1+'O''Brien'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9")")});
+    }
+    writer.close();
+
     return path;
 }
 
@@ -540,6 +598,99 @@ std::filesystem::path write_styled_source(
         CellView::text("old plain")});
     writer.close();
     return path;
+}
+
+void summarize_source_formula_audits(
+    Report& report,
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits)
+{
+    report.source_formula_audit_count = static_cast<int>(audits.size());
+    report.source_formula_rename_risk_count = 0;
+    report.source_formula_external_count = 0;
+    report.source_formula_sheet_range_count = 0;
+    report.source_formula_matched_count = 0;
+    report.source_formula_audit_references.clear();
+    report.source_formula_audit_references.reserve(audits.size());
+
+    for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
+        if (audit.references_renamed_source_name) {
+            ++report.source_formula_rename_risk_count;
+        }
+        if (audit.external_workbook_qualifier) {
+            ++report.source_formula_external_count;
+        }
+        if (audit.sheet_range_qualifier) {
+            ++report.source_formula_sheet_range_count;
+        }
+        if (audit.matched_current_workbook_sheet) {
+            ++report.source_formula_matched_count;
+        }
+        report.source_formula_audit_references.push_back(audit.qualified_reference_text);
+    }
+}
+
+Report run_generated_source_formula_audit(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_formula_reference_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-source-formula-audit-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-source-formula-audit-output.xlsx");
+    report.source_sheet_name = "Formula";
+    report.renamed_sheet_name = "RenamedData";
+    report.mutations = {
+        "source_formula_reference_audits:before_rename",
+        "rename_sheet:Data->RenamedData",
+        "source_formula_reference_audits:after_rename",
+    };
+    report.notes = {
+        "Source worksheet formula audit should not materialize WorksheetEditor sessions",
+        "Data!A1 should be flagged as a stale source-name formula risk after rename",
+        "External workbook and 3D sheet-range qualifiers stay audit-only",
+        "Saved output should keep original formula text unchanged",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    if (!editor.formula_reference_audits().empty()) {
+        throw std::runtime_error(
+            "source formula audit QA unexpectedly materialized worksheet sessions");
+    }
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
+        editor.source_formula_reference_audits();
+    if (initial_audits.size() != 5u) {
+        throw std::runtime_error("source formula audit QA expected 5 initial references");
+    }
+
+    editor.rename_sheet("Data", "RenamedData");
+    if (!editor.formula_reference_audits().empty()) {
+        throw std::runtime_error(
+            "source formula audit QA should not populate materialized formula diagnostics");
+    }
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
+        editor.source_formula_reference_audits();
+    summarize_source_formula_audits(report, renamed_audits);
+    if (report.source_formula_audit_count != 5) {
+        throw std::runtime_error("source formula audit QA expected 5 renamed references");
+    }
+    if (report.source_formula_rename_risk_count != 1) {
+        throw std::runtime_error("source formula audit QA expected one rename-risk reference");
+    }
+    if (report.source_formula_external_count != 1) {
+        throw std::runtime_error("source formula audit QA expected one external reference");
+    }
+    if (report.source_formula_sheet_range_count != 1) {
+        throw std::runtime_error("source formula audit QA expected one 3D sheet-range reference");
+    }
+    if (report.source_formula_matched_count != 3) {
+        throw std::runtime_error("source formula audit QA expected three local matched references");
+    }
+
+    editor.save_as(report.output);
+    return report;
 }
 
 Report run_generated_rename_materialized(const CliOptions& options)
@@ -944,10 +1095,45 @@ Report run_fixture_materialized_only(const CliOptions& options)
     return report;
 }
 
+Report run_fixture_source_formula_audit(const CliOptions& options)
+{
+    if (options.source.empty()) {
+        throw std::runtime_error("fixture_source_formula_audit requires --source");
+    }
+
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = options.source;
+    report.source_sheet_name = options.sheet_name;
+    report.renamed_sheet_name = options.rename_to;
+    report.mutations = {"source_formula_reference_audits:<fixture>"};
+    report.notes = {
+        "This scenario is read-only and does not write an output workbook",
+        "Only explicit source worksheet <f> formula text contributes audit references",
+        "Metadata-only shared formula followers are intentionally outside this audit",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    if (!options.sheet_name.empty() && !options.rename_to.empty()) {
+        editor.rename_sheet(options.sheet_name, options.rename_to);
+        report.mutations.push_back(
+            "rename_sheet:" + options.sheet_name + "->" + options.rename_to);
+    }
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.source_formula_reference_audits();
+    summarize_source_formula_audits(report, audits);
+    return report;
+}
+
 Report run_scenario(const CliOptions& options)
 {
     if (options.scenario == "generated_rename_materialized") {
         return run_generated_rename_materialized(options);
+    }
+    if (options.scenario == "generated_source_formula_audit") {
+        return run_generated_source_formula_audit(options);
     }
     if (options.scenario == "generated_shared_formula_materialization") {
         return run_generated_shared_formula_materialization(options);
@@ -975,6 +1161,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "fixture_materialized_only") {
         return run_fixture_materialized_only(options);
+    }
+    if (options.scenario == "fixture_source_formula_audit") {
+        return run_fixture_source_formula_audit(options);
     }
     if (options.scenario == "fixture_image_replace") {
         return run_fixture_image_replace(options);

@@ -97,6 +97,27 @@ function Verify-GeneratedRenameMaterialized {
     }
 }
 
+function Verify-GeneratedSourceFormulaAudit {
+    param([object]$Workbook)
+
+    $renamed = $null
+    $formula = $null
+    try {
+        $renamed = Get-Worksheet $Workbook "RenamedData"
+        $formula = Get-Worksheet $Workbook "Formula"
+        Assert-CellValue $renamed "A1" 1 "RenamedData!A1"
+        $formulaText = [string]$formula.Range("A1").Formula
+        Assert-True (-not [string]::IsNullOrWhiteSpace($formulaText)) "Formula!A1 formula should be present"
+    }
+    finally {
+        foreach ($object in @($formula, $renamed)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStylePassthrough {
     param([object]$Workbook)
 
@@ -224,16 +245,25 @@ function Verify-Case {
     )
 
     $toolReport = $Case.tool_report
+    $scenario = [string]$toolReport.scenario
+    if ($scenario -eq "fixture_source_formula_audit") {
+        return [ordered]@{
+            name = [string]$Case.name
+            status = "skipped"
+            reason = "read-only source formula audit does not produce an output workbook"
+        }
+    }
+
     $path = Resolve-WorkbookPath ([string]$toolReport.output)
     $workbook = $null
 
     try {
         $workbook = $Excel.Workbooks.Open($path, 0, $true)
         $sheetNames = Get-WorksheetNames $workbook
-        $scenario = [string]$toolReport.scenario
 
         switch ($scenario) {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
+            "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }
             "generated_image_replace" { Verify-GeneratedImageReplace $workbook }
             "generated_public_e2e" { Verify-GeneratedPublicE2E $workbook }

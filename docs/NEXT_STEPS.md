@@ -87,6 +87,12 @@ formula text without materializing `WorksheetEditor` sessions. It gives
 rename-risk visibility for non-materialized worksheets, but still does not
 rewrite those formulas, translate metadata-only shared formula followers,
 evaluate formulas, or build a dependency graph.
+The opt-in workbook-editor QA layer now exposes that boundary directly through
+`generated_source_formula_audit`: the generated case calls the source audit
+before/after a `Data` -> `RenamedData` rename, verifies one stale source-name
+formula risk plus external-workbook and 3D sheet-range audit classification,
+and checks the saved workbook still keeps the non-materialized formula text
+unchanged.
 The same audit boundary now extends to source workbook defined names through
 `WorkbookEditor::defined_name_formula_reference_audits()`: it materializes only
 the small `xl/workbook.xml` metadata part, scans direct
@@ -160,6 +166,18 @@ result cleanup; the dirty output is checked as ordinary formula elements with
 covered by the default public `fastxlsx.workbook_editor.source-success` CTest
 path, so shared formula materialization regressions are not limited to opt-in
 local QA. It also has an opt-in
+`external_source_formula_fixture_audit_smoke` scanner that maps formula-bearing
+fixture worksheets to source worksheet XML parts and invokes the read-only C++
+`fixture_source_formula_audit` mode, recording source formula audit counts,
+rename-risk counts, external-workbook counts, 3D sheet-range counts, and local
+match counts. This fixture smoke intentionally allows zero audit references
+when a workbook contains only unqualified formulas; the generated
+`generated_source_formula_audit` case is the deterministic nonzero assertion.
+Current local xlnt read-only evidence covers `18_formulae.xlsx:Sheet1` with 15
+formula elements, 3 shared formula elements, 1 definition, 2 metadata-only
+followers, and 0 source formula audit references because the fixture formulas
+are unqualified.
+It also has an opt-in
 `external_formula_fixture_materialized_smoke` scanner that maps workbook sheet
 names to worksheet XML parts, records formula/shared-formula counts, and runs
 the materialized edit smoke on the exact formula-bearing sheet; `--formula-shared-only`

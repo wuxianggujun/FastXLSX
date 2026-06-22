@@ -295,7 +295,10 @@ formula reference scanner/translator boundary, raw sheet qualifier span
 metadata for unquoted / quoted / external-workbook / 3D-like qualifiers, direct
 `detail/formula_reference_audit` semantic audit coverage for formula text and
 workbook definedName formulas, including malformed workbook XML mismatch /
-unclosed-tag fail-fast coverage. `fastxlsx.workbook_editor_state` covers the
+unclosed-tag fail-fast coverage, and the internal formula / definedName
+sheet-reference rewrite helpers that update only local sheet qualifiers while
+skipping external-workbook, 3D sheet-range, structured-reference, and quoted
+string text. `fastxlsx.workbook_editor_state` covers the
 private `WorkbookEditor` state projection helpers that now sit between the
 public facade and the feature adapters, and
 `fastxlsx.workbook_editor_sheet_catalog` covers the source/planned worksheet

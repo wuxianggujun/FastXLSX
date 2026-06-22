@@ -92,6 +92,16 @@ formula dependency graph.
 The audit scanner/matcher and definedName extraction logic now live behind the
 internal `detail/formula_reference_audit` semantic API instead of being embedded
 in the public `WorkbookEditor` facade implementation.
+The same internal semantic API now has a first conservative formula-reference
+rewrite foundation: `rewrite_formula_sheet_references()` rewrites only local
+sheet-qualified formula references to quoted replacement sheet qualifiers,
+skips external-workbook qualifiers, 3D sheet-range qualifiers, structured
+references, and quoted string text, and rejects ambiguous rewrite rules instead
+of guessing. `rewrite_workbook_defined_name_formula_references()` applies that
+same narrow rewrite to direct workbook definedName formula text while preserving
+unchanged workbook XML bytes. This is an internal helper for future explicit
+rename-sync policy; current public `WorkbookEditor::rename_sheet()` still does
+not rewrite worksheet formulas or definedNames by default.
 The `WorkbookEditor` implementation has now been split along semantic
 boundaries instead of file-only churn: `src/workbook_editor_state.hpp` owns the
 private editor state and catalog/pending-summary projections,

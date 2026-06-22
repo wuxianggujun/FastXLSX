@@ -1,6 +1,7 @@
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 
 #include <fastxlsx/detail/formula.hpp>
+#include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/workbook.hpp>
 
 #include <cstddef>
@@ -372,6 +373,44 @@ FormulaReferenceAuditFields build_formula_reference_audit_fields(
     return audit;
 }
 
+std::string quoted_formula_sheet_qualifier(std::string_view sheet_name)
+{
+    if (sheet_name.empty()) {
+        throw FastXlsxError("formula sheet rewrite replacement sheet name is empty");
+    }
+
+    std::string qualifier;
+    qualifier.reserve(sheet_name.size() + 3);
+    qualifier.push_back('\'');
+    for (const char ch : sheet_name) {
+        if (ch == '\'') {
+            qualifier += "''";
+        } else {
+            qualifier.push_back(ch);
+        }
+    }
+    qualifier += "'!";
+    return qualifier;
+}
+
+std::optional<std::string> replacement_formula_sheet_name(
+    std::span<const FormulaSheetReferenceRewrite> rewrites,
+    std::string_view referenced_sheet_name)
+{
+    std::optional<std::string> replacement;
+    for (const FormulaSheetReferenceRewrite& rewrite : rewrites) {
+        if (!ascii_equals_ignoring_case(rewrite.source_sheet_name, referenced_sheet_name)) {
+            continue;
+        }
+        if (replacement.has_value() && *replacement != rewrite.replacement_sheet_name) {
+            throw FastXlsxError(
+                "formula sheet rewrite has ambiguous replacement sheet names");
+        }
+        replacement = rewrite.replacement_sheet_name;
+    }
+    return replacement;
+}
+
 } // namespace
 
 std::vector<FormulaReferenceAuditFields> audit_formula_references(
@@ -388,6 +427,52 @@ std::vector<FormulaReferenceAuditFields> audit_formula_references(
         audits.push_back(build_formula_reference_audit_fields(formula_text, reference, catalog));
     }
     return audits;
+}
+
+std::string rewrite_formula_sheet_references(
+    std::string_view formula_text,
+    std::span<const FormulaSheetReferenceRewrite> rewrites)
+{
+    if (rewrites.empty() || formula_text.empty()) {
+        return std::string(formula_text);
+    }
+
+    std::string rewritten;
+    rewritten.reserve(formula_text.size());
+    std::size_t cursor = 0;
+    bool changed = false;
+
+    const std::vector<FormulaReference> references = scan_formula_references(formula_text);
+    for (const FormulaReference& reference : references) {
+        if (!reference.sheet.present || reference.sheet.offset < cursor) {
+            continue;
+        }
+
+        const std::string referenced_sheet_name =
+            decoded_formula_sheet_name(formula_text, reference.sheet);
+        if (formula_sheet_qualifier_has_external_workbook(referenced_sheet_name)
+            || formula_sheet_qualifier_has_sheet_range(referenced_sheet_name)) {
+            continue;
+        }
+
+        const std::optional<std::string> replacement =
+            replacement_formula_sheet_name(rewrites, referenced_sheet_name);
+        if (!replacement.has_value()) {
+            continue;
+        }
+
+        rewritten.append(formula_text.substr(cursor, reference.sheet.offset - cursor));
+        rewritten += quoted_formula_sheet_qualifier(*replacement);
+        cursor = reference.sheet.offset + reference.sheet.length;
+        changed = true;
+    }
+
+    if (!changed) {
+        return std::string(formula_text);
+    }
+
+    rewritten.append(formula_text.substr(cursor));
+    return rewritten;
 }
 
 std::vector<SourceDefinedNameFormula> scan_workbook_defined_name_formulas(
@@ -541,6 +626,141 @@ std::vector<DefinedNameFormulaReferenceAudit> audit_workbook_defined_name_formul
         }
     }
     return audits;
+}
+
+std::string rewrite_workbook_defined_name_formula_references(
+    std::string_view workbook_xml,
+    std::span<const FormulaSheetReferenceRewrite> rewrites)
+{
+    if (rewrites.empty() || workbook_xml.empty()) {
+        return std::string(workbook_xml);
+    }
+
+    std::string rewritten_workbook;
+    rewritten_workbook.reserve(workbook_xml.size());
+    std::size_t rewrite_cursor = 0;
+    bool changed = false;
+
+    std::vector<std::string> element_stack;
+    bool inside_workbook = false;
+    bool inside_defined_names = false;
+    std::size_t defined_names_child_depth = 0;
+
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = workbook_xml.find('<', offset);
+        if (open == std::string_view::npos) {
+            break;
+        }
+        if (open + 1 >= workbook_xml.size()) {
+            throw FastXlsxError("workbook definedName formula rewrite found a truncated XML tag");
+        }
+        if (workbook_xml.substr(open, 4) == "<!--") {
+            const std::size_t close = workbook_xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                throw FastXlsxError(
+                    "workbook definedName formula rewrite found an unclosed XML comment");
+            }
+            offset = close + 3;
+            continue;
+        }
+
+        const std::size_t close = find_xml_tag_end(workbook_xml, open);
+        const char marker = workbook_xml[open + 1];
+        const XmlTagRange tag {open, close};
+
+        if (marker == '/') {
+            const std::string_view closing_name =
+                xml_local_name(closing_tag_name(workbook_xml, tag));
+            if (element_stack.empty()) {
+                throw FastXlsxError(
+                    "workbook definedName formula rewrite found an unmatched XML closing tag");
+            }
+            if (element_stack.back() != closing_name) {
+                throw FastXlsxError(
+                    "workbook definedName formula rewrite found mismatched XML tags");
+            }
+            if (inside_defined_names) {
+                if (defined_names_child_depth == 0 && closing_name == "definedNames") {
+                    inside_defined_names = false;
+                } else if (defined_names_child_depth > 0) {
+                    --defined_names_child_depth;
+                }
+            }
+            if (element_stack.size() == 1 && closing_name == "workbook") {
+                inside_workbook = false;
+            }
+            element_stack.pop_back();
+            offset = close + 1;
+            continue;
+        }
+
+        if (marker == '?' || marker == '!') {
+            offset = close + 1;
+            continue;
+        }
+
+        const std::string_view local_name =
+            xml_local_name(start_tag_name(workbook_xml, tag));
+        const bool self_closing = is_self_closing_tag(workbook_xml, tag);
+        const std::size_t element_depth = element_stack.size();
+
+        if (!inside_defined_names) {
+            if (inside_workbook && element_depth == 1 && local_name == "definedNames") {
+                inside_defined_names = !self_closing;
+                defined_names_child_depth = 0;
+            }
+        } else {
+            if (defined_names_child_depth == 0 && local_name == "definedName" && !self_closing) {
+                const std::size_t closing_open = workbook_xml.find("</", close + 1);
+                if (closing_open == std::string_view::npos) {
+                    throw FastXlsxError(
+                        "workbook definedName formula rewrite found an unclosed definedName");
+                }
+                const std::size_t closing_close =
+                    find_xml_tag_end(workbook_xml, closing_open);
+                const XmlTagRange closing_tag {closing_open, closing_close};
+                if (xml_local_name(closing_tag_name(workbook_xml, closing_tag))
+                    != "definedName") {
+                    throw FastXlsxError(
+                        "workbook definedName formula rewrite found nested XML in definedName text");
+                }
+
+                const std::string formula_text = unescape_xml_text(
+                    workbook_xml.substr(close + 1, closing_open - close - 1));
+                const std::string rewritten_formula =
+                    rewrite_formula_sheet_references(formula_text, rewrites);
+                if (rewritten_formula != formula_text) {
+                    rewritten_workbook.append(
+                        workbook_xml.substr(rewrite_cursor, close + 1 - rewrite_cursor));
+                    rewritten_workbook += escape_xml_text(rewritten_formula);
+                    rewrite_cursor = closing_open;
+                    changed = true;
+                }
+            }
+            if (!self_closing) {
+                ++defined_names_child_depth;
+            }
+        }
+
+        if (!self_closing) {
+            if (element_depth == 0 && local_name == "workbook") {
+                inside_workbook = true;
+            }
+            element_stack.emplace_back(local_name);
+        }
+        offset = close + 1;
+    }
+
+    if (!element_stack.empty()) {
+        throw FastXlsxError("workbook definedName formula rewrite found unclosed XML tags");
+    }
+
+    if (!changed) {
+        return std::string(workbook_xml);
+    }
+
+    rewritten_workbook.append(workbook_xml.substr(rewrite_cursor));
+    return rewritten_workbook;
 }
 
 } // namespace fastxlsx::detail

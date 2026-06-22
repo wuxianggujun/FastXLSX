@@ -356,6 +356,76 @@ void test_scan_workbook_defined_name_formulas_rejects_malformed_structure()
     }), "definedName scanner should reject unclosed workbook XML tags");
 }
 
+void test_rewrite_formula_sheet_references()
+{
+    const std::string formula =
+        R"(SUM(Old!A1,'Old Sheet'!B:B,'O''Brien'!1:1,"Old!A1",Table1[Old!A1],[Book.xlsx]Old!C3,Old:Other!D4,LOG10(Old!E5)))";
+    const std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> rewrites {
+        {"Old", "New Name"},
+        {"Old Sheet", "Renamed"},
+        {"O'Brien", "Quote's"},
+    };
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(formula, rewrites),
+        R"(SUM('New Name'!A1,'Renamed'!B:B,'Quote''s'!1:1,"Old!A1",Table1[Old!A1],[Book.xlsx]Old!C3,Old:Other!D4,LOG10('New Name'!E5)))",
+        "formula sheet rewrite should update local sheet qualifiers only");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(
+            "[Book.xlsx]Old!A1+Old:Other!B2+Table1[Old!C3]", rewrites),
+        "[Book.xlsx]Old!A1+Old:Other!B2+Table1[Old!C3]",
+        "formula sheet rewrite should skip external, 3D, and structured refs");
+
+    check(throws_exception([&] {
+        (void)fastxlsx::detail::rewrite_formula_sheet_references(
+            "Old!A1",
+            std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> {
+                {"Old", "A"},
+                {"old", "B"},
+            });
+    }), "formula sheet rewrite should reject ambiguous rewrite rules");
+}
+
+void test_rewrite_workbook_defined_name_formula_references()
+{
+    const std::string workbook_xml =
+        R"xml(<workbook><definedNames>)xml"
+        R"xml(<definedName name="Global">Old!A1</definedName>)xml"
+        R"xml(<definedName name="Escaped">'Old Sheet'!B2&amp;"x"</definedName>)xml"
+        R"xml(<definedName name="External">[Book.xlsx]Old!C3</definedName>)xml"
+        R"xml(</definedNames></workbook>)xml";
+    const std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> rewrites {
+        {"Old", "New Sheet"},
+        {"Old Sheet", "R&D"},
+    };
+
+    check_equal(
+        fastxlsx::detail::rewrite_workbook_defined_name_formula_references(
+            workbook_xml, rewrites),
+        R"xml(<workbook><definedNames>)xml"
+        R"xml(<definedName name="Global">'New Sheet'!A1</definedName>)xml"
+        R"xml(<definedName name="Escaped">'R&amp;D'!B2&amp;"x"</definedName>)xml"
+        R"xml(<definedName name="External">[Book.xlsx]Old!C3</definedName>)xml"
+        R"xml(</definedNames></workbook>)xml",
+        "definedName formula rewrite should update direct local formulas and preserve skipped formulas");
+
+    check_equal(
+        fastxlsx::detail::rewrite_workbook_defined_name_formula_references(
+            workbook_xml,
+            std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> {
+                {"Missing", "Other"},
+            }),
+        workbook_xml,
+        "definedName formula rewrite should preserve bytes when no formula changes");
+
+    check(throws_exception([&] {
+        (void)fastxlsx::detail::rewrite_workbook_defined_name_formula_references(
+            R"xml(<workbook><definedNames><definedName name="Nested"><x>Old!A1</x></definedName></definedNames></workbook>)xml",
+            rewrites);
+    }), "definedName formula rewrite should reject nested definedName XML");
+}
+
 } // namespace
 
 int main()
@@ -369,6 +439,8 @@ int main()
         test_formula_reference_audit_fields();
         test_scan_workbook_defined_name_formulas();
         test_scan_workbook_defined_name_formulas_rejects_malformed_structure();
+        test_rewrite_formula_sheet_references();
+        test_rewrite_workbook_defined_name_formula_references();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

@@ -43,9 +43,18 @@ struct DefinedNameFormulaReferenceAudit {
     FormulaReferenceAuditFields reference;
 };
 
+struct FormulaSheetReferenceRewrite {
+    std::string source_sheet_name;
+    std::string replacement_sheet_name;
+};
+
 [[nodiscard]] std::vector<FormulaReferenceAuditFields> audit_formula_references(
     std::string_view formula_text,
     std::span<const FormulaAuditSheetCatalogEntry> catalog);
+
+[[nodiscard]] std::string rewrite_formula_sheet_references(
+    std::string_view formula_text,
+    std::span<const FormulaSheetReferenceRewrite> rewrites);
 
 [[nodiscard]] std::vector<SourceDefinedNameFormula> scan_workbook_defined_name_formulas(
     std::string_view workbook_xml,
@@ -55,5 +64,9 @@ struct DefinedNameFormulaReferenceAudit {
 audit_workbook_defined_name_formula_references(
     std::string_view workbook_xml,
     std::span<const FormulaAuditSheetCatalogEntry> catalog);
+
+[[nodiscard]] std::string rewrite_workbook_defined_name_formula_references(
+    std::string_view workbook_xml,
+    std::span<const FormulaSheetReferenceRewrite> rewrites);
 
 } // namespace fastxlsx::detail

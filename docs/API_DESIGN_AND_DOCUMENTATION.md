@@ -308,6 +308,15 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   workbook target 或 3D 引用语义，也不更新 `last_edit_error()`。Malformed workbook
   metadata with mismatched or unclosed XML tags fails the diagnostic scan
   instead of being balanced or repaired.
+- Internal formula sync foundation：`detail::rewrite_formula_sheet_references()`
+  可以按显式 rewrite rule 更新本地 sheet-qualified formula references，并统一写为
+  quoted replacement sheet qualifier；它跳过 external workbook qualifiers、3D
+  sheet-range qualifiers、structured references 和 quoted string text，ambiguous
+  rules 会失败。`detail::rewrite_workbook_defined_name_formula_references()`
+  只把同一窄 rewrite 应用到 source workbook direct definedName formula text，
+  未变化的 workbook XML bytes 保持不动。这些 helper 仍是 internal building blocks，
+  不是 public `rename_sheet()` 默认同步策略，不做公式求值、不解析完整 Excel grammar、
+  不更新 worksheet formula cells、不修复 workbook XML、不 rebuild calcChain。
 - `replace_sheet_data(name, rows)`：按 sheet name 替换整个 `<sheetData>`，输入是
   `CellValue` 行；这是 bounded local rewrite，不是 random cell editing。若当前 editor
   已成功 `rename_sheet()`，follow-up replacement lookup 使用 planned 新 sheet name，
@@ -594,6 +603,14 @@ Current F2 gate audit:
   still targets direct `definedNames` formula diagnostics only; it does not
   repair XML, validate the full workbook schema, evaluate formulas, rewrite
   definedNames, or build a formula dependency graph.
+- P8.397c adds the first internal formula sheet-reference rewrite foundation:
+  local sheet-qualified formula references and direct workbook definedName
+  formula text can be rewritten by explicit old/new sheet-name rules, while
+  external-workbook qualifiers, 3D sheet-range qualifiers, structured
+  references, and quoted string text are skipped. Ambiguous rewrite rules fail
+  instead of guessing. This is not a formula engine, not public
+  `rename_sheet()` behavior, not worksheet formula-cell rewrite, and not
+  calcChain rebuild.
 - P8.398 adds public facade state-hygiene coverage for source inline text/XML
   entity failures: unknown XML entities, unsupported inline `<t>` attributes,
   duplicate direct inline text elements, and unknown inline string metadata

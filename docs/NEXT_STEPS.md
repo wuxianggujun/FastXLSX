@@ -1115,6 +1115,15 @@ summaries, reviving overwritten target state, or leaking stale writes into
 output. This remains public facade state hygiene only, not a handle lifetime
 extension, clean-session commit semantic change, rollback model, formula
 behavior, or large-file random editor.
+P8.600 pins the remaining clean materialization lifecycle: read-only
+`WorksheetEditor` sessions that were materialized from source cells but never
+dirtied or flushed are invalidated hygienically by owner move and move
+assignment. Stale handle failures preserve the moved-to / assigned diagnostic,
+keep public edit counts and dirty materialized diagnostics empty, preserve the
+source-backed value on reacquire, and leave no-op `save_as()` as
+copy-original. This is still borrowed-handle state hygiene only, not a
+materialization caching semantic change, handle lifetime extension, rollback
+model, formula behavior, or large-file random editor.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -3380,6 +3380,194 @@ void test_public_worksheet_editor_saved_clean_handles_invalidated_after_move_ass
         "failed target diagnostic seed should not write discarded invalid-reference data");
 }
 
+void test_public_worksheet_editor_readonly_handle_invalidated_after_owner_move_preserves_clean_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-move-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-readonly-move-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor old_handle = editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = old_handle.get_cell(1, 1);
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "read-only owner-move setup should materialize the source cell");
+    check(!old_handle.has_pending_changes(),
+        "read-only owner-move setup should keep the handle clean");
+    check(!editor.has_pending_changes(),
+        "read-only owner-move setup should keep the editor clean");
+
+    check(threw_fastxlsx_error([&] {
+        editor.replace_sheet_data("Missing",
+            {{fastxlsx::CellValue::text("readonly-move-diagnostic-sentinel")}});
+    }), "read-only owner-move setup should seed a prior public diagnostic");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "read-only owner-move setup should record a prior diagnostic");
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(moved.last_edit_error() == prior_error,
+        "read-only owner move should transfer the prior diagnostic");
+    check(!editor.last_edit_error().has_value(),
+        "read-only moved-from editor should expose no diagnostic");
+
+    const auto check_moved_readonly_state = [&] (std::string_view prefix) {
+        check(moved.last_edit_error() == prior_error,
+            std::string(prefix) + " should preserve moved-to last_edit_error");
+        check(!moved.has_pending_changes(),
+            std::string(prefix) + " should keep the moved-to editor clean");
+        check(moved.pending_change_count() == 0,
+            std::string(prefix) + " should not queue public edits");
+        check(moved.pending_materialized_worksheet_names().empty(),
+            std::string(prefix) + " should keep dirty materialized names empty");
+        check(moved.pending_materialized_cell_count() == 0,
+            std::string(prefix) + " should keep dirty materialized cell count clear");
+        check(moved.estimated_pending_materialized_memory_usage() == 0,
+            std::string(prefix) + " should keep dirty materialized memory clear");
+        check(moved.pending_worksheet_edits().empty(),
+            std::string(prefix) + " should keep worksheet edit summaries empty");
+
+        fastxlsx::WorksheetEditor reacquired = moved.worksheet("Data");
+        check(!reacquired.has_pending_changes(),
+            std::string(prefix) + " should preserve the clean read-only session");
+        const fastxlsx::CellValue moved_value = reacquired.get_cell(1, 1);
+        check(moved_value.kind() == fastxlsx::CellValueKind::Text &&
+                moved_value.text_value() == "placeholder-a1",
+            std::string(prefix) + " should preserve the source-backed value");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)old_handle.has_pending_changes(); }),
+        "read-only handle should be invalid after owner move");
+    check_moved_readonly_state("read-only invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] { (void)old_handle.get_cell("A1"); }),
+        "read-only handle should reject reads after owner move");
+    check_moved_readonly_state("read-only invalidated get_cell");
+    check(threw_fastxlsx_error([&] {
+        (void)old_handle.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    }), "read-only handle should reject ranged sparse reads after owner move");
+    check_moved_readonly_state("read-only invalidated ranged sparse_cells");
+    check(threw_fastxlsx_error([&] {
+        old_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-readonly-move-write"));
+    }), "read-only handle should reject stale writes after owner move");
+    check_moved_readonly_state("read-only invalidated set_cell");
+
+    moved.save_as(output);
+    check(moved.last_edit_error() == prior_error,
+        "read-only no-op save_as after stale-handle failures should preserve diagnostic");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "read-only no-op save_as after owner-move stale handles should copy source entries");
+}
+
+void test_public_worksheet_editor_readonly_handles_invalidated_after_move_assignment_preserve_source_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-assign-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-assign-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-readonly-assign-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor source_editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_handle = source_editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = source_handle.get_cell(1, 1);
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "read-only move-assignment source setup should materialize the source cell");
+    check(!source_handle.has_pending_changes(),
+        "read-only move-assignment source setup should keep the handle clean");
+    check(!source_editor.has_pending_changes(),
+        "read-only move-assignment source setup should keep the editor clean");
+    check(threw_fastxlsx_error([&] {
+        source_editor.replace_sheet_data("Missing",
+            {{fastxlsx::CellValue::text("readonly-source-diagnostic-sentinel")}});
+    }), "read-only source setup should seed a prior public diagnostic");
+    const std::optional<std::string> source_prior_error =
+        source_editor.last_edit_error();
+    check(source_prior_error.has_value(),
+        "read-only source setup should record a diagnostic before assignment");
+
+    fastxlsx::WorkbookEditor target_editor = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_handle = target_editor.worksheet("Data");
+    const fastxlsx::CellValue target_value = target_handle.get_cell(1, 1);
+    check(target_value.kind() == fastxlsx::CellValueKind::Text &&
+            target_value.text_value() == "placeholder-a1",
+        "read-only move-assignment target setup should materialize its source cell");
+    check(!target_handle.has_pending_changes(),
+        "read-only move-assignment target setup should keep the overwritten handle clean");
+    check(threw_fastxlsx_error([&] {
+        target_editor.rename_sheet("Missing", "DiscardedTarget");
+    }), "read-only target setup should seed a diagnostic before overwrite");
+    check(target_editor.last_edit_error().has_value(),
+        "read-only overwritten target should have a discarded diagnostic");
+
+    target_editor = std::move(source_editor);
+    check(target_editor.last_edit_error() == source_prior_error,
+        "read-only move assignment should keep the assigned source diagnostic");
+    check(!source_editor.last_edit_error().has_value(),
+        "read-only move-assigned-from editor should expose no diagnostic");
+
+    const auto check_assigned_readonly_state = [&] (std::string_view prefix) {
+        check(target_editor.last_edit_error() == source_prior_error,
+            std::string(prefix) + " should preserve assigned source last_edit_error");
+        check(!target_editor.has_pending_changes(),
+            std::string(prefix) + " should keep assigned editor clean");
+        check(target_editor.pending_change_count() == 0,
+            std::string(prefix) + " should not queue public edits");
+        check(target_editor.pending_materialized_worksheet_names().empty(),
+            std::string(prefix) + " should keep assigned dirty names empty");
+        check(target_editor.pending_materialized_cell_count() == 0,
+            std::string(prefix) + " should keep assigned dirty cell count clear");
+        check(target_editor.estimated_pending_materialized_memory_usage() == 0,
+            std::string(prefix) + " should keep assigned dirty memory clear");
+        check(target_editor.pending_worksheet_edits().empty(),
+            std::string(prefix) + " should keep assigned summaries empty");
+
+        fastxlsx::WorksheetEditor reacquired = target_editor.worksheet("Data");
+        check(!reacquired.has_pending_changes(),
+            std::string(prefix) + " should preserve the assigned read-only session");
+        const fastxlsx::CellValue assigned_value = reacquired.get_cell(1, 1);
+        check(assigned_value.kind() == fastxlsx::CellValueKind::Text &&
+                assigned_value.text_value() == "placeholder-a1",
+            std::string(prefix) + " should preserve assigned source cell value");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)source_handle.has_pending_changes(); }),
+        "read-only source handle should be invalid after move assignment");
+    check_assigned_readonly_state("read-only source invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] { (void)source_handle.get_cell("A1"); }),
+        "read-only source handle should reject reads after move assignment");
+    check_assigned_readonly_state("read-only source invalidated get_cell");
+    check(threw_fastxlsx_error([&] {
+        source_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-readonly-source-assignment-write"));
+    }), "read-only source handle should reject stale writes after move assignment");
+    check_assigned_readonly_state("read-only source invalidated set_cell");
+    check(threw_fastxlsx_error([&] { (void)target_handle.has_pending_changes(); }),
+        "overwritten read-only target handle should be invalid after move assignment");
+    check_assigned_readonly_state("read-only target invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] {
+        (void)target_handle.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    }), "overwritten read-only target handle should reject ranged sparse reads");
+    check_assigned_readonly_state("read-only target invalidated ranged sparse_cells");
+    check(threw_fastxlsx_error([&] {
+        target_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-readonly-target-assignment-write"));
+    }), "overwritten read-only target handle should reject stale writes");
+    check_assigned_readonly_state("read-only target invalidated set_cell");
+
+    target_editor.save_as(output);
+    check(target_editor.last_edit_error() == source_prior_error,
+        "read-only no-op save_as after move-assignment stale handles should preserve diagnostic");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "read-only no-op save_as after move-assignment stale handles should copy assigned source entries");
+}
+
 void test_public_worksheet_editor_set_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -19861,6 +20049,8 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_move_assignment_invalidated_handle_failures_preserve_owner_diagnostics();
         test_public_worksheet_editor_saved_clean_handle_invalidated_after_owner_move_preserves_state();
         test_public_worksheet_editor_saved_clean_handles_invalidated_after_move_assignment_preserve_source_state();
+        test_public_worksheet_editor_readonly_handle_invalidated_after_owner_move_preserves_clean_state();
+        test_public_worksheet_editor_readonly_handles_invalidated_after_move_assignment_preserve_source_state();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_worksheet_missing_throws_and_preserves_diagnostics();

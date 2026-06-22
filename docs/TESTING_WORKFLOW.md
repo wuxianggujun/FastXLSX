@@ -377,6 +377,11 @@ owner move and move-assignment stale-handle failures must preserve the moved-to
 or assigned diagnostic, saved materialized handoff count, empty dirty
 materialized diagnostics, edit summaries, and final output while discarding
 overwritten target state.
+It also covers the read-only materialized variant: sessions that were
+materialized from source cells but never dirtied or flushed must remain clean
+after owner move / move-assignment stale-handle failures, with public edit
+counts and dirty materialized diagnostics empty and no-op `save_as()` still
+copying the source package bytes.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

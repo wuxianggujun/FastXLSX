@@ -26480,6 +26480,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.600 - Pin read-only invalidated handle hygiene
+
+Status: done.
+
+Type: public borrowed-`WorksheetEditor` read-only invalidated-handle
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove public `WorksheetEditor` handles invalidated by owner move or move
+assignment still fail hygienically when the session was only materialized for
+reads and never dirtied or flushed.
+
+Output:
+- Added owner-move coverage where a read-only materialized `WorksheetEditor`
+  handle is invalidated after materializing source cells and seeding an
+  unrelated public diagnostic.
+- Added move-assignment coverage for stale source and overwritten-target handles
+  when both sessions are read-only materialized and clean.
+- The regressions verify stale read/write attempts preserve the moved-to or
+  assigned `last_edit_error()`, leave `has_pending_changes()` false, keep public
+  edit counts / materialized dirty names / cell counts / memory estimates /
+  edit summaries empty, preserve the source-backed value on reacquire, and keep
+  no-op `save_as()` byte-for-byte copy-original.
+
+Non-goals / boundary:
+- No production code change, no borrowed-handle lifetime extension, no
+  target-state recovery, no public rollback/history, no materialization caching
+  semantic change, no large-file random editing claim, no relationship repair,
+  no sharedStrings / styles migration, no formula evaluation, and no formula
+  rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

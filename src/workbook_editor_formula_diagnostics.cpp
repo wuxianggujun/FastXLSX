@@ -3,11 +3,15 @@
 #include "package_editor.hpp"
 #include "workbook_editor_worksheet_access.hpp"
 
+#include <fastxlsx/detail/formula.hpp>
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 
+#include <cstdint>
 #include <cstddef>
 #include <exception>
+#include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -55,6 +59,21 @@ struct SourceWorksheetFormulaCell {
     std::string formula_text;
 };
 
+struct ActiveSourceFormulaCell {
+    WorksheetCellReference cell;
+    std::string raw_formula_text;
+    std::optional<std::uint64_t> shared_formula_index;
+    bool shared_formula = false;
+};
+
+struct SourceSharedFormulaDefinition {
+    WorksheetCellReference base_cell;
+    std::string formula_text;
+};
+
+using SourceSharedFormulaDefinitions =
+    std::map<std::uint64_t, SourceSharedFormulaDefinition>;
+
 std::string unescape_source_formula_text(std::string_view value)
 {
     std::string output;
@@ -100,11 +119,181 @@ bool is_closing_markup(std::string_view raw_xml) noexcept
     return raw_xml.size() >= 2 && raw_xml[0] == '<' && raw_xml[1] == '/';
 }
 
+bool is_xml_space(char ch) noexcept
+{
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+}
+
+std::string_view tag_body(std::string_view raw_tag) noexcept
+{
+    if (raw_tag.size() < 2 || raw_tag.front() != '<') {
+        return {};
+    }
+
+    std::string_view body = raw_tag.substr(1, raw_tag.size() - 2);
+    while (!body.empty() && is_xml_space(body.front())) {
+        body.remove_prefix(1);
+    }
+    if (!body.empty() && body.front() == '/') {
+        body.remove_prefix(1);
+        while (!body.empty() && is_xml_space(body.front())) {
+            body.remove_prefix(1);
+        }
+    }
+    while (!body.empty() && is_xml_space(body.back())) {
+        body.remove_suffix(1);
+    }
+    if (!body.empty() && body.back() == '/') {
+        body.remove_suffix(1);
+        while (!body.empty() && is_xml_space(body.back())) {
+            body.remove_suffix(1);
+        }
+    }
+    return body;
+}
+
+std::optional<std::string_view> source_formula_tag_attribute(
+    std::string_view raw_tag,
+    std::string_view attribute_name)
+{
+    std::string_view body = tag_body(raw_tag);
+    std::size_t offset = 0;
+    while (offset < body.size() && !is_xml_space(body[offset])) {
+        ++offset;
+    }
+
+    while (offset < body.size()) {
+        while (offset < body.size() && is_xml_space(body[offset])) {
+            ++offset;
+        }
+        if (offset >= body.size() || body[offset] == '/') {
+            break;
+        }
+
+        const std::size_t name_begin = offset;
+        while (offset < body.size() && !is_xml_space(body[offset])
+               && body[offset] != '=' && body[offset] != '/') {
+            ++offset;
+        }
+        const std::string_view name = body.substr(name_begin, offset - name_begin);
+
+        while (offset < body.size() && is_xml_space(body[offset])) {
+            ++offset;
+        }
+        if (offset >= body.size() || body[offset] != '=') {
+            return std::nullopt;
+        }
+        ++offset;
+        while (offset < body.size() && is_xml_space(body[offset])) {
+            ++offset;
+        }
+        if (offset >= body.size()
+            || (body[offset] != '"' && body[offset] != '\'')) {
+            return std::nullopt;
+        }
+
+        const char quote = body[offset++];
+        const std::size_t value_begin = offset;
+        while (offset < body.size() && body[offset] != quote) {
+            ++offset;
+        }
+        if (offset >= body.size()) {
+            return std::nullopt;
+        }
+
+        if (name == attribute_name) {
+            return body.substr(value_begin, offset - value_begin);
+        }
+        ++offset;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<std::uint64_t> parse_source_shared_formula_index(std::string_view value)
+{
+    if (value.empty()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t parsed = 0;
+    for (const char ch : value) {
+        if (ch < '0' || ch > '9') {
+            return std::nullopt;
+        }
+        const std::uint64_t digit = static_cast<std::uint64_t>(ch - '0');
+        if (parsed > (std::numeric_limits<std::uint64_t>::max() - digit) / 10U) {
+            return std::nullopt;
+        }
+        parsed = parsed * 10U + digit;
+    }
+    return parsed;
+}
+
+bool source_formula_tag_is_shared(std::string_view raw_tag)
+{
+    const std::optional<std::string_view> formula_type =
+        source_formula_tag_attribute(raw_tag, "t");
+    return formula_type.has_value() && *formula_type == "shared";
+}
+
+std::optional<std::uint64_t> source_formula_tag_shared_index(std::string_view raw_tag)
+{
+    const std::optional<std::string_view> index =
+        source_formula_tag_attribute(raw_tag, "si");
+    if (!index.has_value()) {
+        return std::nullopt;
+    }
+    return parse_source_shared_formula_index(*index);
+}
+
 WorksheetCellReference worksheet_cell_reference_from_a1(std::string_view cell_reference)
 {
     const WorksheetEditorCellCoordinate coordinate =
         parse_worksheet_editor_a1_cell_reference(cell_reference);
     return WorksheetCellReference {coordinate.row, coordinate.column};
+}
+
+SourceWorksheetFormulaCell source_formula_cell_from_definition(
+    const WorksheetCellReference& follower_cell,
+    const SourceSharedFormulaDefinition& definition)
+{
+    const FormulaTranslationDelta delta {
+        static_cast<std::int64_t>(follower_cell.row)
+            - static_cast<std::int64_t>(definition.base_cell.row),
+        static_cast<std::int64_t>(follower_cell.column)
+            - static_cast<std::int64_t>(definition.base_cell.column),
+    };
+    return SourceWorksheetFormulaCell {
+        follower_cell,
+        translate_formula_references(definition.formula_text, delta),
+    };
+}
+
+void push_completed_source_formula_cell(
+    std::vector<SourceWorksheetFormulaCell>& formula_cells,
+    SourceSharedFormulaDefinitions& shared_formula_definitions,
+    const ActiveSourceFormulaCell& active_formula)
+{
+    if (active_formula.raw_formula_text.empty()) {
+        return;
+    }
+
+    const std::string formula_text =
+        unescape_source_formula_text(active_formula.raw_formula_text);
+    formula_cells.push_back(SourceWorksheetFormulaCell {
+        active_formula.cell,
+        formula_text,
+    });
+
+    if (active_formula.shared_formula
+        && active_formula.shared_formula_index.has_value()) {
+        shared_formula_definitions[*active_formula.shared_formula_index] =
+            SourceSharedFormulaDefinition {
+                active_formula.cell,
+                formula_text,
+            };
+    }
 }
 
 std::vector<SourceWorksheetFormulaCell> scan_source_worksheet_formula_cells(
@@ -113,8 +302,8 @@ std::vector<SourceWorksheetFormulaCell> scan_source_worksheet_formula_cells(
 {
     PackageReaderChunkCallback source = reader.entry_chunk_source(sheet.part_name.zip_path());
     std::vector<SourceWorksheetFormulaCell> formula_cells;
-    std::optional<WorksheetCellReference> current_formula_cell;
-    std::string current_formula_text;
+    std::optional<ActiveSourceFormulaCell> active_formula;
+    SourceSharedFormulaDefinitions shared_formula_definitions;
 
     scan_worksheet_events_from_chunk_source(
         [source = std::move(source)](std::string& output_chunk) mutable {
@@ -124,31 +313,43 @@ std::vector<SourceWorksheetFormulaCell> scan_source_worksheet_formula_cells(
             if (event.kind == WorksheetEventKind::CellValueMarkup
                 && event.element_name == "f") {
                 if (event.self_closing) {
+                    if (source_formula_tag_is_shared(event.raw_xml)) {
+                        const std::optional<std::uint64_t> shared_index =
+                            source_formula_tag_shared_index(event.raw_xml);
+                        if (shared_index.has_value()) {
+                            const auto definition =
+                                shared_formula_definitions.find(*shared_index);
+                            if (definition != shared_formula_definitions.end()) {
+                                formula_cells.push_back(source_formula_cell_from_definition(
+                                    worksheet_cell_reference_from_a1(event.cell_reference),
+                                    definition->second));
+                            }
+                        }
+                    }
                     return;
                 }
 
                 if (is_closing_markup(event.raw_xml)) {
-                    if (current_formula_cell.has_value()
-                        && !current_formula_text.empty()) {
-                        formula_cells.push_back(SourceWorksheetFormulaCell {
-                            *current_formula_cell,
-                            unescape_source_formula_text(current_formula_text),
-                        });
+                    if (active_formula.has_value()) {
+                        push_completed_source_formula_cell(
+                            formula_cells, shared_formula_definitions, *active_formula);
                     }
-                    current_formula_cell.reset();
-                    current_formula_text.clear();
+                    active_formula.reset();
                     return;
                 }
 
-                current_formula_cell =
-                    worksheet_cell_reference_from_a1(event.cell_reference);
-                current_formula_text.clear();
+                ActiveSourceFormulaCell next_formula;
+                next_formula.cell = worksheet_cell_reference_from_a1(event.cell_reference);
+                next_formula.shared_formula = source_formula_tag_is_shared(event.raw_xml);
+                next_formula.shared_formula_index =
+                    source_formula_tag_shared_index(event.raw_xml);
+                active_formula = std::move(next_formula);
                 return;
             }
 
             if (event.kind == WorksheetEventKind::CellValue
-                && current_formula_cell.has_value()) {
-                current_formula_text.append(event.text);
+                && active_formula.has_value()) {
+                active_formula->raw_formula_text.append(event.text);
             }
         });
 

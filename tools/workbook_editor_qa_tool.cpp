@@ -1110,8 +1110,8 @@ Report run_fixture_source_formula_audit(const CliOptions& options)
     report.mutations = {"source_formula_reference_audits:<fixture>"};
     report.notes = {
         "This scenario is read-only and does not write an output workbook",
-        "Only explicit source worksheet <f> formula text contributes audit references",
-        "Metadata-only shared formula followers are intentionally outside this audit",
+        "Explicit source worksheet <f> formula text contributes audit references",
+        "Source-order metadata-only shared formula followers are expanded when their definition is available",
     };
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);

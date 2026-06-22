@@ -832,6 +832,52 @@ std::filesystem::path write_formula_reference_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_shared_formula_reference_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::number(2.0)});
+        data.append_row({fastxlsx::CellView::number(3.0),
+            fastxlsx::CellView::number(4.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula");
+        formulas.append_row({fastxlsx::CellView::formula("Data!A1")});
+    }
+    writer.close();
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(path);
+    std::string& worksheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    const std::size_t dimension_begin = worksheet_xml.find(R"(<dimension ref=")");
+    if (dimension_begin != std::string::npos) {
+        const std::size_t dimension_end = worksheet_xml.find("/>", dimension_begin);
+        if (dimension_end == std::string::npos) {
+            throw std::runtime_error("shared formula fixture dimension end was not found");
+        }
+        worksheet_xml.replace(dimension_begin,
+            dimension_end + std::string_view("/>").size() - dimension_begin,
+            R"(<dimension ref="A1:B2"/>)");
+    }
+
+    const std::string shared_sheet_data =
+        R"(<sheetData><row r="1"><c r="A1"><f t="shared" ref="A1:B2" si="0">Data!A1</f></c><c r="B1"><f t="shared" si="0"/></c></row><row r="2"><c r="A2"><f t="shared" si="0"/></c><c r="B2"><f t="shared" si="0"/></c></row></sheetData>)";
+    const std::size_t sheet_data_begin = worksheet_xml.find("<sheetData>");
+    const std::size_t sheet_data_end = worksheet_xml.find("</sheetData>", sheet_data_begin);
+    if (sheet_data_begin == std::string::npos || sheet_data_end == std::string::npos) {
+        throw std::runtime_error("shared formula fixture source worksheet sheetData was not found");
+    }
+    worksheet_xml.replace(sheet_data_begin,
+        sheet_data_end + std::string_view("</sheetData>").size() - sheet_data_begin,
+        shared_sheet_data);
+    write_stored_zip_entries(path, entries);
+
+    return path;
+}
+
 std::filesystem::path write_multi_formula_reference_source(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -899,6 +945,22 @@ const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_formula_reference_audi
 {
     for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
         if (audit.referenced_sheet_name == referenced_sheet_name) {
+            return &audit;
+        }
+    }
+    return nullptr;
+}
+
+const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_formula_reference_audit_at(
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+    std::string_view referenced_sheet_name,
+    std::uint32_t row,
+    std::uint32_t column)
+{
+    for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
+        if (audit.referenced_sheet_name == referenced_sheet_name
+            && audit.formula_cell.row == row
+            && audit.formula_cell.column == column) {
             return &audit;
         }
     }
@@ -17521,6 +17583,75 @@ void test_source_formula_reference_audits_report_non_materialized_rename_risk()
         "source formula audit should not silently repair non-materialized formulas");
 }
 
+void test_source_formula_reference_audits_translate_shared_formula_followers()
+{
+    const std::filesystem::path source = write_shared_formula_reference_source(
+        "fastxlsx-workbook-editor-source-shared-formula-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-source-shared-formula-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
+        editor.source_formula_reference_audits();
+    check(initial_audits.size() == 4,
+        "source formula audit should expand source-order shared formula followers");
+    check(editor.formula_reference_audits().empty(),
+        "source shared formula audit should not materialize worksheet sessions");
+
+    {
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* a1 =
+            find_formula_reference_audit_at(initial_audits, "Data", 1, 1);
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* b1 =
+            find_formula_reference_audit_at(initial_audits, "Data", 1, 2);
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* a2 =
+            find_formula_reference_audit_at(initial_audits, "Data", 2, 1);
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* b2 =
+            find_formula_reference_audit_at(initial_audits, "Data", 2, 2);
+
+        check(a1 != nullptr && a1->formula_text == "Data!A1" &&
+                a1->qualified_reference_text == "Data!A1",
+            "source shared formula audit should report the definition formula");
+        check(b1 != nullptr && b1->formula_text == "Data!B1" &&
+                b1->qualified_reference_text == "Data!B1",
+            "source shared formula audit should translate the B1 follower");
+        check(a2 != nullptr && a2->formula_text == "Data!A2" &&
+                a2->qualified_reference_text == "Data!A2",
+            "source shared formula audit should translate the A2 follower");
+        check(b2 != nullptr && b2->formula_text == "Data!B2" &&
+                b2->qualified_reference_text == "Data!B2",
+            "source shared formula audit should translate the B2 follower");
+    }
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
+        editor.source_formula_reference_audits();
+    check(renamed_audits.size() == 4,
+        "rename should keep expanded source shared formula audit coverage");
+    check(count_formula_reference_audits(renamed_audits, "Data") == 4,
+        "renamed source shared formula audit should still expose source-name references");
+    for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : renamed_audits) {
+        check(audit.matched_current_workbook_sheet &&
+                audit.matched_source_sheet_name == "Data" &&
+                audit.matched_planned_sheet_name == "RenamedData",
+            "renamed source shared formula audit should map followers to the planned sheet");
+        check(audit.references_renamed_source_name &&
+                !audit.references_planned_sheet_name,
+            "renamed source shared formula audit should flag each follower as stale");
+    }
+
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(formula_sheet_xml, R"(<f t="shared" ref="A1:B2" si="0">Data!A1</f>)",
+        "source shared formula audit should preserve the source shared formula definition");
+    check_contains(formula_sheet_xml, R"(<f t="shared" si="0"/>)",
+        "source shared formula audit should preserve metadata-only shared formula followers");
+    check_not_contains(formula_sheet_xml, "RenamedData",
+        "source shared formula audit should not rewrite non-materialized shared formulas");
+}
+
 void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk()
 {
     const std::filesystem::path source = write_defined_name_reference_source(
@@ -18973,6 +19104,7 @@ int main(int argc, char* argv[])
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
         test_formula_reference_audits_report_renamed_source_sheet_risk();
         test_source_formula_reference_audits_report_non_materialized_rename_risk();
+        test_source_formula_reference_audits_translate_shared_formula_followers();
         test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();

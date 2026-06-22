@@ -355,7 +355,12 @@ worksheets are scanned, quoted and escaped sheet qualifiers are decoded for
 catalog matching, exact reference tokens are exposed, external workbook and 3D
 sheet-range qualifiers are classified without local-sheet matching, a
 `rename_sheet()` source-name reference is reported as a stale risk, and
-`save_as()` still does not rewrite the formula text. The same facade shard also
+`save_as()` still does not rewrite the formula text. The same shard covers
+`WorkbookEditor::source_formula_reference_audits()` for non-materialized source
+worksheet XML, including source-order shared formula followers expanded through
+the narrow formula translator when a preceding shared formula definition is
+available; this remains read-only audit and does not materialize sessions or
+rewrite worksheet XML. The same facade shard also
 covers `WorkbookEditor::defined_name_formula_reference_audits()` for source
 workbook `definedNames`: workbook-scope and `localSheetId` scoped names expose
 their exact formula reference tokens, source-name references are flagged after
@@ -379,8 +384,13 @@ cmake --preset windows-nmake-release -DFASTXLSX_BUILD_QA_TOOLS=ON
 cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
 py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_materialization `
+  --excel-verify `
   --work-dir build\qa\workbook-editor-shared-formula
 ```
+
+The Excel verifier now opens this generated output read-only and checks the
+materialized ordinary formula cells plus the untouched sheet. This is the
+Excel-compatible shared-formula materialization smoke.
 
 For the source-worksheet formula reference diagnostic smoke, run:
 
@@ -411,13 +421,17 @@ text, and bracket tokens are not rewritten; sheet-qualified A1 references and
 whole-row/whole-column ranges still translate under the documented narrow
 shared-formula materializer rule. The dedicated `fastxlsx.formula` test covers
 the scanner-side raw sheet qualifier spans; the generated QA scenario focuses on
-dirty workbook output compatibility.
+dirty workbook output compatibility. This synthetic boundary case is validated
+by ZIP/XML and `openpyxl`; the Excel COM verifier reports it as skipped because
+some deliberately inserted parser-boundary tokens are not intended to be an
+Excel UI compatibility smoke.
 
 For an Office/LibreOffice-like generated shared-formula shape smoke, run:
 
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_office_like_materialization `
+  --excel-verify `
   --work-dir build\qa\workbook-editor-shared-formula-office-like
 ```
 
@@ -425,7 +439,9 @@ This generated case patches a workbook to contain 2D shared formula `ref`
 ranges, multiple `si` groups in one worksheet, interleaved ordinary formulas
 and values, and stale cached formula results. The output check requires all
 formula cells to become ordinary `<f>...</f>` elements, with 0 shared formula
-metadata elements and no stale cached `<v>` values.
+metadata elements and no stale cached `<v>` values. The Excel verifier opens
+this output read-only and checks representative materialized formulas plus the
+untouched sheet.
 
 To smoke-test third-party fixture workbooks such as xlnt or OpenXLSX samples,
 keep them outside the repository and pass a fixture root explicitly. These
@@ -480,15 +496,17 @@ py tools\run_workbook_editor_qa.py `
 
 This fixture scenario scans formula-bearing worksheets, then runs the C++ QA
 tool in read-only `fixture_source_formula_audit` mode. It records how many
-sheet-qualified source formula references the new source audit reports, plus
-rename-risk, external-workbook, 3D sheet-range, and local-match counts. A
-fixture can legitimately report zero audit references when its formulas contain
-only unqualified references; the generated scenario above is the deterministic
-nonzero assertion.
+sheet-qualified source formula references the source audit reports, including
+source-order metadata-only shared formula followers when their definition is
+available, plus rename-risk, external-workbook, 3D sheet-range, and local-match
+counts. A fixture can legitimately report zero audit references when its
+formulas contain only unqualified references; the generated scenario above is
+the deterministic nonzero assertion.
 Current local xlnt evidence for this read-only audit covers
 `18_formulae.xlsx:Sheet1`: 15 formula elements, 3 shared formula elements, 1
 definition, 2 metadata-only followers, and 0 source formula audit references
-because the fixture formulas are unqualified.
+because the fixture formulas are unqualified even after source-order follower
+expansion.
 
 For named range / definedNames fixture coverage, use the opt-in definedName
 scanner scenario. It reads direct workbook `definedNames` records from

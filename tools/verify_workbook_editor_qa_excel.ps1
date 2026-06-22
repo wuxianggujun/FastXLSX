@@ -76,6 +76,18 @@ function Assert-CellValue {
     Assert-Equal $value $Expected $Message
 }
 
+function Assert-Formula {
+    param(
+        [object]$Worksheet,
+        [string]$Address,
+        [string]$Expected,
+        [string]$Message
+    )
+
+    $formula = [string]$Worksheet.Range($Address).Formula
+    Assert-Equal $formula $Expected $Message
+}
+
 function Verify-GeneratedRenameMaterialized {
     param([object]$Workbook)
 
@@ -90,6 +102,58 @@ function Verify-GeneratedRenameMaterialized {
     }
     finally {
         foreach ($object in @($untouched, $edited)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-GeneratedSharedFormulaMaterialization {
+    param([object]$Workbook)
+
+    $sheet = $null
+    $untouched = $null
+    try {
+        $sheet = Get-Worksheet $Workbook "SharedFormula"
+        $untouched = Get-Worksheet $Workbook "Untouched"
+        Assert-CellValue $sheet "A1" 1 "SharedFormula!A1"
+        Assert-CellValue $sheet "B3" 8 "SharedFormula!B3"
+        Assert-Formula $sheet "C1" "=A1+B1" "SharedFormula!C1 formula"
+        Assert-Formula $sheet "C2" "=A2+B2" "SharedFormula!C2 formula"
+        Assert-Formula $sheet "C3" "=A3+B3" "SharedFormula!C3 formula"
+        Assert-Formula $sheet "D2" '=SUM(A2:B2)+$A2+A$1+$A$1' "SharedFormula!D2 formula"
+        Assert-Formula $sheet "D3" '=SUM(A3:B3)+$A3+A$1+$A$1' "SharedFormula!D3 formula"
+        Assert-CellValue $sheet "E4" "shared-formula-qa-edit" "SharedFormula!E4"
+        Assert-CellValue $untouched "A1" "keep-shared-formula-qa" "Untouched!A1"
+    }
+    finally {
+        foreach ($object in @($untouched, $sheet)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-GeneratedSharedFormulaOfficeLikeMaterialization {
+    param([object]$Workbook)
+
+    $sheet = $null
+    $untouched = $null
+    try {
+        $sheet = Get-Worksheet $Workbook "OfficeLikeShared"
+        $untouched = Get-Worksheet $Workbook "Untouched"
+        Assert-Formula $sheet "C1" "=A1+B1" "OfficeLikeShared!C1 formula"
+        Assert-Formula $sheet "D1" "=B1+C1" "OfficeLikeShared!D1 formula"
+        Assert-Formula $sheet "C3" "=A3+B3" "OfficeLikeShared!C3 formula"
+        Assert-Formula $sheet "D3" "=B3+C3" "OfficeLikeShared!D3 formula"
+        Assert-Formula $sheet "G3" '=SUM($A3:C3)+D$1' "OfficeLikeShared!G3 formula"
+        Assert-CellValue $sheet "H6" "office-like-shared-formula-edit" "OfficeLikeShared!H6"
+        Assert-CellValue $untouched "A1" "keep-office-like-shared-formula-qa" "Untouched!A1"
+    }
+    finally {
+        foreach ($object in @($untouched, $sheet)) {
             if ($null -ne $object) {
                 [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
             }
@@ -253,6 +317,13 @@ function Verify-Case {
             reason = "read-only source formula audit does not produce an output workbook"
         }
     }
+    if ($scenario -eq "generated_shared_formula_boundary_materialization") {
+        return [ordered]@{
+            name = [string]$Case.name
+            status = "skipped"
+            reason = "synthetic parser-boundary formulas are validated by ZIP/XML and openpyxl, not Excel COM"
+        }
+    }
 
     $path = Resolve-WorkbookPath ([string]$toolReport.output)
     $workbook = $null
@@ -264,6 +335,8 @@ function Verify-Case {
         switch ($scenario) {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
+            "generated_shared_formula_materialization" { Verify-GeneratedSharedFormulaMaterialization $workbook }
+            "generated_shared_formula_office_like_materialization" { Verify-GeneratedSharedFormulaOfficeLikeMaterialization $workbook }
             "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }
             "generated_image_replace" { Verify-GeneratedImageReplace $workbook }
             "generated_public_e2e" { Verify-GeneratedPublicE2E $workbook }

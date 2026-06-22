@@ -85,8 +85,10 @@ The source-package side of that diagnostic is now separate:
 parts through the internal event reader and reports explicit `<f>...</f>`
 formula text without materializing `WorksheetEditor` sessions. It gives
 rename-risk visibility for non-materialized worksheets, but still does not
-rewrite those formulas, translate metadata-only shared formula followers,
-evaluate formulas, or build a dependency graph.
+rewrite those formulas, resolve out-of-order metadata-only shared formula
+followers, evaluate formulas, or build a dependency graph. Source-order
+metadata-only shared formula followers are expanded only when the corresponding
+shared formula definition has already been seen.
 The opt-in workbook-editor QA layer now exposes that boundary directly through
 `generated_source_formula_audit`: the generated case calls the source audit
 before/after a `Data` -> `RenamedData` rename, verifies one stale source-name
@@ -153,19 +155,24 @@ raw 3D-like sheet qualifier spans, invalid shared formula index forms, public
 cached formula values. The opt-in workbook-editor QA runner includes
 `generated_shared_formula_materialization`, which creates a generated shared
 formula source workbook, verifies materialization through the public C++ tool,
-then checks the output with ZIP/XML and `openpyxl`; it also includes
+then checks the output with ZIP/XML, `openpyxl`, and the Excel COM verifier; it
+also includes
 `generated_shared_formula_boundary_materialization`, which pins quoted strings,
 structured references, name-like tokens, R1C1-like text, whole-row/whole-column
 references, bracketed tokens, and sheet-qualified A1 / whole-axis translation
-boundaries in a generated source/output smoke. It also includes
+boundaries in a generated source/output smoke. That boundary case remains
+ZIP/XML and `openpyxl` validation only because some tokens are deliberately
+synthetic parser-boundary inputs, not an Excel UI compatibility smoke. It also
+includes
 `generated_shared_formula_office_like_materialization`, which pins 2D shared
 formula `ref` ranges, multiple `si` groups in one worksheet, ordinary formulas
 and values interleaved with shared formula followers, and stale cached formula
 result cleanup; the dirty output is checked as ordinary formula elements with
-0 shared formula metadata elements. The same Office-like shape is now also
-covered by the default public `fastxlsx.workbook_editor.source-success` CTest
-path, so shared formula materialization regressions are not limited to opt-in
-local QA. It also has an opt-in
+0 shared formula metadata elements, and is opened by the Excel COM verifier.
+The same Office-like shape is now also covered by the default public
+`fastxlsx.workbook_editor.source-success` CTest path, so shared formula
+materialization regressions are not limited to opt-in local QA. It also has an
+opt-in
 `external_source_formula_fixture_audit_smoke` scanner that maps formula-bearing
 fixture worksheets to source worksheet XML parts and invokes the read-only C++
 `fixture_source_formula_audit` mode, recording source formula audit counts,
@@ -827,6 +834,15 @@ qualifiers: external workbook qualifiers such as `[Book.xlsx]Data!A1` and 3D
 sheet-range qualifiers such as `Data:Formula!A1` are reported with exact tokens
 and explicit classification flags, but are not matched to a single current
 workbook sheet and are not validated, dereferenced, or rewritten.
+P8.572a extends the source-worksheet diagnostic without changing output
+semantics: `WorkbookEditor::source_formula_reference_audits()` now expands
+metadata-only shared formula followers when their source-order shared formula
+definition has already been seen, using the same narrow A1 translator as
+materialized shared formula import. This lets read-only rename-risk audits see
+follower formulas such as `Data!B2` without materializing `WorksheetEditor`
+sessions. It still does not rewrite source worksheet XML, preserve shared
+formula metadata in dirty output, resolve out-of-order followers, evaluate
+formulas, rebuild calcChain, or become a formula dependency graph.
 P8.573 extends formula dependency diagnostics to source workbook
 `definedNames`: `WorkbookEditor::defined_name_formula_reference_audits()`
 scans direct `xl/workbook.xml` definedName formula text, reports workbook- and

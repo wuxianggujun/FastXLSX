@@ -249,6 +249,28 @@ function Verify-GeneratedFormulaRenameEscapedSheetName {
     }
 }
 
+function Verify-GeneratedFormulaRenameChainRewrite {
+    param([object]$Workbook)
+
+    $renamed = $null
+    $formula = $null
+    try {
+        $renamed = Get-Worksheet $Workbook "FinalData"
+        $formula = Get-Worksheet $Workbook "Formula"
+        Assert-CellValue $renamed "A1" 1 "FinalData!A1"
+        Assert-FormulaIn $formula "A1" @("=FinalData!A1", "='FinalData'!A1") "Formula!A1 chain formula"
+        Assert-FormulaIn $formula "A2" @("=FinalData!B1", "='FinalData'!B1") "Formula!A2 chain formula"
+        Assert-FormulaIn $formula "A5" @("=FinalData!A1+`"TemporaryData!B1`"", "='FinalData'!A1+`"TemporaryData!B1`"") "Formula!A5 chain string-literal formula"
+    }
+    finally {
+        foreach ($object in @($formula, $renamed)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedFormulaRenameDefaultAudit {
     param([object]$Workbook)
 
@@ -448,6 +470,7 @@ function Verify-Case {
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }
+            "generated_formula_rename_chain_rewrite" { Verify-GeneratedFormulaRenameChainRewrite $workbook }
             "generated_formula_rename_defined_names_only" { Verify-GeneratedFormulaRenameDefinedNamesOnly $workbook }
             "generated_formula_rename_default_audit" { Verify-GeneratedFormulaRenameDefaultAudit $workbook }
             "generated_shared_formula_materialization" { Verify-GeneratedSharedFormulaMaterialization $workbook }

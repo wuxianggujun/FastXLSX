@@ -104,6 +104,11 @@ py tools\run_workbook_editor_qa.py `
   --excel-verify
 
 py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_chain_rewrite `
+  --work-dir build\qa\workbook-editor-formula-rename-chain `
+  --excel-verify
+
+py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_defined_names_only `
   --work-dir build\qa\workbook-editor-formula-rename-defined-names `
   --excel-verify
@@ -156,6 +161,17 @@ quoted formula qualifiers such as `'Renamed & O''Brien'!A1`, XML-escaped sheet
 catalog / definedName text, unchanged external-workbook references, unchanged
 3D sheet ranges, unchanged string literals, unchanged non-materialized
 worksheet formulas, and no invented calcChain.
+
+`generated_formula_rename_chain_rewrite` is the focused local QA for chained
+renames. It first renames `Data` to `TemporaryData` without formula rewrite,
+then renames `TemporaryData` to `FinalData` with
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas`. ZIP/XML, `openpyxl`, and
+Excel COM verify that both original-source `Data!A1` references and current
+planned-name `TemporaryData!B1` references are rewritten to `FinalData` in
+direct definedNames and already-materialized worksheet formulas, while
+external-workbook references, 3D sheet ranges, string literals,
+non-materialized worksheet formulas, and calcChain absence remain on the
+documented boundary.
 
 `generated_formula_rename_defined_names_only` is the middle policy QA for
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It materializes only

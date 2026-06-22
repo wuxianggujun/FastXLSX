@@ -455,6 +455,27 @@ non-materialized worksheet formula is unchanged, and no `xl/calcChain.xml` is
 invented. Excel COM is a read-only compatibility smoke for the escaped sheet
 name and representative formulas.
 
+For the chained rename variant of the same rewrite policy, run:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_chain_rewrite `
+  --work-dir build\qa\workbook-editor-formula-rename-chain `
+  --excel-verify
+```
+
+This generated case first queues `rename_sheet("Data", "TemporaryData")`
+without formula rewrite, then queues `rename_sheet("TemporaryData",
+"FinalData")` with
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`.
+ZIP/XML and `openpyxl` verify that both original source-name references
+(`Data!A1`) and current planned-name references (`TemporaryData!B1`) are
+rewritten to `FinalData` in direct local definedNames and already-materialized
+worksheet formulas. External-workbook references, 3D sheet ranges, string
+literals, non-materialized worksheet formulas, and calcChain absence stay on
+the documented boundary. Excel COM is a read-only compatibility smoke for the
+final sheet and representative formulas.
+
 For the middle `RewriteDefinedNames` policy QA smoke, run:
 
 ```powershell

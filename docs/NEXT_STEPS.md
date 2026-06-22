@@ -1047,6 +1047,18 @@ formula qualifiers with doubled apostrophes, unchanged external-workbook / 3D /
 string-literal / non-materialized references, calcChain absence, and Excel COM
 read-only compatibility. This is still narrow formula-text rewrite QA, not a
 complete Excel formula parser or semantic rename engine.
+P8.592 adds `generated_formula_rename_chain_rewrite` for chained rename
+coverage. It queues `Data -> TemporaryData` with the default catalog-only
+rename, then queues `TemporaryData -> FinalData` with
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas` after materializing only
+`Formula`; ZIP/XML, `openpyxl`, and Excel COM verify that both original
+source-name references and current planned-name references are rewritten in
+direct definedNames and already-materialized worksheet formulas. External
+workbook references, 3D sheet ranges, string literals, non-materialized
+worksheet formulas, and calcChain absence stay on the documented boundary.
+This is QA hardening for the existing explicit policy, not a semantic formula
+engine, default formula rewrite, non-materialized worksheet rewrite, or
+relationship repair.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

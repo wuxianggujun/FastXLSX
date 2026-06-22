@@ -1030,6 +1030,15 @@ sheet-range references, string literals, non-materialized worksheet formulas,
 and calcChain absence remain unchanged; formula and definedName rename-risk
 audits are still reported. This protects the documented catalog-only default
 from accidental silent formula repair.
+P8.590 adds the middle-policy generated QA scenario:
+`generated_formula_rename_defined_names_only` uses the same workbook shape but
+calls `rename_sheet("Data", "RenamedData")` with
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. ZIP/XML, `openpyxl`,
+and Excel COM verify that direct local definedNames are rewritten while
+already-materialized worksheet formulas, external-workbook references, 3D
+sheet-range references, string literals, non-materialized worksheet formulas,
+and calcChain absence remain unchanged; formula rename-risk audits remain
+visible while definedName rename risks are cleared.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

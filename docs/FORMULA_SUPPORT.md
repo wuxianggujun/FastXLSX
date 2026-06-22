@@ -99,6 +99,11 @@ py tools\run_workbook_editor_qa.py `
   --excel-verify
 
 py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_defined_names_only `
+  --work-dir build\qa\workbook-editor-formula-rename-defined-names `
+  --excel-verify
+
+py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_default_audit `
   --work-dir build\qa\workbook-editor-formula-rename-default `
   --excel-verify
@@ -138,6 +143,13 @@ worksheet formula references are rewritten while external-workbook references,
 `Unmaterialized` worksheet formula remain unchanged. This is still opt-in
 formula text rewrite evidence only, not default rename behavior or formula
 evaluation.
+
+`generated_formula_rename_defined_names_only` is the middle policy QA for
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It materializes only
+the `Formula` sheet, renames `Data` to `RenamedData`, and verifies that direct
+local definedNames are rewritten while already-materialized worksheet formulas,
+external-workbook references, 3D sheet-range references, string literals, the
+non-materialized worksheet formula, and calcChain absence remain unchanged.
 
 `generated_formula_rename_default_audit` is the paired default-policy QA. It
 uses the same generated workbook but calls default `rename_sheet("Data",

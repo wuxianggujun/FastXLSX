@@ -26082,6 +26082,51 @@ Acceptance:
 - Resource check after local verification shows no lingering Excel/build/test
   processes.
 
+## P8.590 - Add generated definedNames-only rename formula QA
+
+Status: done.
+
+Type: opt-in local QA hardening for the middle public rename formula policy; no
+production behavior change, no public API change, no CMake target membership
+change, and no runtime dependency.
+
+Goal: prove `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` rewrites
+only direct local workbook definedNames while keeping already-materialized
+worksheet formulas unchanged.
+
+Output:
+- Added `generated_formula_rename_defined_names_only` to
+  `tools/workbook_editor_qa_tool.cpp`. It reuses the generated formula rename
+  workbook shape, materializes only `Formula`, calls
+  `rename_sheet("Data", "RenamedData")` with `RewriteDefinedNames`, saves, and
+  records formula / definedName audit counters.
+- Extended `tools/run_workbook_editor_qa.py` to verify the output with ZIP/XML
+  and `openpyxl`: the sheet catalog and direct local definedNames are renamed,
+  but already-materialized formula cells, external/3D references, string
+  literals, `Unmaterialized!A1`, and calcChain absence stay unchanged.
+- Extended `tools/verify_workbook_editor_qa_excel.ps1` to open the workbook
+  read-only and smoke-check the renamed sheet plus representative unchanged
+  formula cells.
+- Updated `docs/FORMULA_SUPPORT.md`, `docs/TESTING_WORKFLOW.md`,
+  `docs/EDITING_TEST_MATRIX.md`, and `docs/NEXT_STEPS.md` to document the QA
+  evidence.
+
+Non-goals / boundary:
+- No worksheet formula rewrite under the definedNames-only policy, no formula
+  evaluation, no cached result generation, no calcChain rebuild, no
+  non-materialized worksheet rewrite, no full formula parser, no relationship
+  repair, no sharedStrings/style migration, and no runtime Python or Excel
+  dependency.
+
+Acceptance:
+- `py tools\run_workbook_editor_qa.py --self-test` passes.
+- `generated_formula_rename_defined_names_only` passes with a built
+  `fastxlsx_workbook_editor_qa_tool`, including `--excel-verify`.
+- Focused formula/workbook-editor CTest still passes.
+- `git diff --check` passes.
+- Resource check after local verification shows no lingering Excel/build/test
+  processes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

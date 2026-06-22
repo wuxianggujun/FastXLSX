@@ -35,6 +35,7 @@ GENERATED_SCENARIOS = [
     "generated_rename_materialized",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
+    "generated_formula_rename_defined_names_only",
     "generated_formula_rename_default_audit",
     "generated_shared_formula_materialization",
     "generated_shared_formula_boundary_materialization",
@@ -1022,6 +1023,125 @@ def verify_generated_formula_rename_rewrite(
     return zip_report, openpyxl_report
 
 
+def verify_generated_formula_rename_defined_names_only(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    workbook_xml = read_zip_text(path, "xl/workbook.xml")
+
+    require('name="RenamedData"' in workbook_xml,
+            "generated formula rename definedNames-only: missing renamed sheet catalog entry")
+    require('name="Data"' not in workbook_xml,
+            "generated formula rename definedNames-only: old Data sheet catalog entry remained")
+    require(
+        R"<definedName name=\"ReportRange\">'RenamedData'!$A$1:$B$2</definedName>"
+        .replace('\\"', '"') in workbook_xml,
+        "generated formula rename definedNames-only: ReportRange was not rewritten",
+    )
+    require(
+        R"<definedName name=\"QuotedDataRef\">'RenamedData'!$A$1</definedName>"
+        .replace('\\"', '"') in workbook_xml,
+        "generated formula rename definedNames-only: QuotedDataRef was not rewritten",
+    )
+    require(
+        R"<definedName name=\"ScopedOther\" localSheetId=\"2\">'Other Sheet'!$A$1</definedName>"
+        .replace('\\"', '"') in workbook_xml,
+        "generated formula rename definedNames-only: unrelated scoped definedName changed",
+    )
+    require(
+        R"<definedName name=\"ExternalRef\">[Book.xlsx]Data!A1</definedName>"
+        .replace('\\"', '"') in workbook_xml,
+        "generated formula rename definedNames-only: external definedName reference changed",
+    )
+    require(
+        R"<definedName name=\"ThreeDRef\">Data:Formula!A1</definedName>"
+        .replace('\\"', '"') in workbook_xml,
+        "generated formula rename definedNames-only: 3D definedName reference changed",
+    )
+    require("xl/calcChain.xml" not in zip_names(path),
+            "generated formula rename definedNames-only: calcChain.xml should not be invented")
+
+    formulas = worksheet_formula_cells(path, "Formula")
+    expected_formulas = {
+        "A1": "Data!A1",
+        "A2": "'Data'!$A$1",
+        "A3": "[Book.xlsx]Data!A1",
+        "A4": "Data:Formula!A1",
+        "A5": "Data!A1+\"Data!A1\"",
+    }
+    for reference, expected in expected_formulas.items():
+        require(
+            formulas.get(reference) == expected,
+            f"generated formula rename definedNames-only: Formula!{reference} mismatch "
+            f"{formulas.get(reference)!r}",
+        )
+    unmaterialized_formulas = worksheet_formula_cells(path, "Unmaterialized")
+    require(
+        unmaterialized_formulas.get("A1") == "Data!A1",
+        f"generated formula rename definedNames-only: non-materialized formula changed "
+        f"{unmaterialized_formulas!r}",
+    )
+
+    defined_records = workbook_defined_name_records(path)
+    zip_report["formula_cells"] = sorted_string_mapping(formulas)
+    zip_report["unmaterialized_formula_cells"] = sorted_string_mapping(unmaterialized_formulas)
+    zip_report["defined_names"] = summarize_defined_name_records(defined_records)
+    zip_report["defined_name_records"] = defined_records
+    zip_report["defined_names_only_policy"] = {
+        "catalog_renamed": True,
+        "materialized_formula_cells_rewritten": 0,
+        "defined_names_rewritten": 2,
+        "calc_chain_invented": False,
+    }
+    zip_report["tool_formula_audit"] = {
+        "count": tool_report["source_formula_audit_count"],
+        "rename_risk_count": tool_report["source_formula_rename_risk_count"],
+        "external_count": tool_report["source_formula_external_count"],
+        "sheet_range_count": tool_report["source_formula_sheet_range_count"],
+        "matched_count": tool_report["source_formula_matched_count"],
+        "references": tool_report.get("source_formula_audit_references", []),
+    }
+    zip_report["tool_defined_name_audit"] = {
+        "count": tool_report["defined_name_audit_count"],
+        "rename_risk_count": tool_report["defined_name_audit_rename_risk_count"],
+        "external_count": tool_report["defined_name_audit_external_count"],
+        "sheet_range_count": tool_report["defined_name_audit_sheet_range_count"],
+        "matched_count": tool_report["defined_name_audit_matched_count"],
+        "references": tool_report.get("defined_name_audit_references", []),
+    }
+    require(tool_report.get("source_formula_rename_risk_count") == 3,
+            f"generated formula rename definedNames-only: expected materialized rename risks {tool_report!r}")
+    require(tool_report.get("defined_name_audit_rename_risk_count") == 0,
+            f"generated formula rename definedNames-only: definedName rename risks remained {tool_report!r}")
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(
+            workbook.sheetnames == ["RenamedData", "Other Sheet", "Formula", "Unmaterialized"],
+            f"generated formula rename definedNames-only: unexpected sheetnames {workbook.sheetnames!r}",
+        )
+        formula_sheet = workbook["Formula"]
+        unmaterialized = workbook["Unmaterialized"]
+        openpyxl_formula_report = openpyxl_formula_cells(formula_sheet, expected_formulas)
+        require(
+            unmaterialized["A1"].value == "=Data!A1",
+            f"generated formula rename definedNames-only: openpyxl non-materialized formula mismatch "
+            f"{unmaterialized['A1'].value!r}",
+        )
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "formula_cells": openpyxl_formula_report,
+            "Unmaterialized!A1": unmaterialized["A1"].value,
+            "defined_name_count": len(defined_records),
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
 def verify_generated_formula_rename_default_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -1712,6 +1832,7 @@ def create_xlsxwriter_reference(
     if scenario in {
         "generated_source_formula_audit",
         "generated_formula_rename_rewrite",
+        "generated_formula_rename_defined_names_only",
         "generated_formula_rename_default_audit",
     }:
         return {"status": "skipped", "reason": f"no xlsxwriter reference for {scenario}"}
@@ -1816,6 +1937,11 @@ def run_generated_case(
         )
     elif scenario == "generated_formula_rename_rewrite":
         zip_xml, openpyxl_report = verify_generated_formula_rename_rewrite(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_formula_rename_defined_names_only":
+        zip_xml, openpyxl_report = verify_generated_formula_rename_defined_names_only(
             output_path,
             tool_report,
         )

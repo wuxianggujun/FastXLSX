@@ -436,6 +436,25 @@ Excel COM is a read-only compatibility smoke for the renamed sheet and
 representative rewritten formula cells; exact boundary semantics remain the
 ZIP/XML checks.
 
+For the middle `RewriteDefinedNames` policy QA smoke, run:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_defined_names_only `
+  --work-dir build\qa\workbook-editor-formula-rename-defined-names `
+  --excel-verify
+```
+
+This generated case materializes the `Formula` sheet first, then renames
+`Data` to `RenamedData` with
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. ZIP/XML and
+`openpyxl` verify rewritten direct local definedName references, unchanged
+already-materialized worksheet formulas, unchanged external-workbook
+references, unchanged 3D sheet-range references, preserved string literals, no
+invented `xl/calcChain.xml`, and an unchanged non-materialized worksheet
+formula. Excel COM is a read-only compatibility smoke for the renamed sheet and
+representative unchanged formula cells.
+
 For the paired default rename policy QA smoke, run:
 
 ```powershell

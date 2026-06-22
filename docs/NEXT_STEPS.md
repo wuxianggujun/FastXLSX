@@ -1010,6 +1010,18 @@ records the C++ QA tool's public definedName formula-reference audit counters,
 and can reuse the Excel COM sidecar. This is compatibility evidence for
 supplied fixtures only; it is not name-manager editing, broad rename
 synchronization, external link validation, or formula evaluation.
+P8.585 adds a public combined editing failed-save recovery regression:
+`test_public_workbook_editor_combined_failed_save_as_preserves_state()` queues
+the representative mixed public flow from P8.560, then forces
+`WorkbookEditor::save_as()` to fail at a missing-parent output path before dirty
+materialized sessions are flushed. The test proves pending public counts,
+whole-`sheetData` diagnostics, dirty materialized diagnostics, worksheet edit
+summaries, planned catalog, borrowed `WorksheetEditor` dirty state, and
+`last_edit_error()` survive the failure; a later safe save writes the renamed
+catalog, materialized cells, refreshed dimension, sheetData replacement, and
+memory-backed image bytes. This is retry-state hygiene for the public facade,
+not transaction history, undo/rollback, source mutation, relationship repair,
+or broad semantic object editing.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

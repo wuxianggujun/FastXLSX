@@ -25865,6 +25865,50 @@ Acceptance:
   Patch preservation fixtures and their non-goals.
 - `git diff --check` passes.
 
+## P8.585 - Cover combined public editing failed-save recovery
+
+Status: done.
+
+Type: public `WorkbookEditor` / `WorksheetEditor` combined save-as failure
+regression and docs sync; no production behavior change, no public API change,
+no new CMake target membership, and no relationship repair expansion.
+
+Goal: prove the P8.560 combined public edit flow is stable when
+`WorkbookEditor::save_as()` fails at output-path preflight. A missing-parent
+output path must fail before dirty materialized sessions are flushed, so the
+caller can retry with the same queued rename, whole-`sheetData` replacement,
+memory-backed image replacement, and borrowed dirty `WorksheetEditor` state.
+
+Output:
+- Added `test_public_workbook_editor_combined_failed_save_as_preserves_state()`
+  to the facade shard.
+- The test queues `rename_sheet("Data", "RecoveredData")`, materialized
+  `WorksheetEditor::set_cell()` edits on the renamed sheet,
+  `replace_sheet_data("ReplaceMe", ...)`, and a memory-backed
+  `replace_image("xl/media/image1.png", ...)` whose caller buffer is mutated
+  before save.
+- A missing-parent `save_as()` failure now has focused coverage proving public
+  pending counts, replacement diagnostics, dirty materialized diagnostics,
+  worksheet edit summaries, planned catalog, borrowed handle dirty state, and
+  `last_edit_error()` are preserved without creating output.
+- A later safe `save_as()` verifies the same pending state still writes the
+  renamed workbook catalog, dirty materialized cells, refreshed dimension,
+  whole-`sheetData` replacement, and copied memory-backed image bytes.
+- `docs/NEXT_STEPS.md` and `docs/EDITING_TEST_MATRIX.md` record the new public
+  facade failure-recovery evidence.
+
+Non-goals / boundary:
+- No transaction history, durable commit model, undo/rollback API, source
+  package mutation, source reload, relationship repair/pruning, semantic
+  drawing/image/table/chart editing, sharedStrings/style migration, or
+  large-file random editing claim.
+
+Acceptance:
+- Focused `fastxlsx.workbook_editor.facade` passes.
+- `git diff --check` passes.
+- Resource check after local verification shows no lingering Excel/build/test
+  processes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

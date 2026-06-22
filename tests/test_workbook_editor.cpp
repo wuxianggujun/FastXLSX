@@ -124,6 +124,33 @@ bool workbook_editor_catalog_entries_equal(
     return true;
 }
 
+bool workbook_editor_edit_summaries_equal(
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
+{
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < lhs.size(); ++index) {
+        const auto& left = lhs[index];
+        const auto& right = rhs[index];
+        if (left.source_name != right.source_name
+            || left.planned_name != right.planned_name
+            || left.renamed != right.renamed
+            || left.sheet_data_replaced != right.sheet_data_replaced
+            || left.replacement_cell_count != right.replacement_cell_count
+            || left.estimated_replacement_memory_usage
+                != right.estimated_replacement_memory_usage
+            || left.materialized_dirty != right.materialized_dirty
+            || left.materialized_cell_count != right.materialized_cell_count
+            || left.estimated_materialized_memory_usage
+                != right.estimated_materialized_memory_usage) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
@@ -1712,6 +1739,131 @@ void test_public_workbook_editor_editing_end_to_end_smoke()
         "combined public editing smoke should preserve core document properties");
     check(output_entries.at("docProps/app.xml") == app_props_before,
         "combined public editing smoke should preserve app document properties");
+}
+
+void test_public_workbook_editor_combined_failed_save_as_preserves_state()
+{
+    const std::filesystem::path source =
+        write_public_editing_e2e_source("fastxlsx-workbook-editor-combined-failed-save-source.xlsx");
+    const std::filesystem::path missing_parent_output =
+        artifact("fastxlsx-workbook-editor-combined-failed-save-missing-parent") / "out.xlsx";
+    const std::filesystem::path safe_output =
+        artifact("fastxlsx-workbook-editor-combined-failed-save-recovered-output.xlsx");
+    std::filesystem::remove_all(missing_parent_output.parent_path());
+
+    const std::filesystem::path replacement_png_path =
+        repository_asset("docs/assets/donation/weixin.png");
+    const std::string replacement_png_bytes = fastxlsx::test::read_file(replacement_png_path);
+    std::string staged_image_bytes = replacement_png_bytes;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "RecoveredData");
+    fastxlsx::WorksheetEditor recovered_data = editor.worksheet("RecoveredData");
+    recovered_data.set_cell(1, 1, fastxlsx::CellValue::text("dirty-before-failed-save"));
+    recovered_data.set_cell(3, 3, fastxlsx::CellValue::number(123.0));
+    editor.replace_sheet_data("ReplaceMe",
+        {{fastxlsx::CellValue::text("replacement-before-failed-save"),
+            fastxlsx::CellValue::number(88.0)}});
+    editor.replace_image("xl/media/image1.png", as_bytes(staged_image_bytes));
+    staged_image_bytes.assign(staged_image_bytes.size(), '\0');
+
+    check(editor.has_pending_changes(),
+        "combined failed save_as recovery should queue mixed public edits first");
+    check(editor.pending_change_count() == 3,
+        "combined failed save_as recovery should count rename, sheetData, and image before flush");
+    check(editor.pending_materialized_cell_count() == recovered_data.cell_count(),
+        "combined failed save_as recovery should expose dirty materialized cells before failure");
+    check(!editor.last_edit_error().has_value(),
+        "combined failed save_as recovery should start with no public edit diagnostic");
+
+    const std::size_t pending_count_before_failure = editor.pending_change_count();
+    const std::size_t replacement_cells_before_failure =
+        editor.pending_replacement_cell_count();
+    const std::size_t replacement_memory_before_failure =
+        editor.estimated_pending_replacement_memory_usage();
+    const std::size_t materialized_cells_before_failure =
+        editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_failure =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<std::string> replacement_names_before_failure =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> materialized_names_before_failure =
+        editor.pending_materialized_worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_failure =
+        editor.worksheet_catalog();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_failure =
+        editor.pending_worksheet_edits();
+
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+        "combined save_as should fail before dirty materialized flush when parent is missing");
+
+    check(editor.pending_change_count() == pending_count_before_failure,
+        "failed combined save_as should preserve pending public edit count");
+    check(editor.pending_replacement_cell_count() == replacement_cells_before_failure,
+        "failed combined save_as should preserve replacement cell count");
+    check(editor.estimated_pending_replacement_memory_usage() ==
+            replacement_memory_before_failure,
+        "failed combined save_as should preserve replacement memory estimate");
+    check(editor.pending_materialized_cell_count() == materialized_cells_before_failure,
+        "failed combined save_as should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            materialized_memory_before_failure,
+        "failed combined save_as should preserve dirty materialized memory estimate");
+    check(editor.pending_replacement_worksheet_names() ==
+            replacement_names_before_failure,
+        "failed combined save_as should preserve replacement sheet names");
+    check(editor.pending_materialized_worksheet_names() ==
+            materialized_names_before_failure,
+        "failed combined save_as should preserve dirty materialized sheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before_failure),
+        "failed combined save_as should preserve planned worksheet catalog");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_failure),
+        "failed combined save_as should preserve worksheet edit summaries");
+    check(recovered_data.has_pending_changes(),
+        "failed combined save_as should keep the borrowed WorksheetEditor dirty");
+    check(recovered_data.cell_count() == materialized_cells_before_failure,
+        "failed combined save_as should keep dirty sparse cells on the borrowed handle");
+    check(!editor.last_edit_error().has_value(),
+        "failed combined save_as should not create a public edit diagnostic");
+    check(!std::filesystem::exists(missing_parent_output),
+        "failed combined save_as should not create the missing-parent output");
+
+    editor.save_as(safe_output);
+
+    check(editor.pending_change_count() == pending_count_before_failure + 1,
+        "recovered combined save_as should count the materialized worksheet flush");
+    check(editor.pending_materialized_cell_count() == 0,
+        "recovered combined save_as should clear dirty materialized aggregate diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "recovered combined save_as should clear dirty materialized sheet names");
+    check(!recovered_data.has_pending_changes(),
+        "recovered combined save_as should clear the borrowed WorksheetEditor dirty flag");
+    check(!editor.last_edit_error().has_value(),
+        "recovered combined save_as should leave public edit diagnostics clear");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(safe_output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string data_sheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string replaced_sheet_xml = output_entries.at("xl/worksheets/sheet2.xml");
+
+    check_contains(workbook_xml, R"(name="RecoveredData")",
+        "recovered combined save_as should persist the queued rename");
+    check_not_contains(workbook_xml, R"(name="Data")",
+        "recovered combined save_as should not resurrect the old sheet name");
+    check_contains(data_sheet_xml, "dirty-before-failed-save",
+        "recovered combined save_as should persist dirty materialized text");
+    check_contains(data_sheet_xml, R"(<c r="C3"><v>123</v></c>)",
+        "recovered combined save_as should persist dirty materialized number");
+    check_contains(data_sheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "recovered combined save_as should refresh materialized worksheet dimension");
+    check_contains(replaced_sheet_xml, "replacement-before-failed-save",
+        "recovered combined save_as should persist the queued sheetData replacement");
+    check_contains(replaced_sheet_xml, R"(<c r="B1"><v>88</v></c>)",
+        "recovered combined save_as should persist the queued replacement number");
+    check(output_entries.at("xl/media/image1.png") == replacement_png_bytes,
+        "recovered combined save_as should persist memory-backed image bytes");
 }
 
 void test_replace_sheet_data_preserves_surrounding_worksheet_metadata()
@@ -19220,6 +19372,7 @@ int main(int argc, char* argv[])
         test_replace_image_same_part_later_replacement_wins();
         test_replace_image_memory_source_copies_bytes_before_save_as();
         test_public_workbook_editor_editing_end_to_end_smoke();
+        test_public_workbook_editor_combined_failed_save_as_preserves_state();
         test_docprops_are_preserved_through_patch();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();

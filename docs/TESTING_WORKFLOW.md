@@ -382,6 +382,11 @@ materialized from source cells but never dirtied or flushed must remain clean
 after owner move / move-assignment stale-handle failures, with public edit
 counts and dirty materialized diagnostics empty and no-op `save_as()` still
 copying the source package bytes.
+The public shard also covers read-only materialized same-sheet Patch preflight:
+once a clean borrowed `WorksheetEditor` has materialized `Data`, same-sheet
+`replace_sheet_data()` and `rename_sheet()` must fail before queuing Patch work,
+replace `last_edit_error()` with the guard diagnostic, preserve the clean
+borrowed session and catalog views, and keep no-op `save_as()` copy-original.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

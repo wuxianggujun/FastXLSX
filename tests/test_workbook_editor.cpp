@@ -11529,6 +11529,111 @@ void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
         "blocked same-sheet rename should not leak into workbook catalog");
 }
 
+void test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_operations()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-mixing-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-readonly-mixing-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = sheet.get_cell(1, 1);
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "read-only same-sheet mixing setup should materialize the source value");
+    check(!sheet.has_pending_changes(),
+        "read-only same-sheet mixing setup should leave the borrowed handle clean");
+
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    const std::size_t expected_cell_count = sheet.cell_count();
+    const std::size_t expected_memory = sheet.estimated_memory_usage();
+
+    const auto check_readonly_state = [&] (
+        std::string_view stage, const std::optional<std::string>& expected_error) {
+        check_public_materialization_failure_clean_state(
+            editor,
+            expected_source_names,
+            expected_planned_names,
+            expected_catalog,
+            "read-only same-sheet patch mixing",
+            stage,
+            "Data",
+            expected_error);
+        check(!sheet.has_pending_changes(),
+            std::string(stage) + " should keep the borrowed handle clean");
+        check(sheet.cell_count() == expected_cell_count,
+            std::string(stage) + " should preserve read-only sparse cell count");
+        check(sheet.estimated_memory_usage() == expected_memory,
+            std::string(stage) + " should preserve read-only sparse memory");
+        const fastxlsx::CellValue current = sheet.get_cell(1, 1);
+        check(current.kind() == fastxlsx::CellValueKind::Text &&
+                current.text_value() == "placeholder-a1",
+            std::string(stage) + " should preserve the source-backed cell value");
+    };
+
+    check_readonly_state("before rejected operations", std::nullopt);
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_sheet_data("Data",
+            {{fastxlsx::CellValue::text("blocked-readonly-replacement")}});
+    } catch (const fastxlsx::FastXlsxError& error) {
+        replacement_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "read-only same-sheet replacement should populate last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "read-only same-sheet replacement diagnostic should match thrown error");
+            check_contains(*last_error,
+                "cannot replace sheet data after materializing planned worksheet session",
+                "read-only same-sheet replacement should report materialized-session guard");
+        }
+    }
+    check(replacement_failed,
+        "read-only materialized session should block same-sheet replacement");
+    const std::optional<std::string> replacement_error = editor.last_edit_error();
+    check_readonly_state("after rejected replacement", replacement_error);
+    check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+
+    bool rename_failed = false;
+    try {
+        editor.rename_sheet("Data", "BlockedReadonlyRename");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        rename_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "read-only same-sheet rename should replace last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "read-only same-sheet rename diagnostic should match thrown error");
+            check_contains(*last_error,
+                "cannot rename sheet after materializing planned worksheet session",
+                "read-only same-sheet rename should report materialized-session guard");
+            check_not_contains(*last_error, "replace sheet data",
+                "read-only same-sheet rename should replace the replacement diagnostic");
+        }
+    }
+    check(rename_failed,
+        "read-only materialized session should block same-sheet rename");
+    const std::optional<std::string> rename_error = editor.last_edit_error();
+    check_readonly_state("after rejected rename", rename_error);
+    check_public_inspection_preserves_last_edit_error(editor, rename_error);
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == rename_error,
+        "read-only no-op save_as after rejected same-sheet operations should preserve diagnostic");
+    check_readonly_state("after no-op save_as", rename_error);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "read-only no-op save_as after rejected same-sheet operations should copy source entries");
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -20110,6 +20215,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics();
         test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
+        test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_operations();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

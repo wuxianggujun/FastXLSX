@@ -1124,6 +1124,16 @@ source-backed value on reacquire, and leave no-op `save_as()` as
 copy-original. This is still borrowed-handle state hygiene only, not a
 materialization caching semantic change, handle lifetime extension, rollback
 model, formula behavior, or large-file random editor.
+P8.601 pins the same clean materialized session boundary for public same-sheet
+Patch operation mixing: a read-only `WorksheetEditor` session now blocks
+same-sheet `replace_sheet_data()` and `rename_sheet()` before any Patch state is
+queued. The regression verifies the failures replace `last_edit_error()` with
+the materialized-session guard diagnostic, leave the borrowed handle clean,
+keep public edit counts / dirty materialized diagnostics / edit summaries
+empty, preserve source/planned catalogs, and keep no-op `save_as()`
+copy-original. This is public facade preflight hygiene only, not relationship
+repair, rollback, complete random editing, formula evaluation, or formula
+rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

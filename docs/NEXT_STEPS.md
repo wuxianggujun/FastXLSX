@@ -1059,6 +1059,46 @@ worksheet formulas, and calcChain absence stay on the documented boundary.
 This is QA hardening for the existing explicit policy, not a semantic formula
 engine, default formula rewrite, non-materialized worksheet rewrite, or
 relationship repair.
+P8.593 pins the local workbook-editor QA runner's default executable discovery:
+when both default and minizip build-tree copies of
+`fastxlsx_workbook_editor_qa_tool.exe` exist, `tools/run_workbook_editor_qa.py`
+now picks the newest candidate by file timestamp, and fallback build-tree search
+does the same for non-standard build locations. The runner self-test covers both
+paths so stale local QA tools do not silently mask new generated scenarios. This
+is opt-in QA tooling hygiene only; it does not change production code, CMake
+build policy, formula semantics, runtime dependencies, or the documented formula
+support boundary.
+P8.594 closes a small public `WorksheetEditor::sparse_cells(CellRange)` hygiene
+gap: invalid range inspection calls now have explicit public-facade coverage for
+preserving a pre-existing `WorkbookEditor::last_edit_error()` diagnostic while
+leaving the materialized session clean, public edit counts unchanged, sparse
+cell count / memory / snapshots unchanged, and no-op `save_as()` on the
+copy-original path. This is read-only failure hygiene for the current
+small-file editor facade, not a new range API, large-file random editing path,
+or formula capability expansion.
+P8.595 applies the same public-facade hygiene to `WorksheetEditor::try_cell()` /
+`get_cell()` read failures: invalid row/column coordinates, invalid A1
+references, valid-coordinate missing `get_cell()`, and last-legal `try_cell()`
+misses now explicitly preserve a pre-existing `last_edit_error()` sentinel while
+leaving materialized state, edit counts, sparse counts/memory/snapshots, and the
+clean no-op `save_as()` copy-original path unchanged. This remains small-file
+read failure hygiene only, not a broader A1 parser, range API, formula feature,
+or large-file random editor.
+P8.596 pins the same public-facade hygiene for stale borrowed `WorksheetEditor`
+handles invalidated by owner move: stale read/write/erase attempts now have
+explicit coverage for throwing without replacing the moved-to
+`last_edit_error()`, changing dirty materialized names / cell counts / memory
+estimates, altering `pending_worksheet_edits()`, or leaking stale writes into
+the later `save_as()` output. This is borrowed-handle lifetime failure hygiene
+only, not a handle lifetime extension, rollback model, formula feature, or
+large-file random editor.
+P8.597 completes the symmetric move-assignment case: stale handles from both the
+assigned source editor and the overwritten target editor now have public
+coverage for throwing without replacing the assigned source `last_edit_error()`,
+changing dirty materialized diagnostics or summaries, reviving discarded target
+state, or leaking stale source/target writes into output. This remains
+borrowed-handle failure hygiene only, not target-state recovery, transactional
+undo, formula behavior, or large-file random editing.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

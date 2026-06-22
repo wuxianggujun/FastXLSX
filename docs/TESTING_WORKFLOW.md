@@ -305,6 +305,11 @@ replacement media-byte comparison, `openpyxl` value readback, and a picture
 count smoke. It is local QA only and is not a FastXLSX runtime dependency or a
 claim of relationship repair, semantic image editing, transaction/undo support,
 formula calculation, or large-file random editing.
+If `--qa-exe` is omitted, `tools/run_workbook_editor_qa.py` now chooses the
+newest local `fastxlsx_workbook_editor_qa_tool.exe` from the default and minizip
+build trees, then from fallback discovery under `build/`. This prevents stale
+local tool binaries from hiding newly added generated scenarios, but it remains
+local QA convenience and not a CMake preset or CI policy.
 
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
@@ -342,6 +347,26 @@ missing-parent, and source-overwrite rejection. The extracted
 and `src/workbook_editor_testing_hooks.cpp` split keeps private editor state,
 public worksheet handles, and test hooks in separate semantic modules while
 the default workbook-editor family verifies the same integration behavior.
+The public shard also pins `WorksheetEditor::sparse_cells(CellRange)` invalid
+range failures against an existing `last_edit_error()` sentinel: reverse /
+out-of-bounds ranges must throw without dirtying the materialized session,
+changing sparse snapshots, replacing diagnostics, or moving no-op `save_as()`
+off the copy-original path.
+The same public shard pins `WorksheetEditor::try_cell()` / `get_cell()` invalid
+or missing-cell read failures against an existing `last_edit_error()` sentinel:
+invalid row/column coordinates, invalid A1 references, valid-coordinate missing
+`get_cell()`, and last-legal `try_cell()` misses must preserve diagnostics,
+dirty state, sparse snapshots, and the no-op copy-original save path.
+It also pins stale borrowed `WorksheetEditor` handles invalidated by owner move:
+post-move read/write/erase failures must preserve the moved-to
+`last_edit_error()`, dirty materialized names, aggregate dirty cell/memory
+diagnostics, edit summaries, and final `save_as()` output without accepting
+stale handle mutations.
+The move-assignment variant pins the same invariant for both stale handles
+borrowed from the assigned source editor and stale handles borrowed from the
+overwritten target editor: failures must keep the assigned source diagnostic and
+dirty materialized summaries, discard target state, and avoid stale output
+writes.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

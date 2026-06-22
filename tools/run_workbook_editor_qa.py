@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import posixpath
 import shutil
 import subprocess
@@ -97,17 +98,24 @@ def read_zip_bytes(path: Path, name: str) -> bytes:
             return entry.read()
 
 
-def resolve_default_qa_exe() -> Path | None:
-    candidates = [
-        Path("build/windows-nmake-release-minizip/tools/fastxlsx_workbook_editor_qa_tool.exe"),
-        Path("build/windows-nmake-release/tools/fastxlsx_workbook_editor_qa_tool.exe"),
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
+DEFAULT_QA_EXE_RELATIVE_CANDIDATES = [
+    Path("windows-nmake-release-minizip/tools/fastxlsx_workbook_editor_qa_tool.exe"),
+    Path("windows-nmake-release/tools/fastxlsx_workbook_editor_qa_tool.exe"),
+]
 
-    for candidate in Path("build").rglob("fastxlsx_workbook_editor_qa_tool.exe"):
-        return candidate
+
+def resolve_default_qa_exe(build_root: Path = Path("build")) -> Path | None:
+    candidates = [
+        build_root / relative_candidate
+        for relative_candidate in DEFAULT_QA_EXE_RELATIVE_CANDIDATES
+    ]
+    existing_candidates = [candidate for candidate in candidates if candidate.exists()]
+    if existing_candidates:
+        return max(existing_candidates, key=lambda candidate: candidate.stat().st_mtime_ns)
+
+    discovered = list(build_root.rglob("fastxlsx_workbook_editor_qa_tool.exe"))
+    if discovered:
+        return max(discovered, key=lambda candidate: candidate.stat().st_mtime_ns)
     return None
 
 
@@ -2624,6 +2632,34 @@ def run_self_test() -> int:
             require(reference_path.exists(), "self-test: xlsxwriter did not produce workbook")
             xlsxwriter_status = "created"
 
+        qa_build = temp_dir / "qa-build"
+        stale_qa_exe = qa_build / DEFAULT_QA_EXE_RELATIVE_CANDIDATES[0]
+        fresh_qa_exe = qa_build / DEFAULT_QA_EXE_RELATIVE_CANDIDATES[1]
+        stale_qa_exe.parent.mkdir(parents=True)
+        fresh_qa_exe.parent.mkdir(parents=True)
+        stale_qa_exe.write_text("stale", encoding="utf-8")
+        fresh_qa_exe.write_text("fresh", encoding="utf-8")
+        os.utime(stale_qa_exe, ns=(1_000_000_000, 1_000_000_000))
+        os.utime(fresh_qa_exe, ns=(2_000_000_000, 2_000_000_000))
+        require(
+            resolve_default_qa_exe(qa_build) == fresh_qa_exe,
+            "self-test: default QA exe resolution should prefer the newest candidate",
+        )
+
+        fallback_build = temp_dir / "fallback-build"
+        older_discovered_exe = fallback_build / "older/tools/fastxlsx_workbook_editor_qa_tool.exe"
+        newer_discovered_exe = fallback_build / "custom/tools/fastxlsx_workbook_editor_qa_tool.exe"
+        older_discovered_exe.parent.mkdir(parents=True)
+        newer_discovered_exe.parent.mkdir(parents=True)
+        older_discovered_exe.write_text("older", encoding="utf-8")
+        newer_discovered_exe.write_text("newer", encoding="utf-8")
+        os.utime(older_discovered_exe, ns=(3_000_000_000, 3_000_000_000))
+        os.utime(newer_discovered_exe, ns=(4_000_000_000, 4_000_000_000))
+        require(
+            resolve_default_qa_exe(fallback_build) == newer_discovered_exe,
+            "self-test: fallback QA exe discovery should prefer the newest match",
+        )
+
         nested_dir = temp_dir / "fixtures" / "nested"
         nested_dir.mkdir(parents=True)
         discovered_workbook = nested_dir / "fixture.xlsx"
@@ -2758,6 +2794,7 @@ def run_self_test() -> int:
                     "status": "ok",
                     "workbook": str(workbook_path),
                     "xlsxwriter": xlsxwriter_status,
+                    "qa_exe_resolution": "newest",
                     "fixture_discovery": len(discovered),
                     "formula_scan": len(formula_infos),
                     "defined_name_scan": len(defined_infos),

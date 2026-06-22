@@ -2847,6 +2847,100 @@ void test_public_worksheet_editor_handles_invalidate_after_owner_move()
         "invalidated pre-move handle should not mutate moved-to state");
 }
 
+void test_public_worksheet_editor_invalidated_handle_failures_preserve_owner_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-invalidated-handle-diagnostics-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-invalidated-handle-diagnostics-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor old_handle = editor.worksheet("Data");
+    old_handle.set_cell(1, 1, fastxlsx::CellValue::text("invalidated-handle-before"));
+
+    check(threw_fastxlsx_error([&] {
+        old_handle.set_cell("a1", fastxlsx::CellValue::text("invalidated-handle-sentinel"));
+    }), "invalid mutation should seed last_edit_error before owner move");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid mutation should leave a diagnostic before owner move");
+    if (prior_error.has_value()) {
+        check_contains(*prior_error, "WorksheetEditor cell reference is invalid",
+            "seed diagnostic should come from the invalid A1 mutation");
+    }
+
+    const std::vector<std::string> expected_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t expected_dirty_cells = editor.pending_materialized_cell_count();
+    const std::size_t expected_dirty_memory =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> expected_summaries =
+        editor.pending_worksheet_edits();
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(moved.last_edit_error() == prior_error,
+        "owner move should transfer the prior public diagnostic");
+    check(!editor.last_edit_error().has_value(),
+        "moved-from editor should expose no public diagnostic");
+
+    const auto check_moved_state = [&] (std::string_view prefix) {
+        check(moved.last_edit_error() == prior_error,
+            std::string(prefix) + " should preserve moved-to last_edit_error");
+        check(moved.pending_change_count() == 0,
+            std::string(prefix) + " should not queue a Patch handoff");
+        check(moved.pending_materialized_worksheet_names() == expected_dirty_names,
+            std::string(prefix) + " should preserve dirty materialized names");
+        check(moved.pending_materialized_cell_count() == expected_dirty_cells,
+            std::string(prefix) + " should preserve dirty materialized cell count");
+        check(moved.estimated_pending_materialized_memory_usage() == expected_dirty_memory,
+            std::string(prefix) + " should preserve dirty materialized memory");
+        check(workbook_editor_edit_summaries_equal(
+                  moved.pending_worksheet_edits(), expected_summaries),
+            std::string(prefix) + " should preserve materialized edit summaries");
+
+        fastxlsx::WorksheetEditor reacquired = moved.worksheet("Data");
+        check(reacquired.has_pending_changes(),
+            std::string(prefix) + " should preserve reacquired dirty state");
+        const fastxlsx::CellValue moved_value = reacquired.get_cell(1, 1);
+        check(moved_value.kind() == fastxlsx::CellValueKind::Text &&
+                moved_value.text_value() == "invalidated-handle-before",
+            std::string(prefix) + " should preserve the pre-move materialized cell");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)old_handle.has_pending_changes(); }),
+        "invalidated handle should reject dirty-state reads after owner move");
+    check_moved_state("invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] { (void)old_handle.cell_count(); }),
+        "invalidated handle should reject cell-count reads after owner move");
+    check_moved_state("invalidated cell_count");
+    check(threw_fastxlsx_error([&] { (void)old_handle.try_cell(1, 1); }),
+        "invalidated handle should reject cell reads after owner move");
+    check_moved_state("invalidated try_cell");
+    check(threw_fastxlsx_error([&] { (void)old_handle.sparse_cells(); }),
+        "invalidated handle should reject sparse snapshots after owner move");
+    check_moved_state("invalidated sparse_cells");
+    check(threw_fastxlsx_error([&] {
+        old_handle.set_cell(2, 1, fastxlsx::CellValue::text("stale-invalidated-write"));
+    }), "invalidated handle should reject stale writes after owner move");
+    check_moved_state("invalidated set_cell");
+    check(threw_fastxlsx_error([&] { old_handle.erase_cell(1, 1); }),
+        "invalidated handle should reject stale erases after owner move");
+    check_moved_state("invalidated erase_cell");
+
+    moved.save_as(output);
+    check(moved.last_edit_error() == prior_error,
+        "save_as after invalidated-handle failures should preserve prior diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "invalidated-handle-before",
+        "moved-to output should keep the pre-move materialized value");
+    check_not_contains(worksheet_xml, "stale-invalidated-write",
+        "invalidated handle should not write stale data into moved-to output");
+    check_not_contains(worksheet_xml, "invalidated-handle-sentinel",
+        "failed diagnostic seed should not write invalid-reference data");
+}
+
 void test_public_worksheet_editor_handles_invalidate_after_move_assignment()
 {
     const std::filesystem::path source =
@@ -2895,6 +2989,122 @@ void test_public_worksheet_editor_handles_invalidate_after_move_assignment()
         "move assignment should discard overwritten target materialized edits");
     check_not_contains(worksheet_xml, "stale-target-write",
         "invalidated target handle should not mutate the assigned source state");
+}
+
+void test_public_worksheet_editor_move_assignment_invalidated_handle_failures_preserve_owner_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-assign-invalidated-diagnostics-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-assign-invalidated-diagnostics-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-assign-invalidated-diagnostics-output.xlsx");
+
+    fastxlsx::WorkbookEditor source_editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_handle = source_editor.worksheet("Data");
+    source_handle.set_cell(1, 1,
+        fastxlsx::CellValue::text("assigned-invalidated-source-before"));
+    check(threw_fastxlsx_error([&] {
+        source_handle.set_cell("a1",
+            fastxlsx::CellValue::text("assigned-invalidated-source-sentinel"));
+    }), "source invalid mutation should seed last_edit_error before move assignment");
+    const std::optional<std::string> source_prior_error =
+        source_editor.last_edit_error();
+    check(source_prior_error.has_value(),
+        "source editor should have a prior diagnostic before move assignment");
+
+    const std::vector<std::string> expected_dirty_names =
+        source_editor.pending_materialized_worksheet_names();
+    const std::size_t expected_dirty_cells =
+        source_editor.pending_materialized_cell_count();
+    const std::size_t expected_dirty_memory =
+        source_editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> expected_summaries =
+        source_editor.pending_worksheet_edits();
+
+    fastxlsx::WorkbookEditor target_editor = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_handle = target_editor.worksheet("Data");
+    target_handle.set_cell(1, 1,
+        fastxlsx::CellValue::text("discarded-target-invalidated-before"));
+    check(threw_fastxlsx_error([&] {
+        target_handle.set_cell(0, 1,
+            fastxlsx::CellValue::text("discarded-target-invalidated-sentinel"));
+    }), "target invalid mutation should seed a diagnostic before it is overwritten");
+    const std::optional<std::string> discarded_target_error =
+        target_editor.last_edit_error();
+    check(discarded_target_error.has_value() &&
+            discarded_target_error != source_prior_error,
+        "target pre-assignment diagnostic should be independent from the source");
+
+    target_editor = std::move(source_editor);
+    check(target_editor.last_edit_error() == source_prior_error,
+        "move assignment should keep the assigned source diagnostic");
+    check(!source_editor.last_edit_error().has_value(),
+        "move-assigned-from editor should expose no public diagnostic");
+
+    const auto check_assigned_state = [&] (std::string_view prefix) {
+        check(target_editor.last_edit_error() == source_prior_error,
+            std::string(prefix) + " should preserve assigned last_edit_error");
+        check(target_editor.pending_change_count() == 0,
+            std::string(prefix) + " should not queue a Patch handoff");
+        check(target_editor.pending_materialized_worksheet_names() == expected_dirty_names,
+            std::string(prefix) + " should preserve assigned dirty names");
+        check(target_editor.pending_materialized_cell_count() == expected_dirty_cells,
+            std::string(prefix) + " should preserve assigned dirty cell count");
+        check(target_editor.estimated_pending_materialized_memory_usage() ==
+                expected_dirty_memory,
+            std::string(prefix) + " should preserve assigned dirty memory");
+        check(workbook_editor_edit_summaries_equal(
+                  target_editor.pending_worksheet_edits(), expected_summaries),
+            std::string(prefix) + " should preserve assigned edit summaries");
+
+        fastxlsx::WorksheetEditor reacquired = target_editor.worksheet("Data");
+        check(reacquired.has_pending_changes(),
+            std::string(prefix) + " should preserve assigned dirty state");
+        const fastxlsx::CellValue assigned_value = reacquired.get_cell(1, 1);
+        check(assigned_value.kind() == fastxlsx::CellValueKind::Text &&
+                assigned_value.text_value() == "assigned-invalidated-source-before",
+            std::string(prefix) + " should preserve assigned source cell value");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)source_handle.has_pending_changes(); }),
+        "source handle should be invalid after move assignment");
+    check_assigned_state("invalidated source has_pending_changes");
+    check(threw_fastxlsx_error([&] {
+        source_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-source-assignment-write"));
+    }), "invalidated source handle should reject stale writes");
+    check_assigned_state("invalidated source set_cell");
+    check(threw_fastxlsx_error([&] { (void)target_handle.has_pending_changes(); }),
+        "overwritten target handle should be invalid after move assignment");
+    check_assigned_state("invalidated target has_pending_changes");
+    check(threw_fastxlsx_error([&] {
+        target_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-target-assignment-write"));
+    }), "invalidated target handle should reject stale writes");
+    check_assigned_state("invalidated target set_cell");
+    check(threw_fastxlsx_error([&] { target_handle.erase_cell(1, 1); }),
+        "invalidated target handle should reject stale erases");
+    check_assigned_state("invalidated target erase_cell");
+
+    target_editor.save_as(output);
+    check(target_editor.last_edit_error() == source_prior_error,
+        "save_as after move-assignment invalidated-handle failures should preserve diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "assigned-invalidated-source-before",
+        "move-assigned output should keep the assigned source value");
+    check_not_contains(worksheet_xml, "discarded-target-invalidated-before",
+        "move-assigned output should not keep overwritten target value");
+    check_not_contains(worksheet_xml, "stale-source-assignment-write",
+        "invalidated source handle should not write stale data");
+    check_not_contains(worksheet_xml, "stale-target-assignment-write",
+        "invalidated target handle should not write stale data");
+    check_not_contains(worksheet_xml, "assigned-invalidated-source-sentinel",
+        "failed source diagnostic seed should not write invalid-reference data");
+    check_not_contains(worksheet_xml, "discarded-target-invalidated-sentinel",
+        "failed target diagnostic seed should not write discarded invalid-reference data");
 }
 
 void test_public_worksheet_editor_set_cell_auto_flushes_on_save_as()
@@ -9575,6 +9785,109 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
         "invalid overflow-column set_cell payload should not leak into saved XML");
 }
 
+void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-invalid-read-error-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-invalid-read-error-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before = sheet.cell_count();
+    const std::size_t memory_before = sheet.estimated_memory_usage();
+    const std::vector<fastxlsx::WorksheetCellSnapshot> snapshot_before = sheet.sparse_cells();
+    check(cell_count_before == 3 && snapshot_before.size() == 3,
+        "invalid-read diagnostic test should start from the source sparse cells");
+    check(!sheet.has_pending_changes(),
+        "invalid-read diagnostic test should start with a clean sheet");
+    check(!editor.has_pending_changes(),
+        "invalid-read diagnostic test should start with a clean editor");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-read-sentinel"));
+    }), "invalid coordinate mutation should seed last_edit_error before read failures");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid coordinate mutation should record a prior diagnostic");
+    if (prior_error.has_value()) {
+        check_contains(*prior_error, "WorksheetEditor cell coordinate is invalid",
+            "prior diagnostic should be the seeded invalid coordinate failure");
+    }
+
+    const auto check_preserved = [&] (std::string_view prefix) {
+        check(editor.last_edit_error() == prior_error,
+            std::string(prefix) + " should preserve prior last_edit_error");
+        check(!sheet.has_pending_changes(),
+            std::string(prefix) + " should not dirty the materialized sheet");
+        check(!editor.has_pending_changes(),
+            std::string(prefix) + " should not dirty the editor");
+        check(editor.pending_change_count() == 0,
+            std::string(prefix) + " should not increment public edit count");
+        check(sheet.cell_count() == cell_count_before,
+            std::string(prefix) + " should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == memory_before,
+            std::string(prefix) + " should preserve sparse memory estimate");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
+        "row/column try_cell read should reject row zero");
+    check_preserved("row-zero try_cell read");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 0); }),
+        "row/column get_cell read should reject column zero");
+    check_preserved("column-zero get_cell read");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(1048577, 1); }),
+        "row/column try_cell read should reject row overflow");
+    check_preserved("row-overflow try_cell read");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 16385); }),
+        "row/column get_cell read should reject column overflow");
+    check_preserved("column-overflow get_cell read");
+
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell("a1"); }),
+        "A1 try_cell read should reject lowercase references");
+    check_preserved("lowercase A1 try_cell read");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell("A1:B2"); }),
+        "A1 get_cell read should reject range references");
+    check_preserved("range A1 get_cell read");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell("A01"); }),
+        "A1 try_cell read should reject leading-zero rows");
+    check_preserved("leading-zero A1 try_cell read");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),
+        "A1 get_cell read should reject column overflow");
+    check_preserved("column-overflow A1 get_cell read");
+
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(4, 4); }),
+        "get_cell read should reject a valid but missing sparse cell");
+    check_preserved("missing-cell get_cell read");
+    check(!sheet.try_cell("XFD1048576").has_value(),
+        "try_cell read should still accept the last legal Excel cell");
+    check_preserved("last-legal missing try_cell read");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "valid get_cell read should preserve source-backed cells after read failures");
+    check_preserved("valid source-backed get_cell read");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> snapshot_after = sheet.sparse_cells();
+    check(snapshot_after.size() == snapshot_before.size(),
+        "invalid/missing read failures should preserve sparse snapshot size");
+    check(snapshot_after[0].reference.row == snapshot_before[0].reference.row &&
+            snapshot_after[0].reference.column == snapshot_before[0].reference.column &&
+            snapshot_after[0].value.text_value() == snapshot_before[0].value.text_value(),
+        "invalid/missing read failures should preserve the source-backed A1 snapshot");
+    check(editor.last_edit_error() == prior_error,
+        "final sparse snapshot after invalid reads should preserve prior diagnostic");
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == prior_error,
+        "no-op save_as after invalid cell reads should preserve the prior diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after invalid cell reads should copy source entries");
+}
+
 void test_public_worksheet_editor_sparse_cells_snapshot()
 {
     const std::filesystem::path source =
@@ -9697,6 +10010,108 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "cells outside the inspected range should still persist");
     check_not_contains(worksheet_xml, "placeholder-a2",
         "range sparse_cells should not revive erased source cells");
+}
+
+void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-range-error-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-sparse-range-error-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const auto check_source_snapshot =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells, std::string_view prefix) {
+            check(cells.size() == 3, std::string(prefix) + " should expose the three source cells");
+            check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a1",
+                std::string(prefix) + " should keep source A1 text");
+            check(cells[1].reference.row == 1 && cells[1].reference.column == 2 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0,
+                std::string(prefix) + " should keep source B1 number");
+            check(cells[2].reference.row == 2 && cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2",
+                std::string(prefix) + " should keep source A2 text");
+        };
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells_before = sheet.sparse_cells();
+    const std::size_t cell_count_before = sheet.cell_count();
+    const std::size_t memory_before = sheet.estimated_memory_usage();
+    check_source_snapshot(cells_before, "initial sparse snapshot");
+    check(!sheet.has_pending_changes(),
+        "clean sparse range diagnostic test should start with a clean sheet");
+    check(!editor.has_pending_changes(),
+        "clean sparse range diagnostic test should start with a clean editor");
+    check(editor.pending_change_count() == 0,
+        "clean sparse range diagnostic test should start with no public edits");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-range-sentinel"));
+    }), "invalid coordinate mutation should seed last_edit_error before range read failure");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid coordinate mutation should record a prior diagnostic");
+    if (prior_error.has_value()) {
+        check_contains(*prior_error, "WorksheetEditor cell coordinate is invalid",
+            "prior diagnostic should be the seeded invalid coordinate failure");
+    }
+
+    check(!sheet.has_pending_changes(),
+        "seeded invalid coordinate mutation should not dirty the materialized sheet");
+    check(!editor.has_pending_changes(),
+        "seeded invalid coordinate mutation should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "seeded invalid coordinate mutation should not increment public edit count");
+    check(sheet.cell_count() == cell_count_before,
+        "seeded invalid coordinate mutation should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == memory_before,
+        "seeded invalid coordinate mutation should preserve sparse memory estimate");
+
+    const std::array<fastxlsx::CellRange, 4> invalid_ranges {
+        fastxlsx::CellRange {2, 1, 1, 2},
+        fastxlsx::CellRange {0, 1, 1, 1},
+        fastxlsx::CellRange {1, 1, 1048577, 1},
+        fastxlsx::CellRange {1, 1, 1, 16385},
+    };
+    for (const fastxlsx::CellRange invalid_range : invalid_ranges) {
+        check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid_range); }),
+            "invalid range sparse_cells should throw before mutating public diagnostics");
+        check(editor.last_edit_error() == prior_error,
+            "invalid range sparse_cells should preserve the prior last_edit_error");
+    }
+
+    check(!sheet.has_pending_changes(),
+        "invalid range sparse_cells should not dirty the materialized sheet");
+    check(!editor.has_pending_changes(),
+        "invalid range sparse_cells should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "invalid range sparse_cells should not increment public edit count");
+    check(editor.pending_worksheet_edits().empty(),
+        "invalid range sparse_cells should not expose pending worksheet summaries");
+    check(sheet.cell_count() == cell_count_before,
+        "invalid range sparse_cells should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == memory_before,
+        "invalid range sparse_cells should preserve sparse memory estimate");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells_after = sheet.sparse_cells();
+    check(editor.last_edit_error() == prior_error,
+        "valid sparse_cells inspection after invalid ranges should still preserve prior diagnostic");
+    check_source_snapshot(cells_after, "post-invalid-range sparse snapshot");
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == prior_error,
+        "no-op save_as after invalid range reads should preserve the prior diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after invalid range reads should copy source entries");
 }
 
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
@@ -19168,7 +19583,9 @@ int main(int argc, char* argv[])
 
         if (should_run_workbook_editor_shard(shard, "public")) {
         test_public_worksheet_editor_handles_invalidate_after_owner_move();
+        test_public_worksheet_editor_invalidated_handle_failures_preserve_owner_diagnostics();
         test_public_worksheet_editor_handles_invalidate_after_move_assignment();
+        test_public_worksheet_editor_move_assignment_invalidated_handle_failures_preserve_owner_diagnostics();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_worksheet_missing_throws_and_preserves_diagnostics();
@@ -19213,8 +19630,10 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
         test_public_worksheet_editor_a1_overloads_reject_invalid_references();
         test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates();
+        test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic();
         test_public_worksheet_editor_sparse_cells_snapshot();
         test_public_worksheet_editor_sparse_cells_range_snapshot();
+        test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_options_guard_failure_preserves_state();
         test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();

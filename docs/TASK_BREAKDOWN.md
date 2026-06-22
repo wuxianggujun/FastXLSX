@@ -26229,6 +26229,186 @@ Acceptance:
 - Resource check after local verification shows no lingering Excel/build/test
   processes.
 
+## P8.593 - Pin workbook-editor QA executable auto-discovery freshness
+
+Status: done.
+
+Type: opt-in local QA runner hardening; no production behavior change, no public
+API change, no CMake target membership change, and no runtime dependency.
+
+Goal: prevent `tools/run_workbook_editor_qa.py` from defaulting to a stale
+`fastxlsx_workbook_editor_qa_tool.exe` when both default and minizip build-tree
+copies exist locally.
+
+Output:
+- `resolve_default_qa_exe()` now treats the configured build root as a parameter
+  and selects the newest existing default candidate by `st_mtime_ns`.
+- If neither default candidate exists, fallback discovery under the build root
+  also selects the newest discovered `fastxlsx_workbook_editor_qa_tool.exe`
+  instead of returning the first traversal hit.
+- `--self-test` now constructs synthetic build trees and proves both freshness
+  rules, so future runner changes cannot silently restore stale-executable
+  preference.
+
+Non-goals / boundary:
+- No QA scenario semantics change, no production code change, no CMake rebuild
+  policy, no minizip/default preset preference beyond local executable
+  freshness, no runtime Python dependency, and no formula capability expansion.
+
+Acceptance:
+- `py -m py_compile tools\run_workbook_editor_qa.py` passes.
+- `py tools\run_workbook_editor_qa.py --self-test` passes.
+- Focused formula/workbook-editor CTest still passes.
+- `git diff --check` passes.
+- Resource check after local verification shows no lingering Excel/build/test
+  processes.
+
+## P8.594 - Pin sparse range public diagnostic hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor::sparse_cells(CellRange)` failure-hygiene
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove invalid public `CellRange` inspection failures stay read-only even
+when `WorkbookEditor::last_edit_error()` already contains a prior failed-edit
+diagnostic.
+
+Output:
+- Added a public `fastxlsx.workbook_editor.public` regression that seeds a prior
+  `WorksheetEditor` invalid-coordinate diagnostic, then calls
+  `WorksheetEditor::sparse_cells(CellRange)` with reverse, zero-row,
+  overflow-row, and overflow-column ranges.
+- The regression proves the invalid range calls throw without replacing
+  `last_edit_error()`, dirtying the materialized session, dirtying the owning
+  `WorkbookEditor`, incrementing public edit counts, changing
+  `cell_count()` / `estimated_memory_usage()`, changing sparse snapshots, or
+  creating pending worksheet summaries.
+- A final no-op `WorkbookEditor::save_as()` compares decompressed output package
+  entries against the source package, preserving the current copy-original
+  contract for clean materialized sessions.
+
+Non-goals / boundary:
+- No production code change, no new `WorksheetEditor` API, no range iterator, no
+  large-file random editing claim, no relationship repair, no sharedStrings /
+  styles migration, no formula evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
+## P8.595 - Pin invalid cell-read public diagnostic hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor::try_cell()` / `get_cell()` failure-hygiene
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove invalid or missing-cell public reads stay read-only even when
+`WorkbookEditor::last_edit_error()` already contains a prior failed-edit
+diagnostic.
+
+Output:
+- Added a public `fastxlsx.workbook_editor.public` regression that seeds a prior
+  invalid-coordinate mutation diagnostic, then exercises row/column
+  `try_cell()` / `get_cell()` invalid coordinate reads, A1 invalid reference
+  reads, a valid-coordinate missing `get_cell()` read, and a last-legal
+  `try_cell()` miss.
+- The regression proves those read paths throw or return `std::nullopt` without
+  replacing `last_edit_error()`, dirtying the materialized session, dirtying the
+  owning `WorkbookEditor`, incrementing public edit counts, changing
+  `cell_count()` / `estimated_memory_usage()`, changing sparse snapshots, or
+  blocking later valid source-backed reads.
+- A final no-op `WorkbookEditor::save_as()` compares decompressed output package
+  entries against the source package, preserving the current copy-original
+  contract for clean materialized sessions.
+
+Non-goals / boundary:
+- No production code change, no new `WorksheetEditor` API, no broad parser
+  change, no large-file random editing claim, no relationship repair, no
+  sharedStrings / styles migration, no formula evaluation, and no formula
+  rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
+## P8.596 - Pin invalidated WorksheetEditor handle diagnostic hygiene
+
+Status: done.
+
+Type: public borrowed-`WorksheetEditor` handle failure-hygiene regression and
+docs; no production behavior change, no public API change, no CMake target
+membership change, and no formula capability expansion.
+
+Goal: prove public `WorksheetEditor` handles invalidated by owner move fail
+without polluting the moved-to `WorkbookEditor` diagnostic or materialized
+dirty-state summaries.
+
+Output:
+- Added a public `fastxlsx.workbook_editor.public` regression that materializes
+  `Data`, dirties A1, seeds a prior invalid A1 mutation diagnostic, then move
+  constructs the owning `WorkbookEditor`.
+- The regression exercises the old borrowed handle after move with
+  `has_pending_changes()`, `cell_count()`, `try_cell()`, `sparse_cells()`,
+  `set_cell()`, and `erase_cell()`. Each stale-handle failure throws without
+  replacing the moved-to `last_edit_error()`, queuing a Patch handoff, changing
+  dirty materialized names / cell counts / memory estimates, or changing
+  `pending_worksheet_edits()`.
+- A final `save_as()` proves the moved-to output keeps the pre-move
+  materialized value and does not include stale writes attempted through the
+  invalidated handle.
+
+Non-goals / boundary:
+- No production code change, no borrowed-handle lifetime extension, no public
+  rollback/history, no large-file random editing claim, no relationship repair,
+  no sharedStrings / styles migration, no formula evaluation, and no formula
+  rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
+## P8.597 - Pin move-assignment invalidated handle diagnostic hygiene
+
+Status: done.
+
+Type: public borrowed-`WorksheetEditor` move-assignment failure-hygiene
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove public `WorksheetEditor` handles invalidated by `WorkbookEditor`
+move assignment fail without polluting the assigned moved-to diagnostic or
+materialized dirty-state summaries, including both the moved-from source handle
+and the overwritten target handle.
+
+Output:
+- Added a public `fastxlsx.workbook_editor.public` regression that dirties a
+  source `WorksheetEditor`, seeds a source diagnostic, dirties the target
+  editor, seeds an independent target diagnostic, then move-assigns the source
+  editor over the target.
+- The regression verifies the assigned moved-to editor keeps the source
+  `last_edit_error()` and dirty materialized diagnostics while the moved-from
+  source exposes no diagnostic and the overwritten target diagnostic is
+  discarded with the target state.
+- Stale source-handle and target-handle reads/writes/erase attempts throw
+  without replacing `last_edit_error()`, queuing Patch handoffs, changing dirty
+  materialized names / cell counts / memory estimates, changing
+  `pending_worksheet_edits()`, or leaking stale source/target writes into the
+  later `save_as()` output.
+
+Non-goals / boundary:
+- No production code change, no borrowed-handle lifetime extension, no target
+  state recovery, no public rollback/history, no large-file random editing
+  claim, no relationship repair, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

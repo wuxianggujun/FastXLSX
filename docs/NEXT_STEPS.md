@@ -224,6 +224,16 @@ Chinese sheet name `封面`), with ZIP/XML, `openpyxl`, and Excel COM passing.
 The 2026-06-22 minizip rerun covered the current xlnt
 `19_defined_names.xlsx` fixture: 6 direct definedName records were preserved
 and Excel COM opened the output successfully.
+The same formula/definedName fixture boundary was then rerun against temporary
+Python-generated `openpyxl 3.1.2` and `XlsxWriter 3.2.0` workbooks with
+sheet-qualified formulas and direct workbook `definedNames`. The aggregate
+report `build\qa\python-writer-formula-fixtures-2026-06-22\report.json`
+records 6 cases total: each source-audit case saw 5 formula cells, 6 qualified
+references, 2 rename-risk references, and 6 local matches; each dirty
+materialized rename output kept 5 ordinary formulas and 0 shared-formula
+metadata; each definedName preservation case kept 3 direct records. Excel COM
+reported `ok` for all output workbooks, and the temporary source fixture root
+was removed after validation.
 The scenario deliberately avoids sheet rename because it is a preservation
 fixture smoke; the explicit direct definedName rewrite policy is covered by
 unit tests instead.

@@ -140,3 +140,14 @@ temporary xlnt sparse checkout, then removed that checkout. Reports:
 - `build\qa\xlnt-defined-name-fixtures-2026-06-22\report.json`:
   `19_defined_names.xlsx` preserved 6 direct definedName records, with Excel
   COM status `ok`.
+
+The same formula-compatible boundary was also rerun against temporary
+Python-generated fixtures from `openpyxl 3.1.2` and `XlsxWriter 3.2.0`.
+`build\qa\python-writer-formula-fixtures-2026-06-22\report.json` recorded 6
+cases total: two source-formula-audit cases, two dirty materialized rename
+cases, and two definedName preservation cases. Each formula workbook had 5
+formula cells on the target sheet; source audits saw 6 qualified references,
+2 rename-risk references, and Excel COM status `ok`; dirty rename outputs kept
+5 ordinary formulas and 0 shared-formula metadata; definedName preservation
+kept 3 direct definedName records per workbook, with Excel COM status `ok`.
+The temporary source fixture root was removed after validation.

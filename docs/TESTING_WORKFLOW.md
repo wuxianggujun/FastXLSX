@@ -562,6 +562,19 @@ Excel COM status `ok`; reports are stored under
 `build\qa\xlnt-default-fixtures-2026-06-22\report.json` and
 `build\qa\xlnt-string-fixtures-2026-06-22\report.json`.
 
+The 2026-06-22 Python writer fixture session generated temporary
+`openpyxl 3.1.2` and `XlsxWriter 3.2.0` workbooks with sheet-qualified formulas
+and direct workbook `definedNames`, ran the same three formula/definedName
+fixture scenarios, then removed the temporary source fixture root. The
+aggregate report is
+`build\qa\python-writer-formula-fixtures-2026-06-22\report.json`: each writer
+fixture contributed 5 formula cells; read-only source audits reported 6
+qualified references, 2 rename-risk references, and 6 local matches; dirty
+materialized rename outputs kept 5 ordinary formulas and 0 shared-formula
+metadata; definedName preservation kept 3 direct records per workbook. Excel
+COM verification reported `ok` for all four output-producing cases and skipped
+the two read-only source-audit cases.
+
 ## Benchmark 本地 QA
 
 Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：

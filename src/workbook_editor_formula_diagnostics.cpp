@@ -454,25 +454,18 @@ workbook_editor_source_formula_reference_audits(
 std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
 workbook_editor_defined_name_formula_reference_audits(
     const std::vector<WorkbookEditorSheetCatalogEntry>& catalog,
-    const PackageReader& reader)
+    const PackageEditor& editor)
 {
     const std::vector<FormulaAuditSheetCatalogEntry> formula_catalog =
         formula_audit_catalog_from_sheet_catalog(catalog);
-    const PartName workbook_part = reader.workbook_part();
-    if (const PackageReaderEntry* entry = reader.find_entry(workbook_part.zip_path());
-        entry != nullptr
-        && entry->uncompressed_size
-            > package_editor_workbook_xml_materialization_byte_limit) {
-        throw FastXlsxError(
-            "source workbook definedName formula audit exceeds small workbook XML limit");
-    }
 
     std::string workbook_xml;
     try {
-        workbook_xml = reader.read_entry(workbook_part.zip_path());
+        workbook_xml = editor.current_workbook_xml_for_diagnostics(
+            "definedName formula audit");
     } catch (const std::exception& error) {
         throw FastXlsxError(
-            "failed to read source workbook XML for definedName formula audit: "
+            "failed to read current workbook XML for definedName formula audit: "
             + std::string(error.what()));
     }
 

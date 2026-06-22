@@ -100,15 +100,16 @@ before/after a `Data` -> `RenamedData` rename, verifies one stale source-name
 formula risk plus external-workbook and 3D sheet-range audit classification,
 and checks the saved workbook still keeps the non-materialized formula text
 unchanged.
-The same audit boundary now extends to source workbook defined names through
-`WorkbookEditor::defined_name_formula_reference_audits()`: it materializes only
-the small `xl/workbook.xml` metadata part, scans direct
-`<definedNames><definedName>` formula text, reports exact sheet-qualified
-reference tokens, maps ordinary sheet qualifiers against the current
-source-to-planned catalog, and classifies external-workbook / 3D sheet-range
-qualifiers without local-sheet matching. It still does not rewrite defined
-names, validate external targets, interpret 3D semantics, or implement a
-formula dependency graph.
+The same audit boundary now extends to current workbook defined names through
+`WorkbookEditor::defined_name_formula_reference_audits()`: it materializes the
+small `xl/workbook.xml` metadata part from the current planned editor state
+when a workbook rewrite is queued, otherwise from the source package, scans
+direct `<definedNames><definedName>` formula text, reports exact
+sheet-qualified reference tokens, maps ordinary sheet qualifiers against the
+current source-to-planned catalog, and classifies external-workbook / 3D
+sheet-range qualifiers without local-sheet matching. It still does not rewrite
+defined names, validate external targets, interpret 3D semantics, or
+implement a formula dependency graph.
 The audit scanner/matcher and definedName extraction logic now live behind the
 internal `detail/formula_reference_audit` semantic API instead of being embedded
 in the public `WorkbookEditor` facade implementation.
@@ -863,6 +864,9 @@ current source/planned catalog, flags source-name references after
 `rename_sheet()`, and keeps external-workbook / 3D qualifiers audit-only. It
 does not update definedName formulas, repair workbook metadata, validate
 external targets, interpret 3D semantics, or become a formula engine.
+When a small workbook rewrite is queued, the diagnostic now reflects the
+current planned `xl/workbook.xml` small metadata instead of the source-only
+metadata snapshot, so opt-in definedName rewrites are visible to the audit.
 P8.573a adds the first explicit rename-sync opt-in:
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It is still a
 small-workbook-metadata Patch policy, not a formula engine: it rewrites only

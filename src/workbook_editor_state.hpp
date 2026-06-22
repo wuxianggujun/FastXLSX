@@ -211,7 +211,7 @@ struct WorkbookEditor::Impl {
     defined_name_formula_reference_audits() const
     {
         return detail::workbook_editor_defined_name_formula_reference_audits(
-            sheet_catalog.entries(), editor.reader());
+            sheet_catalog.entries(), editor);
     }
 
     void clear_last_edit_error()

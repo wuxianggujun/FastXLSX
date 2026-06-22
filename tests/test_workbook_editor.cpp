@@ -18036,6 +18036,31 @@ void test_rename_sheet_chain_formula_policy_rewrites_source_aliases()
         "chain formula rewrite should dirty the materialized formula sheet");
     check(editor.pending_change_count() == 2,
         "chain formula rewrite should count the two successful public renames");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> planned_formula_audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(planned_formula_audits, "FinalData") == 1,
+        "chain formula audit should expose the rewritten materialized formula under the final planned name");
+    check(count_formula_reference_audits(planned_formula_audits, "Data") == 0,
+        "chain formula audit should not keep stale source-name materialized formula references after rewrite");
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>
+        planned_defined_name_audits = editor.defined_name_formula_reference_audits();
+    const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* planned_report_range =
+        find_defined_name_formula_reference_audit(
+            planned_defined_name_audits, "ReportRange", "FinalData");
+    check(planned_report_range != nullptr,
+        "chain definedName audit should inspect the queued planned workbook XML after opt-in rewrite");
+    if (planned_report_range != nullptr) {
+        check(planned_report_range->matched_current_workbook_sheet &&
+                planned_report_range->matched_source_sheet_name == "Data" &&
+                planned_report_range->matched_planned_sheet_name == "FinalData",
+            "chain definedName audit should map final planned references back to the source sheet");
+        check(!planned_report_range->references_renamed_source_name &&
+                planned_report_range->references_planned_sheet_name,
+            "chain definedName audit should not flag rewritten planned references as stale");
+    }
+    check(find_defined_name_formula_reference_audit(
+              planned_defined_name_audits, "ReportRange", "Data") == nullptr,
+        "chain definedName audit should not keep source-name direct references after planned rewrite");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "package_reader.hpp"
 #include "workbook_editor_sheet_catalog.hpp"
 
 #include <fastxlsx/detail/materialized_worksheet_session.hpp>
@@ -9,6 +8,9 @@
 #include <vector>
 
 namespace fastxlsx::detail {
+
+class PackageEditor;
+class PackageReader;
 
 [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
 workbook_editor_formula_reference_audits(
@@ -23,6 +25,6 @@ workbook_editor_source_formula_reference_audits(
 [[nodiscard]] std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
 workbook_editor_defined_name_formula_reference_audits(
     const std::vector<WorkbookEditorSheetCatalogEntry>& catalog,
-    const PackageReader& reader);
+    const PackageEditor& editor);
 
 } // namespace fastxlsx::detail

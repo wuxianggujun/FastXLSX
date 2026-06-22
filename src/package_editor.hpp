@@ -219,6 +219,13 @@ public:
     [[nodiscard]] const PackageReader& reader() const noexcept;
     [[nodiscard]] const PackageManifest& manifest() const noexcept;
     [[nodiscard]] const EditPlan& edit_plan() const noexcept;
+    // Internal diagnostic view over the current workbook metadata. This
+    // materializes the planned workbook XML when a small workbook rewrite is
+    // queued, otherwise it reads the source workbook XML. It is intentionally
+    // limited to workbook.xml-sized metadata and is not a general part
+    // materialization API.
+    [[nodiscard]] std::string current_workbook_xml_for_diagnostics(
+        std::string_view purpose) const;
 
     void replace_part(PartName part_name, std::string materialized_small_xml,
         PartWriteMode write_mode, std::string reason = {});

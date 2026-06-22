@@ -5348,6 +5348,18 @@ const EditPlan& PackageEditor::edit_plan() const noexcept
     return edit_plan_;
 }
 
+std::string PackageEditor::current_workbook_xml_for_diagnostics(
+    std::string_view purpose) const
+{
+    const PartName workbook_part = reader_.workbook_part();
+    if (manifest_.find_part(workbook_part) == nullptr) {
+        throw FastXlsxError(
+            "current workbook XML is unavailable for " + std::string(purpose)
+            + " because the officeDocument workbook part has been removed");
+    }
+    return current_planned_materialized_workbook_xml(reader_, replacements_, purpose);
+}
+
 void PackageEditor::replace_part(
     PartName part_name, std::string materialized_small_xml, PartWriteMode write_mode,
     std::string reason)

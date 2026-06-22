@@ -1225,16 +1225,20 @@ public:
 
     /// Returns sheet-qualified formula references from workbook definedNames.
     ///
-    /// This is a read-only dependency-risk diagnostic for source workbook
-    /// metadata. It materializes only the small `xl/workbook.xml` metadata part,
-    /// scans direct `<definedNames><definedName>` entries, and reports
+    /// This is a read-only dependency-risk diagnostic for current workbook
+    /// metadata. It materializes only the small `xl/workbook.xml` metadata part
+    /// from the current planned editor state when a workbook rewrite is queued,
+    /// otherwise from the source package. It scans direct
+    /// `<definedNames><definedName>` entries, and reports
     /// sheet-qualified references found in their formula text. It compares
     /// ordinary decoded qualifier tokens with the current source-to-planned
     /// worksheet catalog so callers can detect definedNames that still name a
     /// source sheet after rename_sheet() has changed that sheet's planned
-    /// catalog name. External workbook and 3D sheet-range qualifiers are
-    /// classified for audit and are not matched to a single local workbook
-    /// sheet.
+    /// catalog name. When an explicit rename formula policy has already queued
+    /// a direct definedName rewrite, this diagnostic reflects that planned
+    /// workbook XML instead of reporting stale source definedName text.
+    /// External workbook and 3D sheet-range qualifiers are classified for audit
+    /// and are not matched to a single local workbook sheet.
     ///
     /// This method intentionally does not materialize worksheets, scan cell
     /// formulas, parse the full Excel formula grammar, evaluate formulas,

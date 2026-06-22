@@ -327,7 +327,7 @@ the default workbook-editor family verifies the same integration behavior.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized
-formula-cell audits and source workbook definedName formula diagnostics through
+formula-cell audits and current workbook definedName formula diagnostics through
 the public API. `fastxlsx.workbook_editor_materialized_edits` covers the
 extracted materialized-edit helper directly: dirty materialized worksheet names
 follow the current planned catalog order, clean sessions are skipped, and flush
@@ -361,12 +361,13 @@ worksheet XML, including source-order shared formula followers expanded through
 the narrow formula translator when a preceding shared formula definition is
 available; this remains read-only audit and does not materialize sessions or
 rewrite worksheet XML. The same facade shard also
-covers `WorkbookEditor::defined_name_formula_reference_audits()` for source
+covers `WorkbookEditor::defined_name_formula_reference_audits()` for current
 workbook `definedNames`: workbook-scope and `localSheetId` scoped names expose
 their exact formula reference tokens, source-name references are flagged after
 `rename_sheet()`, external-workbook / 3D qualifiers remain audit-only, and
-the default `rename_sheet(old, new)` save path still does not rewrite definedName
-formula text. The same shard also covers the explicit
+queued opt-in definedName rewrites are visible before `save_as()`. The default
+`rename_sheet(old, new)` save path still does not rewrite definedName formula
+text. The same shard also covers the explicit
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` option, which rewrites
 only direct workbook definedName formulas while preserving external-workbook and
 3D sheet-range qualifiers. It also covers

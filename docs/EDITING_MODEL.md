@@ -225,6 +225,10 @@ preservation-first 策略：
   在此基础上只同步已经 materialized 的 WorksheetEditor formula cell 文本；未
   materialized 的 worksheet formula cells、tables、drawings、charts、hyperlinks、
   relationship targets、name-manager metadata 仍不更新，也不做 name collision repair。
+  `WorkbookEditor::defined_name_formula_reference_audits()` 现在会优先扫描当前 planned
+  `xl/workbook.xml` 小型 metadata；因此显式 opt-in definedName rewrite queued 后，
+  audit 会反映 planned direct definedName formula text，而不是继续报告 source-only
+  旧文本。
 - Formulas：worksheet formula cells 会触发 payload dependency audit 和 caller review。
   当前 Patch 不解析公式 AST、不求值公式、不写 cached result、不扫描未 materialized
   worksheet 公式、不构建 dependency graph，也不把 streaming writer 的 formula 输出能力

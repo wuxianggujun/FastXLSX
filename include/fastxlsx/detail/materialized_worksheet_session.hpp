@@ -64,6 +64,23 @@ public:
         dirty_ = true;
     }
 
+    void replace_formula_text(
+        std::uint32_t row, std::uint32_t column, std::string formula_text)
+    {
+        const CellRecord* existing = store_.try_cell(row, column);
+        if (existing == nullptr || existing->kind != CellValueKind::Formula) {
+            throw FastXlsxError(
+                "materialized worksheet formula rewrite target is not a formula cell");
+        }
+
+        CellValue value = CellValue::formula(std::move(formula_text));
+        if (existing->style_id.has_value()) {
+            value = value.with_style(*existing->style_id);
+        }
+        store_.set_cell(row, column, value);
+        dirty_ = true;
+    }
+
     void erase_cell(std::uint32_t row, std::uint32_t column)
     {
         const bool had_record = store_.try_cell(row, column) != nullptr;
@@ -261,6 +278,12 @@ public:
             return nullptr;
         }
         return &existing->second;
+    }
+
+    [[nodiscard]] const std::map<std::string, MaterializedWorksheetSession>&
+    sessions() const noexcept
+    {
+        return sessions_;
     }
 
     [[nodiscard]] std::size_t dirty_session_count() const

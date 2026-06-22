@@ -812,6 +812,16 @@ direct workbook definedName formula text from the old sheet qualifier to the new
 quoted sheet qualifier, skips external-workbook and 3D sheet-range qualifiers,
 leaves worksheet formula cells and other workbook/worksheet metadata untouched,
 and fails before state mutation on malformed/nested definedName XML.
+P8.573b extends that opt-in line without turning it into a formula engine:
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
+also rewrites matching formula cells that are already loaded into
+WorkbookEditor-owned WorksheetEditor materialized sessions, preserves existing
+style handles, preflights CellStore guardrails before mutating the package edit
+plan, marks changed sessions dirty for `save_as()` auto-flush, and still skips
+external-workbook qualifiers, 3D sheet ranges, string literals, and every
+non-materialized worksheet formula cell. It does not scan source worksheet XML,
+evaluate formulas, build a dependency graph, rebuild calcChain, or synchronize
+tables/drawings/charts/hyperlinks/relationships.
 P8.574 moves formula dependency audit behind a semantic detail boundary:
 `include/fastxlsx/detail/formula_reference_audit.hpp` exposes
 `audit_formula_references()` and
@@ -887,9 +897,12 @@ state update, and pending whole-`<sheetData>` payload diagnostic migration.
 the public edit count, maps explicit rename formula policy options, and
 clears/records the facade diagnostic. The default overload stays catalog-only;
 the new explicit `RewriteDefinedNames` option routes to the internal
-definedName formula rewrite helper. This does not add worksheet formula rewrites,
-table/drawing/chart relationship updates, sheet add/delete, transaction
-history, rollback, or broader workbook relationship repair.
+definedName formula rewrite helper, and the longer
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas` option additionally routes
+already-materialized WorksheetEditor formula cells through the same narrow
+qualifier rewrite. This does not add non-materialized worksheet formula scanning,
+table/drawing/chart relationship updates, sheet add/delete, transaction history,
+rollback, or broader workbook relationship repair.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

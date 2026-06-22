@@ -15,6 +15,7 @@ class PackageEditor;
 enum class WorkbookEditorSheetRenameFormulaPolicy {
     AuditOnly,
     RewriteDefinedNames,
+    RewriteDefinedNamesAndMaterializedWorksheetFormulas,
 };
 
 struct WorkbookEditorSheetRenameOptions {
@@ -40,7 +41,7 @@ void record_workbook_editor_sheet_rename_state(
 [[nodiscard]] WorkbookEditorSheetRenameResult rename_workbook_editor_sheet(
     PackageEditor& editor,
     WorkbookEditorSheetCatalogPlan& sheet_catalog,
-    const MaterializedWorksheetSessionRegistry& materialized_sessions,
+    MaterializedWorksheetSessionRegistry& materialized_sessions,
     WorkbookEditorPendingSheetDataPayloads& pending_payloads,
     std::string_view old_name,
     std::string new_name,

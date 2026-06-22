@@ -335,9 +335,9 @@ struct WorkbookEditorDefinedNameFormulaReferenceAudit {
 ///
 /// API mode: Patch / existing-workbook workbook metadata rewrite. The default
 /// keeps the current narrow catalog-only behavior and reports formula risks
-/// through audit APIs. The opt-in definedName rewrite policy is intentionally
-/// narrow and does not evaluate formulas, rewrite worksheet formula cells,
-/// update tables/drawings/charts/hyperlinks, rebuild calcChain, or repair
+/// through audit APIs. The opt-in rewrite policies are intentionally narrow and
+/// do not evaluate formulas, scan non-materialized worksheet XML, update
+/// tables/drawings/charts/hyperlinks, rebuild calcChain, or repair
 /// relationships.
 enum class WorkbookEditorRenameFormulaPolicy {
     /// Preserve formula text and expose risks through audit diagnostics.
@@ -348,13 +348,20 @@ enum class WorkbookEditorRenameFormulaPolicy {
     /// ranges, unsupported/nested definedName XML, worksheet formula cells, and
     /// other workbook/worksheet metadata remain outside this policy.
     RewriteDefinedNames,
+
+    /// Rewrite direct workbook definedName formula references and formula cells
+    /// already loaded into WorkbookEditor-owned WorksheetEditor materialized
+    /// sessions. This does not materialize or scan source worksheet parts, and
+    /// formula cells in non-materialized worksheets remain audit-only.
+    RewriteDefinedNamesAndMaterializedWorksheetFormulas,
 };
 
 /// Options for WorkbookEditor::rename_sheet().
 ///
 /// API mode: Patch. Options affect only the small `xl/workbook.xml` metadata
-/// rewrite queued by rename_sheet(); they do not materialize worksheets or
-/// enable a formula calculation engine.
+/// rewrite queued by rename_sheet() plus, when explicitly requested,
+/// already-materialized WorksheetEditor formula cells. They do not materialize
+/// worksheets or enable a formula calculation engine.
 struct WorkbookEditorRenameOptions {
     WorkbookEditorRenameFormulaPolicy formula_policy =
         WorkbookEditorRenameFormulaPolicy::AuditOnly;
@@ -879,7 +886,9 @@ private:
 /// formula_reference_audits() can inspect already-materialized formula cells
 /// and report sheet-qualified references plus whether those references still
 /// point at a renamed source sheet. It does not scan the whole source package
-/// by itself and does not rewrite formulas.
+/// by itself. Formula text rewriting is available only through the explicit
+/// rename_sheet() materialized-formula policy and remains limited to formulas
+/// already loaded into WorksheetEditor sessions.
 /// Failed worksheet materialization does not queue a dirty session; a later
 /// no-op save_as() remains a copy-original package write unless another edit is
 /// explicitly queued.
@@ -1428,23 +1437,29 @@ public:
     ///
     /// API mode: Patch. This keeps the same catalog-name rewrite behavior as
     /// rename_sheet(old_name, new_name) unless `options.formula_policy` is
-    /// `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. That opt-in
-    /// policy additionally rewrites direct workbook definedName formula text in
-    /// `xl/workbook.xml` from the old sheet qualifier to the new sheet
-    /// qualifier. It preserves external workbook references, 3D sheet ranges,
-    /// unsupported nested definedName XML failures, worksheet formula cells,
-    /// tables, drawings, charts, hyperlinks, relationship targets,
-    /// sharedStrings, styles, and calcChain.
+    /// `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` or
+    /// `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`.
+    /// The first opt-in policy additionally rewrites direct workbook
+    /// definedName formula text in `xl/workbook.xml` from the old sheet
+    /// qualifier to the new sheet qualifier. The second also rewrites matching
+    /// formula cells in WorksheetEditor sessions that are already materialized
+    /// in this WorkbookEditor and marks those sessions dirty for save_as()
+    /// auto-flush. It preserves external workbook references, 3D sheet ranges,
+    /// unsupported nested definedName XML failures, non-materialized worksheet
+    /// formula cells, tables, drawings, charts, hyperlinks, relationship
+    /// targets, sharedStrings, styles, and calcChain.
     ///
     /// This is still not a formula engine, semantic sheet rename, relationship
-    /// repair, worksheet formula rewrite, or calcChain rebuild.
+    /// repair, non-materialized worksheet scan/rewrite, or calcChain rebuild.
     ///
     /// @param old_name Existing worksheet name to rename.
     /// @param new_name New sheet-catalog name.
     /// @param options Explicit formula-reference handling policy.
     /// @throws FastXlsxError on the same rename failures as the default
-    /// overload, or if opt-in definedName formula rewriting detects malformed
-    /// workbook definedName XML. On failure no edit state is mutated.
+    /// overload, if opt-in definedName formula rewriting detects malformed
+    /// workbook definedName XML, or if opt-in materialized formula rewriting
+    /// would violate the materialized session guardrails. On failure no edit
+    /// state is mutated.
     void rename_sheet(
         std::string_view old_name,
         std::string new_name,

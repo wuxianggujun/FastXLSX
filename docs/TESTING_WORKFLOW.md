@@ -364,7 +364,13 @@ the default `rename_sheet(old, new)` save path still does not rewrite definedNam
 formula text. The same shard also covers the explicit
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` option, which rewrites
 only direct workbook definedName formulas while preserving external-workbook and
-3D sheet-range qualifiers. For
+3D sheet-range qualifiers. It also covers
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`:
+already-materialized WorksheetEditor formula cells are rewritten and marked
+dirty for `save_as()` auto-flush, while the `RewriteDefinedNames` policy alone
+keeps those materialized formulas unchanged; external-workbook qualifiers, 3D
+sheet-range qualifiers, string literals, and non-materialized worksheet formulas
+remain outside the rewrite boundary. For
 the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
 run the focused generated scenario:
 

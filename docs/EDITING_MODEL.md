@@ -31,7 +31,11 @@ external workbook references、3D sheet ranges 或 calcChain。当前还已有 s
 In-memory `WorksheetEditor` 首片：`worksheet()` / `try_worksheet()` 返回 borrowed
 handle，支持 source-backed `try_cell()` / `get_cell()`、`set_cell()`、`erase_cell()`、
 strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
-`save_as()` auto-flush。它仍**不**表示完整 existing-file editing、public
+`save_as()` auto-flush。新增更窄的
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
+会在同一次 rename 中同时改 direct workbook definedName formula text 和已经载入
+WorksheetEditor session 的 formula cell 文本，并把这些 session 标脏；它不
+materialize 或扫描未载入 worksheet XML。它仍**不**表示完整 existing-file editing、public
 `PackageEditor`、semantic metadata sync、sharedStrings/style migration、relationship
 repair 或 large-file low-memory random editing。
 `CellValue` 作为 public value type 已实现，internal `CellStore` 首个稀疏存储、guardrail
@@ -214,12 +218,16 @@ preservation-first 策略：
   `definedNames` 作为 structured audit / caller-review 风险。显式
   `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` 只改 direct workbook
   definedName formula text 中的本地 sheet qualifier，外部 workbook qualifier 和 3D
-  sheet range 仍保留。当前不更新 worksheet formula cells、tables、drawings、charts、
-  hyperlinks、relationship targets、name-manager metadata，也不做 name collision repair。
+  sheet range 仍保留。显式
+  `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
+  在此基础上只同步已经 materialized 的 WorksheetEditor formula cell 文本；未
+  materialized 的 worksheet formula cells、tables、drawings、charts、hyperlinks、
+  relationship targets、name-manager metadata 仍不更新，也不做 name collision repair。
 - Formulas：worksheet formula cells 会触发 payload dependency audit 和 caller review。
-  当前 Patch 不解析公式 AST、不求值公式、不写 cached result、不改写 cell / range /
-  sheet references、不构建 dependency graph，也不把 streaming writer 的 formula 输出能力
-  提升为 existing-file formula editor。
+  当前 Patch 不解析公式 AST、不求值公式、不写 cached result、不扫描未 materialized
+  worksheet 公式、不构建 dependency graph，也不把 streaming writer 的 formula 输出能力
+  提升为 existing-file formula editor；rename 的 materialized-formula opt-in 只是
+  已载入稀疏公式文本上的窄 qualifier rewrite。
 - Calc metadata：数据或公式相关 worksheet rewrite 默认请求 workbook recalculation：
   `xl/workbook.xml` 会设置 `fullCalcOnLoad="1"`，并按 `CalcChainAction::Remove`
   清理 stale `xl/calcChain.xml` payload、content type override、workbook relationship

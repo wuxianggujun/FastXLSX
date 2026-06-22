@@ -349,6 +349,13 @@ void WorkbookEditor::rename_sheet(
         if (options.formula_policy == WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames) {
             rename_options.formula_policy =
                 detail::WorkbookEditorSheetRenameFormulaPolicy::RewriteDefinedNames;
+        } else if (
+            options.formula_policy
+            == WorkbookEditorRenameFormulaPolicy::
+                RewriteDefinedNamesAndMaterializedWorksheetFormulas) {
+            rename_options.formula_policy =
+                detail::WorkbookEditorSheetRenameFormulaPolicy::
+                    RewriteDefinedNamesAndMaterializedWorksheetFormulas;
         }
         const detail::WorkbookEditorSheetRenameResult result =
             detail::rename_workbook_editor_sheet(

@@ -99,9 +99,13 @@ skips external-workbook qualifiers, 3D sheet-range qualifiers, structured
 references, and quoted string text, and rejects ambiguous rewrite rules instead
 of guessing. `rewrite_workbook_defined_name_formula_references()` applies that
 same narrow rewrite to direct workbook definedName formula text while preserving
-unchanged workbook XML bytes. This is an internal helper for future explicit
-rename-sync policy; current public `WorkbookEditor::rename_sheet()` still does
-not rewrite worksheet formulas or definedNames by default.
+unchanged workbook XML bytes. The first explicit public policy hook now exists:
+`WorkbookEditor::rename_sheet(old, new, WorkbookEditorRenameOptions{...})` can
+opt into `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` to rewrite
+direct workbook definedName formula references during the small `xl/workbook.xml`
+rewrite. The default `rename_sheet(old, new)` remains catalog-only and still
+does not rewrite worksheet formula cells, tables, drawings, charts, hyperlinks,
+relationships, calcChain, external-workbook references, or 3D sheet ranges.
 The `WorkbookEditor` implementation has now been split along semantic
 boundaries instead of file-only churn: `src/workbook_editor_state.hpp` owns the
 private editor state and catalog/pending-summary projections,
@@ -161,8 +165,9 @@ semantically preserved. Current local xlnt evidence covers
 `Issue18_defined_name_with_workbook_scope.xlsx` (1 workbook-scoped record), and
 `issue90_debug_test_file.xlsx` (3 local-sheet-scoped print-area records on the
 Chinese sheet name `封面`), with ZIP/XML, `openpyxl`, and Excel COM passing.
-The scenario deliberately avoids sheet rename because current
-`WorkbookEditor::rename_sheet()` still does not rewrite definedName formulas.
+The scenario deliberately avoids sheet rename because it is a preservation
+fixture smoke; the explicit direct definedName rewrite policy is covered by
+unit tests instead.
 xlnt/OpenXLSX samples remain caller-supplied `--fixture-root` inputs
 rather than runtime dependencies or default CI fixtures. Current local
 compatibility smoke also covers OpenXLSX benchmark fixtures, xlnt reference
@@ -800,6 +805,13 @@ current source/planned catalog, flags source-name references after
 `rename_sheet()`, and keeps external-workbook / 3D qualifiers audit-only. It
 does not update definedName formulas, repair workbook metadata, validate
 external targets, interpret 3D semantics, or become a formula engine.
+P8.573a adds the first explicit rename-sync opt-in:
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It is still a
+small-workbook-metadata Patch policy, not a formula engine: it rewrites only
+direct workbook definedName formula text from the old sheet qualifier to the new
+quoted sheet qualifier, skips external-workbook and 3D sheet-range qualifiers,
+leaves worksheet formula cells and other workbook/worksheet metadata untouched,
+and fails before state mutation on malformed/nested definedName XML.
 P8.574 moves formula dependency audit behind a semantic detail boundary:
 `include/fastxlsx/detail/formula_reference_audit.hpp` exposes
 `audit_formula_references()` and
@@ -872,17 +884,19 @@ P8.583 moves public sheet rename orchestration behind
 rename preflight, package sheet-catalog rename handoff, source/planned catalog
 state update, and pending whole-`<sheetData>` payload diagnostic migration.
 `WorkbookEditor::rename_sheet()` now only wraps public error context, increments
-the public edit count, and clears/records the facade diagnostic. This is
-semantic implementation-boundary cleanup only; it does not add formula or
-definedName rewrites, table/drawing/chart relationship updates, sheet add/delete,
-transaction history, rollback, or broader workbook relationship repair.
+the public edit count, maps explicit rename formula policy options, and
+clears/records the facade diagnostic. The default overload stays catalog-only;
+the new explicit `RewriteDefinedNames` option routes to the internal
+definedName formula rewrite helper. This does not add worksheet formula rewrites,
+table/drawing/chart relationship updates, sheet add/delete, transaction
+history, rollback, or broader workbook relationship repair.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public
 editor smoke, compares definedName records before/after at ZIP/XML level, and
 can reuse the Excel COM sidecar. This is compatibility evidence for supplied
-fixtures only; it is not definedName editing, rename synchronization,
-name-manager support, or formula evaluation.
+fixtures only; it is not name-manager editing, broad rename synchronization,
+external link validation, or formula evaluation.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

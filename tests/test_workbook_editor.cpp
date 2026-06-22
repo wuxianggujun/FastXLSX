@@ -17507,6 +17507,38 @@ void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk
         "definedName audit should not silently repair workbook definedNames");
 }
 
+void test_rename_sheet_can_rewrite_defined_names_opt_in()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-defined-name-rewrite-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-defined-name-rewrite-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames;
+    editor.rename_sheet("Data", "Renamed & Data", options);
+    editor.save_as(output);
+
+    const std::string workbook_xml =
+        fastxlsx::test::read_zip_entries(output).at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed &amp; Data")",
+        "opt-in definedName rewrite should still update the workbook catalog");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'Renamed &amp; Data'!$A$1:$B$2</definedName>)",
+        "opt-in definedName rewrite should update direct workbook definedName formulas");
+    check_contains(workbook_xml,
+        R"(<definedName name="ScopedRange" localSheetId="2">'Other Sheet'!$A$1</definedName>)",
+        "opt-in definedName rewrite should preserve unrelated scoped definedNames");
+    check_contains(workbook_xml,
+        R"(<definedName name="ExternalRef">[Book.xlsx]Data!A1</definedName>)",
+        "opt-in definedName rewrite should preserve external workbook references");
+    check_contains(workbook_xml,
+        R"(<definedName name="ThreeDRef">Data:Formula!A1</definedName>)",
+        "opt-in definedName rewrite should preserve 3D sheet-range references");
+}
+
 void test_rename_sheet_changes_catalog_name_and_preserves_parts()
 {
     const std::filesystem::path source =
@@ -18444,6 +18476,7 @@ int main(int argc, char* argv[])
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
         test_formula_reference_audits_report_renamed_source_sheet_risk();
         test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
+        test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();
         test_rename_back_to_source_name_restores_public_diagnostics();

@@ -329,6 +329,14 @@ void WorkbookEditor::replace_image(
 
 void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_name)
 {
+    rename_sheet(old_name, std::move(new_name), WorkbookEditorRenameOptions {});
+}
+
+void WorkbookEditor::rename_sheet(
+    std::string_view old_name,
+    std::string new_name,
+    WorkbookEditorRenameOptions options)
+{
     if (impl_ == nullptr) {
         throw FastXlsxError("WorkbookEditor is not open");
     }
@@ -337,6 +345,11 @@ void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_nam
     const std::string new_name_key = new_name;
 
     try {
+        detail::WorkbookEditorSheetRenameOptions rename_options;
+        if (options.formula_policy == WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames) {
+            rename_options.formula_policy =
+                detail::WorkbookEditorSheetRenameFormulaPolicy::RewriteDefinedNames;
+        }
         const detail::WorkbookEditorSheetRenameResult result =
             detail::rename_workbook_editor_sheet(
                 impl_->editor,
@@ -344,7 +357,8 @@ void WorkbookEditor::rename_sheet(std::string_view old_name, std::string new_nam
                 impl_->materialized_sessions,
                 impl_->pending_sheet_data_payloads,
                 old_name,
-                std::move(new_name));
+                std::move(new_name),
+                rename_options);
         (void)result;
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();

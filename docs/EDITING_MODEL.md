@@ -23,7 +23,11 @@ Patch 切片：`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp
 `PackageEditor::rename_sheet_catalog_entry()`，只改写 `/xl/workbook.xml` 里
 `<sheets><sheet name="...">` 这个 catalog 名，保留 worksheet parts / relationships /
 content types / unknown entries，不动 defined names / formulas / tables / drawings /
-rel targets（窄 catalog-name 改写，不是语义 rename）。当前还已有 small-file
+rel targets（默认窄 catalog-name 改写，不是语义 rename）。新增显式
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` 选项只在同一个小
+`xl/workbook.xml` rewrite 中改 direct workbook definedName formula text；它不处理
+worksheet formula cells、tables、drawings、charts、hyperlinks、relationship targets、
+external workbook references、3D sheet ranges 或 calcChain。当前还已有 small-file
 In-memory `WorksheetEditor` 首片：`worksheet()` / `try_worksheet()` 返回 borrowed
 handle，支持 source-backed `try_cell()` / `get_cell()`、`set_cell()`、`erase_cell()`、
 strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
@@ -206,10 +210,12 @@ preservation-first 策略：
 继续采用 conservative rewrite + audit-first 策略：
 
 - Defined names：workbook `definedNames` 默认随 `xl/workbook.xml` 保留。sheet catalog
-  rename 只改直接 `<sheets><sheet name="...">` attribute，并把 direct workbook
-  `definedNames` 作为 structured audit / caller-review 风险；当前不更新 named ranges、
-  print areas、sheet-scoped names、formula references、table references 或 external
-  names，也不做 name collision repair。
+  rename 默认只改直接 `<sheets><sheet name="...">` attribute，并把 direct workbook
+  `definedNames` 作为 structured audit / caller-review 风险。显式
+  `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` 只改 direct workbook
+  definedName formula text 中的本地 sheet qualifier，外部 workbook qualifier 和 3D
+  sheet range 仍保留。当前不更新 worksheet formula cells、tables、drawings、charts、
+  hyperlinks、relationship targets、name-manager metadata，也不做 name collision repair。
 - Formulas：worksheet formula cells 会触发 payload dependency audit 和 caller review。
   当前 Patch 不解析公式 AST、不求值公式、不写 cached result、不改写 cell / range /
   sheet references、不构建 dependency graph，也不把 streaming writer 的 formula 输出能力

@@ -12,6 +12,16 @@ namespace fastxlsx::detail {
 
 class PackageEditor;
 
+enum class WorkbookEditorSheetRenameFormulaPolicy {
+    AuditOnly,
+    RewriteDefinedNames,
+};
+
+struct WorkbookEditorSheetRenameOptions {
+    WorkbookEditorSheetRenameFormulaPolicy formula_policy =
+        WorkbookEditorSheetRenameFormulaPolicy::AuditOnly;
+};
+
 struct WorkbookEditorSheetRenameResult {
     std::string old_name;
     std::string new_name;
@@ -33,7 +43,7 @@ void record_workbook_editor_sheet_rename_state(
     const MaterializedWorksheetSessionRegistry& materialized_sessions,
     WorkbookEditorPendingSheetDataPayloads& pending_payloads,
     std::string_view old_name,
-    std::string new_name);
+    std::string new_name,
+    WorkbookEditorSheetRenameOptions options = {});
 
 } // namespace fastxlsx::detail
-

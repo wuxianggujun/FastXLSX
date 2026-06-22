@@ -331,6 +331,35 @@ struct WorkbookEditorDefinedNameFormulaReferenceAudit {
     bool references_planned_sheet_name = false;
 };
 
+/// Formula-reference handling for WorkbookEditor::rename_sheet().
+///
+/// API mode: Patch / existing-workbook workbook metadata rewrite. The default
+/// keeps the current narrow catalog-only behavior and reports formula risks
+/// through audit APIs. The opt-in definedName rewrite policy is intentionally
+/// narrow and does not evaluate formulas, rewrite worksheet formula cells,
+/// update tables/drawings/charts/hyperlinks, rebuild calcChain, or repair
+/// relationships.
+enum class WorkbookEditorRenameFormulaPolicy {
+    /// Preserve formula text and expose risks through audit diagnostics.
+    AuditOnly,
+
+    /// Rewrite direct workbook definedName formula references from the old
+    /// sheet name to the new sheet name. External workbook qualifiers, 3D sheet
+    /// ranges, unsupported/nested definedName XML, worksheet formula cells, and
+    /// other workbook/worksheet metadata remain outside this policy.
+    RewriteDefinedNames,
+};
+
+/// Options for WorkbookEditor::rename_sheet().
+///
+/// API mode: Patch. Options affect only the small `xl/workbook.xml` metadata
+/// rewrite queued by rename_sheet(); they do not materialize worksheets or
+/// enable a formula calculation engine.
+struct WorkbookEditorRenameOptions {
+    WorkbookEditorRenameFormulaPolicy formula_policy =
+        WorkbookEditorRenameFormulaPolicy::AuditOnly;
+};
+
 /// Borrowed random cell editor for one WorkbookEditor-owned materialized sheet.
 ///
 /// API mode: In-memory / existing-workbook small-file editing. WorksheetEditor
@@ -1394,6 +1423,32 @@ public:
     /// diagnostics back to that source name; it is still only a catalog-name
     /// rewrite, not semantic sheet rename synchronization.
     void rename_sheet(std::string_view old_name, std::string new_name);
+
+    /// Renames a worksheet's sheet-catalog name with explicit formula policy.
+    ///
+    /// API mode: Patch. This keeps the same catalog-name rewrite behavior as
+    /// rename_sheet(old_name, new_name) unless `options.formula_policy` is
+    /// `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. That opt-in
+    /// policy additionally rewrites direct workbook definedName formula text in
+    /// `xl/workbook.xml` from the old sheet qualifier to the new sheet
+    /// qualifier. It preserves external workbook references, 3D sheet ranges,
+    /// unsupported nested definedName XML failures, worksheet formula cells,
+    /// tables, drawings, charts, hyperlinks, relationship targets,
+    /// sharedStrings, styles, and calcChain.
+    ///
+    /// This is still not a formula engine, semantic sheet rename, relationship
+    /// repair, worksheet formula rewrite, or calcChain rebuild.
+    ///
+    /// @param old_name Existing worksheet name to rename.
+    /// @param new_name New sheet-catalog name.
+    /// @param options Explicit formula-reference handling policy.
+    /// @throws FastXlsxError on the same rename failures as the default
+    /// overload, or if opt-in definedName formula rewriting detects malformed
+    /// workbook definedName XML. On failure no edit state is mutated.
+    void rename_sheet(
+        std::string_view old_name,
+        std::string new_name,
+        WorkbookEditorRenameOptions options);
 
     /// Writes the edited workbook to a new package path.
     ///

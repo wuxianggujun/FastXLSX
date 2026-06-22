@@ -360,7 +360,11 @@ covers `WorkbookEditor::defined_name_formula_reference_audits()` for source
 workbook `definedNames`: workbook-scope and `localSheetId` scoped names expose
 their exact formula reference tokens, source-name references are flagged after
 `rename_sheet()`, external-workbook / 3D qualifiers remain audit-only, and
-`save_as()` still does not rewrite definedName formula text. For
+the default `rename_sheet(old, new)` save path still does not rewrite definedName
+formula text. The same shard also covers the explicit
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` option, which rewrites
+only direct workbook definedName formulas while preserving external-workbook and
+3D sheet-range qualifiers. For
 the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
 run the focused generated scenario:
 
@@ -448,9 +452,10 @@ scanner scenario. It reads direct workbook `definedNames` records from
 `xl/workbook.xml`, records workbook-scoped, local-sheet-scoped,
 external-reference, and 3D-reference counts, then runs a materialized-only edit
 smoke and verifies the definedName records are semantically preserved in the
-output workbook. This intentionally avoids a sheet rename in the fixture smoke,
-because current `WorkbookEditor::rename_sheet()` does not rewrite definedName
-formula text:
+output workbook. This intentionally avoids a sheet rename in the fixture smoke:
+the fixture scenario is a preservation smoke, while rename-time direct
+definedName formula rewrite is covered by unit tests through the explicit
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` option:
 
 ```powershell
 py tools\run_workbook_editor_qa.py `
@@ -466,9 +471,9 @@ definedName records, `Issue18_defined_name_with_workbook_scope.xlsx` with 1
 workbook-scoped definedName, and `issue90_debug_test_file.xlsx` with 3
 local-sheet-scoped print-area definedNames on a Chinese sheet name (`封面`).
 All three outputs preserve the definedName records and pass Excel COM no-repair
-open smoke. This is fixture QA evidence only; it does not add definedName
-rewrite, name-manager editing, external link validation, or sheet-rename
-formula synchronization.
+open smoke. This is fixture QA evidence only; it does not add name-manager
+editing, external link validation, worksheet formula rewrite, full sheet-rename
+formula synchronization, or formula evaluation.
 
 ## Benchmark 本地 QA
 

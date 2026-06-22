@@ -1,5 +1,6 @@
 ﻿#include "package_editor.hpp"
 
+#include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/detail/xml.hpp>
@@ -6095,7 +6096,10 @@ void PackageEditor::replace_worksheet_cells_by_name(std::string_view sheet_name,
 }
 
 void PackageEditor::rename_sheet_catalog_entry(
-    std::string_view old_name, std::string new_name, const ReferencePolicy& policy)
+    std::string_view old_name,
+    std::string new_name,
+    const ReferencePolicy& policy,
+    SheetCatalogRenameOptions options)
 {
     validate_sheet_catalog_rename_target(new_name);
 
@@ -6111,9 +6115,14 @@ void PackageEditor::rename_sheet_catalog_entry(
         reader_.workbook_sheets_from_xml(workbook_xml);
     const WorkbookSheetReference target =
         select_sheet_catalog_rename_target(sheets, old_name, new_name);
+    const bool rewrite_defined_names =
+        options.formula_policy == SheetCatalogRenameFormulaPolicy::RewriteDefinedNames;
+    const bool has_direct_defined_names =
+        has_direct_workbook_child_tag(workbook_xml, "definedNames");
 
-    if (policy.unsupported_linked_part_action == ReferencePolicyAction::Fail
-        && has_direct_workbook_child_tag(workbook_xml, "definedNames")) {
+    if (!rewrite_defined_names
+        && policy.unsupported_linked_part_action == ReferencePolicyAction::Fail
+        && has_direct_defined_names) {
         throw FastXlsxError(
             "workbook sheet catalog rename does not update workbook definedNames");
     }
@@ -6128,15 +6137,41 @@ void PackageEditor::rename_sheet_catalog_entry(
     workbook_xml.replace(
         value_begin, value_end - value_begin, escape_xml_attribute(new_name));
 
-    edit_plan_.set_part(workbook_part, PartWriteMode::LocalDomRewrite,
-        "workbook sheet catalog name attribute local-DOM rewrite; definedNames, "
-        "formulas, tables, drawings, charts, hyperlinks, and relationship targets "
-        "are preserved for caller review");
-    edit_plan_.add_note(
-        "workbook sheet catalog rename only rewrites the workbook <sheets><sheet "
-        "name> attribute; definedNames, formulas, tables, drawings, charts, "
-        "hyperlinks, relationship targets, sharedStrings, styles, and calcChain "
-        "are not synchronized");
+    bool defined_names_rewritten = false;
+    if (rewrite_defined_names && has_direct_defined_names) {
+        const std::vector<FormulaSheetReferenceRewrite> rewrites {
+            FormulaSheetReferenceRewrite {
+                std::string(old_name),
+                new_name,
+            },
+        };
+        const std::string rewritten_workbook_xml =
+            rewrite_workbook_defined_name_formula_references(workbook_xml, rewrites);
+        defined_names_rewritten = rewritten_workbook_xml != workbook_xml;
+        workbook_xml = rewritten_workbook_xml;
+    }
+
+    const std::string rewrite_reason = rewrite_defined_names
+        ? "workbook sheet catalog name attribute and direct definedName formula "
+          "references local-DOM rewrite; worksheet formulas, tables, drawings, "
+          "charts, hyperlinks, and relationship targets are preserved for caller review"
+        : "workbook sheet catalog name attribute local-DOM rewrite; definedNames, "
+          "formulas, tables, drawings, charts, hyperlinks, and relationship targets "
+          "are preserved for caller review";
+    edit_plan_.set_part(workbook_part, PartWriteMode::LocalDomRewrite, rewrite_reason);
+    if (rewrite_defined_names) {
+        edit_plan_.add_note(
+            "workbook sheet catalog rename rewrites direct workbook definedName "
+            "formula references with an opt-in narrow policy; worksheet formulas, "
+            "tables, drawings, charts, hyperlinks, relationship targets, "
+            "sharedStrings, styles, and calcChain are not synchronized");
+    } else {
+        edit_plan_.add_note(
+            "workbook sheet catalog rename only rewrites the workbook <sheets><sheet "
+            "name> attribute; definedNames, formulas, tables, drawings, charts, "
+            "hyperlinks, relationship targets, sharedStrings, styles, and calcChain "
+            "are not synchronized");
+    }
     edit_plan_.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
         workbook_part,
         WorkbookPayloadDependencyAuditKind::SheetCatalog,
@@ -6149,13 +6184,15 @@ void PackageEditor::rename_sheet_catalog_entry(
         WorkbookPayloadDependencyAuditKind::DefinedNames,
         WorkbookPayloadDependencyAuditScope::SheetCatalogRename,
         "definedNames",
-        "workbook sheet catalog rename preserves definedNames without semantic sync",
+        rewrite_defined_names
+            ? (defined_names_rewritten
+                    ? "workbook sheet catalog rename rewrites direct definedName formula references with opt-in narrow sync"
+                    : "workbook sheet catalog rename checked direct definedName formula references with opt-in narrow sync; no direct references changed")
+            : "workbook sheet catalog rename preserves definedNames without semantic sync",
     });
     upsert_part_replacement(replacements_, workbook_part, std::move(workbook_xml),
         PartWriteMode::LocalDomRewrite,
-        "workbook sheet catalog name attribute local-DOM rewrite; definedNames, "
-        "formulas, tables, drawings, charts, hyperlinks, and relationship targets "
-        "are preserved for caller review",
+        rewrite_reason,
         &workbook_part);
     remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
     remove_omitted_entry(omitted_entries_, workbook_part.zip_path());

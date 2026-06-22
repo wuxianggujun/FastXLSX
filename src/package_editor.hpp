@@ -100,6 +100,16 @@ struct PackageEditorOutputPlan {
     std::vector<WorkbookPayloadDependencyAudit> workbook_payload_dependency_audits;
 };
 
+enum class SheetCatalogRenameFormulaPolicy {
+    AuditOnly,
+    RewriteDefinedNames,
+};
+
+struct SheetCatalogRenameOptions {
+    SheetCatalogRenameFormulaPolicy formula_policy =
+        SheetCatalogRenameFormulaPolicy::AuditOnly;
+};
+
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 using PackageEditorSourceCopyTempFilesHook =
     void (*)(std::span<const std::filesystem::path> temporary_source_files);
@@ -347,7 +357,7 @@ public:
     // treat it as a narrow catalog-name mutation rather than full sheet rename.
     // New-name duplicate checks are conservative and ASCII case-insensitive.
     void rename_sheet_catalog_entry(std::string_view old_name, std::string new_name,
-        const ReferencePolicy& policy = {});
+        const ReferencePolicy& policy = {}, SheetCatalogRenameOptions options = {});
     // Internal small-part Patch helper. Rewrites workbook calc metadata only,
     // optionally omitting stale calcChain payload/metadata, and leaves worksheet
     // parts and linked objects copy-original.

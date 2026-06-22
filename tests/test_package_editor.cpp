@@ -39144,6 +39144,116 @@ void test_package_editor_renames_sheet_catalog_entry_preserving_parts()
         "sheet catalog rename should keep unknown extension default content type");
 }
 
+void test_package_editor_sheet_catalog_rename_rewrites_defined_names_opt_in()
+{
+    LinkedObjectSourcePackage source =
+        write_sheet_data_patch_source_package(
+            "fastxlsx-package-editor-sheet-catalog-rename-defined-names-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<definedNames>)"
+        R"(<definedName name="ReportRange">Sheet1!$A$1:$B$2</definedName>)"
+        R"(<definedName name="External">[Book.xlsx]Sheet1!$A$1</definedName>)"
+        R"(<definedName name="ThreeD">Sheet1:Other!$A$1</definedName>)"
+        R"(</definedNames></workbook>)";
+    rewrite_linked_object_source_package(source);
+
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-sheet-catalog-rename-defined-names-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    using WorkbookAuditKind = fastxlsx::detail::WorkbookPayloadDependencyAuditKind;
+    using WorkbookAuditScope = fastxlsx::detail::WorkbookPayloadDependencyAuditScope;
+
+    fastxlsx::detail::SheetCatalogRenameOptions options;
+    options.formula_policy =
+        fastxlsx::detail::SheetCatalogRenameFormulaPolicy::RewriteDefinedNames;
+    editor.rename_sheet_catalog_entry("Sheet1", "Renamed & Data", {}, options);
+
+    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
+    check(workbook_plan != nullptr,
+        "opt-in definedName rename should record workbook rewrite");
+    check(workbook_plan->reason.find("definedName formula references") != std::string::npos,
+        "opt-in definedName rename plan reason should name definedName formula rewrite");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"definedName", "opt-in narrow policy", "worksheet formulas"}),
+        "opt-in definedName rename should audit the narrow formula policy");
+    check(has_workbook_payload_audit(editor.edit_plan().workbook_payload_dependency_audits(),
+              workbook_part, WorkbookAuditKind::DefinedNames,
+              WorkbookAuditScope::SheetCatalogRename, "definedNames",
+              {"definedName", "opt-in narrow sync"}),
+        "opt-in definedName rename should record structured definedName rewrite audit");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed &amp; Data")",
+        "opt-in definedName rename should still XML-escape the sheet catalog name");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'Renamed &amp; Data'!$A$1:$B$2</definedName>)",
+        "opt-in definedName rename should rewrite direct local definedName formulas");
+    check_contains(workbook_xml,
+        R"(<definedName name="External">[Book.xlsx]Sheet1!$A$1</definedName>)",
+        "opt-in definedName rename should preserve external workbook references");
+    check_contains(workbook_xml,
+        R"(<definedName name="ThreeD">Sheet1:Other!$A$1</definedName>)",
+        "opt-in definedName rename should preserve 3D sheet-range references");
+}
+
+void test_package_editor_sheet_catalog_rename_defined_name_rewrite_failure_is_clean()
+{
+    LinkedObjectSourcePackage source =
+        write_sheet_data_patch_source_package(
+            "fastxlsx-package-editor-sheet-catalog-rename-defined-name-failure-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<definedNames><definedName name="Nested"><x>Sheet1!A1</x></definedName></definedNames>)"
+        R"(</workbook>)";
+    rewrite_linked_object_source_package(source);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_workbook_payload_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+
+    fastxlsx::detail::SheetCatalogRenameOptions options;
+    options.formula_policy =
+        fastxlsx::detail::SheetCatalogRenameFormulaPolicy::RewriteDefinedNames;
+    bool failed = false;
+    try {
+        editor.rename_sheet_catalog_entry("Sheet1", "Renamed", {}, options);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "nested XML in definedName text",
+            "definedName rewrite failure should report malformed definedName XML");
+    }
+    check(failed,
+        "opt-in definedName rewrite should reject nested definedName XML before state changes");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "definedName rewrite failure should preserve edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "definedName rewrite failure should not add notes");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == initial_workbook_payload_audit_count,
+        "definedName rewrite failure should not add workbook payload audits");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "definedName rewrite failure should leave workbook copy-original");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "definedName rewrite failure should leave worksheet copy-original");
+}
+
 void test_package_editor_sheet_catalog_rename_uses_planned_workbook_xml()
 {
     const LinkedObjectSourcePackage source =
@@ -48981,6 +49091,8 @@ int main(int argc, char* argv[])
         test_package_editor_rejects_generic_source_part_materialized_replacement_without_state_changes();
         test_package_editor_rejects_oversized_metadata_xml_materialization_without_state_changes();
         test_package_editor_renames_sheet_catalog_entry_preserving_parts();
+        test_package_editor_sheet_catalog_rename_rewrites_defined_names_opt_in();
+        test_package_editor_sheet_catalog_rename_defined_name_rewrite_failure_is_clean();
         test_package_editor_sheet_catalog_rename_uses_planned_workbook_xml();
         test_package_editor_rejects_sheet_catalog_rename_without_state_changes();
         test_package_editor_rejects_invalid_planned_workbook_catalog_by_name_without_state_changes();

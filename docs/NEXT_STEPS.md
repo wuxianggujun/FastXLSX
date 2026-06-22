@@ -80,6 +80,13 @@ name a source sheet after
 scan non-materialized worksheet parts or rewrite formulas.
 It now also classifies external-workbook and 3D sheet-range qualifiers as
 audit-only cases so they are not mistaken for one local workbook sheet.
+The source-package side of that diagnostic is now separate:
+`WorkbookEditor::source_formula_reference_audits()` streams source worksheet XML
+parts through the internal event reader and reports explicit `<f>...</f>`
+formula text without materializing `WorksheetEditor` sessions. It gives
+rename-risk visibility for non-materialized worksheets, but still does not
+rewrite those formulas, translate metadata-only shared formula followers,
+evaluate formulas, or build a dependency graph.
 The same audit boundary now extends to source workbook defined names through
 `WorkbookEditor::defined_name_formula_reference_audits()`: it materializes only
 the small `xl/workbook.xml` metadata part, scans direct

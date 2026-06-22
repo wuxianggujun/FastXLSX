@@ -200,6 +200,13 @@ struct WorkbookEditor::Impl {
             sheet_catalog.entries(), materialized_sessions);
     }
 
+    [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
+    source_formula_reference_audits() const
+    {
+        return detail::workbook_editor_source_formula_reference_audits(
+            sheet_catalog.entries(), editor.reader());
+    }
+
     [[nodiscard]] std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
     defined_name_formula_reference_audits() const
     {

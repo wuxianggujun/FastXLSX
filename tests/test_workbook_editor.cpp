@@ -191,6 +191,10 @@ void check_public_inspection_preserves_last_edit_error(
     check(editor.last_edit_error() == expected,
         "formula_reference_audits should not update last_edit_error");
 
+    (void)editor.source_formula_reference_audits();
+    check(editor.last_edit_error() == expected,
+        "source_formula_reference_audits should not update last_edit_error");
+
     (void)editor.defined_name_formula_reference_audits();
     check(editor.last_edit_error() == expected,
         "defined_name_formula_reference_audits should not update last_edit_error");
@@ -17435,6 +17439,88 @@ void test_formula_reference_audits_report_renamed_source_sheet_risk()
         "formula reference audit should not silently repair renamed sheet formulas");
 }
 
+void test_source_formula_reference_audits_report_non_materialized_rename_risk()
+{
+    const std::filesystem::path source = write_formula_reference_source(
+        "fastxlsx-workbook-editor-source-formula-reference-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-source-formula-reference-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.formula_reference_audits().empty(),
+        "materialized formula audit should stay empty before worksheet() is called");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
+        editor.source_formula_reference_audits();
+    check(initial_audits.size() == 5,
+        "source formula audit should scan non-materialized source worksheet formulas");
+    {
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* data =
+            find_formula_reference_audit(initial_audits, "Data");
+        check(data != nullptr,
+            "source formula audit should include the unquoted Data sheet reference");
+        if (data != nullptr) {
+            check(data->formula_sheet_source_name == "Formula" &&
+                    data->formula_sheet_planned_name == "Formula",
+                "source formula audit should report the source formula sheet context");
+            check(data->formula_cell.row == 1 && data->formula_cell.column == 1,
+                "source formula audit should parse the formula cell coordinate");
+            check(data->formula_text.find("Data!A1") != std::string::npos,
+                "source formula audit should report decoded formula text");
+            check(data->matched_current_workbook_sheet &&
+                    data->matched_source_sheet_name == "Data" &&
+                    data->matched_planned_sheet_name == "Data",
+                "source formula audit should match source and planned names before rename");
+            check(!data->references_renamed_source_name &&
+                    data->references_planned_sheet_name,
+                "source formula audit should not flag unchanged source references");
+        }
+
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+            find_formula_reference_audit(initial_audits, "[Book.xlsx]Data");
+        check(external != nullptr && external->external_workbook_qualifier,
+            "source formula audit should classify external workbook qualifiers");
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+            find_formula_reference_audit(initial_audits, "Data:Formula");
+        check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+            "source formula audit should classify 3D sheet-range qualifiers");
+    }
+
+    editor.rename_sheet("Data", "RenamedData");
+    check(editor.formula_reference_audits().empty(),
+        "source formula audit should not materialize worksheet formula sessions");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
+        editor.source_formula_reference_audits();
+    check(renamed_audits.size() == 5,
+        "rename should not drop source formula audit entries");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* renamed_data =
+        find_formula_reference_audit(renamed_audits, "Data");
+    check(renamed_data != nullptr,
+        "renamed source formula audit should still expose the source-name formula text");
+    if (renamed_data != nullptr) {
+        check(renamed_data->matched_current_workbook_sheet &&
+                renamed_data->matched_source_sheet_name == "Data" &&
+                renamed_data->matched_planned_sheet_name == "RenamedData",
+            "renamed source formula audit should map the old source name to the planned name");
+        check(renamed_data->references_renamed_source_name &&
+                !renamed_data->references_planned_sheet_name,
+            "renamed source formula audit should flag non-materialized stale formulas");
+    }
+
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "source formula audit should still let rename persist the workbook catalog");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(formula_sheet_xml, "Data!A1",
+        "source formula audit should not rewrite non-materialized source worksheet formulas");
+    check_not_contains(formula_sheet_xml, "RenamedData!A1",
+        "source formula audit should not silently repair non-materialized formulas");
+}
+
 void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk()
 {
     const std::filesystem::path source = write_defined_name_reference_source(
@@ -18886,6 +18972,7 @@ int main(int argc, char* argv[])
         test_text_uses_inline_strings_and_preserves_shared_strings();
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
         test_formula_reference_audits_report_renamed_source_sheet_risk();
+        test_source_formula_reference_audits_report_non_materialized_rename_risk();
         test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();

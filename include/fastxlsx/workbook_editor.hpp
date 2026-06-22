@@ -1195,6 +1195,28 @@ public:
     [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
     formula_reference_audits() const;
 
+    /// Returns sheet-qualified formula references from source worksheet XML.
+    ///
+    /// API mode: Patch / read-only source workbook inspection. This diagnostic
+    /// scans the opened package's source worksheet XML parts using the internal
+    /// bounded event reader and reports references from formula cells that carry
+    /// explicit `<f>...</f>` formula text. It compares ordinary decoded sheet
+    /// qualifier tokens with the current source-to-planned worksheet catalog so
+    /// callers can detect formulas in non-materialized worksheets that still
+    /// name a source sheet after rename_sheet() has changed that sheet's planned
+    /// catalog name. External workbook and 3D sheet-range qualifiers are
+    /// classified for audit and are not matched to a single local workbook
+    /// sheet.
+    ///
+    /// This method intentionally does not materialize WorksheetEditor sessions,
+    /// rewrite formula text, translate metadata-only shared formula followers,
+    /// parse the full Excel formula grammar, evaluate formulas, validate
+    /// external workbook targets or 3D sheet range semantics, rebuild calcChain,
+    /// repair workbook metadata, or update last_edit_error(). It returns an
+    /// empty vector for a moved-from editor.
+    [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
+    source_formula_reference_audits() const;
+
     /// Returns sheet-qualified formula references from workbook definedNames.
     ///
     /// This is a read-only dependency-risk diagnostic for source workbook

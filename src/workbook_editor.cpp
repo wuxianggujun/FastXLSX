@@ -172,6 +172,15 @@ std::vector<WorkbookEditorFormulaReferenceAudit> WorkbookEditor::formula_referen
     return impl_->formula_reference_audits();
 }
 
+std::vector<WorkbookEditorFormulaReferenceAudit>
+WorkbookEditor::source_formula_reference_audits() const
+{
+    if (impl_ == nullptr) {
+        return {};
+    }
+    return impl_->source_formula_reference_audits();
+}
+
 std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
 WorkbookEditor::defined_name_formula_reference_audits() const
 {

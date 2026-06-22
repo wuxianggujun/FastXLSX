@@ -103,9 +103,14 @@ unchanged workbook XML bytes. The first explicit public policy hook now exists:
 `WorkbookEditor::rename_sheet(old, new, WorkbookEditorRenameOptions{...})` can
 opt into `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` to rewrite
 direct workbook definedName formula references during the small `xl/workbook.xml`
-rewrite. The default `rename_sheet(old, new)` remains catalog-only and still
-does not rewrite worksheet formula cells, tables, drawings, charts, hyperlinks,
-relationships, calcChain, external-workbook references, or 3D sheet ranges.
+rewrite, or opt into
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
+to rewrite both those direct definedName references and formula cells already
+loaded into `WorksheetEditor` materialized sessions during the same public
+rename. The default `rename_sheet(old, new)` remains catalog-only and still
+does not rewrite non-materialized worksheet formula cells, tables, drawings,
+charts, hyperlinks, relationships, calcChain, external-workbook references, or
+3D sheet ranges.
 The `WorkbookEditor` implementation has now been split along semantic
 boundaries instead of file-only churn: `src/workbook_editor_state.hpp` owns the
 private editor state and catalog/pending-summary projections,

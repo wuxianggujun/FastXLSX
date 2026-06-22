@@ -17687,6 +17687,101 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
         "reopened output should expose the rewritten materialized formula text");
 }
 
+void test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-combined-formula-rewrite-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-combined-formula-rewrite-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value() == "Data!A1",
+        "combined rewrite fixture should materialize the source formula before rename");
+    check(!formula_sheet.has_pending_changes(),
+        "combined rewrite fixture should start with a clean materialized formula session");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "RenamedData", options);
+
+    const std::string expected_formula = "'RenamedData'!A1";
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == expected_formula,
+        "combined rewrite should update the already-materialized worksheet formula");
+    check(formula_sheet.has_pending_changes(),
+        "combined rewrite should dirty the changed materialized worksheet session");
+    check(editor.pending_change_count() == 1,
+        "combined rewrite should still count the public rename once before save_as");
+    const std::vector<std::string> dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 1 && dirty_names[0] == "Formula",
+        "combined rewrite should expose only the rewritten materialized formula sheet");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> formula_audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(formula_audits, "RenamedData") == 1,
+        "combined rewrite formula audit should expose the planned-name formula reference");
+    check(count_formula_reference_audits(formula_audits, "Data") == 0,
+        "combined rewrite formula audit should not leave a stale local Data reference");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "combined rewrite should persist the renamed workbook catalog entry");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'RenamedData'!$A$1:$B$2</definedName>)",
+        "combined rewrite should persist the rewritten workbook definedName");
+    check_contains(workbook_xml,
+        R"(<definedName name="ExternalRef">[Book.xlsx]Data!A1</definedName>)",
+        "combined rewrite should persist external workbook definedName references unchanged");
+    check_contains(workbook_xml,
+        R"(<definedName name="ThreeDRef">Data:Formula!A1</definedName>)",
+        "combined rewrite should persist 3D definedName references unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet3.xml"), expected_formula,
+        "combined rewrite should persist the rewritten materialized worksheet formula");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        "reopened combined rewrite output should expose the rewritten formula");
+
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>
+        reopened_defined_name_audits = reopened.defined_name_formula_reference_audits();
+    const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* report_range =
+        find_defined_name_formula_reference_audit(
+            reopened_defined_name_audits, "ReportRange", "RenamedData");
+    check(report_range != nullptr,
+        "reopened combined output should expose the rewritten direct definedName reference");
+    if (report_range != nullptr) {
+        check(report_range->formula_text == "'RenamedData'!$A$1:$B$2" &&
+                report_range->references_planned_sheet_name &&
+                !report_range->references_renamed_source_name,
+            "reopened combined definedName audit should report the planned sheet name");
+    }
+    check(find_defined_name_formula_reference_audit(
+              reopened_defined_name_audits, "ReportRange", "Data") == nullptr,
+        "reopened combined output should not leave the direct definedName on the old name");
+    const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* external =
+        find_defined_name_formula_reference_audit(
+            reopened_defined_name_audits, "ExternalRef", "[Book.xlsx]Data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "reopened combined output should preserve external workbook definedName references");
+    const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* sheet_range =
+        find_defined_name_formula_reference_audit(
+            reopened_defined_name_audits, "ThreeDRef", "Data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "reopened combined output should preserve 3D definedName references");
+}
+
 void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
 {
     const std::filesystem::path source = write_multi_formula_reference_source(
@@ -18795,6 +18890,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
+        test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();

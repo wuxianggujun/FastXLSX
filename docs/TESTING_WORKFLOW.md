@@ -375,9 +375,10 @@ already-materialized WorksheetEditor formula cells are rewritten and marked
 dirty for `save_as()` auto-flush, while the `RewriteDefinedNames` policy alone
 keeps those materialized formulas unchanged; external-workbook qualifiers, 3D
 sheet-range qualifiers, string literals, and non-materialized worksheet formulas
-remain outside the rewrite boundary. For
-the local openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and
-run the focused generated scenario:
+remain outside the rewrite boundary. The supported formula matrix and
+non-engine boundaries are maintained in `docs/FORMULA_SUPPORT.md`. For the local
+openpyxl / optional XlsxWriter QA layer, build the opt-in QA tool and run the
+focused generated scenario:
 
 ```powershell
 cmake --preset windows-nmake-release -DFASTXLSX_BUILD_QA_TOOLS=ON

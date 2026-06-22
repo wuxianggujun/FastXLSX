@@ -294,6 +294,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `xl/_rels/workbook.xml.rels`、`xl/worksheets/sheet1.xml`、
   `docProps/core.xml` 和 `docProps/app.xml`。
 - 数字、inline string、布尔和公式单元格写入。
+- 公式能力边界见 `docs/FORMULA_SUPPORT.md`：当前是公式文本写入/读取、
+  共享公式有限展开、审计和重算请求，不是完整 Excel 公式计算引擎。
 - `StringStrategy::SharedString` 基础写出路径、`xl/sharedStrings.xml` package wiring
   和结构测试；它是显式策略，内存随唯一字符串表增长。
 - 基础 `docProps/core.xml` 和 `docProps/app.xml` 配置；不生成
@@ -449,6 +451,8 @@ whole-row/whole-column reference、函数名、named range 和 structured-refere
 shared formula cell 仍只在有 supported cached scalar `<v>` 时按旧边界 materialize。
 dirty projection 输出普通 `<f>...</f>`，不保留 shared formula metadata、cached
 formula results，不计算公式、不重建 calcChain。
+完整公式支持矩阵见 `docs/FORMULA_SUPPORT.md`；该路径不能写成内置 Excel
+calculation engine。
 本地兼容 QA 可以用 `tools/run_workbook_editor_qa.py --scenario
 generated_shared_formula_boundary_materialization` 跑生成型边界样本，用
 `--scenario generated_shared_formula_office_like_materialization` 跑 2D shared

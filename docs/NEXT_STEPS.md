@@ -146,6 +146,9 @@ materializes as plain formula text, metadata-only cells fall back to supported
 cached scalar values, and dirty projection does not preserve array/dataTable
 formula metadata or stale cached formula results. This is not dynamic array
 spill support, data table recalculation, or formula dependency graphing.
+The consolidated formula capability matrix is now tracked in
+`docs/FORMULA_SUPPORT.md`: FastXLSX supports formula-compatible XLSX editing,
+not an embedded Excel calculation engine.
 The current regression matrix now also pins multiple followers per `si`,
 interleaved shared formula indexes, latest source-order definition behavior for
 later followers, function/name-like token boundaries, structured-reference and

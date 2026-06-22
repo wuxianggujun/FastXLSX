@@ -1021,6 +1021,15 @@ with ZIP/XML, `openpyxl`, and Excel COM. The case proves the narrow opt-in
 public rewrite path end-to-end without broadening default `rename_sheet()`,
 formula evaluation, calcChain rebuild, or non-materialized worksheet formula
 rewrite.
+P8.589 adds the paired default-policy generated QA scenario:
+`generated_formula_rename_default_audit` uses the same workbook shape but calls
+default `rename_sheet("Data", "RenamedData")`. ZIP/XML, `openpyxl`, and Excel
+COM verify the catalog rename while direct local definedNames,
+already-materialized worksheet formulas, external-workbook references, 3D
+sheet-range references, string literals, non-materialized worksheet formulas,
+and calcChain absence remain unchanged; formula and definedName rename-risk
+audits are still reported. This protects the documented catalog-only default
+from accidental silent formula repair.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

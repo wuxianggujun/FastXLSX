@@ -218,6 +218,28 @@ function Verify-GeneratedFormulaRenameRewrite {
     }
 }
 
+function Verify-GeneratedFormulaRenameDefaultAudit {
+    param([object]$Workbook)
+
+    $renamed = $null
+    $formula = $null
+    try {
+        $renamed = Get-Worksheet $Workbook "RenamedData"
+        $formula = Get-Worksheet $Workbook "Formula"
+        Assert-CellValue $renamed "A1" 1 "RenamedData!A1"
+        Assert-FormulaIn $formula "A1" @("=Data!A1", "='Data'!A1") "Formula!A1 default formula"
+        Assert-FormulaIn $formula "A2" @("=Data!`$A`$1", "='Data'!`$A`$1") "Formula!A2 default formula"
+        Assert-FormulaIn $formula "A5" @("=Data!A1+`"Data!A1`"", "='Data'!A1+`"Data!A1`"") "Formula!A5 default string-literal formula"
+    }
+    finally {
+        foreach ($object in @($formula, $renamed)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStylePassthrough {
     param([object]$Workbook)
 
@@ -372,6 +394,7 @@ function Verify-Case {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
+            "generated_formula_rename_default_audit" { Verify-GeneratedFormulaRenameDefaultAudit $workbook }
             "generated_shared_formula_materialization" { Verify-GeneratedSharedFormulaMaterialization $workbook }
             "generated_shared_formula_office_like_materialization" { Verify-GeneratedSharedFormulaOfficeLikeMaterialization $workbook }
             "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }

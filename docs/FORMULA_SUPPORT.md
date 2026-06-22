@@ -99,6 +99,11 @@ py tools\run_workbook_editor_qa.py `
   --excel-verify
 
 py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_default_audit `
+  --work-dir build\qa\workbook-editor-formula-rename-default `
+  --excel-verify
+
+py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_materialization `
   --work-dir build\qa\workbook-editor-shared-formula-materialization `
   --excel-verify
@@ -133,6 +138,15 @@ worksheet formula references are rewritten while external-workbook references,
 `Unmaterialized` worksheet formula remain unchanged. This is still opt-in
 formula text rewrite evidence only, not default rename behavior or formula
 evaluation.
+
+`generated_formula_rename_default_audit` is the paired default-policy QA. It
+uses the same generated workbook but calls default `rename_sheet("Data",
+"RenamedData")`, then verifies by ZIP/XML, `openpyxl`, and Excel COM that the
+workbook sheet catalog is renamed while direct local definedNames,
+already-materialized worksheet formulas, external-workbook references, 3D
+sheet-range references, string literals, non-materialized worksheet formulas,
+and calcChain absence remain unchanged. The tool report must still expose
+rename-risk audits for stale source-name formula and definedName references.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

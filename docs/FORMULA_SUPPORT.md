@@ -151,3 +151,12 @@ formula cells on the target sheet; source audits saw 6 qualified references,
 5 ordinary formulas and 0 shared-formula metadata; definedName preservation
 kept 3 direct definedName records per workbook, with Excel COM status `ok`.
 The temporary source fixture root was removed after validation.
+
+A focused definedName audit rerun is recorded in
+`build\qa\python-writer-defined-name-audit-2026-06-22\report.json`. It uses
+temporary `openpyxl 3.1.2` and `XlsxWriter 3.2.0` workbooks with 3 local
+sheet-qualified definedName references each, and confirms the QA layer reports
+the public audit counts: 3 definedName references, 3 current-workbook sheet
+matches, and zero rename-risk, external-workbook, or 3D sheet-range references
+per workbook. This remains diagnostic evidence only; it does not add formula
+evaluation, name-manager editing, or default rename-time formula rewriting.

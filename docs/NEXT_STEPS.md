@@ -234,6 +234,14 @@ materialized rename output kept 5 ordinary formulas and 0 shared-formula
 metadata; each definedName preservation case kept 3 direct records. Excel COM
 reported `ok` for all output workbooks, and the temporary source fixture root
 was removed after validation.
+A focused definedName audit-count rerun now records the public
+`WorkbookEditor::defined_name_formula_reference_audits()` output in the Python
+fixture report. `build\qa\python-writer-defined-name-audit-2026-06-22\report.json`
+covers temporary `openpyxl 3.1.2` and `XlsxWriter 3.2.0` workbooks with 3 local
+sheet-qualified definedName references each; both cases report 3 audits, 3
+current-workbook matches, and zero rename-risk / external-workbook / 3D
+sheet-range references, with Excel COM status `ok`. The temporary source root
+was removed after validation.
 The scenario deliberately avoids sheet rename because it is a preservation
 fixture smoke; the explicit direct definedName rewrite policy is covered by
 unit tests instead.
@@ -997,10 +1005,11 @@ rollback, or broader workbook relationship repair.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public
-editor smoke, compares definedName records before/after at ZIP/XML level, and
-can reuse the Excel COM sidecar. This is compatibility evidence for supplied
-fixtures only; it is not name-manager editing, broad rename synchronization,
-external link validation, or formula evaluation.
+editor smoke, compares definedName records before/after at ZIP/XML level,
+records the C++ QA tool's public definedName formula-reference audit counters,
+and can reuse the Excel COM sidecar. This is compatibility evidence for
+supplied fixtures only; it is not name-manager editing, broad rename
+synchronization, external link validation, or formula evaluation.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

@@ -1771,9 +1771,18 @@ def run_defined_name_fixture_case(
         fixture_path,
         output_path,
     )
+    zip_xml["defined_name_audit"] = {
+        "count": tool_report.get("defined_name_audit_count", 0),
+        "rename_risk_count": tool_report.get("defined_name_audit_rename_risk_count", 0),
+        "external_count": tool_report.get("defined_name_audit_external_count", 0),
+        "sheet_range_count": tool_report.get("defined_name_audit_sheet_range_count", 0),
+        "matched_count": tool_report.get("defined_name_audit_matched_count", 0),
+        "references": tool_report.get("defined_name_audit_references", []),
+    }
     openpyxl_report["defined_name_count"] = zip_xml["defined_name_preservation"]["output"][
         "defined_name_count"
     ]
+    openpyxl_report["defined_name_audit_count"] = zip_xml["defined_name_audit"]["count"]
 
     try:
         case_name = f"{group_name}:{fixture_path.relative_to(fixture_root).as_posix()}"

@@ -61,6 +61,12 @@ struct Report {
     int source_formula_sheet_range_count = 0;
     int source_formula_matched_count = 0;
     std::vector<std::string> source_formula_audit_references;
+    int defined_name_audit_count = 0;
+    int defined_name_audit_rename_risk_count = 0;
+    int defined_name_audit_external_count = 0;
+    int defined_name_audit_sheet_range_count = 0;
+    int defined_name_audit_matched_count = 0;
+    std::vector<std::string> defined_name_audit_references;
 };
 
 [[nodiscard]] std::filesystem::path repository_root()
@@ -279,6 +285,18 @@ void append_json_number_field(
         json, "source_formula_matched_count", report.source_formula_matched_count, first);
     append_json_vector_field(json, "source_formula_audit_references",
         report.source_formula_audit_references, first);
+    append_json_number_field(
+        json, "defined_name_audit_count", report.defined_name_audit_count, first);
+    append_json_number_field(json, "defined_name_audit_rename_risk_count",
+        report.defined_name_audit_rename_risk_count, first);
+    append_json_number_field(
+        json, "defined_name_audit_external_count", report.defined_name_audit_external_count, first);
+    append_json_number_field(json, "defined_name_audit_sheet_range_count",
+        report.defined_name_audit_sheet_range_count, first);
+    append_json_number_field(
+        json, "defined_name_audit_matched_count", report.defined_name_audit_matched_count, first);
+    append_json_vector_field(json, "defined_name_audit_references",
+        report.defined_name_audit_references, first);
     json << "\n}\n";
     return json.str();
 }
@@ -626,6 +644,36 @@ void summarize_source_formula_audits(
             ++report.source_formula_matched_count;
         }
         report.source_formula_audit_references.push_back(audit.qualified_reference_text);
+    }
+}
+
+void summarize_defined_name_audits(
+    Report& report,
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>& audits)
+{
+    report.defined_name_audit_count = static_cast<int>(audits.size());
+    report.defined_name_audit_rename_risk_count = 0;
+    report.defined_name_audit_external_count = 0;
+    report.defined_name_audit_sheet_range_count = 0;
+    report.defined_name_audit_matched_count = 0;
+    report.defined_name_audit_references.clear();
+    report.defined_name_audit_references.reserve(audits.size());
+
+    for (const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit& audit : audits) {
+        if (audit.references_renamed_source_name) {
+            ++report.defined_name_audit_rename_risk_count;
+        }
+        if (audit.external_workbook_qualifier) {
+            ++report.defined_name_audit_external_count;
+        }
+        if (audit.sheet_range_qualifier) {
+            ++report.defined_name_audit_sheet_range_count;
+        }
+        if (audit.matched_current_workbook_sheet) {
+            ++report.defined_name_audit_matched_count;
+        }
+        report.defined_name_audit_references.push_back(
+            audit.defined_name + ":" + audit.qualified_reference_text);
     }
 }
 
@@ -1050,6 +1098,7 @@ Report run_fixture_rename_materialized(const CliOptions& options)
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     report.source_sheet_name = pick_fixture_sheet_name(options, editor);
     editor.rename_sheet(report.source_sheet_name, report.renamed_sheet_name);
+    summarize_defined_name_audits(report, editor.defined_name_formula_reference_audits());
     WorksheetEditor sheet = editor.worksheet(report.renamed_sheet_name);
     sheet.set_cell(1, 1, CellValue::text("fixture-materialized-edit"));
     sheet.set_cell(2, 2, CellValue::number(42.0));
@@ -1082,6 +1131,7 @@ Report run_fixture_materialized_only(const CliOptions& options)
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     report.source_sheet_name = pick_fixture_sheet_name(options, editor);
+    summarize_defined_name_audits(report, editor.defined_name_formula_reference_audits());
     WorksheetEditor sheet = editor.worksheet(report.source_sheet_name);
     sheet.set_cell(1, 1, CellValue::text("fixture-materialized-edit"));
     sheet.set_cell(2, 2, CellValue::number(42.0));

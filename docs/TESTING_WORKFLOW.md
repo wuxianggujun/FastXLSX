@@ -575,6 +575,18 @@ metadata; definedName preservation kept 3 direct records per workbook. Excel
 COM verification reported `ok` for all four output-producing cases and skipped
 the two read-only source-audit cases.
 
+A focused follow-up rerun now records the public
+`WorkbookEditor::defined_name_formula_reference_audits()` counts in the
+definedName fixture report instead of only proving XML record preservation. The
+report
+`build\qa\python-writer-defined-name-audit-2026-06-22\report.json` covers one
+temporary `openpyxl 3.1.2` workbook and one temporary `XlsxWriter 3.2.0`
+workbook with 3 direct local sheet-qualified definedName references each. Both
+cases report `defined_name_audit.count=3`, `matched_count=3`, and zero
+rename-risk / external-workbook / 3D sheet-range references; Excel COM open
+status is `ok` for both outputs. The temporary source fixture root was removed
+after validation, and no Excel process was left running.
+
 ## Benchmark 本地 QA
 
 Benchmark 必须显式 opt-in，不进入默认 CTest/CI。当前可用本地矩阵 helper：

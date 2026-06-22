@@ -1106,6 +1106,15 @@ throwing A1 `get_cell()`, ranged `sparse_cells(CellRange)`, and
 reads. The contract remains that stale handle failures preserve the moved-to
 owner diagnostic and dirty materialized summaries; it does not extend
 `WorksheetEditor::name()` lifetime semantics or make invalid handles usable.
+P8.599 closes the saved-clean variant of the same borrowed-handle lifecycle:
+after a dirty `WorksheetEditor` session has been flushed by `save_as()` and
+marked clean, stale handles invalidated by owner move or move assignment still
+throw without replacing the moved-to / assigned `last_edit_error()`, dirtying
+materialized diagnostics, changing the saved materialized handoff count or edit
+summaries, reviving overwritten target state, or leaking stale writes into
+output. This remains public facade state hygiene only, not a handle lifetime
+extension, clean-session commit semantic change, rollback model, formula
+behavior, or large-file random editor.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

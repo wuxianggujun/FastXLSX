@@ -3131,6 +3131,255 @@ void test_public_worksheet_editor_move_assignment_invalidated_handle_failures_pr
         "failed target diagnostic seed should not write discarded invalid-reference data");
 }
 
+void test_public_worksheet_editor_saved_clean_handle_invalidated_after_owner_move_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-move-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-move-first.xlsx");
+    const std::filesystem::path moved_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor old_handle = editor.worksheet("Data");
+    old_handle.set_cell(1, 1,
+        fastxlsx::CellValue::text("saved-clean-move-before"));
+    editor.save_as(first_output);
+
+    check(!old_handle.has_pending_changes(),
+        "owner-move setup should leave the saved materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "owner-move setup should retain the saved materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "owner-move setup should have no dirty materialized names after save");
+
+    check(threw_fastxlsx_error([&] {
+        old_handle.set_cell(0, 1,
+            fastxlsx::CellValue::text("saved-clean-move-diagnostic-sentinel"));
+    }), "invalid mutation after save should seed a diagnostic without dirtying the saved session");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "owner-move saved-clean setup should record a diagnostic before move");
+    check(!old_handle.has_pending_changes(),
+        "invalid mutation should keep the saved materialized handle clean before move");
+
+    const std::size_t expected_pending_count = editor.pending_change_count();
+    const std::vector<std::string> expected_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t expected_dirty_cells = editor.pending_materialized_cell_count();
+    const std::size_t expected_dirty_memory =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> expected_summaries =
+        editor.pending_worksheet_edits();
+    check(expected_dirty_names.empty() && expected_dirty_cells == 0 &&
+            expected_dirty_memory == 0,
+        "owner-move saved-clean setup should keep materialized diagnostics clean");
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(moved.last_edit_error() == prior_error,
+        "owner move should transfer the saved-clean diagnostic");
+    check(!editor.last_edit_error().has_value(),
+        "moved-from saved-clean editor should expose no public diagnostic");
+
+    const auto check_moved_clean_state = [&] (std::string_view prefix) {
+        check(moved.last_edit_error() == prior_error,
+            std::string(prefix) + " should preserve moved-to last_edit_error");
+        check(moved.pending_change_count() == expected_pending_count,
+            std::string(prefix) + " should preserve the saved materialized handoff count");
+        check(moved.pending_materialized_worksheet_names() == expected_dirty_names,
+            std::string(prefix) + " should keep dirty materialized names empty");
+        check(moved.pending_materialized_cell_count() == expected_dirty_cells,
+            std::string(prefix) + " should keep dirty materialized cell count clear");
+        check(moved.estimated_pending_materialized_memory_usage() ==
+                expected_dirty_memory,
+            std::string(prefix) + " should keep dirty materialized memory clear");
+        check(workbook_editor_edit_summaries_equal(
+                  moved.pending_worksheet_edits(), expected_summaries),
+            std::string(prefix) + " should preserve saved-clean edit summaries");
+
+        fastxlsx::WorksheetEditor reacquired = moved.worksheet("Data");
+        check(!reacquired.has_pending_changes(),
+            std::string(prefix) + " should preserve the clean saved session");
+        const fastxlsx::CellValue moved_value = reacquired.get_cell(1, 1);
+        check(moved_value.kind() == fastxlsx::CellValueKind::Text &&
+                moved_value.text_value() == "saved-clean-move-before",
+            std::string(prefix) + " should preserve the saved materialized value");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)old_handle.has_pending_changes(); }),
+        "saved-clean handle should be invalid after owner move");
+    check_moved_clean_state("saved-clean invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] { (void)old_handle.get_cell("A1"); }),
+        "saved-clean handle should reject reads after owner move");
+    check_moved_clean_state("saved-clean invalidated get_cell");
+    check(threw_fastxlsx_error([&] { (void)old_handle.estimated_memory_usage(); }),
+        "saved-clean handle should reject memory reads after owner move");
+    check_moved_clean_state("saved-clean invalidated estimated_memory_usage");
+    check(threw_fastxlsx_error([&] {
+        old_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-saved-clean-move-write"));
+    }), "saved-clean handle should reject stale writes after owner move");
+    check_moved_clean_state("saved-clean invalidated set_cell");
+    check(threw_fastxlsx_error([&] { old_handle.erase_cell(1, 1); }),
+        "saved-clean handle should reject stale erases after owner move");
+    check_moved_clean_state("saved-clean invalidated erase_cell");
+
+    moved.save_as(moved_output);
+    check(moved.last_edit_error() == prior_error,
+        "save_as after saved-clean invalidated-handle failures should preserve diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(moved_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "saved-clean-move-before",
+        "moved-to output should keep the saved materialized value");
+    check_not_contains(worksheet_xml, "stale-saved-clean-move-write",
+        "invalidated saved-clean handle should not write stale data into output");
+    check_not_contains(worksheet_xml, "saved-clean-move-diagnostic-sentinel",
+        "failed diagnostic seed should not write invalid-coordinate data");
+}
+
+void test_public_worksheet_editor_saved_clean_handles_invalidated_after_move_assignment_preserve_source_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-assign-source.xlsx");
+    const std::filesystem::path source_first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-assign-source-first.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-assign-target.xlsx");
+    const std::filesystem::path target_first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-assign-target-first.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-assign-output.xlsx");
+
+    fastxlsx::WorkbookEditor source_editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_handle = source_editor.worksheet("Data");
+    source_handle.set_cell(1, 1,
+        fastxlsx::CellValue::text("saved-clean-assigned-source-before"));
+    source_editor.save_as(source_first_output);
+    check(!source_handle.has_pending_changes(),
+        "move-assignment source setup should leave the saved handle clean");
+
+    check(threw_fastxlsx_error([&] {
+        source_handle.set_cell(0, 1,
+            fastxlsx::CellValue::text("saved-clean-assigned-source-sentinel"));
+    }), "source invalid mutation after save should seed a diagnostic");
+    const std::optional<std::string> source_prior_error =
+        source_editor.last_edit_error();
+    check(source_prior_error.has_value(),
+        "move-assignment source should have a diagnostic before assignment");
+    check(!source_handle.has_pending_changes(),
+        "source diagnostic failure should keep the saved source handle clean");
+
+    const std::size_t expected_pending_count = source_editor.pending_change_count();
+    const std::vector<std::string> expected_dirty_names =
+        source_editor.pending_materialized_worksheet_names();
+    const std::size_t expected_dirty_cells =
+        source_editor.pending_materialized_cell_count();
+    const std::size_t expected_dirty_memory =
+        source_editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> expected_summaries =
+        source_editor.pending_worksheet_edits();
+    check(expected_dirty_names.empty() && expected_dirty_cells == 0 &&
+            expected_dirty_memory == 0,
+        "move-assignment source setup should keep materialized diagnostics clean");
+
+    fastxlsx::WorkbookEditor target_editor = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_handle = target_editor.worksheet("Data");
+    target_handle.set_cell(1, 1,
+        fastxlsx::CellValue::text("discarded-saved-clean-target-before"));
+    target_editor.save_as(target_first_output);
+    check(!target_handle.has_pending_changes(),
+        "move-assignment target setup should leave the overwritten handle clean");
+    check(threw_fastxlsx_error([&] {
+        target_handle.set_cell("a1",
+            fastxlsx::CellValue::text("discarded-saved-clean-target-sentinel"));
+    }), "target invalid mutation after save should seed an independent diagnostic");
+    check(target_editor.last_edit_error().has_value(),
+        "overwritten target should have a diagnostic before assignment");
+    check(!target_handle.has_pending_changes(),
+        "target diagnostic failure should keep the overwritten saved handle clean");
+
+    target_editor = std::move(source_editor);
+    check(target_editor.last_edit_error() == source_prior_error,
+        "saved-clean move assignment should keep the assigned source diagnostic");
+    check(!source_editor.last_edit_error().has_value(),
+        "saved-clean move-assigned-from editor should expose no diagnostic");
+
+    const auto check_assigned_clean_state = [&] (std::string_view prefix) {
+        check(target_editor.last_edit_error() == source_prior_error,
+            std::string(prefix) + " should preserve assigned source last_edit_error");
+        check(target_editor.pending_change_count() == expected_pending_count,
+            std::string(prefix) + " should preserve assigned materialized handoff count");
+        check(target_editor.pending_materialized_worksheet_names() == expected_dirty_names,
+            std::string(prefix) + " should keep assigned dirty materialized names empty");
+        check(target_editor.pending_materialized_cell_count() == expected_dirty_cells,
+            std::string(prefix) + " should keep assigned dirty cell count clear");
+        check(target_editor.estimated_pending_materialized_memory_usage() ==
+                expected_dirty_memory,
+            std::string(prefix) + " should keep assigned dirty memory clear");
+        check(workbook_editor_edit_summaries_equal(
+                  target_editor.pending_worksheet_edits(), expected_summaries),
+            std::string(prefix) + " should preserve assigned saved-clean summaries");
+
+        fastxlsx::WorksheetEditor reacquired = target_editor.worksheet("Data");
+        check(!reacquired.has_pending_changes(),
+            std::string(prefix) + " should keep the assigned saved session clean");
+        const fastxlsx::CellValue assigned_value = reacquired.get_cell(1, 1);
+        check(assigned_value.kind() == fastxlsx::CellValueKind::Text &&
+                assigned_value.text_value() == "saved-clean-assigned-source-before",
+            std::string(prefix) + " should preserve the assigned saved source value");
+    };
+
+    check(threw_fastxlsx_error([&] { (void)source_handle.has_pending_changes(); }),
+        "saved-clean source handle should be invalid after move assignment");
+    check_assigned_clean_state("saved-clean source invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] { (void)source_handle.get_cell("A1"); }),
+        "saved-clean source handle should reject reads after move assignment");
+    check_assigned_clean_state("saved-clean source invalidated get_cell");
+    check(threw_fastxlsx_error([&] { (void)source_handle.estimated_memory_usage(); }),
+        "saved-clean source handle should reject memory reads after move assignment");
+    check_assigned_clean_state("saved-clean source invalidated estimated_memory_usage");
+    check(threw_fastxlsx_error([&] {
+        source_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-saved-clean-source-assignment-write"));
+    }), "saved-clean source handle should reject stale writes after move assignment");
+    check_assigned_clean_state("saved-clean source invalidated set_cell");
+    check(threw_fastxlsx_error([&] { (void)target_handle.has_pending_changes(); }),
+        "overwritten saved-clean target handle should be invalid after move assignment");
+    check_assigned_clean_state("saved-clean target invalidated has_pending_changes");
+    check(threw_fastxlsx_error([&] {
+        (void)target_handle.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    }), "overwritten saved-clean target handle should reject ranged sparse reads");
+    check_assigned_clean_state("saved-clean target invalidated ranged sparse_cells");
+    check(threw_fastxlsx_error([&] {
+        target_handle.set_cell(2, 1,
+            fastxlsx::CellValue::text("stale-saved-clean-target-assignment-write"));
+    }), "overwritten saved-clean target handle should reject stale writes");
+    check_assigned_clean_state("saved-clean target invalidated set_cell");
+    check(threw_fastxlsx_error([&] { target_handle.erase_cell(1, 1); }),
+        "overwritten saved-clean target handle should reject stale erases");
+    check_assigned_clean_state("saved-clean target invalidated erase_cell");
+
+    target_editor.save_as(output);
+    check(target_editor.last_edit_error() == source_prior_error,
+        "save_as after saved-clean move-assignment stale handles should preserve diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "saved-clean-assigned-source-before",
+        "move-assigned output should keep the assigned saved source value");
+    check_not_contains(worksheet_xml, "discarded-saved-clean-target-before",
+        "move-assigned output should discard overwritten saved target value");
+    check_not_contains(worksheet_xml, "stale-saved-clean-source-assignment-write",
+        "invalidated saved-clean source handle should not write stale data");
+    check_not_contains(worksheet_xml, "stale-saved-clean-target-assignment-write",
+        "invalidated saved-clean target handle should not write stale data");
+    check_not_contains(worksheet_xml, "saved-clean-assigned-source-sentinel",
+        "failed source diagnostic seed should not write invalid-coordinate data");
+    check_not_contains(worksheet_xml, "discarded-saved-clean-target-sentinel",
+        "failed target diagnostic seed should not write discarded invalid-reference data");
+}
+
 void test_public_worksheet_editor_set_cell_auto_flushes_on_save_as()
 {
     const std::filesystem::path source =
@@ -19610,6 +19859,8 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_invalidated_handle_failures_preserve_owner_diagnostics();
         test_public_worksheet_editor_handles_invalidate_after_move_assignment();
         test_public_worksheet_editor_move_assignment_invalidated_handle_failures_preserve_owner_diagnostics();
+        test_public_worksheet_editor_saved_clean_handle_invalidated_after_owner_move_preserves_state();
+        test_public_worksheet_editor_saved_clean_handles_invalidated_after_move_assignment_preserve_source_state();
         test_public_worksheet_editor_set_cell_auto_flushes_on_save_as();
         test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics();
         test_public_worksheet_missing_throws_and_preserves_diagnostics();

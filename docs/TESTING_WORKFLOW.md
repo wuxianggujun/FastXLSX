@@ -371,6 +371,12 @@ The invalidated-handle read surface includes dirty-state probes, cell-count /
 memory estimates, cell reads, full and ranged sparse snapshots, and mutation
 attempts; `WorksheetEditor::name()` remains local handle metadata and is not
 treated as a session-validity probe.
+The same public shard also covers the saved-clean variant: after `save_as()`
+has flushed a dirty materialized session and marked the borrowed handle clean,
+owner move and move-assignment stale-handle failures must preserve the moved-to
+or assigned diagnostic, saved materialized handoff count, empty dirty
+materialized diagnostics, edit summaries, and final output while discarding
+overwritten target state.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

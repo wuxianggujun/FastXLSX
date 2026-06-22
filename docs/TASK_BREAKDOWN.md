@@ -26444,6 +26444,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.599 - Pin saved-clean invalidated handle hygiene
+
+Status: done.
+
+Type: public borrowed-`WorksheetEditor` saved-clean invalidated-handle
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove public `WorksheetEditor` handles invalidated by owner move or move
+assignment still fail hygienically after a dirty materialized session has been
+successfully saved and marked clean.
+
+Output:
+- Added owner-move coverage where a saved-clean materialized `WorksheetEditor`
+  handle is invalidated after `save_as()` and after a prior edit diagnostic was
+  recorded without dirtying the saved session.
+- Added move-assignment coverage where both the assigned source handle and the
+  overwritten target handle are saved-clean before assignment and later stale
+  handle operations throw.
+- The regressions verify stale read/write/erase attempts preserve the assigned
+  or moved-to `last_edit_error()`, saved materialized handoff count, empty dirty
+  materialized names / cell counts / memory estimates, edit summaries, and final
+  output payload, while discarded target saved state and stale writes do not
+  leak into output.
+
+Non-goals / boundary:
+- No production code change, no borrowed-handle lifetime extension, no
+  target-state recovery, no public rollback/history, no clean-session commit
+  semantics change, no large-file random editing claim, no relationship repair,
+  no sharedStrings / styles migration, no formula evaluation, and no formula
+  rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

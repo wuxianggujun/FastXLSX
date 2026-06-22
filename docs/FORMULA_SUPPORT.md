@@ -99,6 +99,11 @@ py tools\run_workbook_editor_qa.py `
   --excel-verify
 
 py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_escaped_sheet_name `
+  --work-dir build\qa\workbook-editor-formula-rename-escaped-sheet `
+  --excel-verify
+
+py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_defined_names_only `
   --work-dir build\qa\workbook-editor-formula-rename-defined-names `
   --excel-verify
@@ -143,6 +148,14 @@ worksheet formula references are rewritten while external-workbook references,
 `Unmaterialized` worksheet formula remain unchanged. This is still opt-in
 formula text rewrite evidence only, not default rename behavior or formula
 evaluation.
+
+`generated_formula_rename_escaped_sheet_name` is the focused local QA for the
+same explicit rewrite policy when the new sheet name contains formula/XML
+special characters. It renames `Data` to `Renamed & O'Brien` and verifies
+quoted formula qualifiers such as `'Renamed & O''Brien'!A1`, XML-escaped sheet
+catalog / definedName text, unchanged external-workbook references, unchanged
+3D sheet ranges, unchanged string literals, unchanged non-materialized
+worksheet formulas, and no invented calcChain.
 
 `generated_formula_rename_defined_names_only` is the middle policy QA for
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It materializes only

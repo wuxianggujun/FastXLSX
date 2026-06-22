@@ -867,6 +867,83 @@ Report run_generated_formula_rename_rewrite(const CliOptions& options)
     return report;
 }
 
+Report run_generated_formula_rename_escaped_sheet_name(const CliOptions& options)
+{
+    static constexpr std::string_view kRenamedSheetName = "Renamed & O'Brien";
+
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_formula_rename_rewrite_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-formula-rename-escaped-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-formula-rename-escaped-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.renamed_sheet_name = std::string(kRenamedSheetName);
+    report.mutations = {
+        "worksheet(Formula).try_cell(A1:A5):materialize_formula_cells",
+        "rename_sheet:Data->Renamed & O'Brien:RewriteDefinedNamesAndMaterializedWorksheetFormulas",
+        "save_as",
+    };
+    report.notes = {
+        "Opt-in rename formula policy should quote and escape special sheet names",
+        "Apostrophes in formula sheet qualifiers should be doubled",
+        "XML text/attributes should escape ampersands without changing formula semantics",
+        "External workbook references, 3D sheet-range references, string literals, and non-materialized worksheet formulas should remain unchanged",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    require_formula_cell(formula_sheet, "A1", "Data!A1");
+    require_formula_cell(formula_sheet, "A2", "'Data'!$A$1");
+    require_formula_cell(formula_sheet, "A3", "[Book.xlsx]Data!A1");
+    require_formula_cell(formula_sheet, "A4", "Data:Formula!A1");
+    require_formula_cell(formula_sheet, "A5", R"(Data!A1+"Data!A1")");
+    if (formula_sheet.has_pending_changes()) {
+        throw std::runtime_error(
+            "escaped formula rename QA read-only materialization dirtied Formula sheet");
+    }
+
+    fastxlsx::WorkbookEditorRenameOptions rename_options;
+    rename_options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", std::string(kRenamedSheetName), rename_options);
+
+    require_formula_cell(formula_sheet, "A1", R"('Renamed & O''Brien'!A1)");
+    require_formula_cell(formula_sheet, "A2", R"('Renamed & O''Brien'!$A$1)");
+    require_formula_cell(formula_sheet, "A3", "[Book.xlsx]Data!A1");
+    require_formula_cell(formula_sheet, "A4", "Data:Formula!A1");
+    require_formula_cell(formula_sheet, "A5", R"('Renamed & O''Brien'!A1+"Data!A1")");
+    if (!formula_sheet.has_pending_changes()) {
+        throw std::runtime_error(
+            "escaped formula rename QA did not mark rewritten Formula sheet dirty");
+    }
+
+    summarize_source_formula_audits(report, editor.formula_reference_audits());
+    summarize_defined_name_audits(report, editor.defined_name_formula_reference_audits());
+    if (report.source_formula_rename_risk_count != 0) {
+        throw std::runtime_error(
+            "escaped formula rename QA should not leave materialized local rename risks");
+    }
+    if (report.source_formula_external_count != 1 || report.source_formula_sheet_range_count != 1) {
+        throw std::runtime_error(
+            "escaped formula rename QA should preserve one external and one 3D materialized reference");
+    }
+    if (report.defined_name_audit_rename_risk_count != 0) {
+        throw std::runtime_error(
+            "escaped formula rename QA should not leave definedName local rename risks");
+    }
+    if (report.defined_name_audit_external_count != 1
+        || report.defined_name_audit_sheet_range_count != 1) {
+        throw std::runtime_error(
+            "escaped formula rename QA should preserve one external and one 3D definedName reference");
+    }
+
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_formula_rename_defined_names_only(const CliOptions& options)
 {
     Report report;
@@ -1453,6 +1530,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_formula_rename_rewrite") {
         return run_generated_formula_rename_rewrite(options);
+    }
+    if (options.scenario == "generated_formula_rename_escaped_sheet_name") {
+        return run_generated_formula_rename_escaped_sheet_name(options);
     }
     if (options.scenario == "generated_formula_rename_defined_names_only") {
         return run_generated_formula_rename_defined_names_only(options);

@@ -26127,6 +26127,56 @@ Acceptance:
 - Resource check after local verification shows no lingering Excel/build/test
   processes.
 
+## P8.591 - Add escaped sheet-name rename formula QA
+
+Status: done.
+
+Type: opt-in local QA hardening for escaped sheet-name formula rewrite; no
+production behavior change, no public API change, no CMake target membership
+change, and no runtime dependency.
+
+Goal: prove the explicit
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
+path handles a new sheet name that requires both OpenXML escaping and Excel
+formula single-quote escaping.
+
+Output:
+- Added `generated_formula_rename_escaped_sheet_name` to
+  `tools/workbook_editor_qa_tool.cpp`. It reuses the generated formula rename
+  workbook shape, materializes only `Formula`, calls
+  `rename_sheet("Data", "Renamed & O'Brien")` with the explicit combined
+  rewrite policy, saves, and records formula / definedName audit counters.
+- Extended `tools/run_workbook_editor_qa.py` to verify the output with ZIP/XML
+  and `openpyxl`: workbook sheet catalog XML attribute escaping,
+  definedName XML text escaping, quoted formula qualifiers with doubled
+  apostrophes, unchanged external/3D/string-literal/non-materialized formula
+  boundaries, no cached values on dirty formulas, and no invented calcChain.
+- Extended `tools/verify_workbook_editor_qa_excel.ps1` to open the workbook
+  read-only and smoke-check the escaped sheet name plus representative rewritten
+  formula cells.
+- Updated `docs/FORMULA_SUPPORT.md`, `docs/TESTING_WORKFLOW.md`,
+  `docs/EDITING_TEST_MATRIX.md`, `docs/NEXT_STEPS.md`, and
+  `docs/API_DESIGN_AND_DOCUMENTATION.md` to document the QA evidence.
+
+Non-goals / boundary:
+- No broader formula grammar support, no default formula rewrite, no formula
+  evaluation, no cached result generation, no calcChain rebuild, no
+  non-materialized worksheet rewrite, no relationship repair, no
+  sharedStrings/style migration, and no runtime Python or Excel dependency.
+
+Acceptance:
+- `py -m py_compile tools\run_workbook_editor_qa.py` passes.
+- `py tools\run_workbook_editor_qa.py --self-test` passes.
+- The 4-case rename-policy local QA matrix passes with Excel COM:
+  `generated_formula_rename_default_audit`,
+  `generated_formula_rename_defined_names_only`,
+  `generated_formula_rename_rewrite`, and
+  `generated_formula_rename_escaped_sheet_name`.
+- Focused formula/workbook-editor CTest still passes.
+- `git diff --check` passes.
+- Resource check after local verification shows no lingering Excel/build/test
+  processes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -218,6 +218,37 @@ function Verify-GeneratedFormulaRenameRewrite {
     }
 }
 
+function Verify-GeneratedFormulaRenameEscapedSheetName {
+    param([object]$Workbook)
+
+    $renamed = $null
+    $formula = $null
+    try {
+        $renamed = Get-Worksheet $Workbook "Renamed & O'Brien"
+        $formula = Get-Worksheet $Workbook "Formula"
+        Assert-CellValue $renamed "A1" 1 "Renamed & O'Brien!A1"
+        Assert-FormulaIn $formula "A1" @(
+            "='Renamed & O''Brien'!A1",
+            "='Renamed & O'Brien'!A1"
+        ) "Formula!A1 escaped formula"
+        Assert-FormulaIn $formula "A2" @(
+            "='Renamed & O''Brien'!`$A`$1",
+            "='Renamed & O'Brien'!`$A`$1"
+        ) "Formula!A2 escaped formula"
+        Assert-FormulaIn $formula "A5" @(
+            "='Renamed & O''Brien'!A1+`"Data!A1`"",
+            "='Renamed & O'Brien'!A1+`"Data!A1`""
+        ) "Formula!A5 escaped string-literal formula"
+    }
+    finally {
+        foreach ($object in @($formula, $renamed)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedFormulaRenameDefaultAudit {
     param([object]$Workbook)
 
@@ -416,6 +447,7 @@ function Verify-Case {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
+            "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }
             "generated_formula_rename_defined_names_only" { Verify-GeneratedFormulaRenameDefinedNamesOnly $workbook }
             "generated_formula_rename_default_audit" { Verify-GeneratedFormulaRenameDefaultAudit $workbook }
             "generated_shared_formula_materialization" { Verify-GeneratedSharedFormulaMaterialization $workbook }

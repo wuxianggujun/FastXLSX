@@ -1039,6 +1039,14 @@ already-materialized worksheet formulas, external-workbook references, 3D
 sheet-range references, string literals, non-materialized worksheet formulas,
 and calcChain absence remain unchanged; formula rename-risk audits remain
 visible while definedName rename risks are cleared.
+P8.591 adds `generated_formula_rename_escaped_sheet_name` for the same explicit
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas` policy. It renames `Data`
+to `Renamed & O'Brien` after materializing only `Formula`, then verifies
+workbook catalog XML attribute escaping, definedName XML text escaping, quoted
+formula qualifiers with doubled apostrophes, unchanged external-workbook / 3D /
+string-literal / non-materialized references, calcChain absence, and Excel COM
+read-only compatibility. This is still narrow formula-text rewrite QA, not a
+complete Excel formula parser or semantic rename engine.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -126,3 +126,17 @@ py tools\run_workbook_editor_qa.py `
 
 These fixture runs are local QA evidence only. They are not vendored runtime
 dependencies and are not part of default CI.
+
+2026-06-22 local fixture evidence used the minizip-enabled QA tool against a
+temporary xlnt sparse checkout, then removed that checkout. Reports:
+
+- `build\qa\xlnt-shared-formula-fixtures-2026-06-22\report.json`:
+  `18_formulae.xlsx:Sheet1` had 15 formula elements, 3 shared formula
+  elements, 1 shared definition, 2 metadata-only followers; dirty output kept
+  15 ordinary formula elements and 0 shared formula metadata elements, with
+  Excel COM status `ok`.
+- `build\qa\xlnt-source-formula-fixtures-2026-06-22\report.json`:
+  three formula-bearing xlnt worksheets scanned read-only with no failures.
+- `build\qa\xlnt-defined-name-fixtures-2026-06-22\report.json`:
+  `19_defined_names.xlsx` preserved 6 direct definedName records, with Excel
+  COM status `ok`.

@@ -484,6 +484,13 @@ Current local xlnt `tests\data` shared-formula smoke evidence covers
 output target sheet still has 15 formula elements and 0 shared formula metadata
 elements. This remains local compatibility evidence only; fixture repositories
 are not vendored, not runtime dependencies, and not default CI inputs.
+The 2026-06-22 rerun used the minizip-enabled QA tool
+`build\windows-nmake-release-minizip\tools\fastxlsx_workbook_editor_qa_tool.exe`
+against a temporary xlnt sparse checkout, then removed the checkout. The
+result is recorded in
+`build\qa\xlnt-shared-formula-fixtures-2026-06-22\report.json` with the same
+15 / 3 / 1 / 2 source counts, 15 output formula elements, 0 output shared
+formula metadata elements, and Excel COM open status `ok`.
 
 For read-only source formula audit fixture coverage, use:
 
@@ -509,6 +516,12 @@ Current local xlnt evidence for this read-only audit covers
 definition, 2 metadata-only followers, and 0 source formula audit references
 because the fixture formulas are unqualified even after source-order follower
 expansion.
+The 2026-06-22 minizip rerun also covered
+`10_comments_hyperlinks_formulae.xlsx:Sheet1`,
+`10_comments_hyperlinks_formulae.xlsx:Sheet2`, and
+`18_formulae.xlsx:Sheet1`, all with `status=ok` and no rename-risk, external,
+3D, or local-match references reported. Its aggregate report is
+`build\qa\xlnt-source-formula-fixtures-2026-06-22\report.json`.
 
 For named range / definedNames fixture coverage, use the opt-in definedName
 scanner scenario. It reads direct workbook `definedNames` records from
@@ -537,6 +550,17 @@ All three outputs preserve the definedName records and pass Excel COM no-repair
 open smoke. This is fixture QA evidence only; it does not add name-manager
 editing, external link validation, worksheet formula rewrite, full sheet-rename
 formula synchronization, or formula evaluation.
+The 2026-06-22 minizip rerun covered the current xlnt fixture
+`19_defined_names.xlsx`: 6 direct definedName records were preserved, all 6 were
+local-sheet-scoped, and Excel COM open status was `ok`. The aggregate report is
+`build\qa\xlnt-defined-name-fixtures-2026-06-22\report.json`.
+
+The same 2026-06-22 external-fixture session also reran the default xlnt rename
+smoke (`2_minimal.xlsx`, `3_default.xlsx`, `20_active_sheet.xlsx`) and xlnt
+string smoke (`Issue445_inline_str.xlsx`, `Issue494_shared_string.xlsx`) with
+Excel COM status `ok`; reports are stored under
+`build\qa\xlnt-default-fixtures-2026-06-22\report.json` and
+`build\qa\xlnt-string-fixtures-2026-06-22\report.json`.
 
 ## Benchmark 本地 QA
 

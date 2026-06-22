@@ -197,6 +197,11 @@ Current local xlnt read-only evidence covers `18_formulae.xlsx:Sheet1` with 15
 formula elements, 3 shared formula elements, 1 definition, 2 metadata-only
 followers, and 0 source formula audit references because the fixture formulas
 are unqualified.
+The 2026-06-22 minizip rerun also covered
+`10_comments_hyperlinks_formulae.xlsx:Sheet1`,
+`10_comments_hyperlinks_formulae.xlsx:Sheet2`, and
+`18_formulae.xlsx:Sheet1` in read-only source formula audit mode; all three
+passed with no rename-risk, external, 3D, or local-match references.
 It also has an opt-in
 `external_formula_fixture_materialized_smoke` scanner that maps workbook sheet
 names to worksheet XML parts, records formula/shared-formula counts, and runs
@@ -205,7 +210,8 @@ narrows the run to worksheets with shared formula metadata. Current local xlnt
 evidence includes `18_formulae.xlsx:Sheet1` with 15 formula elements, 3 shared
 formula elements, 1 definition, and 2 metadata-only followers; the dirty output
 target sheet keeps 15 ordinary formula elements and 0 shared formula metadata
-elements. The runner now also includes
+elements. The 2026-06-22 minizip rerun reproduced this result and Excel COM
+opened the output successfully. The runner now also includes
 `external_defined_name_fixture_smoke`: it scans caller-provided fixture
 workbooks for direct `xl/workbook.xml` `definedNames`, records workbook-scoped
 and `localSheetId` scoped counts plus external/3D-like reference indicators,
@@ -215,6 +221,9 @@ semantically preserved. Current local xlnt evidence covers
 `Issue18_defined_name_with_workbook_scope.xlsx` (1 workbook-scoped record), and
 `issue90_debug_test_file.xlsx` (3 local-sheet-scoped print-area records on the
 Chinese sheet name `封面`), with ZIP/XML, `openpyxl`, and Excel COM passing.
+The 2026-06-22 minizip rerun covered the current xlnt
+`19_defined_names.xlsx` fixture: 6 direct definedName records were preserved
+and Excel COM opened the output successfully.
 The scenario deliberately avoids sheet rename because it is a preservation
 fixture smoke; the explicit direct definedName rewrite policy is covered by
 unit tests instead.

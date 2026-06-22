@@ -344,9 +344,12 @@ enum class WorkbookEditorRenameFormulaPolicy {
     AuditOnly,
 
     /// Rewrite direct workbook definedName formula references from the old
-    /// sheet name to the new sheet name. External workbook qualifiers, 3D sheet
-    /// ranges, unsupported/nested definedName XML, worksheet formula cells, and
-    /// other workbook/worksheet metadata remain outside this policy.
+    /// sheet name to the new sheet name. In rename chains, references that
+    /// still use the sheet's original source name are rewritten too when that
+    /// source name differs from both the current old name and the new name.
+    /// External workbook qualifiers, 3D sheet ranges, unsupported/nested
+    /// definedName XML, worksheet formula cells, and other workbook/worksheet
+    /// metadata remain outside this policy.
     RewriteDefinedNames,
 
     /// Rewrite direct workbook definedName formula references and formula cells
@@ -1466,13 +1469,15 @@ public:
     /// `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`.
     /// The first opt-in policy additionally rewrites direct workbook
     /// definedName formula text in `xl/workbook.xml` from the old sheet
-    /// qualifier to the new sheet qualifier. The second also rewrites matching
-    /// formula cells in WorksheetEditor sessions that are already materialized
-    /// in this WorkbookEditor and marks those sessions dirty for save_as()
-    /// auto-flush. It preserves external workbook references, 3D sheet ranges,
-    /// unsupported nested definedName XML failures, non-materialized worksheet
-    /// formula cells, tables, drawings, charts, hyperlinks, relationship
-    /// targets, sharedStrings, styles, and calcChain.
+    /// qualifier to the new sheet qualifier. In rename chains, it also rewrites
+    /// references that still use the sheet's original source name unless the
+    /// chain has returned to that source name. The second policy also rewrites
+    /// matching formula cells in WorksheetEditor sessions that are already
+    /// materialized in this WorkbookEditor and marks those sessions dirty for
+    /// save_as() auto-flush. It preserves external workbook references, 3D
+    /// sheet ranges, unsupported nested definedName XML failures,
+    /// non-materialized worksheet formula cells, tables, drawings, charts,
+    /// hyperlinks, relationship targets, sharedStrings, styles, and calcChain.
     ///
     /// This is still not a formula engine, semantic sheet rename, relationship
     /// repair, non-materialized worksheet scan/rewrite, or calcChain rebuild.

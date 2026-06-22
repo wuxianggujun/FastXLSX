@@ -127,7 +127,11 @@ rewrite, or opt into
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
 to rewrite both those direct definedName references and formula cells already
 loaded into `WorksheetEditor` materialized sessions during the same public
-rename. The default `rename_sheet(old, new)` remains catalog-only and still
+rename. In a rename chain, those opt-in paths rewrite references that still use
+the sheet's original source name as well as references that use the current old
+planned name, while avoiding no-op source-name rewrites when the chain returns
+to the source name. The default `rename_sheet(old, new)` remains catalog-only
+and still
 does not rewrite non-materialized worksheet formula cells, tables, drawings,
 charts, hyperlinks, relationships, calcChain, external-workbook references, or
 3D sheet ranges.

@@ -24,7 +24,7 @@ Recommended positioning:
 | Shared formula read | Source shared formula definitions and source-order followers are materialized as ordinary formula text when the definition has already been seen. The translator handles a narrow A1-style relative-reference subset. |
 | Array/dataTable formula metadata | Formula text can be imported lossily as plain formula text. Known metadata is accepted only to preserve compatibility at the materialized value boundary. |
 | Formula reference audits | `WorkbookEditor::formula_reference_audits()`, `source_formula_reference_audits()`, and `defined_name_formula_reference_audits()` expose local sheet references, rename risks, external-workbook qualifiers, and 3D-like sheet-range qualifiers as diagnostics. |
-| Rename-time formula rewrite | `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` rewrites direct workbook definedName formulas. `RewriteDefinedNamesAndMaterializedWorksheetFormulas` also rewrites already-materialized worksheet formula cells. Both use the narrow sheet-qualified reference rewriter. |
+| Rename-time formula rewrite | `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` rewrites direct workbook definedName formulas. `RewriteDefinedNamesAndMaterializedWorksheetFormulas` also rewrites already-materialized worksheet formula cells. In rename chains, the opt-in path rewrites both the current old planned sheet name and the original source sheet name when they differ, while still using the narrow sheet-qualified reference rewriter. |
 
 ## Important boundaries
 

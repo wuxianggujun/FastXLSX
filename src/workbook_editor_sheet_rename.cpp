@@ -5,6 +5,7 @@
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,19 +47,32 @@ struct MaterializedFormulaRewrite {
     return value;
 }
 
-[[nodiscard]] std::vector<MaterializedFormulaRewrite>
-collect_materialized_formula_rewrites(
-    const MaterializedWorksheetSessionRegistry& materialized_sessions,
+[[nodiscard]] std::vector<FormulaSheetReferenceRewrite> sheet_rename_formula_rewrites(
     std::string_view old_name,
-    std::string_view new_name)
+    std::string_view new_name,
+    const std::optional<std::string>& source_name)
 {
-    const std::vector<FormulaSheetReferenceRewrite> rewrites {
+    std::vector<FormulaSheetReferenceRewrite> rewrites {
         FormulaSheetReferenceRewrite {
             std::string(old_name),
             std::string(new_name),
         },
     };
 
+    if (source_name.has_value() && *source_name != old_name && *source_name != new_name) {
+        rewrites.push_back(FormulaSheetReferenceRewrite {
+            *source_name,
+            std::string(new_name),
+        });
+    }
+    return rewrites;
+}
+
+[[nodiscard]] std::vector<MaterializedFormulaRewrite>
+collect_materialized_formula_rewrites(
+    const MaterializedWorksheetSessionRegistry& materialized_sessions,
+    std::span<const FormulaSheetReferenceRewrite> rewrites)
+{
     std::vector<MaterializedFormulaRewrite> planned_rewrites;
     for (const auto& [_, session] : materialized_sessions.sessions()) {
         for (const auto& [position, record] : session.store().records()) {
@@ -161,14 +175,17 @@ WorkbookEditorSheetRenameResult rename_workbook_editor_sheet(
 {
     const std::string old_name_key(old_name);
     const std::string new_name_key = new_name;
+    const std::optional<std::string> source_name =
+        sheet_catalog.source_name_for_current(old_name_key);
+    const std::vector<FormulaSheetReferenceRewrite> formula_rewrites =
+        sheet_rename_formula_rewrites(old_name_key, new_name_key, source_name);
 
     validate_workbook_editor_sheet_rename_preflight(materialized_sessions, old_name_key);
 
     std::vector<MaterializedFormulaRewrite> materialized_formula_rewrites;
     if (rewrites_materialized_worksheet_formulas(options.formula_policy)) {
         materialized_formula_rewrites =
-            collect_materialized_formula_rewrites(
-                materialized_sessions, old_name_key, new_name_key);
+            collect_materialized_formula_rewrites(materialized_sessions, formula_rewrites);
         preflight_materialized_formula_rewrites(
             materialized_sessions, materialized_formula_rewrites);
     }
@@ -176,6 +193,8 @@ WorkbookEditorSheetRenameResult rename_workbook_editor_sheet(
     SheetCatalogRenameOptions catalog_options;
     if (rewrites_defined_names(options.formula_policy)) {
         catalog_options.formula_policy = SheetCatalogRenameFormulaPolicy::RewriteDefinedNames;
+        catalog_options.extra_formula_rewrites.assign(
+            formula_rewrites.begin() + 1, formula_rewrites.end());
     }
     editor.rename_sheet_catalog_entry(
         old_name_key, std::move(new_name), ReferencePolicy {}, catalog_options);

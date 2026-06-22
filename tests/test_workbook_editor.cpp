@@ -17999,6 +17999,74 @@ void test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_f
         "reopened combined output should preserve 3D definedName references");
 }
 
+void test_rename_sheet_chain_formula_policy_rewrites_source_aliases()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-chain-formula-rewrite-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-chain-formula-rewrite-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value() == "Data!A1",
+        "chain formula rewrite fixture should start with the source sheet name");
+    check(!formula_sheet.has_pending_changes(),
+        "chain formula rewrite fixture should start with a clean materialized formula");
+
+    editor.rename_sheet("Data", "TemporaryData");
+    check(formula_sheet.get_cell("A1").text_value() == "Data!A1",
+        "audit-only first rename should preserve source-name formula text");
+    check(!formula_sheet.has_pending_changes(),
+        "audit-only first rename should not dirty materialized formula sessions");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("TemporaryData", "FinalData", options);
+
+    const std::string expected_formula = "'FinalData'!A1";
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == expected_formula,
+        "chain formula rewrite should update source-name formulas through the planned alias");
+    check(formula_sheet.has_pending_changes(),
+        "chain formula rewrite should dirty the materialized formula sheet");
+    check(editor.pending_change_count() == 2,
+        "chain formula rewrite should count the two successful public renames");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="FinalData")",
+        "chain formula rewrite should persist the final sheet catalog name");
+    check_not_contains(workbook_xml, "TemporaryData",
+        "chain formula rewrite output should not leak the transient planned name");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'FinalData'!$A$1:$B$2</definedName>)",
+        "chain formula rewrite should update source-name direct definedName references");
+    check_not_contains(workbook_xml,
+        R"(<definedName name="ReportRange">Data!$A$1:$B$2</definedName>)",
+        "chain formula rewrite should not leave the direct definedName on the source name");
+    check_contains(workbook_xml,
+        R"(<definedName name="ExternalRef">[Book.xlsx]Data!A1</definedName>)",
+        "chain formula rewrite should still preserve external workbook definedNames");
+    check_contains(workbook_xml,
+        R"(<definedName name="ThreeDRef">Data:Formula!A1</definedName>)",
+        "chain formula rewrite should still preserve 3D definedName references");
+    check_contains(output_entries.at("xl/worksheets/sheet3.xml"), expected_formula,
+        "chain formula rewrite should persist the rewritten materialized formula");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        "reopened chain formula rewrite output should expose the final sheet formula");
+}
+
 void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
 {
     const std::filesystem::path source = write_multi_formula_reference_source(
@@ -19110,6 +19178,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
         test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
+        test_rename_sheet_chain_formula_policy_rewrites_source_aliases();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();

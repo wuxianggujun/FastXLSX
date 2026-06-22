@@ -3,6 +3,7 @@
 #include "package_reader.hpp"
 #include "package_writer.hpp"
 
+#include <fastxlsx/detail/formula_reference_audit.hpp>
 #include <fastxlsx/detail/worksheet_transformer.hpp>
 #include <fastxlsx/document_properties.hpp>
 
@@ -108,6 +109,7 @@ enum class SheetCatalogRenameFormulaPolicy {
 struct SheetCatalogRenameOptions {
     SheetCatalogRenameFormulaPolicy formula_policy =
         SheetCatalogRenameFormulaPolicy::AuditOnly;
+    std::vector<FormulaSheetReferenceRewrite> extra_formula_rewrites;
 };
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS

@@ -6139,12 +6139,14 @@ void PackageEditor::rename_sheet_catalog_entry(
 
     bool defined_names_rewritten = false;
     if (rewrite_defined_names && has_direct_defined_names) {
-        const std::vector<FormulaSheetReferenceRewrite> rewrites {
+        std::vector<FormulaSheetReferenceRewrite> rewrites {
             FormulaSheetReferenceRewrite {
                 std::string(old_name),
                 new_name,
             },
         };
+        rewrites.insert(rewrites.end(), options.extra_formula_rewrites.begin(),
+            options.extra_formula_rewrites.end());
         const std::string rewritten_workbook_xml =
             rewrite_workbook_defined_name_formula_references(workbook_xml, rewrites);
         defined_names_rewritten = rewritten_workbook_xml != workbook_xml;

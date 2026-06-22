@@ -617,6 +617,21 @@ void test_rewrite_formula_sheet_references()
     }), "formula sheet rewrite should reject ambiguous rewrite rules");
 }
 
+void test_rewrite_formula_sheet_references_accepts_source_and_planned_aliases()
+{
+    const std::string formula =
+        "Source!A1+Temp!B2+[Book.xlsx]Source!C3+Source:Other!D4";
+    const std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> rewrites {
+        {"Source", "Final"},
+        {"Temp", "Final"},
+    };
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(formula, rewrites),
+        "'Final'!A1+'Final'!B2+[Book.xlsx]Source!C3+Source:Other!D4",
+        "formula sheet rewrite should handle source and current planned aliases");
+}
+
 void test_rewrite_workbook_defined_name_formula_references()
 {
     const std::string workbook_xml =
@@ -673,6 +688,7 @@ int main()
         test_scan_workbook_defined_name_formulas();
         test_scan_workbook_defined_name_formulas_rejects_malformed_structure();
         test_rewrite_formula_sheet_references();
+        test_rewrite_formula_sheet_references_accepts_source_and_planned_aliases();
         test_rewrite_workbook_defined_name_formula_references();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';

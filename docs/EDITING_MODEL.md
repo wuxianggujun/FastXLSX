@@ -35,7 +35,9 @@ strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
 会在同一次 rename 中同时改 direct workbook definedName formula text 和已经载入
 WorksheetEditor session 的 formula cell 文本，并把这些 session 标脏；它不
-materialize 或扫描未载入 worksheet XML。它仍**不**表示完整 existing-file editing、public
+materialize 或扫描未载入 worksheet XML。链式 rename 下，显式 opt-in 策略会同时处理
+仍引用原始 source sheet name 和当前旧 planned name 的本地 sheet-qualified 公式引用，
+但不会处理 external workbook references 或 3D sheet ranges。它仍**不**表示完整 existing-file editing、public
 `PackageEditor`、semantic metadata sync、sharedStrings/style migration、relationship
 repair 或 large-file low-memory random editing。
 `CellValue` 作为 public value type 已实现，internal `CellStore` 首个稀疏存储、guardrail

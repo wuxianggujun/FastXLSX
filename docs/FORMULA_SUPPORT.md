@@ -16,7 +16,8 @@ Recommended positioning:
 
 | Area | Current behavior |
 | --- | --- |
-| Formula tokenizer | Internal `tokenize_formula()` exposes a lexical foundation for formula editing/audit work. It preserves source spans for string literals, quoted sheet-name tokens, bracketed external/structured-reference tokens, function/identifier text, numbers, operators, punctuation, and the narrow A1-style reference tokens currently understood by FastXLSX. |
+| Formula tokenizer | Internal `tokenize_formula()` exposes a lexical foundation for formula editing/audit work. It preserves source spans for string literals, quoted sheet-name tokens, bracketed external/structured-reference tokens, function/identifier text, numbers, comparison operators such as `<=` / `>=` / `<>`, punctuation including array-constant braces/separators, and the narrow A1-style reference tokens currently understood by FastXLSX. Incomplete string/bracket spans are preserved as single tokens for audit safety instead of being repaired. |
+| Reference qualifier classifier | Internal `classify_formula_reference_qualifier()` decodes quoted sheet names and classifies scanned references as unqualified, local sheet, external workbook, 3D sheet range, or external-workbook 3D sheet range. This is reused by formula audits and safe sheet-name rewrites. |
 | New workbook formula cells | `Cell::formula(...)`, `CellView::formula(...)`, and `CellValue::formula(...)` write worksheet `<f>` formula text. Callers pass formula text without a leading `=`. |
 | Recalculation request | Workbooks containing formula cells request recalculation with `fullCalcOnLoad`. Patch/edit paths also clean stale `calcChain.xml` metadata when the current policy requires it. |
 | Existing workbook formula read | `WorksheetEditor` can materialize supported source formula cells as `CellValueKind::Formula`. Stale cached `<v>` values are not treated as authoritative results. |
@@ -32,6 +33,7 @@ Recommended positioning:
 | Formula evaluation | Not implemented. FastXLSX does not calculate `SUM`, `VLOOKUP`, dynamic arrays, volatile functions, date math, or any Excel function result. |
 | Cached formula values | Not generated, not trusted as fresh results, and dirty projection drops stale cached results. |
 | Full formula parser | Not implemented. The current parser/auditor is a narrow scanner for reference diagnostics and selected sheet-name rewrites. |
+| Tokenizer recovery | The tokenizer preserves malformed/incomplete lexical spans for diagnostics. It does not repair formulas or guarantee that Excel accepts the formula. |
 | Shared formula preservation | Dirty materialized output is flattened to ordinary `<f>...</f>` formula cells. It does not preserve shared formula `si` / `ref` metadata. Untouched worksheet parts can still be preserved by copy-original paths. |
 | Array formulas / data tables / dynamic arrays | Metadata is not preserved after dirty output, no spill range engine exists, and data table recalculation is not implemented. |
 | External workbook and 3D references | Classified for audit only. FastXLSX does not validate external workbook targets, evaluate 3D references, or repair linked workbooks. |

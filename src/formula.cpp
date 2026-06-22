@@ -141,6 +141,23 @@ bool is_formula_operator_char(char ch) noexcept
     }
 }
 
+std::size_t formula_operator_length(std::string_view formula, std::size_t position)
+{
+    if (position >= formula.size() || !is_formula_operator_char(formula[position])) {
+        return 0;
+    }
+
+    if (position + 1 < formula.size()) {
+        const char ch = formula[position];
+        const char next = formula[position + 1];
+        if ((ch == '<' && (next == '=' || next == '>')) || (ch == '>' && next == '=')) {
+            return 2;
+        }
+    }
+
+    return 1;
+}
+
 bool is_formula_punctuation_char(char ch) noexcept
 {
     switch (ch) {
@@ -566,20 +583,28 @@ std::size_t formula_identifier_length(std::string_view formula, std::size_t posi
 std::size_t formula_number_length(std::string_view formula, std::size_t position)
 {
     const std::size_t start = position;
-    if (position >= formula.size() || !is_ascii_digit(formula[position])) {
+    if (position >= formula.size()) {
         return 0;
     }
+
+    bool has_digits = false;
     while (position < formula.size() && is_ascii_digit(formula[position])) {
+        has_digits = true;
         ++position;
     }
     if (position < formula.size() && formula[position] == '.') {
-        const std::size_t decimal_point = position++;
+        ++position;
+        const std::size_t fraction_begin = position;
         while (position < formula.size() && is_ascii_digit(formula[position])) {
+            has_digits = true;
             ++position;
         }
-        if (position == decimal_point + 1) {
-            return decimal_point - start;
+        if (!has_digits && position == fraction_begin) {
+            return 0;
         }
+    }
+    if (!has_digits) {
+        return 0;
     }
     if (position < formula.size() && (formula[position] == 'E' || formula[position] == 'e')) {
         const std::size_t exponent = position++;
@@ -595,6 +620,45 @@ std::size_t formula_number_length(std::string_view formula, std::size_t position
         }
     }
     return position - start;
+}
+
+std::string decoded_formula_sheet_name(
+    std::string_view formula, const FormulaSheetQualifier& qualifier)
+{
+    std::string decoded;
+    const std::string_view raw_name =
+        formula.substr(qualifier.name_offset, qualifier.name_length);
+    decoded.reserve(raw_name.size());
+
+    for (std::size_t index = 0; index < raw_name.size(); ++index) {
+        if (qualifier.quoted && raw_name[index] == '\'' && index + 1 < raw_name.size()
+            && raw_name[index + 1] == '\'') {
+            decoded += '\'';
+            ++index;
+            continue;
+        }
+        decoded += raw_name[index];
+    }
+
+    return decoded;
+}
+
+bool formula_sheet_qualifier_has_external_workbook(std::string_view decoded_sheet_name)
+{
+    return decoded_sheet_name.size() >= 3 && decoded_sheet_name.front() == '['
+        && decoded_sheet_name.find(']') != std::string_view::npos;
+}
+
+bool formula_sheet_qualifier_has_sheet_range(std::string_view decoded_sheet_name)
+{
+    std::size_t search_offset = 0;
+    if (!decoded_sheet_name.empty() && decoded_sheet_name.front() == '[') {
+        const std::size_t workbook_end = decoded_sheet_name.find(']');
+        if (workbook_end != std::string_view::npos) {
+            search_offset = workbook_end + 1;
+        }
+    }
+    return decoded_sheet_name.find(':', search_offset) != std::string_view::npos;
 }
 
 FormulaReference make_axis_range_reference(
@@ -745,9 +809,9 @@ std::vector<FormulaToken> tokenize_formula(std::string_view formula)
             continue;
         }
 
-        if (is_formula_operator_char(ch)) {
-            tokens.push_back(FormulaToken {FormulaTokenKind::Operator, position, 1, {}});
-            ++position;
+        if (const std::size_t length = formula_operator_length(formula, position); length > 0) {
+            tokens.push_back(FormulaToken {FormulaTokenKind::Operator, position, length, {}});
+            position += length;
             continue;
         }
 
@@ -761,6 +825,31 @@ std::vector<FormulaToken> tokenize_formula(std::string_view formula)
         ++position;
     }
     return tokens;
+}
+
+FormulaReferenceQualifierClassification classify_formula_reference_qualifier(
+    std::string_view formula, const FormulaReference& reference)
+{
+    if (!reference.sheet.present) {
+        return {};
+    }
+
+    FormulaReferenceQualifierClassification classification;
+    classification.decoded_sheet_name = decoded_formula_sheet_name(formula, reference.sheet);
+    const bool external_workbook =
+        formula_sheet_qualifier_has_external_workbook(classification.decoded_sheet_name);
+    const bool sheet_range =
+        formula_sheet_qualifier_has_sheet_range(classification.decoded_sheet_name);
+    if (external_workbook && sheet_range) {
+        classification.kind = FormulaReferenceQualifierKind::ExternalWorkbookSheetRange;
+    } else if (external_workbook) {
+        classification.kind = FormulaReferenceQualifierKind::ExternalWorkbook;
+    } else if (sheet_range) {
+        classification.kind = FormulaReferenceQualifierKind::SheetRange;
+    } else {
+        classification.kind = FormulaReferenceQualifierKind::LocalSheet;
+    }
+    return classification;
 }
 
 std::vector<FormulaReference> scan_formula_references(std::string_view formula)

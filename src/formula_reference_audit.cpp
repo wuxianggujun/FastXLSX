@@ -267,45 +267,6 @@ std::optional<std::size_t> parse_zero_based_index(std::string_view text)
     return value;
 }
 
-std::string decoded_formula_sheet_name(
-    std::string_view formula, const FormulaSheetQualifier& qualifier)
-{
-    std::string decoded;
-    const std::string_view raw_name =
-        formula.substr(qualifier.name_offset, qualifier.name_length);
-    decoded.reserve(raw_name.size());
-
-    for (std::size_t index = 0; index < raw_name.size(); ++index) {
-        if (qualifier.quoted && raw_name[index] == '\'' && index + 1 < raw_name.size()
-            && raw_name[index + 1] == '\'') {
-            decoded += '\'';
-            ++index;
-            continue;
-        }
-        decoded += raw_name[index];
-    }
-
-    return decoded;
-}
-
-bool formula_sheet_qualifier_has_external_workbook(std::string_view decoded_sheet_name)
-{
-    return decoded_sheet_name.size() >= 3 && decoded_sheet_name.front() == '['
-        && decoded_sheet_name.find(']') != std::string_view::npos;
-}
-
-bool formula_sheet_qualifier_has_sheet_range(std::string_view decoded_sheet_name)
-{
-    std::size_t search_offset = 0;
-    if (!decoded_sheet_name.empty() && decoded_sheet_name.front() == '[') {
-        const std::size_t workbook_end = decoded_sheet_name.find(']');
-        if (workbook_end != std::string_view::npos) {
-            search_offset = workbook_end + 1;
-        }
-    }
-    return decoded_sheet_name.find(':', search_offset) != std::string_view::npos;
-}
-
 std::optional<FormulaSheetCatalogMatch> match_formula_sheet_catalog_entry(
     std::span<const FormulaAuditSheetCatalogEntry> catalog,
     std::string_view referenced_sheet_name)
@@ -349,14 +310,18 @@ FormulaReferenceAuditFields build_formula_reference_audit_fields(
     audit.qualified_reference_text = std::string(formula_text.substr(
         reference.sheet.offset,
         reference.offset + reference.length - reference.sheet.offset));
-    audit.referenced_sheet_name = decoded_formula_sheet_name(formula_text, reference.sheet);
+    const FormulaReferenceQualifierClassification qualifier =
+        classify_formula_reference_qualifier(formula_text, reference);
+    audit.referenced_sheet_name = qualifier.decoded_sheet_name;
     audit.qualifier_quoted = reference.sheet.quoted;
     audit.external_workbook_qualifier =
-        formula_sheet_qualifier_has_external_workbook(audit.referenced_sheet_name);
+        qualifier.kind == FormulaReferenceQualifierKind::ExternalWorkbook
+        || qualifier.kind == FormulaReferenceQualifierKind::ExternalWorkbookSheetRange;
     audit.sheet_range_qualifier =
-        formula_sheet_qualifier_has_sheet_range(audit.referenced_sheet_name);
+        qualifier.kind == FormulaReferenceQualifierKind::SheetRange
+        || qualifier.kind == FormulaReferenceQualifierKind::ExternalWorkbookSheetRange;
 
-    if (audit.external_workbook_qualifier || audit.sheet_range_qualifier) {
+    if (qualifier.kind != FormulaReferenceQualifierKind::LocalSheet) {
         return audit;
     }
 
@@ -448,15 +413,14 @@ std::string rewrite_formula_sheet_references(
             continue;
         }
 
-        const std::string referenced_sheet_name =
-            decoded_formula_sheet_name(formula_text, reference.sheet);
-        if (formula_sheet_qualifier_has_external_workbook(referenced_sheet_name)
-            || formula_sheet_qualifier_has_sheet_range(referenced_sheet_name)) {
+        const FormulaReferenceQualifierClassification qualifier =
+            classify_formula_reference_qualifier(formula_text, reference);
+        if (qualifier.kind != FormulaReferenceQualifierKind::LocalSheet) {
             continue;
         }
 
         const std::optional<std::string> replacement =
-            replacement_formula_sheet_name(rewrites, referenced_sheet_name);
+            replacement_formula_sheet_name(rewrites, qualifier.decoded_sheet_name);
         if (!replacement.has_value()) {
             continue;
         }

@@ -15,6 +15,14 @@ enum class FormulaReferenceKind {
     WholeRowRange,
 };
 
+enum class FormulaReferenceQualifierKind {
+    None,
+    LocalSheet,
+    ExternalWorkbook,
+    SheetRange,
+    ExternalWorkbookSheetRange,
+};
+
 enum class FormulaTokenKind {
     Whitespace,
     StringLiteral,
@@ -63,6 +71,11 @@ struct FormulaReference {
     FormulaAxisReference last_axis;
 };
 
+struct FormulaReferenceQualifierClassification {
+    FormulaReferenceQualifierKind kind = FormulaReferenceQualifierKind::None;
+    std::string decoded_sheet_name;
+};
+
 struct FormulaTranslationDelta {
     std::int64_t row_delta = 0;
     std::int64_t column_delta = 0;
@@ -86,6 +99,15 @@ struct FormulaToken {
 /// operators, punctuation, numbers, and the narrow A1-style references currently
 /// understood by scan_formula_references().
 [[nodiscard]] std::vector<FormulaToken> tokenize_formula(std::string_view formula);
+
+/// Classifies the sheet qualifier attached to a scanned formula reference.
+///
+/// The classifier decodes escaped quotes in quoted sheet names and separates
+/// local-sheet references from external-workbook and 3D sheet-range qualifiers.
+/// It is still lexical/audit support; it does not validate workbook, sheet, or
+/// external-link existence.
+[[nodiscard]] FormulaReferenceQualifierClassification classify_formula_reference_qualifier(
+    std::string_view formula, const FormulaReference& reference);
 
 /// Scans formula text for the narrow A1-style references understood by the
 /// shared-formula materializer.

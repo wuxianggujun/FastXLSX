@@ -86,6 +86,21 @@ std::string_view token_text(
     return formula.substr(token.offset, token.length);
 }
 
+void check_token_exists(
+    std::string_view formula,
+    const std::vector<fastxlsx::detail::FormulaToken>& tokens,
+    fastxlsx::detail::FormulaTokenKind kind,
+    std::string_view expected_text,
+    const char* message)
+{
+    for (const fastxlsx::detail::FormulaToken& token : tokens) {
+        if (token.kind == kind && token_text(formula, token) == expected_text) {
+            return;
+        }
+    }
+    throw TestFailure(message);
+}
+
 void test_tokenize_formula_foundation()
 {
     const std::string formula =
@@ -167,6 +182,132 @@ void test_tokenize_formula_foundation()
         "formula tokenizer function argument reference mismatch");
     check_no_sheet_qualifier(reference_tokens[2].reference,
         "formula tokenizer should leave function argument reference unqualified");
+}
+
+void test_tokenize_formula_operator_number_and_recovery_boundaries()
+{
+    const std::string formula = R"(IF(A1<=10, B2>=.5, C3<>1.E2, {1,2;3,4}))";
+    const std::vector<fastxlsx::detail::FormulaToken> tokens =
+        fastxlsx::detail::tokenize_formula(formula);
+
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Operator,
+        "<=", "formula tokenizer should keep <= as one comparison operator token");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Operator,
+        ">=", "formula tokenizer should keep >= as one comparison operator token");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Operator,
+        "<>", "formula tokenizer should keep <> as one comparison operator token");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Number,
+        ".5", "formula tokenizer should classify leading-decimal numbers");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Number,
+        "1.E2", "formula tokenizer should classify exponent numbers with trailing dot");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Punctuation,
+        "{", "formula tokenizer should preserve array-constant open brace");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Punctuation,
+        ";", "formula tokenizer should preserve array-constant row separator");
+    check_token_exists(formula, tokens, fastxlsx::detail::FormulaTokenKind::Punctuation,
+        "}", "formula tokenizer should preserve array-constant close brace");
+
+    std::vector<fastxlsx::detail::FormulaToken> reference_tokens;
+    for (const fastxlsx::detail::FormulaToken& token : tokens) {
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Reference) {
+            reference_tokens.push_back(token);
+        }
+    }
+    check(reference_tokens.size() == 3,
+        "formula tokenizer should report comparison operand references");
+    check_reference_text(formula, reference_tokens[0].reference, "A1",
+        "formula tokenizer comparison left reference mismatch");
+    check_reference_text(formula, reference_tokens[1].reference, "B2",
+        "formula tokenizer comparison middle reference mismatch");
+    check_reference_text(formula, reference_tokens[2].reference, "C3",
+        "formula tokenizer comparison right reference mismatch");
+
+    const std::string incomplete_string = R"("unterminated A1)";
+    const std::vector<fastxlsx::detail::FormulaToken> string_tokens =
+        fastxlsx::detail::tokenize_formula(incomplete_string);
+    check(string_tokens.size() == 1,
+        "formula tokenizer should preserve incomplete strings as one token");
+    check(string_tokens[0].kind == fastxlsx::detail::FormulaTokenKind::StringLiteral,
+        "formula tokenizer incomplete string token kind mismatch");
+    check_equal(token_text(incomplete_string, string_tokens[0]), incomplete_string,
+        "formula tokenizer incomplete string token span mismatch");
+
+    const std::string incomplete_bracket = "[Book.xlsx";
+    const std::vector<fastxlsx::detail::FormulaToken> bracket_tokens =
+        fastxlsx::detail::tokenize_formula(incomplete_bracket);
+    check(bracket_tokens.size() == 1,
+        "formula tokenizer should preserve incomplete brackets as one token");
+    check(bracket_tokens[0].kind == fastxlsx::detail::FormulaTokenKind::BracketedToken,
+        "formula tokenizer incomplete bracket token kind mismatch");
+    check_equal(token_text(incomplete_bracket, bracket_tokens[0]), incomplete_bracket,
+        "formula tokenizer incomplete bracket token span mismatch");
+}
+
+void test_formula_reference_qualifier_classifier()
+{
+    const std::string formula =
+        "A1+Sheet1!B2+'O''Brien'!C3+[Book.xlsx]Sheet1!D4+"
+        "Sheet1:Sheet2!E5+[Book.xlsx]Sheet1:Sheet2!F6+Table1[A1]";
+    const std::vector<fastxlsx::detail::FormulaReference> references =
+        fastxlsx::detail::scan_formula_references(formula);
+
+    check(references.size() == 6,
+        "formula qualifier classifier should ignore structured reference contents");
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[0]);
+        check(qualifier.kind == fastxlsx::detail::FormulaReferenceQualifierKind::None,
+            "formula qualifier classifier should mark unqualified refs as none");
+        check_equal(qualifier.decoded_sheet_name, "",
+            "formula qualifier classifier should leave unqualified decoded name empty");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[1]);
+        check(qualifier.kind == fastxlsx::detail::FormulaReferenceQualifierKind::LocalSheet,
+            "formula qualifier classifier should classify ordinary local sheets");
+        check_equal(qualifier.decoded_sheet_name, "Sheet1",
+            "formula qualifier classifier local sheet name mismatch");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[2]);
+        check(qualifier.kind == fastxlsx::detail::FormulaReferenceQualifierKind::LocalSheet,
+            "formula qualifier classifier should classify quoted local sheets");
+        check_equal(qualifier.decoded_sheet_name, "O'Brien",
+            "formula qualifier classifier should decode escaped quote sheet names");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[3]);
+        check(qualifier.kind == fastxlsx::detail::FormulaReferenceQualifierKind::ExternalWorkbook,
+            "formula qualifier classifier should classify external workbook refs");
+        check_equal(qualifier.decoded_sheet_name, "[Book.xlsx]Sheet1",
+            "formula qualifier classifier external workbook name mismatch");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[4]);
+        check(qualifier.kind == fastxlsx::detail::FormulaReferenceQualifierKind::SheetRange,
+            "formula qualifier classifier should classify 3D sheet ranges");
+        check_equal(qualifier.decoded_sheet_name, "Sheet1:Sheet2",
+            "formula qualifier classifier sheet range name mismatch");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[5]);
+        check(qualifier.kind
+                == fastxlsx::detail::FormulaReferenceQualifierKind::ExternalWorkbookSheetRange,
+            "formula qualifier classifier should classify external workbook 3D refs");
+        check_equal(qualifier.decoded_sheet_name, "[Book.xlsx]Sheet1:Sheet2",
+            "formula qualifier classifier external workbook sheet range name mismatch");
+    }
 }
 
 void test_scan_formula_references()
@@ -521,6 +662,8 @@ int main()
 {
     try {
         test_tokenize_formula_foundation();
+        test_tokenize_formula_operator_number_and_recovery_boundaries();
+        test_formula_reference_qualifier_classifier();
         test_scan_formula_references();
         test_scan_formula_quoted_sheet_qualifier_with_escaped_quote();
         test_translate_formula_references();

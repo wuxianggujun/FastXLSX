@@ -55,9 +55,14 @@ translator from the definition cell to the follower cell; `$` absolute
 row/column anchors are kept, whole-row/whole-column ranges are translated within
 Excel bounds, out-of-bounds relative references become `#REF!`, and quoted strings, quoted
 sheet-name tokens, and bracketed external/structured-reference tokens are not
-rewritten. The internal scanner also exposes raw sheet qualifier spans for
-unquoted, quoted, external-workbook, and 3D-like qualifiers as dependency-audit
-metadata, but it still does not validate sheet names, external workbook
+rewritten. The internal tokenizer now also pins comparison operators
+(`<=`, `>=`, `<>`), array-constant punctuation, leading-decimal/exponent
+number tokens, and malformed string/bracket recovery spans for audit safety.
+The internal scanner exposes raw sheet qualifier spans for unquoted, quoted,
+external-workbook, and 3D-like qualifiers as dependency-audit metadata, and the
+shared `classify_formula_reference_qualifier()` helper now centralizes
+unqualified/local/external/3D/external-3D classification for audits and safe
+sheet-name rewrites. It still does not validate sheet names, external workbook
 targets, or 3D semantics. Dirty `WorksheetEditor` save writes ordinary
 `<f>...</f>` formula
 text, treats formula text as authoritative for default/numeric, `t="str"`, and

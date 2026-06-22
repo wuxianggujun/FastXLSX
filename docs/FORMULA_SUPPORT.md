@@ -94,6 +94,11 @@ py tools\run_workbook_editor_qa.py `
   --excel-verify
 
 py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_rewrite `
+  --work-dir build\qa\workbook-editor-formula-rename-rewrite `
+  --excel-verify
+
+py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_materialization `
   --work-dir build\qa\workbook-editor-shared-formula-materialization `
   --excel-verify
@@ -117,6 +122,17 @@ The generated shared-formula QA reports now include explicit formula evidence:
 `stale_cached_values_removed`, `checked_formula_cells`, `output_formula_cells`,
 and `openpyxl.formula_cells`. This keeps the shared-formula materialization
 claim auditable from the JSON report without manually unpacking the workbook.
+
+`generated_formula_rename_rewrite` is the focused local QA for the explicit
+rename formula policy. It materializes only the `Formula` sheet, renames
+`Data` to `RenamedData` with
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas`, and verifies by ZIP/XML,
+`openpyxl`, and Excel COM that direct local definedName and materialized
+worksheet formula references are rewritten while external-workbook references,
+3D sheet-range references, string literals, and the non-materialized
+`Unmaterialized` worksheet formula remain unchanged. This is still opt-in
+formula text rewrite evidence only, not default rename behavior or formula
+evaluation.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

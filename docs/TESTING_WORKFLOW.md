@@ -416,6 +416,26 @@ records `checked_formula_cells`, `output_formula_cells`,
 `cached_formula_values_removed` so the exact materialized formulas and removed
 stale cache state are visible without unpacking the workbook manually.
 
+For the opt-in rename formula rewrite QA smoke, run:
+
+```powershell
+py tools\run_workbook_editor_qa.py `
+  --scenario generated_formula_rename_rewrite `
+  --work-dir build\qa\workbook-editor-formula-rename-rewrite `
+  --excel-verify
+```
+
+This generated case materializes the `Formula` sheet first, then renames
+`Data` to `RenamedData` with
+`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`.
+ZIP/XML and `openpyxl` verify rewritten direct local definedName references,
+rewritten materialized formula cells, unchanged external-workbook references,
+unchanged 3D sheet-range references, preserved string literals, no invented
+`xl/calcChain.xml`, and an unchanged non-materialized worksheet formula.
+Excel COM is a read-only compatibility smoke for the renamed sheet and
+representative rewritten formula cells; exact boundary semantics remain the
+ZIP/XML checks.
+
 For the source-worksheet formula reference diagnostic smoke, run:
 
 ```powershell

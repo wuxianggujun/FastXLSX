@@ -419,6 +419,58 @@ std::filesystem::path write_formula_reference_source(const std::filesystem::path
     return path;
 }
 
+std::filesystem::path write_formula_rename_rewrite_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({CellView::number(1.0), CellView::number(2.0)});
+    }
+    {
+        WorksheetWriter other = writer.add_worksheet("Other Sheet");
+        other.append_row({CellView::number(10.0)});
+    }
+    {
+        WorksheetWriter formulas = writer.add_worksheet("Formula");
+        formulas.append_row({CellView::formula("Data!A1")});
+        formulas.append_row({CellView::formula("'Data'!$A$1")});
+        formulas.append_row({CellView::formula("[Book.xlsx]Data!A1")});
+        formulas.append_row({CellView::formula("Data:Formula!A1")});
+        formulas.append_row({CellView::formula(R"(Data!A1+"Data!A1")")});
+    }
+    {
+        WorksheetWriter unmaterialized = writer.add_worksheet("Unmaterialized");
+        unmaterialized.append_row({CellView::formula("Data!A1")});
+    }
+    writer.close();
+
+    auto entries = fastxlsx::test::read_zip_entries(path);
+    std::string& workbook_xml = entries.at("xl/workbook.xml");
+    const std::string defined_names_xml =
+        R"(<definedNames>)"
+        R"(<definedName name="ReportRange">Data!$A$1:$B$2</definedName>)"
+        R"(<definedName name="QuotedDataRef">'Data'!$A$1</definedName>)"
+        R"(<definedName name="ScopedOther" localSheetId="2">'Other Sheet'!$A$1</definedName>)"
+        R"(<definedName name="ExternalRef">[Book.xlsx]Data!A1</definedName>)"
+        R"(<definedName name="ThreeDRef">Data:Formula!A1</definedName>)"
+        R"(<definedName name="LiteralText">"Data!A1"</definedName>)"
+        R"(</definedNames>)";
+    const std::size_t calc_begin = workbook_xml.find("<calcPr");
+    if (calc_begin != std::string::npos) {
+        workbook_xml.insert(calc_begin, defined_names_xml);
+    } else {
+        const std::size_t workbook_end = workbook_xml.find("</workbook>");
+        if (workbook_end == std::string::npos) {
+            throw std::runtime_error("formula rename rewrite source workbook.xml is missing </workbook>");
+        }
+        workbook_xml.insert(workbook_end, defined_names_xml);
+    }
+    fastxlsx::test::write_stored_zip_entries(path, entries);
+    return path;
+}
+
 std::filesystem::path write_shared_formula_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -735,6 +787,80 @@ Report run_generated_source_formula_audit(const CliOptions& options)
     }
     if (report.source_formula_matched_count != 3) {
         throw std::runtime_error("source formula audit QA expected three local matched references");
+    }
+
+    editor.save_as(report.output);
+    return report;
+}
+
+Report run_generated_formula_rename_rewrite(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_formula_rename_rewrite_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-formula-rename-rewrite-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-formula-rename-rewrite-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.renamed_sheet_name = "RenamedData";
+    report.mutations = {
+        "worksheet(Formula).try_cell(A1:A5):materialize_formula_cells",
+        "rename_sheet:Data->RenamedData:RewriteDefinedNamesAndMaterializedWorksheetFormulas",
+        "save_as",
+    };
+    report.notes = {
+        "Opt-in rename formula policy should rewrite direct local definedName references",
+        "Opt-in rename formula policy should rewrite only already-materialized worksheet formulas",
+        "External workbook references, 3D sheet-range references, string literals, and non-materialized worksheet formulas should remain unchanged",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    require_formula_cell(formula_sheet, "A1", "Data!A1");
+    require_formula_cell(formula_sheet, "A2", "'Data'!$A$1");
+    require_formula_cell(formula_sheet, "A3", "[Book.xlsx]Data!A1");
+    require_formula_cell(formula_sheet, "A4", "Data:Formula!A1");
+    require_formula_cell(formula_sheet, "A5", R"(Data!A1+"Data!A1")");
+    if (formula_sheet.has_pending_changes()) {
+        throw std::runtime_error(
+            "formula rename rewrite QA read-only materialization dirtied Formula sheet");
+    }
+
+    fastxlsx::WorkbookEditorRenameOptions rename_options;
+    rename_options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "RenamedData", rename_options);
+
+    require_formula_cell(formula_sheet, "A1", "'RenamedData'!A1");
+    require_formula_cell(formula_sheet, "A2", "'RenamedData'!$A$1");
+    require_formula_cell(formula_sheet, "A3", "[Book.xlsx]Data!A1");
+    require_formula_cell(formula_sheet, "A4", "Data:Formula!A1");
+    require_formula_cell(formula_sheet, "A5", R"('RenamedData'!A1+"Data!A1")");
+    if (!formula_sheet.has_pending_changes()) {
+        throw std::runtime_error(
+            "formula rename rewrite QA did not mark rewritten Formula sheet dirty");
+    }
+
+    summarize_source_formula_audits(report, editor.formula_reference_audits());
+    summarize_defined_name_audits(report, editor.defined_name_formula_reference_audits());
+    if (report.source_formula_rename_risk_count != 0) {
+        throw std::runtime_error(
+            "formula rename rewrite QA should not leave materialized local rename risks");
+    }
+    if (report.source_formula_external_count != 1 || report.source_formula_sheet_range_count != 1) {
+        throw std::runtime_error(
+            "formula rename rewrite QA should preserve one external and one 3D materialized reference");
+    }
+    if (report.defined_name_audit_rename_risk_count != 0) {
+        throw std::runtime_error(
+            "formula rename rewrite QA should not leave definedName local rename risks");
+    }
+    if (report.defined_name_audit_external_count != 1
+        || report.defined_name_audit_sheet_range_count != 1) {
+        throw std::runtime_error(
+            "formula rename rewrite QA should preserve one external and one 3D definedName reference");
     }
 
     editor.save_as(report.output);
@@ -1184,6 +1310,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);
+    }
+    if (options.scenario == "generated_formula_rename_rewrite") {
+        return run_generated_formula_rename_rewrite(options);
     }
     if (options.scenario == "generated_shared_formula_materialization") {
         return run_generated_shared_formula_materialization(options);

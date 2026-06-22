@@ -88,6 +88,20 @@ function Assert-Formula {
     Assert-Equal $formula $Expected $Message
 }
 
+function Assert-FormulaIn {
+    param(
+        [object]$Worksheet,
+        [string]$Address,
+        [string[]]$Expected,
+        [string]$Message
+    )
+
+    $formula = [string]$Worksheet.Range($Address).Formula
+    if ($Expected -notcontains $formula) {
+        throw "$Message expected one of '$($Expected -join "', '")', got '$formula'"
+    }
+}
+
 function Verify-GeneratedRenameMaterialized {
     param([object]$Workbook)
 
@@ -172,6 +186,28 @@ function Verify-GeneratedSourceFormulaAudit {
         Assert-CellValue $renamed "A1" 1 "RenamedData!A1"
         $formulaText = [string]$formula.Range("A1").Formula
         Assert-True (-not [string]::IsNullOrWhiteSpace($formulaText)) "Formula!A1 formula should be present"
+    }
+    finally {
+        foreach ($object in @($formula, $renamed)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
+function Verify-GeneratedFormulaRenameRewrite {
+    param([object]$Workbook)
+
+    $renamed = $null
+    $formula = $null
+    try {
+        $renamed = Get-Worksheet $Workbook "RenamedData"
+        $formula = Get-Worksheet $Workbook "Formula"
+        Assert-CellValue $renamed "A1" 1 "RenamedData!A1"
+        Assert-FormulaIn $formula "A1" @("=RenamedData!A1", "='RenamedData'!A1") "Formula!A1 formula"
+        Assert-FormulaIn $formula "A2" @("=RenamedData!`$A`$1", "='RenamedData'!`$A`$1") "Formula!A2 formula"
+        Assert-FormulaIn $formula "A5" @("=RenamedData!A1+`"Data!A1`"", "='RenamedData'!A1+`"Data!A1`"") "Formula!A5 string-literal formula"
     }
     finally {
         foreach ($object in @($formula, $renamed)) {
@@ -335,6 +371,7 @@ function Verify-Case {
         switch ($scenario) {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
+            "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_shared_formula_materialization" { Verify-GeneratedSharedFormulaMaterialization $workbook }
             "generated_shared_formula_office_like_materialization" { Verify-GeneratedSharedFormulaOfficeLikeMaterialization $workbook }
             "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }

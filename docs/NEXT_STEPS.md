@@ -1011,6 +1011,16 @@ already-materialized WorksheetEditor formula cells through the same narrow
 qualifier rewrite. This does not add non-materialized worksheet formula scanning,
 table/drawing/chart relationship updates, sheet add/delete, transaction history,
 rollback, or broader workbook relationship repair.
+P8.588 adds an opt-in generated formula rename rewrite QA scenario on top of
+that public policy. `generated_formula_rename_rewrite` creates a workbook with
+direct local formulas, external-workbook references, 3D sheet-range references,
+string literals, direct workbook definedNames, and a non-materialized worksheet
+formula; it materializes only `Formula`, renames `Data` to `RenamedData` with
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas`, and verifies the output
+with ZIP/XML, `openpyxl`, and Excel COM. The case proves the narrow opt-in
+public rewrite path end-to-end without broadening default `rename_sheet()`,
+formula evaluation, calcChain rebuild, or non-materialized worksheet formula
+rewrite.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

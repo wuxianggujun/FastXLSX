@@ -288,6 +288,24 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_t
 ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.facade" --output-on-failure --timeout 60
 ```
 
+For the opt-in public combined editing external QA smoke, build the local QA
+tool and run the generated public E2E scenario:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_public_e2e `
+  --work-dir build\qa\workbook-editor-public-e2e
+```
+
+This helper validates the combined `WorkbookEditor` / `WorksheetEditor` output
+with ZIP/XML workbook catalog mapping, worksheet/drawing relationships,
+replacement media-byte comparison, `openpyxl` value readback, and a picture
+count smoke. It is local QA only and is not a FastXLSX runtime dependency or a
+claim of relationship repair, semantic image editing, transaction/undo support,
+formula calculation, or large-file random editing.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

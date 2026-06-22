@@ -25909,6 +25909,44 @@ Acceptance:
 - Resource check after local verification shows no lingering Excel/build/test
   processes.
 
+## P8.586 - Add public combined editing openpyxl/ZIP QA evidence
+
+Status: done.
+
+Type: opt-in local QA strengthening for the public `WorkbookEditor` /
+`WorksheetEditor` combined editing smoke; no production behavior change, no
+public API change, no CMake target membership change, and no runtime dependency.
+
+Goal: make the P8.560 combined public edit output externally verifiable without
+relying only on FastXLSX C++ tests. The existing `generated_public_e2e` QA
+scenario should prove workbook catalog mapping, edited cell values,
+whole-`sheetData` replacement, media byte replacement, worksheet/drawing
+relationships, and `openpyxl` readback in one local helper run.
+
+Output:
+- Extended `tools/run_workbook_editor_qa.py` with a reusable `.rels` reader for
+  QA assertions.
+- Strengthened `verify_generated_public_e2e()` so it checks the workbook sheet
+  name to worksheet-part map, `Pictures` worksheet drawing relationship,
+  drawing-owned image relationship, replacement media bytes, and `openpyxl`
+  sheet values / image count.
+- Updated `docs/NEXT_STEPS.md`, `docs/EDITING_TEST_MATRIX.md`, and
+  `docs/TESTING_WORKFLOW.md` to document the helper as opt-in external QA
+  evidence.
+
+Non-goals / boundary:
+- No Excel formula calculation, relationship repair/pruning, semantic image or
+  drawing editing, source package mutation, transaction history, undo/rollback,
+  source reload, runtime Python dependency, or large-file random editing claim.
+
+Acceptance:
+- `tools/run_workbook_editor_qa.py --scenario generated_public_e2e` passes with
+  a built `fastxlsx_workbook_editor_qa_tool`.
+- Focused public facade CTest still passes.
+- `git diff --check` passes.
+- Resource check after local verification shows no lingering Excel/build/test
+  processes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

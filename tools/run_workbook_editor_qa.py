@@ -373,6 +373,25 @@ def workbook_sheet_entry_map(path: Path) -> dict[str, str]:
     return sheet_entries
 
 
+def relationship_entries(path: Path, rels_entry: str) -> list[dict[str, str]]:
+    names = zip_names(path)
+    require(rels_entry in names, f"relationship entry missing: {rels_entry}")
+    rels_root = ElementTree.fromstring(read_zip_bytes(path, rels_entry))
+    entries: list[dict[str, str]] = []
+    for relationship in rels_root:
+        if xml_local_name(relationship.tag) != "Relationship":
+            continue
+        entries.append(
+            {
+                "id": relationship.attrib.get("Id", ""),
+                "type": relationship.attrib.get("Type", ""),
+                "target": relationship.attrib.get("Target", ""),
+                "target_mode": relationship.attrib.get("TargetMode", ""),
+            }
+        )
+    return entries
+
+
 def worksheet_formula_summary(worksheet_xml: bytes) -> dict[str, int]:
     root = ElementTree.fromstring(worksheet_xml)
     summary = {
@@ -1110,18 +1129,60 @@ def verify_fixture_image_replace(
 
 def verify_generated_public_e2e(path: Path, replacement_image: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     zip_report: dict[str, Any] = {}
+    names = zip_names(path)
     workbook_xml = read_zip_text(path, "xl/workbook.xml")
     sheet1_xml = read_zip_text(path, "xl/worksheets/sheet1.xml")
     sheet2_xml = read_zip_text(path, "xl/worksheets/sheet2.xml")
+    sheet3_xml = read_zip_text(path, "xl/worksheets/sheet3.xml")
     require('name="EditedData"' in workbook_xml, "generated public e2e: missing renamed EditedData")
     require('name="Data"' not in workbook_xml, "generated public e2e: old Data name still present")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "EditedData": "xl/worksheets/sheet1.xml",
+        "ReplaceMe": "xl/worksheets/sheet2.xml",
+        "Pictures": "xl/worksheets/sheet3.xml",
+    }, f"generated public e2e: unexpected workbook sheet map {sheet_entries!r}")
     require("materialized-edit" in sheet1_xml, "generated public e2e: missing materialized edit")
     require('<c r="B2"><v>42</v></c>' in sheet1_xml, "generated public e2e: missing B2 edit")
     require("sheetdata-final" in sheet2_xml, "generated public e2e: missing replaced sheet text")
     require('<c r="B1"><v>7</v></c>' in sheet2_xml, "generated public e2e: missing replaced sheet number")
-    require(read_zip_bytes(path, "xl/media/image1.png") == replacement_image.read_bytes(),
+    require("xl/worksheets/_rels/sheet3.xml.rels" in names,
+            "generated public e2e: missing Pictures worksheet relationships")
+    require("xl/drawings/drawing1.xml" in names,
+            "generated public e2e: missing drawing1.xml")
+    require("xl/drawings/_rels/drawing1.xml.rels" in names,
+            "generated public e2e: missing drawing1.xml.rels")
+    require('<drawing r:id="rId1"/>' in sheet3_xml,
+            "generated public e2e: Pictures worksheet missing drawing relationship")
+    sheet_rels = relationship_entries(path, "xl/worksheets/_rels/sheet3.xml.rels")
+    require(
+        any(
+            relationship["id"] == "rId1"
+            and relationship["type"].endswith("/drawing")
+            and relationship["target"] == "../drawings/drawing1.xml"
+            for relationship in sheet_rels
+        ),
+        f"generated public e2e: Pictures worksheet drawing rel missing {sheet_rels!r}",
+    )
+    drawing_rels = relationship_entries(path, "xl/drawings/_rels/drawing1.xml.rels")
+    require(
+        any(
+            relationship["type"].endswith("/image")
+            and relationship["target"] == "../media/image1.png"
+            for relationship in drawing_rels
+        ),
+        f"generated public e2e: drawing image rel missing {drawing_rels!r}",
+    )
+    expected_image_bytes = replacement_image.read_bytes()
+    actual_image_bytes = read_zip_bytes(path, "xl/media/image1.png")
+    require(actual_image_bytes == expected_image_bytes,
             "generated public e2e: image bytes mismatch")
-    zip_report["sheets"] = ["EditedData", "ReplaceMe", "Pictures"]
+    zip_report["sheets"] = list(sheet_entries)
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["image_part"] = "xl/media/image1.png"
+    zip_report["image_bytes"] = len(actual_image_bytes)
+    zip_report["worksheet_drawing_rels"] = len(sheet_rels)
+    zip_report["drawing_rels"] = len(drawing_rels)
 
     openpyxl = load_openpyxl()
     workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
@@ -1135,12 +1196,16 @@ def verify_generated_public_e2e(path: Path, replacement_image: Path) -> tuple[di
         require(edited["B2"].value == 42, "generated public e2e: B2 mismatch")
         require(replaced["A1"].value == "sheetdata-final", "generated public e2e: ReplaceMe!A1 mismatch")
         require(replaced["B1"].value == 7, "generated public e2e: ReplaceMe!B1 mismatch")
+        require(pictures["A1"].value == "image-sheet", "generated public e2e: Pictures!A1 mismatch")
+        require(openpyxl_image_count(pictures) >= 1,
+                "generated public e2e: openpyxl did not load the replaced image")
         openpyxl_report = {
             "sheetnames": workbook.sheetnames,
             "EditedData!A1": edited["A1"].value,
             "EditedData!B2": edited["B2"].value,
             "ReplaceMe!A1": replaced["A1"].value,
             "ReplaceMe!B1": replaced["B1"].value,
+            "Pictures!A1": pictures["A1"].value,
             "Pictures.image_count": openpyxl_image_count(pictures),
         }
     finally:

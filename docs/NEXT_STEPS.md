@@ -1022,6 +1022,15 @@ catalog, materialized cells, refreshed dimension, sheetData replacement, and
 memory-backed image bytes. This is retry-state hygiene for the public facade,
 not transaction history, undo/rollback, source mutation, relationship repair,
 or broad semantic object editing.
+P8.586 strengthens the opt-in `generated_public_e2e` workbook-editor QA helper:
+`tools/run_workbook_editor_qa.py --scenario generated_public_e2e` now validates
+the combined public-edit output through ZIP/XML workbook catalog mapping,
+worksheet/drawing relationship checks, media-byte comparison, and `openpyxl`
+readback including sheet values and picture count. This is external QA evidence
+for the existing public facade smoke only; it is not a runtime dependency, Excel
+formula calculation, relationship repair/pruning, semantic image editing,
+transaction history, undo/rollback, source mutation, or a large-file random
+editing claim.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for

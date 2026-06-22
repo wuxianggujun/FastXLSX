@@ -17646,6 +17646,99 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
         "reopened output should expose the rewritten materialized formula text");
 }
 
+void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()
+{
+    const std::filesystem::path source = write_formula_reference_source(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-output.xlsx");
+    const std::string target_name = "RenamedDataLongerSheetName01";
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_formula_sheet =
+        sizing_editor.worksheet("Formula");
+    const std::size_t exact_memory_budget =
+        sizing_formula_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions worksheet_options;
+    worksheet_options.memory_budget_bytes = exact_memory_budget;
+    fastxlsx::WorksheetEditor formula_sheet =
+        editor.worksheet("Formula", worksheet_options);
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value().find("Data!A1") != std::string::npos,
+        "formula rewrite guard fixture should start with a Data reference");
+    check(!formula_sheet.has_pending_changes(),
+        "guarded materialized formula sheet should start clean");
+    check(!editor.has_pending_changes(),
+        "guarded materialized formula rewrite test should start with no public edits");
+    check(editor.pending_change_count() == 0,
+        "guarded materialized formula rewrite test should start with zero pending edits");
+    const std::vector<std::string> names_before = editor.worksheet_names();
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+
+    bool failed = false;
+    std::string failure_message;
+    try {
+        editor.rename_sheet("Data", std::string(target_name), options);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        failure_message = error.what();
+        check_contains(failure_message, "WorkbookEditor::rename_sheet() failed",
+            "materialized formula rewrite guard should report public rename context");
+        check_contains(failure_message, "Data",
+            "materialized formula rewrite guard diagnostic should include the source sheet");
+        check_contains(failure_message, target_name,
+            "materialized formula rewrite guard diagnostic should include the target sheet");
+        check_contains(failure_message, "CellStore memory_budget_bytes guardrail exceeded",
+            "materialized formula rewrite guard should preserve the CellStore root cause");
+    }
+    check(failed,
+        "materialized formula rewrite should preflight CellStore memory guardrails");
+    check(editor.last_edit_error().has_value() &&
+            *editor.last_edit_error() == failure_message,
+        "materialized formula rewrite guard failure should record the public diagnostic");
+
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == before.kind() && after.text_value() == before.text_value(),
+        "failed materialized formula rewrite should not mutate the clean session formula");
+    check(!formula_sheet.has_pending_changes(),
+        "failed materialized formula rewrite should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "failed materialized formula rewrite should not queue public edits");
+    check(editor.pending_change_count() == 0,
+        "failed materialized formula rewrite should not increment pending edit count");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed materialized formula rewrite should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed materialized formula rewrite should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed materialized formula rewrite should not expose dirty materialized memory");
+    check(editor.worksheet_names() == names_before,
+        "failed materialized formula rewrite should preserve the planned catalog");
+    check(editor.has_worksheet("Data"),
+        "failed materialized formula rewrite should keep the source sheet planned name");
+    check(!editor.has_worksheet(target_name),
+        "failed materialized formula rewrite should not expose the rejected target name");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "no-op save after materialized formula rewrite guard failure should keep source catalog");
+    check_not_contains(output_entries.at("xl/workbook.xml"), target_name,
+        "no-op save after materialized formula rewrite guard failure should not leak target name");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(formula_sheet_xml, "<f>Data!A1+",
+        "no-op save after materialized formula rewrite guard failure should keep source formula");
+    check_not_contains(formula_sheet_xml, target_name,
+        "no-op save after materialized formula rewrite guard failure should not leak rewritten formula");
+}
+
 void test_rename_sheet_changes_catalog_name_and_preserves_parts()
 {
     const std::filesystem::path source =
@@ -18586,6 +18679,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
+        test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();
         test_rename_back_to_source_name_restores_public_diagnostics();

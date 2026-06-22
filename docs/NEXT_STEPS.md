@@ -822,6 +822,11 @@ external-workbook qualifiers, 3D sheet ranges, string literals, and every
 non-materialized worksheet formula cell. It does not scan source worksheet XML,
 evaluate formulas, build a dependency graph, rebuild calcChain, or synchronize
 tables/drawings/charts/hyperlinks/relationships.
+The guardrail path is now covered as well: if that opt-in materialized formula
+rewrite would exceed the existing `WorksheetEditorOptions::memory_budget_bytes`
+budget, the public `rename_sheet()` call fails before catalog/package mutation,
+keeps the materialized session clean, keeps the pending edit count at zero, and
+a no-op `save_as()` still preserves the source workbook formula text.
 P8.574 moves formula dependency audit behind a semantic detail boundary:
 `include/fastxlsx/detail/formula_reference_audit.hpp` exposes
 `audit_formula_references()` and

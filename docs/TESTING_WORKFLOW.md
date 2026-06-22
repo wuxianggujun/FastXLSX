@@ -367,6 +367,10 @@ borrowed from the assigned source editor and stale handles borrowed from the
 overwritten target editor: failures must keep the assigned source diagnostic and
 dirty materialized summaries, discard target state, and avoid stale output
 writes.
+The invalidated-handle read surface includes dirty-state probes, cell-count /
+memory estimates, cell reads, full and ranged sparse snapshots, and mutation
+attempts; `WorksheetEditor::name()` remains local handle metadata and is not
+treated as a session-validity probe.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

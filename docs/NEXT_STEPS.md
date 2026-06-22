@@ -1099,6 +1099,13 @@ changing dirty materialized diagnostics or summaries, reviving discarded target
 state, or leaking stale source/target writes into output. This remains
 borrowed-handle failure hygiene only, not target-state recovery, transactional
 undo, formula behavior, or large-file random editing.
+P8.598 broadens that stale-handle read surface: owner-move coverage now includes
+throwing A1 `get_cell()`, ranged `sparse_cells(CellRange)`, and
+`estimated_memory_usage()`, while move-assignment coverage includes source
+`get_cell()` / memory reads and overwritten-target ranged sparse / memory
+reads. The contract remains that stale handle failures preserve the moved-to
+owner diagnostic and dirty materialized summaries; it does not extend
+`WorksheetEditor::name()` lifetime semantics or make invalid handles usable.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

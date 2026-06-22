@@ -2916,9 +2916,19 @@ void test_public_worksheet_editor_invalidated_handle_failures_preserve_owner_dia
     check(threw_fastxlsx_error([&] { (void)old_handle.try_cell(1, 1); }),
         "invalidated handle should reject cell reads after owner move");
     check_moved_state("invalidated try_cell");
+    check(threw_fastxlsx_error([&] { (void)old_handle.get_cell("A1"); }),
+        "invalidated handle should reject throwing A1 reads after owner move");
+    check_moved_state("invalidated get_cell");
     check(threw_fastxlsx_error([&] { (void)old_handle.sparse_cells(); }),
         "invalidated handle should reject sparse snapshots after owner move");
     check_moved_state("invalidated sparse_cells");
+    check(threw_fastxlsx_error([&] {
+        (void)old_handle.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    }), "invalidated handle should reject ranged sparse snapshots after owner move");
+    check_moved_state("invalidated ranged sparse_cells");
+    check(threw_fastxlsx_error([&] { (void)old_handle.estimated_memory_usage(); }),
+        "invalidated handle should reject memory estimate reads after owner move");
+    check_moved_state("invalidated estimated_memory_usage");
     check(threw_fastxlsx_error([&] {
         old_handle.set_cell(2, 1, fastxlsx::CellValue::text("stale-invalidated-write"));
     }), "invalidated handle should reject stale writes after owner move");
@@ -3070,6 +3080,13 @@ void test_public_worksheet_editor_move_assignment_invalidated_handle_failures_pr
     check(threw_fastxlsx_error([&] { (void)source_handle.has_pending_changes(); }),
         "source handle should be invalid after move assignment");
     check_assigned_state("invalidated source has_pending_changes");
+    check(threw_fastxlsx_error([&] { (void)source_handle.get_cell("A1"); }),
+        "source handle should reject reads after move assignment");
+    check_assigned_state("invalidated source get_cell");
+    check(threw_fastxlsx_error([&] {
+        (void)source_handle.estimated_memory_usage();
+    }), "source handle should reject memory estimate reads after move assignment");
+    check_assigned_state("invalidated source estimated_memory_usage");
     check(threw_fastxlsx_error([&] {
         source_handle.set_cell(2, 1,
             fastxlsx::CellValue::text("stale-source-assignment-write"));
@@ -3078,6 +3095,13 @@ void test_public_worksheet_editor_move_assignment_invalidated_handle_failures_pr
     check(threw_fastxlsx_error([&] { (void)target_handle.has_pending_changes(); }),
         "overwritten target handle should be invalid after move assignment");
     check_assigned_state("invalidated target has_pending_changes");
+    check(threw_fastxlsx_error([&] {
+        (void)target_handle.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    }), "overwritten target handle should reject ranged sparse reads after move assignment");
+    check_assigned_state("invalidated target ranged sparse_cells");
+    check(threw_fastxlsx_error([&] { (void)target_handle.estimated_memory_usage(); }),
+        "overwritten target handle should reject memory estimate reads after move assignment");
+    check_assigned_state("invalidated target estimated_memory_usage");
     check(threw_fastxlsx_error([&] {
         target_handle.set_cell(2, 1,
             fastxlsx::CellValue::text("stale-target-assignment-write"));

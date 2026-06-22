@@ -26409,6 +26409,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.598 - Broaden invalidated handle read-surface hygiene
+
+Status: done.
+
+Type: public borrowed-`WorksheetEditor` invalidated-read surface regression and
+docs; no production behavior change, no public API change, no CMake target
+membership change, and no formula capability expansion.
+
+Goal: extend the stale borrowed-handle hygiene coverage from P8.596/P8.597 to
+the remaining read-only `WorksheetEditor` accessors that still consult the
+owning materialized session.
+
+Output:
+- The owner-move invalidated-handle regression now also covers throwing A1
+  `get_cell()`, ranged `sparse_cells(CellRange)`, and
+  `estimated_memory_usage()` on the stale handle.
+- The move-assignment invalidated-handle regression now also covers
+  source-handle `get_cell()` / `estimated_memory_usage()` failures and
+  overwritten-target-handle ranged `sparse_cells(CellRange)` /
+  `estimated_memory_usage()` failures.
+- Each added stale-handle read still proves the moved-to / assigned owner keeps
+  the prior `last_edit_error()`, dirty materialized names, aggregate dirty
+  cell/memory diagnostics, edit summaries, and final output payload.
+
+Non-goals / boundary:
+- No production code change, no `WorksheetEditor::name()` lifetime contract
+  expansion, no borrowed-handle lifetime extension, no target state recovery, no
+  public rollback/history, no large-file random editing claim, no relationship
+  repair, no sharedStrings / styles migration, no formula evaluation, and no
+  formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

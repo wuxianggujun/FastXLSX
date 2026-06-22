@@ -16,6 +16,7 @@ Recommended positioning:
 
 | Area | Current behavior |
 | --- | --- |
+| Formula tokenizer | Internal `tokenize_formula()` exposes a lexical foundation for formula editing/audit work. It preserves source spans for string literals, quoted sheet-name tokens, bracketed external/structured-reference tokens, function/identifier text, numbers, operators, punctuation, and the narrow A1-style reference tokens currently understood by FastXLSX. |
 | New workbook formula cells | `Cell::formula(...)`, `CellView::formula(...)`, and `CellValue::formula(...)` write worksheet `<f>` formula text. Callers pass formula text without a leading `=`. |
 | Recalculation request | Workbooks containing formula cells request recalculation with `fullCalcOnLoad`. Patch/edit paths also clean stale `calcChain.xml` metadata when the current policy requires it. |
 | Existing workbook formula read | `WorksheetEditor` can materialize supported source formula cells as `CellValueKind::Formula`. Stale cached `<v>` values are not treated as authoritative results. |

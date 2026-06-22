@@ -62,6 +62,11 @@ bool is_formula_name_char(char ch) noexcept
     return is_ascii_alpha(ch) || is_ascii_digit(ch) || ch == '_' || ch == '.';
 }
 
+bool is_formula_identifier_start(char ch) noexcept
+{
+    return is_ascii_alpha(ch) || ch == '_';
+}
+
 bool has_formula_reference_left_boundary(std::string_view formula, std::size_t position)
 {
     if (position == 0) {
@@ -108,6 +113,56 @@ bool is_unquoted_sheet_qualifier_boundary(char ch) noexcept
     default:
         return false;
     }
+}
+
+bool is_formula_space(char ch) noexcept
+{
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
+}
+
+bool is_formula_operator_char(char ch) noexcept
+{
+    switch (ch) {
+    case '+':
+    case '-':
+    case '*':
+    case '/':
+    case '^':
+    case '&':
+    case '=':
+    case '<':
+    case '>':
+    case '%':
+    case ':':
+    case '!':
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool is_formula_punctuation_char(char ch) noexcept
+{
+    switch (ch) {
+    case '(':
+    case ')':
+    case ',':
+    case ';':
+    case '{':
+    case '}':
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::size_t formula_whitespace_length(std::string_view formula, std::size_t position)
+{
+    const std::size_t start = position;
+    while (position < formula.size() && is_formula_space(formula[position])) {
+        ++position;
+    }
+    return position - start;
 }
 
 std::optional<std::size_t> find_opening_quoted_sheet_name(
@@ -446,6 +501,13 @@ void skip_quoted_formula_string(std::string_view formula, std::size_t& position)
     }
 }
 
+std::size_t quoted_formula_string_length(std::string_view formula, std::size_t position)
+{
+    const std::size_t start = position;
+    skip_quoted_formula_string(formula, position);
+    return position - start;
+}
+
 void skip_quoted_sheet_name(std::string_view formula, std::size_t& position)
 {
     ++position;
@@ -462,6 +524,13 @@ void skip_quoted_sheet_name(std::string_view formula, std::size_t& position)
     }
 }
 
+std::size_t quoted_sheet_name_length(std::string_view formula, std::size_t position)
+{
+    const std::size_t start = position;
+    skip_quoted_sheet_name(formula, position);
+    return position - start;
+}
+
 void skip_bracketed_formula_token(std::string_view formula, std::size_t& position)
 {
     ++position;
@@ -472,6 +541,60 @@ void skip_bracketed_formula_token(std::string_view formula, std::size_t& positio
             return;
         }
     }
+}
+
+std::size_t bracketed_formula_token_length(std::string_view formula, std::size_t position)
+{
+    const std::size_t start = position;
+    skip_bracketed_formula_token(formula, position);
+    return position - start;
+}
+
+std::size_t formula_identifier_length(std::string_view formula, std::size_t position)
+{
+    if (position >= formula.size() || !is_formula_identifier_start(formula[position])) {
+        return 0;
+    }
+    const std::size_t start = position;
+    ++position;
+    while (position < formula.size() && is_formula_name_char(formula[position])) {
+        ++position;
+    }
+    return position - start;
+}
+
+std::size_t formula_number_length(std::string_view formula, std::size_t position)
+{
+    const std::size_t start = position;
+    if (position >= formula.size() || !is_ascii_digit(formula[position])) {
+        return 0;
+    }
+    while (position < formula.size() && is_ascii_digit(formula[position])) {
+        ++position;
+    }
+    if (position < formula.size() && formula[position] == '.') {
+        const std::size_t decimal_point = position++;
+        while (position < formula.size() && is_ascii_digit(formula[position])) {
+            ++position;
+        }
+        if (position == decimal_point + 1) {
+            return decimal_point - start;
+        }
+    }
+    if (position < formula.size() && (formula[position] == 'E' || formula[position] == 'e')) {
+        const std::size_t exponent = position++;
+        if (position < formula.size() && (formula[position] == '+' || formula[position] == '-')) {
+            ++position;
+        }
+        const std::size_t exponent_digits = position;
+        while (position < formula.size() && is_ascii_digit(formula[position])) {
+            ++position;
+        }
+        if (position == exponent_digits) {
+            return exponent - start;
+        }
+    }
+    return position - start;
 }
 
 FormulaReference make_axis_range_reference(
@@ -525,49 +648,128 @@ FormulaReference make_cell_reference(
 
 } // namespace
 
-std::vector<FormulaReference> scan_formula_references(std::string_view formula)
+std::vector<FormulaToken> tokenize_formula(std::string_view formula)
 {
-    std::vector<FormulaReference> references;
+    std::vector<FormulaToken> tokens;
     std::size_t position = 0;
     while (position < formula.size()) {
-        if (formula[position] == '"') {
-            skip_quoted_formula_string(formula, position);
-            continue;
-        }
-        if (formula[position] == '\'') {
-            skip_quoted_sheet_name(formula, position);
-            continue;
-        }
-        if (formula[position] == '[') {
-            skip_bracketed_formula_token(formula, position);
+        const char ch = formula[position];
+
+        if (is_formula_space(ch)) {
+            const std::size_t length = formula_whitespace_length(formula, position);
+            tokens.push_back(FormulaToken {FormulaTokenKind::Whitespace, position, length, {}});
+            position += length;
             continue;
         }
 
-        const std::optional<FormulaAxisRangeToken> axis_range_token =
-            parse_formula_axis_range_token(formula, position);
-        if (axis_range_token.has_value()) {
-            references.push_back(make_axis_range_reference(formula, position, *axis_range_token));
+        if (ch == '"') {
+            const std::size_t length = quoted_formula_string_length(formula, position);
+            tokens.push_back(FormulaToken {FormulaTokenKind::StringLiteral, position, length, {}});
+            position += length;
+            continue;
+        }
+
+        if (ch == '\'') {
+            const std::size_t length = quoted_sheet_name_length(formula, position);
+            tokens.push_back(FormulaToken {FormulaTokenKind::QuotedSheetName, position, length, {}});
+            position += length;
+            continue;
+        }
+
+        if (ch == '[') {
+            const std::size_t length = bracketed_formula_token_length(formula, position);
+            tokens.push_back(FormulaToken {FormulaTokenKind::BracketedToken, position, length, {}});
+            position += length;
+            continue;
+        }
+
+        if (const std::optional<FormulaAxisRangeToken> axis_range_token =
+                parse_formula_axis_range_token(formula, position);
+            axis_range_token.has_value()) {
+            const FormulaReference reference =
+                make_axis_range_reference(formula, position, *axis_range_token);
+            tokens.push_back(FormulaToken {
+                FormulaTokenKind::Reference,
+                position,
+                axis_range_token->length,
+                reference,
+            });
             position += axis_range_token->length;
             continue;
         }
 
-        const std::optional<FormulaCellRangeToken> cell_range_token =
-            parse_formula_cell_range_token(formula, position);
-        if (cell_range_token.has_value()) {
-            references.push_back(make_cell_range_reference(formula, position, *cell_range_token));
+        if (const std::optional<FormulaCellRangeToken> cell_range_token =
+                parse_formula_cell_range_token(formula, position);
+            cell_range_token.has_value()) {
+            const FormulaReference reference =
+                make_cell_range_reference(formula, position, *cell_range_token);
+            tokens.push_back(FormulaToken {
+                FormulaTokenKind::Reference,
+                position,
+                cell_range_token->length,
+                reference,
+            });
             position += cell_range_token->length;
             continue;
         }
 
-        const std::optional<FormulaReferenceToken> token =
-            parse_formula_reference_token(formula, position);
-        if (token.has_value()) {
-            references.push_back(make_cell_reference(formula, position, *token));
-            position += token->length;
+        if (const std::optional<FormulaReferenceToken> reference_token =
+                parse_formula_reference_token(formula, position);
+            reference_token.has_value()) {
+            const FormulaReference reference =
+                make_cell_reference(formula, position, *reference_token);
+            tokens.push_back(FormulaToken {
+                FormulaTokenKind::Reference,
+                position,
+                reference_token->length,
+                reference,
+            });
+            position += reference_token->length;
             continue;
         }
 
+        if (const std::size_t length = formula_number_length(formula, position); length > 0) {
+            tokens.push_back(FormulaToken {FormulaTokenKind::Number, position, length, {}});
+            position += length;
+            continue;
+        }
+
+        if (const std::size_t length = formula_identifier_length(formula, position); length > 0) {
+            const std::size_t next = position + length;
+            const FormulaTokenKind kind =
+                next < formula.size() && formula[next] == '('
+                ? FormulaTokenKind::Function
+                : FormulaTokenKind::Identifier;
+            tokens.push_back(FormulaToken {kind, position, length, {}});
+            position += length;
+            continue;
+        }
+
+        if (is_formula_operator_char(ch)) {
+            tokens.push_back(FormulaToken {FormulaTokenKind::Operator, position, 1, {}});
+            ++position;
+            continue;
+        }
+
+        if (is_formula_punctuation_char(ch)) {
+            tokens.push_back(FormulaToken {FormulaTokenKind::Punctuation, position, 1, {}});
+            ++position;
+            continue;
+        }
+
+        tokens.push_back(FormulaToken {FormulaTokenKind::Unknown, position, 1, {}});
         ++position;
+    }
+    return tokens;
+}
+
+std::vector<FormulaReference> scan_formula_references(std::string_view formula)
+{
+    std::vector<FormulaReference> references;
+    for (const FormulaToken& token : tokenize_formula(formula)) {
+        if (token.kind == FormulaTokenKind::Reference) {
+            references.push_back(token.reference);
+        }
     }
     return references;
 }

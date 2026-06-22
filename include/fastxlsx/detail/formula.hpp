@@ -15,6 +15,20 @@ enum class FormulaReferenceKind {
     WholeRowRange,
 };
 
+enum class FormulaTokenKind {
+    Whitespace,
+    StringLiteral,
+    QuotedSheetName,
+    BracketedToken,
+    Reference,
+    Function,
+    Identifier,
+    Number,
+    Operator,
+    Punctuation,
+    Unknown,
+};
+
 struct FormulaCellReference {
     std::uint32_t row = 0;
     std::uint32_t column = 0;
@@ -53,6 +67,25 @@ struct FormulaTranslationDelta {
     std::int64_t row_delta = 0;
     std::int64_t column_delta = 0;
 };
+
+struct FormulaToken {
+    FormulaTokenKind kind = FormulaTokenKind::Unknown;
+    std::size_t offset = 0;
+    std::size_t length = 0;
+    // Valid only when kind == FormulaTokenKind::Reference. The token span is
+    // the raw reference text; `reference.sheet` can point to a preceding sheet
+    // qualifier when one is present.
+    FormulaReference reference;
+};
+
+/// Tokenizes formula text for FastXLSX editing/audit features.
+///
+/// This is a lexical foundation, not a full Excel formula parser or evaluator.
+/// It preserves source spans for quoted strings, quoted sheet-name tokens,
+/// bracketed external/structured-reference tokens, function/identifier text,
+/// operators, punctuation, numbers, and the narrow A1-style references currently
+/// understood by scan_formula_references().
+[[nodiscard]] std::vector<FormulaToken> tokenize_formula(std::string_view formula);
 
 /// Scans formula text for the narrow A1-style references understood by the
 /// shared-formula materializer.

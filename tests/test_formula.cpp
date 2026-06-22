@@ -80,6 +80,95 @@ void check_sheet_qualifier_text(
     check(reference.sheet.quoted == quoted, message);
 }
 
+std::string_view token_text(
+    std::string_view formula, const fastxlsx::detail::FormulaToken& token)
+{
+    return formula.substr(token.offset, token.length);
+}
+
+void test_tokenize_formula_foundation()
+{
+    const std::string formula =
+        R"(SUM(Sheet1!A1,"A1",'Other Sheet'!B:B,Table1[A1],1.25,A1foo,_A1,LOG10(C3)))";
+    const std::vector<fastxlsx::detail::FormulaToken> tokens =
+        fastxlsx::detail::tokenize_formula(formula);
+
+    bool saw_sum_function = false;
+    bool saw_string_literal = false;
+    bool saw_quoted_sheet_name = false;
+    bool saw_bracketed_token = false;
+    bool saw_decimal_number = false;
+    bool saw_a1foo_identifier = false;
+    bool saw_name_like_identifier = false;
+    bool saw_log_function = false;
+    std::vector<fastxlsx::detail::FormulaToken> reference_tokens;
+
+    for (const fastxlsx::detail::FormulaToken& token : tokens) {
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Function
+            && token_text(formula, token) == "SUM") {
+            saw_sum_function = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::StringLiteral
+            && token_text(formula, token) == R"("A1")") {
+            saw_string_literal = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::QuotedSheetName
+            && token_text(formula, token) == "'Other Sheet'") {
+            saw_quoted_sheet_name = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::BracketedToken
+            && token_text(formula, token) == "[A1]") {
+            saw_bracketed_token = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Number
+            && token_text(formula, token) == "1.25") {
+            saw_decimal_number = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Identifier
+            && token_text(formula, token) == "A1foo") {
+            saw_a1foo_identifier = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Identifier
+            && token_text(formula, token) == "_A1") {
+            saw_name_like_identifier = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Function
+            && token_text(formula, token) == "LOG10") {
+            saw_log_function = true;
+        }
+        if (token.kind == fastxlsx::detail::FormulaTokenKind::Reference) {
+            reference_tokens.push_back(token);
+        }
+    }
+
+    check(saw_sum_function, "formula tokenizer should classify function identifiers");
+    check(saw_string_literal, "formula tokenizer should preserve string literal spans");
+    check(saw_quoted_sheet_name, "formula tokenizer should preserve quoted sheet-name tokens");
+    check(saw_bracketed_token, "formula tokenizer should preserve bracketed tokens");
+    check(saw_decimal_number, "formula tokenizer should classify decimal number tokens");
+    check(saw_a1foo_identifier, "formula tokenizer should not split name-like A1 prefixes");
+    check(saw_name_like_identifier, "formula tokenizer should keep underscore names as identifiers");
+    check(saw_log_function, "formula tokenizer should classify function names containing digits");
+    check(reference_tokens.size() == 3,
+        "formula tokenizer should report references outside strings and structured refs only");
+    check_reference_text(formula, reference_tokens[0].reference, "A1",
+        "formula tokenizer first reference mismatch");
+    check_sheet_qualifier_text(formula, reference_tokens[0].reference, "Sheet1!", "Sheet1",
+        false, "formula tokenizer should carry unquoted sheet qualifier metadata");
+    check(reference_tokens[1].reference.kind
+            == fastxlsx::detail::FormulaReferenceKind::WholeColumnRange,
+        "formula tokenizer should preserve whole-column reference kind");
+    check_reference_text(formula, reference_tokens[1].reference, "B:B",
+        "formula tokenizer whole-column reference mismatch");
+    check_sheet_qualifier_text(formula, reference_tokens[1].reference, "'Other Sheet'!",
+        "Other Sheet", true,
+        "formula tokenizer should carry quoted sheet qualifier metadata");
+    check_reference_text(formula, reference_tokens[2].reference, "C3",
+        "formula tokenizer function argument reference mismatch");
+    check_no_sheet_qualifier(reference_tokens[2].reference,
+        "formula tokenizer should leave function argument reference unqualified");
+}
+
 void test_scan_formula_references()
 {
     const std::string formula =
@@ -431,6 +520,7 @@ void test_rewrite_workbook_defined_name_formula_references()
 int main()
 {
     try {
+        test_tokenize_formula_foundation();
         test_scan_formula_references();
         test_scan_formula_quoted_sheet_qualifier_with_escaped_quote();
         test_translate_formula_references();

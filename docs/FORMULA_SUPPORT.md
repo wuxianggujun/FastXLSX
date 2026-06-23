@@ -206,7 +206,7 @@ The definedName audit regression pins the same state hygiene after default
 catalog-only rename: `defined_name_formula_reference_audits()` reports stale
 source-name direct definedName references without incrementing public edit
 count, changing pending-change state, or creating replacement/materialized
-diagnostics or pending edit summaries.
+diagnostics, pending edit summaries, or `last_edit_error()`.
 The materialized worksheet audit regression pins the same boundary for already
 opened `WorksheetEditor` sessions: `formula_reference_audits()` reports stale
 source-name formula references after default catalog-only rename without

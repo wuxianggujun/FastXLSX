@@ -1646,6 +1646,14 @@ still reports stale `data!` / `DATA!` source-name risks without replacing or
 creating that public edit diagnostic. This is diagnostic state hygiene only; it
 is not source formula rewrite, formula evaluation, external/3D semantics,
 dependency graphing, or calcChain rebuild.
+P8.670 applies the same `last_edit_error()` hygiene to workbook definedName
+formula diagnostics. After default catalog-only `rename_sheet("Data",
+"RenamedData")`, the definedName audit regression now snapshots
+`last_edit_error()` with the pending-state diagnostics and verifies
+`defined_name_formula_reference_audits()` still reports stale source-name
+definedName references without replacing that public edit diagnostic. This is
+diagnostic state hygiene only; it is not definedName rewrite, formula
+evaluation, external/3D semantics, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

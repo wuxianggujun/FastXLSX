@@ -28702,6 +28702,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.670 - Pin definedName formula audit last-edit hygiene
+
+Status: done.
+
+Type: public workbook-editor definedName formula diagnostic regression test +
+docs; no public API change, no production behavior change, no CMake target
+membership change, and no formula engine expansion.
+
+Goal: prove `defined_name_formula_reference_audits()` after default
+catalog-only `rename_sheet()` does not update `last_edit_error()` while still
+reporting stale source-name direct definedName references.
+
+Output:
+- Extended
+  `test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk()`.
+- The regression now snapshots `last_edit_error()` alongside the existing
+  pending edit diagnostics after default
+  `rename_sheet("Data", "RenamedData")`.
+- The regression verifies `defined_name_formula_reference_audits()` leaves that
+  public edit diagnostic unchanged while still reporting the stale `Data!`
+  direct definedName reference mapped to planned sheet `RenamedData`.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the definedName
+  formula audit `last_edit_error()` boundary.
+
+Non-goals / boundary:
+- No default formula rewrite, no direct definedName rewrite outside explicit
+  rename policy, no worksheet formula rewrite, no formula evaluation, no
+  external workbook target validation, no 3D reference semantics, no dependency
+  graph, no calcChain rebuild, no relationship repair, no complete Excel
+  formula parser, and no public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

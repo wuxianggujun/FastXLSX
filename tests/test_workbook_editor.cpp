@@ -21904,6 +21904,8 @@ void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk
         editor.pending_materialized_worksheet_names();
     const std::size_t pending_summary_count_before_audit =
         editor.pending_worksheet_edits().size();
+    const std::optional<std::string> last_edit_error_before_audit =
+        editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit> renamed_audits =
         editor.defined_name_formula_reference_audits();
@@ -21917,6 +21919,8 @@ void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk
         "renamed definedName audit should not create materialized diagnostics");
     check(editor.pending_worksheet_edits().size() == pending_summary_count_before_audit,
         "renamed definedName audit should not create pending edit summaries");
+    check(editor.last_edit_error() == last_edit_error_before_audit,
+        "renamed definedName audit should not update last_edit_error");
     check(renamed_audits.size() == 4,
         "rename should not drop definedName formula reference audit entries");
     {

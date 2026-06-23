@@ -412,6 +412,82 @@ void check_public_dirty_materialized_recovery_state(
         prefix + " should preserve the restored planned catalog name");
 }
 
+void reject_public_two_clean_retry_invalid_reads(
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    fastxlsx::WorksheetEditor& data_again,
+    fastxlsx::WorksheetEditor& untouched_again,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(threw_fastxlsx_error([&] { (void)data_again.try_cell(0, 1); }),
+        label + " invalid read should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)data_again.get_cell(1, 0); }),
+        label + " invalid read should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)untouched_again.try_cell(1048577, 1); }),
+        label + " invalid read should reject rows beyond Excel limit");
+    check(threw_fastxlsx_error([&] { (void)untouched_again.get_cell(1, 16385); }),
+        label + " invalid read should reject columns beyond Excel limit");
+    check(threw_fastxlsx_error([&] { (void)data.try_cell("a1"); }),
+        label + " invalid A1 read should reject lowercase references");
+    check(threw_fastxlsx_error([&] { (void)untouched.get_cell("XFE1"); }),
+        label + " invalid A1 read should reject columns beyond Excel limit");
+    check(threw_fastxlsx_error([&] {
+        (void)data_again.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), label + " invalid range read should reject row zero");
+    check(threw_fastxlsx_error([&] {
+        (void)untouched_again.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
+    }), label + " invalid range read should reject reversed ranges");
+}
+
+void check_public_two_clean_retry_clean_after_invalid_reads(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    fastxlsx::WorksheetEditor& data_again,
+    fastxlsx::WorksheetEditor& untouched_again,
+    const std::vector<std::string>& expected_names,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
+    std::size_t expected_pending_count,
+    std::size_t data_count,
+    std::size_t data_memory,
+    std::size_t untouched_count,
+    std::size_t untouched_memory,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!editor.last_edit_error().has_value(),
+        label + " invalid reads should keep last_edit_error clear");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " invalid reads should not add handoffs");
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
+        label + " invalid reads should keep all handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " invalid reads should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " invalid reads should keep dirty materialized cells clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " invalid reads should keep dirty materialized memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        label + " invalid reads should keep worksheet summaries empty");
+    check(editor.source_worksheet_names() == expected_names,
+        label + " invalid reads should preserve source worksheet names");
+    check(editor.worksheet_names() == expected_names,
+        label + " invalid reads should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), expected_catalog),
+        label + " invalid reads should preserve worksheet catalog");
+    check(data_again.cell_count() == data_count &&
+            data_again.estimated_memory_usage() == data_memory,
+        label + " invalid reads should preserve Data sparse diagnostics");
+    check(untouched_again.cell_count() == untouched_count &&
+            untouched_again.estimated_memory_usage() == untouched_memory,
+        label + " invalid reads should preserve Untouched sparse diagnostics");
+}
+
 fastxlsx::CellValue public_two_clean_retry_rejected_mutation_value(
     std::string_view prefix,
     std::string_view suffix)
@@ -13909,53 +13985,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         const std::size_t untouched_count = untouched_again.cell_count();
         const std::size_t untouched_memory = untouched_again.estimated_memory_usage();
 
-        check(threw_fastxlsx_error([&] { (void)data_again.try_cell(0, 1); }),
-            "read-only retry invalid read should reject row zero");
-        check(threw_fastxlsx_error([&] { (void)data_again.get_cell(1, 0); }),
-            "read-only retry invalid read should reject column zero");
-        check(threw_fastxlsx_error([&] { (void)untouched_again.try_cell(1048577, 1); }),
-            "read-only retry invalid read should reject rows beyond Excel limit");
-        check(threw_fastxlsx_error([&] { (void)untouched_again.get_cell(1, 16385); }),
-            "read-only retry invalid read should reject columns beyond Excel limit");
-        check(threw_fastxlsx_error([&] { (void)data.try_cell("a1"); }),
-            "read-only retry invalid A1 read should reject lowercase references");
-        check(threw_fastxlsx_error([&] { (void)untouched.get_cell("XFE1"); }),
-            "read-only retry invalid A1 read should reject columns beyond Excel limit");
-        check(threw_fastxlsx_error([&] {
-            (void)data_again.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
-        }), "read-only retry invalid range read should reject row zero");
-        check(threw_fastxlsx_error([&] {
-            (void)untouched_again.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
-        }), "read-only retry invalid range read should reject reversed ranges");
-
-        check(!editor.last_edit_error().has_value(),
-            "read-only retry invalid reads should keep last_edit_error clear");
-        check(editor.pending_change_count() == 2,
-            "read-only retry invalid reads should not add handoffs");
-        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "read-only retry invalid reads should keep all handles clean");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only retry invalid reads should not dirty materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "read-only retry invalid reads should keep dirty materialized cells clear");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "read-only retry invalid reads should keep dirty materialized memory clear");
-        check(editor.pending_worksheet_edits().empty(),
-            "read-only retry invalid reads should keep worksheet summaries empty");
-        check(editor.source_worksheet_names() == expected_names,
-            "read-only retry invalid reads should preserve source worksheet names");
-        check(editor.worksheet_names() == expected_names,
-            "read-only retry invalid reads should preserve planned worksheet names");
-        check(workbook_editor_catalog_entries_equal(
-                  editor.worksheet_catalog(), expected_catalog),
-            "read-only retry invalid reads should preserve worksheet catalog");
-        check(data_again.cell_count() == data_count &&
-                data_again.estimated_memory_usage() == data_memory,
-            "read-only retry invalid reads should preserve Data sparse diagnostics");
-        check(untouched_again.cell_count() == untouched_count &&
-                untouched_again.estimated_memory_usage() == untouched_memory,
-            "read-only retry invalid reads should preserve Untouched sparse diagnostics");
+        reject_public_two_clean_retry_invalid_reads(
+            data, untouched, data_again, untouched_again, "read-only retry");
+        check_public_two_clean_retry_clean_after_invalid_reads(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, 2, data_count, data_memory,
+            untouched_count, untouched_memory, "read-only retry");
 
         const fastxlsx::CellValue data_value = data_again.get_cell(1, 1);
         const fastxlsx::CellValue untouched_value = untouched_again.get_cell(1, 1);
@@ -14048,53 +14083,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         const std::size_t untouched_count = untouched_again.cell_count();
         const std::size_t untouched_memory = untouched_again.estimated_memory_usage();
 
-        check(threw_fastxlsx_error([&] { (void)data_again.try_cell(0, 1); }),
-            "saved-clean retry invalid read should reject row zero");
-        check(threw_fastxlsx_error([&] { (void)data_again.get_cell(1, 0); }),
-            "saved-clean retry invalid read should reject column zero");
-        check(threw_fastxlsx_error([&] { (void)untouched_again.try_cell(1048577, 1); }),
-            "saved-clean retry invalid read should reject rows beyond Excel limit");
-        check(threw_fastxlsx_error([&] { (void)untouched_again.get_cell(1, 16385); }),
-            "saved-clean retry invalid read should reject columns beyond Excel limit");
-        check(threw_fastxlsx_error([&] { (void)data.try_cell("a1"); }),
-            "saved-clean retry invalid A1 read should reject lowercase references");
-        check(threw_fastxlsx_error([&] { (void)untouched.get_cell("XFE1"); }),
-            "saved-clean retry invalid A1 read should reject columns beyond Excel limit");
-        check(threw_fastxlsx_error([&] {
-            (void)data_again.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
-        }), "saved-clean retry invalid range read should reject row zero");
-        check(threw_fastxlsx_error([&] {
-            (void)untouched_again.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
-        }), "saved-clean retry invalid range read should reject reversed ranges");
-
-        check(!editor.last_edit_error().has_value(),
-            "saved-clean retry invalid reads should keep last_edit_error clear");
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean retry invalid reads should not add handoffs");
-        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "saved-clean retry invalid reads should keep all handles clean");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean retry invalid reads should not dirty materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "saved-clean retry invalid reads should keep dirty materialized cells clear");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "saved-clean retry invalid reads should keep dirty materialized memory clear");
-        check(editor.pending_worksheet_edits().empty(),
-            "saved-clean retry invalid reads should keep worksheet summaries empty");
-        check(editor.source_worksheet_names() == expected_names,
-            "saved-clean retry invalid reads should preserve source worksheet names");
-        check(editor.worksheet_names() == expected_names,
-            "saved-clean retry invalid reads should preserve planned worksheet names");
-        check(workbook_editor_catalog_entries_equal(
-                  editor.worksheet_catalog(), expected_catalog),
-            "saved-clean retry invalid reads should preserve worksheet catalog");
-        check(data_again.cell_count() == data_count &&
-                data_again.estimated_memory_usage() == data_memory,
-            "saved-clean retry invalid reads should preserve Data sparse diagnostics");
-        check(untouched_again.cell_count() == untouched_count &&
-                untouched_again.estimated_memory_usage() == untouched_memory,
-            "saved-clean retry invalid reads should preserve Untouched sparse diagnostics");
+        reject_public_two_clean_retry_invalid_reads(
+            data, untouched, data_again, untouched_again, "saved-clean retry");
+        check_public_two_clean_retry_clean_after_invalid_reads(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, saved_pending_count + 2,
+            data_count, data_memory, untouched_count, untouched_memory,
+            "saved-clean retry");
 
         const fastxlsx::CellValue data_first = data_again.get_cell(1, 1);
         const fastxlsx::CellValue data_recovered = data_again.get_cell(3, 3);

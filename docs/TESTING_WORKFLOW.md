@@ -461,6 +461,9 @@ unchanged, and still allow the next valid mutation to clear diagnostics.
 The invalid-mutation retry coverage uses named helpers for rejected mutation
 injection and clean-session assertions; these helpers are test-maintenance
 scaffolding only and do not change public behavior.
+The adjacent invalid-read retry coverage follows the same structure with named
+helpers for read rejection and clean-session assertions, again as
+test-maintenance scaffolding only.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

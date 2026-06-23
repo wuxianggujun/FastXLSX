@@ -1284,6 +1284,11 @@ reduces local lambda duplication and makes later retry-hygiene shards easier to
 audit. It is test-maintenance scaffolding only, not production behavior change,
 public API change, operation-mixing semantic change, relationship repair,
 formula evaluation, or formula rewrite expansion.
+P8.618 applies the same cleanup to the adjacent invalid-read retry coverage:
+the read rejection checks and clean-session assertions now live in named
+helpers, while the read-side behavior, saved-value checks, and retry/reacquire
+coverage stay unchanged. This is test-maintenance scaffolding only, not
+production behavior change or public API change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

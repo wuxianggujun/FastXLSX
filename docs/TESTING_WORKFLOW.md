@@ -466,6 +466,9 @@ scaffolding only and does not change public behavior.
 The same adjacent non-retry coverage also uses shared state helpers for
 clean-handle preservation, single-dirty materialized sessions, both-dirty
 failed-save states, and safe-save flush checks.
+Its materialized-session guard diagnostics and preserved sparse cell/memory
+checks now share focused helpers as well, keeping the test intent explicit
+without changing the generated workbooks or public behavior.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

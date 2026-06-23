@@ -27432,6 +27432,38 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.629 - Batch refactor non-retry diagnostic checks
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: finish the adjacent non-retry cleanup by removing repeated
+last-edit-error guard diagnostics and preserved sparse cell/memory assertions
+from the no-op recovery, two-clean recovery, scoped other-mutation, and
+failed-save coverage.
+
+Output:
+- Added a shared materialized-session guard diagnostic helper for rename and
+  whole-`<sheetData>` replacement guard errors.
+- Added a shared preserved sparse diagnostics helper for per-sheet cell-count
+  and memory-estimate checks.
+- Reused those helpers across the adjacent non-retry no-op recovery and
+  two-clean recovery / other-mutation / failed-save regressions while keeping
+  the output assertions and generated workbooks unchanged.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

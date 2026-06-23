@@ -1349,6 +1349,12 @@ non-retry two-clean family. Clean-handle preservation, single-dirty
 materialized sessions, both-dirty failed-save recovery, and safe-save flush
 checks now share scenario helpers as well. This is still test-maintenance only
 and does not alter the generated workbooks or public API.
+P8.629 finishes the adjacent diagnostic cleanup pass for the same non-retry
+coverage. Materialized-session guard diagnostics and preserved sparse
+cell/memory checks now use small shared helpers in the no-op recovery,
+two-clean recovery, scoped other-mutation, and failed-save cases. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

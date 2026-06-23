@@ -1501,6 +1501,13 @@ failure clean-state helper. The Data/recovery `has_pending_replacement()`,
 materialized-session, catalog, recovery, and optional `last_edit_error()` checks
 remain explicit. This remains test-maintenance only and does not alter
 production behavior, generated workbooks, or public API.
+P8.655 reuses the no-replacement-diagnostics helper in the remaining public
+materialized recovery helpers and the adjacent post-save recovery diagnostic
+block that already checked replacement cells, memory, and sheet names together.
+Pending counts, replacement lookup probes, materialized-session diagnostics,
+catalog checks, and handle/value assertions remain explicit. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

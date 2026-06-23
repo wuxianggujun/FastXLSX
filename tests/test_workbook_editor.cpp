@@ -364,18 +364,14 @@ void check_public_saved_materialized_recovery_clean_state(
         prefix + " should preserve prior public edit facade state");
     check(editor.pending_change_count() == expected_pending_change_count,
         prefix + " should not queue another public edit");
-    check(editor.pending_replacement_cell_count() == 0,
-        prefix + " should not invent replacement cells");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        prefix + " should not invent replacement sheet names");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " should not invent replacement diagnostics");
     check(!editor.has_pending_replacement("Data"),
         prefix + " should not report a Data replacement");
     check(!editor.has_pending_replacement(transient_sheet_name),
         prefix + " should not revive transient replacement state");
     check(!editor.has_pending_replacement("Missing"),
         prefix + " should not report unrelated missing replacements");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        prefix + " should keep replacement memory empty");
     check(editor.pending_materialized_worksheet_names().empty(),
         prefix + " should not dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,
@@ -421,16 +417,12 @@ void check_public_dirty_materialized_recovery_state(
         prefix + " should preserve dirty public facade state");
     check(editor.pending_change_count() == expected_pending_change_count,
         prefix + " should preserve the pre-save public edit count");
-    check(editor.pending_replacement_cell_count() == 0,
-        prefix + " should not invent replacement cells");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        prefix + " should not invent replacement sheet names");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " should not invent replacement diagnostics");
     check(!editor.has_pending_replacement("Data"),
         prefix + " should not report a Data replacement");
     check(!editor.has_pending_replacement(transient_sheet_name),
         prefix + " should not revive transient replacement state");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        prefix + " should keep replacement memory empty");
     check(first_handle.has_pending_changes() && second_handle.has_pending_changes(),
         prefix + " should dirty existing handles");
     check(first_handle.cell_count() == expected_cell_count &&
@@ -6735,10 +6727,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserv
         "post-save recovery should still expose prior public edits as pending facade state");
     check(editor.pending_change_count() == 3,
         "post-save recovery should count rename, rename-back, and materialized handoff");
-    check(editor.pending_replacement_cell_count() == 0,
-        "post-save recovery should not invent replacement cell diagnostics");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        "post-save recovery should not invent replacement worksheet diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "post-save recovery should not invent replacement diagnostics");
     check(editor.pending_materialized_worksheet_names().empty(),
         "post-save recovery should start with clean materialized names");
     check(editor.pending_materialized_cell_count() == 0,
@@ -6749,8 +6739,6 @@ void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserv
             !editor.has_pending_replacement("TransientDiagnostics") &&
             !editor.has_pending_replacement("Missing"),
         "post-save recovery should not report replacement payloads");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        "post-save recovery should not report replacement memory");
     check(editor.pending_worksheet_edits().empty(),
         "post-save recovery should not expose dirty materialized summaries");
     {

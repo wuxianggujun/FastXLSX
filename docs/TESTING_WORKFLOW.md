@@ -526,6 +526,11 @@ The materialization failure clean-state helper now reuses the same
 no-replacement-diagnostics helper too, while keeping specific replacement
 lookup, materialized-session, catalog, recovery, and optional last-error checks
 explicit.
+The public materialized recovery helpers and adjacent post-save recovery
+diagnostic block now reuse the no-replacement-diagnostics helper where
+replacement cells, replacement memory, and replacement sheet names were already
+checked together; pending counts, replacement lookup probes, materialized
+diagnostics, catalog checks, handles, and value assertions stay explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

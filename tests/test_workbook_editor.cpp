@@ -21551,9 +21551,34 @@ void test_source_formula_reference_audits_report_non_materialized_rename_risk()
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     check(editor.formula_reference_audits().empty(),
         "materialized formula audit should stay empty before worksheet() is called");
+    const std::size_t pending_change_count_before_source_audit =
+        editor.pending_change_count();
+    const bool has_pending_changes_before_source_audit = editor.has_pending_changes();
+    const std::vector<std::string> pending_replacement_names_before_source_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> pending_materialized_names_before_source_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t pending_summary_count_before_source_audit =
+        editor.pending_worksheet_edits().size();
+    const std::optional<std::string> last_edit_error_before_source_audit =
+        editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
         editor.source_formula_reference_audits();
+    check(editor.pending_change_count() == pending_change_count_before_source_audit,
+        "source formula audit should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_source_audit,
+        "source formula audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() ==
+            pending_replacement_names_before_source_audit,
+        "source formula audit should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() ==
+            pending_materialized_names_before_source_audit,
+        "source formula audit should not create materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() == pending_summary_count_before_source_audit,
+        "source formula audit should not create pending edit summaries");
+    check(editor.last_edit_error() == last_edit_error_before_source_audit,
+        "source formula audit should not update last_edit_error");
     check(initial_audits.size() == 5,
         "source formula audit should scan non-materialized source worksheet formulas");
     {

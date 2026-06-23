@@ -1630,6 +1630,14 @@ verifies `formula_reference_audits()` returns no entries and leaves that public
 state unchanged. This is diagnostic state hygiene only; it is not broad source
 formula scanning, lazy worksheet materialization, formula rewrite, formula
 evaluation, external/3D semantics, dependency graphing, or calcChain rebuild.
+P8.668 extends the same public-state evidence to the ordinary source-read
+formula audit path. `test_source_formula_reference_audits_report_non_materialized_rename_risk()`
+now snapshots pending edit diagnostics and `last_edit_error()` before the first
+`source_formula_reference_audits()` call, then verifies the source XML scan
+returns the expected non-materialized formula references without changing those
+public diagnostics. This is diagnostic state hygiene only; it is not worksheet
+materialization, source formula rewrite, formula evaluation, external/3D
+semantics, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

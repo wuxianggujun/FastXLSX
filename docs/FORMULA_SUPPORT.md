@@ -198,6 +198,9 @@ The source-read case-varied regression also pins public state hygiene:
 `source_formula_reference_audits()` does not increment the public edit count,
 change pending-change state, create replacement diagnostics, create
 materialized diagnostics, or add pending edit summaries.
+The ordinary source-read regression pins the same state hygiene before rename
+and also verifies `source_formula_reference_audits()` does not update
+`last_edit_error()` while scanning non-materialized source worksheet formulas.
 The definedName audit regression pins the same state hygiene after default
 catalog-only rename: `defined_name_formula_reference_audits()` reports stale
 source-name direct definedName references without incrementing public edit

@@ -28629,6 +28629,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.668 - Pin source formula audit public state and last-edit hygiene
+
+Status: done.
+
+Type: public workbook-editor source formula diagnostic regression test + docs;
+no public API change, no production behavior change, no CMake target membership
+change, and no formula engine expansion.
+
+Goal: prove ordinary `source_formula_reference_audits()` scans source worksheet
+formula XML read-only without mutating public pending edit diagnostics or
+`last_edit_error()`.
+
+Output:
+- Extended
+  `test_source_formula_reference_audits_report_non_materialized_rename_risk()`.
+- The regression snapshots `pending_change_count()`, `has_pending_changes()`,
+  pending replacement worksheet names, pending materialized worksheet names,
+  pending edit summary count, and `last_edit_error()` before the first
+  `source_formula_reference_audits()` call.
+- The regression verifies the source-read audit leaves all of those public
+  diagnostics unchanged while still reporting the expected non-materialized
+  source worksheet formula references.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the ordinary
+  source-read formula audit state hygiene and `last_edit_error()` boundary.
+
+Non-goals / boundary:
+- No lazy worksheet materialization, no source worksheet formula rewrite, no
+  default formula rewrite, no formula evaluation, no external workbook target
+  validation, no 3D reference semantics, no dependency graph, no calcChain
+  rebuild, no relationship repair, no complete Excel formula parser, and no
+  public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

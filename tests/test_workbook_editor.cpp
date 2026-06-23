@@ -21123,8 +21123,8 @@ void test_noop_save_as_keeps_editor_usable_for_later_edits()
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     editor.save_as(noop_output);
-    check(!editor.has_pending_changes(),
-        "no-op save_as should keep the editor clean for later edits");
+    check_workbook_editor_public_no_pending_state(
+        editor, "no-op save_as should keep the editor clean for later edits");
     check(!editor.last_edit_error().has_value(),
         "no-op save_as should not create last_edit_error before later edits");
 

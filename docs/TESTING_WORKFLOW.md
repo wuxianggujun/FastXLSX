@@ -480,6 +480,9 @@ names, and `last_edit_error()` preservation for failed and successful
 The adjacent no-op save-as regressions after failed edit and failed rename now
 share a narrow no-pending-state helper for the repeated clean-state checks,
 while leaving the diagnostic and source-entry assertions explicit.
+The clean no-op save-as recovery case that queues later edits also reuses that
+helper for its "editor remains clean" assertion, while keeping diagnostics and
+ZIP/XML follow-up checks explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

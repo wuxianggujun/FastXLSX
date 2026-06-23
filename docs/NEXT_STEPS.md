@@ -1421,6 +1421,11 @@ pre-save and post-save "keep the editor clean" checks now share one helper
 while leaving the diagnostic and source-entry assertions explicit. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.641 reuses the same no-pending-state helper in the adjacent clean no-op
+save-as recovery regression. The "editor remains clean before later edits"
+assertion now shares the helper while keeping `last_edit_error()` and ZIP/XML
+follow-up assertions explicit. This remains test-maintenance only and does not
+alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

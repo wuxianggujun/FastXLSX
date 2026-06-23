@@ -27967,6 +27967,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.648 - Reuse no-pending helper in sheetData diagnostics checks
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reuse the public no-pending-state helper in the sheetData failure
+diagnostics regression without hiding `last_edit_error()` or replacement-cell
+checks.
+
+Output:
+- Reused `check_workbook_editor_public_no_pending_state()` after the
+  missing-sheet diagnostic failure.
+- Reused the same helper after the guardrail diagnostic failure.
+- Kept thrown-message, `last_edit_error()`, replacement-cell, successful
+  follow-up edit, and output assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -20898,10 +20898,8 @@ void test_replace_sheet_data_failure_diagnostics_include_context()
         check(editor.last_edit_error().has_value() && *editor.last_edit_error() == message,
             "missing-sheet last_edit_error should match the thrown diagnostic");
     }
-    check(editor.pending_change_count() == 0,
-        "missing-sheet diagnostic failure should not increment pending changes");
-    check(!editor.has_pending_changes(),
-        "missing-sheet diagnostic failure should not queue pending changes");
+    check_workbook_editor_public_no_pending_state(
+        editor, "missing-sheet diagnostic failure");
     check(editor.pending_replacement_cell_count() == 0,
         "missing-sheet diagnostic failure should not record replacement cells");
 
@@ -20927,10 +20925,8 @@ void test_replace_sheet_data_failure_diagnostics_include_context()
                 && *guarded_editor.last_edit_error() == message,
             "guardrail last_edit_error should match the thrown diagnostic");
     }
-    check(guarded_editor.pending_change_count() == 0,
-        "guardrail diagnostic failure should not increment pending changes");
-    check(!guarded_editor.has_pending_changes(),
-        "guardrail diagnostic failure should not queue pending changes");
+    check_workbook_editor_public_no_pending_state(
+        guarded_editor, "guardrail diagnostic failure");
     check(guarded_editor.pending_replacement_cell_count() == 0,
         "guardrail diagnostic failure should not record replacement cells");
 

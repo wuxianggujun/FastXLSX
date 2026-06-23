@@ -889,7 +889,9 @@ private:
 /// formula_reference_audits() can inspect already-materialized formula cells
 /// and report sheet-qualified references plus whether those references still
 /// point at a renamed source sheet. It does not scan the whole source package
-/// by itself. Formula text rewriting is available only through the explicit
+/// by itself. Formula audit diagnostics do not update last_edit_error(), queue
+/// replacements, dirty/create materialized sessions, or change pending edit
+/// summaries. Formula text rewriting is available only through the explicit
 /// rename_sheet() materialized-formula policy and remains limited to formulas
 /// already loaded into WorksheetEditor sessions.
 /// Failed worksheet materialization does not queue a dirty session; a later

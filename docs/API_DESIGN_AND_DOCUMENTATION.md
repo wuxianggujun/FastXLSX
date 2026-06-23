@@ -4111,9 +4111,12 @@ semantic sheet rename。
 默认 `WorkbookEditor::rename_sheet()` 仍是 catalog-only；case-varied local formula
 qualifiers 只通过 `formula_reference_audits()`、`source_formula_reference_audits()` 和
 `defined_name_formula_reference_audits()` 暴露 stale source-name risks，diagnostics
-保留原始 `data!` / `DATA!` 拼写。`source_formula_reference_audits()` 是 read-only
-source scan，不 materialize 或 rewrite 非 materialized worksheet XML；显式 rewrite
-policy 继续保持窄 local sheet-qualified reference 边界。
+保留原始 `data!` / `DATA!` 拼写。这三个 audit API 都是 read-only diagnostic：
+不 increment `pending_change_count()`，不 queue replacement，不 dirty/create
+materialized sessions，不改 pending edit summaries，也不更新 `last_edit_error()`。
+`source_formula_reference_audits()` 是 read-only source scan，不 materialize 或 rewrite
+非 materialized worksheet XML；显式 rewrite policy 继续保持窄 local
+sheet-qualified reference 边界。
 planned workbook XML 路径的内部 `planned_output()`
 只能写成暴露最终 workbook `LocalDomRewrite`、preserved content types /
 workbook `.rels` / worksheet / calcChain / unknown entry，以及 structured sheet

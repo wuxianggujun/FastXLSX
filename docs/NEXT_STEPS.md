@@ -1684,6 +1684,13 @@ shared formula follower expansion and stale source-name reporting do not dirty
 or replace public state. This is diagnostic state hygiene only; it is not lazy
 worksheet materialization, formula rewrite, formula evaluation, external/3D
 semantics, dependency graphing, or calcChain rebuild.
+P8.675 syncs that completed formula-audit state hygiene back into API-facing
+docs: the `WorkbookEditor` Doxygen overview and
+`docs/API_DESIGN_AND_DOCUMENTATION.md` now state that the three formula audit
+APIs are read-only diagnostics that do not increment public edit counts, queue
+replacements, dirty/create materialized sessions, change pending edit
+summaries, or update `last_edit_error()`. This is documentation alignment only;
+it does not change public symbols, runtime behavior, or formula semantics.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -28879,6 +28879,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.675 - Sync formula audit last-edit API docs
+
+Status: done.
+
+Type: public header documentation / API design doc sync; no public API symbol
+change, no production behavior change, no CMake target membership change, and
+no formula engine expansion.
+
+Goal: align API-facing documentation with the completed formula audit state
+hygiene evidence through P8.674, including `last_edit_error()` preservation.
+
+Output:
+- Updated the `WorkbookEditor` Doxygen overview to state that formula audit
+  diagnostics do not update `last_edit_error()`, queue replacements,
+  dirty/create materialized sessions, or change pending edit summaries.
+- Updated `docs/API_DESIGN_AND_DOCUMENTATION.md` to state that
+  `formula_reference_audits()`, `source_formula_reference_audits()`, and
+  `defined_name_formula_reference_audits()` are read-only diagnostics that do
+  not increment public edit counts, queue replacements, dirty/create
+  materialized sessions, change pending edit summaries, or update
+  `last_edit_error()`.
+- Updated `docs/NEXT_STEPS.md` with the documentation alignment note.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no worksheet formula rewrite, no definedName rewrite, no
+  formula evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

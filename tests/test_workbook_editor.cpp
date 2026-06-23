@@ -726,6 +726,32 @@ void check_public_two_clean_retry_single_dirty_state(
         label + " should report only the touched session memory");
 }
 
+void check_public_two_clean_retry_followup_save_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& dirty,
+    fastxlsx::WorksheetEditor& dirty_again,
+    fastxlsx::WorksheetEditor& clean,
+    fastxlsx::WorksheetEditor& clean_again,
+    std::size_t expected_pending_count,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!dirty.has_pending_changes() && !dirty_again.has_pending_changes() &&
+            !clean.has_pending_changes() && !clean_again.has_pending_changes(),
+        label + " should flush all materialized handles");
+    check(!editor.last_edit_error().has_value(),
+        label + " should keep diagnostics clear");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should queue the expected materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should clear dirty memory estimate");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13614,10 +13640,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             "read-only retry second mutation");
 
         editor.save_as(second_output);
-        check(editor.pending_change_count() == 3,
-            "read-only retry second safe save should queue one more materialized handoff");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only retry second safe save should clear dirty names again");
+        check_public_two_clean_retry_followup_save_state(
+            editor, untouched, untouched_again, data, data_again, 3,
+            "read-only retry second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
@@ -13723,10 +13748,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             "saved-clean retry second mutation");
 
         editor.save_as(third_output);
-        check(editor.pending_change_count() == saved_pending_count + 3,
-            "saved-clean retry third safe save should queue one more materialized handoff");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean retry third safe save should clear dirty names again");
+        check_public_two_clean_retry_followup_save_state(
+            editor, data, data_again, untouched, untouched_again,
+            saved_pending_count + 3, "saved-clean retry third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
         check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -13824,8 +13848,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
             "read-only query retry post-query mutation");
 
         editor.save_as(second_output);
-        check(editor.pending_change_count() == 3,
-            "read-only query retry second safe save should queue one more handoff");
+        check_public_two_clean_retry_followup_save_state(
+            editor, untouched, untouched_again, data, data_again, 3,
+            "read-only query retry second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
@@ -13921,8 +13946,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
             "saved-clean query retry post-query mutation");
 
         editor.save_as(third_output);
-        check(editor.pending_change_count() == saved_pending_count + 3,
-            "saved-clean query retry third safe save should queue one more handoff");
+        check_public_two_clean_retry_followup_save_state(
+            editor, data, data_again, untouched, untouched_again,
+            saved_pending_count + 3, "saved-clean query retry third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
         check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -14024,8 +14050,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
             "read-only retry post-invalid-read mutation");
 
         editor.save_as(second_output);
-        check(editor.pending_change_count() == 3,
-            "read-only retry invalid-read second safe save should queue one more handoff");
+        check_public_two_clean_retry_followup_save_state(
+            editor, data, data_again, untouched, untouched_again, 3,
+            "read-only retry invalid-read second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
@@ -14126,8 +14153,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
             "saved-clean retry post-invalid-read mutation");
 
         editor.save_as(third_output);
-        check(editor.pending_change_count() == saved_pending_count + 3,
-            "saved-clean retry invalid-read third safe save should queue one more handoff");
+        check_public_two_clean_retry_followup_save_state(
+            editor, untouched, untouched_again, data, data_again,
+            saved_pending_count + 3, "saved-clean retry invalid-read third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
         check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -14254,8 +14282,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             "read-only retry post-invalid-mutation edit");
 
         editor.save_as(second_output);
-        check(editor.pending_change_count() == 3,
-            "read-only retry invalid-mutation second safe save should queue one more handoff");
+        check_public_two_clean_retry_followup_save_state(
+            editor, data, data_again, untouched, untouched_again, 3,
+            "read-only retry invalid-mutation second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
@@ -14393,8 +14422,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             "saved-clean retry post-invalid-mutation edit");
 
         editor.save_as(third_output);
-        check(editor.pending_change_count() == saved_pending_count + 3,
-            "saved-clean retry invalid-mutation third safe save should queue one more handoff");
+        check_public_two_clean_retry_followup_save_state(
+            editor, untouched, untouched_again, data, data_again,
+            saved_pending_count + 3, "saved-clean retry invalid-mutation third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
         check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",

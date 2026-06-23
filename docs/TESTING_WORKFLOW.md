@@ -457,6 +457,9 @@ public behavior.
 The same family now also reuses a single-dirty-session helper for the valid
 follow-up mutations after reacquire and failure recovery; this is
 test-maintenance scaffolding only and does not change public behavior.
+The follow-up safe-save checks in that family also use a shared helper now,
+covering clean handles, clear diagnostics, expected handoff counts, and empty
+dirty materialized diagnostics after save.
 Invalid-read hygiene is pinned in the same retry/reacquire chain: invalid
 row/column coordinates, malformed A1 references, Excel-limit overflows, and
 invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`

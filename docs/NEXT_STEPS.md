@@ -1318,6 +1318,13 @@ dirty-session helper while their failure injection, saved-value checks,
 clean-state diagnostics, and safe `save_as()` persistence assertions stay
 unchanged. This is still test-maintenance scaffolding only, not production
 behavior change or public API change.
+P8.624 continues that batched cleanup by extracting the repeated safe-save
+state checks after those follow-up mutations. The retry family now shares one
+post-save helper that verifies all materialized handles are clean, diagnostics
+remain clear, pending handoff counts advance as expected, and dirty names /
+cell counts / memory estimates reset to empty. Output ZIP/XML persistence
+assertions stay unchanged; this is still test-maintenance scaffolding only, not
+production behavior change or public API change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

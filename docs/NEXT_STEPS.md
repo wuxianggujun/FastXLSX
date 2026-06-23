@@ -1215,6 +1215,15 @@ failure, then proves `Untouched` same-sheet replacement still fails without
 dirtying `Untouched` or losing the pending `Data` mutation. This is cross-handle
 state hygiene only, not rollback, relationship repair, random-editor expansion,
 formula evaluation, or formula rewrite expansion.
+P8.610 pins the successful mutation side of that two-handle recovery boundary.
+The read-only branch clears a `Data` same-sheet replacement diagnostic through a
+`Data` no-op erase, then mutates only the clean materialized `Untouched` handle
+and verifies dirty diagnostics point only at `Untouched`. The saved-clean branch
+first recovers `Data` through a valid `set_cell()`, then mutates `Untouched` and
+verifies both dirty handles are tracked in workbook order without changing the
+saved handoff count until `save_as()`. This is scoped public
+`WorksheetEditor` mutation hygiene only, not rollback, relationship repair,
+random-editor expansion, formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

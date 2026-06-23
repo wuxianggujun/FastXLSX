@@ -26830,6 +26830,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.610 - Pin scoped other-handle mutation after two-clean recovery
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` cross-handle successful
+mutation regression and docs; no production behavior change, no public API
+change, no CMake target membership change, and no formula capability expansion.
+
+Goal: prove recovery on one clean materialized handle still permits a later
+successful `WorksheetEditor` mutation on another clean materialized handle,
+with dirty diagnostics scoped to the actually mutated handles.
+
+Output:
+- Added public read-only coverage where both `Data` and `Untouched` are clean
+  materialized handles; a `Data` same-sheet replacement failure is cleared by a
+  no-op `Data.erase_cell(5, 5)`, then `Untouched.set_cell()` succeeds, keeps
+  `last_edit_error()` clear, leaves `Data` clean, and records only `Untouched`
+  as dirty.
+- Added public saved-clean coverage where both handles are dirtied and flushed
+  by `save_as()`, then a `Data` same-sheet rename failure is cleared by a valid
+  `Data.set_cell()`. A later `Untouched.set_cell()` succeeds, preserves dirty
+  `Data`, dirties `Untouched`, reports dirty names in workbook order, and keeps
+  the prior saved handoff count unchanged until `save_as()`.
+- The regressions verify rejected same-sheet payloads / names do not leak,
+  successful handle-local mutations are persisted, and `save_as()` flushes only
+  the expected materialized handoffs.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

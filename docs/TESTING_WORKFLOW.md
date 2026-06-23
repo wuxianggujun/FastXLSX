@@ -423,6 +423,11 @@ through no-op erase or a valid mutation must not make same-sheet Patch on a
 separate clean `Untouched` handle legal, must keep dirty materialized
 diagnostics scoped to the recovered handle, and must keep rejected payloads out
 of output.
+The successful side of that boundary is covered too: after the `Data`
+diagnostic is recovered, a valid `Untouched` `WorksheetEditor` mutation must
+clear/preserve `last_edit_error()` appropriately, dirty only the mutated clean
+handle in read-only recovery, and preserve both dirty handles in saved-clean
+recovery until `save_as()` flushes them.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

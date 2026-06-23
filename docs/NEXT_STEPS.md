@@ -1360,6 +1360,12 @@ The read-only and saved-clean cross-sheet success paths, plus the matching
 worksheet mutation recovery checks, now share focused state helpers for the
 single-sheet clean/dirty assertions. This remains test-maintenance only and
 does not alter production behavior, generated workbooks, or public API.
+P8.631 reuses that same single-sheet cross-sheet state helper in the adjacent
+clean-session cross-sheet Patch coverage. The read-only rename+replacement and
+saved-clean replacement+rename cases now share the same clean-handle /
+materialized-diagnostics assertions while preserving their value and output
+checks. This remains test-maintenance only and does not alter production
+behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

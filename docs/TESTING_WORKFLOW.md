@@ -472,6 +472,9 @@ without changing the generated workbooks or public behavior.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.
+The adjacent clean-session cross-sheet Patch coverage reuses that same
+single-sheet cross-sheet helper for the read-only and saved-clean cases, while
+leaving the value checks and ZIP/XML persistence checks explicit.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

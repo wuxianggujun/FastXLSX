@@ -12571,24 +12571,9 @@ void test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operati
         editor.replace_sheet_data("ReadonlyOtherName",
             {{fastxlsx::CellValue::text("readonly-cross-sheet-replacement")}});
 
-        check(!editor.last_edit_error().has_value(),
-            "read-only cross-sheet Patch operations should not set last_edit_error");
-        check(editor.has_pending_changes(),
-            "read-only cross-sheet Patch operations should dirty the editor");
-        check(editor.pending_change_count() == 2,
-            "read-only cross-sheet rename plus replacement should queue two public edits");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only cross-sheet Patch operations should not dirty Data materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "read-only cross-sheet Patch operations should not add Data materialized cells");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "read-only cross-sheet Patch operations should not add Data materialized memory");
-        check(!data.has_pending_changes(),
-            "read-only cross-sheet Patch operations should keep Data handle clean");
-        check(data.cell_count() == data_cell_count,
-            "read-only cross-sheet Patch operations should preserve Data sparse count");
-        check(data.estimated_memory_usage() == data_memory,
-            "read-only cross-sheet Patch operations should preserve Data memory estimate");
+        check_public_single_sheet_cross_sheet_success_state(
+            editor, data, data_cell_count, data_memory, 2, "Data",
+            "read-only cross-sheet Patch operations");
         const fastxlsx::CellValue preserved_data = data.get_cell(1, 1);
         check(preserved_data.kind() == fastxlsx::CellValueKind::Text &&
                 preserved_data.text_value() == "placeholder-a1",
@@ -12636,24 +12621,9 @@ void test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operati
             {{fastxlsx::CellValue::text("saved-clean-cross-sheet-replacement")}});
         editor.rename_sheet("Untouched", "SavedCleanOtherName");
 
-        check(!editor.last_edit_error().has_value(),
-            "saved-clean cross-sheet Patch operations should not set last_edit_error");
-        check(editor.has_pending_changes(),
-            "saved-clean cross-sheet Patch operations should keep the editor pending");
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean cross-sheet operations should add two public edits beside the saved handoff");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean cross-sheet Patch operations should not re-dirty Data names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "saved-clean cross-sheet Patch operations should not add dirty Data cells");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "saved-clean cross-sheet Patch operations should not add dirty Data memory");
-        check(!data.has_pending_changes(),
-            "saved-clean cross-sheet Patch operations should keep Data handle clean");
-        check(data.cell_count() == data_cell_count,
-            "saved-clean cross-sheet Patch operations should preserve Data sparse count");
-        check(data.estimated_memory_usage() == data_memory,
-            "saved-clean cross-sheet Patch operations should preserve Data memory estimate");
+        check_public_single_sheet_cross_sheet_success_state(
+            editor, data, data_cell_count, data_memory, saved_pending_count + 2,
+            "Data", "saved-clean cross-sheet Patch operations");
         const fastxlsx::CellValue preserved_data = data.get_cell(1, 1);
         check(preserved_data.kind() == fastxlsx::CellValueKind::Text &&
                 preserved_data.text_value() == "saved-clean-cross-sheet-data",

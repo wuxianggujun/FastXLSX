@@ -774,6 +774,25 @@ std::size_t check_public_two_clean_retry_two_handle_save_state(
     return editor.pending_change_count();
 }
 
+template <typename Action>
+void check_public_two_clean_retry_failed_save_dirty_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    std::size_t expected_pending_count,
+    Action&& action,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(threw_fastxlsx_error(std::forward<Action>(action)),
+        label + " should fail");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        label + " should preserve dirty handles");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should preserve pending change count");
+}
+
 std::size_t check_public_two_clean_two_handle_clean_state(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& data,
@@ -13782,12 +13801,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
         check(!editor.last_edit_error().has_value(),
             "read-only two-clean retry reacquire mutations should clear diagnostic");
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "read-only two-clean retry reacquire save_as over source should fail");
-        check(data.has_pending_changes() && untouched.has_pending_changes(),
-            "read-only two-clean retry reacquire failed save should preserve dirty handles");
-        check(editor.pending_change_count() == 0,
-            "read-only two-clean retry reacquire failed save should not queue handoffs");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, 0,
+            [&] { editor.save_as(source); },
+            "read-only two-clean retry reacquire failed save");
 
         editor.save_as(first_output);
         check_public_two_clean_retry_two_handle_save_state(
@@ -13873,12 +13890,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
         check(!editor.last_edit_error().has_value(),
             "saved-clean two-clean retry reacquire mutations should clear diagnostic");
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "saved-clean two-clean retry reacquire save_as over source should fail");
-        check(data.has_pending_changes() && untouched.has_pending_changes(),
-            "saved-clean two-clean retry reacquire failed save should preserve dirty handles");
-        check(editor.pending_change_count() == saved_pending_count,
-            "saved-clean two-clean retry reacquire failed save should preserve handoff count");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, saved_pending_count,
+            [&] { editor.save_as(source); },
+            "saved-clean two-clean retry reacquire failed save");
 
         editor.save_as(second_output);
         check_public_two_clean_retry_two_handle_save_state(
@@ -13977,8 +13992,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         untouched.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-query-retry-untouched"));
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "read-only two-clean query retry save_as over source should fail");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, 0,
+            [&] { editor.save_as(source); },
+            "read-only two-clean query retry failed save");
         editor.save_as(first_output);
         check_public_two_clean_retry_two_handle_save_state(
             editor, data, untouched, 2,
@@ -14064,8 +14081,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         check(!editor.last_edit_error().has_value(),
             "saved-clean query retry recovery mutations should clear diagnostic");
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "saved-clean two-clean query retry save_as over source should fail");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, saved_pending_count,
+            [&] { editor.save_as(source); },
+            "saved-clean two-clean query retry failed save");
         editor.save_as(second_output);
         check_public_two_clean_retry_two_handle_save_state(
             editor, data, untouched, saved_pending_count + 2,
@@ -14165,8 +14184,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         untouched.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-read-retry-untouched"));
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "read-only two-clean invalid-read retry save_as over source should fail");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, 0,
+            [&] { editor.save_as(source); },
+            "read-only two-clean invalid-read retry failed save");
         editor.save_as(first_output);
         check_public_two_clean_retry_two_handle_save_state(
             editor, data, untouched, 2,
@@ -14257,8 +14278,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         untouched.set_cell(2, 2,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-read-retry-untouched-recovered"));
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "saved-clean two-clean invalid-read retry save_as over source should fail");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, saved_pending_count,
+            [&] { editor.save_as(source); },
+            "saved-clean two-clean invalid-read retry failed save");
         editor.save_as(second_output);
         check_public_two_clean_retry_two_handle_save_state(
             editor, data, untouched, saved_pending_count + 2,
@@ -14368,14 +14391,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         untouched.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-mutation-retry-untouched"));
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "read-only two-clean invalid-mutation retry save_as over source should fail");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, 0,
+            [&] { editor.save_as(source); },
+            "read-only two-clean invalid-mutation retry failed save_as");
         check(!editor.last_edit_error().has_value(),
             "read-only two-clean invalid-mutation retry failed save_as should not create last_edit_error");
-        check(data.has_pending_changes() && untouched.has_pending_changes(),
-            "read-only two-clean invalid-mutation retry failed save_as should preserve both dirty handles");
-        check(editor.pending_change_count() == 0,
-            "read-only two-clean invalid-mutation retry failed save_as should not queue handoffs");
         editor.save_as(first_output);
         check_public_two_clean_retry_two_handle_save_state(
             editor, data, untouched, 2,
@@ -14485,14 +14506,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         untouched.set_cell(2, 2,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-mutation-retry-untouched-recovered"));
 
-        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
-            "saved-clean two-clean invalid-mutation retry save_as over source should fail");
+        check_public_two_clean_retry_failed_save_dirty_state(
+            editor, data, untouched, saved_pending_count,
+            [&] { editor.save_as(source); },
+            "saved-clean two-clean invalid-mutation retry failed save_as");
         check(!editor.last_edit_error().has_value(),
             "saved-clean two-clean invalid-mutation retry failed save_as should not create last_edit_error");
-        check(data.has_pending_changes() && untouched.has_pending_changes(),
-            "saved-clean two-clean invalid-mutation retry failed save_as should preserve both dirty handles");
-        check(editor.pending_change_count() == saved_pending_count,
-            "saved-clean two-clean invalid-mutation retry failed save_as should preserve handoff count");
         editor.save_as(second_output);
         check_public_two_clean_retry_two_handle_save_state(
             editor, data, untouched, saved_pending_count + 2,

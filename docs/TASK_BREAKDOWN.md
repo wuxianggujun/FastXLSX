@@ -27636,6 +27636,34 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.636 - Reuse retry failed-save dirty-state helper
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reduce repeated failed-save dirty-state checks in the two-clean retry
+reacquire, query, invalid-read, and invalid-mutation branches without broadening
+production behavior or changing generated workbook expectations.
+
+Output:
+- Added a focused helper for retry failed-save dirty-state checks.
+- Reused it for read-only and saved-clean reacquire, query, invalid-read, and
+  invalid-mutation retry failed-save paths.
+- Kept `last_edit_error()` and output assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

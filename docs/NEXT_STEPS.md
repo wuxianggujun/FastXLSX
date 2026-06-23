@@ -1390,6 +1390,12 @@ setup failures in that family now share the same same-sheet guard failure
 helper while leaving the later reacquire, dirty-state, and ZIP/XML assertions
 explicit. This remains test-maintenance only and does not alter production
 behavior, generated workbooks, or public API.
+P8.636 adds a focused retry failed-save dirty-state helper for the two-clean
+reacquire, query, invalid-read, and invalid-mutation branches. Those branches
+now share the `save_as()` throw, dirty-handle preservation, and pending-count
+preservation checks while leaving diagnostic and output assertions explicit.
+This remains test-maintenance only and does not alter production behavior,
+generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

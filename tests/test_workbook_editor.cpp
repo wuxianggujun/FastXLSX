@@ -682,7 +682,7 @@ void check_public_two_clean_retry_reacquire_clean_state(
         label + " should not add handoffs");
 }
 
-void check_public_two_clean_retry_reacquire_saved_value(
+void check_public_two_clean_retry_saved_value(
     fastxlsx::WorksheetEditor& sheet,
     std::size_t row,
     std::size_t column,
@@ -13567,10 +13567,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
-        check_public_two_clean_retry_reacquire_saved_value(
+        check_public_two_clean_retry_saved_value(
             data_again, 3, 3, "readonly-two-clean-reacquire-retry-data",
             "read-only retry post-save Data reacquire");
-        check_public_two_clean_retry_reacquire_saved_value(
+        check_public_two_clean_retry_saved_value(
             untouched_again, 2, 2, "readonly-two-clean-reacquire-retry-untouched",
             "read-only retry post-save Untouched reacquire");
         check_public_two_clean_retry_reacquire_clean_state(
@@ -13678,17 +13678,17 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
-        check_public_two_clean_retry_reacquire_saved_value(
+        check_public_two_clean_retry_saved_value(
             data_again, 1, 1, "saved-clean-two-clean-reacquire-retry-data-first",
             "saved-clean retry Data reacquire");
-        check_public_two_clean_retry_reacquire_saved_value(
+        check_public_two_clean_retry_saved_value(
             data_again, 3, 3, "saved-clean-two-clean-reacquire-retry-data-recovered",
             "saved-clean retry Data reacquire");
-        check_public_two_clean_retry_reacquire_saved_value(
+        check_public_two_clean_retry_saved_value(
             untouched_again, 1, 1,
             "saved-clean-two-clean-reacquire-retry-untouched-first",
             "saved-clean retry Untouched reacquire");
-        check_public_two_clean_retry_reacquire_saved_value(
+        check_public_two_clean_retry_saved_value(
             untouched_again, 2, 2,
             "saved-clean-two-clean-reacquire-retry-untouched-recovered",
             "saved-clean retry Untouched reacquire");
@@ -13795,14 +13795,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
             editor, data, untouched, data_again, untouched_again,
             expected_names, expected_catalog, 2, "read-only query retry");
 
-        const fastxlsx::CellValue data_again_value = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_again_value = untouched_again.get_cell(1, 1);
-        check(data_again_value.kind() == fastxlsx::CellValueKind::Text &&
-                data_again_value.text_value() == "readonly-two-clean-query-retry-data",
-            "read-only query retry should preserve saved Data materialized state");
-        check(untouched_again_value.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_again_value.text_value() == "readonly-two-clean-query-retry-untouched",
-            "read-only query retry should preserve saved Untouched materialized state");
+        check_public_two_clean_retry_saved_value(
+            data_again, 1, 1, "readonly-two-clean-query-retry-data",
+            "read-only query retry Data");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 1, 1, "readonly-two-clean-query-retry-untouched",
+            "read-only query retry Untouched");
 
         untouched_again.set_cell(2, 2,
             fastxlsx::CellValue::text("readonly-two-clean-query-retry-second"));
@@ -13891,22 +13889,20 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
             expected_names, expected_catalog, saved_pending_count + 2,
             "saved-clean query retry");
 
-        const fastxlsx::CellValue data_again_first = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue data_again_recovered = data_again.get_cell(3, 3);
-        const fastxlsx::CellValue untouched_again_first = untouched_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_again_recovered = untouched_again.get_cell(2, 2);
-        check(data_again_first.kind() == fastxlsx::CellValueKind::Text &&
-                data_again_first.text_value() == "saved-clean-two-clean-query-retry-data-first",
-            "saved-clean query retry should preserve Data first saved value");
-        check(data_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                data_again_recovered.text_value() == "saved-clean-two-clean-query-retry-data-recovered",
-            "saved-clean query retry should preserve Data recovered value");
-        check(untouched_again_first.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_again_first.text_value() == "saved-clean-two-clean-query-retry-untouched-first",
-            "saved-clean query retry should preserve Untouched first saved value");
-        check(untouched_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_again_recovered.text_value() == "saved-clean-two-clean-query-retry-untouched-recovered",
-            "saved-clean query retry should preserve Untouched recovered value");
+        check_public_two_clean_retry_saved_value(
+            data_again, 1, 1, "saved-clean-two-clean-query-retry-data-first",
+            "saved-clean query retry Data");
+        check_public_two_clean_retry_saved_value(
+            data_again, 3, 3, "saved-clean-two-clean-query-retry-data-recovered",
+            "saved-clean query retry Data");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 1, 1,
+            "saved-clean-two-clean-query-retry-untouched-first",
+            "saved-clean query retry Untouched");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 2, 2,
+            "saved-clean-two-clean-query-retry-untouched-recovered",
+            "saved-clean query retry Untouched");
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-query-retry-second"));
@@ -14008,14 +14004,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
             expected_names, expected_catalog, 2, data_count, data_memory,
             untouched_count, untouched_memory, "read-only retry");
 
-        const fastxlsx::CellValue data_value = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_value = untouched_again.get_cell(1, 1);
-        check(data_value.kind() == fastxlsx::CellValueKind::Text &&
-                data_value.text_value() == "readonly-two-clean-invalid-read-retry-data",
-            "read-only retry invalid reads should preserve saved Data value");
-        check(untouched_value.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_value.text_value() == "readonly-two-clean-invalid-read-retry-untouched",
-            "read-only retry invalid reads should preserve saved Untouched value");
+        check_public_two_clean_retry_saved_value(
+            data_again, 1, 1, "readonly-two-clean-invalid-read-retry-data",
+            "read-only retry invalid reads Data");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 1, 1,
+            "readonly-two-clean-invalid-read-retry-untouched",
+            "read-only retry invalid reads Untouched");
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-read-retry-second"));
@@ -14107,22 +14102,22 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
             data_count, data_memory, untouched_count, untouched_memory,
             "saved-clean retry");
 
-        const fastxlsx::CellValue data_first = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue data_recovered = data_again.get_cell(3, 3);
-        const fastxlsx::CellValue untouched_first = untouched_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_recovered = untouched_again.get_cell(2, 2);
-        check(data_first.kind() == fastxlsx::CellValueKind::Text &&
-                data_first.text_value() == "saved-clean-two-clean-invalid-read-retry-data-first",
-            "saved-clean retry invalid reads should preserve Data first saved value");
-        check(data_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                data_recovered.text_value() == "saved-clean-two-clean-invalid-read-retry-data-recovered",
-            "saved-clean retry invalid reads should preserve Data recovered value");
-        check(untouched_first.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_first.text_value() == "saved-clean-two-clean-invalid-read-retry-untouched-first",
-            "saved-clean retry invalid reads should preserve Untouched first saved value");
-        check(untouched_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_recovered.text_value() == "saved-clean-two-clean-invalid-read-retry-untouched-recovered",
-            "saved-clean retry invalid reads should preserve Untouched recovered value");
+        check_public_two_clean_retry_saved_value(
+            data_again, 1, 1,
+            "saved-clean-two-clean-invalid-read-retry-data-first",
+            "saved-clean retry invalid reads Data");
+        check_public_two_clean_retry_saved_value(
+            data_again, 3, 3,
+            "saved-clean-two-clean-invalid-read-retry-data-recovered",
+            "saved-clean retry invalid reads Data");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 1, 1,
+            "saved-clean-two-clean-invalid-read-retry-untouched-first",
+            "saved-clean retry invalid reads Untouched");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 2, 2,
+            "saved-clean-two-clean-invalid-read-retry-untouched-recovered",
+            "saved-clean retry invalid reads Untouched");
 
         untouched_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-read-retry-second"));
@@ -14246,16 +14241,14 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             untouched_count, untouched_memory,
             "read-only retry failed save_as after invalid mutations");
 
-        const fastxlsx::CellValue data_value = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_value = untouched_again.get_cell(1, 1);
-        check(data_value.kind() == fastxlsx::CellValueKind::Text &&
-                data_value.text_value() ==
-                    "readonly-two-clean-invalid-mutation-retry-data",
-            "read-only retry invalid mutations should preserve saved Data value");
-        check(untouched_value.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_value.text_value() ==
-                    "readonly-two-clean-invalid-mutation-retry-untouched",
-            "read-only retry invalid mutations should preserve saved Untouched value");
+        check_public_two_clean_retry_saved_value(
+            data_again, 1, 1,
+            "readonly-two-clean-invalid-mutation-retry-data",
+            "read-only retry invalid mutations Data");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 1, 1,
+            "readonly-two-clean-invalid-mutation-retry-untouched",
+            "read-only retry invalid mutations Untouched");
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-mutation-retry-second"));
@@ -14384,26 +14377,22 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             data_count, data_memory, untouched_count, untouched_memory,
             "saved-clean retry failed save_as after invalid mutations");
 
-        const fastxlsx::CellValue data_first = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue data_recovered = data_again.get_cell(3, 3);
-        const fastxlsx::CellValue untouched_first = untouched_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_recovered = untouched_again.get_cell(2, 2);
-        check(data_first.kind() == fastxlsx::CellValueKind::Text &&
-                data_first.text_value() ==
-                    "saved-clean-two-clean-invalid-mutation-retry-data-first",
-            "saved-clean retry invalid mutations should preserve Data first saved value");
-        check(data_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                data_recovered.text_value() ==
-                    "saved-clean-two-clean-invalid-mutation-retry-data-recovered",
-            "saved-clean retry invalid mutations should preserve Data recovered value");
-        check(untouched_first.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_first.text_value() ==
-                    "saved-clean-two-clean-invalid-mutation-retry-untouched-first",
-            "saved-clean retry invalid mutations should preserve Untouched first saved value");
-        check(untouched_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_recovered.text_value() ==
-                    "saved-clean-two-clean-invalid-mutation-retry-untouched-recovered",
-            "saved-clean retry invalid mutations should preserve Untouched recovered value");
+        check_public_two_clean_retry_saved_value(
+            data_again, 1, 1,
+            "saved-clean-two-clean-invalid-mutation-retry-data-first",
+            "saved-clean retry invalid mutations Data");
+        check_public_two_clean_retry_saved_value(
+            data_again, 3, 3,
+            "saved-clean-two-clean-invalid-mutation-retry-data-recovered",
+            "saved-clean retry invalid mutations Data");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 1, 1,
+            "saved-clean-two-clean-invalid-mutation-retry-untouched-first",
+            "saved-clean retry invalid mutations Untouched");
+        check_public_two_clean_retry_saved_value(
+            untouched_again, 2, 2,
+            "saved-clean-two-clean-invalid-mutation-retry-untouched-recovered",
+            "saved-clean retry invalid mutations Untouched");
 
         untouched_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-mutation-retry-second"));

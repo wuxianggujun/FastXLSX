@@ -450,6 +450,10 @@ The post-save reacquire clean-session diagnostics use a named helper; this is
 test-maintenance scaffolding only and does not change public behavior.
 The post-save reacquire saved-value checks use a named helper; this is
 test-maintenance scaffolding only and does not change public behavior.
+The broader two-clean retry family now reuses that saved materialized value
+helper for reacquire, query-failure, invalid-read, and invalid-mutation
+regressions; this is test-maintenance scaffolding only and does not change
+public behavior.
 Invalid-read hygiene is pinned in the same retry/reacquire chain: invalid
 row/column coordinates, malformed A1 references, Excel-limit overflows, and
 invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`

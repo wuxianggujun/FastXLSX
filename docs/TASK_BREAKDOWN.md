@@ -27225,6 +27225,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.622 - Batch refactor two-clean retry saved-value helper usage
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: finish the current two-clean retry saved-value cleanup as one larger
+batch instead of separate micro-shards.
+
+Output:
+- Generalized the two-clean retry saved materialized value helper.
+- Reused it across the reacquire, query-failure, invalid-read, and
+  invalid-mutation retry regressions.
+- Kept failure injection, clean-state diagnostics, follow-up valid mutation,
+  rejected-payload checks, and safe `save_as()` persistence assertions
+  unchanged.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

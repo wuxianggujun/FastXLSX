@@ -1304,6 +1304,13 @@ the repeated saved-value checks after reacquire into a named helper. The
 clean-state helper, follow-up single-handle mutation, and safe `save_as()`
 persistence assertions stay unchanged. This is test-maintenance scaffolding
 only, not production behavior change or public API change.
+P8.622 broadens that helper cleanup across the two-clean retry family: the
+reacquire, query-failure, invalid-read, and invalid-mutation regressions now
+share the same saved materialized value helper while their failure injection,
+clean-state diagnostics, follow-up valid mutation, rejected-payload checks, and
+safe `save_as()` persistence assertions stay unchanged. This is a batched
+test-maintenance cleanup only, not production behavior change or public API
+change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

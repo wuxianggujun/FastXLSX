@@ -1557,6 +1557,17 @@ original formula text. This is default audit-only boundary coverage; it is not
 default formula rewrite, non-materialized worksheet rewrite, formula
 evaluation, external link validation, 3D semantics, dependency graphing, or
 calcChain rebuild.
+P8.661 extends that default audit-only evidence to source worksheet formula
+diagnostics. Without materializing the `Formula` worksheet, default
+`rename_sheet("Data", "Renamed & Data")` followed by
+`source_formula_reference_audits()` now verifies that mixed-case `data!` and
+`DATA!` references are reported as stale source-name risks, while external
+workbook and 3D qualifiers remain classified audit-only. `save_as()` still
+preserves the non-materialized worksheet formula XML and only persists the
+catalog rename. This is source-read diagnostic coverage only; it is not
+non-materialized formula rewrite, default formula synchronization, formula
+evaluation, external link validation, 3D semantics, dependency graphing, or
+calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

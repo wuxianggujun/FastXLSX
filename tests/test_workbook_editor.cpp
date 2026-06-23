@@ -21578,6 +21578,83 @@ void test_source_formula_reference_audits_report_non_materialized_rename_risk()
         "source formula audit should not silently repair non-materialized formulas");
 }
 
+void test_source_formula_reference_audits_report_case_varied_default_rename_risk()
+{
+    const std::filesystem::path source = write_case_varied_formula_reference_source(
+        "fastxlsx-workbook-editor-source-case-varied-formula-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-source-case-varied-formula-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.formula_reference_audits().empty(),
+        "case-varied source formula audit should not start with materialized sessions");
+
+    editor.rename_sheet("Data", "Renamed & Data");
+    check(editor.formula_reference_audits().empty(),
+        "case-varied source formula audit should not materialize worksheet formulas");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
+        editor.source_formula_reference_audits();
+    const auto check_stale_source_formula_ref = [&] (std::string_view spelling) {
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+            find_formula_reference_audit(renamed_audits, spelling);
+        check(audit != nullptr,
+            std::string("case-varied source formula audit should include ") +
+                std::string(spelling));
+        if (audit != nullptr) {
+            check(audit->formula_sheet_source_name == "Formula" &&
+                    audit->formula_sheet_planned_name == "Formula",
+                std::string("case-varied source formula audit should report Formula context for ") +
+                    std::string(spelling));
+            check(audit->formula_cell.row == 1 && audit->formula_cell.column == 1,
+                std::string("case-varied source formula audit should report A1 for ") +
+                    std::string(spelling));
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Renamed & Data",
+                std::string("case-varied source formula audit should map ") +
+                    std::string(spelling) + " to the renamed catalog entry");
+            check(audit->references_renamed_source_name &&
+                    !audit->references_planned_sheet_name,
+                std::string("case-varied source formula audit should flag ") +
+                    std::string(spelling) + " as stale source-name text");
+        }
+    };
+    check_stale_source_formula_ref("data");
+    check_stale_source_formula_ref("DATA");
+    check(count_formula_reference_audits(renamed_audits, "Renamed & Data") == 0,
+        "case-varied source formula audit should not invent planned-name refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(renamed_audits, "[Book.xlsx]data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "case-varied source formula audit should classify external workbook qualifiers");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(renamed_audits, "data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "case-varied source formula audit should classify 3D sheet-range qualifiers");
+
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Renamed &amp; Data")",
+        "case-varied source formula audit should still let rename persist the catalog");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet3.xml");
+    check_contains(formula_sheet_xml,
+        R"(<f>data!A1+DATA!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1"</f>)",
+        "case-varied source formula audit should preserve non-materialized formula XML");
+    check_not_contains(formula_sheet_xml, "Renamed &amp; Data'!A1",
+        "case-varied source formula audit should not rewrite non-materialized formulas");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value()
+                == R"(data!A1+DATA!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1")",
+        "reopened source-audit output should expose original non-materialized formula text");
+}
+
 void test_source_formula_reference_audits_translate_shared_formula_followers()
 {
     const std::filesystem::path source = write_shared_formula_reference_source(
@@ -23427,6 +23504,7 @@ int main(int argc, char* argv[])
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();
         test_formula_reference_audits_report_renamed_source_sheet_risk();
         test_source_formula_reference_audits_report_non_materialized_rename_risk();
+        test_source_formula_reference_audits_report_case_varied_default_rename_risk();
         test_source_formula_reference_audits_translate_shared_formula_followers();
         test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
         test_rename_sheet_can_rewrite_defined_names_opt_in();

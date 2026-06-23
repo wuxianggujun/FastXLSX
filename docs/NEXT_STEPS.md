@@ -1433,6 +1433,12 @@ worksheet names, and empty `last_edit_error()` assertions while leaving
 ZIP/XML output and follow-up edit checks explicit. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.643 reuses the public clean/no-pending helpers in the pending diagnostics
+facade test. Newly opened editor checks now use the fuller clean-state helper,
+while rejected `replace_sheet_data()` and `rename_sheet()` paths use the
+no-pending-state helper and keep replacement-specific assertions explicit. This
+remains test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

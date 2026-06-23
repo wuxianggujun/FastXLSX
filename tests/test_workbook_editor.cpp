@@ -20361,36 +20361,23 @@ void test_pending_change_diagnostics_track_public_edits()
         write_two_sheet_source("fastxlsx-workbook-editor-pending-source.xlsx");
 
     fastxlsx::WorkbookEditor clean_editor = fastxlsx::WorkbookEditor::open(source);
-    check(!clean_editor.has_pending_changes(),
-        "newly opened editor should report no pending changes");
-    check(clean_editor.pending_change_count() == 0,
-        "newly opened editor should report zero pending changes");
-    check(clean_editor.pending_replacement_cell_count() == 0,
-        "newly opened editor should report zero pending replacement cells");
-    check(clean_editor.pending_replacement_worksheet_names().empty(),
-        "newly opened editor should report no pending replacement worksheets");
+    check_workbook_editor_public_clean_state(clean_editor, "newly opened editor");
     check(!clean_editor.has_pending_replacement("Data"),
         "newly opened editor should report no pending replacement for Data");
-    check(clean_editor.estimated_pending_replacement_memory_usage() == 0,
-        "newly opened editor should report zero pending replacement memory");
 
     check(threw_fastxlsx_error([&] {
         clean_editor.replace_sheet_data("Missing",
             {{fastxlsx::CellValue::number(1.0)}});
     }), "rejected replace_sheet_data should throw FastXlsxError");
-    check(!clean_editor.has_pending_changes(),
-        "rejected replace_sheet_data should not mark the editor dirty");
-    check(clean_editor.pending_change_count() == 0,
-        "rejected replace_sheet_data should not add pending changes");
+    check_workbook_editor_public_no_pending_state(
+        clean_editor, "rejected replace_sheet_data");
     check(clean_editor.pending_replacement_worksheet_names().empty(),
         "rejected replace_sheet_data should not add pending replacement names");
 
     check(threw_fastxlsx_error([&] { clean_editor.rename_sheet("Data", "Bad/Name"); }),
         "rejected rename_sheet should throw FastXlsxError");
-    check(!clean_editor.has_pending_changes(),
-        "rejected rename_sheet should not mark the editor dirty");
-    check(clean_editor.pending_change_count() == 0,
-        "rejected rename_sheet should not add pending changes");
+    check_workbook_editor_public_no_pending_state(
+        clean_editor, "rejected rename_sheet");
 
     clean_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(9.0)}});
     check(clean_editor.has_pending_changes(),

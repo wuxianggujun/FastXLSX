@@ -486,6 +486,9 @@ ZIP/XML follow-up checks explicit.
 Fresh and clean no-op save-as facade states now also share a fuller clean-state
 helper for empty replacement diagnostics and empty `last_edit_error()`, with
 source-entry and follow-up edit assertions still explicit.
+The pending diagnostics facade test now reuses the same clean/no-pending state
+helpers for the newly opened editor and rejected public edits, keeping
+replacement-specific assertions explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

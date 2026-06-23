@@ -1205,6 +1205,16 @@ replacement failure. Both keep dirty materialized diagnostics empty and output
 bytes unchanged. This is guard-preservation and diagnostic-ordering hygiene,
 not rollback, relationship repair, random-editor expansion, formula evaluation,
 or formula rewrite expansion.
+P8.609 extends the recovery matrix to two simultaneous clean materialized
+handles. The read-only branch materializes both `Data` and `Untouched`, clears
+a `Data` same-sheet Patch diagnostic through a `Data` no-op erase, then proves
+`Untouched` same-sheet replacement still fails with its own guard while both
+handles stay clean and output remains copy-original. The saved-clean branch
+flushes dirty edits on both handles, mutates only `Data` after a `Data` guard
+failure, then proves `Untouched` same-sheet replacement still fails without
+dirtying `Untouched` or losing the pending `Data` mutation. This is cross-handle
+state hygiene only, not rollback, relationship repair, random-editor expansion,
+formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

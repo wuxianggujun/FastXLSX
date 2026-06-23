@@ -418,6 +418,11 @@ That no-op recovery is not a bypass: a later same-sheet Patch operation against
 the same clean materialized worksheet must still fail, repopulate
 `last_edit_error()` with the latest guard diagnostic, and keep the output bytes
 unchanged.
+Two-handle clean-session hygiene is covered as well: recovery on `Data`
+through no-op erase or a valid mutation must not make same-sheet Patch on a
+separate clean `Untouched` handle legal, must keep dirty materialized
+diagnostics scoped to the recovered handle, and must keep rejected payloads out
+of output.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

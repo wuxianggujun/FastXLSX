@@ -478,6 +478,9 @@ leaving the value checks and ZIP/XML persistence checks explicit.
 The adjacent same-sheet Patch failure diagnostics now share a focused
 rename-then-replacement guard helper plus read-only and saved-clean clean-state
 helpers, while keeping retry output equality checks explicit.
+The adjacent failure-recovery and no-op guard regressions now also share a
+single same-sheet guard-failure helper for the throw and `last_edit_error()`
+checks, while leaving the recovery and ZIP/XML assertions explicit.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

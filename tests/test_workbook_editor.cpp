@@ -933,6 +933,22 @@ std::optional<std::string> check_public_materialized_guard_error(
     return error;
 }
 
+template <typename Action>
+std::optional<std::string> check_public_same_sheet_guard_failure(
+    fastxlsx::WorkbookEditor& editor,
+    Action&& action,
+    PublicMaterializedGuardDiagnostic expected_guard,
+    std::string_view scenario,
+    std::optional<PublicMaterializedGuardDiagnostic> stale_guard = std::nullopt)
+{
+    const std::string label = std::string(scenario);
+
+    check(threw_fastxlsx_error(std::forward<Action>(action)),
+        label + " should fail");
+    return check_public_materialized_guard_error(
+        editor, expected_guard, label, stale_guard);
+}
+
 void check_public_preserved_sheet_diagnostics(
     fastxlsx::WorksheetEditor& sheet,
     std::size_t expected_cell_count,
@@ -1021,21 +1037,23 @@ std::optional<std::string> check_public_same_sheet_rename_then_replacement_guard
     const std::string new_name = std::string(new_sheet_name);
     const std::string replacement = std::string(replacement_text);
 
-    check(threw_fastxlsx_error([&] {
-        editor.rename_sheet(target, new_name);
-    }), label + " same-sheet rename should fail first");
     const std::optional<std::string> rename_error =
-        check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::RenameSheet,
+        check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet(target, new_name);
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
             label + " same-sheet rename failure");
 
-    check(threw_fastxlsx_error([&] {
-        editor.replace_sheet_data(
-            target, {{fastxlsx::CellValue::text(replacement)}});
-    }), label + " same-sheet replacement should fail second");
     const std::optional<std::string> replacement_error =
-        check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+        check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data(
+                    target, {{fastxlsx::CellValue::text(replacement)}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
             label + " same-sheet replacement failure",
             PublicMaterializedGuardDiagnostic::RenameSheet);
 
@@ -12825,18 +12843,14 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_succ
         const std::size_t data_cell_count = data.cell_count();
         const std::size_t data_memory = data.estimated_memory_usage();
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-blocked-before-success")}});
-        }), "read-only same-sheet replacement should fail before recovery");
-        const std::optional<std::string> replacement_error = editor.last_edit_error();
-        check(replacement_error.has_value(),
-            "read-only same-sheet replacement failure should populate last_edit_error");
-        if (replacement_error.has_value()) {
-            check_contains(*replacement_error,
-                "cannot replace sheet data after materializing planned worksheet session",
-                "read-only same-sheet replacement failure should report replacement guard");
-        }
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-blocked-before-success")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only same-sheet replacement before recovery");
         check(!editor.has_pending_changes(),
             "read-only failed same-sheet replacement should not queue public edits");
 
@@ -12882,17 +12896,13 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_succ
         const std::size_t data_cell_count = data.cell_count();
         const std::size_t data_memory = data.estimated_memory_usage();
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanBlockedBeforeSuccess");
-        }), "saved-clean same-sheet rename should fail before recovery");
-        const std::optional<std::string> rename_error = editor.last_edit_error();
-        check(rename_error.has_value(),
-            "saved-clean same-sheet rename failure should populate last_edit_error");
-        if (rename_error.has_value()) {
-            check_contains(*rename_error,
-                "cannot rename sheet after materializing planned worksheet session",
-                "saved-clean same-sheet rename failure should report rename guard");
-        }
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanBlockedBeforeSuccess");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean same-sheet rename before recovery");
 
         editor.replace_sheet_data("Untouched",
             {{fastxlsx::CellValue::text("saved-clean-cross-sheet-after-failure")}});
@@ -12939,18 +12949,14 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutati
 
         const std::size_t data_cell_count = data.cell_count();
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-blocked-before-mutation")}});
-        }), "read-only same-sheet replacement should fail before worksheet mutation recovery");
-        const std::optional<std::string> replacement_error = editor.last_edit_error();
-        check(replacement_error.has_value(),
-            "read-only same-sheet replacement failure should populate last_edit_error before mutation");
-        if (replacement_error.has_value()) {
-            check_contains(*replacement_error,
-                "cannot replace sheet data after materializing planned worksheet session",
-                "read-only same-sheet replacement failure should report replacement guard before mutation");
-        }
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-blocked-before-mutation")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only same-sheet replacement before worksheet mutation");
         check(!editor.has_pending_changes(),
             "read-only failed same-sheet replacement should not queue public edits before mutation");
 
@@ -13002,17 +13008,13 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutati
             "saved-clean failure-mutation setup should retain one materialized handoff");
         const std::size_t data_cell_count = data.cell_count();
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanBlockedBeforeMutation");
-        }), "saved-clean same-sheet rename should fail before worksheet mutation recovery");
-        const std::optional<std::string> rename_error = editor.last_edit_error();
-        check(rename_error.has_value(),
-            "saved-clean same-sheet rename failure should populate last_edit_error before mutation");
-        if (rename_error.has_value()) {
-            check_contains(*rename_error,
-                "cannot rename sheet after materializing planned worksheet session",
-                "saved-clean same-sheet rename failure should report rename guard before mutation");
-        }
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanBlockedBeforeMutation");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean same-sheet rename before worksheet mutation");
 
         data.erase_cell(2, 1);
 
@@ -13066,14 +13068,14 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clear
         check(!data.try_cell(5, 5).has_value(),
             "read-only no-op erase recovery setup should use a missing target cell");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-blocked-before-noop-erase")}});
-        }), "read-only same-sheet replacement should fail before no-op erase recovery");
-        const std::optional<std::string> replacement_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
-                "read-only same-sheet replacement failure before no-op erase");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-blocked-before-noop-erase")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only same-sheet replacement failure before no-op erase");
 
         data.erase_cell(5, 5);
 
@@ -13134,13 +13136,13 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clear
         check(!data.try_cell(5, 5).has_value(),
             "saved-clean no-op erase recovery setup should use a missing target cell");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanBlockedBeforeNoopErase");
-        }), "saved-clean same-sheet rename should fail before no-op erase recovery");
-        const std::optional<std::string> rename_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::RenameSheet,
-                "saved-clean same-sheet rename failure before no-op erase");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanBlockedBeforeNoopErase");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean same-sheet rename failure before no-op erase");
 
         data.erase_cell(5, 5);
 
@@ -13198,14 +13200,14 @@ void test_public_worksheet_editor_noop_erase_recovery_preserves_same_sheet_patch
         check(!data.try_cell(5, 5).has_value(),
             "read-only no-op guard setup should use a missing erase target");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-blocked-before-noop-guard")}});
-        }), "read-only same-sheet replacement should fail before no-op guard check");
-        const std::optional<std::string> replacement_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
-                "read-only initial replacement failure before no-op guard");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-blocked-before-noop-guard")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only initial replacement failure before no-op guard");
 
         data.erase_cell(5, 5);
         check(!editor.last_edit_error().has_value(),
@@ -13213,12 +13215,13 @@ void test_public_worksheet_editor_noop_erase_recovery_preserves_same_sheet_patch
         check(!data.has_pending_changes(),
             "read-only no-op erase should keep Data clean before second same-sheet Patch");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "ReadonlyNoopEraseBypass");
-        }), "read-only same-sheet rename should still fail after no-op erase recovery");
         const std::optional<std::string> rename_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::RenameSheet,
+            check_public_same_sheet_guard_failure(
+                editor,
+                [&] {
+                    editor.rename_sheet("Data", "ReadonlyNoopEraseBypass");
+                },
+                PublicMaterializedGuardDiagnostic::RenameSheet,
                 "read-only same-sheet rename after no-op erase",
                 PublicMaterializedGuardDiagnostic::ReplaceSheetData);
 
@@ -13279,13 +13282,13 @@ void test_public_worksheet_editor_noop_erase_recovery_preserves_same_sheet_patch
         check(!data.try_cell(5, 5).has_value(),
             "saved-clean no-op guard setup should use a missing erase target");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanNoopEraseBypass");
-        }), "saved-clean same-sheet rename should fail before no-op guard check");
-        const std::optional<std::string> rename_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::RenameSheet,
-                "saved-clean initial rename failure before no-op guard");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanNoopEraseBypass");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean initial rename failure before no-op guard");
 
         data.erase_cell(5, 5);
         check(!editor.last_edit_error().has_value(),
@@ -13293,13 +13296,14 @@ void test_public_worksheet_editor_noop_erase_recovery_preserves_same_sheet_patch
         check(!data.has_pending_changes(),
             "saved-clean no-op erase should keep Data clean before second same-sheet Patch");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("saved-clean-blocked-after-noop-guard")}});
-        }), "saved-clean same-sheet replacement should still fail after no-op erase recovery");
         const std::optional<std::string> replacement_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            check_public_same_sheet_guard_failure(
+                editor,
+                [&] {
+                    editor.replace_sheet_data("Data",
+                        {{fastxlsx::CellValue::text("saved-clean-blocked-after-noop-guard")}});
+                },
+                PublicMaterializedGuardDiagnostic::ReplaceSheetData,
                 "saved-clean same-sheet replacement after no-op erase",
                 PublicMaterializedGuardDiagnostic::RenameSheet);
 

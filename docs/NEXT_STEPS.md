@@ -1372,6 +1372,12 @@ saved-clean clean-state helpers. The test still proves the replacement guard
 supersedes the rename guard, preserves the borrowed handle state, and keeps
 the retry output unchanged. This remains test-maintenance only and does not
 alter production behavior, generated workbooks, or public API.
+P8.633 reuses a single same-sheet guard-failure helper across the adjacent
+failure-recovery and no-op guard regressions. The affected read-only and
+saved-clean paths now share the throw + `last_edit_error()` guard check while
+leaving recovery, value, and ZIP/XML assertions explicit. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

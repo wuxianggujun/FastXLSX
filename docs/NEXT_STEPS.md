@@ -1415,6 +1415,12 @@ share one helper across failed-save and successful-save paths while keeping the
 catalog/edit-summary and ZIP/XML assertions explicit. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.640 adds a narrow public no-pending-state helper for the adjacent no-op
+save-as regressions after failed edit and failed rename diagnostics. The
+pre-save and post-save "keep the editor clean" checks now share one helper
+while leaving the diagnostic and source-entry assertions explicit. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

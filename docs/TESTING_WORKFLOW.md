@@ -477,6 +477,9 @@ The adjacent scalar public save-state checks now share a focused snapshot
 helper as well, covering pending counts, replacement memory, pending worksheet
 names, and `last_edit_error()` preservation for failed and successful
 `save_as()` paths.
+The adjacent no-op save-as regressions after failed edit and failed rename now
+share a narrow no-pending-state helper for the repeated clean-state checks,
+while leaving the diagnostic and source-entry assertions explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

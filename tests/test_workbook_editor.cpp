@@ -191,6 +191,18 @@ void check_workbook_editor_public_save_state_preserved(
         std::string(scenario) + " should not replace or clear last_edit_error");
 }
 
+void check_workbook_editor_public_no_pending_state(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(!editor.has_pending_changes(), prefix + " should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        prefix + " should keep pending edit count empty");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should keep pending summaries empty");
+}
+
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
@@ -21027,23 +21039,15 @@ void test_noop_save_as_preserves_failed_edit_diagnostic()
     const std::optional<std::string> last_error_before_save = editor.last_edit_error();
     check(last_error_before_save.has_value(),
         "failed edit before no-op save_as should record last_edit_error");
-    check(!editor.has_pending_changes(),
-        "failed edit before no-op save_as should not create pending changes");
-    check(editor.pending_change_count() == 0,
-        "failed edit before no-op save_as should not create pending edit count");
-    check(editor.pending_worksheet_edits().empty(),
-        "failed edit before no-op save_as should not create pending summaries");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed edit before no-op save_as");
 
     editor.save_as(noop_output);
 
     check(editor.last_edit_error() == last_error_before_save,
         "no-op save_as should preserve a prior failed-edit diagnostic");
-    check(!editor.has_pending_changes(),
-        "no-op save_as after a failed edit should keep the editor clean");
-    check(editor.pending_change_count() == 0,
-        "no-op save_as after a failed edit should keep pending edit count empty");
-    check(editor.pending_worksheet_edits().empty(),
-        "no-op save_as after a failed edit should keep pending summaries empty");
+    check_workbook_editor_public_no_pending_state(
+        editor, "no-op save_as after a failed edit");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == source_entries,
@@ -21082,23 +21086,15 @@ void test_noop_save_as_preserves_failed_rename_diagnostic()
         check_contains(*last_error_before_save, "Bad/Name",
             "failed rename diagnostic should name the rejected sheet");
     }
-    check(!editor.has_pending_changes(),
-        "failed rename before no-op save_as should not create pending changes");
-    check(editor.pending_change_count() == 0,
-        "failed rename before no-op save_as should not create pending edit count");
-    check(editor.pending_worksheet_edits().empty(),
-        "failed rename before no-op save_as should not create pending summaries");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed rename before no-op save_as");
 
     editor.save_as(noop_output);
 
     check(editor.last_edit_error() == last_error_before_save,
         "no-op save_as should preserve a prior failed-rename diagnostic");
-    check(!editor.has_pending_changes(),
-        "no-op save_as after a failed rename should keep the editor clean");
-    check(editor.pending_change_count() == 0,
-        "no-op save_as after a failed rename should keep pending edit count empty");
-    check(editor.pending_worksheet_edits().empty(),
-        "no-op save_as after a failed rename should keep pending summaries empty");
+    check_workbook_editor_public_no_pending_state(
+        editor, "no-op save_as after a failed rename");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == source_entries,

@@ -1378,6 +1378,12 @@ saved-clean paths now share the throw + `last_edit_error()` guard check while
 leaving recovery, value, and ZIP/XML assertions explicit. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.634 extends that helper reuse into the explicit two-clean recovery,
+scoped-other-mutation, and failed-save guard checks. The Data and Untouched
+read-only/saved-clean branches now share the same same-sheet guard failure
+helper while preserving the existing scoped state, dirty-handle, and output
+assertions. This remains test-maintenance only and does not alter production
+behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

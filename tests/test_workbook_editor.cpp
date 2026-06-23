@@ -13364,12 +13364,13 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_othe
         check(!data.has_pending_changes() && !untouched.has_pending_changes(),
             "read-only two-clean recovery setup should keep both handles clean");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-blocked-data")}});
-        }), "read-only two-clean Data same-sheet replacement should fail first");
-        (void)check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-two-clean-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
             "read-only two-clean Data failure");
 
         data.erase_cell(5, 5);
@@ -13380,13 +13381,14 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_othe
         check(!untouched.has_pending_changes(),
             "read-only two-clean Data no-op erase should not dirty Untouched");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Untouched",
-                {{fastxlsx::CellValue::text("readonly-two-clean-blocked-untouched")}});
-        }), "read-only two-clean Untouched same-sheet replacement should still fail");
         const std::optional<std::string> untouched_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            check_public_same_sheet_guard_failure(
+                editor,
+                [&] {
+                    editor.replace_sheet_data("Untouched",
+                        {{fastxlsx::CellValue::text("readonly-two-clean-blocked-untouched")}});
+                },
+                PublicMaterializedGuardDiagnostic::ReplaceSheetData,
                 "read-only two-clean Untouched failure");
         if (untouched_error.has_value()) {
             check_not_contains(*untouched_error, "Data",
@@ -13434,11 +13436,12 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_othe
         const std::size_t untouched_cell_count = untouched.cell_count();
         const std::size_t untouched_memory = untouched.estimated_memory_usage();
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoHandleBlockedData");
-        }), "saved-clean two-clean Data same-sheet rename should fail first");
-        (void)check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::RenameSheet,
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoHandleBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
             "saved-clean two-clean Data failure");
 
         data.set_cell(3, 3,
@@ -13449,13 +13452,14 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_othe
             editor, data, untouched, "Data", data_cell_count + 1,
             saved_pending_count, "saved-clean two-clean Data mutation");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Untouched",
-                {{fastxlsx::CellValue::text("saved-clean-two-handle-blocked-untouched")}});
-        }), "saved-clean two-clean Untouched same-sheet replacement should still fail");
         const std::optional<std::string> untouched_error =
-            check_public_materialized_guard_error(
-                editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            check_public_same_sheet_guard_failure(
+                editor,
+                [&] {
+                    editor.replace_sheet_data("Untouched",
+                        {{fastxlsx::CellValue::text("saved-clean-two-handle-blocked-untouched")}});
+                },
+                PublicMaterializedGuardDiagnostic::ReplaceSheetData,
                 "saved-clean two-clean Untouched failure",
                 PublicMaterializedGuardDiagnostic::RenameSheet);
 
@@ -13513,12 +13517,13 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_
         check(!data.has_pending_changes() && !untouched.has_pending_changes(),
             "read-only two-clean other-mutation setup should keep both handles clean");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-other-mutation-blocked-data")}});
-        }), "read-only two-clean Data same-sheet replacement should fail before other mutation");
-        (void)check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-two-clean-other-mutation-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
             "read-only two-clean Data failure before other mutation");
 
         data.erase_cell(5, 5);
@@ -13575,11 +13580,12 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_
         const std::size_t data_cell_count = data.cell_count();
         const std::size_t untouched_cell_count = untouched.cell_count();
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoHandleOtherMutationBlockedData");
-        }), "saved-clean two-clean Data same-sheet rename should fail before other mutation");
-        (void)check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::RenameSheet,
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoHandleOtherMutationBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
             "saved-clean two-clean Data failure before other mutation");
 
         data.set_cell(3, 3,
@@ -13631,12 +13637,13 @@ void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-failed-save-blocked-data")}});
-        }), "read-only two-clean failed-save setup should reject same-sheet replacement");
-        (void)check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-two-clean-failed-save-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
             "read-only two-clean failed-save setup");
 
         data.erase_cell(5, 5);
@@ -13697,11 +13704,12 @@ void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty
                 editor, data, untouched, 2,
                 "saved-clean two-clean failed-save setup");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoCleanFailedSaveBlockedData");
-        }), "saved-clean two-clean failed-save setup should reject same-sheet rename");
-        (void)check_public_materialized_guard_error(
-            editor, PublicMaterializedGuardDiagnostic::RenameSheet,
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoCleanFailedSaveBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
             "saved-clean two-clean failed-save setup");
 
         data.set_cell(3, 3,

@@ -481,6 +481,9 @@ helpers, while keeping retry output equality checks explicit.
 The adjacent failure-recovery and no-op guard regressions now also share a
 single same-sheet guard-failure helper for the throw and `last_edit_error()`
 checks, while leaving the recovery and ZIP/XML assertions explicit.
+The explicit two-clean recovery, scoped other-mutation, and failed-save guard
+checks reuse that same helper too, while keeping the dirty-state and output
+assertions local to each scenario.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

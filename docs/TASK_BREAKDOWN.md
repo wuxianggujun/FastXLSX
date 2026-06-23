@@ -27578,6 +27578,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.634 - Reuse same-sheet guard helper in two-clean recovery
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: continue the same helper cleanup into the explicit two-clean recovery,
+scoped other-mutation, and failed-save guard diagnostic checks.
+
+Output:
+- Reused the single same-sheet guard-failure helper for read-only two-clean
+  Data and Untouched replacement guard failures.
+- Reused it for saved-clean two-clean Data rename and Untouched replacement
+  guard failures, including stale-diagnostic replacement checks.
+- Reused it for the scoped other-mutation and failed-save setup guard failures
+  while leaving dirty-state and output assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

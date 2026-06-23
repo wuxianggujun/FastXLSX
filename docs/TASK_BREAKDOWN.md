@@ -28025,6 +28025,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.650 - Reuse no-pending helper in last-edit-error tracking
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reuse the public no-pending-state helper in the last-edit-error tracking
+regression's initial failed replace path while keeping `last_edit_error()` and
+inspection assertions explicit.
+
+Output:
+- Reused `check_workbook_editor_public_no_pending_state()` after failed
+  `replace_sheet_data()` before any successful edit is queued.
+- Kept the later failed rename path's existing `last_edit_error()` and public
+  inspection assertions explicit because the prior successful rename is already
+  a valid pending change.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

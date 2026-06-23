@@ -20442,6 +20442,8 @@ void test_last_edit_error_tracks_failed_public_edits()
     }
     check(failed, "missing sheet replacement should fail");
 
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed replace_sheet_data");
     check_public_inspection_preserves_last_edit_error(
         editor, editor.last_edit_error());
 

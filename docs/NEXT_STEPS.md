@@ -1473,6 +1473,12 @@ rewrite guard failure regression. The formula sheet clean check,
 `last_edit_error()`, materialized diagnostics, planned catalog assertions, and
 follow-up save/output checks remain explicit. This remains test-maintenance only
 and does not alter production behavior, generated workbooks, or public API.
+P8.650 reuses the public no-pending-state helper in the last-edit-error
+tracking regression's initial failed replace path. The later failed rename path
+already has a queued successful rename, so it keeps only the existing
+`last_edit_error()` and inspection assertions explicit. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

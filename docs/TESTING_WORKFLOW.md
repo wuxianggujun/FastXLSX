@@ -508,6 +508,10 @@ The materialized formula rewrite guard failure regression also reuses the
 no-pending-state helper for WorkbookEditor state while keeping formula sheet,
 `last_edit_error()`, materialized diagnostics, catalog, and output checks
 explicit.
+The last-edit-error tracking regression now also shares the no-pending helper
+after the initial failed replace call, while the later failed rename path keeps
+its existing public inspection and `last_edit_error()` assertions because a
+successful rename is already queued.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

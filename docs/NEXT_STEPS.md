@@ -1366,6 +1366,12 @@ saved-clean replacement+rename cases now share the same clean-handle /
 materialized-diagnostics assertions while preserving their value and output
 checks. This remains test-maintenance only and does not alter production
 behavior, generated workbooks, or public API.
+P8.632 trims the adjacent clean-session same-sheet Patch failure block by
+reusing a focused rename/replacement guard-sequence helper plus read-only and
+saved-clean clean-state helpers. The test still proves the replacement guard
+supersedes the rename guard, preserves the borrowed handle state, and keeps
+the retry output unchanged. This remains test-maintenance only and does not
+alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

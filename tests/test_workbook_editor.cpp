@@ -1009,6 +1009,97 @@ void check_public_single_sheet_mutation_state(
         label + " should expose dirty sheet memory");
 }
 
+std::optional<std::string> check_public_same_sheet_rename_then_replacement_guard_sequence(
+    fastxlsx::WorkbookEditor& editor,
+    std::string_view target_sheet_name,
+    std::string_view new_sheet_name,
+    std::string_view replacement_text,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+    const std::string target = std::string(target_sheet_name);
+    const std::string new_name = std::string(new_sheet_name);
+    const std::string replacement = std::string(replacement_text);
+
+    check(threw_fastxlsx_error([&] {
+        editor.rename_sheet(target, new_name);
+    }), label + " same-sheet rename should fail first");
+    const std::optional<std::string> rename_error =
+        check_public_materialized_guard_error(
+            editor, PublicMaterializedGuardDiagnostic::RenameSheet,
+            label + " same-sheet rename failure");
+
+    check(threw_fastxlsx_error([&] {
+        editor.replace_sheet_data(
+            target, {{fastxlsx::CellValue::text(replacement)}});
+    }), label + " same-sheet replacement should fail second");
+    const std::optional<std::string> replacement_error =
+        check_public_materialized_guard_error(
+            editor, PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            label + " same-sheet replacement failure",
+            PublicMaterializedGuardDiagnostic::RenameSheet);
+
+    check(replacement_error != rename_error,
+        label + " replacement guard should replace the prior rename diagnostic");
+
+    return replacement_error;
+}
+
+void check_public_failed_same_sheet_patch_readonly_clean_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    const std::optional<std::string>& expected_error,
+    std::string_view sheet_name,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+    const std::string name = std::string(sheet_name);
+
+    check(!sheet.has_pending_changes(),
+        label + " should keep " + name + " clean");
+    check(!editor.has_pending_changes(),
+        label + " should keep editor clean");
+    check(editor.pending_change_count() == 0,
+        label + " should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should not expose dirty cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should not expose dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        label + " should not expose summaries");
+    check_public_inspection_preserves_last_edit_error(editor, expected_error);
+}
+
+void check_public_failed_same_sheet_patch_saved_clean_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    std::size_t expected_pending_count,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& expected_summaries,
+    const std::optional<std::string>& expected_error,
+    std::string_view sheet_name,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+    const std::string name = std::string(sheet_name);
+
+    check(!sheet.has_pending_changes(),
+        label + " should keep " + name + " clean");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should preserve saved handoff count");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should not expose dirty cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should not expose dirty memory");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), expected_summaries),
+        label + " should preserve summaries");
+    check_public_inspection_preserves_last_edit_error(editor, expected_error);
+}
+
 const std::string& check_public_two_clean_retry_entry(
     const std::map<std::string, std::string>& entries,
     std::string_view entry_name)
@@ -12661,50 +12752,14 @@ void test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagno
                 source_value.text_value() == "placeholder-a1",
             "read-only preflight diagnostic setup should materialize Data");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "ReadonlyRenameFirst");
-        }), "read-only same-sheet rename should fail first");
-        const std::optional<std::string> rename_error = editor.last_edit_error();
-        check(rename_error.has_value(),
-            "read-only same-sheet rename failure should populate last_edit_error");
-        if (rename_error.has_value()) {
-            check_contains(*rename_error,
-                "cannot rename sheet after materializing planned worksheet session",
-                "read-only same-sheet rename failure should report rename guard");
-        }
+        const std::optional<std::string> replacement_error =
+            check_public_same_sheet_rename_then_replacement_guard_sequence(
+                editor, "Data", "ReadonlyRenameFirst", "readonly-replacement-second",
+                "read-only same-sheet Patch diagnostics");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-replacement-second")}});
-        }), "read-only same-sheet replacement should fail second");
-        const std::optional<std::string> replacement_error = editor.last_edit_error();
-        check(replacement_error.has_value(),
-            "read-only same-sheet replacement failure should keep last_edit_error populated");
-        if (replacement_error.has_value()) {
-            check_contains(*replacement_error,
-                "cannot replace sheet data after materializing planned worksheet session",
-                "read-only same-sheet replacement failure should report replacement guard");
-            check_not_contains(*replacement_error, "rename sheet",
-                "read-only replacement diagnostic should replace the rename diagnostic");
-        }
-        check(replacement_error != rename_error,
-            "read-only replacement guard should replace the prior rename diagnostic");
-
-        check(!data.has_pending_changes(),
-            "read-only failed same-sheet Patch diagnostics should keep Data clean");
-        check(!editor.has_pending_changes(),
-            "read-only failed same-sheet Patch diagnostics should keep editor clean");
-        check(editor.pending_change_count() == 0,
-            "read-only failed same-sheet Patch diagnostics should not queue public edits");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only failed same-sheet Patch diagnostics should not expose dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "read-only failed same-sheet Patch diagnostics should not expose dirty cells");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "read-only failed same-sheet Patch diagnostics should not expose dirty memory");
-        check(editor.pending_worksheet_edits().empty(),
-            "read-only failed same-sheet Patch diagnostics should not expose summaries");
-        check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+        check_public_failed_same_sheet_patch_readonly_clean_state(
+            editor, data, replacement_error, "Data",
+            "read-only failed same-sheet Patch diagnostics");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -12733,49 +12788,15 @@ void test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagno
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> saved_summaries =
             editor.pending_worksheet_edits();
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanRenameFirst");
-        }), "saved-clean same-sheet rename should fail first");
-        const std::optional<std::string> rename_error = editor.last_edit_error();
-        check(rename_error.has_value(),
-            "saved-clean same-sheet rename failure should populate last_edit_error");
-        if (rename_error.has_value()) {
-            check_contains(*rename_error,
-                "cannot rename sheet after materializing planned worksheet session",
-                "saved-clean same-sheet rename failure should report rename guard");
-        }
+        const std::optional<std::string> replacement_error =
+            check_public_same_sheet_rename_then_replacement_guard_sequence(
+                editor, "Data", "SavedCleanRenameFirst",
+                "saved-clean-replacement-second",
+                "saved-clean same-sheet Patch diagnostics");
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("saved-clean-replacement-second")}});
-        }), "saved-clean same-sheet replacement should fail second");
-        const std::optional<std::string> replacement_error = editor.last_edit_error();
-        check(replacement_error.has_value(),
-            "saved-clean same-sheet replacement failure should keep last_edit_error populated");
-        if (replacement_error.has_value()) {
-            check_contains(*replacement_error,
-                "cannot replace sheet data after materializing planned worksheet session",
-                "saved-clean same-sheet replacement failure should report replacement guard");
-            check_not_contains(*replacement_error, "rename sheet",
-                "saved-clean replacement diagnostic should replace the rename diagnostic");
-        }
-        check(replacement_error != rename_error,
-            "saved-clean replacement guard should replace the prior rename diagnostic");
-
-        check(!data.has_pending_changes(),
-            "saved-clean failed same-sheet Patch diagnostics should keep Data clean");
-        check(editor.pending_change_count() == saved_pending_count,
-            "saved-clean failed same-sheet Patch diagnostics should preserve saved handoff count");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean failed same-sheet Patch diagnostics should not expose dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "saved-clean failed same-sheet Patch diagnostics should not expose dirty cells");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "saved-clean failed same-sheet Patch diagnostics should not expose dirty memory");
-        check(workbook_editor_edit_summaries_equal(
-                  editor.pending_worksheet_edits(), saved_summaries),
-            "saved-clean failed same-sheet Patch diagnostics should preserve summaries");
-        check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+        check_public_failed_same_sheet_patch_saved_clean_state(
+            editor, data, saved_pending_count, saved_summaries, replacement_error,
+            "Data", "saved-clean failed same-sheet Patch diagnostics");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);

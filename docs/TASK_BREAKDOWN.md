@@ -27521,6 +27521,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.632 - Refactor same-sheet Patch failure diagnostics
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reduce repeated guard-diagnostic and clean-state assertions in the
+adjacent read-only and saved-clean same-sheet Patch failure coverage.
+
+Output:
+- Added a focused helper for the same-sheet rename-then-replacement guard
+  sequence.
+- Added focused helpers for read-only and saved-clean failed same-sheet Patch
+  clean-state checks.
+- Reused those helpers in the preflight diagnostic block while keeping output
+  equality assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

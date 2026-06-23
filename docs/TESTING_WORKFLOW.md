@@ -495,6 +495,9 @@ source catalog checks still explicit.
 The corrupt source-entry read failure regression now shares that same
 no-pending-state helper, while preserving replacement diagnostics, source
 restore, and follow-up output checks.
+The replacement guardrail regression now reuses the clean `replace_sheet_data()`
+failure-state helper for max-cell and memory-budget failures, with the valid
+guarded replacement output checks still explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

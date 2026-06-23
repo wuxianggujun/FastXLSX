@@ -27910,6 +27910,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.646 - Reuse sheetData failure helper in guardrail checks
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reuse the clean `replace_sheet_data()` failure-state helper for the
+replacement guardrail failures while preserving the successful guarded
+replacement output checks.
+
+Output:
+- Reused `check_clean_replace_sheet_data_failure_state()` after
+  `max_replacement_cells` rejection.
+- Reused the same helper after `replacement_memory_budget_bytes` rejection.
+- Kept the valid guarded replacement, repeated replacement, and output XML
+  assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

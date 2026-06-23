@@ -20782,12 +20782,8 @@ void test_replacement_guardrails_and_payload_diagnostics()
         max_cell_editor.replace_sheet_data("Data",
             {{fastxlsx::CellValue::number(1.0), fastxlsx::CellValue::number(2.0)}});
     }), "replace_sheet_data should enforce max_replacement_cells before commit");
-    check(!max_cell_editor.has_pending_changes(),
-        "max_replacement_cells failure should not mark the editor dirty");
-    check(max_cell_editor.pending_replacement_cell_count() == 0,
-        "max_replacement_cells failure should not record replacement cells");
-    check(max_cell_editor.estimated_pending_replacement_memory_usage() == 0,
-        "max_replacement_cells failure should not record replacement memory");
+    check_clean_replace_sheet_data_failure_state(
+        max_cell_editor, "max_replacement_cells failure");
 
     max_cell_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(3.0)}});
     check(max_cell_editor.pending_replacement_cell_count() == 1,
@@ -20820,12 +20816,7 @@ void test_replacement_guardrails_and_payload_diagnostics()
     check(threw_fastxlsx_error([&] {
         memory_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("too large")}});
     }), "replace_sheet_data should enforce replacement_memory_budget_bytes before commit");
-    check(!memory_editor.has_pending_changes(),
-        "memory budget failure should not mark the editor dirty");
-    check(memory_editor.pending_replacement_cell_count() == 0,
-        "memory budget failure should not record replacement cells");
-    check(memory_editor.estimated_pending_replacement_memory_usage() == 0,
-        "memory budget failure should not record replacement memory");
+    check_clean_replace_sheet_data_failure_state(memory_editor, "memory budget failure");
 }
 
 void test_missing_sheet_throws_and_editor_stays_usable()

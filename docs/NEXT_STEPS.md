@@ -1250,6 +1250,15 @@ materialized values, and must still allow the next single-handle mutation to
 flush through a later safe `save_as()`. This is query hygiene only, not
 rollback, transaction history, relationship repair, random-editor expansion,
 formula evaluation, or formula rewrite expansion.
+P8.614 adds invalid-read coverage on top of the same retry/reacquire boundary:
+row/column zero, Excel-limit overflow, malformed A1 references, and invalid
+`sparse_cells()` ranges must throw without changing clean handle state,
+`last_edit_error()`, dirty materialized diagnostics, workbook catalog views, or
+saved sparse store estimates. The follow-up valid mutation still dirties only
+the touched reacquired handle and persists through the next safe `save_as()`.
+This is read-side validation hygiene only, not rollback, transaction history,
+relationship repair, random-editor expansion, formula evaluation, or formula
+rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

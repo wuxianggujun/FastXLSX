@@ -443,6 +443,11 @@ materialization options and missing-sheet lookups after the retry must leave
 `last_edit_error()`, dirty materialized diagnostics, worksheet summaries,
 catalog queries, and saved values unchanged, and the next valid mutation must
 still dirty only the touched reacquired session.
+Invalid-read hygiene is pinned in the same retry/reacquire chain: invalid
+row/column coordinates, malformed A1 references, Excel-limit overflows, and
+invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`
+or dirty diagnostics, and without changing saved sparse cell counts / memory
+before the next valid mutation.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

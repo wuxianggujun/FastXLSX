@@ -26974,6 +26974,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.614 - Pin invalid-read hygiene after two-clean failed-save retry reacquire
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` invalid-read state hygiene
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove that after two-handle recovery, failed `save_as(source)`, safe
+retry, and post-save reacquire, invalid cell / range reads throw without
+corrupting saved clean materialized sessions.
+
+Output:
+- Added public read-only coverage where `Data` and `Untouched` recover from a
+  same-sheet replacement guard, survive failed `save_as(source)`, flush through
+  a safe retry, reacquire cleanly, then reject invalid row/column, malformed A1,
+  and invalid `sparse_cells()` reads without dirtying either handle.
+- Added public saved-clean coverage where two prior saved materialized handoffs
+  survive a same-sheet rename guard, failed `save_as(source)`, safe retry,
+  post-save reacquire, invalid reads on both handles, and a later single-handle
+  mutation.
+- The regression verifies invalid reads leave `last_edit_error()`, dirty
+  materialized names, dirty cell counts, dirty memory, worksheet summaries,
+  source/planned catalog diagnostics, sparse store counts/memory, and handoff
+  counts unchanged, while a later safe `save_as()` still persists the next valid
+  mutation.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

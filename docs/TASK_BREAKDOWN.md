@@ -28226,6 +28226,37 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.657 - Reuse no-replacement payload-size helper
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reuse a narrow helper for states that assert replacement cell count and
+replacement memory are empty, without expanding those checks to replacement
+sheet-name diagnostics.
+
+Output:
+- Added `check_workbook_editor_no_replacement_payload_size_diagnostics()` for
+  the repeated replacement cell-count and memory zero checks.
+- Reused it in memory-budget move and move-assignment failure paths.
+- Reused it in source-read failure state, the clean sheetData failure helper,
+  and old-name-after-rename replacement failure.
+- Kept no-pending, sheet-name, catalog, `last_edit_error()`, and
+  has-worksheet/source-worksheet assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

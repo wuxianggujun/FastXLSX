@@ -535,6 +535,11 @@ The shared public clean-state helper now delegates its replacement cells,
 replacement memory, and replacement sheet-name assertions to the same
 no-replacement-diagnostics helper, while keeping no-pending state and
 `last_edit_error()` checks explicit.
+A narrower no-replacement-payload-size helper now covers repeated replacement
+cell-count and memory-zero assertions where the original checks did not include
+replacement sheet names. Memory-budget move paths, source-read failures, clean
+sheetData failure state, and old-name-after-rename replacement failure use it
+without expanding their sheet-name coverage.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

@@ -1514,6 +1514,12 @@ cells, replacement memory, and replacement sheet-name checks while keeping
 generic no-pending state and `last_edit_error()` assertions explicit. This
 remains test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.657 adds a narrower no-replacement-payload-size diagnostics helper for
+states that only asserted replacement cell count and replacement memory. The
+memory-budget move paths, source-read failure state, clean sheetData failure
+helper, and old-name-after-rename failure now share those two checks without
+adding replacement sheet-name assertions. This remains test-maintenance only and
+does not alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

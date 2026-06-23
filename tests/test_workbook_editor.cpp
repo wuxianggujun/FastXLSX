@@ -216,6 +216,17 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement sheet names");
 }
 
+void check_workbook_editor_no_replacement_payload_size_diagnostics(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.pending_replacement_cell_count() == 0,
+        prefix + " should not expose replacement cells");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        prefix + " should not expose replacement memory");
+}
+
 void check_workbook_editor_public_clean_state(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
@@ -3272,10 +3283,8 @@ void test_moved_to_workbook_editor_preserves_replacement_memory_budget()
     }), "moved-to editor should keep replacement_memory_budget_bytes guardrail");
     check(!moved.has_pending_changes(),
         "moved-to memory-budget failure should not queue public edits");
-    check(moved.pending_replacement_cell_count() == 0,
-        "moved-to memory-budget failure should not add replacement cells");
-    check(moved.estimated_pending_replacement_memory_usage() == 0,
-        "moved-to memory-budget failure should not record replacement memory");
+    check_workbook_editor_no_replacement_payload_size_diagnostics(
+        moved, "moved-to memory-budget failure");
     check(moved.last_edit_error().has_value(),
         "moved-to memory-budget failure should set last_edit_error");
 
@@ -3549,10 +3558,8 @@ void test_move_assignment_replaces_target_replacement_memory_budget()
     }), "move-assigned editor should use assigned source memory-budget guardrail");
     check(!target.has_pending_changes(),
         "move-assigned memory-budget failure should not queue public edits");
-    check(target.pending_replacement_cell_count() == 0,
-        "move-assigned memory-budget failure should not add replacement cells");
-    check(target.estimated_pending_replacement_memory_usage() == 0,
-        "move-assigned memory-budget failure should not record replacement memory");
+    check_workbook_editor_no_replacement_payload_size_diagnostics(
+        target, "move-assigned memory-budget failure");
     check(target.last_edit_error().has_value(),
         "move-assigned memory-budget failure should set last_edit_error");
 
@@ -20627,10 +20634,8 @@ void test_replace_sheet_data_source_read_failure_preserves_public_state()
     check(failed,
         "replace_sheet_data should fail when the source worksheet entry cannot be read");
     check_workbook_editor_public_no_pending_state(editor, "source read failure");
-    check(editor.pending_replacement_cell_count() == 0,
-        "source read failure should not record public replacement cells");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        "source read failure should not record public replacement memory");
+    check_workbook_editor_no_replacement_payload_size_diagnostics(
+        editor, "source read failure");
     check(editor.has_worksheet("Data"),
         "source read failure should not disturb the opened source sheet catalog");
 
@@ -20647,10 +20652,7 @@ void check_clean_replace_sheet_data_failure_state(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
     check_workbook_editor_public_no_pending_state(editor, scenario);
-    check(editor.pending_replacement_cell_count() == 0,
-        std::string(scenario) + " should not record public replacement cells");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        std::string(scenario) + " should not record public replacement memory");
+    check_workbook_editor_no_replacement_payload_size_diagnostics(editor, scenario);
     check(editor.has_worksheet("Data"),
         std::string(scenario) + " should not disturb the opened source sheet catalog");
 }
@@ -22333,10 +22335,8 @@ void test_replace_sheet_data_uses_planned_catalog_after_rename()
         }), "replace_sheet_data should reject the old source name after a planned rename");
         check(editor.pending_change_count() == 1,
             "old-name replace failure should not add a public pending change after rename");
-        check(editor.pending_replacement_cell_count() == 0,
-            "old-name replace failure should not add replacement cells after rename");
-        check(editor.estimated_pending_replacement_memory_usage() == 0,
-            "old-name replace failure should not add replacement memory after rename");
+        check_workbook_editor_no_replacement_payload_size_diagnostics(
+            editor, "old-name replace failure after rename");
         check(!editor.has_worksheet("Data"),
             "planned workbook inspection should reject the old name after planned rename");
         check(editor.has_worksheet("RenamedOnly"),

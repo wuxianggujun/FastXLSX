@@ -682,6 +682,21 @@ void check_public_two_clean_retry_reacquire_clean_state(
         label + " should not add handoffs");
 }
 
+void check_public_two_clean_retry_reacquire_saved_value(
+    fastxlsx::WorksheetEditor& sheet,
+    std::size_t row,
+    std::size_t column,
+    std::string_view expected_text,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+    const fastxlsx::CellValue value = sheet.get_cell(row, column);
+
+    check(value.kind() == fastxlsx::CellValueKind::Text &&
+            value.text_value() == expected_text,
+        label + " should preserve the saved materialized value");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13552,14 +13567,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
-        const fastxlsx::CellValue data_again_value = data_again.get_cell(3, 3);
-        const fastxlsx::CellValue untouched_again_value = untouched_again.get_cell(2, 2);
-        check(data_again_value.kind() == fastxlsx::CellValueKind::Text &&
-                data_again_value.text_value() == "readonly-two-clean-reacquire-retry-data",
-            "read-only retry post-save Data reacquire should reuse saved materialized state");
-        check(untouched_again_value.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_again_value.text_value() == "readonly-two-clean-reacquire-retry-untouched",
-            "read-only retry post-save Untouched reacquire should reuse saved materialized state");
+        check_public_two_clean_retry_reacquire_saved_value(
+            data_again, 3, 3, "readonly-two-clean-reacquire-retry-data",
+            "read-only retry post-save Data reacquire");
+        check_public_two_clean_retry_reacquire_saved_value(
+            untouched_again, 2, 2, "readonly-two-clean-reacquire-retry-untouched",
+            "read-only retry post-save Untouched reacquire");
         check_public_two_clean_retry_reacquire_clean_state(
             editor, data, untouched, data_again, untouched_again, 2,
             "read-only retry post-save reacquire");
@@ -13665,22 +13678,20 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
-        const fastxlsx::CellValue data_again_first = data_again.get_cell(1, 1);
-        const fastxlsx::CellValue data_again_recovered = data_again.get_cell(3, 3);
-        const fastxlsx::CellValue untouched_again_first = untouched_again.get_cell(1, 1);
-        const fastxlsx::CellValue untouched_again_recovered = untouched_again.get_cell(2, 2);
-        check(data_again_first.kind() == fastxlsx::CellValueKind::Text &&
-                data_again_first.text_value() == "saved-clean-two-clean-reacquire-retry-data-first",
-            "saved-clean retry Data reacquire should keep the first saved value");
-        check(data_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                data_again_recovered.text_value() == "saved-clean-two-clean-reacquire-retry-data-recovered",
-            "saved-clean retry Data reacquire should keep the recovery value");
-        check(untouched_again_first.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_again_first.text_value() == "saved-clean-two-clean-reacquire-retry-untouched-first",
-            "saved-clean retry Untouched reacquire should keep the first saved value");
-        check(untouched_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
-                untouched_again_recovered.text_value() == "saved-clean-two-clean-reacquire-retry-untouched-recovered",
-            "saved-clean retry Untouched reacquire should keep the recovery value");
+        check_public_two_clean_retry_reacquire_saved_value(
+            data_again, 1, 1, "saved-clean-two-clean-reacquire-retry-data-first",
+            "saved-clean retry Data reacquire");
+        check_public_two_clean_retry_reacquire_saved_value(
+            data_again, 3, 3, "saved-clean-two-clean-reacquire-retry-data-recovered",
+            "saved-clean retry Data reacquire");
+        check_public_two_clean_retry_reacquire_saved_value(
+            untouched_again, 1, 1,
+            "saved-clean-two-clean-reacquire-retry-untouched-first",
+            "saved-clean retry Untouched reacquire");
+        check_public_two_clean_retry_reacquire_saved_value(
+            untouched_again, 2, 2,
+            "saved-clean-two-clean-reacquire-retry-untouched-recovered",
+            "saved-clean retry Untouched reacquire");
         check_public_two_clean_retry_reacquire_clean_state(
             editor, data, untouched, data_again, untouched_again,
             saved_pending_count + 2, "saved-clean retry post-save reacquire");

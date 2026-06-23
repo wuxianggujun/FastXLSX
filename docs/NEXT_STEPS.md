@@ -1738,6 +1738,17 @@ formula rewrite policy regressions under
 `fastxlsx.workbook_editor_formula_rewrite`. This is test organization and CTest
 budget hygiene only; it does not change public API symbols, runtime behavior,
 formula rewrite semantics, formula evaluation, or dependency graph scope.
+P8.683 finishes the larger WorkbookEditor test-source split by moving the
+former monolithic `facade`, `source-success`, `source-failure-*`, and
+`materialized` shard bodies into standalone test executables:
+`tests/test_workbook_editor_facade.cpp`,
+`tests/test_workbook_editor_source_success.cpp`,
+`tests/test_workbook_editor_source_failures.cpp`, and
+`tests/test_workbook_editor_materialized_sessions.cpp`. The original
+`tests/test_workbook_editor.cpp` now keeps only the core/public/public-edge
+shards. This is test layout and CTest budget hygiene only; it does not change
+runtime behavior, public API, package output semantics, source materialization
+policy, materialized-session behavior, or formula/image/docProps features.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public
@@ -2194,10 +2205,11 @@ schema validation.
   - `fastxlsx.workbook_editor.core`
   - `fastxlsx.workbook_editor.public`
   - `fastxlsx.workbook_editor.public-edge`
-  - `fastxlsx.workbook_editor.source-success`
-  - `fastxlsx.workbook_editor.source-failure`
-  - `fastxlsx.workbook_editor.materialized`
-  - `fastxlsx.workbook_editor.facade`
+  - `fastxlsx.workbook_editor_source_success`
+  - `fastxlsx.workbook_editor_source_failures`
+  - `fastxlsx.workbook_editor_materialized_sessions`
+  - `fastxlsx.workbook_editor_facade`
+  - `fastxlsx.workbook_editor_formula_rewrite`
   - `fastxlsx.image`
 - The max-coordinate `WorksheetEditor` public save-as regressions now run under
   `fastxlsx.workbook_editor.public-edge`, keeping the general public facade

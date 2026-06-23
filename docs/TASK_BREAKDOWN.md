@@ -29175,6 +29175,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public|fastxlsx\.workbook_editor_formula_rewrite" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.683 - Split remaining WorkbookEditor shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: finish the large test-source split by moving the remaining non-core
+WorkbookEditor shard bodies out of `tests/test_workbook_editor.cpp`, leaving
+that file focused on core, public, and public-edge coverage.
+
+Output:
+- Added `tests/test_workbook_editor_facade.cpp` with the public facade,
+  image-replacement, docProps, rename, no-op save, and public editing smoke
+  regressions.
+- Added `tests/test_workbook_editor_source_success.cpp` with source worksheet
+  materialization success regressions.
+- Added `tests/test_workbook_editor_source_failures.cpp` with source
+  materialization failure and state-hygiene regressions.
+- Added `tests/test_workbook_editor_materialized_sessions.cpp` with internal
+  materialized-session flush / guard / retry regressions.
+- Replaced the old monolithic CTest shards with standalone CTest names
+  `fastxlsx.workbook_editor_facade`,
+  `fastxlsx.workbook_editor_source_success`,
+  `fastxlsx.workbook_editor_source_failures`, and
+  `fastxlsx.workbook_editor_materialized_sessions`.
+- Kept `tests/test_workbook_editor.cpp` as the remaining core/public/public-edge
+  runner.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no new editing capability, no
+  source materialization policy change, no materialized-session behavior change,
+  no image/docProps/formula feature expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests fastxlsx_workbook_editor_facade_tests fastxlsx_workbook_editor_source_success_tests fastxlsx_workbook_editor_source_failures_tests fastxlsx_workbook_editor_materialized_sessions_tests fastxlsx_workbook_editor_formula_rewrite_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor(\.|_)" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

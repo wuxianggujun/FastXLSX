@@ -303,11 +303,36 @@ endfunction()
 add_fastxlsx_workbook_editor_shard(core 60)
 add_fastxlsx_workbook_editor_shard(public 60)
 add_fastxlsx_workbook_editor_shard(public-edge 60)
-add_fastxlsx_workbook_editor_shard(source-success 60)
-add_fastxlsx_workbook_editor_shard(source-failure-core 60)
-add_fastxlsx_workbook_editor_shard(source-failure-shapes 60)
-add_fastxlsx_workbook_editor_shard(materialized 60)
-add_fastxlsx_workbook_editor_shard(facade 60)
+
+function(add_fastxlsx_workbook_editor_standalone_test test_name source_file timeout_seconds)
+    set(target_name fastxlsx_workbook_editor_${test_name}_tests)
+    add_executable(${target_name}
+        ${source_file}
+    )
+
+    target_link_libraries(${target_name} PRIVATE FastXLSX::fastxlsx)
+    target_compile_features(${target_name} PRIVATE cxx_std_20)
+    target_compile_definitions(${target_name} PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+    target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    if(FASTXLSX_ENABLE_MINIZIP_NG)
+        target_link_libraries(${target_name} PRIVATE MINIZIP::minizip-ng)
+        target_compile_definitions(${target_name} PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+    endif()
+
+    add_test(
+        NAME fastxlsx.workbook_editor_${test_name}
+        COMMAND ${target_name}
+    )
+    set_tests_properties(fastxlsx.workbook_editor_${test_name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
+add_fastxlsx_workbook_editor_standalone_test(source_success test_workbook_editor_source_success.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(source_failures test_workbook_editor_source_failures.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(materialized_sessions test_workbook_editor_materialized_sessions.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(facade test_workbook_editor_facade.cpp 60)
 
 add_executable(fastxlsx_workbook_editor_formula_rewrite_tests
     test_workbook_editor_formula_rewrite.cpp

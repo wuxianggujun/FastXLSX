@@ -22671,6 +22671,8 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-source.xlsx");
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-output.xlsx");
+    const std::filesystem::path recovered_output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-output.xlsx");
     const std::string target_name = "RenamedDataLongerSheetName01";
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -22752,6 +22754,36 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "no-op save after materialized formula rewrite guard failure should keep source formula");
     check_not_contains(formula_sheet_xml, target_name,
         "no-op save after materialized formula rewrite guard failure should not leak rewritten formula");
+    check(editor.last_edit_error().has_value() &&
+            *editor.last_edit_error() == failure_message,
+        "no-op save after materialized formula rewrite guard failure should preserve the diagnostic");
+
+    editor.rename_sheet("Data", "R", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful retry after formula rewrite guard failure should clear last_edit_error");
+    check(formula_sheet.has_pending_changes(),
+        "successful retry after formula rewrite guard failure should dirty the formula session");
+    check(editor.has_worksheet("R") && !editor.has_worksheet("Data"),
+        "successful retry after formula rewrite guard failure should update the planned catalog");
+    const fastxlsx::CellValue recovered_formula = formula_sheet.get_cell("A1");
+    check(recovered_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            recovered_formula.text_value().find("'R'!A1") != std::string::npos,
+        "successful retry after formula rewrite guard failure should rewrite the materialized formula");
+    check(recovered_formula.text_value().find(target_name) == std::string::npos,
+        "successful retry after formula rewrite guard failure should not retain rejected target text");
+
+    editor.save_as(recovered_output);
+    const auto recovered_entries = fastxlsx::test::read_zip_entries(recovered_output);
+    check_contains(recovered_entries.at("xl/workbook.xml"), R"(name="R")",
+        "successful retry output should persist the recovered short rename");
+    check_not_contains(recovered_entries.at("xl/workbook.xml"), target_name,
+        "successful retry output should not leak the rejected long rename");
+    const std::string recovered_formula_sheet_xml =
+        recovered_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(recovered_formula_sheet_xml, "'R'!A1",
+        "successful retry output should persist the recovered rewritten formula");
+    check_not_contains(recovered_formula_sheet_xml, target_name,
+        "successful retry formula output should not leak the rejected long rename");
 }
 
 void test_rename_sheet_changes_catalog_name_and_preserves_parts()

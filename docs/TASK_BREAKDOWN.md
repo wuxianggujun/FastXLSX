@@ -28947,6 +28947,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.677 - Pin materialized formula rewrite guard retry recovery
+
+Status: done.
+
+Type: public workbook-editor formula rewrite guard recovery regression test +
+docs; no public API symbol change, no production behavior change, no CMake
+target membership change, and no formula engine expansion.
+
+Goal: prove a failed opt-in materialized formula rewrite does not poison later
+valid opt-in formula rewrite retries.
+
+Output:
+- Extended
+  `test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()`.
+- The regression now verifies no-op `save_as()` after the memory-budget guard
+  failure preserves the recorded `last_edit_error()`.
+- The same editor then retries with a short valid target name, proving the
+  successful opt-in rewrite clears `last_edit_error()`, updates the planned
+  catalog, dirties the materialized formula session, rewrites formula text, and
+  keeps the rejected target name out of the recovered output workbook.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the guard
+  failure/retry recovery boundary.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no non-materialized worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

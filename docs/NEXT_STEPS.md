@@ -1696,6 +1696,13 @@ formula section and the `docs/FORMULA_SUPPORT.md` capability matrix now both
 state that formula audit APIs report stale source-name risks without queuing
 edits, dirtying/materializing worksheet sessions, changing pending diagnostics,
 or updating `last_edit_error()`. This remains documentation-only alignment.
+P8.677 extends the materialized formula rewrite guard regression with a recovery
+path: after the memory-budget rejection records `last_edit_error()` and a no-op
+`save_as()` preserves that diagnostic, a later valid short-name opt-in rewrite
+now proves the diagnostic is cleared, the materialized formula is rewritten, and
+the rejected target name does not leak into the recovered workbook. This is
+failure/retry state hygiene only; it is not broader formula rewrite semantics,
+formula evaluation, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

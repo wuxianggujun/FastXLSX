@@ -153,6 +153,11 @@ worksheet formula references are rewritten while external-workbook references,
 `Unmaterialized` worksheet formula remain unchanged. This is still opt-in
 formula text rewrite evidence only, not default rename behavior or formula
 evaluation.
+The materialized formula rewrite guard regression also proves recovery hygiene:
+a memory-budget rejection preserves the public diagnostic through a no-op
+`save_as()`, then a later valid opt-in rewrite clears `last_edit_error()`,
+updates the planned catalog, rewrites the materialized formula, and keeps the
+rejected target text out of the recovered output.
 
 `generated_formula_rename_escaped_sheet_name` is the focused local QA for the
 same explicit rewrite policy when the new sheet name contains formula/XML

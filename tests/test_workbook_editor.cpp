@@ -21189,38 +21189,14 @@ void test_failed_save_as_preserves_public_facade_state()
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_after_save =
         editor.worksheet_catalog();
-    check(catalog_after_save.size() == catalog_before_save.size(),
-        "failed save_as should preserve worksheet catalog size");
-    if (catalog_after_save.size() == 2 && catalog_before_save.size() == 2) {
-        check(catalog_after_save[0].source_name == catalog_before_save[0].source_name,
-            "failed save_as should preserve catalog source name");
-        check(catalog_after_save[0].planned_name == catalog_before_save[0].planned_name,
-            "failed save_as should preserve catalog planned name");
-        check(catalog_after_save[0].renamed == catalog_before_save[0].renamed,
-            "failed save_as should preserve catalog rename flag");
-    }
+    check(workbook_editor_catalog_entries_equal(catalog_after_save, catalog_before_save),
+        "failed save_as should preserve worksheet catalog");
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_after_save =
         editor.pending_worksheet_edits();
-    check(summaries_after_save.size() == summaries_before_save.size(),
-        "failed save_as should preserve pending summary count");
-    if (summaries_after_save.size() == 1 && summaries_before_save.size() == 1) {
-        check(summaries_after_save[0].source_name == summaries_before_save[0].source_name,
-            "failed save_as should preserve summary source name");
-        check(summaries_after_save[0].planned_name == summaries_before_save[0].planned_name,
-            "failed save_as should preserve summary planned name");
-        check(summaries_after_save[0].renamed == summaries_before_save[0].renamed,
-            "failed save_as should preserve summary rename flag");
-        check(summaries_after_save[0].sheet_data_replaced ==
-                summaries_before_save[0].sheet_data_replaced,
-            "failed save_as should preserve summary replacement flag");
-        check(summaries_after_save[0].replacement_cell_count ==
-                summaries_before_save[0].replacement_cell_count,
-            "failed save_as should preserve summary replacement cell count");
-        check(summaries_after_save[0].estimated_replacement_memory_usage ==
-                summaries_before_save[0].estimated_replacement_memory_usage,
-            "failed save_as should preserve summary memory estimate");
-    }
+    check(workbook_editor_edit_summaries_equal(
+              summaries_after_save, summaries_before_save),
+        "failed save_as should preserve pending worksheet edit summaries");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -21299,38 +21275,14 @@ void test_successful_save_as_preserves_public_facade_state()
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_after_save =
         editor.worksheet_catalog();
-    check(catalog_after_save.size() == catalog_before_save.size(),
-        "successful save_as should preserve worksheet catalog size");
-    if (catalog_after_save.size() == 2 && catalog_before_save.size() == 2) {
-        check(catalog_after_save[0].source_name == catalog_before_save[0].source_name,
-            "successful save_as should preserve catalog source name");
-        check(catalog_after_save[0].planned_name == catalog_before_save[0].planned_name,
-            "successful save_as should preserve catalog planned name");
-        check(catalog_after_save[0].renamed == catalog_before_save[0].renamed,
-            "successful save_as should preserve catalog rename flag");
-    }
+    check(workbook_editor_catalog_entries_equal(catalog_after_save, catalog_before_save),
+        "successful save_as should preserve worksheet catalog");
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_after_save =
         editor.pending_worksheet_edits();
-    check(summaries_after_save.size() == summaries_before_save.size(),
-        "successful save_as should preserve pending summary count");
-    if (summaries_after_save.size() == 1 && summaries_before_save.size() == 1) {
-        check(summaries_after_save[0].source_name == summaries_before_save[0].source_name,
-            "successful save_as should preserve summary source name");
-        check(summaries_after_save[0].planned_name == summaries_before_save[0].planned_name,
-            "successful save_as should preserve summary planned name");
-        check(summaries_after_save[0].renamed == summaries_before_save[0].renamed,
-            "successful save_as should preserve summary rename flag");
-        check(summaries_after_save[0].sheet_data_replaced ==
-                summaries_before_save[0].sheet_data_replaced,
-            "successful save_as should preserve summary replacement flag");
-        check(summaries_after_save[0].replacement_cell_count ==
-                summaries_before_save[0].replacement_cell_count,
-            "successful save_as should preserve summary replacement cell count");
-        check(summaries_after_save[0].estimated_replacement_memory_usage ==
-                summaries_before_save[0].estimated_replacement_memory_usage,
-            "successful save_as should preserve summary memory estimate");
-    }
+    check(workbook_editor_edit_summaries_equal(
+              summaries_after_save, summaries_before_save),
+        "successful save_as should preserve pending worksheet edit summaries");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="SavedData")",

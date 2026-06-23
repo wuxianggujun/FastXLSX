@@ -1402,6 +1402,12 @@ pending-count assertions now share one helper across direct and move-assigned
 materialized retry paths while keeping public diagnostics and output XML checks
 explicit. This remains test-maintenance only and does not alter production
 behavior, generated workbooks, or public API.
+P8.638 applies the same helper-reuse pattern to the public facade's failed-save
+and successful-save state checks. The adjacent `worksheet_catalog()` and
+`pending_worksheet_edits()` comparisons now share file-scope equality helpers
+across both save-state regressions while keeping the surrounding diagnostics and
+ZIP/XML assertions explicit. This remains test-maintenance only and does not
+alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

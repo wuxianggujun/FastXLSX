@@ -27690,6 +27690,34 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.638 - Reuse public facade catalog/edit-summary equality helpers
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reduce repeated `worksheet_catalog()` and `pending_worksheet_edits()`
+field-by-field comparisons in the public failed-save and successful-save
+facade regressions.
+
+Output:
+- Reused the file-scope catalog equality helper for both public save-state
+  regressions.
+- Reused the file-scope edit-summary equality helper for both public save-state
+  regressions.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

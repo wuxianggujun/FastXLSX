@@ -469,6 +469,10 @@ failed-save states, and safe-save flush checks.
 Its materialized-session guard diagnostics and preserved sparse cell/memory
 checks now share focused helpers as well, keeping the test intent explicit
 without changing the generated workbooks or public behavior.
+The public facade failed-save and successful-save state checks now also reuse
+the file-scope catalog/edit-summary equality helpers, keeping the
+`worksheet_catalog()` and `pending_worksheet_edits()` comparisons centralized
+without changing the surrounding diagnostics or ZIP/XML assertions.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

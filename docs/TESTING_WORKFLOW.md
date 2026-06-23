@@ -504,6 +504,10 @@ follow-up edit output check explicit.
 The sheetData failure diagnostics regression now reuses the no-pending-state
 helper for missing-sheet and guardrail diagnostic failures, while keeping
 `last_edit_error()` and replacement-cell checks explicit.
+The materialized formula rewrite guard failure regression also reuses the
+no-pending-state helper for WorkbookEditor state while keeping formula sheet,
+`last_edit_error()`, materialized diagnostics, catalog, and output checks
+explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

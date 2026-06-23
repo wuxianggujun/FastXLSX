@@ -22197,10 +22197,8 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "formula rewrite guard fixture should start with a Data reference");
     check(!formula_sheet.has_pending_changes(),
         "guarded materialized formula sheet should start clean");
-    check(!editor.has_pending_changes(),
-        "guarded materialized formula rewrite test should start with no public edits");
-    check(editor.pending_change_count() == 0,
-        "guarded materialized formula rewrite test should start with zero pending edits");
+    check_workbook_editor_public_no_pending_state(
+        editor, "guarded materialized formula rewrite initial state");
     const std::vector<std::string> names_before = editor.worksheet_names();
 
     fastxlsx::WorkbookEditorRenameOptions options;
@@ -22235,10 +22233,8 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "failed materialized formula rewrite should not mutate the clean session formula");
     check(!formula_sheet.has_pending_changes(),
         "failed materialized formula rewrite should not dirty the materialized session");
-    check(!editor.has_pending_changes(),
-        "failed materialized formula rewrite should not queue public edits");
-    check(editor.pending_change_count() == 0,
-        "failed materialized formula rewrite should not increment pending edit count");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed materialized formula rewrite");
     check(editor.pending_materialized_worksheet_names().empty(),
         "failed materialized formula rewrite should not expose dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,

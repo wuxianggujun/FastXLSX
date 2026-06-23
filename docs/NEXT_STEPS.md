@@ -1468,6 +1468,11 @@ diagnostics regression. The missing-sheet and guardrail diagnostic paths keep
 their `last_edit_error()` and replacement-cell assertions explicit while sharing
 the public no-pending checks. This remains test-maintenance only and does not
 alter production behavior, generated workbooks, or public API.
+P8.649 reuses the public no-pending-state helper in the materialized formula
+rewrite guard failure regression. The formula sheet clean check,
+`last_edit_error()`, materialized diagnostics, planned catalog assertions, and
+follow-up save/output checks remain explicit. This remains test-maintenance only
+and does not alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

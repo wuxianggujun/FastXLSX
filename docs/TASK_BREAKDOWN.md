@@ -27799,6 +27799,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.642 - Reuse public clean-state helper for no-op saves
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: centralize fresh and clean no-op save-as public facade state checks that
+also require empty replacement diagnostics and no `last_edit_error()`.
+
+Output:
+- Added a fuller public clean-state helper on top of the no-pending-state
+  helper.
+- Reused it before and after the clean no-op save-as source-preservation
+  regression.
+- Reused it in the clean no-op save-as recovery regression before queuing later
+  edits.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

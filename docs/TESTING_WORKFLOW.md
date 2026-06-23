@@ -483,6 +483,9 @@ while leaving the diagnostic and source-entry assertions explicit.
 The clean no-op save-as recovery case that queues later edits also reuses that
 helper for its "editor remains clean" assertion, while keeping diagnostics and
 ZIP/XML follow-up checks explicit.
+Fresh and clean no-op save-as facade states now also share a fuller clean-state
+helper for empty replacement diagnostics and empty `last_edit_error()`, with
+source-entry and follow-up edit assertions still explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

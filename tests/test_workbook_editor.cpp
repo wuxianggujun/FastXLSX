@@ -203,6 +203,22 @@ void check_workbook_editor_public_no_pending_state(
         prefix + " should keep pending summaries empty");
 }
 
+void check_workbook_editor_public_clean_state(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check_workbook_editor_public_no_pending_state(editor, scenario);
+    check(editor.pending_replacement_cell_count() == 0,
+        prefix + " should keep replacement cell count empty");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        prefix + " should keep replacement memory estimate empty");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        prefix + " should keep replacement worksheet names empty");
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep last_edit_error empty");
+}
+
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
@@ -20986,27 +21002,12 @@ void test_noop_save_as_preserves_source_package_entries()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    check(!editor.has_pending_changes(),
-        "fresh WorkbookEditor should not report pending changes before no-op save_as");
-    check(editor.pending_change_count() == 0,
-        "fresh WorkbookEditor should not report pending public edit count");
-    check(editor.pending_replacement_cell_count() == 0,
-        "fresh WorkbookEditor should not report pending replacement cells");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        "fresh WorkbookEditor should not report pending replacement names");
-    check(editor.pending_worksheet_edits().empty(),
-        "fresh WorkbookEditor should not report pending worksheet edits");
-    check(!editor.last_edit_error().has_value(),
-        "fresh WorkbookEditor should not report last_edit_error");
+    check_workbook_editor_public_clean_state(
+        editor, "fresh WorkbookEditor before no-op save_as");
 
     editor.save_as(output);
 
-    check(!editor.has_pending_changes(),
-        "no-op save_as should not create public pending changes");
-    check(editor.pending_change_count() == 0,
-        "no-op save_as should not create public pending edit count");
-    check(!editor.last_edit_error().has_value(),
-        "no-op save_as should not create last_edit_error");
+    check_workbook_editor_public_clean_state(editor, "no-op save_as");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -21123,10 +21124,8 @@ void test_noop_save_as_keeps_editor_usable_for_later_edits()
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     editor.save_as(noop_output);
-    check_workbook_editor_public_no_pending_state(
-        editor, "no-op save_as should keep the editor clean for later edits");
-    check(!editor.last_edit_error().has_value(),
-        "no-op save_as should not create last_edit_error before later edits");
+    check_workbook_editor_public_clean_state(
+        editor, "no-op save_as before later edits");
 
     editor.replace_sheet_data("Data",
         {{fastxlsx::CellValue::text("after noop"),

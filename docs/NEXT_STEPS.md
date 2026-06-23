@@ -1185,6 +1185,16 @@ successful worksheet mutation. This remains public facade diagnostic-clearing
 hygiene, not rollback, relationship repair, random-editor expansion,
 sharedStrings / styles migration, formula evaluation, or formula rewrite
 expansion.
+P8.607 pins the no-op side of that same recovery contract: after a clean
+materialized `Data` session records a same-sheet Patch guard failure, a valid
+`erase_cell()` targeting an already-missing cell must still clear
+`last_edit_error()` without dirtying the borrowed handle. The read-only branch
+now proves the editor remains copy-original after same-sheet
+`replace_sheet_data()` failure plus no-op erase, and the saved-clean branch
+proves the prior materialized handoff count and retry output remain unchanged
+after same-sheet `rename_sheet()` failure plus no-op erase. This is diagnostic
+state hygiene only, not rollback, relationship repair, random-editor
+expansion, formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -12334,6 +12334,150 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutati
     }
 }
 
+void test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clears_diagnostic()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-failure-noop-erase-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-failure-noop-erase-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        const fastxlsx::CellValue source_value = data.get_cell(1, 1);
+        check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+                source_value.text_value() == "placeholder-a1",
+            "read-only no-op erase recovery setup should materialize Data from source");
+        check(!data.has_pending_changes(),
+            "read-only no-op erase recovery setup should keep Data clean");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        check(!data.try_cell(5, 5).has_value(),
+            "read-only no-op erase recovery setup should use a missing target cell");
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_sheet_data("Data",
+                {{fastxlsx::CellValue::text("readonly-blocked-before-noop-erase")}});
+        }), "read-only same-sheet replacement should fail before no-op erase recovery");
+        const std::optional<std::string> replacement_error = editor.last_edit_error();
+        check(replacement_error.has_value(),
+            "read-only same-sheet replacement failure should populate last_edit_error before no-op erase");
+        if (replacement_error.has_value()) {
+            check_contains(*replacement_error,
+                "cannot replace sheet data after materializing planned worksheet session",
+                "read-only same-sheet replacement failure should report replacement guard before no-op erase");
+        }
+
+        data.erase_cell(5, 5);
+
+        check(!editor.last_edit_error().has_value(),
+            "read-only successful no-op erase should clear prior same-sheet diagnostic");
+        check(!data.has_pending_changes(),
+            "read-only successful no-op erase should keep Data clean");
+        check(!editor.has_pending_changes(),
+            "read-only successful no-op erase should keep WorkbookEditor clean");
+        check(editor.pending_change_count() == 0,
+            "read-only successful no-op erase should not queue public edits");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only successful no-op erase should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "read-only successful no-op erase should keep dirty materialized cells empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "read-only successful no-op erase should keep dirty materialized memory empty");
+        check(data.cell_count() == data_cell_count,
+            "read-only successful no-op erase should preserve sparse count");
+        check(data.estimated_memory_usage() == data_memory,
+            "read-only successful no-op erase should preserve memory estimate");
+        check(!data.try_cell(5, 5).has_value(),
+            "read-only successful no-op erase should keep the missing target absent");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "read-only no-op erase recovery save_as should keep last_edit_error clear");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "read-only no-op erase recovery output should remain copy-original");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-blocked-before-noop-erase",
+            "read-only rejected replacement should not leak after no-op erase recovery");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-noop-erase-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-noop-erase-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-noop-erase-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-noop-erase-data"));
+        editor.save_as(first_output);
+        const auto first_output_entries =
+            fastxlsx::test::read_zip_entries(first_output);
+
+        check(!data.has_pending_changes(),
+            "saved-clean no-op erase recovery setup should leave Data clean");
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        check(saved_pending_count == 1,
+            "saved-clean no-op erase recovery setup should retain one materialized handoff");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        check(!data.try_cell(5, 5).has_value(),
+            "saved-clean no-op erase recovery setup should use a missing target cell");
+
+        check(threw_fastxlsx_error([&] {
+            editor.rename_sheet("Data", "SavedCleanBlockedBeforeNoopErase");
+        }), "saved-clean same-sheet rename should fail before no-op erase recovery");
+        const std::optional<std::string> rename_error = editor.last_edit_error();
+        check(rename_error.has_value(),
+            "saved-clean same-sheet rename failure should populate last_edit_error before no-op erase");
+        if (rename_error.has_value()) {
+            check_contains(*rename_error,
+                "cannot rename sheet after materializing planned worksheet session",
+                "saved-clean same-sheet rename failure should report rename guard before no-op erase");
+        }
+
+        data.erase_cell(5, 5);
+
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean successful no-op erase should clear prior same-sheet diagnostic");
+        check(!data.has_pending_changes(),
+            "saved-clean successful no-op erase should keep Data clean");
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean successful no-op erase should preserve saved handoff count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean successful no-op erase should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "saved-clean successful no-op erase should keep dirty materialized cells empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "saved-clean successful no-op erase should keep dirty materialized memory empty");
+        check(data.cell_count() == data_cell_count,
+            "saved-clean successful no-op erase should preserve sparse count");
+        check(data.estimated_memory_usage() == data_memory,
+            "saved-clean successful no-op erase should preserve memory estimate");
+        check(!data.try_cell(5, 5).has_value(),
+            "saved-clean successful no-op erase should keep the missing target absent");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean no-op erase recovery save_as should keep last_edit_error clear");
+        check(!data.has_pending_changes(),
+            "saved-clean no-op erase recovery save_as should leave Data clean");
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean no-op erase recovery save_as should not add a materialized handoff");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == first_output_entries,
+            "saved-clean no-op erase recovery output should match the first saved output");
+        check_not_contains(output_entries.at("xl/workbook.xml"),
+            "SavedCleanBlockedBeforeNoopErase",
+            "saved-clean rejected rename should not leak after no-op erase recovery");
+    }
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -20921,6 +21065,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagnostics();
         test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
         test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic();
+        test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clears_diagnostic();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

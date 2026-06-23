@@ -26721,6 +26721,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.607 - Pin clean same-sheet failure recovery through no-op erase
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` diagnostic-clearing
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove a successful no-op `WorksheetEditor::erase_cell()` clears a
+previous same-sheet Patch guard diagnostic without dirtying the clean
+materialized handle or changing saved output bytes.
+
+Output:
+- Added public read-only coverage where clean materialized `Data` first rejects
+  same-sheet `replace_sheet_data("Data", ...)`, then `erase_cell(5, 5)` on a
+  missing cell clears `last_edit_error()` while preserving copy-original state.
+- Added public saved-clean coverage where `Data` is dirtied, flushed by
+  `save_as()`, marked clean, then rejects same-sheet `rename_sheet("Data", ...)`
+  before a no-op `erase_cell(5, 5)` clears `last_edit_error()` without adding a
+  new materialized handoff.
+- The regressions verify the no-op recovery keeps the borrowed `Data` session
+  clean, keeps dirty materialized diagnostics empty, preserves sparse counts and
+  memory estimates, and saves output bytes matching the original source or first
+  saved output without leaking rejected same-sheet Patch payloads or names.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

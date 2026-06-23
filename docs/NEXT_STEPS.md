@@ -1153,6 +1153,14 @@ and verify output preserves `Data` while writing the other sheet rename and
 replacement. This remains same-workbook facade hygiene, not sheet add/delete,
 relationship repair, rollback, formula calculation, or broad semantic object
 editing.
+P8.604 pins the reverse diagnostic ordering for clean same-sheet Patch
+preflights: read-only and saved-clean materialized `Data` sessions now fail
+same-sheet `rename_sheet()` first and then same-sheet `replace_sheet_data()`,
+with the latter guard diagnostic replacing the former. The tests keep the clean
+borrowed handle state, dirty materialized diagnostics, saved handoff count, edit
+summaries, and retry output unchanged. This is diagnostic replacement hygiene
+only, not new operation mixing semantics, rollback, formula evaluation, or
+relationship repair.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

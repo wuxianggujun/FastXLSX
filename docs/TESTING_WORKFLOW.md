@@ -396,6 +396,10 @@ materialized sessions: Patch operations targeting `Untouched` can still rename
 and replace that other sheet while the clean borrowed `Data` handle remains
 clean, dirty materialized diagnostics stay empty, and output keeps the `Data`
 payload separate from the other-sheet replacement.
+The reverse diagnostic order is pinned too: clean same-sheet
+`rename_sheet()` failures followed by clean same-sheet `replace_sheet_data()`
+failures must replace `last_edit_error()` with the latest guard diagnostic
+while leaving the clean materialized state and output path unchanged.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

@@ -12178,6 +12178,162 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_succ
     }
 }
 
+void test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-failure-mutation-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-failure-mutation-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        const fastxlsx::CellValue source_value = data.get_cell(1, 1);
+        check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+                source_value.text_value() == "placeholder-a1",
+            "read-only failure-mutation setup should materialize Data from source");
+        check(!data.has_pending_changes(),
+            "read-only failure-mutation setup should keep Data clean");
+
+        const std::size_t data_cell_count = data.cell_count();
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_sheet_data("Data",
+                {{fastxlsx::CellValue::text("readonly-blocked-before-mutation")}});
+        }), "read-only same-sheet replacement should fail before worksheet mutation recovery");
+        const std::optional<std::string> replacement_error = editor.last_edit_error();
+        check(replacement_error.has_value(),
+            "read-only same-sheet replacement failure should populate last_edit_error before mutation");
+        if (replacement_error.has_value()) {
+            check_contains(*replacement_error,
+                "cannot replace sheet data after materializing planned worksheet session",
+                "read-only same-sheet replacement failure should report replacement guard before mutation");
+        }
+        check(!editor.has_pending_changes(),
+            "read-only failed same-sheet replacement should not queue public edits before mutation");
+
+        data.set_cell(2, 2,
+            fastxlsx::CellValue::text("readonly-mutation-after-failure"));
+
+        check(!editor.last_edit_error().has_value(),
+            "read-only successful worksheet mutation should clear prior same-sheet diagnostic");
+        check(data.has_pending_changes(),
+            "read-only successful worksheet mutation should dirty Data");
+        check(editor.has_pending_changes(),
+            "read-only successful worksheet mutation should make save_as pending");
+        check(editor.pending_change_count() == 0,
+            "read-only dirty materialized mutation should not queue a Patch handoff before save_as");
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names.size() == 1 && dirty_names[0] == "Data",
+                "read-only worksheet mutation recovery should expose Data as the only dirty materialized sheet");
+        }
+        check(editor.pending_materialized_cell_count() == data_cell_count + 1,
+            "read-only worksheet mutation recovery should expose the added sparse cell");
+        check(editor.estimated_pending_materialized_memory_usage() > 0,
+            "read-only worksheet mutation recovery should expose dirty materialized memory");
+        check(data.cell_count() == data_cell_count + 1,
+            "read-only worksheet mutation recovery should add one sparse record");
+        const fastxlsx::CellValue recovered_value = data.get_cell(2, 2);
+        check(recovered_value.kind() == fastxlsx::CellValueKind::Text &&
+                recovered_value.text_value() == "readonly-mutation-after-failure",
+            "read-only worksheet mutation recovery should read back the recovered value");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "read-only mutation recovery save_as should keep last_edit_error clear");
+        check(!data.has_pending_changes(),
+            "read-only mutation recovery save_as should clean the borrowed handle");
+        check(editor.pending_change_count() == 1,
+            "read-only mutation recovery save_as should record one materialized handoff");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-mutation-after-failure",
+            "read-only mutation recovery output should persist the successful worksheet mutation");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-blocked-before-mutation",
+            "read-only rejected replacement should not leak into Data");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-mutation-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-mutation-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-mutation-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-mutation-recovery-data"));
+        editor.save_as(first_output);
+
+        check(!data.has_pending_changes(),
+            "saved-clean failure-mutation setup should leave Data clean");
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        check(saved_pending_count == 1,
+            "saved-clean failure-mutation setup should retain one materialized handoff");
+        const std::size_t data_cell_count = data.cell_count();
+
+        check(threw_fastxlsx_error([&] {
+            editor.rename_sheet("Data", "SavedCleanBlockedBeforeMutation");
+        }), "saved-clean same-sheet rename should fail before worksheet mutation recovery");
+        const std::optional<std::string> rename_error = editor.last_edit_error();
+        check(rename_error.has_value(),
+            "saved-clean same-sheet rename failure should populate last_edit_error before mutation");
+        if (rename_error.has_value()) {
+            check_contains(*rename_error,
+                "cannot rename sheet after materializing planned worksheet session",
+                "saved-clean same-sheet rename failure should report rename guard before mutation");
+        }
+
+        data.erase_cell(2, 1);
+
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean successful worksheet erase should clear prior same-sheet diagnostic");
+        check(data.has_pending_changes(),
+            "saved-clean successful worksheet erase should dirty Data");
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean dirty materialized erase should not add a handoff before save_as");
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names.size() == 1 && dirty_names[0] == "Data",
+                "saved-clean worksheet mutation recovery should expose Data as the only dirty materialized sheet");
+        }
+        check(editor.pending_materialized_cell_count() == data_cell_count - 1,
+            "saved-clean worksheet mutation recovery should expose the erased sparse cell");
+        check(editor.estimated_pending_materialized_memory_usage() > 0,
+            "saved-clean worksheet mutation recovery should expose dirty materialized memory");
+        check(data.cell_count() == data_cell_count - 1,
+            "saved-clean worksheet mutation recovery should remove one sparse record");
+        check(!data.try_cell(2, 1).has_value(),
+            "saved-clean worksheet mutation recovery should keep the erased cell absent");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean mutation recovery save_as should keep last_edit_error clear");
+        check(!data.has_pending_changes(),
+            "saved-clean mutation recovery save_as should clean the borrowed handle");
+        check(editor.pending_change_count() == saved_pending_count + 1,
+            "saved-clean mutation recovery save_as should record one additional materialized handoff");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "saved-clean rejected rename should leave Data sheet name unchanged");
+        check_not_contains(output_entries.at("xl/workbook.xml"),
+            "SavedCleanBlockedBeforeMutation",
+            "saved-clean rejected rename should not leak into workbook catalog");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-mutation-recovery-data",
+            "saved-clean mutation recovery output should preserve the saved Data value");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "placeholder-a2",
+            "saved-clean mutation recovery output should persist the successful erase");
+    }
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -20764,6 +20920,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operations();
         test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagnostics();
         test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
+        test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

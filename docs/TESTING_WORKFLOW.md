@@ -405,6 +405,11 @@ clean `Data` sessions record a same-sheet Patch guard failure, a later
 successful cross-sheet Patch operation on `Untouched` must clear
 `last_edit_error()` while preserving the clean borrowed `Data` state and
 keeping rejected same-sheet payloads out of the saved output.
+The same recovery matrix now covers same-handle `WorksheetEditor` mutations:
+after a clean materialized `Data` session records a same-sheet Patch guard
+failure, a later valid `set_cell()` or `erase_cell()` must clear
+`last_edit_error()`, dirty only the `Data` materialized session before flush,
+and keep rejected Patch payloads or names out of the saved output.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

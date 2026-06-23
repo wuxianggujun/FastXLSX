@@ -1172,6 +1172,19 @@ hand-off counts / edit summaries where applicable, and verifies the saved
 output only reflects the successful cross-sheet edit. This is facade
 state-clearing hygiene only, not rollback, relationship repair, sharedStrings /
 styles migration, formula evaluation, or formula rewrite expansion.
+P8.606 extends that recovery matrix to same-handle `WorksheetEditor`
+mutations: after a clean materialized `Data` session records a same-sheet Patch
+guard failure, a later valid `set_cell()` or `erase_cell()` on that same
+borrowed handle must clear `last_edit_error()` and transition `Data` into the
+dirty materialized path. The read-only branch now covers same-sheet
+`replace_sheet_data()` followed by `set_cell()`, and the saved-clean branch
+covers same-sheet `rename_sheet()` followed by `erase_cell()`. The regression
+verifies rejected Patch payloads / names do not leak, dirty materialized
+diagnostics point only at `Data`, and the final saved output reflects only the
+successful worksheet mutation. This remains public facade diagnostic-clearing
+hygiene, not rollback, relationship repair, random-editor expansion,
+sharedStrings / styles migration, formula evaluation, or formula rewrite
+expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

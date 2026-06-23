@@ -28666,6 +28666,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.669 - Pin case-varied source formula audit last-edit hygiene
+
+Status: done.
+
+Type: public workbook-editor source formula diagnostic regression test + docs;
+no public API change, no production behavior change, no CMake target membership
+change, and no formula engine expansion.
+
+Goal: prove case-varied `source_formula_reference_audits()` after default
+catalog-only `rename_sheet()` does not update `last_edit_error()` while still
+reporting stale source-name references.
+
+Output:
+- Extended
+  `test_source_formula_reference_audits_report_case_varied_default_rename_risk()`.
+- The regression now snapshots `last_edit_error()` alongside the existing
+  pending edit diagnostics after default
+  `rename_sheet("Data", "Renamed & Data")`.
+- The regression verifies `source_formula_reference_audits()` leaves that
+  public edit diagnostic unchanged while still reporting stale `data!` and
+  `DATA!` references mapped to source sheet `Data` and planned sheet
+  `Renamed & Data`.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the case-varied
+  source-read formula audit `last_edit_error()` boundary.
+
+Non-goals / boundary:
+- No source worksheet formula rewrite, no default formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no complete Excel formula parser, and no public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

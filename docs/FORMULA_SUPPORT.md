@@ -197,7 +197,8 @@ formula XML and definedName bodies unchanged.
 The source-read case-varied regression also pins public state hygiene:
 `source_formula_reference_audits()` does not increment the public edit count,
 change pending-change state, create replacement diagnostics, create
-materialized diagnostics, or add pending edit summaries.
+materialized diagnostics, add pending edit summaries, or update
+`last_edit_error()`.
 The ordinary source-read regression pins the same state hygiene before rename
 and also verifies `source_formula_reference_audits()` does not update
 `last_edit_error()` while scanning non-materialized source worksheet formulas.

@@ -21670,6 +21670,8 @@ void test_source_formula_reference_audits_report_case_varied_default_rename_risk
         editor.pending_materialized_worksheet_names();
     const std::size_t pending_summary_count_before_audit =
         editor.pending_worksheet_edits().size();
+    const std::optional<std::string> last_edit_error_before_audit =
+        editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
         editor.source_formula_reference_audits();
@@ -21683,6 +21685,8 @@ void test_source_formula_reference_audits_report_case_varied_default_rename_risk
         "case-varied source formula audit should not create materialized diagnostics");
     check(editor.pending_worksheet_edits().size() == pending_summary_count_before_audit,
         "case-varied source formula audit should not create pending edit summaries");
+    check(editor.last_edit_error() == last_edit_error_before_audit,
+        "case-varied source formula audit should not update last_edit_error");
     const auto check_stale_source_formula_ref = [&] (std::string_view spelling) {
         const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
             find_formula_reference_audit(renamed_audits, spelling);

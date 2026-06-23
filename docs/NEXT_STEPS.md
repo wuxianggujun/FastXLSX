@@ -1638,6 +1638,14 @@ returns the expected non-materialized formula references without changing those
 public diagnostics. This is diagnostic state hygiene only; it is not worksheet
 materialization, source formula rewrite, formula evaluation, external/3D
 semantics, dependency graphing, or calcChain rebuild.
+P8.669 closes the same `last_edit_error()` gap in the case-varied source-read
+rename regression. After default catalog-only `rename_sheet("Data",
+"Renamed & Data")`, the test now snapshots `last_edit_error()` alongside the
+pending-state diagnostics and verifies `source_formula_reference_audits()`
+still reports stale `data!` / `DATA!` source-name risks without replacing or
+creating that public edit diagnostic. This is diagnostic state hygiene only; it
+is not source formula rewrite, formula evaluation, external/3D semantics,
+dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

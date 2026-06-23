@@ -28592,6 +28592,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.667 - Pin non-materialized formula audit empty-read state hygiene
+
+Status: done.
+
+Type: public workbook-editor materialized formula diagnostic regression test +
+docs; no public API change, no production behavior change, no CMake target
+membership change, and no formula engine expansion.
+
+Goal: prove `formula_reference_audits()` remains a read-only empty diagnostic
+before any `WorksheetEditor` session is materialized and does not create public
+pending edit state while returning no formula audit entries.
+
+Output:
+- Extended
+  `test_formula_reference_audits_report_renamed_source_sheet_risk()`.
+- The regression snapshots `pending_change_count()`, `has_pending_changes()`,
+  pending replacement worksheet names, pending materialized worksheet names,
+  and pending edit summary count immediately after opening the workbook and
+  before calling `worksheet("Formula")`.
+- The regression verifies `formula_reference_audits()` returns no entries and
+  leaves those public diagnostics unchanged, including no materialized session
+  diagnostics.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the
+  non-materialized empty-read formula audit state hygiene boundary.
+
+Non-goals / boundary:
+- No broad source worksheet formula scan, no lazy worksheet materialization, no
+  default formula rewrite, no non-materialized worksheet formula rewrite, no
+  formula evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no complete Excel formula parser, and no public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

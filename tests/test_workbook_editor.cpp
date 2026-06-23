@@ -21364,8 +21364,34 @@ void test_formula_reference_audits_report_renamed_source_sheet_risk()
         artifact("fastxlsx-workbook-editor-formula-reference-audit-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    check(editor.formula_reference_audits().empty(),
+    const std::size_t non_materialized_pending_change_count_before_audit =
+        editor.pending_change_count();
+    const bool non_materialized_has_pending_changes_before_audit =
+        editor.has_pending_changes();
+    const std::vector<std::string> non_materialized_pending_replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> non_materialized_pending_materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t non_materialized_pending_summary_count_before_audit =
+        editor.pending_worksheet_edits().size();
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> non_materialized_audits =
+        editor.formula_reference_audits();
+    check(non_materialized_audits.empty(),
         "formula reference audit should not scan non-materialized worksheets");
+    check(editor.pending_change_count() == non_materialized_pending_change_count_before_audit,
+        "non-materialized formula audit should not increment public edit count");
+    check(editor.has_pending_changes() == non_materialized_has_pending_changes_before_audit,
+        "non-materialized formula audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() ==
+            non_materialized_pending_replacement_names_before_audit,
+        "non-materialized formula audit should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() ==
+            non_materialized_pending_materialized_names_before_audit,
+        "non-materialized formula audit should not create materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() ==
+            non_materialized_pending_summary_count_before_audit,
+        "non-materialized formula audit should not create pending edit summaries");
 
     (void)editor.worksheet("Formula");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =

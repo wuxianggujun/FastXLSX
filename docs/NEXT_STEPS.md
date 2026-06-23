@@ -1622,6 +1622,14 @@ stale source-name materialized worksheet formula references. This is diagnostic
 state hygiene only; it is not a production behavior change, worksheet formula
 rewrite, formula evaluation, external/3D semantics, dependency graphing, or
 calcChain rebuild.
+P8.667 pins the empty-read side of the materialized formula audit contract. The
+same public workbook-editor regression now snapshots `pending_change_count()`,
+`has_pending_changes()`, pending replacement names, pending materialized names,
+and pending edit summary count before any `worksheet()` session is opened, then
+verifies `formula_reference_audits()` returns no entries and leaves that public
+state unchanged. This is diagnostic state hygiene only; it is not broad source
+formula scanning, lazy worksheet materialization, formula rewrite, formula
+evaluation, external/3D semantics, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

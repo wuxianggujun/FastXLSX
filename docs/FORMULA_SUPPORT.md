@@ -208,6 +208,10 @@ opened `WorksheetEditor` sessions: `formula_reference_audits()` reports stale
 source-name formula references after default catalog-only rename without
 incrementing public edit count, changing pending-change state, or creating
 replacement/materialized diagnostics or pending edit summaries.
+The non-materialized worksheet audit regression pins the empty-read side of the
+same contract: `formula_reference_audits()` returns no entries before
+`worksheet()` opens a session and still does not create materialized sessions,
+replacement diagnostics, pending edit summaries, or pending-change state.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

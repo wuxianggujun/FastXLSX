@@ -22098,6 +22098,124 @@ void test_rename_sheet_formula_policy_rewrites_case_varied_local_refs()
         "reopened case-varied output should expose the rewritten materialized formula");
 }
 
+void test_rename_sheet_default_preserves_case_varied_formula_refs()
+{
+    const std::filesystem::path source = write_case_varied_formula_reference_source(
+        "fastxlsx-workbook-editor-case-varied-formula-default-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-case-varied-formula-default-output.xlsx");
+    const std::string original_formula =
+        R"(data!A1+DATA!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1")";
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value() == original_formula,
+        "case-varied default formula fixture should expose mixed-case source references");
+
+    editor.rename_sheet("Data", "Renamed & Data");
+
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == original_formula,
+        "default rename_sheet should preserve materialized formula text");
+    check(!formula_sheet.has_pending_changes(),
+        "default rename_sheet should not dirty materialized formula sessions");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> formula_audits =
+        editor.formula_reference_audits();
+    const auto check_stale_formula_ref = [&] (std::string_view spelling) {
+        const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+            find_formula_reference_audit(formula_audits, spelling);
+        check(audit != nullptr,
+            std::string("default rename should audit stale formula ref ") +
+                std::string(spelling));
+        if (audit != nullptr) {
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Renamed & Data",
+                std::string("default rename formula audit should map ") +
+                    std::string(spelling) + " to the renamed catalog entry");
+            check(audit->references_renamed_source_name &&
+                    !audit->references_planned_sheet_name,
+                std::string("default rename formula audit should flag ") +
+                    std::string(spelling) + " as stale source-name text");
+        }
+    };
+    check_stale_formula_ref("data");
+    check_stale_formula_ref("DATA");
+    check(count_formula_reference_audits(formula_audits, "Renamed & Data") == 0,
+        "default rename should not report rewritten planned-name formula refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(formula_audits, "[Book.xlsx]data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "default rename should preserve external workbook formula audit classification");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(formula_audits, "data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "default rename should preserve 3D formula audit classification");
+
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>
+        defined_name_audits = editor.defined_name_formula_reference_audits();
+    const auto check_stale_defined_name_ref = [&] (std::string_view spelling) {
+        const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* audit =
+            find_defined_name_formula_reference_audit(
+                defined_name_audits, "ReportRange", spelling);
+        check(audit != nullptr,
+            std::string("default rename should audit stale definedName ref ") +
+                std::string(spelling));
+        if (audit != nullptr) {
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Renamed & Data",
+                std::string("default rename definedName audit should map ") +
+                    std::string(spelling) + " to the renamed catalog entry");
+            check(audit->references_renamed_source_name &&
+                    !audit->references_planned_sheet_name,
+                std::string("default rename definedName audit should flag ") +
+                    std::string(spelling) + " as stale source-name text");
+        }
+    };
+    check_stale_defined_name_ref("data");
+    check_stale_defined_name_ref("DATA");
+    check(find_defined_name_formula_reference_audit(
+              defined_name_audits, "ReportRange", "Renamed & Data") == nullptr,
+        "default rename should not rewrite direct definedName formula refs");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed &amp; Data")",
+        "default rename should persist XML-escaped renamed sheet catalog");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">data!$A$1+DATA!$B$2</definedName>)",
+        "default rename should preserve mixed-case direct definedName text");
+    check_contains(workbook_xml,
+        R"(<definedName name="ExternalRef">[Book.xlsx]data!A1</definedName>)",
+        "default rename should preserve external workbook definedNames");
+    check_contains(workbook_xml,
+        R"(<definedName name="ThreeDRef">data:Formula!A1</definedName>)",
+        "default rename should preserve 3D definedNames");
+    check_not_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'Renamed &amp; Data'!$A$1)",
+        "default rename should not persist rewritten definedName formula text");
+
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet3.xml");
+    check_contains(formula_sheet_xml,
+        R"(<f>data!A1+DATA!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1"</f>)",
+        "default rename should preserve original materialized formula XML");
+    check_not_contains(formula_sheet_xml, "Renamed &amp; Data'!A1",
+        "default rename should not persist rewritten worksheet formula refs");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == original_formula,
+        "reopened default rename output should expose original formula text");
+}
+
 void test_rename_sheet_chain_formula_policy_rewrites_source_aliases()
 {
     const std::filesystem::path source = write_defined_name_reference_source(
@@ -23316,6 +23434,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
         test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
         test_rename_sheet_formula_policy_rewrites_case_varied_local_refs();
+        test_rename_sheet_default_preserves_case_varied_formula_refs();
         test_rename_sheet_chain_formula_policy_rewrites_source_aliases();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();

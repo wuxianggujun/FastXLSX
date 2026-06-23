@@ -28333,6 +28333,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.660 - Pin default rename audit-only case-varied formula refs
+
+Status: done.
+
+Type: public workbook-editor regression test + docs; no public API change, no
+production behavior change, no CMake target membership change, and no formula
+engine expansion.
+
+Goal: prove the default `WorkbookEditor::rename_sheet()` formula policy stays
+catalog-only for case-varied local formula references while still exposing
+audit risks.
+
+Output:
+- Added `test_rename_sheet_default_preserves_case_varied_formula_refs()`.
+- The regression reuses the mixed-case public formula fixture from P8.659,
+  materializes the `Formula` worksheet, calls default
+  `rename_sheet("Data", "Renamed & Data")`, and verifies formula text remains
+  unchanged and the materialized worksheet session stays clean.
+- The regression checks public formula and definedName audits still map both
+  `data!` and `DATA!` qualifiers to source sheet `Data` / planned sheet
+  `Renamed & Data`, with `references_renamed_source_name=true` and
+  `references_planned_sheet_name=false`.
+- The saved package verifies only the workbook sheet catalog is XML-escaped and
+  rewritten; worksheet formula XML and direct definedName formula bodies retain
+  their original mixed-case local qualifiers. Reopen verifies the formula text
+  is still original.
+
+Non-goals / boundary:
+- No default formula rewrite, no non-materialized worksheet formula rewrite, no
+  formula evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

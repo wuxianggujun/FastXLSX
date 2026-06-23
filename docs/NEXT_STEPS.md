@@ -1545,6 +1545,18 @@ formula text. This is public e2e coverage for the existing opt-in formula text
 policy only; it is not default rename synchronization, non-materialized
 worksheet rewrite, formula evaluation, external link validation, 3D semantics,
 or calcChain rebuild.
+P8.660 pins the matching default-policy negative case. The same public
+mixed-case workbook now verifies that default `rename_sheet("Data",
+"Renamed & Data")` only rewrites the workbook sheet catalog: materialized
+worksheet formula text and direct workbook definedName formula text keep their
+original `data!` / `DATA!` qualifiers, while public formula and definedName
+audits still flag those case-varied references as stale source-name risks
+against the planned `Renamed & Data` catalog entry. The saved package preserves
+the original formula XML and definedName bodies, and reopen still exposes the
+original formula text. This is default audit-only boundary coverage; it is not
+default formula rewrite, non-materialized worksheet rewrite, formula
+evaluation, external link validation, 3D semantics, dependency graphing, or
+calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

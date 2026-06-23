@@ -1730,6 +1730,14 @@ session guard, preserve the rewritten formula and public rename state, and avoid
 queuing replacement diagnostics. A cross-sheet replacement on `Other Sheet`
 still succeeds, clears the guard diagnostic, and saves beside the rewritten
 formula state.
+P8.682 splits the formula-heavy WorkbookEditor public tests out of the large
+`tests/test_workbook_editor.cpp` facade shard. The new
+`tests/test_workbook_editor_formula_rewrite.cpp` target owns formula reference
+audits, source formula audits, definedName formula audits, and explicit rename
+formula rewrite policy regressions under
+`fastxlsx.workbook_editor_formula_rewrite`. This is test organization and CTest
+budget hygiene only; it does not change public API symbols, runtime behavior,
+formula rewrite semantics, formula evaluation, or dependency graph scope.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

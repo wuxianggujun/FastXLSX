@@ -29142,6 +29142,39 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.682 - Split WorkbookEditor formula rewrite tests
+
+Status: done.
+
+Type: test organization / CTest shard split; no public API symbol change and no
+production behavior change.
+
+Goal: reduce the size and responsibility of `tests/test_workbook_editor.cpp` by
+moving formula reference diagnostics and explicit formula rewrite policy
+regressions into a dedicated test executable.
+
+Output:
+- Added `tests/test_workbook_editor_formula_rewrite.cpp`.
+- Added `fastxlsx_workbook_editor_formula_rewrite_tests` and CTest name
+  `fastxlsx.workbook_editor_formula_rewrite`.
+- Moved the formula reference audit, source formula audit, definedName formula
+  audit, and explicit rename formula rewrite policy regressions out of the
+  `fastxlsx.workbook_editor.public` facade shard.
+- Kept the moved tests public-API-level and package-structure-based; no runtime
+  code or public header was changed.
+- `docs/NEXT_STEPS.md` now records this as CTest budget hygiene only.
+
+Non-goals / boundary:
+- No formula behavior change, no default formula rewrite, no non-materialized
+  worksheet formula rewrite, no formula evaluation, no external workbook target
+  validation, no 3D reference semantics, no dependency graph, no calcChain
+  rebuild, and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests fastxlsx_workbook_editor_formula_rewrite_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public|fastxlsx\.workbook_editor_formula_rewrite" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

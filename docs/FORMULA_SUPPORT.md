@@ -158,6 +158,11 @@ a memory-budget rejection preserves the public diagnostic through a no-op
 `save_as()`, then a later valid opt-in rewrite clears `last_edit_error()`,
 updates the planned catalog, rewrites the materialized formula, and keeps the
 rejected target text out of the recovered output.
+Representative explicit formula rewrite success regressions also seed a prior
+failed public edit diagnostic before the valid rename and verify the success
+clears `last_edit_error()` across definedName-only, materialized worksheet
+formula, combined, case-varied, chained alias, and multi-session materialized
+formula rewrite paths.
 
 `generated_formula_rename_escaped_sheet_name` is the focused local QA for the
 same explicit rewrite policy when the new sheet name contains formula/XML

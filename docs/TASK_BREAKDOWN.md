@@ -28982,6 +28982,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.678 - Pin formula rewrite success clears prior edit diagnostics
+
+Status: done.
+
+Type: public workbook-editor formula rewrite diagnostic regression test + docs;
+no public API symbol change, no production behavior change, no CMake target
+membership change, and no formula engine expansion.
+
+Goal: prove representative successful explicit formula rewrite policy calls
+clear a prior public edit diagnostic instead of leaving stale
+`WorkbookEditor::last_edit_error()` state visible after success.
+
+Output:
+- Added a shared public-test helper that seeds `last_edit_error()` through a
+  rejected invalid rename before the valid formula rewrite call.
+- Extended the definedName-only opt-in rewrite regression to prove success
+  clears the prior diagnostic while still rewriting workbook definedNames.
+- Extended the materialized worksheet formula, combined definedName +
+  materialized formula, case-varied local reference, chained alias, and
+  multi-session materialized formula rewrite regressions to prove the same
+  success-side `last_edit_error()` cleanup while preserving their existing
+  formula rewrite assertions.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record that this
+  success-side diagnostic cleanup is pinned across the representative explicit
+  rewrite paths.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no non-materialized worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

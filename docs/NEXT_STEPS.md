@@ -1703,6 +1703,13 @@ now proves the diagnostic is cleared, the materialized formula is rewritten, and
 the rejected target name does not leak into the recovered workbook. This is
 failure/retry state hygiene only; it is not broader formula rewrite semantics,
 formula evaluation, dependency graphing, or calcChain rebuild.
+P8.678 broadens that success-side diagnostic hygiene from the guard recovery
+case to the representative explicit formula rewrite paths. The definedName-only,
+materialized worksheet formula, combined definedName + materialized formula,
+case-varied local reference, chained alias, and multi-session materialized
+formula rewrite regressions now seed a prior invalid-rename `last_edit_error()`
+and prove the subsequent successful opt-in rewrite clears it while preserving
+the existing formula rewrite assertions.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

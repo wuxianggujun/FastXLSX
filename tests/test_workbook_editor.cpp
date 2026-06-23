@@ -107,6 +107,21 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+void seed_invalid_rename_last_edit_error(
+    fastxlsx::WorkbookEditor& editor,
+    std::string_view source_name,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(threw_fastxlsx_error([&] {
+            editor.rename_sheet(std::string(source_name), "Bad/Name");
+        }),
+        prefix + " should reject an invalid sheet name before the successful edit");
+    check(editor.last_edit_error().has_value(),
+        prefix + " should seed last_edit_error before the successful edit");
+}
+
 bool workbook_editor_catalog_entries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& rhs)
@@ -22052,7 +22067,11 @@ void test_rename_sheet_can_rewrite_defined_names_opt_in()
     fastxlsx::WorkbookEditorRenameOptions options;
     options.formula_policy =
         fastxlsx::WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames;
+    seed_invalid_rename_last_edit_error(
+        editor, "Data", "definedName formula rewrite success");
     editor.rename_sheet("Data", "Renamed & Data", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful definedName formula rewrite should clear last_edit_error");
     editor.save_as(output);
 
     const std::string workbook_xml =
@@ -22127,7 +22146,11 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
     options.formula_policy =
         fastxlsx::WorkbookEditorRenameFormulaPolicy::
             RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "Data", "materialized formula rewrite success");
     editor.rename_sheet("Data", "RenamedData", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful materialized formula rewrite should clear last_edit_error");
 
     const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
     const std::string expected_formula =
@@ -22200,7 +22223,11 @@ void test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_f
     options.formula_policy =
         fastxlsx::WorkbookEditorRenameFormulaPolicy::
             RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "Data", "combined formula rewrite success");
     editor.rename_sheet("Data", "RenamedData", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful combined formula rewrite should clear last_edit_error");
 
     const std::string expected_formula = "'RenamedData'!A1";
     const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
@@ -22310,7 +22337,11 @@ void test_rename_sheet_formula_policy_rewrites_case_varied_local_refs()
     options.formula_policy =
         fastxlsx::WorkbookEditorRenameFormulaPolicy::
             RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "Data", "case-varied formula rewrite success");
     editor.rename_sheet("Data", "Renamed & Data", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful case-varied formula rewrite should clear last_edit_error");
 
     const std::string expected_formula =
         R"('Renamed & Data'!A1+'Renamed & Data'!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1")";
@@ -22523,7 +22554,11 @@ void test_rename_sheet_chain_formula_policy_rewrites_source_aliases()
     options.formula_policy =
         fastxlsx::WorkbookEditorRenameFormulaPolicy::
             RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "TemporaryData", "chain formula rewrite success");
     editor.rename_sheet("TemporaryData", "FinalData", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful chain formula rewrite should clear last_edit_error");
 
     const std::string expected_formula = "'FinalData'!A1";
     const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
@@ -22611,7 +22646,11 @@ void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
     options.formula_policy =
         fastxlsx::WorkbookEditorRenameFormulaPolicy::
             RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "Data", "multi-session formula rewrite success");
     editor.rename_sheet("Data", "RenamedData", options);
+    check(!editor.last_edit_error().has_value(),
+        "successful multi-session formula rewrite should clear last_edit_error");
 
     const std::string expected_one = "'RenamedData'!A1+'RenamedData'!A1";
     const std::string expected_two =

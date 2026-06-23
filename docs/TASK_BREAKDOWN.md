@@ -27401,6 +27401,37 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.628 - Batch refactor non-retry two-clean state checks
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: extend the same helper cleanup to the repeated clean/dirty state
+assertions in the adjacent non-retry two-clean recovery and failed-save
+coverage.
+
+Output:
+- Added shared helpers for clean-handle preservation, single-dirty
+  materialized sessions, both-dirty failed-save states, and safe-save flush
+  checks.
+- Reused those helpers across the same non-retry two-clean recovery,
+  other-mutation, and failed-save regressions.
+- Kept workbook catalog preservation, saved / recovered values, and rejected
+  payload leak checks intact.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -1344,6 +1344,11 @@ recovery, scoped other-mutation, and failed-save recovery outputs now use
 scenario helpers for workbook catalog preservation, persisted Data /
 Untouched values, and rejected-payload leak checks. This remains
 test-maintenance only, with no production behavior or public API change.
+P8.628 follows that with the matching state-assertion cleanup in the same
+non-retry two-clean family. Clean-handle preservation, single-dirty
+materialized sessions, both-dirty failed-save recovery, and safe-save flush
+checks now share scenario helpers as well. This is still test-maintenance only
+and does not alter the generated workbooks or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

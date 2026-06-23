@@ -463,6 +463,9 @@ dirty materialized diagnostics after save.
 The adjacent non-retry two-clean recovery, other-mutation, and failed-save
 output assertions now use scenario helpers too; this is test-maintenance
 scaffolding only and does not change public behavior.
+The same adjacent non-retry coverage also uses shared state helpers for
+clean-handle preservation, single-dirty materialized sessions, both-dirty
+failed-save states, and safe-save flush checks.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

@@ -504,6 +504,50 @@ void test_formula_reference_audit_fields()
     }
 }
 
+void test_formula_reference_audit_matches_sheet_names_case_insensitively()
+{
+    const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
+        {"Data", "RenamedData"},
+    };
+
+    const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+        fastxlsx::detail::audit_formula_references(
+            "data!A1+RENAMEDDATA!B2+[Book.xlsx]data!C3+data:Other!D4",
+            catalog);
+
+    check(audits.size() == 4,
+        "formula audit should report local, external, and 3D sheet qualifiers");
+
+    check(audits[0].matched_current_workbook_sheet,
+        "formula audit should match source sheet names ignoring ASCII case");
+    check_equal(audits[0].referenced_sheet_name, "data",
+        "formula audit should preserve the formula's referenced sheet spelling");
+    check_equal(audits[0].matched_source_sheet_name, "Data",
+        "formula audit should report the canonical source sheet name");
+    check_equal(audits[0].matched_planned_sheet_name, "RenamedData",
+        "formula audit should report the canonical planned sheet name");
+    check(audits[0].references_renamed_source_name,
+        "formula audit should flag case-varied source-name references as stale after rename");
+    check(!audits[0].references_planned_sheet_name,
+        "formula audit should not treat a source-name match as a planned-name match");
+
+    check(audits[1].matched_current_workbook_sheet,
+        "formula audit should match planned sheet names ignoring ASCII case");
+    check_equal(audits[1].referenced_sheet_name, "RENAMEDDATA",
+        "formula audit should preserve case-varied planned reference spelling");
+    check(!audits[1].references_renamed_source_name,
+        "formula audit should not flag planned-name references as stale");
+    check(audits[1].references_planned_sheet_name,
+        "formula audit should mark planned-name references");
+
+    check(audits[2].external_workbook_qualifier &&
+            !audits[2].matched_current_workbook_sheet,
+        "formula audit should not local-match external workbook qualifiers");
+    check(audits[3].sheet_range_qualifier &&
+            !audits[3].matched_current_workbook_sheet,
+        "formula audit should not local-match 3D sheet-range qualifiers");
+}
+
 void test_scan_workbook_defined_name_formulas()
 {
     const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
@@ -632,6 +676,28 @@ void test_rewrite_formula_sheet_references_accepts_source_and_planned_aliases()
         "formula sheet rewrite should handle source and current planned aliases");
 }
 
+void test_rewrite_formula_sheet_references_matches_case_insensitively()
+{
+    const std::string formula =
+        "data!A1+DATA!B2+Data!C3+[Book.xlsx]data!D4+data:Other!E5+Table1[data!F6]";
+    const std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> rewrites {
+        {"Data", "Final Data"},
+    };
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(formula, rewrites),
+        "'Final Data'!A1+'Final Data'!B2+'Final Data'!C3+"
+        "[Book.xlsx]data!D4+data:Other!E5+Table1[data!F6]",
+        "formula sheet rewrite should case-insensitively rewrite only local sheet qualifiers");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(
+            "Other!A1",
+            rewrites),
+        "Other!A1",
+        "formula sheet rewrite should preserve bytes when no local qualifier matches");
+}
+
 void test_rewrite_workbook_defined_name_formula_references()
 {
     const std::string workbook_xml =
@@ -671,6 +737,27 @@ void test_rewrite_workbook_defined_name_formula_references()
     }), "definedName formula rewrite should reject nested definedName XML");
 }
 
+void test_rewrite_workbook_defined_name_formula_references_prefixed_and_case_boundary()
+{
+    const std::string workbook_xml =
+        R"xml(<x:workbook xmlns:x="urn:test"><x:definedNames>)xml"
+        R"xml(<x:definedName name="CaseLocal">data!A1+DATA!B2</x:definedName>)xml"
+        R"xml(<x:definedName name="Skipped">[Book.xlsx]data!C3+data:Other!D4+Table1[data!E5]</x:definedName>)xml"
+        R"xml(</x:definedNames></x:workbook>)xml";
+    const std::vector<fastxlsx::detail::FormulaSheetReferenceRewrite> rewrites {
+        {"Data", "Renamed & O'Brien"},
+    };
+
+    check_equal(
+        fastxlsx::detail::rewrite_workbook_defined_name_formula_references(
+            workbook_xml, rewrites),
+        R"xml(<x:workbook xmlns:x="urn:test"><x:definedNames>)xml"
+        R"xml(<x:definedName name="CaseLocal">'Renamed &amp; O''Brien'!A1+'Renamed &amp; O''Brien'!B2</x:definedName>)xml"
+        R"xml(<x:definedName name="Skipped">[Book.xlsx]data!C3+data:Other!D4+Table1[data!E5]</x:definedName>)xml"
+        R"xml(</x:definedNames></x:workbook>)xml",
+        "definedName formula rewrite should support prefixed workbook metadata, case-insensitive local matches, and XML escaping");
+}
+
 } // namespace
 
 int main()
@@ -685,11 +772,14 @@ int main()
         test_translate_formula_out_of_bounds();
         test_zero_delta_preserves_formula();
         test_formula_reference_audit_fields();
+        test_formula_reference_audit_matches_sheet_names_case_insensitively();
         test_scan_workbook_defined_name_formulas();
         test_scan_workbook_defined_name_formulas_rejects_malformed_structure();
         test_rewrite_formula_sheet_references();
         test_rewrite_formula_sheet_references_accepts_source_and_planned_aliases();
+        test_rewrite_formula_sheet_references_matches_case_insensitively();
         test_rewrite_workbook_defined_name_formula_references();
+        test_rewrite_workbook_defined_name_formula_references_prefixed_and_case_boundary();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

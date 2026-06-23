@@ -451,6 +451,10 @@ whole-row/whole-column reference、函数名、named range 和 structured-refere
 shared formula cell 仍只在有 supported cached scalar `<v>` 时按旧边界 materialize。
 dirty projection 输出普通 `<f>...</f>`，不保留 shared formula metadata、cached
 formula results，不计算公式、不重建 calcChain。
+公式 reference audit 和显式 opt-in rename-time formula rewrite 会对 local sheet
+qualifier 做 ASCII 大小写不敏感匹配，但 diagnostics 仍保留公式里的原始拼写。
+rewrite 仍只处理 local sheet-qualified references；external workbook qualifier、
+3D sheet range、structured reference 和 string literal 保持不变。
 完整公式支持矩阵见 `docs/FORMULA_SUPPORT.md`；该路径不能写成内置 Excel
 calculation engine。
 本地兼容 QA 可以用 `tools/run_workbook_editor_qa.py --scenario

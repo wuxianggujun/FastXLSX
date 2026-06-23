@@ -1520,6 +1520,18 @@ memory-budget move paths, source-read failure state, clean sheetData failure
 helper, and old-name-after-rename failure now share those two checks without
 adding replacement sheet-name assertions. This remains test-maintenance only and
 does not alter production behavior, generated workbooks, or public API.
+P8.658 returns to the formula boundary lane with focused internal formula
+regressions. `fastxlsx.formula` now pins ASCII case-insensitive local sheet
+matching for formula-reference audits, distinguishes case-varied source-name
+references from planned-name references after rename, and proves external
+workbook qualifiers plus 3D sheet ranges remain audit-only. The same slice pins
+case-insensitive local qualifier rewriting, unchanged bytes when no qualifier
+matches, prefixed workbook/definedName XML handling, and XML escaping for
+rewritten definedName formulas whose replacement sheet name contains `&` or an
+apostrophe. This is formula text audit/rewrite boundary hardening only; it does
+not add formula evaluation, default rename-time formula synchronization,
+non-materialized worksheet formula rewrite, external-link validation, 3D
+semantics, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

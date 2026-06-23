@@ -1496,6 +1496,11 @@ moved-from-source assignment paths now share the replacement cells/memory/names
 checks while keeping pending state, replacement lookup, materialized-session,
 catalog, and last-error assertions explicit. This remains test-maintenance only
 and does not alter production behavior, generated workbooks, or public API.
+P8.654 reuses the no-replacement-diagnostics helper inside the materialization
+failure clean-state helper. The Data/recovery `has_pending_replacement()`,
+materialized-session, catalog, recovery, and optional `last_edit_error()` checks
+remain explicit. This remains test-maintenance only and does not alter
+production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

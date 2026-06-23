@@ -28140,6 +28140,33 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.654 - Reuse no-replacement helper in materialization helper
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reuse the no-replacement-diagnostics helper inside the materialization
+failure clean-state helper now that the helper exists.
+
+Output:
+- Reused `check_workbook_editor_no_replacement_diagnostics()` inside
+  `check_public_materialization_failure_clean_state()`.
+- Kept Data/recovery `has_pending_replacement()`, materialized-session,
+  catalog, recovery, and optional `last_edit_error()` checks explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

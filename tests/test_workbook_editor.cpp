@@ -321,16 +321,11 @@ void check_public_materialization_failure_clean_state(
     const std::string prefix = std::string(scenario) + " " + std::string(stage);
 
     check_workbook_editor_public_no_pending_state(editor, prefix);
-    check(editor.pending_replacement_cell_count() == 0,
-        prefix + " should not retain replacement cells");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        prefix + " should not retain replacement sheet names");
+    check_workbook_editor_no_replacement_diagnostics(editor, prefix);
     check(!editor.has_pending_replacement("Data"),
         prefix + " should not report a Data replacement");
     check(!editor.has_pending_replacement(recovery_sheet_name),
         prefix + " should not report a recovery-sheet replacement");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        prefix + " should not retain replacement memory estimates");
     check(editor.pending_materialized_worksheet_names().empty(),
         prefix + " should not leave materialized sessions");
     check(editor.pending_materialized_cell_count() == 0,

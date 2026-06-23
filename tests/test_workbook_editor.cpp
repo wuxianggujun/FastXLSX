@@ -412,6 +412,66 @@ void check_public_dirty_materialized_recovery_state(
         prefix + " should preserve the restored planned catalog name");
 }
 
+void reject_public_two_clean_retry_query_failures(
+    fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditorOptions& options,
+    const fastxlsx::WorksheetEditorOptions& mismatched_options,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), label + " try_worksheet should reject mismatched options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Untouched", mismatched_options);
+    }), label + " worksheet should reject mismatched options");
+    const std::optional<fastxlsx::WorksheetEditor> missing_try =
+        editor.try_worksheet("Missing", options);
+    check(!missing_try.has_value(),
+        label + " try_worksheet should return empty for missing sheets");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), label + " worksheet should throw for missing sheets");
+}
+
+void check_public_two_clean_retry_clean_after_query_failures(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    fastxlsx::WorksheetEditor& data_again,
+    fastxlsx::WorksheetEditor& untouched_again,
+    const std::vector<std::string>& expected_names,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
+    std::size_t expected_pending_count,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!editor.last_edit_error().has_value(),
+        label + " failures should keep last_edit_error clear");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " failures should not add handoffs");
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
+        label + " failures should keep all materialized handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " failures should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " failures should keep dirty materialized cells clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " failures should keep dirty materialized memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        label + " failures should keep worksheet summaries empty");
+    check(editor.source_worksheet_names() == expected_names,
+        label + " failures should preserve source worksheet names");
+    check(editor.worksheet_names() == expected_names,
+        label + " failures should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), expected_catalog),
+        label + " failures should preserve worksheet catalog");
+}
+
 void reject_public_two_clean_retry_invalid_reads(
     fastxlsx::WorksheetEditor& data,
     fastxlsx::WorksheetEditor& untouched,
@@ -13712,42 +13772,11 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
 
-        check(threw_fastxlsx_error([&] {
-            (void)editor.try_worksheet("Data", mismatched_options);
-        }), "read-only query retry try_worksheet should reject mismatched options");
-        check(threw_fastxlsx_error([&] {
-            (void)editor.worksheet("Untouched", mismatched_options);
-        }), "read-only query retry worksheet should reject mismatched options");
-        const std::optional<fastxlsx::WorksheetEditor> missing_try =
-            editor.try_worksheet("Missing", options);
-        check(!missing_try.has_value(),
-            "read-only query retry try_worksheet should return empty for missing sheets");
-        check(threw_fastxlsx_error([&] {
-            (void)editor.worksheet("Missing", options);
-        }), "read-only query retry worksheet should throw for missing sheets");
-
-        check(!editor.last_edit_error().has_value(),
-            "read-only query retry failures should keep last_edit_error clear");
-        check(editor.pending_change_count() == 2,
-            "read-only query retry failures should not add handoffs");
-        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "read-only query retry failures should keep all materialized handles clean");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only query retry failures should not dirty materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "read-only query retry failures should keep dirty materialized cells clear");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "read-only query retry failures should keep dirty materialized memory clear");
-        check(editor.pending_worksheet_edits().empty(),
-            "read-only query retry failures should keep worksheet summaries empty");
-        check(editor.source_worksheet_names() == expected_names,
-            "read-only query retry failures should preserve source worksheet names");
-        check(editor.worksheet_names() == expected_names,
-            "read-only query retry failures should preserve planned worksheet names");
-        check(workbook_editor_catalog_entries_equal(
-                  editor.worksheet_catalog(), expected_catalog),
-            "read-only query retry failures should preserve worksheet catalog");
+        reject_public_two_clean_retry_query_failures(
+            editor, options, mismatched_options, "read-only query retry");
+        check_public_two_clean_retry_clean_after_query_failures(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, 2, "read-only query retry");
 
         const fastxlsx::CellValue data_again_value = data_again.get_cell(1, 1);
         const fastxlsx::CellValue untouched_again_value = untouched_again.get_cell(1, 1);
@@ -13838,42 +13867,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
 
-        check(threw_fastxlsx_error([&] {
-            (void)editor.try_worksheet("Data", mismatched_options);
-        }), "saved-clean query retry try_worksheet should reject mismatched options");
-        check(threw_fastxlsx_error([&] {
-            (void)editor.worksheet("Untouched", mismatched_options);
-        }), "saved-clean query retry worksheet should reject mismatched options");
-        const std::optional<fastxlsx::WorksheetEditor> missing_try =
-            editor.try_worksheet("Missing", options);
-        check(!missing_try.has_value(),
-            "saved-clean query retry try_worksheet should return empty for missing sheets");
-        check(threw_fastxlsx_error([&] {
-            (void)editor.worksheet("Missing", options);
-        }), "saved-clean query retry worksheet should throw for missing sheets");
-
-        check(!editor.last_edit_error().has_value(),
-            "saved-clean query retry failures should keep last_edit_error clear");
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean query retry failures should not add handoffs");
-        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "saved-clean query retry failures should keep all materialized handles clean");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean query retry failures should not dirty materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "saved-clean query retry failures should keep dirty materialized cells clear");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "saved-clean query retry failures should keep dirty materialized memory clear");
-        check(editor.pending_worksheet_edits().empty(),
-            "saved-clean query retry failures should keep worksheet summaries empty");
-        check(editor.source_worksheet_names() == expected_names,
-            "saved-clean query retry failures should preserve source worksheet names");
-        check(editor.worksheet_names() == expected_names,
-            "saved-clean query retry failures should preserve planned worksheet names");
-        check(workbook_editor_catalog_entries_equal(
-                  editor.worksheet_catalog(), expected_catalog),
-            "saved-clean query retry failures should preserve worksheet catalog");
+        reject_public_two_clean_retry_query_failures(
+            editor, options, mismatched_options, "saved-clean query retry");
+        check_public_two_clean_retry_clean_after_query_failures(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, saved_pending_count + 2,
+            "saved-clean query retry");
 
         const fastxlsx::CellValue data_again_first = data_again.get_cell(1, 1);
         const fastxlsx::CellValue data_again_recovered = data_again.get_cell(3, 3);

@@ -443,6 +443,9 @@ materialization options and missing-sheet lookups after the retry must leave
 `last_edit_error()`, dirty materialized diagnostics, worksheet summaries,
 catalog queries, and saved values unchanged, and the next valid mutation must
 still dirty only the touched reacquired session.
+The failure-query retry coverage uses named helpers for query rejection and
+clean-session assertions; these helpers are test-maintenance scaffolding only
+and do not change public behavior.
 Invalid-read hygiene is pinned in the same retry/reacquire chain: invalid
 row/column coordinates, malformed A1 references, Excel-limit overflows, and
 invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`

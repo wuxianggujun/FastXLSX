@@ -1289,6 +1289,11 @@ the read rejection checks and clean-session assertions now live in named
 helpers, while the read-side behavior, saved-value checks, and retry/reacquire
 coverage stay unchanged. This is test-maintenance scaffolding only, not
 production behavior change or public API change.
+P8.619 applies the same helper structure to the two-clean failure-query retry
+coverage: mismatched-option and missing-sheet query failures, plus the
+clean-session assertions that follow them, are now named helpers. The query
+behavior, saved-value checks, follow-up valid mutation, and safe `save_as()`
+persistence assertions stay unchanged.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

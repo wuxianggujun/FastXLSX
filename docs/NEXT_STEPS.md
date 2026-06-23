@@ -1195,6 +1195,16 @@ proves the prior materialized handoff count and retry output remain unchanged
 after same-sheet `rename_sheet()` failure plus no-op erase. This is diagnostic
 state hygiene only, not rollback, relationship repair, random-editor
 expansion, formula evaluation, or formula rewrite expansion.
+P8.608 verifies the no-op erase recovery does not weaken same-sheet Patch
+guards: after the no-op `erase_cell()` clears a prior diagnostic and leaves the
+clean `Data` handle unchanged, a later same-sheet Patch operation must still
+fail and replace `last_edit_error()` with the current guard. The read-only
+branch covers replacement failure -> no-op erase -> same-sheet rename failure;
+the saved-clean branch covers rename failure -> no-op erase -> same-sheet
+replacement failure. Both keep dirty materialized diagnostics empty and output
+bytes unchanged. This is guard-preservation and diagnostic-ordering hygiene,
+not rollback, relationship repair, random-editor expansion, formula evaluation,
+or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

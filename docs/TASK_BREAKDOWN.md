@@ -26756,6 +26756,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.608 - Pin no-op erase recovery does not bypass same-sheet Patch guard
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` guard-preservation regression
+and docs; no production behavior change, no public API change, no CMake target
+membership change, and no formula capability expansion.
+
+Goal: prove a no-op `WorksheetEditor::erase_cell()` may clear a previous
+same-sheet Patch diagnostic, but does not make a clean materialized same-sheet
+Patch operation legal.
+
+Output:
+- Added public read-only coverage where clean materialized `Data` rejects
+  same-sheet `replace_sheet_data("Data", ...)`, then no-op `erase_cell(5, 5)`
+  clears `last_edit_error()`, and a later same-sheet `rename_sheet("Data", ...)`
+  still fails with the current rename guard diagnostic.
+- Added public saved-clean coverage where `Data` is dirtied, flushed by
+  `save_as()`, marked clean, then rejects same-sheet `rename_sheet("Data", ...)`,
+  no-op `erase_cell(5, 5)` clears the diagnostic, and a later same-sheet
+  `replace_sheet_data("Data", ...)` still fails with the current replacement
+  guard diagnostic.
+- The regressions verify the second guard failure repopulates
+  `last_edit_error()`, keeps the borrowed `Data` session clean, keeps dirty
+  materialized diagnostics empty, preserves saved-clean handoff counts where
+  applicable, and keeps no-op / retry output bytes unchanged.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

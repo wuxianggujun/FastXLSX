@@ -414,6 +414,10 @@ No-op erase recovery is pinned separately: `erase_cell()` on an already-missing
 cell must also clear the prior same-sheet Patch diagnostic while leaving the
 clean materialized handle, dirty diagnostics, handoff counts, and retry output
 unchanged.
+That no-op recovery is not a bypass: a later same-sheet Patch operation against
+the same clean materialized worksheet must still fail, repopulate
+`last_edit_error()` with the latest guard diagnostic, and keep the output bytes
+unchanged.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

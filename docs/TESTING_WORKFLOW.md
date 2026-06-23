@@ -469,6 +469,9 @@ failed-save states, and safe-save flush checks.
 Its materialized-session guard diagnostics and preserved sparse cell/memory
 checks now share focused helpers as well, keeping the test intent explicit
 without changing the generated workbooks or public behavior.
+The earlier same-sheet recovery blocks now share focused single-sheet clean /
+dirty helpers too, covering the read-only and saved-clean cross-sheet success
+paths plus the matching worksheet mutation recovery cases.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

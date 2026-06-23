@@ -949,6 +949,66 @@ void check_public_preserved_sheet_diagnostics(
         label + " should preserve " + name + " memory");
 }
 
+void check_public_single_sheet_cross_sheet_success_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    std::size_t expected_cell_count,
+    std::size_t expected_memory,
+    std::size_t expected_pending_count,
+    std::string_view sheet_name,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!editor.last_edit_error().has_value(),
+        label + " should clear last_edit_error");
+    check(editor.has_pending_changes(),
+        label + " should dirty the editor");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should queue the expected public edit count");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should keep dirty materialized memory empty");
+    check(!sheet.has_pending_changes(),
+        label + " should keep the borrowed handle clean");
+    check_public_preserved_sheet_diagnostics(
+        sheet, expected_cell_count, expected_memory, sheet_name, label);
+}
+
+void check_public_single_sheet_mutation_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    std::size_t expected_cell_count,
+    std::size_t expected_pending_count,
+    std::string_view expected_dirty_name,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!editor.last_edit_error().has_value(),
+        label + " should clear last_edit_error");
+    check(editor.has_pending_changes(),
+        label + " should dirty the editor");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should preserve the queued public edit count");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{std::string(expected_dirty_name)},
+        label + " should expose the expected dirty materialized sheet");
+    check(editor.pending_materialized_cell_count() == expected_cell_count,
+        label + " should expose the expected dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() > 0,
+        label + " should expose dirty materialized memory");
+    check(sheet.has_pending_changes(),
+        label + " should dirty the borrowed handle");
+    check(sheet.cell_count() == expected_cell_count,
+        label + " should expose the expected sparse cell count");
+    check(sheet.estimated_memory_usage() > 0,
+        label + " should expose dirty sheet memory");
+}
+
 const std::string& check_public_two_clean_retry_entry(
     const std::map<std::string, std::string>& entries,
     std::string_view entry_name)
@@ -12791,24 +12851,9 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_succ
 
         editor.rename_sheet("Untouched", "ReadonlyRecoveredOther");
 
-        check(!editor.last_edit_error().has_value(),
-            "read-only cross-sheet success should clear prior same-sheet diagnostic");
-        check(editor.has_pending_changes(),
-            "read-only cross-sheet recovery should dirty the editor");
-        check(editor.pending_change_count() == 1,
-            "read-only cross-sheet recovery should queue only the successful rename");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only cross-sheet recovery should not dirty materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "read-only cross-sheet recovery should not add dirty materialized cells");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "read-only cross-sheet recovery should not add dirty materialized memory");
-        check(!data.has_pending_changes(),
-            "read-only cross-sheet recovery should keep Data handle clean");
-        check(data.cell_count() == data_cell_count,
-            "read-only cross-sheet recovery should preserve Data sparse count");
-        check(data.estimated_memory_usage() == data_memory,
-            "read-only cross-sheet recovery should preserve Data memory estimate");
+        check_public_single_sheet_cross_sheet_success_state(
+            editor, data, data_cell_count, data_memory, 1, "Data",
+            "read-only cross-sheet recovery");
 
         editor.save_as(output);
         check(!editor.last_edit_error().has_value(),
@@ -12861,22 +12906,9 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_succ
         editor.replace_sheet_data("Untouched",
             {{fastxlsx::CellValue::text("saved-clean-cross-sheet-after-failure")}});
 
-        check(!editor.last_edit_error().has_value(),
-            "saved-clean cross-sheet success should clear prior same-sheet diagnostic");
-        check(editor.pending_change_count() == saved_pending_count + 1,
-            "saved-clean cross-sheet recovery should add only the successful replacement");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean cross-sheet recovery should not dirty materialized names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "saved-clean cross-sheet recovery should not add dirty materialized cells");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "saved-clean cross-sheet recovery should not add dirty materialized memory");
-        check(!data.has_pending_changes(),
-            "saved-clean cross-sheet recovery should keep Data handle clean");
-        check(data.cell_count() == data_cell_count,
-            "saved-clean cross-sheet recovery should preserve Data sparse count");
-        check(data.estimated_memory_usage() == data_memory,
-            "saved-clean cross-sheet recovery should preserve Data memory estimate");
+        check_public_single_sheet_cross_sheet_success_state(
+            editor, data, data_cell_count, data_memory, saved_pending_count + 1,
+            "Data", "saved-clean cross-sheet recovery");
 
         editor.save_as(output);
         check(!editor.last_edit_error().has_value(),
@@ -12934,26 +12966,9 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutati
         data.set_cell(2, 2,
             fastxlsx::CellValue::text("readonly-mutation-after-failure"));
 
-        check(!editor.last_edit_error().has_value(),
-            "read-only successful worksheet mutation should clear prior same-sheet diagnostic");
-        check(data.has_pending_changes(),
-            "read-only successful worksheet mutation should dirty Data");
-        check(editor.has_pending_changes(),
-            "read-only successful worksheet mutation should make save_as pending");
-        check(editor.pending_change_count() == 0,
-            "read-only dirty materialized mutation should not queue a Patch handoff before save_as");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names.size() == 1 && dirty_names[0] == "Data",
-                "read-only worksheet mutation recovery should expose Data as the only dirty materialized sheet");
-        }
-        check(editor.pending_materialized_cell_count() == data_cell_count + 1,
-            "read-only worksheet mutation recovery should expose the added sparse cell");
-        check(editor.estimated_pending_materialized_memory_usage() > 0,
-            "read-only worksheet mutation recovery should expose dirty materialized memory");
-        check(data.cell_count() == data_cell_count + 1,
-            "read-only worksheet mutation recovery should add one sparse record");
+        check_public_single_sheet_mutation_state(
+            editor, data, data_cell_count + 1, 0, "Data",
+            "read-only worksheet mutation recovery");
         const fastxlsx::CellValue recovered_value = data.get_cell(2, 2);
         check(recovered_value.kind() == fastxlsx::CellValueKind::Text &&
                 recovered_value.text_value() == "readonly-mutation-after-failure",
@@ -13010,24 +13025,9 @@ void test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutati
 
         data.erase_cell(2, 1);
 
-        check(!editor.last_edit_error().has_value(),
-            "saved-clean successful worksheet erase should clear prior same-sheet diagnostic");
-        check(data.has_pending_changes(),
-            "saved-clean successful worksheet erase should dirty Data");
-        check(editor.pending_change_count() == saved_pending_count,
-            "saved-clean dirty materialized erase should not add a handoff before save_as");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names.size() == 1 && dirty_names[0] == "Data",
-                "saved-clean worksheet mutation recovery should expose Data as the only dirty materialized sheet");
-        }
-        check(editor.pending_materialized_cell_count() == data_cell_count - 1,
-            "saved-clean worksheet mutation recovery should expose the erased sparse cell");
-        check(editor.estimated_pending_materialized_memory_usage() > 0,
-            "saved-clean worksheet mutation recovery should expose dirty materialized memory");
-        check(data.cell_count() == data_cell_count - 1,
-            "saved-clean worksheet mutation recovery should remove one sparse record");
+        check_public_single_sheet_mutation_state(
+            editor, data, data_cell_count - 1, saved_pending_count, "Data",
+            "saved-clean worksheet mutation recovery");
         check(!data.try_cell(2, 1).has_value(),
             "saved-clean worksheet mutation recovery should keep the erased cell absent");
 

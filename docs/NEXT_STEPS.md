@@ -1355,6 +1355,11 @@ cell/memory checks now use small shared helpers in the no-op recovery,
 two-clean recovery, scoped other-mutation, and failed-save cases. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.630 continues the same cleanup into the earlier same-sheet recovery blocks.
+The read-only and saved-clean cross-sheet success paths, plus the matching
+worksheet mutation recovery checks, now share focused state helpers for the
+single-sheet clean/dirty assertions. This remains test-maintenance only and
+does not alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

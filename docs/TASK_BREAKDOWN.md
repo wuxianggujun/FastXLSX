@@ -28482,6 +28482,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.664 - Sync formula audit pending-state API docs
+
+Status: done.
+
+Type: public header documentation / API design doc sync; no public API symbol
+change, no production behavior change, no CMake target membership change, and
+no formula engine expansion.
+
+Goal: align public Doxygen comments and API design docs with the P8.663
+read-only pending-state evidence for formula audit diagnostics.
+
+Output:
+- Updated `include/fastxlsx/workbook_editor.hpp` Doxygen for
+  `formula_reference_audits()`, `source_formula_reference_audits()`, and
+  `defined_name_formula_reference_audits()`.
+- The comments now state that these diagnostics do not increment
+  `pending_change_count()`, queue replacements, dirty/create materialized
+  sessions, or change pending edit diagnostics.
+- Updated `docs/API_DESIGN_AND_DOCUMENTATION.md` with the same read-only
+  pending-state boundary for materialized, source-read, and definedName formula
+  audits.
+- Recorded this documentation/comment-only sync in `docs/NEXT_STEPS.md` and
+  this breakdown.
+
+Non-goals / boundary:
+- No production behavior change, no public symbol change, no default formula
+  rewrite, no non-materialized worksheet formula rewrite, no formula evaluation,
+  no external workbook target validation, no 3D reference semantics, no
+  dependency graph, no calcChain rebuild, no relationship repair, no complete
+  Excel formula parser, and no CMake change.
+
+Acceptance:
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

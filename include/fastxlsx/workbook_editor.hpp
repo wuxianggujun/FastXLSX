@@ -1193,8 +1193,9 @@ public:
     /// non-materialized worksheet parts, parse the full Excel formula grammar,
     /// evaluate formulas, validate external workbook targets or 3D sheet range
     /// semantics, rewrite formulas, rebuild calcChain, repair defined names, or
-    /// update last_edit_error(). It returns an empty vector for a moved-from
-    /// editor.
+    /// update last_edit_error(). It also does not increment pending_change_count(),
+    /// queue replacements, dirty materialized sessions, or change pending edit
+    /// diagnostics. It returns an empty vector for a moved-from editor.
     [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
     formula_reference_audits() const;
 
@@ -1218,8 +1219,9 @@ public:
     /// out-of-order shared formula followers, parse the full Excel formula
     /// grammar, evaluate formulas, validate external workbook targets or 3D
     /// sheet range semantics, rebuild calcChain, repair workbook metadata, or
-    /// update last_edit_error(). It returns an empty vector for a moved-from
-    /// editor.
+    /// update last_edit_error(). It also does not increment pending_change_count(),
+    /// queue replacements, create materialized sessions, or change pending edit
+    /// diagnostics. It returns an empty vector for a moved-from editor.
     [[nodiscard]] std::vector<WorkbookEditorFormulaReferenceAudit>
     source_formula_reference_audits() const;
 
@@ -1244,7 +1246,9 @@ public:
     /// formulas, parse the full Excel formula grammar, evaluate formulas,
     /// validate external workbook targets or 3D sheet range semantics, rewrite
     /// definedNames, rebuild calcChain, repair workbook metadata, or update
-    /// last_edit_error(). It returns an empty vector for a moved-from editor.
+    /// last_edit_error(). It also does not increment pending_change_count(),
+    /// queue replacements, dirty materialized sessions, or change pending edit
+    /// diagnostics. It returns an empty vector for a moved-from editor.
     [[nodiscard]] std::vector<WorkbookEditorDefinedNameFormulaReferenceAudit>
     defined_name_formula_reference_audits() const;
 

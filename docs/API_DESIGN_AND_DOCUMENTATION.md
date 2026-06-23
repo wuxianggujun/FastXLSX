@@ -295,11 +295,14 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `rename_sheet()` 改名的 source sheet。它不 materialize 新 sheet、不扫描整包
   worksheet XML、不解析完整 Excel 公式语法、不求值、不改写公式、不 rebuild
   calcChain、不验证外部 workbook target 或 3D 引用语义，也不更新
-  `last_edit_error()`。
+  `last_edit_error()`，不递增 `pending_change_count()`、不排队 replacement、不弄脏
+  materialized sessions，也不改变 pending edit diagnostics。
 - `source_formula_reference_audits()`：只读扫描 source worksheet formula XML，返回与
   materialized audit 相同语义的 source-read diagnostics。它不 materialize
   `WorksheetEditor` session、不把 source worksheet XML 排入 rewrite、不改写公式、不更新
-  `last_edit_error()`；默认 `rename_sheet()` 后只报告 stale source-name 风险。
+  `last_edit_error()`，不递增 `pending_change_count()`、不创建 replacement diagnostics、
+  不创建 materialized diagnostics，也不新增 pending edit summaries；默认
+  `rename_sheet()` 后只报告 stale source-name 风险。
 - `defined_name_formula_reference_audits()`：只读扫描 current planned
   workbook `xl/workbook.xml` 中 direct `<definedNames><definedName>` formula
   text（有 queued small workbook rewrite 时使用 planned XML，否则使用 source
@@ -313,7 +316,8 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   不改写 definedNames、不修复 workbook metadata、不 rebuild calcChain、不验证外部
   workbook target 或 3D 引用语义，也不更新 `last_edit_error()`。Malformed workbook
   metadata with mismatched or unclosed XML tags fails the diagnostic scan
-  instead of being balanced or repaired.
+  instead of being balanced or repaired. 它也不递增 `pending_change_count()`、不排队
+  replacement、不弄脏 materialized sessions、不改变 pending edit diagnostics。
 - 默认 `rename_sheet()` 保持 catalog-only：只改 workbook sheet catalog，不改
   materialized worksheet formulas、non-materialized source worksheet formulas 或 direct
   definedName formula text。上述 audit API 会把 `data!` / `DATA!` 这类 case-varied

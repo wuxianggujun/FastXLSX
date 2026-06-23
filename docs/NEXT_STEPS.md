@@ -1590,6 +1590,16 @@ reporting stale `data!` / `DATA!` source-name risks. This is diagnostic state
 hygiene only; it is not a production behavior change, formula rewrite,
 formula evaluation, external/3D semantics, dependency graph, or calcChain
 rebuild.
+P8.664 syncs that read-only pending-state boundary into public API comments and
+design docs. `include/fastxlsx/workbook_editor.hpp` now states that
+`formula_reference_audits()`, `source_formula_reference_audits()`, and
+`defined_name_formula_reference_audits()` do not increment
+`pending_change_count()`, queue replacements, dirty/create materialized
+sessions, or change pending edit diagnostics. The API design doc repeats the
+same boundary alongside the formula-audit mode descriptions. This is
+documentation/comment alignment only; it does not change behavior, public
+symbols, CMake, formula rewrite, formula evaluation, external/3D semantics,
+dependency graphing, or calcChain handling.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

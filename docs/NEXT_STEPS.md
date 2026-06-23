@@ -1445,6 +1445,12 @@ coverage keeps its replacement diagnostics and source catalog assertions
 explicit while centralizing the public pending-state checks. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.645 reuses the public no-pending-state helper in the source-entry read
+failure regression for `replace_sheet_data()`. The corrupt-source failure path
+still keeps its replacement diagnostics, source catalog check, source restore,
+and follow-up save assertion explicit while sharing the public pending-state
+checks. This remains test-maintenance only and does not alter production
+behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -492,6 +492,9 @@ replacement-specific assertions explicit.
 The clean `replace_sheet_data()` source/current-input failure helper also
 reuses the public no-pending-state helper now, with replacement diagnostics and
 source catalog checks still explicit.
+The corrupt source-entry read failure regression now shares that same
+no-pending-state helper, while preserving replacement diagnostics, source
+restore, and follow-up output checks.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

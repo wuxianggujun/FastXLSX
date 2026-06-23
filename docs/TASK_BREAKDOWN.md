@@ -27882,6 +27882,34 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.645 - Reuse no-pending helper in source read failure regression
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reuse the shared public no-pending-state helper in the
+`replace_sheet_data()` source-entry read failure regression while keeping the
+source restore and output smoke explicit.
+
+Output:
+- Reused `check_workbook_editor_public_no_pending_state()` after the corrupt
+  source worksheet read failure.
+- Kept replacement cell/memory, source catalog, source restore, and follow-up
+  output assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

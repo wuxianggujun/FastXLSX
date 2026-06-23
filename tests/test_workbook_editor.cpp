@@ -20659,10 +20659,7 @@ void test_replace_sheet_data_source_read_failure_preserves_public_state()
 
     check(failed,
         "replace_sheet_data should fail when the source worksheet entry cannot be read");
-    check(!editor.has_pending_changes(),
-        "source read failure should not mark the public editor dirty");
-    check(editor.pending_change_count() == 0,
-        "source read failure should not add public pending changes");
+    check_workbook_editor_public_no_pending_state(editor, "source read failure");
     check(editor.pending_replacement_cell_count() == 0,
         "source read failure should not record public replacement cells");
     check(editor.estimated_pending_replacement_memory_usage() == 0,

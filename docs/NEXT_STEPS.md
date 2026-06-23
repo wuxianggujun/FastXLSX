@@ -1259,6 +1259,16 @@ the touched reacquired handle and persists through the next safe `save_as()`.
 This is read-side validation hygiene only, not rollback, transaction history,
 relationship repair, random-editor expansion, formula evaluation, or formula
 rewrite expansion.
+P8.615 pins the mutation-side validation half of that same boundary: after the
+two-handle recovery flow, failed `save_as(source)`, safe retry, and post-save
+reacquire, invalid `set_cell()` / `erase_cell()` calls on both original and
+reacquired handles must update `last_edit_error()` without dirtying either
+clean session, without changing sparse store diagnostics, and without adding
+materialized handoffs. A later valid mutation clears the diagnostic, dirties
+only the touched reacquired session, and persists through the next safe
+`save_as()`. This is invalid-mutation state hygiene only, not rollback,
+transaction history, relationship repair, random-editor expansion, formula
+evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

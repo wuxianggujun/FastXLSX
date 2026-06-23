@@ -448,6 +448,12 @@ row/column coordinates, malformed A1 references, Excel-limit overflows, and
 invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`
 or dirty diagnostics, and without changing saved sparse cell counts / memory
 before the next valid mutation.
+Invalid-mutation hygiene is pinned beside it: invalid `set_cell()` /
+`erase_cell()` calls after the same retry/reacquire chain must update
+`last_edit_error()` but leave all original and reacquired handles clean, keep
+dirty materialized diagnostics and saved sparse store counts / memory unchanged,
+avoid leaking rejected payload bytes, and let the next valid mutation clear the
+diagnostic before a safe `save_as()` persists only the touched sheet.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

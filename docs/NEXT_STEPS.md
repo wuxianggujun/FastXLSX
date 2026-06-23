@@ -1611,6 +1611,17 @@ still reporting stale source-name direct definedName references. This is
 diagnostic state hygiene only; it is not a production behavior change,
 definedName rewrite, worksheet formula rewrite, formula evaluation,
 external/3D semantics, dependency graphing, or calcChain rebuild.
+P8.666 closes the matching pending-state hygiene gap for already materialized
+worksheet formula diagnostics. The existing
+`test_formula_reference_audits_report_renamed_source_sheet_risk()` now
+snapshots `pending_change_count()`, `has_pending_changes()`, pending
+replacement names, pending materialized names, and pending edit summary count
+after default `rename_sheet("Data", "RenamedData")`, then verifies
+`formula_reference_audits()` leaves all of them unchanged while still reporting
+stale source-name materialized worksheet formula references. This is diagnostic
+state hygiene only; it is not a production behavior change, worksheet formula
+rewrite, formula evaluation, external/3D semantics, dependency graphing, or
+calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

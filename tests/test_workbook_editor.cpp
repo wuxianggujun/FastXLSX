@@ -20841,12 +20841,7 @@ void test_missing_sheet_throws_and_editor_stays_usable()
             "missing sheet failure should include the requested sheet name");
     }
     check(failed, "replacing a missing sheet should throw FastXlsxError");
-    check(!editor.has_pending_changes(),
-        "missing sheet failure should not mark the editor dirty");
-    check(editor.pending_replacement_cell_count() == 0,
-        "missing sheet failure should not record replacement cells");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        "missing sheet failure should not record replacement memory");
+    check_clean_replace_sheet_data_failure_state(editor, "missing sheet failure");
 
     fastxlsx::WorkbookEditorOptions guard_options;
     guard_options.max_replacement_cells = 0;
@@ -20863,10 +20858,8 @@ void test_missing_sheet_throws_and_editor_stays_usable()
     }
     check(failed,
         "guarded missing sheet replacement should throw FastXlsxError");
-    check(!guarded_editor.has_pending_changes(),
-        "guarded missing sheet failure should not mark the editor dirty");
-    check(guarded_editor.pending_replacement_cell_count() == 0,
-        "guarded missing sheet failure should not record replacement cells");
+    check_clean_replace_sheet_data_failure_state(
+        guarded_editor, "guarded missing sheet failure");
 
     // The editor must remain usable after a rejected edit.
     editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(7.0)}});

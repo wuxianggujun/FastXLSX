@@ -1457,6 +1457,12 @@ now share no-pending, replacement diagnostics, and source catalog assertions,
 while the successful guarded replacement and ZIP/XML output checks stay
 explicit. This remains test-maintenance only and does not alter production
 behavior, generated workbooks, or public API.
+P8.647 reuses the same clean `replace_sheet_data()` failure-state helper in the
+missing-sheet recovery regression. Plain and guardrail-preflight missing-sheet
+failures now share no-pending, replacement diagnostics, and source catalog
+assertions while the valid follow-up edit and output checks stay explicit. This
+remains test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

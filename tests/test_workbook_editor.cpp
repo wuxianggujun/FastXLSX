@@ -11768,6 +11768,134 @@ void test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_op
         "rejected saved-clean rename should not leak into workbook catalog");
 }
 
+void test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operations()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-cross-sheet-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-cross-sheet-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        const fastxlsx::CellValue source_value = data.get_cell(1, 1);
+        check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+                source_value.text_value() == "placeholder-a1",
+            "read-only cross-sheet setup should materialize Data from source");
+        check(!data.has_pending_changes(),
+            "read-only cross-sheet setup should keep Data clean");
+
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+
+        editor.rename_sheet("Untouched", "ReadonlyOtherName");
+        editor.replace_sheet_data("ReadonlyOtherName",
+            {{fastxlsx::CellValue::text("readonly-cross-sheet-replacement")}});
+
+        check(!editor.last_edit_error().has_value(),
+            "read-only cross-sheet Patch operations should not set last_edit_error");
+        check(editor.has_pending_changes(),
+            "read-only cross-sheet Patch operations should dirty the editor");
+        check(editor.pending_change_count() == 2,
+            "read-only cross-sheet rename plus replacement should queue two public edits");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only cross-sheet Patch operations should not dirty Data materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "read-only cross-sheet Patch operations should not add Data materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "read-only cross-sheet Patch operations should not add Data materialized memory");
+        check(!data.has_pending_changes(),
+            "read-only cross-sheet Patch operations should keep Data handle clean");
+        check(data.cell_count() == data_cell_count,
+            "read-only cross-sheet Patch operations should preserve Data sparse count");
+        check(data.estimated_memory_usage() == data_memory,
+            "read-only cross-sheet Patch operations should preserve Data memory estimate");
+        const fastxlsx::CellValue preserved_data = data.get_cell(1, 1);
+        check(preserved_data.kind() == fastxlsx::CellValueKind::Text &&
+                preserved_data.text_value() == "placeholder-a1",
+            "read-only cross-sheet Patch operations should preserve Data value");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="ReadonlyOtherName")",
+            "read-only cross-sheet rename should persist the other sheet name");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+            "read-only cross-sheet output should preserve Data source cell");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-cross-sheet-replacement",
+            "read-only cross-sheet replacement should not leak into Data");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+            "readonly-cross-sheet-replacement",
+            "read-only cross-sheet replacement should persist on the other sheet");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-cross-sheet-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-cross-sheet-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-cross-sheet-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-cross-sheet-data"));
+        editor.save_as(first_output);
+
+        check(!data.has_pending_changes(),
+            "saved-clean cross-sheet setup should leave Data clean after save");
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        check(saved_pending_count == 1,
+            "saved-clean cross-sheet setup should retain one materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean cross-sheet setup should clear dirty materialized names");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+
+        editor.replace_sheet_data("Untouched",
+            {{fastxlsx::CellValue::text("saved-clean-cross-sheet-replacement")}});
+        editor.rename_sheet("Untouched", "SavedCleanOtherName");
+
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean cross-sheet Patch operations should not set last_edit_error");
+        check(editor.has_pending_changes(),
+            "saved-clean cross-sheet Patch operations should keep the editor pending");
+        check(editor.pending_change_count() == saved_pending_count + 2,
+            "saved-clean cross-sheet operations should add two public edits beside the saved handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean cross-sheet Patch operations should not re-dirty Data names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "saved-clean cross-sheet Patch operations should not add dirty Data cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "saved-clean cross-sheet Patch operations should not add dirty Data memory");
+        check(!data.has_pending_changes(),
+            "saved-clean cross-sheet Patch operations should keep Data handle clean");
+        check(data.cell_count() == data_cell_count,
+            "saved-clean cross-sheet Patch operations should preserve Data sparse count");
+        check(data.estimated_memory_usage() == data_memory,
+            "saved-clean cross-sheet Patch operations should preserve Data memory estimate");
+        const fastxlsx::CellValue preserved_data = data.get_cell(1, 1);
+        check(preserved_data.kind() == fastxlsx::CellValueKind::Text &&
+                preserved_data.text_value() == "saved-clean-cross-sheet-data",
+            "saved-clean cross-sheet Patch operations should preserve Data saved value");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="SavedCleanOtherName")",
+            "saved-clean cross-sheet rename should persist the other sheet name");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-cross-sheet-data",
+            "saved-clean cross-sheet output should preserve Data saved cell");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-cross-sheet-replacement",
+            "saved-clean cross-sheet replacement should not leak into Data");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+            "saved-clean-cross-sheet-replacement",
+            "saved-clean cross-sheet replacement should persist on the other sheet");
+    }
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -20351,6 +20479,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_operations();
         test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_operations();
+        test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operations();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

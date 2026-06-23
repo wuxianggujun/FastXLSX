@@ -391,6 +391,11 @@ The saved-clean variant is pinned as well: after `save_as()` flushes a dirty
 borrowed session into the Patch plan and marks the handle clean, same-sheet
 Patch operations must still fail before changing the saved handoff, dirty
 materialized diagnostics, catalog views, or retry output bytes.
+The positive cross-sheet side is also covered for read-only and saved-clean
+materialized sessions: Patch operations targeting `Untouched` can still rename
+and replace that other sheet while the clean borrowed `Data` handle remains
+clean, dirty materialized diagnostics stay empty, and output keeps the `Data`
+payload separate from the other-sheet replacement.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

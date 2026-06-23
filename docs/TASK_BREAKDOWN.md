@@ -26581,6 +26581,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.603 - Pin clean materialized cross-sheet Patch success hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` operation-mixing regression
+and docs; no production behavior change, no public API change, no CMake target
+membership change, and no formula capability expansion.
+
+Goal: prove clean materialized sessions block only same-sheet Patch operations;
+cross-sheet Patch operations on another worksheet remain valid and preserve the
+clean materialized session.
+
+Output:
+- Added public read-only coverage where `worksheet("Data")` materializes source
+  cells, stays clean, then `rename_sheet("Untouched", ...)` followed by
+  `replace_sheet_data()` on the planned other-sheet name succeeds.
+- Added public saved-clean coverage where `Data` is dirtied and flushed by
+  `save_as()`, then cross-sheet `replace_sheet_data("Untouched", ...)`
+  followed by `rename_sheet("Untouched", ...)` succeeds beside the saved
+  materialized handoff.
+- The regressions verify cross-sheet operations keep the borrowed `Data` handle
+  clean, preserve its sparse state and value, leave dirty materialized names /
+  cell counts / memory estimates empty, avoid `last_edit_error()`, and write the
+  other-sheet rename and replacement without leaking those payloads into `Data`.
+
+Non-goals / boundary:
+- No production code change, no sheet add/delete, no relationship repair, no
+  rollback/history model, no complete random editor, no large-file editing
+  claim, no sharedStrings / styles migration, no formula evaluation, and no
+  formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

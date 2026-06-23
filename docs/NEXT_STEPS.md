@@ -1144,6 +1144,15 @@ empty dirty materialized diagnostics, and saved output bytes while replacing
 operation-mixing hygiene only, not rollback, relationship repair,
 sharedStrings/styles migration, formula evaluation, or formula rewrite
 expansion.
+P8.603 completes the positive half of the clean-session operation-mixing matrix:
+read-only and saved-clean `Data` materialized sessions now have public coverage
+showing cross-sheet Patch operations on `Untouched` still succeed. The tests
+cover both rename-then-replace and replace-then-rename ordering, keep the clean
+borrowed `Data` handle undirtied, keep dirty materialized diagnostics empty,
+and verify output preserves `Data` while writing the other sheet rename and
+replacement. This remains same-workbook facade hygiene, not sheet add/delete,
+relationship repair, rollback, formula calculation, or broad semantic object
+editing.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

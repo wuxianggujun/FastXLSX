@@ -489,6 +489,9 @@ source-entry and follow-up edit assertions still explicit.
 The pending diagnostics facade test now reuses the same clean/no-pending state
 helpers for the newly opened editor and rejected public edits, keeping
 replacement-specific assertions explicit.
+The clean `replace_sheet_data()` source/current-input failure helper also
+reuses the public no-pending-state helper now, with replacement diagnostics and
+source catalog checks still explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

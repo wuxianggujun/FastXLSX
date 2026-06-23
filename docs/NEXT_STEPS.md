@@ -1439,6 +1439,12 @@ while rejected `replace_sheet_data()` and `rename_sheet()` paths use the
 no-pending-state helper and keep replacement-specific assertions explicit. This
 remains test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.644 reuses the public no-pending-state helper inside the existing clean
+`replace_sheet_data()` failure-state helper. Source XML/current-input failure
+coverage keeps its replacement diagnostics and source catalog assertions
+explicit while centralizing the public pending-state checks. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

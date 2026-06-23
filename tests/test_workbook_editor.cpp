@@ -20682,10 +20682,7 @@ void test_replace_sheet_data_source_read_failure_preserves_public_state()
 void check_clean_replace_sheet_data_failure_state(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
-    check(!editor.has_pending_changes(),
-        std::string(scenario) + " should not mark the public editor dirty");
-    check(editor.pending_change_count() == 0,
-        std::string(scenario) + " should not add public pending changes");
+    check_workbook_editor_public_no_pending_state(editor, scenario);
     check(editor.pending_replacement_cell_count() == 0,
         std::string(scenario) + " should not record public replacement cells");
     check(editor.estimated_pending_replacement_memory_usage() == 0,

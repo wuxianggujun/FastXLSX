@@ -1580,6 +1580,16 @@ diagnostics do not materialize or rewrite non-materialized worksheet XML. This
 is documentation alignment only, with no code, public API, CMake, formula
 evaluation, default rewrite, external/3D semantics, dependency graph, or
 calcChain rebuild change.
+P8.663 pins the read-only public state boundary for case-varied source formula
+diagnostics. The existing `fastxlsx.workbook_editor.public` source-read
+regression now snapshots `pending_change_count()`, `has_pending_changes()`,
+pending replacement names, pending materialized names, and pending edit summary
+count after the default catalog-only rename, then verifies
+`source_formula_reference_audits()` leaves all of them unchanged while still
+reporting stale `data!` / `DATA!` source-name risks. This is diagnostic state
+hygiene only; it is not a production behavior change, formula rewrite,
+formula evaluation, external/3D semantics, dependency graph, or calcChain
+rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

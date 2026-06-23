@@ -194,6 +194,10 @@ source worksheet formula audits, and definedName audits all preserve the
 original `data!` / `DATA!` spelling while mapping those tokens to source
 `Data` and planned `Renamed & Data`. The saved package still preserves the
 formula XML and definedName bodies unchanged.
+The source-read case-varied regression also pins public state hygiene:
+`source_formula_reference_audits()` does not increment the public edit count,
+change pending-change state, create replacement diagnostics, create
+materialized diagnostics, or add pending edit summaries.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

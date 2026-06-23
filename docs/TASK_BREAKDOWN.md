@@ -28445,6 +28445,43 @@ Non-goals / boundary:
 Acceptance:
 - `git diff --check` passes.
 
+## P8.663 - Pin source formula audit read-only public state
+
+Status: done.
+
+Type: public workbook-editor source diagnostic regression test + docs; no
+public API change, no production behavior change, no CMake target membership
+change, and no formula engine expansion.
+
+Goal: prove `source_formula_reference_audits()` remains a read-only diagnostic
+after default catalog-only `rename_sheet()` and does not mutate public pending
+edit state while reporting case-varied stale source-name formula refs.
+
+Output:
+- Extended
+  `test_source_formula_reference_audits_report_case_varied_default_rename_risk()`.
+- The regression snapshots `pending_change_count()`, `has_pending_changes()`,
+  pending replacement worksheet names, pending materialized worksheet names,
+  and pending edit summary count after default
+  `rename_sheet("Data", "Renamed & Data")`.
+- The regression verifies `source_formula_reference_audits()` leaves those
+  public diagnostics unchanged while still reporting both `data!` and `DATA!`
+  as stale source-name refs mapped to source sheet `Data` and planned sheet
+  `Renamed & Data`.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the read-only
+  state hygiene boundary.
+
+Non-goals / boundary:
+- No non-materialized worksheet formula rewrite, no default formula rewrite, no
+  formula evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no complete Excel formula parser, and no public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

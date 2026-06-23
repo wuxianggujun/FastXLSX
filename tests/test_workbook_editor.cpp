@@ -656,6 +656,32 @@ void check_public_two_clean_retry_clean_after_invalid_mutations(
         editor, invalid_mutation_error);
 }
 
+void check_public_two_clean_retry_reacquire_clean_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    fastxlsx::WorksheetEditor& data_again,
+    fastxlsx::WorksheetEditor& untouched_again,
+    std::size_t expected_pending_count,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
+        label + " should keep all handles clean");
+    check(!editor.last_edit_error().has_value(),
+        label + " should keep last_edit_error clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should not create dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should not create dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should not create dirty memory estimate");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should not add handoffs");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13534,19 +13560,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
         check(untouched_again_value.kind() == fastxlsx::CellValueKind::Text &&
                 untouched_again_value.text_value() == "readonly-two-clean-reacquire-retry-untouched",
             "read-only retry post-save Untouched reacquire should reuse saved materialized state");
-        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "read-only retry post-save reacquire should keep all handles clean");
-        check(!editor.last_edit_error().has_value(),
-            "read-only retry post-save reacquire should keep last_edit_error clear");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "read-only retry post-save reacquire should not create dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "read-only retry post-save reacquire should not create dirty cell count");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "read-only retry post-save reacquire should not create dirty memory estimate");
-        check(editor.pending_change_count() == 2,
-            "read-only retry post-save reacquire should not add handoffs");
+        check_public_two_clean_retry_reacquire_clean_state(
+            editor, data, untouched, data_again, untouched_again, 2,
+            "read-only retry post-save reacquire");
 
         untouched_again.set_cell(4, 4,
             fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-second"));
@@ -13665,19 +13681,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
         check(untouched_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
                 untouched_again_recovered.text_value() == "saved-clean-two-clean-reacquire-retry-untouched-recovered",
             "saved-clean retry Untouched reacquire should keep the recovery value");
-        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "saved-clean retry post-save reacquire should keep all handles clean");
-        check(!editor.last_edit_error().has_value(),
-            "saved-clean retry post-save reacquire should keep last_edit_error clear");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean retry post-save reacquire should not create dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "saved-clean retry post-save reacquire should not create dirty cell count");
-        check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "saved-clean retry post-save reacquire should not create dirty memory estimate");
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean retry post-save reacquire should not add handoffs");
+        check_public_two_clean_retry_reacquire_clean_state(
+            editor, data, untouched, data_again, untouched_again,
+            saved_pending_count + 2, "saved-clean retry post-save reacquire");
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-second"));

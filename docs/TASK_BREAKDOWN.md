@@ -27169,6 +27169,34 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.620 - Refactor two-clean reacquire clean-state helper structure
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reduce repeated clean-session diagnostics in the P8.612
+retry/reacquire regression by extracting a named helper while preserving
+read-only and saved-clean coverage.
+
+Output:
+- Extracted post-save reacquire clean-session diagnostics into a file-scope
+  test helper.
+- Kept saved-value, follow-up valid mutation, and safe `save_as()`
+  persistence assertions unchanged.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -1294,6 +1294,11 @@ coverage: mismatched-option and missing-sheet query failures, plus the
 clean-session assertions that follow them, are now named helpers. The query
 behavior, saved-value checks, follow-up valid mutation, and safe `save_as()`
 persistence assertions stay unchanged.
+P8.620 keeps the two-clean post-save reacquire behavior unchanged but moves the
+repeated clean-session diagnostics after reacquire into a named helper.
+Saved-value checks, follow-up single-handle mutation, and safe `save_as()`
+persistence assertions stay unchanged. This is test-maintenance scaffolding
+only, not production behavior change or public API change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

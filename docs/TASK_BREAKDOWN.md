@@ -26547,6 +26547,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.602 - Pin saved-clean materialized same-sheet Patch preflight hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` operation-mixing regression
+and docs; no production behavior change, no public API change, no CMake target
+membership change, and no formula capability expansion.
+
+Goal: prove public same-sheet Patch operations also fail hygienically when the
+target worksheet has a saved-clean materialized `WorksheetEditor` session that
+was previously flushed by `save_as()`.
+
+Output:
+- Added public coverage where `worksheet("Data")` writes a cell, `save_as()`
+  flushes the dirty session into the Patch plan, and the borrowed handle becomes
+  clean before same-sheet `replace_sheet_data("Data", ...)` and
+  `rename_sheet("Data", ...)` are attempted.
+- The regression verifies both failed operations replace `last_edit_error()`
+  with the thrown guard diagnostics, preserve the saved materialized handoff
+  count and worksheet edit summaries, leave dirty materialized names / cell
+  counts / memory estimates empty, preserve source/planned catalogs and the
+  clean borrowed session's sparse state, and make the retry `save_as()` output
+  byte-for-byte match the first saved output.
+
+Non-goals / boundary:
+- No production code change, no rollback/history model, no relationship repair,
+  no complete random editor, no saved-clean commit semantic change, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -11634,6 +11634,140 @@ void test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_opera
         "read-only no-op save_as after rejected same-sheet operations should copy source entries");
 }
 
+void test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_operations()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-mixing-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-mixing-first.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-mixing-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("saved-clean-same-sheet-preflight"));
+    editor.save_as(first_output);
+
+    check(!sheet.has_pending_changes(),
+        "saved-clean same-sheet mixing setup should leave the borrowed handle clean");
+    check(editor.pending_change_count() == 1,
+        "saved-clean same-sheet mixing setup should retain the materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "saved-clean same-sheet mixing setup should clear dirty materialized names");
+    const auto first_output_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_output_entries.at("xl/worksheets/sheet1.xml"),
+        "saved-clean-same-sheet-preflight",
+        "saved-clean same-sheet mixing setup should persist the initial materialized edit");
+
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    const std::size_t expected_pending_count = editor.pending_change_count();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> expected_summaries =
+        editor.pending_worksheet_edits();
+    const std::size_t expected_cell_count = sheet.cell_count();
+    const std::size_t expected_memory = sheet.estimated_memory_usage();
+
+    const auto check_saved_clean_state = [&] (
+        std::string_view stage, const std::optional<std::string>& expected_error) {
+        const std::string prefix = std::string(stage);
+        check(editor.last_edit_error() == expected_error,
+            prefix + " should preserve last_edit_error");
+        check(editor.pending_change_count() == expected_pending_count,
+            prefix + " should preserve the saved materialized handoff count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            prefix + " should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            prefix + " should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            prefix + " should keep dirty materialized memory clear");
+        check(workbook_editor_edit_summaries_equal(
+                  editor.pending_worksheet_edits(), expected_summaries),
+            prefix + " should preserve saved-clean edit summaries");
+        check(editor.source_worksheet_names() == expected_source_names,
+            prefix + " should preserve source worksheet names");
+        check(editor.worksheet_names() == expected_planned_names,
+            prefix + " should preserve planned worksheet names");
+        check(workbook_editor_catalog_entries_equal(
+                  editor.worksheet_catalog(), expected_catalog),
+            prefix + " should preserve worksheet catalog");
+        check(!sheet.has_pending_changes(),
+            prefix + " should keep the borrowed handle clean");
+        check(sheet.cell_count() == expected_cell_count,
+            prefix + " should preserve saved sparse cell count");
+        check(sheet.estimated_memory_usage() == expected_memory,
+            prefix + " should preserve saved sparse memory");
+        const fastxlsx::CellValue current = sheet.get_cell(1, 1);
+        check(current.kind() == fastxlsx::CellValueKind::Text &&
+                current.text_value() == "saved-clean-same-sheet-preflight",
+            prefix + " should preserve the saved materialized value");
+    };
+
+    check_saved_clean_state("before rejected saved-clean operations", std::nullopt);
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_sheet_data("Data",
+            {{fastxlsx::CellValue::text("blocked-saved-clean-replacement")}});
+    } catch (const fastxlsx::FastXlsxError& error) {
+        replacement_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "saved-clean same-sheet replacement should populate last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "saved-clean same-sheet replacement diagnostic should match thrown error");
+            check_contains(*last_error,
+                "cannot replace sheet data after materializing planned worksheet session",
+                "saved-clean same-sheet replacement should report materialized-session guard");
+        }
+    }
+    check(replacement_failed,
+        "saved-clean materialized session should block same-sheet replacement");
+    const std::optional<std::string> replacement_error = editor.last_edit_error();
+    check_saved_clean_state("after rejected saved-clean replacement", replacement_error);
+    check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+
+    bool rename_failed = false;
+    try {
+        editor.rename_sheet("Data", "BlockedSavedCleanRename");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        rename_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "saved-clean same-sheet rename should replace last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "saved-clean same-sheet rename diagnostic should match thrown error");
+            check_contains(*last_error,
+                "cannot rename sheet after materializing planned worksheet session",
+                "saved-clean same-sheet rename should report materialized-session guard");
+            check_not_contains(*last_error, "replace sheet data",
+                "saved-clean same-sheet rename should replace the replacement diagnostic");
+        }
+    }
+    check(rename_failed,
+        "saved-clean materialized session should block same-sheet rename");
+    const std::optional<std::string> rename_error = editor.last_edit_error();
+    check_saved_clean_state("after rejected saved-clean rename", rename_error);
+    check_public_inspection_preserves_last_edit_error(editor, rename_error);
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == rename_error,
+        "save_as after rejected saved-clean same-sheet operations should preserve diagnostic");
+    check_saved_clean_state("after saved-clean retry save_as", rename_error);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == first_output_entries,
+        "save_as after rejected saved-clean same-sheet operations should match first output");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "blocked-saved-clean-replacement",
+        "rejected saved-clean replacement should not leak into output");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "BlockedSavedCleanRename",
+        "rejected saved-clean rename should not leak into workbook catalog");
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -20216,6 +20350,7 @@ int main(int argc, char* argv[])
         test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics();
         test_public_worksheet_editor_blocks_same_sheet_patch_operations();
         test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_operations();
+        test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_operations();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

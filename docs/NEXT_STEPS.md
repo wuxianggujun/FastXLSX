@@ -1134,6 +1134,16 @@ empty, preserve source/planned catalogs, and keep no-op `save_as()`
 copy-original. This is public facade preflight hygiene only, not relationship
 repair, rollback, complete random editing, formula evaluation, or formula
 rewrite expansion.
+P8.602 closes the saved-clean side of that same preflight boundary: after a
+dirty `WorksheetEditor` session has been flushed by `save_as()` and marked
+clean, same-sheet `replace_sheet_data()` and `rename_sheet()` still fail before
+mutating the planned catalog or queued Patch handoff. The regression preserves
+the saved materialized handoff count, edit summaries, clean borrowed handle,
+empty dirty materialized diagnostics, and saved output bytes while replacing
+`last_edit_error()` with each guard diagnostic. This is still public facade
+operation-mixing hygiene only, not rollback, relationship repair,
+sharedStrings/styles migration, formula evaluation, or formula rewrite
+expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

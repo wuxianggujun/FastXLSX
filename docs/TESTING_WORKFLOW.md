@@ -387,6 +387,10 @@ once a clean borrowed `WorksheetEditor` has materialized `Data`, same-sheet
 `replace_sheet_data()` and `rename_sheet()` must fail before queuing Patch work,
 replace `last_edit_error()` with the guard diagnostic, preserve the clean
 borrowed session and catalog views, and keep no-op `save_as()` copy-original.
+The saved-clean variant is pinned as well: after `save_as()` flushes a dirty
+borrowed session into the Patch plan and marks the handle clean, same-sheet
+Patch operations must still fail before changing the saved handoff, dirty
+materialized diagnostics, catalog views, or retry output bytes.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

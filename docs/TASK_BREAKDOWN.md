@@ -28082,6 +28082,34 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.652 - Add no-replacement-diagnostics helper for rename-only states
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: add a narrow helper for states that may have valid pending rename edits
+but must not expose sheetData replacement diagnostics.
+
+Output:
+- Added `check_workbook_editor_no_replacement_diagnostics()`.
+- Reused it in the pending diagnostics rename-only branch.
+- Reused it in the rename-chain-back regression.
+- Kept pending-count, planned-catalog, data-replaced, and summary assertions
+  explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -1484,6 +1484,12 @@ failure clean-state helper. Replacement diagnostics, materialized-session
 diagnostics, source/planned catalog checks, recovery checks, and optional
 `last_edit_error()` assertions remain explicit. This remains test-maintenance
 only and does not alter production behavior, generated workbooks, or public API.
+P8.652 adds a narrow no-replacement-diagnostics helper for states that may have
+valid pending rename edits but must not expose sheetData replacement diagnostics.
+The pending diagnostics rename-only path and rename-chain-back path now share
+that helper while keeping pending-count, planned-catalog, data-replaced, and
+summary assertions explicit. This remains test-maintenance only and does not
+alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

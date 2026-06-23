@@ -219,6 +219,19 @@ void check_workbook_editor_public_clean_state(
         prefix + " should keep last_edit_error empty");
 }
 
+void check_workbook_editor_no_replacement_diagnostics(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.pending_replacement_cell_count() == 0,
+        prefix + " should not expose replacement cells");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        prefix + " should not expose replacement memory");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        prefix + " should not expose replacement sheet names");
+}
+
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
@@ -20401,14 +20414,10 @@ void test_pending_change_diagnostics_track_public_edits()
         "successful rename_sheet should mark the editor dirty");
     check(rename_editor.pending_change_count() > 0,
         "successful rename_sheet should expose a coarse pending count");
-    check(rename_editor.pending_replacement_cell_count() == 0,
-        "rename_sheet should not add replacement cells");
-    check(rename_editor.pending_replacement_worksheet_names().empty(),
-        "rename_sheet should not add pending replacement names");
+    check_workbook_editor_no_replacement_diagnostics(
+        rename_editor, "successful rename_sheet");
     check(!rename_editor.has_pending_replacement("Renamed"),
         "rename_sheet should not mark the renamed sheet as data-replaced");
-    check(rename_editor.estimated_pending_replacement_memory_usage() == 0,
-        "rename_sheet should not add replacement memory");
 }
 
 void test_last_edit_error_tracks_failed_public_edits()
@@ -22605,12 +22614,8 @@ void test_rename_chain_back_to_source_name_clears_rename_only_summary()
         "rename-only chain back should remove the first transient planned name");
     check(!editor.has_worksheet("TemporaryB"),
         "rename-only chain back should remove the second transient planned name");
-    check(editor.pending_replacement_cell_count() == 0,
-        "rename-only chain back should not create replacement diagnostics");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        "rename-only chain back should not create replacement memory diagnostics");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        "rename-only chain back should not report replacement sheet names");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "rename-only chain back");
     check(editor.pending_worksheet_edits().empty(),
         "rename-only chain back to the source name should clear rename-only summaries");
     {

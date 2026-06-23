@@ -516,6 +516,9 @@ The materialization failure clean-state helper now delegates the generic
 WorkbookEditor no-pending checks to the shared helper, while keeping
 replacement, materialized-session, catalog, recovery, and optional
 `last_edit_error()` checks explicit.
+Rename-only public editor states now share a narrow no-replacement-diagnostics
+helper when replacement cells, memory, and replacement sheet names must stay
+empty even though valid rename edits may still be pending.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

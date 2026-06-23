@@ -27049,6 +27049,38 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.616 - Pin failed-save hygiene after two-clean invalid-mutation retry reacquire
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` failed-save diagnostic
+preservation regression and docs; no production behavior change, no public API
+change, no CMake target membership change, and no formula capability expansion.
+
+Goal: prove that after the two-clean retry/reacquire chain, invalid mutations,
+and the resulting `last_edit_error()`, a failed `save_as(source)` still keeps
+the invalid-mutation diagnostic stable without dirtying clean sessions or
+adding handoffs.
+
+Output:
+- Extended the P8.615 public read-only and saved-clean retry/reacquire
+  regression so that, after invalid `set_cell()` / `erase_cell()` failures have
+  populated `last_edit_error()`, a later `save_as(source)` failure preserves
+  that diagnostic and keeps all handles clean.
+- The regression still verifies the later valid mutation clears the diagnostic,
+  dirties only the touched reacquired session, and persists through the next
+  safe `save_as()`.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

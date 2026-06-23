@@ -14204,6 +14204,17 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         check_clean_after_invalid_mutations(editor, data, untouched, data_again,
             untouched_again, 2, data_count, data_memory, untouched_count,
             untouched_memory, "read-only retry invalid mutations");
+        const std::optional<std::string> read_only_invalid_mutation_error =
+            editor.last_edit_error();
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "read-only retry failed save_as after invalid mutations should reject source overwrite");
+        check(editor.last_edit_error() == read_only_invalid_mutation_error,
+            "read-only retry failed save_as after invalid mutations should preserve diagnostics");
+        check_clean_after_invalid_mutations(editor, data, untouched, data_again,
+            untouched_again, 2, data_count, data_memory, untouched_count,
+            untouched_memory,
+            "read-only retry failed save_as after invalid mutations");
 
         const fastxlsx::CellValue data_value = data_again.get_cell(1, 1);
         const fastxlsx::CellValue untouched_value = untouched_again.get_cell(1, 1);
@@ -14328,6 +14339,17 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             untouched_again, saved_pending_count + 2, data_count, data_memory,
             untouched_count, untouched_memory,
             "saved-clean retry invalid mutations");
+        const std::optional<std::string> saved_clean_invalid_mutation_error =
+            editor.last_edit_error();
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "saved-clean retry failed save_as after invalid mutations should reject source overwrite");
+        check(editor.last_edit_error() == saved_clean_invalid_mutation_error,
+            "saved-clean retry failed save_as after invalid mutations should preserve diagnostics");
+        check_clean_after_invalid_mutations(editor, data, untouched, data_again,
+            untouched_again, saved_pending_count + 2, data_count, data_memory,
+            untouched_count, untouched_memory,
+            "saved-clean retry failed save_as after invalid mutations");
 
         const fastxlsx::CellValue data_first = data_again.get_cell(1, 1);
         const fastxlsx::CellValue data_recovered = data_again.get_cell(3, 3);

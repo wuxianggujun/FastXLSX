@@ -1269,6 +1269,15 @@ only the touched reacquired session, and persists through the next safe
 `save_as()`. This is invalid-mutation state hygiene only, not rollback,
 transaction history, relationship repair, random-editor expansion, formula
 evaluation, or formula rewrite expansion.
+P8.616 closes the adjacent failed-save edge after that invalid-mutation
+diagnostic: the same retry/reacquire regression now attempts `save_as(source)`
+after invalid mutations have populated `last_edit_error()`, and proves the
+output-path failure does not replace or clear that diagnostic, does not dirty
+clean sessions, does not add handoffs, and still leaves the next valid mutation
+able to clear diagnostics and persist through a safe `save_as()`. This is
+diagnostic preservation around output-path preflight only, not rollback,
+transaction history, relationship repair, random-editor expansion, formula
+evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

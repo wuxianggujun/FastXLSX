@@ -29020,6 +29020,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.679 - Pin formula rewrite failed-save retry state
+
+Status: done.
+
+Type: public workbook-editor formula rewrite failed-save retry regression test +
+docs; no public API symbol change, no production behavior change, no CMake
+target membership change, and no formula engine expansion.
+
+Goal: prove an already-successful explicit formula rewrite is not lost or
+partially flushed when `WorkbookEditor::save_as()` fails before output creation.
+
+Output:
+- Added
+  `test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()`.
+- The regression performs a combined definedName + materialized worksheet
+  formula rewrite, then snapshots the planned catalog, public edit summaries,
+  dirty materialized worksheet diagnostics, and empty `last_edit_error()`.
+- A missing-parent `save_as()` failure must not create output, must not create
+  `last_edit_error()`, and must preserve the rewritten materialized formula
+  session and pending public rename state.
+- A later safe `save_as()` retry must persist the renamed catalog, rewritten
+  workbook definedName, and rewritten materialized worksheet formula; reopening
+  the output must expose the rewritten formula text.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the formula
+  rewrite output-failure retry boundary.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no non-materialized worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no atomic in-place editing guarantee, and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

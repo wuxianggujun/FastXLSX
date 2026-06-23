@@ -163,6 +163,11 @@ failed public edit diagnostic before the valid rename and verify the success
 clears `last_edit_error()` across definedName-only, materialized worksheet
 formula, combined, case-varied, chained alias, and multi-session materialized
 formula rewrite paths.
+The formula rewrite failed-save regression then verifies the already-successful
+combined rewrite state survives a missing-parent `save_as()` failure: the
+planned catalog, rewritten definedName, dirty materialized formula session,
+public summaries, empty `last_edit_error()`, and later safe retry output all
+remain consistent.
 
 `generated_formula_rename_escaped_sheet_name` is the focused local QA for the
 same explicit rewrite policy when the new sheet name contains formula/XML

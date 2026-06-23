@@ -22704,6 +22704,93 @@ void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
         "reopened output should expose second rewritten materialized formula");
 }
 
+void test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-formula-rewrite-failed-save-source.xlsx");
+    const std::filesystem::path missing_parent_output =
+        artifact("fastxlsx-workbook-editor-formula-rewrite-failed-save-missing-parent")
+        / "output.xlsx";
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-failed-save-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    check(formula_sheet.get_cell("A1").text_value() == "Data!A1",
+        "formula rewrite failed-save fixture should start with the source formula");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "RenamedData", options);
+
+    const std::string expected_formula = "'RenamedData'!A1";
+    check(!editor.last_edit_error().has_value(),
+        "successful formula rewrite before failed save_as should leave last_edit_error empty");
+    check(formula_sheet.has_pending_changes() &&
+            formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "successful formula rewrite before failed save_as should dirty the materialized formula");
+    check(editor.pending_change_count() == 1,
+        "formula rewrite failed-save fixture should queue one public rename before save");
+
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_save =
+        editor.worksheet_catalog();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_save =
+        editor.pending_worksheet_edits();
+    const std::vector<std::string> dirty_names_before_save =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t dirty_cell_count_before_save =
+        editor.pending_materialized_cell_count();
+    const std::size_t dirty_memory_before_save =
+        editor.estimated_pending_materialized_memory_usage();
+
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+        "formula rewrite save_as to a missing parent should fail without committing output");
+    check(!std::filesystem::exists(missing_parent_output),
+        "formula rewrite failed save_as should not create the missing-parent output");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_save, "failed formula rewrite save_as");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before_save),
+        "failed formula rewrite save_as should preserve the planned catalog");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_save),
+        "failed formula rewrite save_as should preserve public edit summaries");
+    check(editor.pending_materialized_worksheet_names() == dirty_names_before_save,
+        "failed formula rewrite save_as should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count_before_save,
+        "failed formula rewrite save_as should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == dirty_memory_before_save,
+        "failed formula rewrite save_as should preserve dirty materialized memory");
+    check(formula_sheet.has_pending_changes() &&
+            formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "failed formula rewrite save_as should preserve the rewritten formula session");
+    check(!editor.last_edit_error().has_value(),
+        "failed formula rewrite save_as should not create last_edit_error");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "safe retry after formula rewrite failed save should persist the catalog rename");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'RenamedData'!$A$1:$B$2</definedName>)",
+        "safe retry after formula rewrite failed save should persist rewritten definedNames");
+    check_contains(output_entries.at("xl/worksheets/sheet3.xml"), expected_formula,
+        "safe retry after formula rewrite failed save should persist rewritten worksheet formulas");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        "reopened retry output should expose the rewritten formula after failed save_as");
+}
+
 void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()
 {
     const std::filesystem::path source = write_formula_reference_source(
@@ -23790,6 +23877,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_default_preserves_case_varied_formula_refs();
         test_rename_sheet_chain_formula_policy_rewrites_source_aliases();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
+        test_rename_sheet_formula_rewrite_failed_save_as_preserves_state();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();

@@ -1710,6 +1710,13 @@ case-varied local reference, chained alias, and multi-session materialized
 formula rewrite regressions now seed a prior invalid-rename `last_edit_error()`
 and prove the subsequent successful opt-in rewrite clears it while preserving
 the existing formula rewrite assertions.
+P8.679 pins the output-failure retry boundary after a successful combined
+formula rewrite. A new regression performs the opt-in definedName +
+materialized worksheet formula rewrite, snapshots public edit summaries,
+planned catalog, dirty materialized diagnostics, and empty `last_edit_error()`,
+then forces a missing-parent `save_as()` failure. The same editor must preserve
+the rewritten state and a later safe retry must persist the renamed catalog,
+rewritten definedName, and rewritten materialized formula.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

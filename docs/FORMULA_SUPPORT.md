@@ -216,7 +216,8 @@ replacement/materialized diagnostics, pending edit summaries, or
 The non-materialized worksheet audit regression pins the empty-read side of the
 same contract: `formula_reference_audits()` returns no entries before
 `worksheet()` opens a session and still does not create materialized sessions,
-replacement diagnostics, pending edit summaries, or pending-change state.
+replacement diagnostics, pending edit summaries, pending-change state, or
+`last_edit_error()`.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

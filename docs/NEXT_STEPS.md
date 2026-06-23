@@ -1662,6 +1662,13 @@ the pending-state diagnostics and verifies stale source-name formula references
 are reported without replacing that public edit diagnostic. This is diagnostic
 state hygiene only; it is not worksheet formula rewrite, formula evaluation,
 external/3D semantics, dependency graphing, or calcChain rebuild.
+P8.672 closes the empty-read side of the same public audit contract: before any
+`WorksheetEditor` session is opened, `formula_reference_audits()` now snapshots
+`last_edit_error()` with the non-materialized pending-state diagnostics and
+verifies the empty audit read leaves that public diagnostic unchanged. This is
+diagnostic state hygiene only; it is not lazy worksheet materialization,
+worksheet formula rewrite, formula evaluation, external/3D semantics,
+dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

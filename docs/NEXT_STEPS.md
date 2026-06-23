@@ -1242,6 +1242,14 @@ mutation on one reacquired handle still dirties only that handle before a
 second safe `save_as()`. This is post-save reacquire hygiene after failed-save
 retry, not rollback, transaction history, relationship repair, random-editor
 expansion, formula evaluation, or formula rewrite expansion.
+P8.613 pins the failure-query side of that same state: after failed-save retry
+and post-save reacquire, mismatched-option `try_worksheet()` / `worksheet()`
+lookups and missing-sheet lookups must not dirty `Data` or `Untouched`, must not
+create `last_edit_error()`, must preserve catalog diagnostics and saved
+materialized values, and must still allow the next single-handle mutation to
+flush through a later safe `save_as()`. This is query hygiene only, not
+rollback, transaction history, relationship repair, random-editor expansion,
+formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

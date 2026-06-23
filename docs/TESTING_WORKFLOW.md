@@ -438,6 +438,11 @@ both materialized handles, reacquiring `Data` and `Untouched` must read the
 saved recovered cells rather than source state, keep clean diagnostics empty,
 and let a later mutation dirty only the touched reacquired session before the
 next safe `save_as()`.
+Failure-query hygiene is pinned on top of that reacquired state: mismatched
+materialization options and missing-sheet lookups after the retry must leave
+`last_edit_error()`, dirty materialized diagnostics, worksheet summaries,
+catalog queries, and saved values unchanged, and the next valid mutation must
+still dirty only the touched reacquired session.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

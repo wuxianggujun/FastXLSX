@@ -697,6 +697,35 @@ void check_public_two_clean_retry_saved_value(
         label + " should preserve the saved materialized value");
 }
 
+void check_public_two_clean_retry_single_dirty_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& dirty,
+    fastxlsx::WorksheetEditor& dirty_again,
+    fastxlsx::WorksheetEditor& clean,
+    fastxlsx::WorksheetEditor& clean_again,
+    std::string_view expected_dirty_name,
+    std::size_t expected_dirty_cell_count,
+    std::size_t expected_dirty_memory_usage,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(dirty.has_pending_changes() && dirty_again.has_pending_changes() &&
+            !clean.has_pending_changes() && !clean_again.has_pending_changes(),
+        label + " should dirty only the touched session");
+    {
+        const std::vector<std::string> dirty_names =
+            editor.pending_materialized_worksheet_names();
+        check(dirty_names == std::vector<std::string>{std::string(expected_dirty_name)},
+            label + " should expose only the touched session as dirty");
+    }
+    check(editor.pending_materialized_cell_count() == expected_dirty_cell_count,
+        label + " should report only the touched session cells");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            expected_dirty_memory_usage,
+        label + " should report only the touched session memory");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13579,20 +13608,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
 
         untouched_again.set_cell(4, 4,
             fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-second"));
-        check(!data.has_pending_changes() && !data_again.has_pending_changes() &&
-                untouched.has_pending_changes() && untouched_again.has_pending_changes(),
-            "read-only retry second mutation should dirty only the Untouched session");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Untouched"},
-                "read-only retry second mutation should expose only Untouched as dirty");
-        }
-        check(editor.pending_materialized_cell_count() == untouched_again.cell_count(),
-            "read-only retry second mutation should report only Untouched cells");
-        check(editor.estimated_pending_materialized_memory_usage() ==
-                untouched_again.estimated_memory_usage(),
-            "read-only retry second mutation should report only Untouched memory");
+        check_public_two_clean_retry_single_dirty_state(
+            editor, untouched, untouched_again, data, data_again, "Untouched",
+            untouched_again.cell_count(), untouched_again.estimated_memory_usage(),
+            "read-only retry second mutation");
 
         editor.save_as(second_output);
         check(editor.pending_change_count() == 3,
@@ -13698,15 +13717,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-second"));
-        check(data.has_pending_changes() && data_again.has_pending_changes() &&
-                !untouched.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "saved-clean retry second mutation should dirty only the Data session");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Data"},
-                "saved-clean retry second mutation should expose only Data as dirty");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, data, data_again, untouched, untouched_again, "Data",
+            data_again.cell_count(), data_again.estimated_memory_usage(),
+            "saved-clean retry second mutation");
 
         editor.save_as(third_output);
         check(editor.pending_change_count() == saved_pending_count + 3,
@@ -13804,15 +13818,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
 
         untouched_again.set_cell(2, 2,
             fastxlsx::CellValue::text("readonly-two-clean-query-retry-second"));
-        check(!data.has_pending_changes() && !data_again.has_pending_changes() &&
-                untouched.has_pending_changes() && untouched_again.has_pending_changes(),
-            "read-only query retry post-query mutation should dirty only Untouched");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Untouched"},
-                "read-only query retry post-query mutation should expose only Untouched");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, untouched, untouched_again, data, data_again, "Untouched",
+            untouched_again.cell_count(), untouched_again.estimated_memory_usage(),
+            "read-only query retry post-query mutation");
 
         editor.save_as(second_output);
         check(editor.pending_change_count() == 3,
@@ -13906,15 +13915,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-query-retry-second"));
-        check(data.has_pending_changes() && data_again.has_pending_changes() &&
-                !untouched.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "saved-clean query retry post-query mutation should dirty only Data");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Data"},
-                "saved-clean query retry post-query mutation should expose only Data");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, data, data_again, untouched, untouched_again, "Data",
+            data_again.cell_count(), data_again.estimated_memory_usage(),
+            "saved-clean query retry post-query mutation");
 
         editor.save_as(third_output);
         check(editor.pending_change_count() == saved_pending_count + 3,
@@ -14014,15 +14018,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
 
         data_again.set_cell(4, 4,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-read-retry-second"));
-        check(data.has_pending_changes() && data_again.has_pending_changes() &&
-                !untouched.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "read-only retry post-invalid-read mutation should dirty only Data");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Data"},
-                "read-only retry post-invalid-read mutation should expose only Data");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, data, data_again, untouched, untouched_again, "Data",
+            data_again.cell_count(), data_again.estimated_memory_usage(),
+            "read-only retry post-invalid-read mutation");
 
         editor.save_as(second_output);
         check(editor.pending_change_count() == 3,
@@ -14121,15 +14120,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
 
         untouched_again.set_cell(4, 4,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-read-retry-second"));
-        check(!data.has_pending_changes() && !data_again.has_pending_changes() &&
-                untouched.has_pending_changes() && untouched_again.has_pending_changes(),
-            "saved-clean retry post-invalid-read mutation should dirty only Untouched");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Untouched"},
-                "saved-clean retry post-invalid-read mutation should expose only Untouched");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, untouched, untouched_again, data, data_again, "Untouched",
+            untouched_again.cell_count(), untouched_again.estimated_memory_usage(),
+            "saved-clean retry post-invalid-read mutation");
 
         editor.save_as(third_output);
         check(editor.pending_change_count() == saved_pending_count + 3,
@@ -14254,15 +14248,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             fastxlsx::CellValue::text("readonly-two-clean-invalid-mutation-retry-second"));
         check(!editor.last_edit_error().has_value(),
             "read-only retry valid post-invalid-mutation edit should clear diagnostics");
-        check(data.has_pending_changes() && data_again.has_pending_changes() &&
-                !untouched.has_pending_changes() && !untouched_again.has_pending_changes(),
-            "read-only retry post-invalid-mutation edit should dirty only Data");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Data"},
-                "read-only retry post-invalid-mutation edit should expose only Data");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, data, data_again, untouched, untouched_again, "Data",
+            data_again.cell_count(), data_again.estimated_memory_usage(),
+            "read-only retry post-invalid-mutation edit");
 
         editor.save_as(second_output);
         check(editor.pending_change_count() == 3,
@@ -14398,15 +14387,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-mutation-retry-second"));
         check(!editor.last_edit_error().has_value(),
             "saved-clean retry valid post-invalid-mutation edit should clear diagnostics");
-        check(!data.has_pending_changes() && !data_again.has_pending_changes() &&
-                untouched.has_pending_changes() && untouched_again.has_pending_changes(),
-            "saved-clean retry post-invalid-mutation edit should dirty only Untouched");
-        {
-            const std::vector<std::string> dirty_names =
-                editor.pending_materialized_worksheet_names();
-            check(dirty_names == std::vector<std::string>{"Untouched"},
-                "saved-clean retry post-invalid-mutation edit should expose only Untouched");
-        }
+        check_public_two_clean_retry_single_dirty_state(
+            editor, untouched, untouched_again, data, data_again, "Untouched",
+            untouched_again.cell_count(), untouched_again.estimated_memory_usage(),
+            "saved-clean retry post-invalid-mutation edit");
 
         editor.save_as(third_output);
         check(editor.pending_change_count() == saved_pending_count + 3,

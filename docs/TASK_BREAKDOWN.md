@@ -27254,6 +27254,34 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.623 - Batch refactor two-clean retry single-dirty-session checks
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: finish the current two-clean retry cleanup by extracting the repeated
+single-dirty-session assertions after follow-up valid mutations.
+
+Output:
+- Added a shared helper for the "only one session is dirty" checks.
+- Reused it across the reacquire, query-failure, invalid-read, and
+  invalid-mutation retry regressions.
+- Kept mutation injection, saved-value checks, clean-state diagnostics, and
+  safe `save_as()` persistence assertions unchanged.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

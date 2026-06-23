@@ -1311,6 +1311,13 @@ clean-state diagnostics, follow-up valid mutation, rejected-payload checks, and
 safe `save_as()` persistence assertions stay unchanged. This is a batched
 test-maintenance cleanup only, not production behavior change or public API
 change.
+P8.623 finishes the next layer of that same family by extracting the repeated
+single-dirty-session checks after valid follow-up mutations. Reacquire,
+query-failure, invalid-read, and invalid-mutation regressions now share the same
+dirty-session helper while their failure injection, saved-value checks,
+clean-state diagnostics, and safe `save_as()` persistence assertions stay
+unchanged. This is still test-maintenance scaffolding only, not production
+behavior change or public API change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

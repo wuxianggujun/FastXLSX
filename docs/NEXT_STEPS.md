@@ -1654,6 +1654,14 @@ formula diagnostics. After default catalog-only `rename_sheet("Data",
 definedName references without replacing that public edit diagnostic. This is
 diagnostic state hygiene only; it is not definedName rewrite, formula
 evaluation, external/3D semantics, dependency graphing, or calcChain rebuild.
+P8.671 closes the matching `last_edit_error()` gap for already-materialized
+worksheet formula diagnostics. After default catalog-only
+`rename_sheet("Data", "RenamedData")`, the materialized
+`formula_reference_audits()` regression now snapshots `last_edit_error()` with
+the pending-state diagnostics and verifies stale source-name formula references
+are reported without replacing that public edit diagnostic. This is diagnostic
+state hygiene only; it is not worksheet formula rewrite, formula evaluation,
+external/3D semantics, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

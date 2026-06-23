@@ -460,6 +460,9 @@ test-maintenance scaffolding only and does not change public behavior.
 The follow-up safe-save checks in that family also use a shared helper now,
 covering clean handles, clear diagnostics, expected handoff counts, and empty
 dirty materialized diagnostics after save.
+The adjacent non-retry two-clean recovery, other-mutation, and failed-save
+output assertions now use scenario helpers too; this is test-maintenance
+scaffolding only and does not change public behavior.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

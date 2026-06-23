@@ -881,6 +881,81 @@ void check_public_two_clean_retry_saved_clean_followup_output(
     check_public_two_clean_retry_no_rejected_prefix(entries, rejected_prefix, label);
 }
 
+void check_public_two_clean_recovery_copy_original_output(
+    const std::map<std::string, std::string>& entries,
+    const std::map<std::string, std::string>& source_entries,
+    std::string_view data_rejected_text,
+    std::string_view untouched_rejected_text,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(entries == source_entries, label + " should remain copy-original");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_rejected_text, label + " should not leak rejected Data payload");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_rejected_text, label + " should not leak rejected Untouched payload");
+}
+
+void check_public_two_clean_saved_clean_output(
+    const std::map<std::string, std::string>& entries,
+    std::string_view blocked_catalog_name,
+    std::string_view data_text,
+    std::string_view untouched_text,
+    std::string_view scenario,
+    std::string_view untouched_rejected_text = {})
+{
+    const std::string label = std::string(scenario);
+
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/workbook.xml"),
+        R"(name="Data")", label + " should preserve Data catalog name");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/workbook.xml"),
+        blocked_catalog_name, label + " should not leak rejected Data rename");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_text, label + " should persist Data value");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_text, label + " should persist Untouched value");
+    if (!untouched_rejected_text.empty()) {
+        check_not_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+            untouched_rejected_text, label + " should not leak rejected Untouched payload");
+    }
+}
+
+void check_public_two_clean_other_mutation_readonly_output(
+    const std::map<std::string, std::string>& entries,
+    const std::map<std::string, std::string>& source_entries,
+    std::string_view data_rejected_text,
+    std::string_view untouched_mutated_text,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml") ==
+            check_public_two_clean_retry_entry(source_entries, "xl/worksheets/sheet1.xml"),
+        label + " should preserve Data bytes");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_rejected_text, label + " should not leak rejected Data payload");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_mutated_text, label + " should persist Untouched mutation");
+}
+
+void check_public_two_clean_failed_save_readonly_output(
+    const std::map<std::string, std::string>& entries,
+    std::string_view data_text,
+    std::string_view untouched_text,
+    std::string_view data_rejected_text,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_text, label + " should persist Data mutation");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_text, label + " should persist Untouched mutation");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_rejected_text, label + " should not leak rejected Data payload");
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13212,14 +13287,10 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_othe
         check(editor.last_edit_error() == untouched_error,
             "read-only two-clean save_as should preserve the latest Untouched diagnostic");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
-        check(output_entries == source_entries,
-            "read-only two-clean output should remain copy-original");
-        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-blocked-data",
-            "read-only two-clean rejected Data payload should not leak");
-        check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_recovery_copy_original_output(
+            output_entries, source_entries, "readonly-two-clean-blocked-data",
             "readonly-two-clean-blocked-untouched",
-            "read-only two-clean rejected Untouched payload should not leak");
+            "read-only two-clean output");
     }
 
     {
@@ -13329,20 +13400,12 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_othe
         check(editor.pending_change_count() == saved_pending_count + 1,
             "saved-clean two-clean save_as should record one additional Data handoff");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
-        check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean two-clean rejected Data rename should not change workbook catalog");
-        check_not_contains(output_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoHandleBlockedData",
-            "saved-clean two-clean rejected Data rename should not leak");
-        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_saved_clean_output(
+            output_entries, "SavedCleanTwoHandleBlockedData",
             "saved-clean-two-handle-data-recovered",
-            "saved-clean two-clean output should persist the Data recovery mutation");
-        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-handle-untouched",
-            "saved-clean two-clean output should preserve the untouched saved value");
-        check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"),
-            "saved-clean-two-handle-blocked-untouched",
-            "saved-clean two-clean rejected Untouched replacement should not leak");
+            "saved-clean two-clean output",
+            "saved-clean-two-handle-blocked-untouched");
     }
 }
 
@@ -13424,15 +13487,10 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_
         check(editor.pending_change_count() == 1,
             "read-only two-clean other-mutation save_as should record one materialized handoff");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
-        check(output_entries.at("xl/worksheets/sheet1.xml") ==
-                source_entries.at("xl/worksheets/sheet1.xml"),
-            "read-only two-clean other-mutation output should preserve Data bytes");
-        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-other-mutation-blocked-data",
-            "read-only two-clean rejected Data payload should not leak after other mutation");
-        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_other_mutation_readonly_output(
+            output_entries, source_entries, "readonly-two-clean-other-mutation-blocked-data",
             "readonly-two-clean-untouched-mutated",
-            "read-only two-clean output should persist the Untouched mutation");
+            "read-only two-clean other-mutation output");
     }
 
     {
@@ -13520,17 +13578,11 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_
         check(editor.pending_change_count() == saved_pending_count + 2,
             "saved-clean two-clean other-mutation save_as should record both additional handoffs");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
-        check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean two-clean rejected Data rename should not change workbook catalog");
-        check_not_contains(output_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoHandleOtherMutationBlockedData",
-            "saved-clean two-clean rejected Data rename should not leak after other mutation");
-        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_saved_clean_output(
+            output_entries, "SavedCleanTwoHandleOtherMutationBlockedData",
             "saved-clean-two-handle-data-before-other-mutation",
-            "saved-clean two-clean output should persist Data recovery mutation");
-        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-handle-untouched-after-data-recovery",
-            "saved-clean two-clean output should persist Untouched later mutation");
+            "saved-clean two-clean other-mutation output");
     }
 }
 
@@ -13609,15 +13661,11 @@ void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty
         check(editor.pending_materialized_worksheet_names().empty(),
             "read-only two-clean recovery safe save_as should clear dirty names");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
-        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-failed-save-data",
-            "read-only two-clean recovery safe output should persist Data mutation");
-        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_failed_save_readonly_output(
+            output_entries, "readonly-two-clean-failed-save-data",
             "readonly-two-clean-failed-save-untouched",
-            "read-only two-clean recovery safe output should persist Untouched mutation");
-        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
             "readonly-two-clean-failed-save-blocked-data",
-            "read-only two-clean rejected payload should not leak after retry");
+            "read-only two-clean recovery safe output");
     }
 
     {
@@ -13691,17 +13739,11 @@ void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty
         check(editor.pending_materialized_worksheet_names().empty(),
             "saved-clean two-clean recovery safe save_as should clear dirty names");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
-        check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean two-clean rejected rename should preserve Data catalog name");
-        check_not_contains(output_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoCleanFailedSaveBlockedData",
-            "saved-clean two-clean rejected rename should not leak after retry");
-        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_saved_clean_output(
+            output_entries, "SavedCleanTwoCleanFailedSaveBlockedData",
             "saved-clean-two-clean-failed-save-data-recovered",
-            "saved-clean two-clean recovery safe output should persist Data mutation");
-        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-failed-save-untouched-recovered",
-            "saved-clean two-clean recovery safe output should persist Untouched mutation");
+            "saved-clean two-clean recovery safe output");
     }
 }
 

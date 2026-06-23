@@ -1338,6 +1338,12 @@ follow-up outputs, now use shared helpers that keep the Data / Untouched value
 checks and rejected replacement / rejected rename / rejected invalid-mutation
 payload leak checks together. This reduces duplicated package assertions while
 leaving the generated workbooks, public behavior, and public API unchanged.
+P8.627 applies the same output-check cleanup to the adjacent non-retry
+two-clean recovery and other-mutation coverage. Copy-original, saved-clean
+recovery, scoped other-mutation, and failed-save recovery outputs now use
+scenario helpers for workbook catalog preservation, persisted Data /
+Untouched values, and rejected-payload leak checks. This remains
+test-maintenance only, with no production behavior or public API change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

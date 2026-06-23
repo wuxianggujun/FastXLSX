@@ -531,6 +531,10 @@ diagnostic block now reuse the no-replacement-diagnostics helper where
 replacement cells, replacement memory, and replacement sheet names were already
 checked together; pending counts, replacement lookup probes, materialized
 diagnostics, catalog checks, handles, and value assertions stay explicit.
+The shared public clean-state helper now delegates its replacement cells,
+replacement memory, and replacement sheet-name assertions to the same
+no-replacement-diagnostics helper, while keeping no-pending state and
+`last_edit_error()` checks explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

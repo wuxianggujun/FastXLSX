@@ -203,22 +203,6 @@ void check_workbook_editor_public_no_pending_state(
         prefix + " should keep pending summaries empty");
 }
 
-void check_workbook_editor_public_clean_state(
-    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
-{
-    const std::string prefix = std::string(scenario);
-
-    check_workbook_editor_public_no_pending_state(editor, scenario);
-    check(editor.pending_replacement_cell_count() == 0,
-        prefix + " should keep replacement cell count empty");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        prefix + " should keep replacement memory estimate empty");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        prefix + " should keep replacement worksheet names empty");
-    check(!editor.last_edit_error().has_value(),
-        prefix + " should keep last_edit_error empty");
-}
-
 void check_workbook_editor_no_replacement_diagnostics(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
@@ -230,6 +214,17 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement memory");
     check(editor.pending_replacement_worksheet_names().empty(),
         prefix + " should not expose replacement sheet names");
+}
+
+void check_workbook_editor_public_clean_state(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check_workbook_editor_public_no_pending_state(editor, scenario);
+    check_workbook_editor_no_replacement_diagnostics(editor, scenario);
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep last_edit_error empty");
 }
 
 void check_public_inspection_preserves_last_edit_error(

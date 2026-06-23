@@ -28197,6 +28197,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.656 - Reuse no-replacement helper in public clean-state helper
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: make the shared public clean-state helper reuse the existing
+no-replacement-diagnostics helper for its replacement cells, memory, and sheet
+name assertions.
+
+Output:
+- Moved `check_workbook_editor_no_replacement_diagnostics()` before
+  `check_workbook_editor_public_clean_state()` so the clean-state helper can
+  delegate the replacement diagnostic checks.
+- Kept generic no-pending-state checks and `last_edit_error()` assertions
+  explicit in `check_workbook_editor_public_clean_state()`.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -1508,6 +1508,12 @@ Pending counts, replacement lookup probes, materialized-session diagnostics,
 catalog checks, and handle/value assertions remain explicit. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.656 reuses that same no-replacement-diagnostics helper inside the shared
+public clean-state helper itself. Clean-state callers now share the replacement
+cells, replacement memory, and replacement sheet-name checks while keeping
+generic no-pending state and `last_edit_error()` assertions explicit. This
+remains test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

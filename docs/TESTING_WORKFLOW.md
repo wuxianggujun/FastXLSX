@@ -512,6 +512,10 @@ The last-edit-error tracking regression now also shares the no-pending helper
 after the initial failed replace call, while the later failed rename path keeps
 its existing public inspection and `last_edit_error()` assertions because a
 successful rename is already queued.
+The materialization failure clean-state helper now delegates the generic
+WorkbookEditor no-pending checks to the shared helper, while keeping
+replacement, materialized-session, catalog, recovery, and optional
+`last_edit_error()` checks explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

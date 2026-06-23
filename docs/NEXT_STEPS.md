@@ -1479,6 +1479,11 @@ already has a queued successful rename, so it keeps only the existing
 `last_edit_error()` and inspection assertions explicit. This remains
 test-maintenance only and does not alter production behavior, generated
 workbooks, or public API.
+P8.651 reuses the public no-pending-state helper inside the materialization
+failure clean-state helper. Replacement diagnostics, materialized-session
+diagnostics, source/planned catalog checks, recovery checks, and optional
+`last_edit_error()` assertions remain explicit. This remains test-maintenance
+only and does not alter production behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

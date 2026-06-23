@@ -307,9 +307,7 @@ void check_public_materialization_failure_clean_state(
 {
     const std::string prefix = std::string(scenario) + " " + std::string(stage);
 
-    check(!editor.has_pending_changes(), prefix + " should keep editor clean");
-    check(editor.pending_change_count() == 0,
-        prefix + " should not queue public edits");
+    check_workbook_editor_public_no_pending_state(editor, prefix);
     check(editor.pending_replacement_cell_count() == 0,
         prefix + " should not retain replacement cells");
     check(editor.pending_replacement_worksheet_names().empty(),
@@ -326,8 +324,6 @@ void check_public_materialization_failure_clean_state(
         prefix + " should not retain materialized cells");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         prefix + " should not retain materialized memory estimates");
-    check(editor.pending_worksheet_edits().empty(),
-        prefix + " should not expose pending worksheet edit summaries");
     check(editor.source_worksheet_names() == expected_source_names,
         prefix + " should preserve source worksheet_names");
     check(editor.worksheet_names() == expected_planned_names,

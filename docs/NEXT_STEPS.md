@@ -1532,6 +1532,19 @@ apostrophe. This is formula text audit/rewrite boundary hardening only; it does
 not add formula evaluation, default rename-time formula synchronization,
 non-materialized worksheet formula rewrite, external-link validation, 3D
 semantics, dependency graphing, or calcChain rebuild.
+P8.659 lifts that case-boundary evidence to the public `WorkbookEditor` facade.
+`fastxlsx.workbook_editor.public` now has a generated mixed-case formula /
+definedName workbook where `data!` and `DATA!` local references are rewritten
+by the explicit
+`RewriteDefinedNamesAndMaterializedWorksheetFormulas` policy, while
+`[Book.xlsx]data!`, `data:Formula!`, structured-like skipped text, and string
+literals remain unchanged. The regression verifies materialized formula
+readback, public formula/definedName audits before and after rewrite,
+`save_as()` XML output with escaped `Renamed & Data` qualifiers, and reopened
+formula text. This is public e2e coverage for the existing opt-in formula text
+policy only; it is not default rename synchronization, non-materialized
+worksheet rewrite, formula evaluation, external link validation, 3D semantics,
+or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

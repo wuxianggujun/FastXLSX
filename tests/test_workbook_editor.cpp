@@ -1958,6 +1958,27 @@ std::filesystem::path write_defined_name_reference_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_case_varied_formula_reference_source(std::string_view name)
+{
+    const std::filesystem::path path = write_defined_name_reference_source(name);
+
+    std::string workbook_xml =
+        fastxlsx::test::read_zip_entries(path).at("xl/workbook.xml");
+    replace_first_or_throw(workbook_xml, "Data!$A$1:$B$2", "data!$A$1+DATA!$B$2");
+    replace_first_or_throw(workbook_xml, "[Book.xlsx]Data!A1", "[Book.xlsx]data!A1");
+    replace_first_or_throw(workbook_xml, "Data:Formula!A1", "data:Formula!A1");
+    rewrite_package_entry_as_stored(path, "xl/workbook.xml", std::move(workbook_xml));
+
+    std::string formula_sheet_xml =
+        fastxlsx::test::read_zip_entries(path).at("xl/worksheets/sheet3.xml");
+    replace_first_or_throw(formula_sheet_xml, "Data!A1",
+        R"(data!A1+DATA!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1")");
+    rewrite_package_entry_as_stored(path, "xl/worksheets/sheet3.xml",
+        std::move(formula_sheet_xml));
+
+    return path;
+}
+
 const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_formula_reference_audit(
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
     std::string_view referenced_sheet_name)
@@ -21973,6 +21994,110 @@ void test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_f
         "reopened combined output should preserve 3D definedName references");
 }
 
+void test_rename_sheet_formula_policy_rewrites_case_varied_local_refs()
+{
+    const std::filesystem::path source = write_case_varied_formula_reference_source(
+        "fastxlsx-workbook-editor-case-varied-formula-rewrite-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-case-varied-formula-rewrite-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value()
+                == R"(data!A1+DATA!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1")",
+        "case-varied formula fixture should expose mixed-case source references");
+    check(!formula_sheet.has_pending_changes(),
+        "case-varied formula fixture should start with a clean materialized formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_formula_audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(initial_formula_audits, "data") == 1 &&
+            count_formula_reference_audits(initial_formula_audits, "DATA") == 1,
+        "case-varied formula audit should preserve source qualifier spelling before rewrite");
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>
+        initial_defined_name_audits = editor.defined_name_formula_reference_audits();
+    check(find_defined_name_formula_reference_audit(
+              initial_defined_name_audits, "ReportRange", "data") != nullptr,
+        "case-varied definedName audit should expose lowercase source references");
+    check(find_defined_name_formula_reference_audit(
+              initial_defined_name_audits, "ReportRange", "DATA") != nullptr,
+        "case-varied definedName audit should expose uppercase source references");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "Renamed & Data", options);
+
+    const std::string expected_formula =
+        R"('Renamed & Data'!A1+'Renamed & Data'!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1")";
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == expected_formula,
+        "opt-in formula policy should rewrite case-varied local worksheet formulas only");
+    check(formula_sheet.has_pending_changes(),
+        "case-varied formula rewrite should dirty the materialized Formula sheet");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> rewritten_formula_audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(rewritten_formula_audits, "Renamed & Data") == 2,
+        "rewritten formula audit should expose both local refs under the planned sheet name");
+    check(count_formula_reference_audits(rewritten_formula_audits, "data") == 0 &&
+            count_formula_reference_audits(rewritten_formula_audits, "DATA") == 0,
+        "rewritten formula audit should not keep stale case-varied local source refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(rewritten_formula_audits, "[Book.xlsx]data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "case-varied formula rewrite should preserve external workbook references");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(rewritten_formula_audits, "data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "case-varied formula rewrite should preserve 3D sheet-range references");
+
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit>
+        rewritten_defined_name_audits = editor.defined_name_formula_reference_audits();
+    check(find_defined_name_formula_reference_audit(
+              rewritten_defined_name_audits, "ReportRange", "Renamed & Data") != nullptr,
+        "case-varied definedName rewrite should expose planned-name local references");
+    check(find_defined_name_formula_reference_audit(
+              rewritten_defined_name_audits, "ReportRange", "data") == nullptr,
+        "case-varied definedName rewrite should remove lowercase local source references");
+    check(find_defined_name_formula_reference_audit(
+              rewritten_defined_name_audits, "ReportRange", "DATA") == nullptr,
+        "case-varied definedName rewrite should remove uppercase local source references");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, R"(name="Renamed &amp; Data")",
+        "case-varied formula rewrite should persist XML-escaped renamed sheet catalog");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'Renamed &amp; Data'!$A$1+'Renamed &amp; Data'!$B$2</definedName>)",
+        "case-varied formula rewrite should persist XML-escaped rewritten definedNames");
+    check_contains(workbook_xml,
+        R"(<definedName name="ExternalRef">[Book.xlsx]data!A1</definedName>)",
+        "case-varied formula rewrite should preserve external workbook definedNames");
+    check_contains(workbook_xml,
+        R"(<definedName name="ThreeDRef">data:Formula!A1</definedName>)",
+        "case-varied formula rewrite should preserve 3D definedNames");
+
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet3.xml");
+    check_contains(formula_sheet_xml,
+        R"(<f>'Renamed &amp; Data'!A1+'Renamed &amp; Data'!B1+[Book.xlsx]data!C1+data:Formula!D1+"data!E1"</f>)",
+        "case-varied formula rewrite should persist XML-escaped materialized formula text");
+    check_not_contains(formula_sheet_xml, "<f>data!A1+DATA!B1",
+        "case-varied formula rewrite should not leave stale local worksheet formula refs");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        "reopened case-varied output should expose the rewritten materialized formula");
+}
+
 void test_rename_sheet_chain_formula_policy_rewrites_source_aliases()
 {
     const std::filesystem::path source = write_defined_name_reference_source(
@@ -23190,6 +23315,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
         test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
+        test_rename_sheet_formula_policy_rewrites_case_varied_local_refs();
         test_rename_sheet_chain_formula_policy_rewrites_source_aliases();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();

@@ -28295,6 +28295,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.formula" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.659 - Lift case-varied formula rewrite to public WorkbookEditor e2e
+
+Status: done.
+
+Type: public workbook-editor regression test + docs; no public API change, no
+production behavior change, no CMake target membership change, and no formula
+engine expansion.
+
+Goal: prove the P8.658 formula audit/rewrite case-boundary behavior is visible
+through the existing public opt-in `WorkbookEditor::rename_sheet()` formula
+policy and persists through `save_as()`.
+
+Output:
+- Added a generated source helper that creates mixed-case worksheet formula and
+  workbook definedName references (`data!` / `DATA!`) while keeping external
+  workbook and 3D references case-varied.
+- Added `test_rename_sheet_formula_policy_rewrites_case_varied_local_refs()`.
+- The regression materializes the `Formula` worksheet, verifies pre-rewrite
+  public formula and definedName audits preserve original qualifier spelling,
+  runs `rename_sheet("Data", "Renamed & Data",
+  RewriteDefinedNamesAndMaterializedWorksheetFormulas)`, and verifies only
+  local sheet-qualified formula references are rewritten.
+- The regression checks dirty materialized state, post-rewrite audits,
+  `save_as()` workbook / worksheet XML escaping, external workbook and 3D
+  reference preservation, stale local-reference absence, and reopened formula
+  text.
+
+Non-goals / boundary:
+- No default rename-time formula synchronization, no non-materialized worksheet
+  formula rewrite, no formula evaluation, no external workbook target
+  validation, no 3D reference semantics, no dependency graph, no calcChain
+  rebuild, no relationship repair, and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

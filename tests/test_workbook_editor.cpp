@@ -793,6 +793,21 @@ void check_public_two_clean_retry_failed_save_dirty_state(
         label + " should preserve pending change count");
 }
 
+void check_internal_materialized_session_save_state(
+    const fastxlsx::WorkbookEditor& editor,
+    std::size_t expected_dirty_session_count,
+    std::size_t expected_pending_count,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(
+              editor) == expected_dirty_session_count,
+        label + " should preserve dirty materialized session count");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should preserve pending change count");
+}
+
 std::size_t check_public_two_clean_two_handle_clean_state(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& data,
@@ -19701,28 +19716,22 @@ void test_internal_materialized_session_failed_save_as_preserves_dirty_and_flush
         "failed save_as before flush should throw without touching dirty materialized state");
     check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
         "missing-parent save_as before flush should fail before materialized state changes");
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 1,
-        "failed save_as before flush should preserve dirty materialized state");
-    check(editor.pending_change_count() == 0,
-        "failed save_as before flush should not queue materialized projections");
+    check_internal_materialized_session_save_state(
+        editor, 1, 0, "failed save_as before flush");
     check(!editor.last_edit_error().has_value(),
         "failed save_as before flush should not create public last_edit_error");
 
     fastxlsx::detail::testing_workbook_editor_flush_materialized_sessions_to_patch_plan(editor);
 
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 0,
-        "explicit flush after failed save_as should clear dirty materialized state");
-    check(editor.pending_change_count() == 1,
-        "explicit flush after failed save_as should queue one staged projection");
+    check_internal_materialized_session_save_state(
+        editor, 0, 1, "explicit flush after failed save_as");
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "failed save_as over source should preserve staged materialized projection");
     check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
         "failed save_as to directory should preserve staged materialized projection");
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 0,
-        "failed save_as after flush should keep clean materialized state clean");
-    check(editor.pending_change_count() == 1,
-        "failed save_as after flush should preserve staged projection diagnostics");
+    check_internal_materialized_session_save_state(
+        editor, 0, 1, "failed save_as after flush");
     check(!editor.last_edit_error().has_value(),
         "failed save_as after flush should not create public last_edit_error");
 
@@ -19752,18 +19761,14 @@ void test_internal_materialized_session_reflush_after_failed_save_as()
     fastxlsx::detail::testing_workbook_editor_set_materialized_cell(
         editor, "Data", 1, 1, fastxlsx::CellValue::text("first-before-failed-save"));
     fastxlsx::detail::testing_workbook_editor_flush_materialized_sessions_to_patch_plan(editor);
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 0,
-        "initial flush before failed save_as should leave the materialized session clean");
-    check(editor.pending_change_count() == 1,
-        "initial flush before failed save_as should queue one staged projection");
+    check_internal_materialized_session_save_state(
+        editor, 0, 1, "initial flush before failed save_as");
 
     check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
         "save_as to a directory should fail before consuming the staged projection");
 
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 0,
-        "failed save_as should keep the flushed materialized session clean");
-    check(editor.pending_change_count() == 1,
-        "failed save_as should preserve the first staged projection diagnostic");
+    check_internal_materialized_session_save_state(
+        editor, 0, 1, "failed save_as after initial flush");
 
     fastxlsx::detail::testing_workbook_editor_set_materialized_cell(
         editor, "Data", 1, 1, fastxlsx::CellValue::text("second-after-failed-save"));
@@ -19771,10 +19776,8 @@ void test_internal_materialized_session_reflush_after_failed_save_as()
         "mutating after failed save_as should dirty the existing materialized session again");
 
     fastxlsx::detail::testing_workbook_editor_flush_materialized_sessions_to_patch_plan(editor);
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 0,
-        "reflush after failed save_as should clear dirty state again");
-    check(editor.pending_change_count() == 2,
-        "reflush after failed save_as should record a second coarse handoff");
+    check_internal_materialized_session_save_state(
+        editor, 0, 2, "reflush after failed save_as");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -19823,23 +19826,17 @@ void test_internal_materialized_session_move_reflush_after_failed_save_as()
 
     check(fastxlsx::detail::testing_workbook_editor_materialized_session_count(target) == 1,
         "move assignment before failed save retry should keep one assigned materialized session");
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(target) == 1,
-        "move assignment before failed save retry should keep assigned dirty state");
-    check(target.pending_change_count() == 1,
-        "move assignment before failed save retry should keep assigned public edit only");
+    check_internal_materialized_session_save_state(
+        target, 1, 1, "move assignment before failed save retry");
 
     fastxlsx::detail::testing_workbook_editor_flush_materialized_sessions_to_patch_plan(target);
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(target) == 0,
-        "first flush after move assignment should clear assigned dirty state");
-    check(target.pending_change_count() == 2,
-        "first flush after move assignment should stage materialized and public edits");
+    check_internal_materialized_session_save_state(
+        target, 0, 2, "first flush after move assignment");
 
     check(threw_fastxlsx_error([&] { target.save_as(directory_output); }),
         "directory save_as after moved materialized flush should fail before consuming state");
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(target) == 0,
-        "failed save after moved flush should keep the materialized session clean");
-    check(target.pending_change_count() == 2,
-        "failed save after moved flush should preserve staged diagnostics");
+    check_internal_materialized_session_save_state(
+        target, 0, 2, "failed save after moved flush");
 
     fastxlsx::detail::testing_workbook_editor_set_materialized_cell(
         target, "Data", 1, 1,
@@ -19848,10 +19845,8 @@ void test_internal_materialized_session_move_reflush_after_failed_save_as()
         "mutation after moved failed save should re-dirty the assigned materialized session");
 
     fastxlsx::detail::testing_workbook_editor_flush_materialized_sessions_to_patch_plan(target);
-    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(target) == 0,
-        "reflush after moved failed save should clear dirty state again");
-    check(target.pending_change_count() == 3,
-        "reflush after moved failed save should record a new coarse handoff");
+    check_internal_materialized_session_save_state(
+        target, 0, 3, "reflush after moved failed save");
 
     target.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

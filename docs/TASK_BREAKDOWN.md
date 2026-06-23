@@ -27664,6 +27664,32 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.637 - Reuse internal materialized-session save-state helper
+
+Status: done.
+
+Type: internal workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reduce repeated dirty-session-count and pending-count checks in the
+internal failed-save and reflush materialized-session regressions.
+
+Output:
+- Added a narrow helper for internal materialized-session save-state checks.
+- Reused it in the direct failed-save materialized-session regression.
+- Reused it in the reflush-after-failed-save and move-reflush regressions.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

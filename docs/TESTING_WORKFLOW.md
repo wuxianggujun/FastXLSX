@@ -490,6 +490,9 @@ The two-clean retry reacquire, query, invalid-read, and invalid-mutation
 branches now reuse a focused failed-save dirty-state helper for the `save_as()`
 throw plus dirty-handle and pending-count checks, while keeping
 `last_edit_error()` and output assertions explicit.
+The adjacent internal materialized-session failed-save and reflush regressions
+reuse a narrow save-state helper for dirty-session-count and pending-count
+checks, while keeping public diagnostics and output XML assertions explicit.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

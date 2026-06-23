@@ -1396,6 +1396,12 @@ now share the `save_as()` throw, dirty-handle preservation, and pending-count
 preservation checks while leaving diagnostic and output assertions explicit.
 This remains test-maintenance only and does not alter production behavior,
 generated workbooks, or public API.
+P8.637 adds a narrow internal materialized-session save-state helper for the
+failed-save and reflush regressions. The adjacent dirty-session-count and
+pending-count assertions now share one helper across direct and move-assigned
+materialized retry paths while keeping public diagnostics and output XML checks
+explicit. This remains test-maintenance only and does not alter production
+behavior, generated workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -1676,6 +1676,14 @@ after opening the `Formula` worksheet session and before any rename,
 does not dirty or replace that state. This is diagnostic state hygiene only; it
 is not formula rewrite, formula evaluation, external/3D semantics, dependency
 graphing, or calcChain rebuild.
+P8.674 applies the same public state hygiene to source shared-formula audits.
+`test_source_formula_reference_audits_translate_shared_formula_followers()` now
+snapshots pending diagnostics and `last_edit_error()` before both the initial
+and post-rename `source_formula_reference_audits()` calls, proving source-order
+shared formula follower expansion and stale source-name reporting do not dirty
+or replace public state. This is diagnostic state hygiene only; it is not lazy
+worksheet materialization, formula rewrite, formula evaluation, external/3D
+semantics, dependency graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

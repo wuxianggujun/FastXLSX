@@ -28843,6 +28843,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.674 - Pin source shared-formula audit state hygiene
+
+Status: done.
+
+Type: public workbook-editor source shared-formula diagnostic regression test +
+docs; no public API change, no production behavior change, no CMake target
+membership change, and no formula engine expansion.
+
+Goal: prove `source_formula_reference_audits()` remains read-only while
+expanding source-order shared formula followers before and after default
+catalog-only rename.
+
+Output:
+- Extended
+  `test_source_formula_reference_audits_translate_shared_formula_followers()`.
+- The regression now snapshots public pending diagnostics and
+  `last_edit_error()` before the initial source shared-formula audit and before
+  the post-rename source shared-formula audit.
+- The regression verifies both audit reads leave those public diagnostics
+  unchanged while still expanding four shared formula references and reporting
+  stale source-name references after rename.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the source
+  shared-formula audit state hygiene boundary.
+
+Non-goals / boundary:
+- No lazy worksheet materialization, no default formula rewrite, no worksheet
+  formula rewrite, no formula evaluation, no external workbook target
+  validation, no 3D reference semantics, no dependency graph, no calcChain
+  rebuild, no relationship repair, no complete Excel formula parser, and no
+  public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

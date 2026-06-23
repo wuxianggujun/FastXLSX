@@ -21790,8 +21790,35 @@ void test_source_formula_reference_audits_translate_shared_formula_followers()
         artifact("fastxlsx-workbook-editor-source-shared-formula-audit-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::size_t initial_pending_change_count_before_audit =
+        editor.pending_change_count();
+    const bool initial_has_pending_changes_before_audit =
+        editor.has_pending_changes();
+    const std::vector<std::string> initial_pending_replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> initial_pending_materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t initial_pending_summary_count_before_audit =
+        editor.pending_worksheet_edits().size();
+    const std::optional<std::string> initial_last_edit_error_before_audit =
+        editor.last_edit_error();
+
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
         editor.source_formula_reference_audits();
+    check(editor.pending_change_count() == initial_pending_change_count_before_audit,
+        "source shared formula audit should not increment public edit count");
+    check(editor.has_pending_changes() == initial_has_pending_changes_before_audit,
+        "source shared formula audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() ==
+            initial_pending_replacement_names_before_audit,
+        "source shared formula audit should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() ==
+            initial_pending_materialized_names_before_audit,
+        "source shared formula audit should not create materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() == initial_pending_summary_count_before_audit,
+        "source shared formula audit should not create pending edit summaries");
+    check(editor.last_edit_error() == initial_last_edit_error_before_audit,
+        "source shared formula audit should not update last_edit_error");
     check(initial_audits.size() == 4,
         "source formula audit should expand source-order shared formula followers");
     check(editor.formula_reference_audits().empty(),
@@ -21822,8 +21849,35 @@ void test_source_formula_reference_audits_translate_shared_formula_followers()
     }
 
     editor.rename_sheet("Data", "RenamedData");
+    const std::size_t renamed_pending_change_count_before_audit =
+        editor.pending_change_count();
+    const bool renamed_has_pending_changes_before_audit =
+        editor.has_pending_changes();
+    const std::vector<std::string> renamed_pending_replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> renamed_pending_materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t renamed_pending_summary_count_before_audit =
+        editor.pending_worksheet_edits().size();
+    const std::optional<std::string> renamed_last_edit_error_before_audit =
+        editor.last_edit_error();
+
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> renamed_audits =
         editor.source_formula_reference_audits();
+    check(editor.pending_change_count() == renamed_pending_change_count_before_audit,
+        "renamed source shared formula audit should not increment public edit count");
+    check(editor.has_pending_changes() == renamed_has_pending_changes_before_audit,
+        "renamed source shared formula audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() ==
+            renamed_pending_replacement_names_before_audit,
+        "renamed source shared formula audit should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() ==
+            renamed_pending_materialized_names_before_audit,
+        "renamed source shared formula audit should not create materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() == renamed_pending_summary_count_before_audit,
+        "renamed source shared formula audit should not create pending edit summaries");
+    check(editor.last_edit_error() == renamed_last_edit_error_before_audit,
+        "renamed source shared formula audit should not update last_edit_error");
     check(renamed_audits.size() == 4,
         "rename should keep expanded source shared formula audit coverage");
     check(count_formula_reference_audits(renamed_audits, "Data") == 4,

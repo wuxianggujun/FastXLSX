@@ -473,6 +473,10 @@ The public facade failed-save and successful-save state checks now also reuse
 the file-scope catalog/edit-summary equality helpers, keeping the
 `worksheet_catalog()` and `pending_worksheet_edits()` comparisons centralized
 without changing the surrounding diagnostics or ZIP/XML assertions.
+The adjacent scalar public save-state checks now share a focused snapshot
+helper as well, covering pending counts, replacement memory, pending worksheet
+names, and `last_edit_error()` preservation for failed and successful
+`save_as()` paths.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

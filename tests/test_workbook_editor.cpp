@@ -151,6 +151,46 @@ bool workbook_editor_edit_summaries_equal(
     return true;
 }
 
+struct WorkbookEditorPublicSaveStateSnapshot {
+    std::size_t pending_change_count{};
+    std::size_t pending_replacement_cell_count{};
+    std::size_t estimated_pending_replacement_memory_usage{};
+    std::vector<std::string> pending_replacement_worksheet_names;
+    std::optional<std::string> last_edit_error;
+};
+
+WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot(
+    const fastxlsx::WorkbookEditor& editor)
+{
+    return {
+        editor.pending_change_count(),
+        editor.pending_replacement_cell_count(),
+        editor.estimated_pending_replacement_memory_usage(),
+        editor.pending_replacement_worksheet_names(),
+        editor.last_edit_error(),
+    };
+}
+
+void check_workbook_editor_public_save_state_preserved(
+    const fastxlsx::WorkbookEditor& editor,
+    const WorkbookEditorPublicSaveStateSnapshot& before,
+    std::string_view scenario)
+{
+    check(editor.pending_change_count() == before.pending_change_count,
+        std::string(scenario) + " should preserve public pending change count");
+    check(editor.pending_replacement_cell_count()
+            == before.pending_replacement_cell_count,
+        std::string(scenario) + " should preserve pending replacement cell count");
+    check(editor.estimated_pending_replacement_memory_usage()
+            == before.estimated_pending_replacement_memory_usage,
+        std::string(scenario) + " should preserve replacement memory estimate");
+    check(editor.pending_replacement_worksheet_names()
+            == before.pending_replacement_worksheet_names,
+        std::string(scenario) + " should preserve pending replacement worksheet names");
+    check(editor.last_edit_error() == before.last_edit_error,
+        std::string(scenario) + " should not replace or clear last_edit_error");
+}
+
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
@@ -21148,17 +21188,10 @@ void test_failed_save_as_preserves_public_facade_state()
     check(threw_fastxlsx_error([&] {
         editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(99.0)}});
     }), "old source name replacement should fail after queued rename");
-    const std::optional<std::string> last_error_before_save = editor.last_edit_error();
-    check(last_error_before_save.has_value(),
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+        workbook_editor_public_save_state_snapshot(editor);
+    check(save_state_before_save.last_edit_error.has_value(),
         "pre-save failed edit should leave a public last_edit_error");
-
-    const std::size_t pending_count_before_save = editor.pending_change_count();
-    const std::size_t replacement_cells_before_save =
-        editor.pending_replacement_cell_count();
-    const std::size_t replacement_memory_before_save =
-        editor.estimated_pending_replacement_memory_usage();
-    const std::vector<std::string> pending_names_before_save =
-        editor.pending_replacement_worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_save =
         editor.worksheet_catalog();
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_save =
@@ -21175,17 +21208,8 @@ void test_failed_save_as_preserves_public_facade_state()
     check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
         "save_as to an existing directory should fail without committing output");
 
-    check(editor.pending_change_count() == pending_count_before_save,
-        "failed save_as should preserve public pending change count");
-    check(editor.pending_replacement_cell_count() == replacement_cells_before_save,
-        "failed save_as should preserve pending replacement cell count");
-    check(editor.estimated_pending_replacement_memory_usage() ==
-            replacement_memory_before_save,
-        "failed save_as should preserve replacement memory estimate");
-    check(editor.pending_replacement_worksheet_names() == pending_names_before_save,
-        "failed save_as should preserve pending replacement worksheet names");
-    check(editor.last_edit_error() == last_error_before_save,
-        "failed save_as should not replace or clear last_edit_error");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_save, "failed save_as");
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_after_save =
         editor.worksheet_catalog();
@@ -21244,34 +21268,19 @@ void test_successful_save_as_preserves_public_facade_state()
         editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(99.0)}});
     }), "old source name replacement should fail after queued rename before save");
 
-    const std::size_t pending_count_before_save = editor.pending_change_count();
-    const std::size_t replacement_cells_before_save =
-        editor.pending_replacement_cell_count();
-    const std::size_t replacement_memory_before_save =
-        editor.estimated_pending_replacement_memory_usage();
-    const std::vector<std::string> pending_names_before_save =
-        editor.pending_replacement_worksheet_names();
-    const std::optional<std::string> last_error_before_save = editor.last_edit_error();
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+        workbook_editor_public_save_state_snapshot(editor);
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_save =
         editor.worksheet_catalog();
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_save =
         editor.pending_worksheet_edits();
-    check(last_error_before_save.has_value(),
+    check(save_state_before_save.last_edit_error.has_value(),
         "pre-save failed edit should leave last_edit_error for successful save_as state test");
 
     editor.save_as(first_output);
 
-    check(editor.pending_change_count() == pending_count_before_save,
-        "successful save_as should preserve public pending change count");
-    check(editor.pending_replacement_cell_count() == replacement_cells_before_save,
-        "successful save_as should preserve pending replacement cell count");
-    check(editor.estimated_pending_replacement_memory_usage() ==
-            replacement_memory_before_save,
-        "successful save_as should preserve replacement memory estimate");
-    check(editor.pending_replacement_worksheet_names() == pending_names_before_save,
-        "successful save_as should preserve pending replacement worksheet names");
-    check(editor.last_edit_error() == last_error_before_save,
-        "successful save_as should not replace or clear last_edit_error");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_save, "successful save_as");
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_after_save =
         editor.worksheet_catalog();
@@ -21297,7 +21306,7 @@ void test_successful_save_as_preserves_public_facade_state()
         "second save_as without new edits should reuse the preserved pending state");
 
     editor.replace_sheet_data("SavedData", {{fastxlsx::CellValue::number(31.0)}});
-    check(editor.pending_change_count() == pending_count_before_save + 1,
+    check(editor.pending_change_count() == save_state_before_save.pending_change_count + 1,
         "follow-up edit after successful save_as should add another pending change");
     check(!editor.last_edit_error().has_value(),
         "follow-up successful edit after save_as should clear the prior edit error");

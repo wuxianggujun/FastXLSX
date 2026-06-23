@@ -1408,6 +1408,13 @@ and successful-save state checks. The adjacent `worksheet_catalog()` and
 across both save-state regressions while keeping the surrounding diagnostics and
 ZIP/XML assertions explicit. This remains test-maintenance only and does not
 alter production behavior, generated workbooks, or public API.
+P8.639 adds a narrow public save-state snapshot helper for the same two
+save-state regressions. Pending-change count, replacement cell count, memory
+estimate, pending worksheet names, and `last_edit_error()` preservation now
+share one helper across failed-save and successful-save paths while keeping the
+catalog/edit-summary and ZIP/XML assertions explicit. This remains
+test-maintenance only and does not alter production behavior, generated
+workbooks, or public API.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

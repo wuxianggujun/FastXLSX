@@ -519,6 +519,9 @@ replacement, materialized-session, catalog, recovery, and optional
 Rename-only public editor states now share a narrow no-replacement-diagnostics
 helper when replacement cells, memory, and replacement sheet names must stay
 empty even though valid rename edits may still be pending.
+Move and move-assignment cleanup regressions now also share that
+no-replacement-diagnostics helper, with pending-state, replacement lookup,
+materialized-session, catalog, and last-error checks still explicit.
 The earlier same-sheet recovery blocks now share focused single-sheet clean /
 dirty helpers too, covering the read-only and saved-clean cross-sheet success
 paths plus the matching worksheet mutation recovery cases.

@@ -3094,14 +3094,9 @@ void test_moved_from_workbook_editor_operations_throw()
         "moved-from has_pending_changes should return false");
     check(editor.pending_change_count() == 0,
         "moved-from pending_change_count should return zero");
-    check(editor.pending_replacement_cell_count() == 0,
-        "moved-from pending_replacement_cell_count should return zero");
-    check(editor.pending_replacement_worksheet_names().empty(),
-        "moved-from pending replacement names should be empty");
+    check_workbook_editor_no_replacement_diagnostics(editor, "moved-from editor");
     check(!editor.has_pending_replacement("Data"),
         "moved-from pending replacement lookup should return false");
-    check(editor.estimated_pending_replacement_memory_usage() == 0,
-        "moved-from estimated pending replacement memory should return zero");
     check(editor.pending_worksheet_edits().empty(),
         "moved-from pending worksheet edit summaries should be empty");
     check(editor.worksheet_catalog().empty(),
@@ -3207,14 +3202,9 @@ void test_clean_moved_to_workbook_editor_preserves_noop_public_state()
         "clean moved-to editor should keep no pending changes");
     check(moved.pending_change_count() == 0,
         "clean moved-to editor should keep zero pending public edits");
-    check(moved.pending_replacement_cell_count() == 0,
-        "clean moved-to editor should keep zero replacement cells");
-    check(moved.pending_replacement_worksheet_names().empty(),
-        "clean moved-to editor should keep no pending replacement names");
+    check_workbook_editor_no_replacement_diagnostics(moved, "clean moved-to editor");
     check(!moved.has_pending_replacement("Data"),
         "clean moved-to editor should keep no pending replacement lookup");
-    check(moved.estimated_pending_replacement_memory_usage() == 0,
-        "clean moved-to editor should keep zero replacement memory");
     check(moved.pending_worksheet_edits().empty(),
         "clean moved-to editor should keep no pending worksheet edit summaries");
     check(!moved.last_edit_error().has_value(),
@@ -3416,14 +3406,10 @@ void test_move_assigned_clean_workbook_editor_clears_dirty_target_state()
         "clean-source move assignment should clear old target pending changes");
     check(target.pending_change_count() == 0,
         "clean-source move assignment should clear old target pending count");
-    check(target.pending_replacement_cell_count() == 0,
-        "clean-source move assignment should clear old target replacement cell count");
-    check(target.pending_replacement_worksheet_names().empty(),
-        "clean-source move assignment should clear old target replacement names");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "clean-source move assignment");
     check(!target.has_pending_replacement("DirtyTarget"),
         "clean-source move assignment should clear old target replacement lookup");
-    check(target.estimated_pending_replacement_memory_usage() == 0,
-        "clean-source move assignment should clear old target replacement memory");
     check(target.pending_worksheet_edits().empty(),
         "clean-source move assignment should clear old target edit summaries");
     check(!target.last_edit_error().has_value(),
@@ -3678,16 +3664,12 @@ void test_move_assignment_from_moved_from_source_clears_dirty_target_state()
         "assignment from a moved-from source should clear target pending changes");
     check(target.pending_change_count() == 0,
         "assignment from a moved-from source should clear target pending count");
-    check(target.pending_replacement_cell_count() == 0,
-        "assignment from a moved-from source should clear replacement cell diagnostics");
-    check(target.pending_replacement_worksheet_names().empty(),
-        "assignment from a moved-from source should clear pending replacement names");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "assignment from a moved-from source");
     check(target.pending_materialized_worksheet_names().empty(),
         "assignment from a moved-from source should clear dirty materialized names");
     check(!target.has_pending_replacement("DirtyBeforeMovedFromAssign"),
         "assignment from a moved-from source should clear target replacement lookup");
-    check(target.estimated_pending_replacement_memory_usage() == 0,
-        "assignment from a moved-from source should clear replacement memory diagnostics");
     check(target.pending_worksheet_edits().empty(),
         "assignment from a moved-from source should clear target edit summaries");
     check(target.worksheet_catalog().empty(),

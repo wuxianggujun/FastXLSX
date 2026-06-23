@@ -296,6 +296,10 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   worksheet XML、不解析完整 Excel 公式语法、不求值、不改写公式、不 rebuild
   calcChain、不验证外部 workbook target 或 3D 引用语义，也不更新
   `last_edit_error()`。
+- `source_formula_reference_audits()`：只读扫描 source worksheet formula XML，返回与
+  materialized audit 相同语义的 source-read diagnostics。它不 materialize
+  `WorksheetEditor` session、不把 source worksheet XML 排入 rewrite、不改写公式、不更新
+  `last_edit_error()`；默认 `rename_sheet()` 后只报告 stale source-name 风险。
 - `defined_name_formula_reference_audits()`：只读扫描 current planned
   workbook `xl/workbook.xml` 中 direct `<definedNames><definedName>` formula
   text（有 queued small workbook rewrite 时使用 planned XML，否则使用 source
@@ -310,6 +314,11 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   workbook target 或 3D 引用语义，也不更新 `last_edit_error()`。Malformed workbook
   metadata with mismatched or unclosed XML tags fails the diagnostic scan
   instead of being balanced or repaired.
+- 默认 `rename_sheet()` 保持 catalog-only：只改 workbook sheet catalog，不改
+  materialized worksheet formulas、non-materialized source worksheet formulas 或 direct
+  definedName formula text。上述 audit API 会把 `data!` / `DATA!` 这类 case-varied
+  local qualifiers 按 ASCII case-insensitive 映射到 source/planned catalog，并在
+  diagnostics 中保留公式原始拼写作为 stale source-name 风险证据。
 - Internal formula sync foundation：`detail::rewrite_formula_sheet_references()`
   可以按显式 rewrite rule 更新本地 sheet-qualified formula references，并统一写为
   quoted replacement sheet qualifier；它跳过 external workbook qualifiers、3D
@@ -4095,6 +4104,12 @@ definedName formula text 的本地 sheet qualifier；更窄的
 还会同步已经 materialized 的 WorksheetEditor formula cells。两者仍不是公式引擎、
 非 materialized worksheet formula rewrite、relationship repair、calcChain rebuild 或完整
 semantic sheet rename。
+默认 `WorkbookEditor::rename_sheet()` 仍是 catalog-only；case-varied local formula
+qualifiers 只通过 `formula_reference_audits()`、`source_formula_reference_audits()` 和
+`defined_name_formula_reference_audits()` 暴露 stale source-name risks，diagnostics
+保留原始 `data!` / `DATA!` 拼写。`source_formula_reference_audits()` 是 read-only
+source scan，不 materialize 或 rewrite 非 materialized worksheet XML；显式 rewrite
+policy 继续保持窄 local sheet-qualified reference 边界。
 planned workbook XML 路径的内部 `planned_output()`
 只能写成暴露最终 workbook `LocalDomRewrite`、preserved content types /
 workbook `.rels` / worksheet / calcChain / unknown entry，以及 structured sheet

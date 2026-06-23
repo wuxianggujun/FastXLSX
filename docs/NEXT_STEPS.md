@@ -1568,6 +1568,18 @@ catalog rename. This is source-read diagnostic coverage only; it is not
 non-materialized formula rewrite, default formula synchronization, formula
 evaluation, external link validation, 3D semantics, dependency graphing, or
 calcChain rebuild.
+P8.662 syncs the formula boundary documentation after the default audit-only
+case-varied rename coverage. `docs/FORMULA_SUPPORT.md`, `README.md`,
+`docs/EDITING_MODEL.md`, `docs/API_DESIGN_AND_DOCUMENTATION.md`, and
+`docs/TASK_BREAKDOWN.md` now state the same policy: default `rename_sheet()`
+is catalog-only; `formula_reference_audits()`, `source_formula_reference_audits()`,
+and `defined_name_formula_reference_audits()` expose stale source-name risks
+without changing formula text; case-varied local qualifiers are matched
+ASCII case-insensitively while preserving original spelling; source-read
+diagnostics do not materialize or rewrite non-materialized worksheet XML. This
+is documentation alignment only, with no code, public API, CMake, formula
+evaluation, default rewrite, external/3D semantics, dependency graph, or
+calcChain rebuild change.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

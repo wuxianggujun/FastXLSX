@@ -40,6 +40,12 @@ materialize 或扫描未载入 worksheet XML。链式 rename 下，显式 opt-in
 但不会处理 external workbook references 或 3D sheet ranges。它仍**不**表示完整 existing-file editing、public
 `PackageEditor`、semantic metadata sync、sharedStrings/style migration、relationship
 repair 或 large-file low-memory random editing。
+默认 `rename_sheet()` 之后，`formula_reference_audits()`、`source_formula_reference_audits()`
+和 `defined_name_formula_reference_audits()` 只暴露 stale source-name 风险，不改公式文本；
+`data!` / `DATA!` 这类本地大小写变体按 ASCII case-insensitive 匹配到 source/planned
+catalog，但 diagnostics 保留公式里的原始 qualifier 拼写。`source_formula_reference_audits()`
+是 source worksheet formula XML 的 read-only scan，不 materialize worksheet session，
+也不 rewrite 非 materialized worksheet XML。
 `CellValue` 作为 public value type 已实现，internal `CellStore` 首个稀疏存储、guardrail
 和 standalone `<sheetData>` / worksheet projection 切片也已实现。
 

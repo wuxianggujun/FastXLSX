@@ -23,8 +23,8 @@ Recommended positioning:
 | Existing workbook formula read | `WorksheetEditor` can materialize supported source formula cells as `CellValueKind::Formula`. Stale cached `<v>` values are not treated as authoritative results. |
 | Shared formula read | Source shared formula definitions and source-order followers are materialized as ordinary formula text when the definition has already been seen. The translator handles a narrow A1-style relative-reference subset. |
 | Array/dataTable formula metadata | Formula text can be imported lossily as plain formula text. Known metadata is accepted only to preserve compatibility at the materialized value boundary. |
-| Formula reference audits | `WorkbookEditor::formula_reference_audits()`, `source_formula_reference_audits()`, and `defined_name_formula_reference_audits()` expose local sheet references, rename risks, external-workbook qualifiers, and 3D-like sheet-range qualifiers as diagnostics. Local sheet matching is ASCII case-insensitive while preserving the formula text's original qualifier spelling in diagnostics. The definedName audit uses the current planned `xl/workbook.xml` when a small workbook rewrite is queued, otherwise the source workbook metadata. |
-| Rename-time formula rewrite | `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` rewrites direct workbook definedName formulas. `RewriteDefinedNamesAndMaterializedWorksheetFormulas` also rewrites already-materialized worksheet formula cells. In rename chains, the opt-in path rewrites both the current old planned sheet name and the original source sheet name when they differ, while still using the narrow sheet-qualified reference rewriter. That rewriter matches local sheet qualifiers ASCII case-insensitively, always emits quoted formula sheet qualifiers, XML-escapes rewritten definedName text, and still skips external-workbook qualifiers, 3D sheet ranges, structured references, and string literals. |
+| Formula reference audits | `WorkbookEditor::formula_reference_audits()`, `source_formula_reference_audits()`, and `defined_name_formula_reference_audits()` expose local sheet references, rename risks, external-workbook qualifiers, and 3D-like sheet-range qualifiers as diagnostics. Local sheet matching is ASCII case-insensitive while preserving the formula text's original qualifier spelling in diagnostics. `formula_reference_audits()` only inspects already-materialized `WorksheetEditor` sessions; `source_formula_reference_audits()` scans source worksheet formula XML read-only without materializing or rewriting it; the definedName audit uses the current planned `xl/workbook.xml` when a small workbook rewrite is queued, otherwise the source workbook metadata. |
+| Rename-time formula rewrite | Default `rename_sheet()` is catalog-only and preserves worksheet formula text plus direct definedName formula text, including case-varied local qualifiers such as `data!` / `DATA!`; the audit APIs report those as stale source-name risks after the catalog rename. `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` rewrites direct workbook definedName formulas. `RewriteDefinedNamesAndMaterializedWorksheetFormulas` also rewrites already-materialized worksheet formula cells. In rename chains, the opt-in path rewrites both the current old planned sheet name and the original source sheet name when they differ, while still using the narrow sheet-qualified reference rewriter. That rewriter matches local sheet qualifiers ASCII case-insensitively, always emits quoted formula sheet qualifiers, XML-escapes rewritten definedName text, and still skips external-workbook qualifiers, 3D sheet ranges, structured references, and string literals. |
 
 ## Important boundaries
 
@@ -39,7 +39,7 @@ Recommended positioning:
 | External workbook and 3D references | Classified for audit only. FastXLSX does not validate external workbook targets, evaluate 3D references, or repair linked workbooks. |
 | Dependency graph | Not implemented. FastXLSX does not build Excel's calculation dependency graph. |
 | `calcChain.xml` rebuild | Not implemented. Rebuild requests are rejected; supported edit paths either preserve or remove stale calcChain metadata according to policy. |
-| Full sheet rename formula sync | Not implemented. Default `rename_sheet()` does not rewrite formulas. Explicit policies only cover direct definedNames and already-materialized worksheet formulas. |
+| Full sheet rename formula sync | Not implemented. Default `rename_sheet()` does not rewrite materialized worksheet formulas, non-materialized source worksheet formulas, or direct definedName formula text; it only exposes stale risks through audits. Explicit policies only cover direct definedNames and already-materialized worksheet formulas. |
 
 ## Shared formula materialization details
 
@@ -188,6 +188,12 @@ already-materialized worksheet formulas, external-workbook references, 3D
 sheet-range references, string literals, non-materialized worksheet formulas,
 and calcChain absence remain unchanged. The tool report must still expose
 rename-risk audits for stale source-name formula and definedName references.
+Default-policy CTest coverage now also pins the case-varied boundary: after
+default `rename_sheet("Data", "Renamed & Data")`, materialized formula audits,
+source worksheet formula audits, and definedName audits all preserve the
+original `data!` / `DATA!` spelling while mapping those tokens to source
+`Data` and planned `Renamed & Data`. The saved package still preserves the
+formula XML and definedName bodies unchanged.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

@@ -28409,6 +28409,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.662 - Sync formula boundary docs for default audit-only rename
+
+Status: done.
+
+Type: formula documentation / README boundary sync; no public API change, no
+production code change, no CMake target membership change, and no formula
+engine expansion.
+
+Goal: align user-facing and design docs with the P8.660/P8.661 default
+audit-only behavior for case-varied local formula references after
+catalog-only `rename_sheet()`.
+
+Output:
+- Updated `docs/FORMULA_SUPPORT.md` to state that `formula_reference_audits()`
+  only inspects already-materialized `WorksheetEditor` sessions,
+  `source_formula_reference_audits()` scans source worksheet formula XML
+  read-only without materializing or rewriting it, and default `rename_sheet()`
+  preserves worksheet formula text plus direct definedName formula text.
+- Updated `README.md` to keep the formula support summary aligned with the
+  default catalog-only rename policy and the stale source-name audit behavior
+  for `data!` / `DATA!` case variants.
+- Updated `docs/EDITING_MODEL.md` and `docs/API_DESIGN_AND_DOCUMENTATION.md`
+  so public formula diagnostics, source-read diagnostics, definedName
+  diagnostics, and explicit rename formula policies share the same boundary.
+- Recorded this documentation-only task in `docs/NEXT_STEPS.md` and this
+  breakdown.
+
+Non-goals / boundary:
+- No default formula rewrite, no non-materialized worksheet formula rewrite, no
+  formula evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no complete Excel formula parser, and no public API or CMake change.
+
+Acceptance:
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

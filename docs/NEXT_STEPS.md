@@ -1325,6 +1325,13 @@ remain clear, pending handoff counts advance as expected, and dirty names /
 cell counts / memory estimates reset to empty. Output ZIP/XML persistence
 assertions stay unchanged; this is still test-maintenance scaffolding only, not
 production behavior change or public API change.
+P8.625 finishes the adjacent two-handle safe-save cleanup for the same retry
+family. The first safe save in read-only flows, the setup save in saved-clean
+flows, and the saved-clean recovery save now reuse a shared two-handle helper
+that checks clean handles, expected handoff counts, and cleared dirty
+materialized diagnostics. Failure injection, reacquire/query/invalid-read /
+invalid-mutation coverage, follow-up saves, and output ZIP/XML assertions stay
+unchanged; this remains test-maintenance scaffolding only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

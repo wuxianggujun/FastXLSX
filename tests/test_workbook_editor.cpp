@@ -752,6 +752,28 @@ void check_public_two_clean_retry_followup_save_state(
         label + " should clear dirty memory estimate");
 }
 
+std::size_t check_public_two_clean_retry_two_handle_save_state(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    std::size_t expected_pending_count,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        label + " should flush both materialized handles");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should queue the expected materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should clear dirty memory estimate");
+    return editor.pending_change_count();
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13615,10 +13637,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             "read-only two-clean retry reacquire failed save should not queue handoffs");
 
         editor.save_as(first_output);
-        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
-            "read-only two-clean retry reacquire first safe save should flush both handles");
-        check(editor.pending_change_count() == 2,
-            "read-only two-clean retry reacquire first safe save should queue both handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, 2,
+            "read-only two-clean retry reacquire first safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
@@ -13686,11 +13707,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-untouched-first"));
         editor.save_as(first_output);
 
-        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
-            "saved-clean two-clean retry reacquire setup should leave handles clean");
-        const std::size_t saved_pending_count = editor.pending_change_count();
-        check(saved_pending_count == 2,
-            "saved-clean two-clean retry reacquire setup should retain two saved handoffs");
+        const std::size_t saved_pending_count =
+            check_public_two_clean_retry_two_handle_save_state(
+                editor, data, untouched, 2,
+                "saved-clean two-clean retry reacquire setup");
 
         check(threw_fastxlsx_error([&] {
             editor.rename_sheet("Data", "SavedCleanTwoCleanReacquireRetryBlockedData");
@@ -13713,12 +13733,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             "saved-clean two-clean retry reacquire failed save should preserve handoff count");
 
         editor.save_as(second_output);
-        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
-            "saved-clean two-clean retry reacquire second safe save should flush both handles");
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean two-clean retry reacquire second safe save should queue two handoffs");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "saved-clean two-clean retry reacquire second safe save should clear dirty names");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, saved_pending_count + 2,
+            "saved-clean two-clean retry reacquire second safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
@@ -13821,8 +13838,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         check(threw_fastxlsx_error([&] { editor.save_as(source); }),
             "read-only two-clean query retry save_as over source should fail");
         editor.save_as(first_output);
-        check(editor.pending_change_count() == 2,
-            "read-only two-clean query retry first safe save should queue two handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, 2,
+            "read-only two-clean query retry first safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
@@ -13893,9 +13911,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         untouched.set_cell(1, 1,
             fastxlsx::CellValue::text("saved-clean-two-clean-query-retry-untouched-first"));
         editor.save_as(first_output);
-        const std::size_t saved_pending_count = editor.pending_change_count();
-        check(saved_pending_count == 2,
-            "saved-clean two-clean query retry setup should retain two saved handoffs");
+        const std::size_t saved_pending_count =
+            check_public_two_clean_retry_two_handle_save_state(
+                editor, data, untouched, 2,
+                "saved-clean two-clean query retry setup");
 
         check(threw_fastxlsx_error([&] {
             editor.rename_sheet("Data", "SavedCleanTwoCleanQueryRetryBlockedData");
@@ -13910,8 +13929,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         check(threw_fastxlsx_error([&] { editor.save_as(source); }),
             "saved-clean two-clean query retry save_as over source should fail");
         editor.save_as(second_output);
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean two-clean query retry second safe save should queue two handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, saved_pending_count + 2,
+            "saved-clean two-clean query retry second safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
@@ -14017,8 +14037,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         check(threw_fastxlsx_error([&] { editor.save_as(source); }),
             "read-only two-clean invalid-read retry save_as over source should fail");
         editor.save_as(first_output);
-        check(editor.pending_change_count() == 2,
-            "read-only two-clean invalid-read retry first safe save should queue two handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, 2,
+            "read-only two-clean invalid-read retry first safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
@@ -14095,9 +14116,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         untouched.set_cell(1, 1,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-read-retry-untouched-first"));
         editor.save_as(first_output);
-        const std::size_t saved_pending_count = editor.pending_change_count();
-        check(saved_pending_count == 2,
-            "saved-clean two-clean invalid-read retry setup should retain two saved handoffs");
+        const std::size_t saved_pending_count =
+            check_public_two_clean_retry_two_handle_save_state(
+                editor, data, untouched, 2,
+                "saved-clean two-clean invalid-read retry setup");
 
         check(threw_fastxlsx_error([&] {
             editor.rename_sheet("Data", "SavedCleanTwoCleanInvalidReadRetryBlockedData");
@@ -14110,8 +14132,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         check(threw_fastxlsx_error([&] { editor.save_as(source); }),
             "saved-clean two-clean invalid-read retry save_as over source should fail");
         editor.save_as(second_output);
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean two-clean invalid-read retry second safe save should queue two handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, saved_pending_count + 2,
+            "saved-clean two-clean invalid-read retry second safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
@@ -14232,8 +14255,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         check(editor.pending_change_count() == 0,
             "read-only two-clean invalid-mutation retry failed save_as should not queue handoffs");
         editor.save_as(first_output);
-        check(editor.pending_change_count() == 2,
-            "read-only two-clean invalid-mutation retry first safe save should queue two handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, 2,
+            "read-only two-clean invalid-mutation retry first safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);
@@ -14343,9 +14367,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         untouched.set_cell(1, 1,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-mutation-retry-untouched-first"));
         editor.save_as(first_output);
-        const std::size_t saved_pending_count = editor.pending_change_count();
-        check(saved_pending_count == 2,
-            "saved-clean two-clean invalid-mutation retry setup should retain two saved handoffs");
+        const std::size_t saved_pending_count =
+            check_public_two_clean_retry_two_handle_save_state(
+                editor, data, untouched, 2,
+                "saved-clean two-clean invalid-mutation retry setup");
 
         check(threw_fastxlsx_error([&] {
             editor.rename_sheet("Data", "SavedCleanTwoCleanInvalidMutationRetryBlockedData");
@@ -14364,8 +14389,9 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         check(editor.pending_change_count() == saved_pending_count,
             "saved-clean two-clean invalid-mutation retry failed save_as should preserve handoff count");
         editor.save_as(second_output);
-        check(editor.pending_change_count() == saved_pending_count + 2,
-            "saved-clean two-clean invalid-mutation retry second safe save should queue two handoffs");
+        check_public_two_clean_retry_two_handle_save_state(
+            editor, data, untouched, saved_pending_count + 2,
+            "saved-clean two-clean invalid-mutation retry second safe save");
 
         fastxlsx::WorksheetEditor data_again = editor.worksheet("Data", options);
         fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched", options);

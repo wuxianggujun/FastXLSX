@@ -460,6 +460,10 @@ test-maintenance scaffolding only and does not change public behavior.
 The follow-up safe-save checks in that family also use a shared helper now,
 covering clean handles, clear diagnostics, expected handoff counts, and empty
 dirty materialized diagnostics after save.
+The first safe saves and saved-clean recovery saves in that family now share a
+two-handle helper as well; it checks the two materialized sessions flush
+cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are
+reset after save.
 Invalid-read hygiene is pinned in the same retry/reacquire chain: invalid
 row/column coordinates, malformed A1 references, Excel-limit overflows, and
 invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`

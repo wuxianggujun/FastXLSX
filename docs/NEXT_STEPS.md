@@ -1717,6 +1717,12 @@ planned catalog, dirty materialized diagnostics, and empty `last_edit_error()`,
 then forces a missing-parent `save_as()` failure. The same editor must preserve
 the rewritten state and a later safe retry must persist the renamed catalog,
 rewritten definedName, and rewritten materialized formula.
+P8.680 pins the adjacent post-rewrite materialized mutation boundary. After a
+successful opt-in formula rewrite dirties the `Formula` worksheet session, an
+invalid follow-up mutation must update `last_edit_error()` without reverting or
+corrupting the rewritten formula, while a later valid mutation clears the
+diagnostic, updates dirty materialized diagnostics, and saves/reopens with both
+the rewritten formula and the later cell edit.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

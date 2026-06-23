@@ -168,6 +168,12 @@ combined rewrite state survives a missing-parent `save_as()` failure: the
 planned catalog, rewritten definedName, dirty materialized formula session,
 public summaries, empty `last_edit_error()`, and later safe retry output all
 remain consistent.
+The post-rewrite mutation regression also proves the rewritten materialized
+worksheet session remains usable: an invalid follow-up mutation records
+`last_edit_error()` without corrupting the rewritten formula, a later valid
+mutation clears the diagnostic, and the saved/reopened workbook contains both
+the rewritten formula and the later materialized edit without leaking the
+rejected payload.
 
 `generated_formula_rename_escaped_sheet_name` is the focused local QA for the
 same explicit rewrite policy when the new sheet name contains formula/XML

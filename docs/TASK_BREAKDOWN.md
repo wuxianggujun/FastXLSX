@@ -29058,6 +29058,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.680 - Pin post-formula-rewrite materialized mutations
+
+Status: done.
+
+Type: public workbook-editor formula rewrite + materialized mutation regression
+test + docs; no public API symbol change, no production behavior change, no
+CMake target membership change, and no formula engine expansion.
+
+Goal: prove an opt-in formula rewrite that dirties a materialized worksheet
+session still leaves that session usable for later public cell edits, and that
+failed follow-up mutations do not corrupt the rewritten formula state.
+
+Output:
+- Added
+  `test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()`.
+- The regression performs a combined definedName + materialized worksheet
+  formula rewrite, then triggers an invalid follow-up `WorksheetEditor`
+  mutation to populate `last_edit_error()` without changing the rewritten
+  formula, sparse cell count, sparse memory estimate, or queued public rename.
+- A later valid materialized mutation clears the diagnostic, updates aggregate
+  dirty materialized cell diagnostics, preserves the rewritten formula audit,
+  and does not restore stale source-name formula references.
+- The saved and reopened output must contain the renamed catalog, rewritten
+  workbook definedName, rewritten materialized formula, and later materialized
+  edit, while excluding the rejected invalid-mutation payload.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the
+  post-rewrite materialized mutation boundary.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no non-materialized worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no rollback/history model, and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

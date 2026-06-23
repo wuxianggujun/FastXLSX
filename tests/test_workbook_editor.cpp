@@ -22791,6 +22791,99 @@ void test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()
         "reopened retry output should expose the rewritten formula after failed save_as");
 }
 
+void test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-formula-rewrite-later-mutation-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-later-mutation-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    check(formula_sheet.get_cell("A1").text_value() == "Data!A1",
+        "formula rewrite later-mutation fixture should start with the source formula");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "RenamedData", options);
+
+    const std::string expected_formula = "'RenamedData'!A1";
+    check(formula_sheet.has_pending_changes() &&
+            formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "formula rewrite should dirty the materialized session before later mutations");
+    const std::size_t rewritten_cell_count = formula_sheet.cell_count();
+    const std::size_t rewritten_memory = formula_sheet.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&] {
+        formula_sheet.set_cell("a1",
+            fastxlsx::CellValue::text("rejected-after-formula-rewrite"));
+    }), "invalid mutation after formula rewrite should throw");
+    check(editor.last_edit_error().has_value(),
+        "invalid mutation after formula rewrite should populate last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "WorksheetEditor cell reference is invalid",
+            "invalid mutation after formula rewrite should expose the cell-reference diagnostic");
+    }
+    check(formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "invalid mutation after formula rewrite should preserve rewritten formula text");
+    check(formula_sheet.cell_count() == rewritten_cell_count,
+        "invalid mutation after formula rewrite should preserve sparse cell count");
+    check(formula_sheet.estimated_memory_usage() == rewritten_memory,
+        "invalid mutation after formula rewrite should preserve sparse memory estimate");
+    check(editor.pending_change_count() == 1,
+        "invalid mutation after formula rewrite should preserve the queued public rename");
+
+    formula_sheet.set_cell(2, 1,
+        fastxlsx::CellValue::text("post-rewrite materialized edit"));
+    check(!editor.last_edit_error().has_value(),
+        "valid mutation after formula rewrite should clear the failed mutation diagnostic");
+    check(formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "valid mutation after formula rewrite should keep the rewritten formula");
+    check(formula_sheet.get_cell("A2").text_value() == "post-rewrite materialized edit",
+        "valid mutation after formula rewrite should be readable from the same session");
+    check(formula_sheet.cell_count() == rewritten_cell_count + 1,
+        "valid mutation after formula rewrite should add one materialized cell");
+    check(editor.pending_materialized_cell_count() == formula_sheet.cell_count(),
+        "valid mutation after formula rewrite should update aggregate dirty cell count");
+    const std::vector<std::string> dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 1 && dirty_names[0] == "Formula",
+        "valid mutation after formula rewrite should keep only Formula dirty");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(audits, "RenamedData") == 1,
+        "later materialized mutation should preserve the rewritten formula audit");
+    check(count_formula_reference_audits(audits, "Data") == 0,
+        "later materialized mutation should not restore stale source-name formula refs");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet3.xml");
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "later mutation after formula rewrite should persist the renamed catalog");
+    check_contains(output_entries.at("xl/workbook.xml"),
+        R"(<definedName name="ReportRange">'RenamedData'!$A$1:$B$2</definedName>)",
+        "later mutation after formula rewrite should persist rewritten definedNames");
+    check_contains(formula_sheet_xml, expected_formula,
+        "later mutation after formula rewrite should persist rewritten formula text");
+    check_contains(formula_sheet_xml, "post-rewrite materialized edit",
+        "later mutation after formula rewrite should persist later materialized edits");
+    check_not_contains(formula_sheet_xml, "rejected-after-formula-rewrite",
+        "later mutation after formula rewrite should not leak rejected payloads");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_formula = reopened.worksheet("Formula");
+    check(reopened_formula.get_cell("A1").text_value() == expected_formula,
+        "reopened later-mutation output should expose the rewritten formula");
+    check(reopened_formula.get_cell("A2").text_value()
+            == "post-rewrite materialized edit",
+        "reopened later-mutation output should expose the later edit");
+}
+
 void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()
 {
     const std::filesystem::path source = write_formula_reference_source(
@@ -23878,6 +23971,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_chain_formula_policy_rewrites_source_aliases();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_formula_rewrite_failed_save_as_preserves_state();
+        test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();

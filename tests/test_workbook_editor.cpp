@@ -22884,6 +22884,108 @@ void test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()
         "reopened later-mutation output should expose the later edit");
 }
 
+void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    check(formula_sheet.get_cell("A1").text_value() == "Data!A1",
+        "formula rewrite replacement fixture should start with the source formula");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    editor.rename_sheet("Data", "RenamedData", options);
+
+    const std::string expected_formula = "'RenamedData'!A1";
+    check(formula_sheet.has_pending_changes() &&
+            formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "formula rewrite should dirty Formula before same-sheet replacement preflight");
+    const std::size_t rewritten_cell_count = formula_sheet.cell_count();
+    const std::size_t rewritten_memory = formula_sheet.estimated_memory_usage();
+    check(editor.pending_change_count() == 1,
+        "formula rewrite replacement fixture should queue the public rename first");
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_sheet_data("Formula",
+            {{fastxlsx::CellValue::text("blocked-formula-replacement")}});
+    } catch (const fastxlsx::FastXlsxError& error) {
+        replacement_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "same-sheet replacement after formula rewrite should populate last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "same-sheet replacement diagnostic should match the thrown error");
+            check_contains(*last_error,
+                "cannot replace sheet data after materializing planned worksheet session",
+                "same-sheet replacement should report the materialized-session guard");
+        }
+    }
+    check(replacement_failed,
+        "same-sheet replacement after formula rewrite should be rejected");
+    const std::optional<std::string> replacement_error = editor.last_edit_error();
+    check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+    check(formula_sheet.has_pending_changes() &&
+            formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "rejected same-sheet replacement should preserve the rewritten formula");
+    check(formula_sheet.cell_count() == rewritten_cell_count,
+        "rejected same-sheet replacement should preserve sparse formula cell count");
+    check(formula_sheet.estimated_memory_usage() == rewritten_memory,
+        "rejected same-sheet replacement should preserve sparse formula memory");
+    check(!editor.has_pending_replacement("Formula"),
+        "rejected same-sheet replacement should not queue a Formula replacement");
+    check(editor.pending_replacement_cell_count() == 0,
+        "rejected same-sheet replacement should not add replacement cells");
+    check(editor.pending_replacement_worksheet_names().empty(),
+        "rejected same-sheet replacement should not add replacement sheet names");
+    check(editor.pending_change_count() == 1,
+        "rejected same-sheet replacement should preserve the queued public rename only");
+
+    editor.replace_sheet_data("Other Sheet",
+        {{fastxlsx::CellValue::text("allowed-other-sheet-after-formula-rewrite")}});
+    check(!editor.last_edit_error().has_value(),
+        "cross-sheet replacement after formula rewrite should clear last_edit_error");
+    check(editor.has_pending_replacement("Other Sheet"),
+        "cross-sheet replacement after formula rewrite should queue replacement state");
+    check(editor.pending_replacement_cell_count() == 1,
+        "cross-sheet replacement after formula rewrite should expose one replacement cell");
+    check(editor.pending_change_count() == 2,
+        "cross-sheet replacement should add to the queued formula rewrite rename");
+    check(formula_sheet.get_cell("A1").text_value() == expected_formula,
+        "cross-sheet replacement should not disturb the rewritten Formula session");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet3.xml");
+    const std::string other_sheet_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "same-sheet replacement boundary should persist the renamed catalog");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">'RenamedData'!$A$1:$B$2</definedName>)",
+        "same-sheet replacement boundary should persist rewritten definedNames");
+    check_contains(formula_sheet_xml, expected_formula,
+        "same-sheet replacement boundary should persist rewritten formula text");
+    check_not_contains(formula_sheet_xml, "blocked-formula-replacement",
+        "rejected same-sheet replacement should not leak into Formula output");
+    check_contains(other_sheet_xml, "allowed-other-sheet-after-formula-rewrite",
+        "cross-sheet replacement should save beside the rewritten Formula session");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.worksheet("Formula").get_cell("A1").text_value() == expected_formula,
+        "reopened same-sheet replacement boundary output should expose rewritten formula");
+    check(reopened.worksheet("Other Sheet").get_cell("A1").text_value()
+            == "allowed-other-sheet-after-formula-rewrite",
+        "reopened same-sheet replacement boundary output should expose cross-sheet replacement");
+}
+
 void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()
 {
     const std::filesystem::path source = write_formula_reference_source(
@@ -23972,6 +24074,7 @@ int main(int argc, char* argv[])
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_formula_rewrite_failed_save_as_preserves_state();
         test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations();
+        test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement();
         test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state();
         test_rename_sheet_changes_catalog_name_and_preserves_parts();
         test_replace_sheet_data_uses_planned_catalog_after_rename();

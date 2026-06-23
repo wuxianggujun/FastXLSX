@@ -1723,6 +1723,13 @@ invalid follow-up mutation must update `last_edit_error()` without reverting or
 corrupting the rewritten formula, while a later valid mutation clears the
 diagnostic, updates dirty materialized diagnostics, and saves/reopens with both
 the rewritten formula and the later cell edit.
+P8.681 pins the corresponding Patch mixing boundary. After opt-in formula
+rewrite has dirtied the materialized `Formula` session, same-sheet
+`replace_sheet_data("Formula", ...)` must fail with the existing materialized
+session guard, preserve the rewritten formula and public rename state, and avoid
+queuing replacement diagnostics. A cross-sheet replacement on `Other Sheet`
+still succeeds, clears the guard diagnostic, and saves beside the rewritten
+formula state.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

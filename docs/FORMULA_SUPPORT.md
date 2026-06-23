@@ -174,6 +174,11 @@ worksheet session remains usable: an invalid follow-up mutation records
 mutation clears the diagnostic, and the saved/reopened workbook contains both
 the rewritten formula and the later materialized edit without leaking the
 rejected payload.
+The same-sheet replacement regression pins the matching Patch boundary:
+after formula rewrite dirties the materialized `Formula` session,
+`replace_sheet_data("Formula", ...)` is rejected without queuing replacement
+payload or corrupting the rewritten formula, while a replacement on `Other
+Sheet` still succeeds and saves beside the rewritten formula state.
 
 `generated_formula_rename_escaped_sheet_name` is the focused local QA for the
 same explicit rewrite policy when the new sheet name contains formula/XML

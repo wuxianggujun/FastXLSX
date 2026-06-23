@@ -29098,6 +29098,50 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.681 - Pin formula rewrite same-sheet replacement guard
+
+Status: done.
+
+Type: public workbook-editor formula rewrite + Patch mixing regression test +
+docs; no public API symbol change, no production behavior change, no CMake
+target membership change, and no formula engine expansion.
+
+Goal: prove an opt-in formula rewrite that dirties a materialized worksheet
+session still enforces the existing same-sheet Patch replacement guard, while
+allowing unrelated sheet replacements to compose with the rewritten formula
+state.
+
+Output:
+- Added
+  `test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()`.
+- The regression performs a combined definedName + materialized worksheet
+  formula rewrite, then verifies `replace_sheet_data("Formula", ...)` fails
+  with the existing materialized-session guard.
+- The failed same-sheet replacement must preserve the rewritten formula, sparse
+  cell count, sparse memory estimate, queued public rename, and empty
+  replacement diagnostics.
+- A cross-sheet `replace_sheet_data("Other Sheet", ...)` must still succeed,
+  clear the guard diagnostic, queue one replacement cell, and save beside the
+  rewritten Formula session.
+- The saved and reopened output must contain the renamed catalog, rewritten
+  workbook definedName, rewritten materialized formula, and cross-sheet
+  replacement payload, while excluding the rejected Formula replacement.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the
+  formula-rewrite same-sheet replacement guard boundary.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no non-materialized worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no rollback/history model, no automatic conflict resolution between
+  same-sheet Patch and materialized edits, and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

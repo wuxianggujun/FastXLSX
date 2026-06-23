@@ -1234,6 +1234,14 @@ and keeps rejected same-sheet payloads / names out of the retry output. This is
 output-path failure hygiene only, not rollback, transaction history,
 relationship repair, random-editor expansion, formula evaluation, or formula
 rewrite expansion.
+P8.612 continues that retry boundary with a post-save reacquire check: after
+the same two-handle recovery flow and a failed `save_as(source)`, the test
+reacquires `Data` and `Untouched` from the same editor to prove the saved
+materialized session is reused, clean diagnostics remain empty, and a later
+mutation on one reacquired handle still dirties only that handle before a
+second safe `save_as()`. This is post-save reacquire hygiene after failed-save
+retry, not rollback, transaction history, relationship repair, random-editor
+expansion, formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -26902,6 +26902,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.612 - Pin post-save reacquire after two-clean failed-save retry
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` post-save reacquire
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove that after two-handle recovery, a failed `save_as()` output-path
+preflight, and a successful retry, reacquiring `Data` and `Untouched` reuses
+the saved materialized sessions instead of falling back to source worksheet
+state.
+
+Output:
+- Added public read-only coverage where clean `Data` and `Untouched` handles
+  recover from a same-sheet replacement guard, both become dirty, `save_as(source)`
+  fails, a safe retry flushes both handles, and post-save reacquire reads the
+  recovered cells from saved materialized state.
+- Added public saved-clean coverage where two prior materialized handoffs are
+  preserved through a same-sheet rename guard, failed `save_as(source)`, safe
+  retry, post-save reacquire of both sheets, and a later single-handle mutation.
+- The regression verifies clean post-save reacquire leaves `last_edit_error()`,
+  dirty materialized names, dirty cell counts, dirty memory, and handoff counts
+  unchanged, while the next mutation dirties only the touched reacquired
+  session and is persisted by a second safe `save_as()`.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

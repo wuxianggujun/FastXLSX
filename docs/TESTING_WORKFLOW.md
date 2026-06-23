@@ -433,6 +433,11 @@ path preflight after both handles become dirty, the dirty materialized names,
 aggregate cell/memory diagnostics, handle dirty flags, and prior saved handoff
 count must remain unchanged so a later safe `save_as()` can flush exactly the
 expected materialized handoffs.
+Post-save reacquire is pinned after that retry too: once the safe retry flushes
+both materialized handles, reacquiring `Data` and `Untouched` must read the
+saved recovered cells rather than source state, keep clean diagnostics empty,
+and let a later mutation dirty only the touched reacquired session before the
+next safe `save_as()`.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

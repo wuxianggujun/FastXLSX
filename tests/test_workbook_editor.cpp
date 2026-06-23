@@ -13236,6 +13236,252 @@ void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty
     }
 }
 
+void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserves_sessions()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-reacquire-retry-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-reacquire-retry-first.xlsx");
+        const std::filesystem::path second_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-reacquire-retry-second.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        (void)data.get_cell(1, 1);
+        (void)untouched.get_cell(1, 1);
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_sheet_data("Data",
+                {{fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-blocked-data")}});
+        }), "read-only two-clean retry reacquire setup should reject same-sheet replacement");
+        check(editor.last_edit_error().has_value(),
+            "read-only two-clean retry reacquire setup should record same-sheet diagnostic");
+
+        data.erase_cell(5, 5);
+        data.set_cell(3, 3,
+            fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-data"));
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-untouched"));
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean retry reacquire mutations should clear diagnostic");
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "read-only two-clean retry reacquire save_as over source should fail");
+        check(data.has_pending_changes() && untouched.has_pending_changes(),
+            "read-only two-clean retry reacquire failed save should preserve dirty handles");
+        check(editor.pending_change_count() == 0,
+            "read-only two-clean retry reacquire failed save should not queue handoffs");
+
+        editor.save_as(first_output);
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "read-only two-clean retry reacquire first safe save should flush both handles");
+        check(editor.pending_change_count() == 2,
+            "read-only two-clean retry reacquire first safe save should queue both handoffs");
+
+        fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
+        const fastxlsx::CellValue data_again_value = data_again.get_cell(3, 3);
+        const fastxlsx::CellValue untouched_again_value = untouched_again.get_cell(2, 2);
+        check(data_again_value.kind() == fastxlsx::CellValueKind::Text &&
+                data_again_value.text_value() == "readonly-two-clean-reacquire-retry-data",
+            "read-only retry post-save Data reacquire should reuse saved materialized state");
+        check(untouched_again_value.kind() == fastxlsx::CellValueKind::Text &&
+                untouched_again_value.text_value() == "readonly-two-clean-reacquire-retry-untouched",
+            "read-only retry post-save Untouched reacquire should reuse saved materialized state");
+        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
+            "read-only retry post-save reacquire should keep all handles clean");
+        check(!editor.last_edit_error().has_value(),
+            "read-only retry post-save reacquire should keep last_edit_error clear");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only retry post-save reacquire should not create dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "read-only retry post-save reacquire should not create dirty cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "read-only retry post-save reacquire should not create dirty memory estimate");
+        check(editor.pending_change_count() == 2,
+            "read-only retry post-save reacquire should not add handoffs");
+
+        untouched_again.set_cell(4, 4,
+            fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-second"));
+        check(!data.has_pending_changes() && !data_again.has_pending_changes() &&
+                untouched.has_pending_changes() && untouched_again.has_pending_changes(),
+            "read-only retry second mutation should dirty only the Untouched session");
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names == std::vector<std::string>{"Untouched"},
+                "read-only retry second mutation should expose only Untouched as dirty");
+        }
+        check(editor.pending_materialized_cell_count() == untouched_again.cell_count(),
+            "read-only retry second mutation should report only Untouched cells");
+        check(editor.estimated_pending_materialized_memory_usage() ==
+                untouched_again.estimated_memory_usage(),
+            "read-only retry second mutation should report only Untouched memory");
+
+        editor.save_as(second_output);
+        check(editor.pending_change_count() == 3,
+            "read-only retry second safe save should queue one more materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only retry second safe save should clear dirty names again");
+
+        const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-two-clean-reacquire-retry-data",
+            "read-only retry first output should include Data recovery mutation");
+        check_contains(first_entries.at("xl/worksheets/sheet2.xml"),
+            "readonly-two-clean-reacquire-retry-untouched",
+            "read-only retry first output should include Untouched recovery mutation");
+        check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-two-clean-reacquire-retry-blocked-data",
+            "read-only retry rejected replacement should not leak into first output");
+
+        const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-two-clean-reacquire-retry-data",
+            "read-only retry second output should keep Data recovery mutation");
+        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+            "readonly-two-clean-reacquire-retry-untouched",
+            "read-only retry second output should keep Untouched recovery mutation");
+        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+            "readonly-two-clean-reacquire-retry-second",
+            "read-only retry second output should persist post-reacquire mutation");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-reacquire-retry-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-reacquire-retry-first.xlsx");
+        const std::filesystem::path second_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-reacquire-retry-second.xlsx");
+        const std::filesystem::path third_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-reacquire-retry-third.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-data-first"));
+        untouched.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-untouched-first"));
+        editor.save_as(first_output);
+
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "saved-clean two-clean retry reacquire setup should leave handles clean");
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        check(saved_pending_count == 2,
+            "saved-clean two-clean retry reacquire setup should retain two saved handoffs");
+
+        check(threw_fastxlsx_error([&] {
+            editor.rename_sheet("Data", "SavedCleanTwoCleanReacquireRetryBlockedData");
+        }), "saved-clean two-clean retry reacquire setup should reject same-sheet rename");
+        check(editor.last_edit_error().has_value(),
+            "saved-clean two-clean retry reacquire setup should record same-sheet diagnostic");
+
+        data.set_cell(3, 3,
+            fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-data-recovered"));
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-untouched-recovered"));
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean retry reacquire mutations should clear diagnostic");
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "saved-clean two-clean retry reacquire save_as over source should fail");
+        check(data.has_pending_changes() && untouched.has_pending_changes(),
+            "saved-clean two-clean retry reacquire failed save should preserve dirty handles");
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean two-clean retry reacquire failed save should preserve handoff count");
+
+        editor.save_as(second_output);
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "saved-clean two-clean retry reacquire second safe save should flush both handles");
+        check(editor.pending_change_count() == saved_pending_count + 2,
+            "saved-clean two-clean retry reacquire second safe save should queue two handoffs");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean two-clean retry reacquire second safe save should clear dirty names");
+
+        fastxlsx::WorksheetEditor data_again = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched_again = editor.worksheet("Untouched");
+        const fastxlsx::CellValue data_again_first = data_again.get_cell(1, 1);
+        const fastxlsx::CellValue data_again_recovered = data_again.get_cell(3, 3);
+        const fastxlsx::CellValue untouched_again_first = untouched_again.get_cell(1, 1);
+        const fastxlsx::CellValue untouched_again_recovered = untouched_again.get_cell(2, 2);
+        check(data_again_first.kind() == fastxlsx::CellValueKind::Text &&
+                data_again_first.text_value() == "saved-clean-two-clean-reacquire-retry-data-first",
+            "saved-clean retry Data reacquire should keep the first saved value");
+        check(data_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
+                data_again_recovered.text_value() == "saved-clean-two-clean-reacquire-retry-data-recovered",
+            "saved-clean retry Data reacquire should keep the recovery value");
+        check(untouched_again_first.kind() == fastxlsx::CellValueKind::Text &&
+                untouched_again_first.text_value() == "saved-clean-two-clean-reacquire-retry-untouched-first",
+            "saved-clean retry Untouched reacquire should keep the first saved value");
+        check(untouched_again_recovered.kind() == fastxlsx::CellValueKind::Text &&
+                untouched_again_recovered.text_value() == "saved-clean-two-clean-reacquire-retry-untouched-recovered",
+            "saved-clean retry Untouched reacquire should keep the recovery value");
+        check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+                !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
+            "saved-clean retry post-save reacquire should keep all handles clean");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean retry post-save reacquire should keep last_edit_error clear");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean retry post-save reacquire should not create dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "saved-clean retry post-save reacquire should not create dirty cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "saved-clean retry post-save reacquire should not create dirty memory estimate");
+        check(editor.pending_change_count() == saved_pending_count + 2,
+            "saved-clean retry post-save reacquire should not add handoffs");
+
+        data_again.set_cell(4, 4,
+            fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-second"));
+        check(data.has_pending_changes() && data_again.has_pending_changes() &&
+                !untouched.has_pending_changes() && !untouched_again.has_pending_changes(),
+            "saved-clean retry second mutation should dirty only the Data session");
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names == std::vector<std::string>{"Data"},
+                "saved-clean retry second mutation should expose only Data as dirty");
+        }
+
+        editor.save_as(third_output);
+        check(editor.pending_change_count() == saved_pending_count + 3,
+            "saved-clean retry third safe save should queue one more materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean retry third safe save should clear dirty names again");
+
+        const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "saved-clean retry rejected rename should preserve Data catalog name");
+        check_not_contains(second_entries.at("xl/workbook.xml"),
+            "SavedCleanTwoCleanReacquireRetryBlockedData",
+            "saved-clean retry rejected rename should not leak into second output");
+        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-two-clean-reacquire-retry-data-recovered",
+            "saved-clean retry second output should include Data recovery mutation");
+        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+            "saved-clean-two-clean-reacquire-retry-untouched-recovered",
+            "saved-clean retry second output should include Untouched recovery mutation");
+
+        const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-two-clean-reacquire-retry-data-first",
+            "saved-clean retry third output should keep Data first value");
+        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-two-clean-reacquire-retry-data-recovered",
+            "saved-clean retry third output should keep Data recovery mutation");
+        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-two-clean-reacquire-retry-second",
+            "saved-clean retry third output should persist post-reacquire mutation");
+        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
+            "saved-clean-two-clean-reacquire-retry-untouched-recovered",
+            "saved-clean retry third output should keep Untouched recovery mutation");
+    }
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -21828,6 +22074,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_other_guard();
         test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_other_mutation();
         test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty_handles();
+        test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserves_sessions();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

@@ -27607,6 +27607,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.635 - Reuse same-sheet guard helper in retry invalid-* setup checks
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: continue the same helper cleanup into the retry read-only and saved-clean
+invalid-read / invalid-mutation setup guard checks.
+
+Output:
+- Reused the single same-sheet guard-failure helper for read-only retry
+  replacement setup failures in the invalid-read and invalid-mutation
+  branches.
+- Reused it for saved-clean retry rename setup failures in the invalid-read and
+  invalid-mutation branches.
+- Kept the later reacquire, dirty-state, and output assertions explicit.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

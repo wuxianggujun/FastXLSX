@@ -484,6 +484,8 @@ checks, while leaving the recovery and ZIP/XML assertions explicit.
 The explicit two-clean recovery, scoped other-mutation, and failed-save guard
 checks reuse that same helper too, while keeping the dirty-state and output
 assertions local to each scenario.
+The retry invalid-read and invalid-mutation setup guard checks reuse it as
+well, while keeping the reacquire, dirty-state, and output assertions explicit.
 The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are

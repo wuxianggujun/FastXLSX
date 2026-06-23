@@ -13764,12 +13764,15 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-blocked-data")}});
-        }), "read-only two-clean retry reacquire setup should reject same-sheet replacement");
-        check(editor.last_edit_error().has_value(),
-            "read-only two-clean retry reacquire setup should record same-sheet diagnostic");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text(
+                        "readonly-two-clean-reacquire-retry-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only two-clean retry reacquire setup");
 
         data.erase_cell(5, 5);
         data.set_cell(3, 3,
@@ -13855,11 +13858,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
                 editor, data, untouched, 2,
                 "saved-clean two-clean retry reacquire setup");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoCleanReacquireRetryBlockedData");
-        }), "saved-clean two-clean retry reacquire setup should reject same-sheet rename");
-        check(editor.last_edit_error().has_value(),
-            "saved-clean two-clean retry reacquire setup should record same-sheet diagnostic");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoCleanReacquireRetryBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean two-clean retry reacquire setup");
 
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-data-recovered"));
@@ -13957,10 +13962,15 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-query-retry-blocked-data")}});
-        }), "read-only two-clean query retry setup should reject same-sheet replacement");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text(
+                        "readonly-two-clean-query-retry-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only two-clean query retry setup");
         data.erase_cell(5, 5);
         data.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-query-retry-data"));
@@ -14040,9 +14050,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
                 editor, data, untouched, 2,
                 "saved-clean two-clean query retry setup");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoCleanQueryRetryBlockedData");
-        }), "saved-clean two-clean query retry setup should reject same-sheet rename");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoCleanQueryRetryBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean two-clean query retry setup");
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("saved-clean-two-clean-query-retry-data-recovered"));
         untouched.set_cell(2, 2,
@@ -14136,10 +14150,15 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-invalid-read-retry-blocked-data")}});
-        }), "read-only two-clean invalid-read retry setup should reject same-sheet replacement");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text(
+                        "readonly-two-clean-invalid-read-retry-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only two-clean invalid-read retry setup");
         data.erase_cell(5, 5);
         data.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-read-retry-data"));
@@ -14226,9 +14245,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
                 editor, data, untouched, 2,
                 "saved-clean two-clean invalid-read retry setup");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoCleanInvalidReadRetryBlockedData");
-        }), "saved-clean two-clean invalid-read retry setup should reject same-sheet rename");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoCleanInvalidReadRetryBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean two-clean invalid-read retry setup");
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-read-retry-data-recovered"));
         untouched.set_cell(2, 2,
@@ -14330,10 +14353,15 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
 
-        check(threw_fastxlsx_error([&] {
-            editor.replace_sheet_data("Data",
-                {{fastxlsx::CellValue::text("readonly-two-clean-invalid-mutation-retry-blocked-data")}});
-        }), "read-only two-clean invalid-mutation retry setup should reject same-sheet replacement");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text(
+                        "readonly-two-clean-invalid-mutation-retry-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only two-clean invalid-mutation retry setup");
         data.erase_cell(5, 5);
         data.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-mutation-retry-data"));
@@ -14445,9 +14473,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
                 editor, data, untouched, 2,
                 "saved-clean two-clean invalid-mutation retry setup");
 
-        check(threw_fastxlsx_error([&] {
-            editor.rename_sheet("Data", "SavedCleanTwoCleanInvalidMutationRetryBlockedData");
-        }), "saved-clean two-clean invalid-mutation retry setup should reject same-sheet rename");
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoCleanInvalidMutationRetryBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean two-clean invalid-mutation retry setup");
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-mutation-retry-data-recovered"));
         untouched.set_cell(2, 2,

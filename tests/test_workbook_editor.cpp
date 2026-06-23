@@ -21822,8 +21822,27 @@ void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk
     }
 
     editor.rename_sheet("Data", "RenamedData");
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> pending_replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> pending_materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t pending_summary_count_before_audit =
+        editor.pending_worksheet_edits().size();
+
     const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit> renamed_audits =
         editor.defined_name_formula_reference_audits();
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        "renamed definedName audit should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        "renamed definedName audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() == pending_replacement_names_before_audit,
+        "renamed definedName audit should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == pending_materialized_names_before_audit,
+        "renamed definedName audit should not create materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() == pending_summary_count_before_audit,
+        "renamed definedName audit should not create pending edit summaries");
     check(renamed_audits.size() == 4,
         "rename should not drop definedName formula reference audit entries");
     {

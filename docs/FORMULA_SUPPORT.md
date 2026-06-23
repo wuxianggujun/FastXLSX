@@ -198,6 +198,11 @@ The source-read case-varied regression also pins public state hygiene:
 `source_formula_reference_audits()` does not increment the public edit count,
 change pending-change state, create replacement diagnostics, create
 materialized diagnostics, or add pending edit summaries.
+The definedName audit regression pins the same state hygiene after default
+catalog-only rename: `defined_name_formula_reference_audits()` reports stale
+source-name direct definedName references without incrementing public edit
+count, changing pending-change state, or creating replacement/materialized
+diagnostics or pending edit summaries.
 
 External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
 outside this repository:

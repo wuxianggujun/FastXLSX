@@ -28516,6 +28516,44 @@ Non-goals / boundary:
 Acceptance:
 - `git diff --check` passes.
 
+## P8.665 - Pin definedName formula audit read-only public state
+
+Status: done.
+
+Type: public workbook-editor definedName diagnostic regression test + docs; no
+public API change, no production behavior change, no CMake target membership
+change, and no formula engine expansion.
+
+Goal: prove `defined_name_formula_reference_audits()` remains a read-only
+diagnostic after default catalog-only `rename_sheet()` and does not mutate
+public pending edit state while reporting stale source-name direct definedName
+formula refs.
+
+Output:
+- Extended
+  `test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk()`.
+- The regression snapshots `pending_change_count()`, `has_pending_changes()`,
+  pending replacement worksheet names, pending materialized worksheet names,
+  and pending edit summary count after default
+  `rename_sheet("Data", "RenamedData")`.
+- The regression verifies `defined_name_formula_reference_audits()` leaves those
+  public diagnostics unchanged while still reporting the stale `Data!` direct
+  definedName ref mapped to planned sheet `RenamedData`.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the definedName
+  read-only state hygiene boundary.
+
+Non-goals / boundary:
+- No default formula rewrite, no direct definedName rewrite outside explicit
+  rename policy, no non-materialized worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference semantics,
+  no dependency graph, no calcChain rebuild, no relationship repair, no complete
+  Excel formula parser, and no public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

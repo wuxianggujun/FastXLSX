@@ -27081,6 +27081,35 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.617 - Refactor two-clean invalid-mutation retry helper structure
+
+Status: done.
+
+Type: public workbook-editor test maintainability cleanup and docs; no
+production behavior change, no public API change, no CMake target membership
+change, and no formula capability expansion.
+
+Goal: reduce local lambda duplication in the P8.615/P8.616 invalid-mutation
+retry regression by extracting named helpers while preserving the exact
+assertions and shard coverage.
+
+Output:
+- Extracted invalid mutation rejection and clean-session state checks into
+  file-scope test helpers.
+- Kept read-only and saved-clean retry/reacquire coverage unchanged.
+- Kept failed-save-after-invalid-mutation diagnostic preservation checks
+  unchanged.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -412,6 +412,114 @@ void check_public_dirty_materialized_recovery_state(
         prefix + " should preserve the restored planned catalog name");
 }
 
+fastxlsx::CellValue public_two_clean_retry_rejected_mutation_value(
+    std::string_view prefix,
+    std::string_view suffix)
+{
+    return fastxlsx::CellValue::text(std::string(prefix) + std::string(suffix));
+}
+
+void reject_public_two_clean_retry_invalid_mutations(
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    fastxlsx::WorksheetEditor& data_again,
+    fastxlsx::WorksheetEditor& untouched_again,
+    std::string_view rejected_prefix,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(threw_fastxlsx_error([&] {
+        data_again.set_cell(0, 1,
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-row-zero"));
+    }), label + " should reject row-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        data_again.set_cell(1, 0,
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-column-zero"));
+    }), label + " should reject column-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        untouched_again.set_cell(1048577, 1,
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-row-overflow"));
+    }), label + " should reject row-overflow set_cell");
+    check(threw_fastxlsx_error([&] {
+        untouched_again.set_cell(1, 16385,
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-column-overflow"));
+    }), label + " should reject column-overflow set_cell");
+    check(threw_fastxlsx_error([&] {
+        data.set_cell("a1",
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-lowercase-a1"));
+    }), label + " should reject lowercase A1 set_cell");
+    check(threw_fastxlsx_error([&] {
+        untouched.set_cell("XFE1",
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-a1-column-overflow"));
+    }), label + " should reject A1 column-overflow set_cell");
+    check(threw_fastxlsx_error([&] { data.erase_cell(0, 1); }),
+        label + " should reject row-zero erase");
+    check(threw_fastxlsx_error([&] { untouched.erase_cell(1, 16385); }),
+        label + " should reject column-overflow erase");
+}
+
+void check_public_two_clean_retry_clean_after_invalid_mutations(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& data,
+    fastxlsx::WorksheetEditor& untouched,
+    fastxlsx::WorksheetEditor& data_again,
+    fastxlsx::WorksheetEditor& untouched_again,
+    const std::vector<std::string>& expected_names,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& expected_catalog,
+    std::size_t expected_pending_count,
+    std::size_t data_count,
+    std::size_t data_memory,
+    std::size_t untouched_count,
+    std::size_t untouched_memory,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+    const std::optional<std::string> invalid_mutation_error =
+        editor.last_edit_error();
+
+    check(invalid_mutation_error.has_value(),
+        label + " should record invalid mutation diagnostics");
+    check(editor.pending_change_count() == expected_pending_count,
+        label + " should preserve handoff count");
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_again.has_pending_changes() && !untouched_again.has_pending_changes(),
+        label + " should keep all handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        label + " should not dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        label + " should keep dirty materialized cells clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        label + " should keep dirty materialized memory clear");
+    check(editor.pending_worksheet_edits().empty(),
+        label + " should keep worksheet summaries empty");
+    check(editor.source_worksheet_names() == expected_names,
+        label + " should preserve source worksheet names");
+    check(editor.worksheet_names() == expected_names,
+        label + " should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), expected_catalog),
+        label + " should preserve worksheet catalog");
+    check(data.cell_count() == data_count &&
+            data_again.cell_count() == data_count &&
+            data.estimated_memory_usage() == data_memory &&
+            data_again.estimated_memory_usage() == data_memory,
+        label + " should preserve Data sparse diagnostics");
+    check(untouched.cell_count() == untouched_count &&
+            untouched_again.cell_count() == untouched_count &&
+            untouched.estimated_memory_usage() == untouched_memory &&
+            untouched_again.estimated_memory_usage() == untouched_memory,
+        label + " should preserve Untouched sparse diagnostics");
+    check_public_inspection_preserves_last_edit_error(
+        editor, invalid_mutation_error);
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -14061,99 +14169,6 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
 
-    const auto rejected_value =
-        [](std::string_view prefix, std::string_view suffix) {
-            return fastxlsx::CellValue::text(std::string(prefix) + std::string(suffix));
-        };
-
-    const auto reject_invalid_mutations =
-        [&](fastxlsx::WorksheetEditor& data,
-            fastxlsx::WorksheetEditor& untouched,
-            fastxlsx::WorksheetEditor& data_again,
-            fastxlsx::WorksheetEditor& untouched_again,
-            std::string_view rejected_prefix,
-            std::string_view scenario) {
-            const std::string label = std::string(scenario);
-            check(threw_fastxlsx_error([&] {
-                data_again.set_cell(0, 1, rejected_value(rejected_prefix, "-row-zero"));
-            }), label + " should reject row-zero set_cell");
-            check(threw_fastxlsx_error([&] {
-                data_again.set_cell(1, 0,
-                    rejected_value(rejected_prefix, "-column-zero"));
-            }), label + " should reject column-zero set_cell");
-            check(threw_fastxlsx_error([&] {
-                untouched_again.set_cell(1048577, 1,
-                    rejected_value(rejected_prefix, "-row-overflow"));
-            }), label + " should reject row-overflow set_cell");
-            check(threw_fastxlsx_error([&] {
-                untouched_again.set_cell(1, 16385,
-                    rejected_value(rejected_prefix, "-column-overflow"));
-            }), label + " should reject column-overflow set_cell");
-            check(threw_fastxlsx_error([&] {
-                data.set_cell("a1", rejected_value(rejected_prefix, "-lowercase-a1"));
-            }), label + " should reject lowercase A1 set_cell");
-            check(threw_fastxlsx_error([&] {
-                untouched.set_cell("XFE1",
-                    rejected_value(rejected_prefix, "-a1-column-overflow"));
-            }), label + " should reject A1 column-overflow set_cell");
-            check(threw_fastxlsx_error([&] { data.erase_cell(0, 1); }),
-                label + " should reject row-zero erase");
-            check(threw_fastxlsx_error([&] { untouched.erase_cell(1, 16385); }),
-                label + " should reject column-overflow erase");
-        };
-
-    const auto check_clean_after_invalid_mutations =
-        [&](fastxlsx::WorkbookEditor& editor,
-            fastxlsx::WorksheetEditor& data,
-            fastxlsx::WorksheetEditor& untouched,
-            fastxlsx::WorksheetEditor& data_again,
-            fastxlsx::WorksheetEditor& untouched_again,
-            std::size_t expected_pending_count,
-            std::size_t data_count,
-            std::size_t data_memory,
-            std::size_t untouched_count,
-            std::size_t untouched_memory,
-            std::string_view scenario) {
-            const std::string label = std::string(scenario);
-            const std::optional<std::string> invalid_mutation_error =
-                editor.last_edit_error();
-            check(invalid_mutation_error.has_value(),
-                label + " should record invalid mutation diagnostics");
-            check(editor.pending_change_count() == expected_pending_count,
-                label + " should preserve handoff count");
-            check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
-                    !data_again.has_pending_changes() &&
-                    !untouched_again.has_pending_changes(),
-                label + " should keep all handles clean");
-            check(editor.pending_materialized_worksheet_names().empty(),
-                label + " should not dirty materialized names");
-            check(editor.pending_materialized_cell_count() == 0,
-                label + " should keep dirty materialized cells clear");
-            check(editor.estimated_pending_materialized_memory_usage() == 0,
-                label + " should keep dirty materialized memory clear");
-            check(editor.pending_worksheet_edits().empty(),
-                label + " should keep worksheet summaries empty");
-            check(editor.source_worksheet_names() == expected_names,
-                label + " should preserve source worksheet names");
-            check(editor.worksheet_names() == expected_names,
-                label + " should preserve planned worksheet names");
-            check(workbook_editor_catalog_entries_equal(
-                      editor.worksheet_catalog(), expected_catalog),
-                label + " should preserve worksheet catalog");
-            check(data.cell_count() == data_count &&
-                    data_again.cell_count() == data_count &&
-                    data.estimated_memory_usage() == data_memory &&
-                    data_again.estimated_memory_usage() == data_memory,
-                label + " should preserve Data sparse diagnostics");
-            check(untouched.cell_count() == untouched_count &&
-                    untouched_again.cell_count() == untouched_count &&
-                    untouched.estimated_memory_usage() == untouched_memory &&
-                    untouched_again.estimated_memory_usage() == untouched_memory,
-                label + " should preserve Untouched sparse diagnostics");
-            check_public_inspection_preserves_last_edit_error(
-                editor, invalid_mutation_error);
-        };
-
     {
         const std::filesystem::path source =
             write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-invalid-mutation-retry-source.xlsx");
@@ -14199,11 +14214,14 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         const std::size_t untouched_count = untouched_again.cell_count();
         const std::size_t untouched_memory = untouched_again.estimated_memory_usage();
 
-        reject_invalid_mutations(data, untouched, data_again, untouched_again,
-            rejected_prefix, "read-only retry invalid mutations");
-        check_clean_after_invalid_mutations(editor, data, untouched, data_again,
-            untouched_again, 2, data_count, data_memory, untouched_count,
-            untouched_memory, "read-only retry invalid mutations");
+        reject_public_two_clean_retry_invalid_mutations(
+            data, untouched, data_again, untouched_again, rejected_prefix,
+            "read-only retry invalid mutations");
+        check_public_two_clean_retry_clean_after_invalid_mutations(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, 2, data_count, data_memory,
+            untouched_count, untouched_memory,
+            "read-only retry invalid mutations");
         const std::optional<std::string> read_only_invalid_mutation_error =
             editor.last_edit_error();
 
@@ -14211,9 +14229,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             "read-only retry failed save_as after invalid mutations should reject source overwrite");
         check(editor.last_edit_error() == read_only_invalid_mutation_error,
             "read-only retry failed save_as after invalid mutations should preserve diagnostics");
-        check_clean_after_invalid_mutations(editor, data, untouched, data_again,
-            untouched_again, 2, data_count, data_memory, untouched_count,
-            untouched_memory,
+        check_public_two_clean_retry_clean_after_invalid_mutations(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, 2, data_count, data_memory,
+            untouched_count, untouched_memory,
             "read-only retry failed save_as after invalid mutations");
 
         const fastxlsx::CellValue data_value = data_again.get_cell(1, 1);
@@ -14333,11 +14352,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         const std::size_t untouched_count = untouched_again.cell_count();
         const std::size_t untouched_memory = untouched_again.estimated_memory_usage();
 
-        reject_invalid_mutations(data, untouched, data_again, untouched_again,
-            rejected_prefix, "saved-clean retry invalid mutations");
-        check_clean_after_invalid_mutations(editor, data, untouched, data_again,
-            untouched_again, saved_pending_count + 2, data_count, data_memory,
-            untouched_count, untouched_memory,
+        reject_public_two_clean_retry_invalid_mutations(
+            data, untouched, data_again, untouched_again, rejected_prefix,
+            "saved-clean retry invalid mutations");
+        check_public_two_clean_retry_clean_after_invalid_mutations(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, saved_pending_count + 2,
+            data_count, data_memory, untouched_count, untouched_memory,
             "saved-clean retry invalid mutations");
         const std::optional<std::string> saved_clean_invalid_mutation_error =
             editor.last_edit_error();
@@ -14346,9 +14367,10 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             "saved-clean retry failed save_as after invalid mutations should reject source overwrite");
         check(editor.last_edit_error() == saved_clean_invalid_mutation_error,
             "saved-clean retry failed save_as after invalid mutations should preserve diagnostics");
-        check_clean_after_invalid_mutations(editor, data, untouched, data_again,
-            untouched_again, saved_pending_count + 2, data_count, data_memory,
-            untouched_count, untouched_memory,
+        check_public_two_clean_retry_clean_after_invalid_mutations(
+            editor, data, untouched, data_again, untouched_again,
+            expected_names, expected_catalog, saved_pending_count + 2,
+            data_count, data_memory, untouched_count, untouched_memory,
             "saved-clean retry failed save_as after invalid mutations");
 
         const fastxlsx::CellValue data_first = data_again.get_cell(1, 1);

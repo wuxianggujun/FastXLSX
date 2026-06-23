@@ -458,6 +458,9 @@ The failed-save edge after invalid mutations is pinned too: if
 `save_as(source)` fails after the invalid-mutation diagnostic exists, it must
 preserve that `last_edit_error()`, keep clean sessions and handoff counts
 unchanged, and still allow the next valid mutation to clear diagnostics.
+The invalid-mutation retry coverage uses named helpers for rejected mutation
+injection and clean-session assertions; these helpers are test-maintenance
+scaffolding only and do not change public behavior.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

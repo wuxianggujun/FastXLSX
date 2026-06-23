@@ -1278,6 +1278,12 @@ able to clear diagnostics and persist through a safe `save_as()`. This is
 diagnostic preservation around output-path preflight only, not rollback,
 transaction history, relationship repair, random-editor expansion, formula
 evaluation, or formula rewrite expansion.
+P8.617 keeps that coverage unchanged but moves the two-clean retry invalid
+mutation injection and clean-session assertions into named test helpers. This
+reduces local lambda duplication and makes later retry-hygiene shards easier to
+audit. It is test-maintenance scaffolding only, not production behavior change,
+public API change, operation-mixing semantic change, relationship repair,
+formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

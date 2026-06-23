@@ -26867,6 +26867,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.611 - Pin failed-save retry after two-clean recovery mutations
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` output-path failure retry
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove a `save_as()` output-path failure after two-handle recovery does
+not clear dirty materialized handles, does not queue partial handoffs, and still
+allows a later safe retry to flush both handles.
+
+Output:
+- Added public read-only coverage where `Data` and `Untouched` are clean
+  materialized handles; a `Data` same-sheet replacement failure is cleared by a
+  no-op erase, both handles are dirtied, `save_as(source)` fails before dirty
+  auto-flush, and a later safe `save_as()` persists both mutations.
+- Added public saved-clean coverage where two prior materialized handoffs are
+  already recorded; a `Data` same-sheet rename failure is cleared by dirtying
+  both handles, `save_as(source)` fails without changing the prior handoff count,
+  and a later safe `save_as()` records exactly two additional handoffs.
+- The regressions verify failed `save_as()` preserves dirty materialized names,
+  aggregate dirty cell counts and memory, keeps `last_edit_error()` clear, and
+  keeps rejected same-sheet payloads / names out of retry output.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

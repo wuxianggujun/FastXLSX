@@ -1224,6 +1224,16 @@ verifies both dirty handles are tracked in workbook order without changing the
 saved handoff count until `save_as()`. This is scoped public
 `WorksheetEditor` mutation hygiene only, not rollback, relationship repair,
 random-editor expansion, formula evaluation, or formula rewrite expansion.
+P8.611 adds retry-state coverage after that two-handle recovery flow: both
+read-only and saved-clean branches dirty `Data` and `Untouched` after clearing a
+same-sheet guard diagnostic, force `save_as(source)` to fail before dirty
+materialized auto-flush, and then prove a later safe `save_as()` still flushes
+both handles. The regression preserves dirty names / cell counts / memory,
+does not create `last_edit_error()` or partial materialized handoffs on failure,
+and keeps rejected same-sheet payloads / names out of the retry output. This is
+output-path failure hygiene only, not rollback, transaction history,
+relationship repair, random-editor expansion, formula evaluation, or formula
+rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

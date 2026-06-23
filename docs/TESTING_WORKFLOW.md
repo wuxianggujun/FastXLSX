@@ -428,6 +428,11 @@ diagnostic is recovered, a valid `Untouched` `WorksheetEditor` mutation must
 clear/preserve `last_edit_error()` appropriately, dirty only the mutated clean
 handle in read-only recovery, and preserve both dirty handles in saved-clean
 recovery until `save_as()` flushes them.
+Retry hygiene is also pinned for the same flow: if `save_as()` fails at output
+path preflight after both handles become dirty, the dirty materialized names,
+aggregate cell/memory diagnostics, handle dirty flags, and prior saved handoff
+count must remain unchanged so a later safe `save_as()` can flush exactly the
+expected materialized handoffs.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

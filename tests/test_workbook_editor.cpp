@@ -13065,6 +13065,177 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_
     }
 }
 
+void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty_handles()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-failed-save-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-failed-save-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        (void)data.get_cell(1, 1);
+        (void)untouched.get_cell(1, 1);
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_sheet_data("Data",
+                {{fastxlsx::CellValue::text("readonly-two-clean-failed-save-blocked-data")}});
+        }), "read-only two-clean failed-save setup should reject same-sheet replacement");
+        check(editor.last_edit_error().has_value(),
+            "read-only two-clean failed-save setup should record the same-sheet diagnostic");
+
+        data.erase_cell(5, 5);
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean failed-save no-op recovery should clear the diagnostic");
+        data.set_cell(3, 3,
+            fastxlsx::CellValue::text("readonly-two-clean-failed-save-data"));
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("readonly-two-clean-failed-save-untouched"));
+
+        const std::size_t expected_dirty_cells =
+            data.cell_count() + untouched.cell_count();
+        const std::size_t expected_dirty_memory =
+            data.estimated_memory_usage() + untouched.estimated_memory_usage();
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names == std::vector<std::string>{"Data", "Untouched"},
+                "read-only two-clean failed-save setup should expose both dirty handles");
+        }
+        check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+            "read-only two-clean failed-save setup should expose both dirty cell counts");
+        check(editor.estimated_pending_materialized_memory_usage() ==
+                expected_dirty_memory,
+            "read-only two-clean failed-save setup should expose both dirty memory estimates");
+        check(editor.pending_change_count() == 0,
+            "read-only two-clean dirty handles should not queue handoffs before save_as");
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "read-only two-clean save_as over source should fail before dirty flush");
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean failed save_as should not create last_edit_error");
+        check(data.has_pending_changes() && untouched.has_pending_changes(),
+            "read-only two-clean failed save_as should preserve both dirty handles");
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names == std::vector<std::string>{"Data", "Untouched"},
+                "read-only two-clean failed save_as should preserve dirty handle names");
+        }
+        check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+            "read-only two-clean failed save_as should preserve dirty cell counts");
+        check(editor.estimated_pending_materialized_memory_usage() ==
+                expected_dirty_memory,
+            "read-only two-clean failed save_as should preserve dirty memory estimates");
+        check(editor.pending_change_count() == 0,
+            "read-only two-clean failed save_as should not queue partial handoffs");
+
+        editor.save_as(output);
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "read-only two-clean recovery safe save_as should flush both handles");
+        check(editor.pending_change_count() == 2,
+            "read-only two-clean recovery safe save_as should queue two materialized handoffs");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only two-clean recovery safe save_as should clear dirty names");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-two-clean-failed-save-data",
+            "read-only two-clean recovery safe output should persist Data mutation");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+            "readonly-two-clean-failed-save-untouched",
+            "read-only two-clean recovery safe output should persist Untouched mutation");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-two-clean-failed-save-blocked-data",
+            "read-only two-clean rejected payload should not leak after retry");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-failed-save-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-failed-save-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-failed-save-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clean-failed-save-data"));
+        untouched.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clean-failed-save-untouched"));
+        editor.save_as(first_output);
+
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "saved-clean two-clean failed-save setup should leave both handles clean");
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        check(saved_pending_count == 2,
+            "saved-clean two-clean failed-save setup should retain two prior handoffs");
+
+        check(threw_fastxlsx_error([&] {
+            editor.rename_sheet("Data", "SavedCleanTwoCleanFailedSaveBlockedData");
+        }), "saved-clean two-clean failed-save setup should reject same-sheet rename");
+        check(editor.last_edit_error().has_value(),
+            "saved-clean two-clean failed-save setup should record the same-sheet diagnostic");
+
+        data.set_cell(3, 3,
+            fastxlsx::CellValue::text("saved-clean-two-clean-failed-save-data-recovered"));
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("saved-clean-two-clean-failed-save-untouched-recovered"));
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean mutations should clear the same-sheet diagnostic");
+
+        const std::size_t expected_dirty_cells =
+            data.cell_count() + untouched.cell_count();
+        const std::size_t expected_dirty_memory =
+            data.estimated_memory_usage() + untouched.estimated_memory_usage();
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean two-clean dirty handles should not add handoffs before save_as");
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "saved-clean two-clean save_as over source should fail before dirty flush");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean failed save_as should not create last_edit_error");
+        check(data.has_pending_changes() && untouched.has_pending_changes(),
+            "saved-clean two-clean failed save_as should preserve both dirty handles");
+        {
+            const std::vector<std::string> dirty_names =
+                editor.pending_materialized_worksheet_names();
+            check(dirty_names == std::vector<std::string>{"Data", "Untouched"},
+                "saved-clean two-clean failed save_as should preserve dirty handle names");
+        }
+        check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+            "saved-clean two-clean failed save_as should preserve dirty cell counts");
+        check(editor.estimated_pending_materialized_memory_usage() ==
+                expected_dirty_memory,
+            "saved-clean two-clean failed save_as should preserve dirty memory estimates");
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean two-clean failed save_as should not queue partial handoffs");
+
+        editor.save_as(output);
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "saved-clean two-clean recovery safe save_as should flush both handles");
+        check(editor.pending_change_count() == saved_pending_count + 2,
+            "saved-clean two-clean recovery safe save_as should queue two more handoffs");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean two-clean recovery safe save_as should clear dirty names");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "saved-clean two-clean rejected rename should preserve Data catalog name");
+        check_not_contains(output_entries.at("xl/workbook.xml"),
+            "SavedCleanTwoCleanFailedSaveBlockedData",
+            "saved-clean two-clean rejected rename should not leak after retry");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-two-clean-failed-save-data-recovered",
+            "saved-clean two-clean recovery safe output should persist Data mutation");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+            "saved-clean-two-clean-failed-save-untouched-recovered",
+            "saved-clean two-clean recovery safe output should persist Untouched mutation");
+    }
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -21656,6 +21827,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_noop_erase_recovery_preserves_same_sheet_patch_guard();
         test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_other_guard();
         test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_other_mutation();
+        test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty_handles();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

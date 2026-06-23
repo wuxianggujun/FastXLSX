@@ -455,7 +455,10 @@ formula results，不计算公式、不重建 calcChain。
 qualifier 做 ASCII 大小写不敏感匹配，但 diagnostics 仍保留公式里的原始拼写。
 默认 `rename_sheet()` 仍只改 workbook catalog，不改 materialized worksheet formula、
 non-materialized source worksheet formula 或 direct definedName formula text；对应
-audit API 会把 `data!` / `DATA!` 这类大小写变体报告为 stale source-name 风险。
+audit API 会把 `data!` / `DATA!` 这类大小写变体报告为 stale source-name 风险，
+但它们都是 read-only diagnostics：不增加 `pending_change_count()`、不 queue
+replacement、不 dirty/create materialized sessions、不改 pending edit summaries，
+也不更新 `last_edit_error()`。
 显式 rewrite 仍只处理 local sheet-qualified references；external workbook qualifier、
 3D sheet range、structured reference 和 string literal 保持不变。
 完整公式支持矩阵见 `docs/FORMULA_SUPPORT.md`；该路径不能写成内置 Excel

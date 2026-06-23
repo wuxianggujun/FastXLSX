@@ -28914,6 +28914,39 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.676 - Sync formula audit user-facing docs
+
+Status: done.
+
+Type: README / formula support documentation sync; no public API symbol change,
+no production behavior change, no CMake target membership change, and no
+formula engine expansion.
+
+Goal: align user-facing formula documentation with the completed formula audit
+read-only state hygiene boundary.
+
+Output:
+- Updated README's formula section to state that formula audit APIs report
+  stale source-name risks without increasing `pending_change_count()`, queuing
+  replacements, dirtying/creating materialized sessions, changing pending edit
+  summaries, or updating `last_edit_error()`.
+- Updated the `docs/FORMULA_SUPPORT.md` capability matrix with the same
+  read-only diagnostic boundary.
+- Updated `docs/NEXT_STEPS.md` with the user-facing documentation alignment
+  note.
+
+Non-goals / boundary:
+- No public API symbol change, no production behavior change, no default
+  formula rewrite, no worksheet formula rewrite, no definedName rewrite, no
+  formula evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  and no complete Excel formula parser.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

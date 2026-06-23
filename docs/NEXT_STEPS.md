@@ -1691,6 +1691,11 @@ APIs are read-only diagnostics that do not increment public edit counts, queue
 replacements, dirty/create materialized sessions, change pending edit
 summaries, or update `last_edit_error()`. This is documentation alignment only;
 it does not change public symbols, runtime behavior, or formula semantics.
+P8.676 completes the user-facing docs alignment for the same boundary. README's
+formula section and the `docs/FORMULA_SUPPORT.md` capability matrix now both
+state that formula audit APIs report stale source-name risks without queuing
+edits, dirtying/materializing worksheet sessions, changing pending diagnostics,
+or updating `last_edit_error()`. This remains documentation-only alignment.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

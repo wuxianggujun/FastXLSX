@@ -464,6 +464,10 @@ The first safe saves and saved-clean recovery saves in that family now share a
 two-handle helper as well; it checks the two materialized sessions flush
 cleanly and that the dirty-name / dirty-count / dirty-memory diagnostics are
 reset after save.
+The ZIP/XML output persistence checks in that retry family now share helpers
+for read-only first/follow-up outputs and saved-clean recovery/follow-up
+outputs, including rejected replacement, rejected rename, and rejected
+invalid-mutation payload leak checks.
 Invalid-read hygiene is pinned in the same retry/reacquire chain: invalid
 row/column coordinates, malformed A1 references, Excel-limit overflows, and
 invalid `sparse_cells()` ranges must throw without updating `last_edit_error()`

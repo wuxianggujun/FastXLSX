@@ -1332,6 +1332,12 @@ that checks clean handles, expected handoff counts, and cleared dirty
 materialized diagnostics. Failure injection, reacquire/query/invalid-read /
 invalid-mutation coverage, follow-up saves, and output ZIP/XML assertions stay
 unchanged; this remains test-maintenance scaffolding only.
+P8.626 extracts the ZIP/XML output persistence checks for the same retry
+family. Read-only first and follow-up outputs, plus saved-clean recovery and
+follow-up outputs, now use shared helpers that keep the Data / Untouched value
+checks and rejected replacement / rejected rename / rejected invalid-mutation
+payload leak checks together. This reduces duplicated package assertions while
+leaving the generated workbooks, public behavior, and public API unchanged.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

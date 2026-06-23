@@ -774,6 +774,113 @@ std::size_t check_public_two_clean_retry_two_handle_save_state(
     return editor.pending_change_count();
 }
 
+const std::string& check_public_two_clean_retry_entry(
+    const std::map<std::string, std::string>& entries,
+    std::string_view entry_name)
+{
+    return entries.at(std::string(entry_name));
+}
+
+void check_public_two_clean_retry_no_rejected_prefix(
+    const std::map<std::string, std::string>& entries,
+    std::string_view rejected_prefix,
+    std::string_view scenario)
+{
+    if (rejected_prefix.empty()) {
+        return;
+    }
+
+    const std::string label = std::string(scenario);
+    const std::string combined =
+        check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml") +
+        check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml");
+    check_not_contains(combined, rejected_prefix,
+        label + " should not leak rejected mutation payloads");
+}
+
+void check_public_two_clean_retry_readonly_first_output(
+    const std::map<std::string, std::string>& entries,
+    std::string_view data_text,
+    std::string_view untouched_text,
+    std::string_view rejected_replacement_text,
+    std::string_view scenario,
+    std::string_view rejected_prefix = {})
+{
+    const std::string label = std::string(scenario);
+
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_text, label + " should include saved Data value");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_text, label + " should include saved Untouched value");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        rejected_replacement_text, label + " should not leak rejected replacement");
+    check_public_two_clean_retry_no_rejected_prefix(entries, rejected_prefix, label);
+}
+
+void check_public_two_clean_retry_readonly_followup_output(
+    const std::map<std::string, std::string>& entries,
+    std::string_view data_text,
+    std::string_view untouched_text,
+    std::string_view followup_entry_name,
+    std::string_view followup_text,
+    std::string_view scenario,
+    std::string_view rejected_prefix = {})
+{
+    const std::string label = std::string(scenario);
+
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_text, label + " should keep saved Data value");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_text, label + " should keep saved Untouched value");
+    check_contains(check_public_two_clean_retry_entry(entries, followup_entry_name),
+        followup_text, label + " should include follow-up mutation");
+    check_public_two_clean_retry_no_rejected_prefix(entries, rejected_prefix, label);
+}
+
+void check_public_two_clean_retry_saved_clean_recovery_output(
+    const std::map<std::string, std::string>& entries,
+    std::string_view blocked_catalog_name,
+    std::string_view data_recovered_text,
+    std::string_view untouched_recovered_text,
+    std::string_view scenario,
+    std::string_view rejected_prefix = {})
+{
+    const std::string label = std::string(scenario);
+
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/workbook.xml"),
+        R"(name="Data")", label + " should preserve Data catalog name");
+    check_not_contains(check_public_two_clean_retry_entry(entries, "xl/workbook.xml"),
+        blocked_catalog_name, label + " should not leak rejected rename");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_recovered_text, label + " should include Data recovery value");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_recovered_text, label + " should include Untouched recovery value");
+    check_public_two_clean_retry_no_rejected_prefix(entries, rejected_prefix, label);
+}
+
+void check_public_two_clean_retry_saved_clean_followup_output(
+    const std::map<std::string, std::string>& entries,
+    std::string_view data_first_text,
+    std::string_view data_recovered_text,
+    std::string_view untouched_recovered_text,
+    std::string_view followup_entry_name,
+    std::string_view followup_text,
+    std::string_view scenario,
+    std::string_view rejected_prefix = {})
+{
+    const std::string label = std::string(scenario);
+
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_first_text, label + " should keep Data first value");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet1.xml"),
+        data_recovered_text, label + " should keep Data recovery value");
+    check_contains(check_public_two_clean_retry_entry(entries, "xl/worksheets/sheet2.xml"),
+        untouched_recovered_text, label + " should keep Untouched recovery value");
+    check_contains(check_public_two_clean_retry_entry(entries, followup_entry_name),
+        followup_text, label + " should include follow-up mutation");
+    check_public_two_clean_retry_no_rejected_prefix(entries, rejected_prefix, label);
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
@@ -13666,26 +13773,19 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             "read-only retry second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
-        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-reacquire-retry-data",
-            "read-only retry first output should include Data recovery mutation");
-        check_contains(first_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_first_output(
+            first_entries, "readonly-two-clean-reacquire-retry-data",
             "readonly-two-clean-reacquire-retry-untouched",
-            "read-only retry first output should include Untouched recovery mutation");
-        check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
             "readonly-two-clean-reacquire-retry-blocked-data",
-            "read-only retry rejected replacement should not leak into first output");
+            "read-only retry first output");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-reacquire-retry-data",
-            "read-only retry second output should keep Data recovery mutation");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_followup_output(
+            second_entries, "readonly-two-clean-reacquire-retry-data",
             "readonly-two-clean-reacquire-retry-untouched",
-            "read-only retry second output should keep Untouched recovery mutation");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+            "xl/worksheets/sheet2.xml",
             "readonly-two-clean-reacquire-retry-second",
-            "read-only retry second output should persist post-reacquire mutation");
+            "read-only retry second output");
     }
 
     {
@@ -13770,31 +13870,20 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             saved_pending_count + 3, "saved-clean retry third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean retry rejected rename should preserve Data catalog name");
-        check_not_contains(second_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoCleanReacquireRetryBlockedData",
-            "saved-clean retry rejected rename should not leak into second output");
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_recovery_output(
+            second_entries, "SavedCleanTwoCleanReacquireRetryBlockedData",
             "saved-clean-two-clean-reacquire-retry-data-recovered",
-            "saved-clean retry second output should include Data recovery mutation");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-reacquire-retry-untouched-recovered",
-            "saved-clean retry second output should include Untouched recovery mutation");
+            "saved-clean retry second output");
 
         const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
-            "saved-clean-two-clean-reacquire-retry-data-first",
-            "saved-clean retry third output should keep Data first value");
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_followup_output(
+            third_entries, "saved-clean-two-clean-reacquire-retry-data-first",
             "saved-clean-two-clean-reacquire-retry-data-recovered",
-            "saved-clean retry third output should keep Data recovery mutation");
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
-            "saved-clean-two-clean-reacquire-retry-second",
-            "saved-clean retry third output should persist post-reacquire mutation");
-        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-reacquire-retry-untouched-recovered",
-            "saved-clean retry third output should keep Untouched recovery mutation");
+            "xl/worksheets/sheet1.xml",
+            "saved-clean-two-clean-reacquire-retry-second",
+            "saved-clean retry third output");
     }
 }
 
@@ -13871,26 +13960,18 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
             "read-only query retry second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
-        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-query-retry-data",
-            "read-only query retry first output should include saved Data value");
-        check_contains(first_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_first_output(
+            first_entries, "readonly-two-clean-query-retry-data",
             "readonly-two-clean-query-retry-untouched",
-            "read-only query retry first output should include saved Untouched value");
-        check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
             "readonly-two-clean-query-retry-blocked-data",
-            "read-only query retry first output should not leak rejected replacement");
+            "read-only query retry first output");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-query-retry-data",
-            "read-only query retry second output should keep saved Data value");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_followup_output(
+            second_entries, "readonly-two-clean-query-retry-data",
             "readonly-two-clean-query-retry-untouched",
-            "read-only query retry second output should keep saved Untouched value");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
-            "readonly-two-clean-query-retry-second",
-            "read-only query retry second output should include post-query mutation");
+            "xl/worksheets/sheet2.xml", "readonly-two-clean-query-retry-second",
+            "read-only query retry second output");
     }
 
     {
@@ -13971,31 +14052,19 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_s
             saved_pending_count + 3, "saved-clean query retry third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean query retry rejected rename should preserve Data catalog name");
-        check_not_contains(second_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoCleanQueryRetryBlockedData",
-            "saved-clean query retry rejected rename should not leak");
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_recovery_output(
+            second_entries, "SavedCleanTwoCleanQueryRetryBlockedData",
             "saved-clean-two-clean-query-retry-data-recovered",
-            "saved-clean query retry second output should include Data recovery value");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-query-retry-untouched-recovered",
-            "saved-clean query retry second output should include Untouched recovery value");
+            "saved-clean query retry second output");
 
         const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
-            "saved-clean-two-clean-query-retry-data-first",
-            "saved-clean query retry third output should keep Data first value");
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_followup_output(
+            third_entries, "saved-clean-two-clean-query-retry-data-first",
             "saved-clean-two-clean-query-retry-data-recovered",
-            "saved-clean query retry third output should keep Data recovery value");
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
-            "saved-clean-two-clean-query-retry-second",
-            "saved-clean query retry third output should include post-query mutation");
-        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-query-retry-untouched-recovered",
-            "saved-clean query retry third output should keep Untouched recovery value");
+            "xl/worksheets/sheet1.xml", "saved-clean-two-clean-query-retry-second",
+            "saved-clean query retry third output");
     }
 }
 
@@ -14076,26 +14145,19 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
             "read-only retry invalid-read second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
-        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-invalid-read-retry-data",
-            "read-only retry invalid-read first output should include saved Data value");
-        check_contains(first_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_first_output(
+            first_entries, "readonly-two-clean-invalid-read-retry-data",
             "readonly-two-clean-invalid-read-retry-untouched",
-            "read-only retry invalid-read first output should include saved Untouched value");
-        check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
             "readonly-two-clean-invalid-read-retry-blocked-data",
-            "read-only retry invalid-read first output should not leak rejected replacement");
+            "read-only retry invalid-read first output");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-invalid-read-retry-data",
-            "read-only retry invalid-read second output should keep saved Data value");
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-invalid-read-retry-second",
-            "read-only retry invalid-read second output should include post-read mutation");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_followup_output(
+            second_entries, "readonly-two-clean-invalid-read-retry-data",
             "readonly-two-clean-invalid-read-retry-untouched",
-            "read-only retry invalid-read second output should keep saved Untouched value");
+            "xl/worksheets/sheet1.xml",
+            "readonly-two-clean-invalid-read-retry-second",
+            "read-only retry invalid-read second output");
     }
 
     {
@@ -14181,31 +14243,20 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_pres
             saved_pending_count + 3, "saved-clean retry invalid-read third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean retry invalid-read rejected rename should preserve Data catalog name");
-        check_not_contains(second_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoCleanInvalidReadRetryBlockedData",
-            "saved-clean retry invalid-read rejected rename should not leak");
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_recovery_output(
+            second_entries, "SavedCleanTwoCleanInvalidReadRetryBlockedData",
             "saved-clean-two-clean-invalid-read-retry-data-recovered",
-            "saved-clean retry invalid-read second output should include Data recovery value");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-invalid-read-retry-untouched-recovered",
-            "saved-clean retry invalid-read second output should include Untouched recovery value");
+            "saved-clean retry invalid-read second output");
 
         const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
-            "saved-clean-two-clean-invalid-read-retry-data-first",
-            "saved-clean retry invalid-read third output should keep Data first value");
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_followup_output(
+            third_entries, "saved-clean-two-clean-invalid-read-retry-data-first",
             "saved-clean-two-clean-invalid-read-retry-data-recovered",
-            "saved-clean retry invalid-read third output should keep Data recovery value");
-        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-invalid-read-retry-untouched-recovered",
-            "saved-clean retry invalid-read third output should keep Untouched recovery value");
-        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
+            "xl/worksheets/sheet2.xml",
             "saved-clean-two-clean-invalid-read-retry-second",
-            "saved-clean retry invalid-read third output should include post-read mutation");
+            "saved-clean retry invalid-read third output");
     }
 }
 
@@ -14311,40 +14362,19 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             "read-only retry invalid-mutation second safe save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
-        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-invalid-mutation-retry-data",
-            "read-only retry invalid-mutation first output should include saved Data value");
-        check_contains(first_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_first_output(
+            first_entries, "readonly-two-clean-invalid-mutation-retry-data",
             "readonly-two-clean-invalid-mutation-retry-untouched",
-            "read-only retry invalid-mutation first output should include saved Untouched value");
-        check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
             "readonly-two-clean-invalid-mutation-retry-blocked-data",
-            "read-only retry invalid-mutation first output should not leak rejected replacement");
-        {
-            const std::string first_combined =
-                first_entries.at("xl/worksheets/sheet1.xml") +
-                first_entries.at("xl/worksheets/sheet2.xml");
-            check_not_contains(first_combined, rejected_prefix,
-                "read-only retry invalid-mutation first output should not leak rejected mutation payloads");
-        }
+            "read-only retry invalid-mutation first output", rejected_prefix);
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-invalid-mutation-retry-data",
-            "read-only retry invalid-mutation second output should keep saved Data value");
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-            "readonly-two-clean-invalid-mutation-retry-second",
-            "read-only retry invalid-mutation second output should include post-mutation edit");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
+        check_public_two_clean_retry_readonly_followup_output(
+            second_entries, "readonly-two-clean-invalid-mutation-retry-data",
             "readonly-two-clean-invalid-mutation-retry-untouched",
-            "read-only retry invalid-mutation second output should keep saved Untouched value");
-        {
-            const std::string second_combined =
-                second_entries.at("xl/worksheets/sheet1.xml") +
-                second_entries.at("xl/worksheets/sheet2.xml");
-            check_not_contains(second_combined, rejected_prefix,
-                "read-only retry invalid-mutation second output should not leak rejected mutation payloads");
-        }
+            "xl/worksheets/sheet1.xml",
+            "readonly-two-clean-invalid-mutation-retry-second",
+            "read-only retry invalid-mutation second output", rejected_prefix);
     }
 
     {
@@ -14453,45 +14483,20 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             saved_pending_count + 3, "saved-clean retry invalid-mutation third safe save");
 
         const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
-        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
-            "saved-clean retry invalid-mutation rejected rename should preserve Data catalog name");
-        check_not_contains(second_entries.at("xl/workbook.xml"),
-            "SavedCleanTwoCleanInvalidMutationRetryBlockedData",
-            "saved-clean retry invalid-mutation rejected rename should not leak");
-        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_recovery_output(
+            second_entries, "SavedCleanTwoCleanInvalidMutationRetryBlockedData",
             "saved-clean-two-clean-invalid-mutation-retry-data-recovered",
-            "saved-clean retry invalid-mutation second output should include Data recovery value");
-        check_contains(second_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-invalid-mutation-retry-untouched-recovered",
-            "saved-clean retry invalid-mutation second output should include Untouched recovery value");
-        {
-            const std::string second_combined =
-                second_entries.at("xl/worksheets/sheet1.xml") +
-                second_entries.at("xl/worksheets/sheet2.xml");
-            check_not_contains(second_combined, rejected_prefix,
-                "saved-clean retry invalid-mutation second output should not leak rejected mutation payloads");
-        }
+            "saved-clean retry invalid-mutation second output", rejected_prefix);
 
         const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
-            "saved-clean-two-clean-invalid-mutation-retry-data-first",
-            "saved-clean retry invalid-mutation third output should keep Data first value");
-        check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        check_public_two_clean_retry_saved_clean_followup_output(
+            third_entries, "saved-clean-two-clean-invalid-mutation-retry-data-first",
             "saved-clean-two-clean-invalid-mutation-retry-data-recovered",
-            "saved-clean retry invalid-mutation third output should keep Data recovery value");
-        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
             "saved-clean-two-clean-invalid-mutation-retry-untouched-recovered",
-            "saved-clean retry invalid-mutation third output should keep Untouched recovery value");
-        check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
+            "xl/worksheets/sheet2.xml",
             "saved-clean-two-clean-invalid-mutation-retry-second",
-            "saved-clean retry invalid-mutation third output should include post-mutation edit");
-        {
-            const std::string third_combined =
-                third_entries.at("xl/worksheets/sheet1.xml") +
-                third_entries.at("xl/worksheets/sheet2.xml");
-            check_not_contains(third_combined, rejected_prefix,
-                "saved-clean retry invalid-mutation third output should not leak rejected mutation payloads");
-        }
+            "saved-clean retry invalid-mutation third output", rejected_prefix);
     }
 }
 

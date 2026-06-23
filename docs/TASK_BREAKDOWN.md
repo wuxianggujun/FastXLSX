@@ -28808,6 +28808,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.673 - Pin initial materialized formula audit state hygiene
+
+Status: done.
+
+Type: public workbook-editor materialized formula diagnostic regression test +
+docs; no public API change, no production behavior change, no CMake target
+membership change, and no formula engine expansion.
+
+Goal: prove the first `formula_reference_audits()` call on an already-opened
+`WorksheetEditor` session does not dirty public pending diagnostics or update
+`last_edit_error()` while exposing sheet-qualified formula references.
+
+Output:
+- Extended
+  `test_formula_reference_audits_report_renamed_source_sheet_risk()`.
+- The regression now snapshots public pending diagnostics and
+  `last_edit_error()` immediately after opening the `Formula` worksheet session
+  and before the initial `formula_reference_audits()` call.
+- The regression verifies the initial materialized audit leaves those public
+  diagnostics unchanged while still returning the five expected formula
+  reference entries.
+- `docs/FORMULA_SUPPORT.md` and `docs/NEXT_STEPS.md` now record the initial
+  materialized worksheet formula audit state hygiene boundary.
+
+Non-goals / boundary:
+- No default formula rewrite, no worksheet formula rewrite, no formula
+  evaluation, no external workbook target validation, no 3D reference
+  semantics, no dependency graph, no calcChain rebuild, no relationship repair,
+  no complete Excel formula parser, and no public API or CMake change.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

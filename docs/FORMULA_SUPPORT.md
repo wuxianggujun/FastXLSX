@@ -208,11 +208,12 @@ source-name direct definedName references without incrementing public edit
 count, changing pending-change state, or creating replacement/materialized
 diagnostics, pending edit summaries, or `last_edit_error()`.
 The materialized worksheet audit regression pins the same boundary for already
-opened `WorksheetEditor` sessions: `formula_reference_audits()` reports stale
-source-name formula references after default catalog-only rename without
-incrementing public edit count, changing pending-change state, or creating
-replacement/materialized diagnostics, pending edit summaries, or
-`last_edit_error()`.
+opened `WorksheetEditor` sessions: the initial `formula_reference_audits()` scan
+exposes sheet-qualified formula references without incrementing public edit
+count, changing pending-change state, or creating replacement/materialized
+diagnostics, pending edit summaries, or `last_edit_error()`. The post-rename
+materialized regression pins the same boundary while reporting stale
+source-name formula references after default catalog-only rename.
 The non-materialized worksheet audit regression pins the empty-read side of the
 same contract: `formula_reference_audits()` returns no entries before
 `worksheet()` opens a session and still does not create materialized sessions,

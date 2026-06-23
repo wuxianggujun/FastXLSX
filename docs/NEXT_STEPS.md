@@ -1669,6 +1669,13 @@ verifies the empty audit read leaves that public diagnostic unchanged. This is
 diagnostic state hygiene only; it is not lazy worksheet materialization,
 worksheet formula rewrite, formula evaluation, external/3D semantics,
 dependency graphing, or calcChain rebuild.
+P8.673 pins the clean initial materialized scan as read-only too. Immediately
+after opening the `Formula` worksheet session and before any rename,
+`formula_reference_audits()` now snapshots the public pending diagnostics and
+`last_edit_error()`, then verifies exposing sheet-qualified formula references
+does not dirty or replace that state. This is diagnostic state hygiene only; it
+is not formula rewrite, formula evaluation, external/3D semantics, dependency
+graphing, or calcChain rebuild.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -21398,8 +21398,35 @@ void test_formula_reference_audits_report_renamed_source_sheet_risk()
         "non-materialized formula audit should not update last_edit_error");
 
     (void)editor.worksheet("Formula");
+    const std::size_t initial_pending_change_count_before_audit =
+        editor.pending_change_count();
+    const bool initial_has_pending_changes_before_audit =
+        editor.has_pending_changes();
+    const std::vector<std::string> initial_pending_replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> initial_pending_materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t initial_pending_summary_count_before_audit =
+        editor.pending_worksheet_edits().size();
+    const std::optional<std::string> initial_last_edit_error_before_audit =
+        editor.last_edit_error();
+
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> initial_audits =
         editor.formula_reference_audits();
+    check(editor.pending_change_count() == initial_pending_change_count_before_audit,
+        "initial materialized formula audit should not increment public edit count");
+    check(editor.has_pending_changes() == initial_has_pending_changes_before_audit,
+        "initial materialized formula audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() ==
+            initial_pending_replacement_names_before_audit,
+        "initial materialized formula audit should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() ==
+            initial_pending_materialized_names_before_audit,
+        "initial materialized formula audit should not create materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() == initial_pending_summary_count_before_audit,
+        "initial materialized formula audit should not create pending edit summaries");
+    check(editor.last_edit_error() == initial_last_edit_error_before_audit,
+        "initial materialized formula audit should not update last_edit_error");
     check(initial_audits.size() == 5,
         "materialized formula sheet should expose all sheet-qualified references");
     {

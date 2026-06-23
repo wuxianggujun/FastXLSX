@@ -26650,6 +26650,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.605 - Pin clean same-sheet failure recovery through cross-sheet success
+
+Status: done.
+
+Type: public `WorksheetEditor` / `WorkbookEditor` diagnostic-clearing
+regression and docs; no production behavior change, no public API change, no
+CMake target membership change, and no formula capability expansion.
+
+Goal: prove a successful cross-sheet Patch operation clears a previous
+same-sheet materialized-session guard diagnostic while preserving the clean
+borrowed worksheet state.
+
+Output:
+- Added public read-only coverage where materialized clean `Data` first rejects
+  same-sheet `replace_sheet_data("Data", ...)`, then a successful cross-sheet
+  `rename_sheet("Untouched", ...)` clears `last_edit_error()`.
+- Added public saved-clean coverage where `Data` is dirtied, flushed by
+  `save_as()`, marked clean, then rejects same-sheet `rename_sheet("Data", ...)`
+  before a successful cross-sheet `replace_sheet_data("Untouched", ...)` clears
+  `last_edit_error()`.
+- The regressions verify the successful recovery operation keeps the borrowed
+  `Data` handle clean, leaves dirty materialized diagnostics empty, preserves
+  saved-clean handoff counts where applicable, and saves only the successful
+  cross-sheet change without leaking rejected same-sheet payloads or names.
+
+Non-goals / boundary:
+- No production code change, no operation-mixing semantic change, no
+  rollback/history model, no relationship repair, no complete random editor, no
+  large-file editing claim, no sharedStrings / styles migration, no formula
+  evaluation, and no formula rewrite expansion.
+
+Acceptance:
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

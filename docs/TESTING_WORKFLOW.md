@@ -400,6 +400,11 @@ The reverse diagnostic order is pinned too: clean same-sheet
 `rename_sheet()` failures followed by clean same-sheet `replace_sheet_data()`
 failures must replace `last_edit_error()` with the latest guard diagnostic
 while leaving the clean materialized state and output path unchanged.
+The failure-recovery direction is also covered: after read-only or saved-clean
+clean `Data` sessions record a same-sheet Patch guard failure, a later
+successful cross-sheet Patch operation on `Untouched` must clear
+`last_edit_error()` while preserving the clean borrowed `Data` state and
+keeping rejected same-sheet payloads out of the saved output.
 The extracted
 `src/workbook_editor_formula_diagnostics.*` public-adapter layer remains covered
 through `fastxlsx.workbook_editor.facade`, which exercises both materialized

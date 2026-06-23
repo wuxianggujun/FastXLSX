@@ -1161,6 +1161,17 @@ borrowed handle state, dirty materialized diagnostics, saved handoff count, edit
 summaries, and retry output unchanged. This is diagnostic replacement hygiene
 only, not new operation mixing semantics, rollback, formula evaluation, or
 relationship repair.
+P8.605 closes the remaining failure-recovery gap: after a clean materialized
+`Data` session first records a same-sheet Patch failure, a later successful
+cross-sheet Patch operation on `Untouched` must clear `last_edit_error()`
+again. The read-only branch now covers same-sheet `replace_sheet_data()` then
+cross-sheet `rename_sheet()`, and the saved-clean branch covers same-sheet
+`rename_sheet()` then cross-sheet `replace_sheet_data()`. The regression keeps
+the borrowed `Data` handle clean, preserves dirty-materialized diagnostics /
+hand-off counts / edit summaries where applicable, and verifies the saved
+output only reflects the successful cross-sheet edit. This is facade
+state-clearing hygiene only, not rollback, relationship repair, sharedStrings /
+styles migration, formula evaluation, or formula rewrite expansion.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -12035,6 +12035,149 @@ void test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagno
     }
 }
 
+void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-failure-success-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-failure-success-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        const fastxlsx::CellValue source_value = data.get_cell(1, 1);
+        check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+                source_value.text_value() == "placeholder-a1",
+            "read-only failure-success setup should materialize Data from source");
+        check(!data.has_pending_changes(),
+            "read-only failure-success setup should keep Data clean");
+
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_sheet_data("Data",
+                {{fastxlsx::CellValue::text("readonly-blocked-before-success")}});
+        }), "read-only same-sheet replacement should fail before recovery");
+        const std::optional<std::string> replacement_error = editor.last_edit_error();
+        check(replacement_error.has_value(),
+            "read-only same-sheet replacement failure should populate last_edit_error");
+        if (replacement_error.has_value()) {
+            check_contains(*replacement_error,
+                "cannot replace sheet data after materializing planned worksheet session",
+                "read-only same-sheet replacement failure should report replacement guard");
+        }
+        check(!editor.has_pending_changes(),
+            "read-only failed same-sheet replacement should not queue public edits");
+
+        editor.rename_sheet("Untouched", "ReadonlyRecoveredOther");
+
+        check(!editor.last_edit_error().has_value(),
+            "read-only cross-sheet success should clear prior same-sheet diagnostic");
+        check(editor.has_pending_changes(),
+            "read-only cross-sheet recovery should dirty the editor");
+        check(editor.pending_change_count() == 1,
+            "read-only cross-sheet recovery should queue only the successful rename");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "read-only cross-sheet recovery should not dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "read-only cross-sheet recovery should not add dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "read-only cross-sheet recovery should not add dirty materialized memory");
+        check(!data.has_pending_changes(),
+            "read-only cross-sheet recovery should keep Data handle clean");
+        check(data.cell_count() == data_cell_count,
+            "read-only cross-sheet recovery should preserve Data sparse count");
+        check(data.estimated_memory_usage() == data_memory,
+            "read-only cross-sheet recovery should preserve Data memory estimate");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "read-only recovery save_as should keep last_edit_error clear");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"),
+            R"(name="ReadonlyRecoveredOther")",
+            "read-only recovery rename should persist on the other sheet");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+            "read-only recovery output should preserve Data source cell");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-blocked-before-success",
+            "read-only rejected replacement should not leak into Data");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-success-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-success-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-failure-success-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-failure-success-data"));
+        editor.save_as(first_output);
+
+        check(!data.has_pending_changes(),
+            "saved-clean failure-success setup should leave Data clean");
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        check(saved_pending_count == 1,
+            "saved-clean failure-success setup should retain one materialized handoff");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+
+        check(threw_fastxlsx_error([&] {
+            editor.rename_sheet("Data", "SavedCleanBlockedBeforeSuccess");
+        }), "saved-clean same-sheet rename should fail before recovery");
+        const std::optional<std::string> rename_error = editor.last_edit_error();
+        check(rename_error.has_value(),
+            "saved-clean same-sheet rename failure should populate last_edit_error");
+        if (rename_error.has_value()) {
+            check_contains(*rename_error,
+                "cannot rename sheet after materializing planned worksheet session",
+                "saved-clean same-sheet rename failure should report rename guard");
+        }
+
+        editor.replace_sheet_data("Untouched",
+            {{fastxlsx::CellValue::text("saved-clean-cross-sheet-after-failure")}});
+
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean cross-sheet success should clear prior same-sheet diagnostic");
+        check(editor.pending_change_count() == saved_pending_count + 1,
+            "saved-clean cross-sheet recovery should add only the successful replacement");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "saved-clean cross-sheet recovery should not dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "saved-clean cross-sheet recovery should not add dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "saved-clean cross-sheet recovery should not add dirty materialized memory");
+        check(!data.has_pending_changes(),
+            "saved-clean cross-sheet recovery should keep Data handle clean");
+        check(data.cell_count() == data_cell_count,
+            "saved-clean cross-sheet recovery should preserve Data sparse count");
+        check(data.estimated_memory_usage() == data_memory,
+            "saved-clean cross-sheet recovery should preserve Data memory estimate");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean recovery save_as should keep last_edit_error clear");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"),
+            R"(name="Data")",
+            "saved-clean rejected rename should not change Data sheet name");
+        check_not_contains(output_entries.at("xl/workbook.xml"),
+            "SavedCleanBlockedBeforeSuccess",
+            "saved-clean rejected rename should not leak into workbook catalog");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-failure-success-data",
+            "saved-clean recovery output should preserve Data saved cell");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+            "saved-clean-cross-sheet-after-failure",
+            "saved-clean recovery replacement should persist on the other sheet");
+    }
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -20620,6 +20763,7 @@ int main(int argc, char* argv[])
         test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_operations();
         test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operations();
         test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagnostics();
+        test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-edge")) {

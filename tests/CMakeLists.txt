@@ -408,8 +408,20 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_core_docparts.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
-    fastxlsx_package_editor_preservation_removal_tests
+    fastxlsx_package_editor_preservation_removal_core_tests
     test_package_editor_preservation_removal.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_removal_policy_tests
+    test_package_editor_preservation_removal_policy.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_removal_workbook_parts_tests
+    test_package_editor_preservation_removal_workbook_parts.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_removal_drawing_parts_tests
+    test_package_editor_preservation_removal_drawing_parts.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_resources_tests
@@ -451,6 +463,14 @@ add_custom_target(fastxlsx_package_editor_preservation_linked_pivot_tests
         fastxlsx_package_editor_preservation_linked_pivot_cache_records_tests
 )
 
+add_custom_target(fastxlsx_package_editor_preservation_removal_tests
+    DEPENDS
+        fastxlsx_package_editor_preservation_removal_core_tests
+        fastxlsx_package_editor_preservation_removal_policy_tests
+        fastxlsx_package_editor_preservation_removal_workbook_parts_tests
+        fastxlsx_package_editor_preservation_removal_drawing_parts_tests
+)
+
 add_custom_target(fastxlsx_package_editor_preservation_tests
     DEPENDS
         fastxlsx_package_editor_preservation_core_tests
@@ -488,7 +508,19 @@ add_fastxlsx_package_editor_preservation_shard(
     fastxlsx_package_editor_preservation_core_docparts_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
-    preservation-removal fastxlsx_package_editor_preservation_removal_tests 60
+    preservation-removal fastxlsx_package_editor_preservation_removal_core_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-removal-policy
+    fastxlsx_package_editor_preservation_removal_policy_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-removal-workbook-parts
+    fastxlsx_package_editor_preservation_removal_workbook_parts_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-removal-drawing-parts
+    fastxlsx_package_editor_preservation_removal_drawing_parts_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-resources fastxlsx_package_editor_preservation_resources_tests 60

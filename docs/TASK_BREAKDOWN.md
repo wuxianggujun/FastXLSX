@@ -29926,6 +29926,50 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.sheetdata-linked" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.706 - Split PackageEditor preservation-removal executable by object family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageEditor preservation-removal executable by moving
+the policy-failure, workbook-owned part, and drawing/VML replacement-order
+families into separate source files and executables, while keeping the existing
+`fastxlsx.package_editor.preservation-removal` CTest name stable for the base
+removal shard.
+
+Output:
+- Extracted shared preservation-removal helpers to
+  `tests/test_package_editor_preservation_removal_common.hpp`.
+- Kept `tests/test_package_editor_preservation_removal.cpp` focused on base
+  unknown-extension, workbook, worksheet, drawing, chart, and media removals.
+- Added:
+  - `tests/test_package_editor_preservation_removal_policy.cpp`.
+  - `tests/test_package_editor_preservation_removal_workbook_parts.cpp`.
+  - `tests/test_package_editor_preservation_removal_drawing_parts.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_preservation_removal_core_tests`,
+  `fastxlsx_package_editor_preservation_removal_policy_tests`,
+  `fastxlsx_package_editor_preservation_removal_workbook_parts_tests`, and
+  `fastxlsx_package_editor_preservation_removal_drawing_parts_tests`.
+- Kept `fastxlsx_package_editor_preservation_removal_tests` as a build-only
+  aggregate target depending on all removal shard executables.
+- Kept `fastxlsx.package_editor.preservation-removal` for the base removal
+  shard and added `fastxlsx.package_editor.preservation-removal-policy`,
+  `fastxlsx.package_editor.preservation-removal-workbook-parts`, and
+  `fastxlsx.package_editor.preservation-removal-drawing-parts`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no removal/preservation semantic expansion, and no CTest coverage
+  removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_preservation_removal_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-removal" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

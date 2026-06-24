@@ -1860,6 +1860,18 @@ percent-decoded drawing and doc-part families. The existing
 `fastxlsx.package_editor.preservation-core-docparts` names are added, and
 `fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
 This is still test organization only.
+The preservation-removal executable now follows the same split pattern:
+`tests/test_package_editor_preservation_removal.cpp` keeps the base
+unknown-extension, workbook, worksheet, drawing, chart, and media removal
+coverage, while
+`tests/test_package_editor_preservation_removal_policy.cpp`,
+`tests/test_package_editor_preservation_removal_workbook_parts.cpp`, and
+`tests/test_package_editor_preservation_removal_drawing_parts.cpp` own the
+policy-failure, workbook-owned part, and drawing/VML replacement-order
+families. The existing `fastxlsx.package_editor.preservation-removal` CTest
+name stays stable for the base shard, the new removal shard names are added,
+and `fastxlsx_package_editor_preservation_removal_tests` remains a build-only
+aggregate. This is still test organization only.
 The base PackageEditor core executable is now split too:
 `tests/test_package_editor_core.cpp` keeps staged-chunk, worksheet routing,
 replacement-state, and docProps coverage, while
@@ -2353,6 +2365,9 @@ schema validation.
   - `fastxlsx.package_editor.c5`
   - `fastxlsx.package_editor.preservation-core`
   - `fastxlsx.package_editor.preservation-removal`
+  - `fastxlsx.package_editor.preservation-removal-policy`
+  - `fastxlsx.package_editor.preservation-removal-workbook-parts`
+  - `fastxlsx.package_editor.preservation-removal-drawing-parts`
   - `fastxlsx.package_editor.preservation-resources`
   - `fastxlsx.package_editor.preservation-comments`
   - `fastxlsx.package_editor.preservation-linked`
@@ -3319,6 +3334,12 @@ feature completion.
       `fastxlsx.package_editor.preservation-comments`, keeping preservation
       coverage aligned with the 60s CTest shard budget before more public-editor
       gate work is added.
+      The preservation-removal executable now follows the same split pattern:
+      base removal keeps the unknown-extension, workbook, worksheet, drawing,
+      chart, and media removals; the new policy-failure, workbook-owned part,
+      and drawing/VML shards cover the remaining families while keeping the
+      original `fastxlsx.package_editor.preservation-removal` CTest name
+      stable for the base shard.
       P8.295 extends the no-op `WorkbookEditor::save_as()` failed-edit
       diagnostic regression to failed `rename_sheet()` as the other current
       public edit path; no-op output stays a source-entry copy, the failed

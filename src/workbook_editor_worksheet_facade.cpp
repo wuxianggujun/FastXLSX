@@ -362,6 +362,26 @@ void WorksheetEditor::clear_cell_values(std::span<const WorksheetCellReference> 
     }
 }
 
+void WorksheetEditor::erase_cells(CellRange range)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_range(range);
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->erase_cells(range);
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::erase_cells(std::span<const WorksheetCellReference> cells)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

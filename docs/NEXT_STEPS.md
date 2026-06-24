@@ -56,11 +56,12 @@ while preserving the current source style handle, range / coordinate-batch
 clears affect only already represented sparse records, missing targets /
 missing-only ranges / missing-only coordinate batches are successful no-ops,
 and the output remains non-tombstone sparse projection.
-`erase_cells(span<WorksheetCellReference>)` now covers the matching sparse
-coordinate batch delete case: the batch validates all coordinates before
-mutation, deletes only represented active sparse records, treats empty /
-missing-only batches as successful no-ops, and writes no tombstones or explicit
-blank cells for erased coordinates.
+`erase_cells(CellRange)` and `erase_cells(span<WorksheetCellReference>)` now
+cover the matching sparse delete cases: the range overload validates one
+1-based inclusive rectangle, the coordinate overload validates every coordinate
+before mutation, both delete only represented active sparse records, treat
+empty / missing-only inputs as successful no-ops, and write no tombstones or
+explicit blank cells for erased coordinates.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input
@@ -2695,6 +2696,7 @@ schema validation.
   - `WorksheetEditor::clear_cell_values(CellRange)`
   - `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
   - `WorksheetEditor::erase_cell()`
+  - `WorksheetEditor::erase_cells(CellRange)`
   - `WorksheetEditor::erase_cells(span<WorksheetCellReference>)`
   - `WorksheetEditor` strict uppercase single-cell A1 overloads
   - `WorksheetCellReference`

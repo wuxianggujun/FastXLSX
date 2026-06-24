@@ -816,6 +816,22 @@ public:
     /// parser.
     void clear_cell_values(std::span<const WorksheetCellReference> cells);
 
+    /// Removes sparse-store cell records inside a rectangular range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// CellRange is 1-based and inclusive, and is validated against Excel
+    /// worksheet limits. Only active sparse records already present in the
+    /// materialized store are removed; missing cells inside the range are not
+    /// synthesized, and a range with no active cells is a successful no-op that
+    /// does not dirty the session. Invalid ranges are mutation failures and
+    /// update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// may shrink the worksheet dimension. This is not dense range deletion,
+    /// row/column delete, tombstone output, range metadata recalculation,
+    /// relationship repair, or a large-file low-memory random-editing path.
+    void erase_cells(CellRange range);
+
     /// Removes sparse-store cell records at explicit sparse coordinates.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. Each

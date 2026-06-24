@@ -33171,6 +33171,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.724 - WorksheetEditor sparse range erase boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook sparse range erase API; no
+tombstone model, no row/column delete, and no dense range delete.
+
+Goal: provide a rectangular sparse counterpart to `erase_cell()`.
+`WorksheetEditor::erase_cells(CellRange)` validates one 1-based inclusive range,
+removes only represented active sparse records inside that range, treats
+missing-only ranges as successful no-ops, and does not synthesize tombstones or
+explicit blanks.
+
+Output:
+- Added public `WorksheetEditor::erase_cells(CellRange)` with Doxygen boundary
+  notes.
+- Added sparse range erase logic in the materialized worksheet session so the
+  operation iterates active sparse records rather than dense coordinates.
+- Extended public source-style regressions to prove invalid range
+  no-state-pollution, missing-only no-op diagnostic cleanup, represented-cell
+  range removal, missing-cell non-synthesis, and dirty save-as omission.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  range erase from explicit blank clear, tombstones, dense range deletion,
+  row/column delete, range metadata recalculation, relationship repair, and
+  large-file low-memory random editing.
+
+Non-goals / boundary:
+- No A1 range string parser, dense matrix/range deletion, tombstone model,
+  row/column delete/insert, explicit blank conversion, style migration/merge,
+  sharedStrings migration expansion, range metadata recalculation,
+  relationship/content-type repair, or large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

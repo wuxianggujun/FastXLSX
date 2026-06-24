@@ -697,6 +697,12 @@ void reject_public_two_clean_retry_invalid_mutations(
     check(threw_fastxlsx_error([&] {
         untouched_again.clear_cell_values(fastxlsx::CellRange {2, 1, 1, 1});
     }), label + " should reject reversed clear_cell_values");
+    check(threw_fastxlsx_error([&] {
+        data_again.erase_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), label + " should reject row-zero erase_cells range");
+    check(threw_fastxlsx_error([&] {
+        untouched_again.erase_cells(fastxlsx::CellRange {2, 1, 1, 1});
+    }), label + " should reject reversed erase_cells range");
     const std::vector<fastxlsx::WorksheetCellReference> invalid_clear_batch = {
         fastxlsx::WorksheetCellReference {1, 1},
         fastxlsx::WorksheetCellReference {1048577, 1}};
@@ -3010,6 +3016,14 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
         check(!editor.last_edit_error().has_value(),
             "missing-only clear_cell_values should keep public edit diagnostics clear");
 
+        sheet.erase_cells(fastxlsx::CellRange {4, 4, 4, 5});
+        check(!sheet.try_cell(4, 4).has_value(),
+            "WorksheetEditor::erase_cells range should not synthesize missing cells");
+        check(!sheet.has_pending_changes(),
+            "missing-only erase_cells range should not dirty the materialized session");
+        check(!editor.last_edit_error().has_value(),
+            "missing-only erase_cells range should keep public edit diagnostics clear");
+
         const std::vector<fastxlsx::WorksheetCellUpdate> empty_batch;
         sheet.set_cells(empty_batch);
         check(!sheet.has_pending_changes(),
@@ -3046,7 +3060,11 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             {fastxlsx::WorksheetCellReference {1, 6},
                 fastxlsx::CellValue::text("value-batch-last")},
             {fastxlsx::WorksheetCellReference {1, 8},
-                fastxlsx::CellValue::text("erase-batch-target")}};
+                fastxlsx::CellValue::text("erase-batch-target")},
+            {fastxlsx::WorksheetCellReference {1, 10},
+                fastxlsx::CellValue::text("range-erase-left")},
+            {fastxlsx::WorksheetCellReference {1, 11},
+                fastxlsx::CellValue::text("range-erase-right")}};
         sheet.set_cell_values(value_batch_updates);
         const fastxlsx::CellValue batch_updated_a1 = sheet.get_cell("A1");
         check(batch_updated_a1.kind() == fastxlsx::CellValueKind::Text
@@ -3064,6 +3082,16 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
                 && erase_batch_target_h1.text_value() == "erase-batch-target"
                 && !erase_batch_target_h1.has_style(),
             "WorksheetEditor::set_cell_values should create a target for erase_cells");
+        const fastxlsx::CellValue range_erase_target_j1 = sheet.get_cell("J1");
+        check(range_erase_target_j1.kind() == fastxlsx::CellValueKind::Text
+                && range_erase_target_j1.text_value() == "range-erase-left"
+                && !range_erase_target_j1.has_style(),
+            "WorksheetEditor::set_cell_values should create the left target for range erase");
+        const fastxlsx::CellValue range_erase_target_k1 = sheet.get_cell("K1");
+        check(range_erase_target_k1.kind() == fastxlsx::CellValueKind::Text
+                && range_erase_target_k1.text_value() == "range-erase-right"
+                && !range_erase_target_k1.has_style(),
+            "WorksheetEditor::set_cell_values should create the right target for range erase");
         check(!editor.last_edit_error().has_value(),
             "successful set_cell_values batch should keep public edit diagnostics clear");
 
@@ -3090,6 +3118,16 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             "coordinate erase_cells should not synthesize missing cells");
         check(!editor.last_edit_error().has_value(),
             "successful coordinate erase_cells batch should keep public edit diagnostics clear");
+
+        sheet.erase_cells(fastxlsx::CellRange {1, 10, 1, 12});
+        check(!sheet.try_cell("J1").has_value(),
+            "range erase_cells should remove the left represented cell");
+        check(!sheet.try_cell("K1").has_value(),
+            "range erase_cells should remove the right represented cell");
+        check(!sheet.try_cell("L1").has_value(),
+            "range erase_cells should not synthesize missing cells");
+        check(!editor.last_edit_error().has_value(),
+            "successful range erase_cells should keep public edit diagnostics clear");
 
         sheet.set_cell_value("A1",
             fastxlsx::CellValue::text("style-preserved-value-edit"));
@@ -3184,6 +3222,12 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             "coordinate erase batch should omit erased output cells");
         check_not_contains(output_xml, R"(r="I1")",
             "coordinate erase batch should not synthesize missing output cells");
+        check_not_contains(output_xml, R"(r="J1")",
+            "range erase should omit the left erased output cell");
+        check_not_contains(output_xml, R"(r="K1")",
+            "range erase should omit the right erased output cell");
+        check_not_contains(output_xml, R"(r="L1")",
+            "range erase should not synthesize missing output cells");
         check_not_contains(output_xml, R"(r="C2")",
             "range clear should not synthesize missing output cells");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-source-style",

@@ -1803,6 +1803,18 @@ The PackageEditor sheetData executable split removes
 `fastxlsx.package_editor.sheetdata*` CTest names stay stable, and
 `fastxlsx_package_editor_sheetdata_tests` remains a build-only aggregate. This
 is still test organization only.
+The follow-up WorkbookEditor public-shard split keeps
+`tests/test_workbook_editor_public.cpp` as the base public shard and moves the
+retry, public-state, and guardrail bodies into
+`tests/test_workbook_editor_public_retry.cpp`,
+`tests/test_workbook_editor_public_state.cpp`, and
+`tests/test_workbook_editor_public_guards.cpp`. The existing
+`fastxlsx.workbook_editor.public` CTest name stays stable, the new
+`fastxlsx.workbook_editor.public-retry`,
+`fastxlsx.workbook_editor.public-state`, and
+`fastxlsx.workbook_editor.public-guards` names are added, and
+`fastxlsx_workbook_editor_tests` remains a build-only aggregate. This is still
+test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

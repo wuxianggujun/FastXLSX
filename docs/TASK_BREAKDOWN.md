@@ -29461,6 +29461,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.691 - Split WorkbookEditor public shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep the WorkbookEditor public facade regressions under the 60s shard
+discipline by splitting the large `tests/test_workbook_editor_public.cpp`
+source into focused public, retry, state, and guardrail executables while
+preserving the existing public shard name.
+
+Output:
+- Kept `tests/test_workbook_editor_public.cpp` focused on the base public
+  handle, lookup, style-policy, reacquire, and materialized-name diagnostics
+  coverage.
+- Added:
+  - `tests/test_workbook_editor_public_retry.cpp`.
+  - `tests/test_workbook_editor_public_state.cpp`.
+  - `tests/test_workbook_editor_public_guards.cpp`.
+- Added executable targets:
+  `fastxlsx_workbook_editor_public_retry_tests`,
+  `fastxlsx_workbook_editor_public_state_tests`, and
+  `fastxlsx_workbook_editor_public_guards_tests`.
+- Kept `fastxlsx_workbook_editor_tests` as a build-only aggregate target
+  depending on all WorkbookEditor shard executables.
+- Kept the existing CTest name `fastxlsx.workbook_editor.public`, and added
+  `fastxlsx.workbook_editor.public-retry`,
+  `fastxlsx.workbook_editor.public-state`, and
+  `fastxlsx.workbook_editor.public-guards`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no WorkbookEditor behavior
+  change, no worksheet materialization semantic change, no formula or
+  relationship behavior change, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

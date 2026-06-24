@@ -468,6 +468,18 @@ add_fastxlsx_workbook_editor_target(
     test_workbook_editor_public.cpp
 )
 add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_public_retry_tests
+    test_workbook_editor_public_retry.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_public_state_tests
+    test_workbook_editor_public_state.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_public_guards_tests
+    test_workbook_editor_public_guards.cpp
+)
+add_fastxlsx_workbook_editor_target(
     fastxlsx_workbook_editor_public_edge_shard_tests
     test_workbook_editor_public_edge.cpp
 )
@@ -476,6 +488,9 @@ add_custom_target(fastxlsx_workbook_editor_tests
     DEPENDS
         fastxlsx_workbook_editor_core_shard_tests
         fastxlsx_workbook_editor_public_shard_tests
+        fastxlsx_workbook_editor_public_retry_tests
+        fastxlsx_workbook_editor_public_state_tests
+        fastxlsx_workbook_editor_public_guards_tests
         fastxlsx_workbook_editor_public_edge_shard_tests
 )
 
@@ -492,6 +507,15 @@ endfunction()
 
 add_fastxlsx_workbook_editor_shard(core fastxlsx_workbook_editor_core_shard_tests 60)
 add_fastxlsx_workbook_editor_shard(public fastxlsx_workbook_editor_public_shard_tests 60)
+add_fastxlsx_workbook_editor_shard(
+    public-retry fastxlsx_workbook_editor_public_retry_tests 60
+)
+add_fastxlsx_workbook_editor_shard(
+    public-state fastxlsx_workbook_editor_public_state_tests 60
+)
+add_fastxlsx_workbook_editor_shard(
+    public-guards fastxlsx_workbook_editor_public_guards_tests 60
+)
 add_fastxlsx_workbook_editor_shard(
     public-edge fastxlsx_workbook_editor_public_edge_shard_tests 60
 )

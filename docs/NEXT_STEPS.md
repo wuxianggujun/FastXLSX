@@ -1913,6 +1913,16 @@ transaction history, undo/rollback, source mutation, or a large-file random
 editing claim.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
+The WorkbookEditor source-success executable is now split the same way:
+`tests/test_workbook_editor_source_success.cpp` keeps the core supported-value,
+inline-string, wrapper-metadata, and no-op save coverage, while
+`tests/test_workbook_editor_source_success_shared_strings.cpp`,
+`tests/test_workbook_editor_source_success_max_coordinate.cpp`, and
+`tests/test_workbook_editor_source_success_formulas.cpp` own the sharedStrings,
+max-coordinate, and formula families. The existing
+`fastxlsx.workbook_editor_source_success` CTest name stays stable for the core
+shard, and `fastxlsx_workbook_editor_source_success_tests` remains a
+build-only aggregate. This is still test organization only.
 Public `try_worksheet()` / `worksheet()` facade failure hygiene is pinned for
 representative invalid sharedStrings metadata as well: the editor remains clean,
 `last_edit_error()` is unchanged, and later Patch edits can still be saved.
@@ -2339,11 +2349,19 @@ schema validation.
   - `fastxlsx.workbook_editor.public`
   - `fastxlsx.workbook_editor.public-edge`
   - `fastxlsx.workbook_editor_source_success`
+  - `fastxlsx.workbook_editor_source_success_shared_strings`
+  - `fastxlsx.workbook_editor_source_success_max_coordinate`
+  - `fastxlsx.workbook_editor_source_success_formulas`
   - `fastxlsx.workbook_editor_source_failures`
   - `fastxlsx.workbook_editor_materialized_sessions`
   - `fastxlsx.workbook_editor_facade`
   - `fastxlsx.workbook_editor_formula_rewrite`
   - `fastxlsx.image`
+- The source-success `WorksheetEditor` materialization regressions are now
+  split into core, sharedStrings, max-coordinate, and formulas executables.
+  The existing `fastxlsx.workbook_editor_source_success` CTest name remains the
+  core shard; the added shard names are test-organization only and do not
+  change source materialization semantics or public API behavior.
 - The max-coordinate `WorksheetEditor` public save-as regressions now run under
   `fastxlsx.workbook_editor.public-edge`, keeping the general public facade
   shard inside the default 60s CTest budget without changing product API

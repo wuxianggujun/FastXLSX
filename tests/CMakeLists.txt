@@ -730,7 +730,62 @@ function(add_fastxlsx_workbook_editor_standalone_test test_name source_file time
     )
 endfunction()
 
-add_fastxlsx_workbook_editor_standalone_test(source_success test_workbook_editor_source_success.cpp 60)
+function(add_fastxlsx_workbook_editor_source_success_test ctest_name target timeout_seconds)
+    add_test(
+        NAME ${ctest_name}
+        COMMAND ${target}
+    )
+    set_tests_properties(${ctest_name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_source_success_core_tests
+    test_workbook_editor_source_success.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_source_success_shared_strings_tests
+    test_workbook_editor_source_success_shared_strings.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_source_success_max_coordinate_tests
+    test_workbook_editor_source_success_max_coordinate.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_source_success_formulas_tests
+    test_workbook_editor_source_success_formulas.cpp
+)
+
+add_custom_target(fastxlsx_workbook_editor_source_success_tests
+    DEPENDS
+        fastxlsx_workbook_editor_source_success_core_tests
+        fastxlsx_workbook_editor_source_success_shared_strings_tests
+        fastxlsx_workbook_editor_source_success_max_coordinate_tests
+        fastxlsx_workbook_editor_source_success_formulas_tests
+)
+
+add_fastxlsx_workbook_editor_source_success_test(
+    fastxlsx.workbook_editor_source_success
+    fastxlsx_workbook_editor_source_success_core_tests
+    60
+)
+add_fastxlsx_workbook_editor_source_success_test(
+    fastxlsx.workbook_editor_source_success_shared_strings
+    fastxlsx_workbook_editor_source_success_shared_strings_tests
+    60
+)
+add_fastxlsx_workbook_editor_source_success_test(
+    fastxlsx.workbook_editor_source_success_max_coordinate
+    fastxlsx_workbook_editor_source_success_max_coordinate_tests
+    60
+)
+add_fastxlsx_workbook_editor_source_success_test(
+    fastxlsx.workbook_editor_source_success_formulas
+    fastxlsx_workbook_editor_source_success_formulas_tests
+    60
+)
 add_fastxlsx_workbook_editor_standalone_test(source_failures test_workbook_editor_source_failures.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(materialized_sessions test_workbook_editor_materialized_sessions.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(facade test_workbook_editor_facade.cpp 60)

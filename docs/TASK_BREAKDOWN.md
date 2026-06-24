@@ -29756,6 +29756,51 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.c5" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.698 - Split WorkbookEditor source-success executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large WorkbookEditor source-success test executable by moving
+the current source materialization families into focused source files and
+executables, while keeping the existing
+`fastxlsx.workbook_editor_source_success` CTest name stable for the core shard.
+
+Output:
+- Extracted shared source-success helpers to
+  `tests/test_workbook_editor_source_success_common.hpp`.
+- Kept `tests/test_workbook_editor_source_success.cpp` focused on core
+  supported source values, inline strings, default style normalization, empty
+  source worksheets, wrapper metadata projection, and read-only no-op save
+  preservation.
+- Added:
+  - `tests/test_workbook_editor_source_success_shared_strings.cpp`.
+  - `tests/test_workbook_editor_source_success_max_coordinate.cpp`.
+  - `tests/test_workbook_editor_source_success_formulas.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_workbook_editor_source_success_core_tests`,
+  `fastxlsx_workbook_editor_source_success_shared_strings_tests`,
+  `fastxlsx_workbook_editor_source_success_max_coordinate_tests`, and
+  `fastxlsx_workbook_editor_source_success_formulas_tests`.
+- Kept `fastxlsx_workbook_editor_source_success_tests` as a build-only
+  aggregate target depending on all source-success shard executables.
+- Kept `fastxlsx.workbook_editor_source_success` for the core shard and added
+  `fastxlsx.workbook_editor_source_success_shared_strings`,
+  `fastxlsx.workbook_editor_source_success_max_coordinate`, and
+  `fastxlsx.workbook_editor_source_success_formulas`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no WorkbookEditor behavior
+  change, no source materialization semantic change, no formula/sharedStrings
+  expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_success_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_success" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

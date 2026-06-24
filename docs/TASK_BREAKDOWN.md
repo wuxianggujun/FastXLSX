@@ -33476,6 +33476,49 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.732 - WorksheetEditor sparse row/column value-clear boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse row/column value-clear
+convenience API; no row/column delete/shift and no metadata recalculation.
+
+Goal: provide explicit row/column "clear contents" UX for existing-workbook
+small-file In-memory editing without implying dense row/column deletion
+semantics. `WorksheetEditor::clear_row()` / `clear_rows()` and
+`clear_column()` / `clear_columns()` keep represented sparse records, convert
+their values to explicit blanks, preserve each current source style handle,
+treat missing-only inputs as successful no-ops, and stage mutations before
+replacing the active sparse store.
+
+Output:
+- Added public `WorksheetEditor::clear_row(row)`,
+  `clear_rows(first_row, last_row)`, `clear_column(column)`, and
+  `clear_columns(first_column, last_column)` with Doxygen boundary notes.
+- Implemented staged sparse-store row/column value clear with Excel coordinate
+  guards, reversed-range rejection, missing-only diagnostic cleanup, and
+  source-style preservation for each represented target cell.
+- Added public-state regressions for row clear output, row-range clear,
+  styled-source row clear preservation, invalid / reversed row range failure
+  hygiene, missing column no-op diagnostic cleanup, column clear output,
+  column-range clear, and invalid / reversed column range failure hygiene.
+- Updated README, API design notes, and next-step status to distinguish
+  row/column value-clear from row/column deletion, shifting, metadata editing,
+  tombstones, style migration/merge/creation, relationship repair, and
+  large-file random editing.
+
+Non-goals / boundary:
+- No row/column insertion, row/column deletion, row/column shifting,
+  row/column metadata model, dense range editing, tombstone output,
+  table/range/definedName/drawing metadata recalculation, style
+  migration/merge/creation, sharedStrings migration, relationship repair, A1
+  range parser, or large-file low-memory random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

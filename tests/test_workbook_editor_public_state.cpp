@@ -3832,6 +3832,325 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
     }
 }
 
+void test_public_worksheet_editor_clear_row_preserves_sparse_records()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-clear-row-source.xlsx");
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.clear_row(1);
+        check(sheet.cell_count() == 3,
+            "clear_row should keep represented cells as explicit blanks");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_row should convert target-row text cells to blanks");
+        check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_row should convert target-row numeric cells to blanks");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "clear_row should preserve represented cells outside the target row");
+        check(sheet.has_pending_changes(),
+            "clear_row should dirty the materialized worksheet when records are cleared");
+        check(editor.pending_materialized_cell_count() == 3,
+            "clear_row should keep blank records in aggregate diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_row should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+            "clear_row should keep the projected dimension over explicit blanks");
+        check_contains(worksheet_xml, R"(<c r="A1"/>)",
+            "clear_row should persist row-one text as an explicit blank cell");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_row should persist row-one number as an explicit blank cell");
+        check_contains(worksheet_xml, "placeholder-a2",
+            "clear_row should persist non-target row source cells");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "clear_row should omit the old target-row text payload");
+        check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "clear_row should omit the old target-row numeric payload");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "clear_row should preserve untouched worksheets");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 4, fastxlsx::CellValue::text("clear-row-range-extra"));
+        sheet.clear_rows(1, 2);
+        check(sheet.cell_count() == 4,
+            "clear_rows should retain represented sparse records in all target rows");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows should clear first-row text cells");
+        check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows should clear first-row numeric cells");
+        check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows should clear second-row text cells");
+        check(sheet.get_cell("D4").text_value() == "clear-row-range-extra",
+            "clear_rows should preserve represented cells outside the row range");
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_rows should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+            "clear_rows should keep explicit blanks in the projected dimension");
+        check_contains(worksheet_xml, R"(<c r="A1"/>)",
+            "clear_rows should persist row-one text as a blank");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_rows should persist row-one number as a blank");
+        check_contains(worksheet_xml, R"(<c r="A2"/>)",
+            "clear_rows should persist row-two text as a blank");
+        check_contains(worksheet_xml, "clear-row-range-extra",
+            "clear_rows should persist non-target row edits");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "clear_rows should omit old row-one text payload");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "clear_rows should omit old row-two text payload");
+        check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "clear_rows should omit old row-one numeric payload");
+    }
+
+    {
+        const std::filesystem::path style_source =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-output.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
+            {
+                fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+                non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+                styled_sheet.append_row({
+                    fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                    fastxlsx::CellView::text("unstyled"),
+                });
+            }
+            writer.close();
+        }
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+        sheet.clear_row(1);
+
+        const fastxlsx::CellValue cleared_a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue cleared_b1 = sheet.get_cell("B1");
+        check(cleared_a1.kind() == fastxlsx::CellValueKind::Blank && cleared_a1.has_style()
+                && cleared_a1.style_id().value() == non_default_style.value(),
+            "clear_row should preserve source style ids on blank records");
+        check(cleared_b1.kind() == fastxlsx::CellValueKind::Blank && !cleared_b1.has_style(),
+            "clear_row should keep unstyled source cells unstyled");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_blank =
+            R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
+        check_contains(worksheet_xml, styled_blank,
+            "clear_row should persist styled blanks with the source style id");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_row should persist unstyled source cells as unstyled blanks");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool invalid_failed = false;
+        try {
+            sheet.clear_row(0);
+        } catch (const fastxlsx::FastXlsxError&) {
+            invalid_failed = true;
+        }
+        check(invalid_failed, "clear_row should reject invalid row numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed clear_row invalid-row mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "clear_row invalid-row failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "clear_row invalid-row failure should preserve sparse cell count");
+
+        bool reversed_failed = false;
+        try {
+            sheet.clear_rows(2, 1);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            reversed_failed = true;
+            check_contains(error.what(), "first_row <= last_row",
+                "clear_rows reversed failure should expose the row ordering rule");
+        }
+        check(reversed_failed, "clear_rows should reject reversed row ranges");
+        check(editor.last_edit_error().has_value(),
+            "failed clear_rows reversed mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "clear_rows reversed failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "clear_rows reversed failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "clear_rows reversed failure should preserve existing cells");
+    }
+}
+
+void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-clear-column-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before missing clear_column no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before missing clear_column no-op");
+
+        sheet.clear_column(3);
+        check(!editor.last_edit_error().has_value(),
+            "missing clear_column should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "missing clear_column should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "missing clear_column should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "missing clear_column should not create or remove sparse records");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.clear_column(1);
+        check(sheet.cell_count() == 3,
+            "clear_column should keep represented column cells as explicit blanks");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_column should clear target-column row-one text cells");
+        check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_column should clear target-column row-two text cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "clear_column should preserve represented cells outside the target column");
+        check(sheet.has_pending_changes(),
+            "clear_column should dirty the materialized worksheet when records are cleared");
+        check(editor.pending_materialized_cell_count() == 3,
+            "clear_column should keep blank records in aggregate diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_column should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+            "clear_column should keep the projected dimension over explicit blanks");
+        check_contains(worksheet_xml, R"(<c r="A1"/>)",
+            "clear_column should persist row-one text as a blank");
+        check_contains(worksheet_xml, R"(<c r="A2"/>)",
+            "clear_column should persist row-two text as a blank");
+        check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "clear_column should persist non-target column source cells");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "clear_column should omit old row-one text payload");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "clear_column should omit old row-two text payload");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "clear_column should preserve untouched worksheets");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 4, fastxlsx::CellValue::text("clear-column-range-extra"));
+        sheet.clear_columns(1, 2);
+        check(sheet.cell_count() == 4,
+            "clear_columns should retain represented sparse records in all target columns");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns should clear first-column row-one text cells");
+        check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns should clear first-column row-two text cells");
+        check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns should clear second-column numeric cells");
+        check(sheet.get_cell("D4").text_value() == "clear-column-range-extra",
+            "clear_columns should preserve represented cells outside the column range");
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_columns should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+            "clear_columns should keep explicit blanks in the projected dimension");
+        check_contains(worksheet_xml, R"(<c r="A1"/>)",
+            "clear_columns should persist first-column row-one text as a blank");
+        check_contains(worksheet_xml, R"(<c r="A2"/>)",
+            "clear_columns should persist first-column row-two text as a blank");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_columns should persist second-column number as a blank");
+        check_contains(worksheet_xml, "clear-column-range-extra",
+            "clear_columns should persist non-target column edits");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "clear_columns should omit old first-column row-one text payload");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "clear_columns should omit old first-column row-two text payload");
+        check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "clear_columns should omit old second-column numeric payload");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool invalid_failed = false;
+        try {
+            sheet.clear_column(0);
+        } catch (const fastxlsx::FastXlsxError&) {
+            invalid_failed = true;
+        }
+        check(invalid_failed, "clear_column should reject invalid column numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed clear_column invalid-column mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "clear_column invalid-column failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "clear_column invalid-column failure should preserve sparse cell count");
+
+        bool reversed_failed = false;
+        try {
+            sheet.clear_columns(2, 1);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            reversed_failed = true;
+            check_contains(error.what(), "first_column <= last_column",
+                "clear_columns reversed failure should expose the column ordering rule");
+        }
+        check(reversed_failed, "clear_columns should reject reversed column ranges");
+        check(editor.last_edit_error().has_value(),
+            "failed clear_columns reversed mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "clear_columns reversed failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "clear_columns reversed failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "clear_columns reversed failure should preserve existing cells");
+    }
+}
+
 void test_public_worksheet_editor_erase_row_removes_sparse_row()
 {
     const std::filesystem::path source =
@@ -5114,6 +5433,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_set_row_empty_and_guardrails();
             test_public_worksheet_editor_set_column_replaces_sparse_column();
             test_public_worksheet_editor_set_column_empty_and_guardrails();
+            test_public_worksheet_editor_clear_row_preserves_sparse_records();
+            test_public_worksheet_editor_clear_columns_noop_invalid_and_range();
             test_public_worksheet_editor_erase_row_removes_sparse_row();
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();

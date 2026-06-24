@@ -575,6 +575,108 @@ void WorksheetEditor::clear_cell_value(std::string_view cell_reference)
     }
 }
 
+void WorksheetEditor::clear_row(std::uint32_t row)
+{
+    clear_rows(row, row);
+}
+
+void WorksheetEditor::clear_rows(std::uint32_t first_row, std::uint32_t last_row)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(first_row, 1);
+        detail::validate_worksheet_editor_cell_coordinate(last_row, 1);
+        if (first_row > last_row) {
+            throw FastXlsxError(
+                "WorksheetEditor::clear_rows() requires first_row <= last_row");
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        const detail::CellStore& current_store = session->store();
+        std::vector<detail::CellPosition> row_positions;
+        for (const auto& [position, record] : current_store.records()) {
+            (void)record;
+            if (position.row >= first_row && position.row <= last_row) {
+                row_positions.push_back(position);
+            }
+        }
+        if (row_positions.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = current_store;
+        for (const detail::CellPosition& position : row_positions) {
+            const detail::CellRecord* existing =
+                staged_store.try_cell(position.row, position.column);
+            staged_store.set_cell(position.row, position.column,
+                with_preserved_source_style(CellValue::blank(), existing));
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::clear_column(std::uint32_t column)
+{
+    clear_columns(column, column);
+}
+
+void WorksheetEditor::clear_columns(std::uint32_t first_column, std::uint32_t last_column)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(1, first_column);
+        detail::validate_worksheet_editor_cell_coordinate(1, last_column);
+        if (first_column > last_column) {
+            throw FastXlsxError(
+                "WorksheetEditor::clear_columns() requires first_column <= last_column");
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        const detail::CellStore& current_store = session->store();
+        std::vector<detail::CellPosition> column_positions;
+        for (const auto& [position, record] : current_store.records()) {
+            (void)record;
+            if (position.column >= first_column && position.column <= last_column) {
+                column_positions.push_back(position);
+            }
+        }
+        if (column_positions.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = current_store;
+        for (const detail::CellPosition& position : column_positions) {
+            const detail::CellRecord* existing =
+                staged_store.try_cell(position.row, position.column);
+            staged_store.set_cell(position.row, position.column,
+                with_preserved_source_style(CellValue::blank(), existing));
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::clear_cell_values(CellRange range)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

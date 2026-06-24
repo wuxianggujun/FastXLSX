@@ -607,12 +607,13 @@ struct WorkbookEditorRenameOptions {
 /// are rejected, and prior source styles on overwritten cells are dropped.
 /// `set_cell_value()` and `set_cell_values()` can replace cell values while
 /// preserving currently materialized source style handles on those coordinates.
-/// `clear_cell_value()` and the `clear_cell_values()` overloads can turn
-/// existing materialized cells into explicit blanks while preserving those same
-/// style handles; missing cells are successful no-ops and range or coordinate
-/// batch clears do not synthesize blank records for missing coordinates. This
-/// does not migrate or merge styles, synthesize styles for missing cells,
-/// create tombstones, or allow caller-supplied foreign style handles.
+/// `clear_cell_value()`, `clear_row()`, `clear_rows()`, `clear_column()`,
+/// `clear_columns()`, and the `clear_cell_values()` overloads can turn existing
+/// materialized cells into explicit blanks while preserving those same style
+/// handles; missing cells are successful no-ops and range or coordinate batch
+/// clears do not synthesize blank records for missing coordinates. This does
+/// not migrate or merge styles, synthesize styles for missing cells, create
+/// tombstones, or allow caller-supplied foreign style handles.
 /// `erase_cell()`, `erase_cells()`, `erase_row()`, `erase_rows()`,
 /// `erase_column()`, and `erase_columns()` remove active sparse records instead
 /// of writing explicit blanks. Empty, valueless, unquoted, unterminated, padded,
@@ -951,6 +952,81 @@ public:
     /// behavior, and non-tombstone explicit-blank semantics follow the
     /// row/column clear_cell_value() overload.
     void clear_cell_value(std::string_view cell_reference);
+
+    /// Clears represented values from one sparse row while preserving styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The row is
+    /// a 1-based Excel row number. Only active sparse records already present
+    /// in that row are converted to explicit blanks; missing rows are
+    /// successful no-ops that do not dirty the materialized session and clear
+    /// prior public edit diagnostics. Existing source StyleId handles are
+    /// preserved per represented cell. Invalid row numbers are mutation
+    /// failures and update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() keeps the represented coordinates as blank `<c>` cells
+    /// and may keep the worksheet dimension expanded to those coordinates.
+    /// This is not row deletion, row shifting, row metadata editing, dense
+    /// range editing, tombstone output, table/range metadata recalculation,
+    /// style migration/merge/creation, or a large-file low-memory
+    /// random-editing path.
+    void clear_row(std::uint32_t row);
+
+    /// Clears represented values from an inclusive sparse row range while preserving styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// row-range bounds are 1-based Excel row numbers and must satisfy
+    /// `first_row <= last_row`. Only active sparse records already present in
+    /// those rows are converted to explicit blanks; missing-only ranges are
+    /// successful no-ops that do not dirty the materialized session and clear
+    /// prior public edit diagnostics. Existing source StyleId handles are
+    /// preserved per represented cell. Invalid or reversed ranges reject before
+    /// mutating the sparse store and update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() keeps represented coordinates as blank `<c>` cells and
+    /// may keep the worksheet dimension expanded to those coordinates. This is
+    /// not row deletion, row shifting, row metadata editing, dense range
+    /// editing, tombstone output, table/range metadata recalculation, style
+    /// migration/merge/creation, or a large-file low-memory random-editing
+    /// path.
+    void clear_rows(std::uint32_t first_row, std::uint32_t last_row);
+
+    /// Clears represented values from one sparse column while preserving styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The column
+    /// is a 1-based Excel column number. Only active sparse records already
+    /// present in that column are converted to explicit blanks; missing columns
+    /// are successful no-ops that do not dirty the materialized session and
+    /// clear prior public edit diagnostics. Existing source StyleId handles are
+    /// preserved per represented cell. Invalid column numbers are mutation
+    /// failures and update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() keeps represented coordinates as blank `<c>` cells and
+    /// may keep the worksheet dimension expanded to those coordinates. This is
+    /// not column deletion, column shifting, column metadata editing, dense
+    /// range editing, tombstone output, table/range metadata recalculation,
+    /// style migration/merge/creation, or a large-file low-memory
+    /// random-editing path.
+    void clear_column(std::uint32_t column);
+
+    /// Clears represented values from an inclusive sparse column range while preserving styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// column-range bounds are 1-based Excel column numbers and must satisfy
+    /// `first_column <= last_column`. Only active sparse records already
+    /// present in those columns are converted to explicit blanks; missing-only
+    /// ranges are successful no-ops that do not dirty the materialized session
+    /// and clear prior public edit diagnostics. Existing source StyleId handles
+    /// are preserved per represented cell. Invalid or reversed ranges reject
+    /// before mutating the sparse store and update
+    /// WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() keeps represented coordinates as blank `<c>` cells and
+    /// may keep the worksheet dimension expanded to those coordinates. This is
+    /// not column deletion, column shifting, column metadata editing, dense
+    /// range editing, tombstone output, table/range metadata recalculation,
+    /// style migration/merge/creation, or a large-file low-memory random-editing
+    /// path.
+    void clear_columns(std::uint32_t first_column, std::uint32_t last_column);
 
     /// Clears represented cell values inside a rectangular range while preserving styles.
     ///

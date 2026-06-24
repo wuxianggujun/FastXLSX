@@ -49,13 +49,15 @@ They still reject caller-supplied non-default `StyleId` values, do not create
 or merge `xl/styles.xml` entries, and do not synthesize styles for newly
 inserted cells. Full cell replacement through `set_cell()` continues to drop
 prior source style handles by design. `clear_cell_value()`,
+`clear_row()`, `clear_rows()`, `clear_column()`, `clear_columns()`,
 `clear_cell_values(CellRange)`, and
 `clear_cell_values(span<WorksheetCellReference>)` now cover the matching
 "clear contents" case: existing materialized cells become explicit blank cells
-while preserving the current source style handle, range / coordinate-batch
-clears affect only already represented sparse records, missing targets /
-missing-only ranges / missing-only coordinate batches are successful no-ops,
-and the output remains non-tombstone sparse projection.
+while preserving the current source style handle, row / column / range /
+coordinate-batch clears affect only already represented sparse records, missing
+targets / missing-only rows / missing-only columns / missing-only ranges /
+missing-only coordinate batches are successful no-ops, and the output remains
+non-tombstone sparse projection.
 `erase_cells(CellRange)` and `erase_cells(span<WorksheetCellReference>)` now
 cover the matching sparse delete cases: the range overload validates one
 1-based inclusive rectangle, the coordinate overload validates every coordinate
@@ -110,6 +112,15 @@ height, style, max_cells, and memory-budget failures are staged and do not mutat
 the active sparse store. This is not column insertion/deletion, column shifting,
 column metadata editing, table/range metadata recalculation, sharedStrings/styles
 migration, or large-file low-memory random editing.
+`WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
+`clear_columns()` now cover row/column value-only clear convenience for small
+files: they keep represented sparse records, convert their values to explicit
+blanks, preserve each source style handle, treat missing-only inputs as
+successful no-ops, and stage the mutation before replacing the active sparse
+store. They do not add row/column deletion, row/column shifting, row/column
+metadata editing, dense range editing, tombstone output, style
+migration/merge/creation, relationship repair, or large-file low-memory random
+editing.
 `WorksheetEditor::erase_row()` and `WorksheetEditor::erase_rows()` now cover
 the sparse row delete convenience for small files: they delete only represented
 active sparse records from a single row or inclusive row range, treat missing
@@ -2757,6 +2768,10 @@ schema validation.
   - `WorksheetEditor::set_cell_values()`
   - `WorksheetEditor::set_cell_values(initializer_list<WorksheetCellUpdate>)`
   - `WorksheetEditor::clear_cell_value()`
+  - `WorksheetEditor::clear_row()`
+  - `WorksheetEditor::clear_rows()`
+  - `WorksheetEditor::clear_column()`
+  - `WorksheetEditor::clear_columns()`
   - `WorksheetEditor::clear_cell_values(CellRange)`
   - `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
   - `WorksheetEditor::clear_cell_values(initializer_list<WorksheetCellReference>)`

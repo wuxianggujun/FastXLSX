@@ -43,12 +43,13 @@ or invalid sharedStrings relationships/targets, missing or wrong-typed parts,
 malformed sharedStrings XML, and invalid indexes fail fast for worksheets that
 actually require source shared strings instead of being repaired or guessed.
 The current `WorksheetEditor` style boundary now has a narrow value-only edit
-API: `set_cell_value()` and `set_cell_values()` replace cell values while
-preserving currently materialized source style handles on those coordinates.
-They still reject caller-supplied non-default `StyleId` values, do not create
-or merge `xl/styles.xml` entries, and do not synthesize styles for newly
-inserted cells. Full cell replacement through `set_cell()` continues to drop
-prior source style handles by design. `clear_cell_value()`,
+API: `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
+`set_column_values()` replace cell values while preserving currently
+materialized source style handles on overwritten coordinates. They still reject
+caller-supplied non-default `StyleId` values, do not create or merge
+`xl/styles.xml` entries, and do not synthesize styles for newly inserted cells.
+Full cell replacement through `set_cell()` continues to drop prior source style
+handles by design. `clear_cell_value()`,
 `clear_row()`, `clear_rows()`, `clear_column()`, `clear_columns()`,
 `clear_cell_values(CellRange)`, and
 `clear_cell_values(span<WorksheetCellReference>)` now cover the matching
@@ -112,6 +113,16 @@ height, style, max_cells, and memory-budget failures are staged and do not mutat
 the active sparse store. This is not column insertion/deletion, column shifting,
 column metadata editing, table/range metadata recalculation, sharedStrings/styles
 migration, or large-file low-memory random editing.
+`WorksheetEditor::set_row_values()` and `set_column_values()` now cover the
+style-preserving row/column prefix write convenience for small files: they write
+input values to columns 1..N or rows 1..N, preserve source styles on overwritten
+target cells, insert missing prefix cells without styles, treat empty input as
+a clean no-op, and leave cells outside the input prefix untouched. Invalid
+row/column coordinates, width/height, caller-supplied non-default `StyleId`,
+max_cells, and memory-budget failures are staged and do not mutate the active
+sparse store. This is not row/column replacement, insertion/deletion, shifting,
+dense range writing, metadata recalculation, style migration/merge/creation, or
+large-file low-memory random editing.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit

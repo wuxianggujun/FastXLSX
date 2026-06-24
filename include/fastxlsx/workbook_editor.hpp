@@ -605,8 +605,9 @@ struct WorkbookEditorRenameOptions {
 /// source styles part is preserved. `set_cells()` shares the full-cell
 /// replacement semantics of `set_cell()`: caller-supplied non-default style ids
 /// are rejected, and prior source styles on overwritten cells are dropped.
-/// `set_cell_value()` and `set_cell_values()` can replace cell values while
-/// preserving currently materialized source style handles on those coordinates.
+/// `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
+/// `set_column_values()` can replace cell values while preserving currently
+/// materialized source style handles on those coordinates.
 /// `clear_cell_value()`, `clear_row()`, `clear_rows()`, `clear_column()`,
 /// `clear_columns()`, and the `clear_cell_values()` overloads can turn existing
 /// materialized cells into explicit blanks while preserving those same style
@@ -904,6 +905,68 @@ public:
     /// duplicate-coordinate ordering, empty-batch no-op behavior, guardrails,
     /// diagnostics, and non-goals are identical.
     void set_cell_values(std::initializer_list<WorksheetCellUpdate> cells);
+
+    /// Applies a value-only prefix write to one sparse row.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The row is
+    /// a 1-based Excel row number. Values are written to columns 1..N in input
+    /// order. Existing target cells keep their current materialized source
+    /// StyleId; missing target cells are inserted without a style. Cells beyond
+    /// the input prefix are left untouched. Empty input is a successful no-op
+    /// that does not dirty the materialized session and clears prior public
+    /// edit diagnostics.
+    ///
+    /// The entire prefix write is preflighted and staged. Invalid row numbers,
+    /// more than 16,384 values, caller-supplied non-default StyleId handles,
+    /// max_cells violations, or memory_budget_bytes violations reject the call
+    /// before the active sparse store is mutated. Explicit CellValue::blank()
+    /// values are represented as blank cells and preserve an existing target
+    /// style when one is present.
+    ///
+    /// This is a value-only prefix write, not row replacement, row
+    /// insertion/deletion, row shifting, dense range writing, style
+    /// migration/merge/creation, range metadata recalculation, sharedStrings
+    /// migration, or a large-file low-memory random-editing path.
+    void set_row_values(std::uint32_t row, std::span<const CellValue> values);
+
+    /// Applies a value-only prefix write to one sparse row from a small literal list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so style-preserving value semantics,
+    /// empty-input no-op behavior, guardrails, diagnostics, and non-goals are
+    /// identical.
+    void set_row_values(std::uint32_t row, std::initializer_list<CellValue> values);
+
+    /// Applies a value-only prefix write to one sparse column.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The column
+    /// is a 1-based Excel column number. Values are written to rows 1..N in
+    /// input order. Existing target cells keep their current materialized
+    /// source StyleId; missing target cells are inserted without a style. Cells
+    /// beyond the input prefix are left untouched. Empty input is a successful
+    /// no-op that does not dirty the materialized session and clears prior
+    /// public edit diagnostics.
+    ///
+    /// The entire prefix write is preflighted and staged. Invalid column
+    /// numbers, more than 1,048,576 values, caller-supplied non-default StyleId
+    /// handles, max_cells violations, or memory_budget_bytes violations reject
+    /// the call before the active sparse store is mutated. Explicit
+    /// CellValue::blank() values are represented as blank cells and preserve an
+    /// existing target style when one is present.
+    ///
+    /// This is a value-only prefix write, not column replacement, column
+    /// insertion/deletion, column shifting, dense range writing, style
+    /// migration/merge/creation, range metadata recalculation, sharedStrings
+    /// migration, or a large-file low-memory random-editing path.
+    void set_column_values(std::uint32_t column, std::span<const CellValue> values);
+
+    /// Applies a value-only prefix write to one sparse column from a small literal list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so style-preserving value semantics,
+    /// empty-input no-op behavior, guardrails, diagnostics, and non-goals are
+    /// identical.
+    void set_column_values(std::uint32_t column, std::initializer_list<CellValue> values);
 
     /// Sets or replaces one sparse-store cell value by strict uppercase A1
     /// reference.

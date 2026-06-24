@@ -33519,6 +33519,58 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.733 - WorksheetEditor sparse row/column value-write boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse row/column value-only prefix
+write convenience API; no row/column replacement or style migration.
+
+Depends on: P8.717, P8.721, P8.728, P8.731.
+
+Touch files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: provide style-preserving row/column prefix value writes for small-file
+In-memory editing. `WorksheetEditor::set_row_values()` writes to columns 1..N
+of one row; `set_column_values()` writes to rows 1..N of one column. Existing
+target cells preserve source StyleId; missing prefix cells are inserted without
+style; cells outside the input prefix are untouched; empty input is a clean
+no-op.
+
+Output:
+- Added public span and initializer-list overloads for `set_row_values()` and
+  `set_column_values()` with Doxygen boundaries.
+- Implemented staged `CellStore` mutations that reject invalid row/column,
+  width/height, caller-supplied non-default `StyleId`, max_cells, and
+  memory_budget failures before active store mutation.
+- Added `fastxlsx.workbook_editor.public-state` coverage for row/column prefix
+  writes, source-style preservation, untouched tails, empty no-op, invalid
+  coordinate / StyleId / guardrail failure no-state-pollution, and saved XML
+  projection.
+- Updated README, API design notes, and next-step status to distinguish
+  row/column prefix value writes from row/column replacement, insert/delete,
+  dense range writes, metadata recalculation, style migration/merge/creation,
+  and large-file random editing.
+
+Non-goals / boundary:
+- No row/column replacement, insertion, deletion, shifting, row/column metadata
+  edit, dense range writer, A1 range parser, sharedStrings migration, style
+  migration/merge/creation, relationship repair, or large-file low-memory random
+  editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

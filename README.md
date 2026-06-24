@@ -276,6 +276,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `erase_row()`、`erase_rows()`、`erase_column()`、`erase_columns()`、
   `set_cell_value()`、`set_cell_values()`、
   `set_cell_values(initializer_list<WorksheetCellUpdate>)`、
+  `set_row_values()`、`set_row_values(initializer_list<CellValue>)`、
+  `set_column_values()`、`set_column_values(initializer_list<CellValue>)`、
   `clear_cell_value()`、`clear_row()`、`clear_rows()`、`clear_column()`、
   `clear_columns()`、`clear_cell_values(CellRange)`、
   `clear_cell_values(span<WorksheetCellReference>)`、
@@ -587,7 +589,13 @@ duplicate / missing-coordinate（坐标批量 API）、guardrail 或 diagnostic 
 `WorksheetEditor::set_cell_value()`
 和 `set_cell_values()` 是 value-only 编辑，会保留目标 cell 当前 materialized source
 style handle；批量版本同样支持 duplicate coordinates 后者覆盖前者、empty no-op 和
-失败不污染。`clear_cell_value()` / `clear_row()` / `clear_rows()` /
+失败不污染。`set_row_values()` / `set_column_values()` 是对应的 row/column prefix
+value-only 便利 API：它们分别把输入写到目标 row 的 columns 1..N 或目标 column 的
+rows 1..N，覆盖已有 prefix cell 时保留 source style，缺失 prefix cell 以 no-style
+record 插入，input prefix 之外已有的 sparse cells 保持不变；empty input 是 clean
+no-op。它们不是 `set_row()` / `set_column()` 这种整行/整列 replacement，不删除尾部
+cells，也不做行列插入/删除、dense range writing、metadata recalculation 或 style
+migration。`clear_cell_value()` / `clear_row()` / `clear_rows()` /
 `clear_column()` / `clear_columns()` / `clear_cell_values(CellRange)` /
 `clear_cell_values(span<WorksheetCellReference>)` 会把已有 cell 转成显式 blank 并保留该
 style；row/column/range/坐标批量版本都只清 already represented sparse records，不补齐
@@ -673,6 +681,14 @@ sheet.set_cell_values(value_updates);
 sheet.set_cell_values({
     {{4, 2}, fastxlsx::CellValue::boolean(true)},
 });
+sheet.set_row_values(1, {
+    fastxlsx::CellValue::text("value-only row prefix"),
+    fastxlsx::CellValue::blank(),
+});
+sheet.set_column_values(2, {
+    fastxlsx::CellValue::number(10.0),
+    fastxlsx::CellValue::text("value-only column prefix"),
+});
 sheet.clear_cell_value("B2");
 sheet.clear_row(1);
 sheet.clear_rows(2, 3);
@@ -710,7 +726,8 @@ editor.save_as("edited.xlsx");
 行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
 `set_cell()` / `set_cells()` / `append_row()` / `set_row()` / `set_column()` / `erase_row()` /
-`erase_rows()` / `erase_column()` / `erase_columns()` / `set_cell_values()` / `clear_row()` /
+`erase_rows()` / `erase_column()` / `erase_columns()` / `set_cell_values()` /
+`set_row_values()` / `set_column_values()` / `clear_row()` /
 `clear_rows()` / `clear_column()` / `clear_columns()` / `clear_cell_values(span)` /
 `erase_cell()` / `erase_cells(CellRange)` / `erase_cells(span)` throws、updates `last_edit_error()`，并且不会 dirty 或 mutate sparse store；
 连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
@@ -746,6 +763,10 @@ represented 的 active sparse records；missing row / missing-only row range 是
 `set_column()` 使用同样的 1-based column guardrail 替换目标列内已经 represented 的
 active sparse records；empty input 会清空 represented column，missing column 是成功
 no-op。它不做 column insertion、column deletion、column shifting 或 column metadata edit。
+`set_row_values()` / `set_column_values()` 使用同样的 1-based row/column guardrail 做
+value-only prefix write：只覆盖输入 prefix 覆盖到的 cells，保留 existing target
+source style，插入 missing prefix cells 时不带 style，且不删除 prefix 外的 sparse
+records。它们不是 row/column replacement、insert/delete、shifting 或 metadata edit。
 `erase_column()` / `erase_columns()` 使用同样的 1-based column guardrail 删除目标列内已经
 represented 的 active sparse records；missing column / missing-only column range 是成功
 no-op，反向 column range 会失败且不污染状态。它们不做 column deletion、column shifting

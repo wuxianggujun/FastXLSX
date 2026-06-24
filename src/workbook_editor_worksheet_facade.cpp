@@ -516,6 +516,101 @@ void WorksheetEditor::set_cell_values(std::initializer_list<WorksheetCellUpdate>
     set_cell_values(std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
+void WorksheetEditor::set_row_values(std::uint32_t row, std::span<const CellValue> values)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(row, 1);
+        if (values.size() > max_excel_columns) {
+            throw FastXlsxError(
+                "WorksheetEditor::set_row_values() cannot set more than 16384 cells");
+        }
+        for (const CellValue& value : values) {
+            if (has_non_default_style(value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::set_row_values() does not support caller-supplied non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (values.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = session->store();
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            const std::uint32_t column = static_cast<std::uint32_t>(index + 1U);
+            const detail::CellRecord* existing = staged_store.try_cell(row, column);
+            staged_store.set_cell(
+                row, column, with_preserved_source_style(values[index], existing));
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::set_row_values(std::uint32_t row, std::initializer_list<CellValue> values)
+{
+    set_row_values(row, std::span<const CellValue>(values.begin(), values.size()));
+}
+
+void WorksheetEditor::set_column_values(std::uint32_t column, std::span<const CellValue> values)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(1, column);
+        if (values.size() > static_cast<std::size_t>(max_excel_rows)) {
+            throw FastXlsxError(
+                "WorksheetEditor::set_column_values() cannot set more than 1048576 cells");
+        }
+        for (const CellValue& value : values) {
+            if (has_non_default_style(value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::set_column_values() does not support caller-supplied non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (values.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = session->store();
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            const std::uint32_t row = static_cast<std::uint32_t>(index + 1U);
+            const detail::CellRecord* existing = staged_store.try_cell(row, column);
+            staged_store.set_cell(
+                row, column, with_preserved_source_style(values[index], existing));
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::set_column_values(
+    std::uint32_t column, std::initializer_list<CellValue> values)
+{
+    set_column_values(column, std::span<const CellValue>(values.begin(), values.size()));
+}
+
 void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue& value)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

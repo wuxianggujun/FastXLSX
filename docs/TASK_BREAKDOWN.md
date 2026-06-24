@@ -32978,6 +32978,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.719 - WorksheetEditor sparse range clear value boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook sparse range value clear API;
+no dense range model and no style migration.
+
+Goal: extend the "clear contents" boundary from one represented cell to a
+bounded rectangular sparse range. `WorksheetEditor::clear_cell_values(CellRange)`
+validates a 1-based inclusive range, converts only existing materialized sparse
+records inside that range to explicit blanks, and preserves each record's
+current source style handle. Missing cells and missing-only ranges are
+successful no-ops.
+
+Output:
+- Added public `WorksheetEditor::clear_cell_values(CellRange)` with Doxygen
+  boundary notes.
+- Added materialized-session range clear logic that snapshots matching sparse
+  positions before mutating records.
+- Extended public source-style regressions to prove range clear preserves style
+  ids, projects styled explicit blanks, does not synthesize missing cells, and
+  rejects invalid ranges without state pollution.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  range clear from dense range editing, tombstones, style migration/merge, range
+  metadata recalculation, and A1 range parsing.
+
+Non-goals / boundary:
+- No A1 range string parser, dense matrix/range writer, tombstone model,
+  row/column delete/insert, style id write API, styles.xml creation, style
+  migration/merge, sharedStrings migration, range metadata recalculation,
+  relationship/content-type repair, or large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

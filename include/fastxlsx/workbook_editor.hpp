@@ -591,10 +591,12 @@ struct WorkbookEditorRenameOptions {
 /// numeric passthrough handles, and written back by dirty projection while the
 /// source styles part is preserved. `set_cell_value()` can replace a cell value
 /// while preserving the currently materialized source style handle on that same
-/// coordinate. `clear_cell_value()` can turn an existing materialized cell into
-/// an explicit blank while preserving that same style handle; missing cells are
-/// a successful no-op. This does not migrate or merge styles, synthesize styles
-/// for missing cells, create tombstones, or allow caller-supplied foreign style handles. Empty,
+/// coordinate. `clear_cell_value()` and `clear_cell_values(CellRange)` can turn
+/// existing materialized cells into explicit blanks while preserving those same
+/// style handles; missing cells are successful no-ops and range clears do not
+/// synthesize blank records for missing coordinates. This does not migrate or
+/// merge styles, synthesize styles for missing cells, create tombstones, or
+/// allow caller-supplied foreign style handles. Empty,
 /// valueless, unquoted, unterminated, padded, signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -725,6 +727,22 @@ public:
     /// behavior, and non-tombstone explicit-blank semantics follow the
     /// row/column clear_cell_value() overload.
     void clear_cell_value(std::string_view cell_reference);
+
+    /// Clears represented cell values inside a rectangular range while preserving styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// CellRange is 1-based and inclusive, and is validated against Excel
+    /// worksheet limits. Only active sparse records already present in the
+    /// materialized store are converted to explicit blanks; missing cells inside
+    /// the range are not synthesized, and a range with no active cells is a
+    /// successful no-op that does not dirty the session. Existing non-default
+    /// source style handles are preserved per cell, so dirty save_as() projects
+    /// empty styled `<c>` cells only for cells that were already represented.
+    /// Invalid ranges are mutation failures and update
+    /// WorkbookEditor::last_edit_error(). This is not dense range editing,
+    /// erase/tombstone semantics, range metadata recalculation, style
+    /// migration/merge/creation, or an A1 range parser.
+    void clear_cell_values(CellRange range);
 
     /// Removes one sparse-store cell record.
     ///

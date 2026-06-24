@@ -48,10 +48,12 @@ materialized source style handle on that coordinate. It still rejects
 caller-supplied non-default `StyleId` values, does not create or merge
 `xl/styles.xml` entries, and does not synthesize styles for newly inserted
 cells. Full cell replacement through `set_cell()` continues to drop prior
-source style handles by design. `clear_cell_value()` now covers the matching
-"clear contents" case: existing materialized cells become explicit blank cells
-while preserving the current source style handle, missing targets are successful
-no-ops, and the output remains non-tombstone sparse projection.
+source style handles by design. `clear_cell_value()` and
+`clear_cell_values(CellRange)` now cover the matching "clear contents" case:
+existing materialized cells become explicit blank cells while preserving the
+current source style handle, range clears affect only already represented sparse
+records, missing targets / missing-only ranges are successful no-ops, and the
+output remains non-tombstone sparse projection.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
@@ -2667,8 +2669,11 @@ schema validation.
   - `WorksheetEditor::try_cell()`
   - `WorksheetEditor::get_cell()`
   - `WorksheetEditor::set_cell()`
+  - `WorksheetEditor::set_cell_value()`
+  - `WorksheetEditor::clear_cell_value()`
+  - `WorksheetEditor::clear_cell_values(CellRange)`
   - `WorksheetEditor::erase_cell()`
-  - `WorksheetEditor` strict uppercase A1 cell overloads
+  - `WorksheetEditor` strict uppercase single-cell A1 overloads
   - `WorksheetCellReference`
   - `WorksheetCellSnapshot`
   - `WorksheetEditor::has_pending_changes()`

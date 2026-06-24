@@ -104,6 +104,23 @@ public:
         dirty_ = true;
     }
 
+    void clear_cell_values(const CellRange& range)
+    {
+        std::vector<CellPosition> positions;
+        for (const auto& [position, record] : store_.records()) {
+            (void)record;
+            if (position.row < range.first_row || position.row > range.last_row ||
+                position.column < range.first_column || position.column > range.last_column) {
+                continue;
+            }
+            positions.push_back(position);
+        }
+
+        for (const CellPosition& position : positions) {
+            clear_cell_value(position.row, position.column);
+        }
+    }
+
     [[nodiscard]] const CellRecord* try_cell(
         std::uint32_t row, std::uint32_t column) const
     {

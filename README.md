@@ -269,7 +269,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`erase_cell()`、row/column coordinate guardrails、这些 cell API 的
+  `set_cell()`、`set_cell_value()`、`clear_cell_value()`、`clear_cell_values(CellRange)`、
+  `erase_cell()`、row/column coordinate guardrails、这些 single-cell API 的
   strict uppercase A1 string overload、`WorksheetCellReference`、`WorksheetCellSnapshot`、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
   `cell_count()` 和 `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
@@ -531,8 +532,9 @@ no style handle；dirty output 不写 `s="0"`。非默认 style ids 仍会被拒
 row/column 和 A1 overload 的失败都不会 mutate sparse store、dirty materialized
 session 或 queue pending edit。`WorksheetEditor::set_cell_value()` 是 value-only
 编辑，会保留目标 cell 当前 materialized source style handle；
-`clear_cell_value()` 会把已有 cell 转成显式 blank 并保留该 style，missing cell
-是成功 no-op，不写 tombstone。
+`clear_cell_value()` / `clear_cell_values(CellRange)` 会把已有 cell 转成显式 blank
+并保留该 style；range 版本只清 already represented sparse records，不补齐 missing
+cells。missing cell / missing-only range 是成功 no-op，不写 tombstone。
 读取 source worksheet 时，显式默认 `s` 属性值精确为 `0`（例如 `s="0"`、
 `s='0'` 或 `s = "0"`）也会归一化为 no style handle；非默认 source style ids
 会先按 source `xl/styles.xml` 的 `cellXfs` 边界验证，再作为 workbook-local
@@ -569,6 +571,8 @@ sheet.set_cell(1, 1, fastxlsx::CellValue::text("updated"));
 sheet.set_cell(1, 2, fastxlsx::CellValue::text("default style")
     .with_style(fastxlsx::StyleId{})); // Normalized to no style handle.
 sheet.set_cell("D4", fastxlsx::CellValue::text("strict A1 ref"));
+sheet.clear_cell_value("B2");
+sheet.clear_cell_values(fastxlsx::CellRange{1, 1, 10, 5});
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
@@ -594,6 +598,9 @@ mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效
 range 内已经存在的 active sparse records，不补齐 missing cells。两者都不暴露内部
 iterator/lifetime，不是 dense range read 或 streaming sparse iterator，也不会同步
 worksheet metadata。
+`clear_cell_values(CellRange)` 使用同样的 1-based inclusive range guardrail，只把
+range 内已经存在的 active records 清成 explicit blanks 并保留各自 source style
+handle；missing cells 不会被合成，且当前没有 A1 range string parser。
 `WorksheetEditor::has_pending_changes()` 只检查该 borrowed handle 对应的
 materialized session 是否 dirty；它不触发 flush、不增加
 `WorkbookEditor::pending_change_count()`，也不更新 `last_edit_error()`。

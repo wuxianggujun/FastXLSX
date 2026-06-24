@@ -2372,6 +2372,8 @@ schema validation.
   - `fastxlsx.package_editor.sheetdata-catalog-audits`
   - `fastxlsx.package_editor.sheetdata-guards`
   - `fastxlsx.package_editor.sheetdata-linked`
+  - `fastxlsx.package_editor.sheetdata-linked-object-parts`
+  - `fastxlsx.package_editor.sheetdata-linked-background-vml`
   - `fastxlsx.package_editor.policy`
   - `fastxlsx.workbook_editor.core`
   - `fastxlsx.workbook_editor.public`

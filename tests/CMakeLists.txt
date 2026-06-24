@@ -555,8 +555,16 @@ add_fastxlsx_package_editor_sheetdata_target(
     test_package_editor_sheetdata_guards.cpp
 )
 add_fastxlsx_package_editor_sheetdata_target(
-    fastxlsx_package_editor_sheetdata_linked_tests
+    fastxlsx_package_editor_sheetdata_linked_core_tests
     test_package_editor_sheetdata_linked.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_linked_object_parts_tests
+    test_package_editor_sheetdata_linked_objects.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_linked_background_vml_tests
+    test_package_editor_sheetdata_linked_background.cpp
 )
 
 add_custom_target(fastxlsx_package_editor_sheetdata_catalog_tests
@@ -564,6 +572,13 @@ add_custom_target(fastxlsx_package_editor_sheetdata_catalog_tests
         fastxlsx_package_editor_sheetdata_catalog_core_tests
         fastxlsx_package_editor_sheetdata_catalog_guards_tests
         fastxlsx_package_editor_sheetdata_catalog_audits_tests
+)
+
+add_custom_target(fastxlsx_package_editor_sheetdata_linked_tests
+    DEPENDS
+        fastxlsx_package_editor_sheetdata_linked_core_tests
+        fastxlsx_package_editor_sheetdata_linked_object_parts_tests
+        fastxlsx_package_editor_sheetdata_linked_background_vml_tests
 )
 
 add_custom_target(fastxlsx_package_editor_sheetdata_tests
@@ -599,7 +614,15 @@ add_fastxlsx_package_editor_sheetdata_shard(
     sheetdata-guards fastxlsx_package_editor_sheetdata_guards_tests 60
 )
 add_fastxlsx_package_editor_sheetdata_shard(
-    sheetdata-linked fastxlsx_package_editor_sheetdata_linked_tests 60
+    sheetdata-linked fastxlsx_package_editor_sheetdata_linked_core_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-linked-object-parts
+    fastxlsx_package_editor_sheetdata_linked_object_parts_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-linked-background-vml
+    fastxlsx_package_editor_sheetdata_linked_background_vml_tests 60
 )
 
 function(add_fastxlsx_package_editor_cellstore_target target source_file)

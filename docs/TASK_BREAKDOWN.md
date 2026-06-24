@@ -29884,6 +29884,48 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.sheetdata-catalog" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.705 - Split PackageEditor sheetData linked executable by object family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageEditor sheetData linked-object executable by
+moving the linked-object preservation, worksheet-owned OLE/control object
+coverage, and background-picture / header-footer VML coverage into separate
+source files and executables, while keeping the existing
+`fastxlsx.package_editor.sheetdata-linked` CTest name stable for the core
+linked-object preservation shard.
+
+Output:
+- Extracted shared sheetData linked-object helpers to
+  `tests/test_package_editor_sheetdata_linked_common.hpp`.
+- Kept `tests/test_package_editor_sheetdata_linked.cpp` focused on the core
+  linked-object preservation roundtrip.
+- Added:
+  - `tests/test_package_editor_sheetdata_linked_objects.cpp`.
+  - `tests/test_package_editor_sheetdata_linked_background.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_sheetdata_linked_core_tests`,
+  `fastxlsx_package_editor_sheetdata_linked_object_parts_tests`, and
+  `fastxlsx_package_editor_sheetdata_linked_background_vml_tests`.
+- Kept `fastxlsx_package_editor_sheetdata_linked_tests` as a build-only
+  aggregate target depending on all linked shard executables.
+- Kept `fastxlsx.package_editor.sheetdata-linked` for the core linked-object
+  shard and added `fastxlsx.package_editor.sheetdata-linked-object-parts` and
+  `fastxlsx.package_editor.sheetdata-linked-background-vml`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no linked-object preservation semantic expansion, and no CTest
+  coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_sheetdata_linked_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.sheetdata-linked" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

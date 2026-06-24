@@ -1803,6 +1803,17 @@ The PackageEditor sheetData executable split removes
 `fastxlsx.package_editor.sheetdata*` CTest names stay stable, and
 `fastxlsx_package_editor_sheetdata_tests` remains a build-only aggregate. This
 is still test organization only.
+The sheetData catalog executable is now split further:
+`tests/test_package_editor_sheetdata_catalog.cpp` keeps catalog rename,
+by-name helper, and source workbook catalog failure coverage, while
+`tests/test_package_editor_sheetdata_catalog_guards.cpp` owns small-XML /
+source-part materialization guardrails and
+`tests/test_package_editor_sheetdata_catalog_audits.cpp` owns worksheet
+replacement payload / relationship audit policy coverage. The existing
+`fastxlsx.package_editor.sheetdata-catalog` CTest name stays stable for the
+catalog core shard, the new catalog guard/audit shard names are added, and
+`fastxlsx_package_editor_sheetdata_catalog_tests` remains a build-only
+aggregate. This is still test organization only.
 The follow-up WorkbookEditor public-shard split keeps
 `tests/test_workbook_editor_public.cpp` as the base public shard and moves the
 retry, public-state, and guardrail bodies into
@@ -2357,6 +2368,8 @@ schema validation.
   - `fastxlsx.package_editor.cellstore-catalog`
   - `fastxlsx.package_editor.sheetdata`
   - `fastxlsx.package_editor.sheetdata-catalog`
+  - `fastxlsx.package_editor.sheetdata-catalog-guards`
+  - `fastxlsx.package_editor.sheetdata-catalog-audits`
   - `fastxlsx.package_editor.sheetdata-guards`
   - `fastxlsx.package_editor.sheetdata-linked`
   - `fastxlsx.package_editor.policy`

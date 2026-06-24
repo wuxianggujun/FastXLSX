@@ -539,8 +539,16 @@ add_fastxlsx_package_editor_sheetdata_target(
     test_package_editor_sheetdata_base.cpp
 )
 add_fastxlsx_package_editor_sheetdata_target(
-    fastxlsx_package_editor_sheetdata_catalog_tests
+    fastxlsx_package_editor_sheetdata_catalog_core_tests
     test_package_editor_sheetdata_catalog.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_catalog_guards_tests
+    test_package_editor_sheetdata_catalog_guards.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_catalog_audits_tests
+    test_package_editor_sheetdata_catalog_audits.cpp
 )
 add_fastxlsx_package_editor_sheetdata_target(
     fastxlsx_package_editor_sheetdata_guards_tests
@@ -549,6 +557,13 @@ add_fastxlsx_package_editor_sheetdata_target(
 add_fastxlsx_package_editor_sheetdata_target(
     fastxlsx_package_editor_sheetdata_linked_tests
     test_package_editor_sheetdata_linked.cpp
+)
+
+add_custom_target(fastxlsx_package_editor_sheetdata_catalog_tests
+    DEPENDS
+        fastxlsx_package_editor_sheetdata_catalog_core_tests
+        fastxlsx_package_editor_sheetdata_catalog_guards_tests
+        fastxlsx_package_editor_sheetdata_catalog_audits_tests
 )
 
 add_custom_target(fastxlsx_package_editor_sheetdata_tests
@@ -572,7 +587,13 @@ endfunction()
 
 add_fastxlsx_package_editor_sheetdata_shard(sheetdata fastxlsx_package_editor_sheetdata_base_tests 60)
 add_fastxlsx_package_editor_sheetdata_shard(
-    sheetdata-catalog fastxlsx_package_editor_sheetdata_catalog_tests 60
+    sheetdata-catalog fastxlsx_package_editor_sheetdata_catalog_core_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-catalog-guards fastxlsx_package_editor_sheetdata_catalog_guards_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-catalog-audits fastxlsx_package_editor_sheetdata_catalog_audits_tests 60
 )
 add_fastxlsx_package_editor_sheetdata_shard(
     sheetdata-guards fastxlsx_package_editor_sheetdata_guards_tests 60

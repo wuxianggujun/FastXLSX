@@ -29843,6 +29843,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-linked-pivot" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.700 - Split PackageEditor sheetData catalog executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageEditor sheetData catalog test executable by
+moving the catalog rename, source-catalog lookup, and worksheet audit-policy
+families into focused source files and executables, while keeping the existing
+`fastxlsx.package_editor.sheetdata-catalog` CTest name stable for the catalog
+core shard.
+
+Output:
+- Extracted shared sheetData catalog helpers to
+  `tests/test_package_editor_sheetdata_catalog_common.hpp`.
+- Kept `tests/test_package_editor_sheetdata_catalog.cpp` focused on catalog
+  rename, by-name helper, and source workbook catalog failure coverage.
+- Added:
+  - `tests/test_package_editor_sheetdata_catalog_guards.cpp`.
+  - `tests/test_package_editor_sheetdata_catalog_audits.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_sheetdata_catalog_core_tests`,
+  `fastxlsx_package_editor_sheetdata_catalog_guards_tests`, and
+  `fastxlsx_package_editor_sheetdata_catalog_audits_tests`.
+- Kept `fastxlsx_package_editor_sheetdata_catalog_tests` as a build-only
+  aggregate target depending on all catalog shard executables.
+- Kept `fastxlsx.package_editor.sheetdata-catalog` for the catalog core shard
+  and added `fastxlsx.package_editor.sheetdata-catalog-guards` and
+  `fastxlsx.package_editor.sheetdata-catalog-audits`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no sheetData catalog semantic expansion, and no CTest coverage
+  removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_sheetdata_catalog_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.sheetdata-catalog" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -29348,6 +29348,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.688 - Split remaining PackageEditor core/c5/policy shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the last monolithic `tests/test_package_editor.cpp` source by
+splitting the remaining `core`, `c5`, and `policy` shard bodies into dedicated
+source files and executables while preserving the existing CTest names.
+
+Output:
+- Replaced `tests/test_package_editor.cpp` with:
+  - `tests/test_package_editor_core.cpp`.
+  - `tests/test_package_editor_c5.cpp`.
+  - `tests/test_package_editor_policy.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_core_tests`, `fastxlsx_package_editor_c5_tests`, and
+  `fastxlsx_package_editor_policy_tests`.
+- Kept `fastxlsx_package_editor_tests` as a build-only aggregate target
+  depending on the three per-shard executables.
+- Kept the public CTest names `fastxlsx.package_editor.core`,
+  `fastxlsx.package_editor.c5`, and `fastxlsx.package_editor.policy`; only the
+  executable behind each name changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no Patch semantics change, no minizip behavior change, and no CTest
+  coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

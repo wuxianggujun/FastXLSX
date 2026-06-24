@@ -1775,6 +1775,15 @@ with five per-shard files:
 `fastxlsx.package_editor.preservation-*` CTest names stay stable, and
 `fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
 This remains test-source and CTest budget hygiene only.
+The final PackageEditor monolith split removes
+`tests/test_package_editor.cpp` by moving the remaining `core`, `c5`, and
+`policy` shards into `tests/test_package_editor_core.cpp`,
+`tests/test_package_editor_c5.cpp`, and
+`tests/test_package_editor_policy.cpp`. The
+`fastxlsx.package_editor.core`, `fastxlsx.package_editor.c5`, and
+`fastxlsx.package_editor.policy` CTest names stay stable, and
+`fastxlsx_package_editor_tests` remains a build-only aggregate. This is still
+test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

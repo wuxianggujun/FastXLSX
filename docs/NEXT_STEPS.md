@@ -131,6 +131,13 @@ existing read diagnostics, and do not dirty, flush, reload, or mutate the
 materialized session. They are not dense row/column reads, row/column metadata
 inspection, iterators, metadata recalculation, or large-file low-memory random
 access.
+`WorksheetEditor::sparse_cells(std::string_view)` now adds the read-only strict
+uppercase A1 range convenience over the same sparse snapshot path: `A1` is a
+single-cell range, `A1:C3` is a rectangular range, and lowercase,
+sheet-qualified, absolute, whole-row / whole-column, multi-area, reversed,
+leading-zero, and out-of-limit references are rejected without changing
+`last_edit_error()`. This is not an A1 range mutation parser, dense range read,
+iterator, metadata recalculation, or large-file low-memory random access.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit

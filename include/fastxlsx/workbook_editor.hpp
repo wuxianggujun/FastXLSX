@@ -1259,6 +1259,25 @@ public:
         std::uint32_t column) const;
 
     /// Returns an owning row-major snapshot of active sparse records inside a
+    /// strict uppercase A1 range reference.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. The
+    /// reference must name one cell such as `A1` or one rectangular range such
+    /// as `A1:C3`; a single cell is treated as a one-cell range. Lowercase
+    /// references, sheet-qualified references, absolute references, whole-row
+    /// or whole-column references, reversed ranges, multi-area references,
+    /// leading-zero rows, and coordinates outside Excel limits throw
+    /// FastXlsxError. Only active sparse records currently present in the
+    /// parsed range are returned; missing cells are not synthesized as blanks.
+    /// This is a parsing convenience over sparse_cells(CellRange), not a dense
+    /// range read, range iterator, range metadata inspection, or large-file
+    /// low-memory random access. It does not mutate dirty state, update
+    /// WorkbookEditor::last_edit_error(), flush, or reload the materialized
+    /// session.
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells(
+        std::string_view range_reference) const;
+
+    /// Returns an owning row-major snapshot of active sparse records inside a
     /// rectangular range.
     ///
     /// API mode: In-memory / existing-workbook small-file inspection. The

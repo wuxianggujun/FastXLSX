@@ -994,6 +994,12 @@ std::vector<WorksheetCellSnapshot> WorksheetEditor::column_cells(std::uint32_t c
     });
 }
 
+std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(
+    std::string_view range_reference) const
+{
+    return sparse_cells(detail::parse_worksheet_editor_a1_cell_range(range_reference));
+}
+
 std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(CellRange range) const
 {
     detail::validate_worksheet_editor_cell_range(range);

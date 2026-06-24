@@ -33619,6 +33619,61 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.735 - WorksheetEditor strict A1 sparse range snapshot reads
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse range read convenience API;
+read-only strict A1 range parser, no A1 range mutation parser and no dense range
+read.
+
+Depends on: P8.382, P8.734.
+
+Touch files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_access.hpp`
+- `src/workbook_editor_worksheet_access.cpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: provide a user-facing read-only A1 range convenience for small-file
+In-memory sparse inspection without expanding mutation semantics.
+`WorksheetEditor::sparse_cells(std::string_view)` parses `A1` as a one-cell
+range and `A1:C3` as a rectangular range, then delegates to the existing
+`sparse_cells(CellRange)` snapshot path. It returns only active sparse records
+inside the parsed range and does not synthesize missing cells.
+
+Output:
+- Added internal `parse_worksheet_editor_a1_cell_range()` reusing the existing
+  strict uppercase single-cell parser and existing `CellRange` validation.
+- Added public `WorksheetEditor::sparse_cells(std::string_view)` with Doxygen
+  boundaries for read-only A1 range snapshot semantics.
+- Added public-state coverage for rectangular A1 range snapshots, single-cell
+  range snapshots, empty missing sparse ranges, owning-copy behavior, invalid
+  A1 range rejection, diagnostic preservation, and dirty-session save_as
+  non-interference.
+- Updated README, API design notes, and next-step status to distinguish this
+  read-only A1 range parser from dense range reads, A1 range mutation APIs,
+  iterators, metadata recalculation, and large-file random access.
+
+Non-goals / boundary:
+- No dense range read, A1 range mutation parser, A1 range write/clear/erase
+  overloads, whole-row / whole-column range parser, multi-area ranges,
+  lowercase normalization, sheet-qualified range parsing, absolute `$A$1`
+  parsing, iterator/lifetime exposure, missing-cell synthesis, metadata
+  recalculation, source reload, save-as flush, or large-file low-memory random
+  editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

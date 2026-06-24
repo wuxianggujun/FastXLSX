@@ -145,6 +145,7 @@ In-memory `WorksheetEditor` 切片：`WorksheetEditorOptions`、
 `erase_cells(span<WorksheetCellReference>)` /
 `erase_cells(initializer_list<WorksheetCellReference>)`、
 `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
+`sparse_cells(std::string_view)` strict uppercase A1 range overload、
 `row_cells()`、`column_cells()`、`cell_count()` 和
 `estimated_memory_usage()`。Small new-workbook
 `Workbook::rename_worksheet()` / `Workbook::remove_worksheet()` 也已落地，只修改
@@ -259,6 +260,15 @@ missing cells, do not update `last_edit_error()`, and do not dirty or reload the
 materialized session. They are conveniences over `sparse_cells(CellRange)`, not
 dense row/column reads, row/column metadata inspection, iterators, metadata
 recalculation, or large-file random access.
+
+Matrix addendum: P8.735 adds `WorksheetEditor::sparse_cells(std::string_view)`
+as a strict uppercase A1 read-only range convenience over
+`sparse_cells(CellRange)`. It accepts `A1` and rectangular `A1:C3` references,
+rejects lowercase, sheet-qualified, absolute, whole-row / whole-column,
+multi-area, reversed, leading-zero, and out-of-limit references, returns only
+active sparse records without missing-cell synthesis, preserves read
+diagnostics, and is not an A1 range mutation parser, dense range read,
+iterator, metadata recalculation, or large-file random access.
 
 因此接下来的 API 推进重点是继续保持三条路径清晰：`WorkbookEditor` 统一承载
 existing-file facade，但 whole-`<sheetData>` replacement 属于 Patch，`WorksheetEditor`
@@ -496,16 +506,21 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `set_cells()`、`set_cell_values()` 和 clear/erase batch/range 以外的 single-cell
   read/mutation API 的 strict uppercase A1 string overload、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
+  `sparse_cells(std::string_view)` strict uppercase A1 range overload、
   `row_cells()`、`column_cells()`、`cell_count()` 和
   `estimated_memory_usage()`。
   `try_cell()` 对 missing sparse record 返回 empty；`get_cell()` 对 missing sparse
   record 抛 `FastXlsxError`；explicit blank 返回 `CellValue::blank()`。
-  A1 overload 只接受单个 uppercase cell reference，例如 `A1` 或
+  single-cell A1 overload 只接受单个 uppercase cell reference，例如 `A1` 或
   `XFD1048576`；lowercase、range、zero 或 leading-zero row、zero column
-  和超出 Excel 上限的引用会被拒绝。
+  和超出 Excel 上限的引用会被拒绝。`sparse_cells(std::string_view)` 是
+  read-only strict uppercase A1 range convenience，接受 `A1` 或 `A1:B2`，
+  但拒绝 lowercase、sheet-qualified、absolute、whole-row / whole-column、
+  multi-area、reversed、leading-zero 和 out-of-limit references。
   `sparse_cells()` 返回 owning row-major `WorksheetCellSnapshot` vector，包含
-  explicit blank records。`sparse_cells(CellRange)` 返回 1-based inclusive
-  range 内已经存在的 active sparse records，不合成 missing cells。`row_cells()` /
+  explicit blank records。`sparse_cells(CellRange)` 和
+  `sparse_cells(std::string_view)` 返回 1-based inclusive range 内已经存在的
+  active sparse records，不合成 missing cells。`row_cells()` /
   `column_cells()` 返回单个 row 或 column 内已经 represented 的 active sparse records，
   同样不合成 missing cells、不更新 `last_edit_error()`。这些 snapshot reads 都不暴露
   内部 iterator/lifetime，不是 dense range / row / column read 或 streaming sparse
@@ -626,10 +641,11 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   strict uppercase single-cell A1 overload、
   `has_pending_changes()` dirty-state inspection、
   `sparse_cells()` owning snapshot、`sparse_cells(CellRange)` filtered owning
-  snapshot、`row_cells()` / `column_cells()` sparse row/column owning snapshots、
+  snapshot、`sparse_cells(std::string_view)` strict A1 range owning snapshot、
+  `row_cells()` / `column_cells()` sparse row/column owning snapshots、
   `cell_count()`、`estimated_memory_usage()`。
 - 候选：broader range iteration / streaming sparse record iterator / dense
-  range read。
+  range read / A1 range mutation parser。
 - `insert_rows(...)`、`delete_rows(...)`：只作为后续小文件能力候选；
   需要先证明 dimension/range metadata/operation mixing，不写成 ready API。
 

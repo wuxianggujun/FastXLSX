@@ -64,6 +64,33 @@ WorksheetEditorCellCoordinate parse_worksheet_editor_a1_cell_reference(
         static_cast<std::uint32_t>(row), static_cast<std::uint32_t>(column)};
 }
 
+CellRange parse_worksheet_editor_a1_cell_range(std::string_view range_reference)
+{
+    if (range_reference.empty()) {
+        throw FastXlsxError("WorksheetEditor cell range reference is empty");
+    }
+
+    const std::size_t separator = range_reference.find(':');
+    if (separator == std::string_view::npos) {
+        const WorksheetEditorCellCoordinate cell =
+            parse_worksheet_editor_a1_cell_reference(range_reference);
+        return CellRange {cell.row, cell.column, cell.row, cell.column};
+    }
+    if (separator == 0 || separator + 1 == range_reference.size() ||
+        range_reference.find(':', separator + 1) != std::string_view::npos) {
+        throw FastXlsxError("WorksheetEditor cell range reference is invalid");
+    }
+
+    const WorksheetEditorCellCoordinate first =
+        parse_worksheet_editor_a1_cell_reference(range_reference.substr(0, separator));
+    const WorksheetEditorCellCoordinate last =
+        parse_worksheet_editor_a1_cell_reference(range_reference.substr(separator + 1));
+
+    const CellRange range {first.row, first.column, last.row, last.column};
+    validate_worksheet_editor_cell_range(range);
+    return range;
+}
+
 void validate_worksheet_editor_cell_range(const CellRange& range)
 {
     (void)range_reference(range);

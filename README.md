@@ -288,6 +288,7 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   single-cell mutation/read API 的 strict uppercase A1 string overload、
   `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
+  `sparse_cells(std::string_view)` strict uppercase A1 range overload、
   `row_cells()`、`column_cells()`、`cell_count()` 和
   `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；caller-supplied default `StyleId{0}`
@@ -711,6 +712,7 @@ sheet.erase_cells(erase_targets);
 sheet.erase_cells({{6, 1}, {6, 2}});
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
+const auto a1_visible_cells = sheet.sparse_cells("A1:J10");
 const auto first_row_cells = sheet.row_cells(1);
 const auto first_column_cells = sheet.column_cells(1);
 sheet.erase_cell(2, 1);
@@ -724,9 +726,12 @@ const auto pending_summaries = editor.pending_worksheet_edits();
 editor.save_as("edited.xlsx");
 ```
 
-`WorksheetEditor` 的 A1 overload 只接受单个 uppercase cell reference，例如
-`A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
-行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
+`WorksheetEditor` 的 single-cell A1 overload 只接受单个 uppercase cell reference，
+例如 `A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
+行列上限的引用会被拒绝。`sparse_cells(std::string_view)` 是只读 strict uppercase
+A1 range convenience，接受 `A1` 或 `A1:B2`，但拒绝 lowercase、sheet-qualified、
+absolute、whole-row / whole-column、multi-area 和 reversed range references。
+row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
 `set_cell()` / `set_cells()` / `append_row()` / `set_row()` / `set_column()` / `erase_row()` /
 `erase_rows()` / `erase_column()` / `erase_columns()` / `set_cell_values()` /
@@ -736,8 +741,9 @@ invalid read throws but does not update `last_edit_error()`，invalid
 连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
 mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，
-包含 explicit blank records；`sparse_cells(CellRange)` 返回 1-based inclusive
-range 内已经存在的 active sparse records，不补齐 missing cells。`row_cells()` /
+包含 explicit blank records；`sparse_cells(CellRange)` 和
+`sparse_cells(std::string_view)` 返回 1-based inclusive range 内已经存在的 active
+sparse records，不补齐 missing cells。`row_cells()` /
 `column_cells()` 是同一 sparse snapshot 语义的 row/column convenience：只返回目标
 row 或 column 中已 represented 的 active sparse records，missing cells 不会被合成
 blank，invalid row/column read 不更新 `last_edit_error()`。这些读取 API 都不暴露内部

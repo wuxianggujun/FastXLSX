@@ -17,6 +17,8 @@ struct WorksheetEditorCellCoordinate {
 [[nodiscard]] WorksheetEditorCellCoordinate parse_worksheet_editor_a1_cell_reference(
     std::string_view cell_reference);
 
+[[nodiscard]] CellRange parse_worksheet_editor_a1_cell_range(std::string_view range_reference);
+
 void validate_worksheet_editor_cell_range(const CellRange& range);
 
 void validate_worksheet_editor_cell_coordinate(std::uint32_t row, std::uint32_t column);

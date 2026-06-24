@@ -2869,6 +2869,90 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "range sparse_cells should not revive erased source cells");
 }
 
+void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-a1-range-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-sparse-a1-range-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("a1-range-excluded"));
+    sheet.set_cell(3, 2, fastxlsx::CellValue::blank());
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("a1-range-new"));
+    sheet.erase_cell(2, 1);
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells = sheet.sparse_cells("B1:C3");
+    check(cells.size() == 3,
+        "A1 range sparse_cells should return only active sparse records inside the range");
+    check(cells[0].reference.row == 1 && cells[0].reference.column == 2 &&
+            cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+            cells[0].value.number_value() == 1.0,
+        "A1 range sparse_cells should include source-backed cells in row-major order");
+    check(cells[1].reference.row == 3 && cells[1].reference.column == 2 &&
+            cells[1].value.kind() == fastxlsx::CellValueKind::Blank,
+        "A1 range sparse_cells should include explicit blank records");
+    check(cells[2].reference.row == 3 && cells[2].reference.column == 3 &&
+            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[2].value.text_value() == "a1-range-new",
+        "A1 range sparse_cells should include edited records in range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> single_cell = sheet.sparse_cells("B1");
+    check(single_cell.size() == 1 && single_cell[0].reference.row == 1 &&
+            single_cell[0].reference.column == 2 &&
+            single_cell[0].value.kind() == fastxlsx::CellValueKind::Number &&
+            single_cell[0].value.number_value() == 1.0,
+        "A1 range sparse_cells should accept a single cell as a one-cell range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> empty_range =
+        sheet.sparse_cells("B2:C2");
+    check(empty_range.empty(),
+        "A1 range sparse_cells should not synthesize missing cells as blank snapshots");
+
+    sheet.set_cell(1, 2, fastxlsx::CellValue::number(2.0));
+    check(cells[0].value.number_value() == 1.0,
+        "A1 range sparse_cells should return owning snapshots, not borrowed records");
+    check(!editor.last_edit_error().has_value(),
+        "A1 range sparse_cells read should not update last_edit_error");
+
+    const std::size_t cell_count_before_invalid_ranges = sheet.cell_count();
+    const std::array<std::string_view, 13> invalid_ranges {
+        "",
+        "a1:B2",
+        "A1:b2",
+        "A0:B2",
+        "A01:B2",
+        "XFE1:XFE2",
+        "A1:A1048577",
+        "A1:B2:C3",
+        "B2:A1",
+        "A:C",
+        "1:3",
+        "$A$1:$B$2",
+        "Data!A1:B2",
+    };
+    for (const std::string_view invalid_range : invalid_ranges) {
+        check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid_range); }),
+            "A1 range sparse_cells should reject invalid range references");
+    }
+    check(sheet.cell_count() == cell_count_before_invalid_ranges,
+        "invalid A1 range sparse_cells calls should not mutate sparse store state");
+    check(!editor.last_edit_error().has_value(),
+        "invalid A1 range sparse_cells calls should not update last_edit_error");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "A1 range sparse_cells should not interfere with dirty-session save_as");
+    check_contains(worksheet_xml, "a1-range-excluded",
+        "cells outside the inspected A1 range should still persist");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "A1 range sparse_cells should not revive erased source cells");
+}
+
 void test_public_worksheet_editor_row_and_column_cells_snapshot()
 {
     const std::filesystem::path source =
@@ -3084,6 +3168,20 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
             "invalid range sparse_cells should throw before mutating public diagnostics");
         check(editor.last_edit_error() == prior_error,
             "invalid range sparse_cells should preserve the prior last_edit_error");
+    }
+    const std::array<std::string_view, 6> invalid_range_references {
+        "a1:B2",
+        "A1:B2:C3",
+        "B2:A1",
+        "A:C",
+        "$A$1:$B$2",
+        "Data!A1:B2",
+    };
+    for (const std::string_view invalid_range_reference : invalid_range_references) {
+        check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid_range_reference); }),
+            "invalid A1 range sparse_cells should throw before mutating public diagnostics");
+        check(editor.last_edit_error() == prior_error,
+            "invalid A1 range sparse_cells should preserve the prior last_edit_error");
     }
 
     check(!sheet.has_pending_changes(),
@@ -5987,6 +6085,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic();
             test_public_worksheet_editor_sparse_cells_snapshot();
             test_public_worksheet_editor_sparse_cells_range_snapshot();
+            test_public_worksheet_editor_sparse_cells_a1_range_snapshot();
             test_public_worksheet_editor_row_and_column_cells_snapshot();
             test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics();
             test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();

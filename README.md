@@ -269,8 +269,9 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`set_cells()`、`set_cell_value()`、`clear_cell_value()`、
-  `clear_cell_values(CellRange)`、`erase_cell()`、row/column coordinate guardrails、
+  `set_cell()`、`set_cells()`、`set_cell_value()`、`set_cell_values()`、
+  `clear_cell_value()`、`clear_cell_values(CellRange)`、
+  `clear_cell_values(span<WorksheetCellReference>)`、`erase_cell()`、row/column coordinate guardrails、
   single-cell mutation/read API 的 strict uppercase A1 string overload、
   `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
@@ -536,10 +537,13 @@ replacement batch：输入是显式 row/column 坐标序列，duplicate coordina
 覆盖前者；空 batch 是成功 no-op；任一坐标、非默认 style id、`max_cells` 或
 `memory_budget_bytes` 失败都会在状态变更前拒绝整个 batch。它不是 dense range writer
 或 A1 range parser，也不会保留被覆盖 cell 的旧 style。`WorksheetEditor::set_cell_value()`
-是 value-only 编辑，会保留目标 cell 当前 materialized source style handle；
-`clear_cell_value()` / `clear_cell_values(CellRange)` 会把已有 cell 转成显式 blank
-并保留该 style；range 版本只清 already represented sparse records，不补齐 missing
-cells。missing cell / missing-only range 是成功 no-op，不写 tombstone。
+和 `set_cell_values()` 是 value-only 编辑，会保留目标 cell 当前 materialized source
+style handle；批量版本同样支持 duplicate coordinates 后者覆盖前者、empty no-op 和
+失败不污染。`clear_cell_value()` / `clear_cell_values(CellRange)` /
+`clear_cell_values(span<WorksheetCellReference>)` 会把已有 cell 转成显式 blank 并保留该
+style；range 版本和坐标批量版本都只清 already represented sparse records，不补齐
+missing cells。missing cell / missing-only range / missing-only coordinate batch 是成功
+no-op，不写 tombstone。
 读取 source worksheet 时，显式默认 `s` 属性值精确为 `0`（例如 `s="0"`、
 `s='0'` 或 `s = "0"`）也会归一化为 no style handle；非默认 source style ids
 会先按 source `xl/styles.xml` 的 `cellXfs` 边界验证，再作为 workbook-local
@@ -582,8 +586,18 @@ std::vector<fastxlsx::WorksheetCellUpdate> updates = {
     {{3, 2}, fastxlsx::CellValue::blank()},
 };
 sheet.set_cells(updates);
+std::vector<fastxlsx::WorksheetCellUpdate> value_updates = {
+    {{1, 1}, fastxlsx::CellValue::text("value-only keeps existing style")},
+    {{4, 1}, fastxlsx::CellValue::text("missing target has no style")},
+};
+sheet.set_cell_values(value_updates);
 sheet.clear_cell_value("B2");
 sheet.clear_cell_values(fastxlsx::CellRange{1, 1, 10, 5});
+std::vector<fastxlsx::WorksheetCellReference> clear_targets = {
+    {4, 1},
+    {4, 2}, // Missing cells are not synthesized.
+};
+sheet.clear_cell_values(clear_targets);
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);
@@ -601,8 +615,9 @@ editor.save_as("edited.xlsx");
 `A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
 行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
-`set_cell()` / `set_cells()` / `erase_cell()` throws、updates `last_edit_error()`，并且不会 dirty 或
-mutate sparse store；连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
+`set_cell()` / `set_cells()` / `set_cell_values()` / `clear_cell_values(span)` /
+`erase_cell()` throws、updates `last_edit_error()`，并且不会 dirty 或 mutate sparse store；
+连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
 mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，
 包含 explicit blank records；`sparse_cells(CellRange)` 返回 1-based inclusive
@@ -612,6 +627,9 @@ worksheet metadata。
 `clear_cell_values(CellRange)` 使用同样的 1-based inclusive range guardrail，只把
 range 内已经存在的 active records 清成 explicit blanks 并保留各自 source style
 handle；missing cells 不会被合成，且当前没有 A1 range string parser。
+`clear_cell_values(span<WorksheetCellReference>)` 使用显式坐标列表做同样的清值语义：
+invalid coordinate 会拒绝整个 batch，missing coordinate 不合成 blank，duplicate
+coordinate 允许。
 `WorksheetEditor::has_pending_changes()` 只检查该 borrowed handle 对应的
 materialized session 是否 dirty；它不触发 flush、不增加
 `WorkbookEditor::pending_change_count()`，也不更新 `last_edit_error()`。

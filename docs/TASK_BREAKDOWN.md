@@ -33055,6 +33055,84 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.721 - WorksheetEditor sparse batch value-only replacement boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook sparse batch value-only API;
+source-style preserving, no style migration.
+
+Goal: provide a batch counterpart to `set_cell_value()` for small-file
+In-memory editing. `WorksheetEditor::set_cell_values()` accepts a span of
+explicit row/column `WorksheetCellUpdate` values, validates the whole batch
+before committing, preserves each target's currently materialized source style
+handle, and applies duplicate coordinates in input order so later updates win.
+Missing targets are inserted without a style, and empty input is a successful
+no-op.
+
+Output:
+- Added public `WorksheetEditor::set_cell_values()` with Doxygen boundary
+  notes.
+- Reused staged `CellStore` batch application so coordinate, caller-supplied
+  non-default style id, `max_cells`, and `memory_budget_bytes` failures reject
+  the whole batch without mutating the active materialized session.
+- Extended public source-style regressions to prove value-batch style rejection
+  no-state-pollution, empty batch no-op diagnostic cleanup, source-style
+  preservation, duplicate-coordinate later-wins behavior, missing-target
+  no-style insertion, and dirty save-as projection through later edits.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  value-only batch replacement from full-cell batch replacement, dense range
+  editing, A1 range parsing, style migration/merge, range metadata
+  recalculation, and large-file low-memory random editing.
+
+Non-goals / boundary:
+- No dense matrix/range writer, no A1 range string parser, no style id write
+  API, no styles.xml creation, no style migration or merge, no sharedStrings
+  migration expansion, no row/column insert/delete, no range metadata
+  recalculation, no relationship/content-type repair, and no large-file random
+  editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+## P8.722 - WorksheetEditor sparse coordinate batch clear boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook coordinate-batch clear API; no
+tombstone model and no dense range writer.
+
+Goal: provide an explicit-coordinate batch counterpart to
+`clear_cell_value()`. `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
+validates every coordinate before committing, converts only represented sparse
+records to explicit blanks, preserves each record's current source style handle,
+and treats missing coordinates / empty input as successful no-ops.
+
+Output:
+- Added public `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
+  with Doxygen boundary notes.
+- Added staged coordinate clear logic so invalid coordinates reject the whole
+  batch without mutating the active materialized session.
+- Extended public source-style regressions to prove invalid coordinate batch
+  no-state-pollution, empty batch no-op diagnostic cleanup, represented-cell
+  clear, missing-coordinate non-synthesis, and dirty save-as projection.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  coordinate clear from dense range editing, tombstones, style migration/merge,
+  range metadata recalculation, and A1 range parsing.
+
+Non-goals / boundary:
+- No A1 range string parser, dense matrix/range writer, tombstone model,
+  row/column delete/insert, style id write API, styles.xml creation, style
+  migration/merge, sharedStrings migration, range metadata recalculation,
+  relationship/content-type repair, or large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -43,17 +43,19 @@ or invalid sharedStrings relationships/targets, missing or wrong-typed parts,
 malformed sharedStrings XML, and invalid indexes fail fast for worksheets that
 actually require source shared strings instead of being repaired or guessed.
 The current `WorksheetEditor` style boundary now has a narrow value-only edit
-API: `set_cell_value()` replaces a cell's value while preserving the currently
-materialized source style handle on that coordinate. It still rejects
-caller-supplied non-default `StyleId` values, does not create or merge
-`xl/styles.xml` entries, and does not synthesize styles for newly inserted
-cells. Full cell replacement through `set_cell()` continues to drop prior
-source style handles by design. `clear_cell_value()` and
-`clear_cell_values(CellRange)` now cover the matching "clear contents" case:
-existing materialized cells become explicit blank cells while preserving the
-current source style handle, range clears affect only already represented sparse
-records, missing targets / missing-only ranges are successful no-ops, and the
-output remains non-tombstone sparse projection.
+API: `set_cell_value()` and `set_cell_values()` replace cell values while
+preserving currently materialized source style handles on those coordinates.
+They still reject caller-supplied non-default `StyleId` values, do not create
+or merge `xl/styles.xml` entries, and do not synthesize styles for newly
+inserted cells. Full cell replacement through `set_cell()` continues to drop
+prior source style handles by design. `clear_cell_value()`,
+`clear_cell_values(CellRange)`, and
+`clear_cell_values(span<WorksheetCellReference>)` now cover the matching
+"clear contents" case: existing materialized cells become explicit blank cells
+while preserving the current source style handle, range / coordinate-batch
+clears affect only already represented sparse records, missing targets /
+missing-only ranges / missing-only coordinate batches are successful no-ops,
+and the output remains non-tombstone sparse projection.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input
@@ -61,6 +63,11 @@ winning, empty batches are no-ops, and any coordinate/style/budget failure
 rejects the entire batch before mutating the active materialized session. This
 is still not a dense range writer, style-preserving edit, A1 range parser, or
 large-file low-memory random-editing path.
+The value-only batch and coordinate-clear batch now use the same preflight /
+staged sparse-store hygiene: `set_cell_values()` preserves existing source
+styles while duplicate coordinates remain later-wins, and
+`clear_cell_values(span<WorksheetCellReference>)` clears only represented
+coordinates without synthesizing missing cells.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
@@ -2678,8 +2685,10 @@ schema validation.
   - `WorksheetEditor::set_cell()`
   - `WorksheetEditor::set_cells()`
   - `WorksheetEditor::set_cell_value()`
+  - `WorksheetEditor::set_cell_values()`
   - `WorksheetEditor::clear_cell_value()`
   - `WorksheetEditor::clear_cell_values(CellRange)`
+  - `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
   - `WorksheetEditor::erase_cell()`
   - `WorksheetEditor` strict uppercase single-cell A1 overloads
   - `WorksheetCellReference`

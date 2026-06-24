@@ -200,6 +200,45 @@ void WorksheetEditor::set_cell_value(
     }
 }
 
+void WorksheetEditor::set_cell_values(std::span<const WorksheetCellUpdate> cells)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        for (const WorksheetCellUpdate& cell : cells) {
+            detail::validate_worksheet_editor_cell_coordinate(
+                cell.reference.row, cell.reference.column);
+            if (has_non_default_style(cell.value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::set_cell_values() does not support caller-supplied non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (cells.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = session->store();
+        for (const WorksheetCellUpdate& cell : cells) {
+            const detail::CellRecord* existing =
+                staged_store.try_cell(cell.reference.row, cell.reference.column);
+            staged_store.set_cell(cell.reference.row, cell.reference.column,
+                with_preserved_source_style(cell.value, existing));
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue& value)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -272,6 +311,50 @@ void WorksheetEditor::clear_cell_values(CellRange range)
         }
 
         session->clear_cell_values(range);
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::clear_cell_values(std::span<const WorksheetCellReference> cells)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        for (const WorksheetCellReference& cell : cells) {
+            detail::validate_worksheet_editor_cell_coordinate(cell.row, cell.column);
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (cells.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = session->store();
+        bool cleared_any_cell = false;
+        for (const WorksheetCellReference& cell : cells) {
+            const detail::CellRecord* existing = staged_store.try_cell(cell.row, cell.column);
+            if (existing == nullptr) {
+                continue;
+            }
+
+            CellValue value = CellValue::blank();
+            if (existing->style_id.has_value()) {
+                value = value.with_style(*existing->style_id);
+            }
+            staged_store.set_cell(cell.row, cell.column, value);
+            cleared_any_cell = true;
+        }
+
+        if (cleared_any_cell) {
+            session->replace_store(std::move(staged_store));
+        }
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);

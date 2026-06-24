@@ -604,14 +604,14 @@ struct WorkbookEditorRenameOptions {
 /// source styles part is preserved. `set_cells()` shares the full-cell
 /// replacement semantics of `set_cell()`: caller-supplied non-default style ids
 /// are rejected, and prior source styles on overwritten cells are dropped.
-/// `set_cell_value()` can replace a cell value while preserving the currently
-/// materialized source style handle on that same coordinate. `clear_cell_value()`
-/// and `clear_cell_values(CellRange)` can turn existing materialized cells into
-/// explicit blanks while preserving those same style handles; missing cells are
-/// successful no-ops and range clears do not synthesize blank records for
-/// missing coordinates. This does not migrate or merge styles, synthesize styles
-/// for missing cells, create tombstones, or allow caller-supplied foreign style
-/// handles. Empty,
+/// `set_cell_value()` and `set_cell_values()` can replace cell values while
+/// preserving currently materialized source style handles on those coordinates.
+/// `clear_cell_value()` and the `clear_cell_values()` overloads can turn
+/// existing materialized cells into explicit blanks while preserving those same
+/// style handles; missing cells are successful no-ops and range or coordinate
+/// batch clears do not synthesize blank records for missing coordinates. This
+/// does not migrate or merge styles, synthesize styles for missing cells,
+/// create tombstones, or allow caller-supplied foreign style handles. Empty,
 /// valueless, unquoted, unterminated, padded, signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -712,6 +712,25 @@ public:
     void set_cell_value(
         std::uint32_t row, std::uint32_t column, const CellValue& value);
 
+    /// Applies sparse value-only replacements as one preflighted batch.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Each update
+    /// names one explicit 1-based row/column coordinate. The input order is
+    /// respected and duplicate coordinates are allowed; later updates win after
+    /// the whole batch passes validation. Existing target cells keep their
+    /// current materialized source StyleId, including when an earlier update in
+    /// the same batch preserved that handle. Missing target cells are inserted
+    /// without a style. Empty input is a successful no-op that does not dirty
+    /// the materialized session and clears prior public edit diagnostics.
+    /// Invalid coordinates, caller-supplied non-default StyleId handles,
+    /// max_cells violations, or memory_budget_bytes violations reject the
+    /// entire batch before the active sparse store is mutated.
+    ///
+    /// This is a sparse value-only convenience, not a dense range writer, A1
+    /// range parser, style migration/merge API, range metadata recalculation,
+    /// or large-file low-memory random-editing path.
+    void set_cell_values(std::span<const WorksheetCellUpdate> cells);
+
     /// Sets or replaces one sparse-store cell value by strict uppercase A1
     /// reference.
     ///
@@ -775,6 +794,25 @@ public:
     /// erase/tombstone semantics, range metadata recalculation, style
     /// migration/merge/creation, or an A1 range parser.
     void clear_cell_values(CellRange range);
+
+    /// Clears represented cell values at explicit sparse coordinates.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Each
+    /// coordinate is 1-based and validated against Excel worksheet limits. The
+    /// input order is respected, duplicate coordinates are allowed, and only
+    /// active sparse records already present in the materialized store are
+    /// converted to explicit blanks; missing coordinates are no-ops and are not
+    /// synthesized. Existing non-default source style handles are preserved per
+    /// cell, so dirty save_as() projects empty styled `<c>` cells only for
+    /// cells that were already represented. Empty input, or input containing no
+    /// represented cells, is a successful no-op that does not dirty the session.
+    /// Invalid coordinates reject the entire batch before the active sparse
+    /// store is mutated and update WorkbookEditor::last_edit_error().
+    ///
+    /// This is not dense range editing, erase/tombstone semantics, range
+    /// metadata recalculation, style migration/merge/creation, or an A1 range
+    /// parser.
+    void clear_cell_values(std::span<const WorksheetCellReference> cells);
 
     /// Removes one sparse-store cell record.
     ///

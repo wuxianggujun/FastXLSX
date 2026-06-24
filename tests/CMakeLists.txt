@@ -317,6 +317,18 @@ add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_linked_tests
     test_package_editor_preservation_linked.cpp
 )
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_linked_pivot_tests
+    test_package_editor_preservation_linked_pivot.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_linked_external_links_tests
+    test_package_editor_preservation_linked_external_links.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_linked_custom_xml_tests
+    test_package_editor_preservation_linked_custom_xml.cpp
+)
 
 add_custom_target(fastxlsx_package_editor_preservation_tests
     DEPENDS
@@ -325,6 +337,9 @@ add_custom_target(fastxlsx_package_editor_preservation_tests
         fastxlsx_package_editor_preservation_resources_tests
         fastxlsx_package_editor_preservation_comments_tests
         fastxlsx_package_editor_preservation_linked_tests
+        fastxlsx_package_editor_preservation_linked_pivot_tests
+        fastxlsx_package_editor_preservation_linked_external_links_tests
+        fastxlsx_package_editor_preservation_linked_custom_xml_tests
 )
 
 function(add_fastxlsx_package_editor_preservation_shard shard target timeout_seconds)
@@ -352,6 +367,18 @@ add_fastxlsx_package_editor_preservation_shard(
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked fastxlsx_package_editor_preservation_linked_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-linked-pivot
+    fastxlsx_package_editor_preservation_linked_pivot_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-linked-external-links
+    fastxlsx_package_editor_preservation_linked_external_links_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-linked-custom-xml
+    fastxlsx_package_editor_preservation_linked_custom_xml_tests 60
 )
 
 function(add_fastxlsx_package_editor_sheetdata_target target source_file)

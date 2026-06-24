@@ -516,7 +516,7 @@ std::filesystem::path output_path(std::string_view name)
 
 bool is_package_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "preservation-linked";
+    return shard == "all" || shard == "preservation-linked-external-links";
 }
 
 std::string_view package_editor_shard_from_args(int argc, char* argv[])
@@ -1610,244 +1610,1003 @@ void rewrite_linked_object_source_package(const LinkedObjectSourcePackage& sourc
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
 
-void test_package_editor_worksheet_rewrite_preserves_registered_comments_part()
+void test_package_editor_worksheet_rewrite_preserves_external_links()
 {
-    const CommentsSourcePackage source =
-        write_comments_source_package("fastxlsx-package-editor-comments-source.xlsx");
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package("fastxlsx-package-editor-external-links-source.xlsx");
     const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-comments-output.xlsx");
+        output_path("fastxlsx-package-editor-external-links-output.xlsx");
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName comments_part("/xl/comments/comment1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
     const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
 
     const std::string replacement_sheet =
         R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)"
+        R"(<sheetData><row r="1"><c r="A1"><v>512</v></c></row></sheetData>)"
         R"(</worksheet>)";
     replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
 
-    const auto* comments_plan = editor.edit_plan().find_part(comments_part);
-    check(comments_plan != nullptr,
-        "comments part should remain visible in worksheet rewrite edit plan");
-    check(comments_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "comments part should remain copy-original during worksheet rewrite");
-    check(comments_plan->reason.find("worksheet relationship rId1")
-            != std::string::npos,
-        "comments copy reason should come from worksheet relationship traversal");
-    check(comments_plan->reason.find("relationships/comments") != std::string::npos,
-        "comments copy reason should include relationship type");
-    check(comments_plan->relationship_owner_part == worksheet_part.value(),
-        "comments copy audit should keep structured relationship owner");
-    check(comments_plan->relationship_id == "rId1",
-        "comments copy audit should keep structured relationship id");
-    check(comments_plan->relationship_type
-            == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments",
-        "comments copy audit should keep structured relationship type");
-    check(comments_plan->relationship_target == "../comments/comment1.xml",
-        "comments copy audit should keep structured relationship target");
-    const auto* worksheet_relationships_plan =
-        editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels");
-    check(worksheet_relationships_plan != nullptr,
-        "comments worksheet rewrite should audit preserved worksheet relationships");
-    check(worksheet_relationships_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "comments worksheet relationships should be copy-original in package-entry audit");
-    check(worksheet_relationships_plan->audit_kind
-            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
-        "comments worksheet relationships audit should keep structured role");
-    check(worksheet_relationships_plan->owner_part == worksheet_part.value(),
-        "comments worksheet relationships audit should keep owner part");
-    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
-        "comments worksheet rewrite should not rewrite content types without calcChain");
+    const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
+    check(external_link_plan != nullptr,
+        "external link part should remain visible in worksheet rewrite edit plan");
+    check(external_link_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "external link part should remain copy-original during worksheet rewrite");
     check(editor.edit_plan().find_part(unknown_part)->write_mode
             == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "comments worksheet rewrite should keep unrelated unknown part copy-original");
+        "external link worksheet rewrite should keep unrelated unknown part copy-original");
+
+    const auto* workbook_relationships_plan =
+        editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels");
+    check(workbook_relationships_plan != nullptr,
+        "external link worksheet rewrite should audit preserved workbook relationships");
+    check(workbook_relationships_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "external link workbook relationships should be copy-original in package-entry audit");
+    check(workbook_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "external link workbook relationships audit should keep structured role");
+    check(workbook_relationships_plan->owner_part == workbook_part.value(),
+        "external link workbook relationships audit should keep owner part");
+
+    const auto* external_link_relationships_plan =
+        editor.edit_plan().find_package_entry(
+            "xl/externalLinks/_rels/externalLink1.xml.rels");
+    check(external_link_relationships_plan != nullptr,
+        "external link worksheet rewrite should audit preserved externalLink relationships");
+    check(external_link_relationships_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink relationships should be copy-original in package-entry audit");
+    check(external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink relationships audit should keep structured role");
+    check(external_link_relationships_plan->owner_part == external_link_part.value(),
+        "externalLink relationships audit should keep owner part");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "external link worksheet rewrite should not rewrite content types without calcChain");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(output_plan.full_calculation_on_load,
+        "external link worksheet rewrite output plan should request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
+        "external link worksheet rewrite output plan should expose calcChain removal policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "external link worksheet rewrite output plan should not invent dependency audits");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "external link worksheet rewrite output plan should stream-rewrite worksheet");
+    check_output_entry_part_context(output_plan.entries, "xl/worksheets/sheet1.xml",
+        true, worksheet_part.value(),
+        "external link worksheet rewrite output plan should classify worksheet as a part");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "external link worksheet rewrite output plan should update workbook metadata");
+    check_output_entry_part_context(output_plan.entries, "xl/workbook.xml", true,
+        workbook_part.value(),
+        "external link worksheet rewrite output plan should classify workbook as a part");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "external link worksheet rewrite output plan should preserve workbook relationships");
+    check_output_entry_part_context(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        false, "",
+        "external link worksheet rewrite output plan should classify workbook relationships");
+    const auto* output_workbook_relationships_plan =
+        find_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels");
+    check(output_workbook_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "external link worksheet rewrite output plan should keep workbook relationship role");
+    check(output_workbook_relationships_plan->owner_part == workbook_part.value(),
+        "external link worksheet rewrite output plan should keep workbook owner context");
+    check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "external link worksheet rewrite output plan should preserve externalLink part");
+    check_output_entry_part_context(output_plan.entries, "xl/externalLinks/externalLink1.xml",
+        true, external_link_part.value(),
+        "external link worksheet rewrite output plan should classify externalLink part");
+    check_output_entry_plan(output_plan.entries,
+        "xl/externalLinks/_rels/externalLink1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "external link worksheet rewrite output plan should preserve owner relationships");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/externalLinks/_rels/externalLink1.xml.rels", false, "",
+        "external link worksheet rewrite output plan should classify owner relationships");
+    const auto* output_external_link_relationships_plan =
+        find_output_entry_plan(output_plan.entries,
+            "xl/externalLinks/_rels/externalLink1.xml.rels");
+    check(output_external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "external link worksheet rewrite output plan should keep owner relationship role");
+    check(output_external_link_relationships_plan->owner_part
+            == external_link_part.value(),
+        "external link worksheet rewrite output plan should keep externalLink owner context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "external link worksheet rewrite output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "external link worksheet rewrite output plan should classify content types");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "external link worksheet rewrite output plan should preserve unknown entry");
+    check_output_entry_part_context(output_plan.entries, "custom/opaque.bin", true,
+        unknown_part.value(),
+        "external link worksheet rewrite output plan should classify unknown entry");
 
     editor.save_as(output);
 
     const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/comments/comment1.xml") != entries.end(),
-        "comments worksheet rewrite output should keep comments part entry");
-    check(entries.find("xl/worksheets/_rels/sheet1.xml.rels") != entries.end(),
-        "comments worksheet rewrite output should keep worksheet relationships entry");
+    check(entries.find("xl/externalLinks/externalLink1.xml") != entries.end(),
+        "external link worksheet rewrite output should keep externalLink part");
+    check(entries.find("xl/externalLinks/_rels/externalLink1.xml.rels") != entries.end(),
+        "external link worksheet rewrite output should keep externalLink relationships");
 
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
     check(output_reader.read_entry("xl/worksheets/sheet1.xml") == replacement_sheet,
-        "comments worksheet rewrite should write replacement worksheet XML");
-    check(output_reader.read_entry("xl/comments/comment1.xml") == source.comments,
-        "comments worksheet rewrite should preserve comments bytes");
-    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
-            == source.worksheet_relationships,
-        "comments worksheet rewrite should preserve worksheet relationships bytes");
-    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
-        "comments worksheet rewrite should preserve content types bytes");
-    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
-        "comments worksheet rewrite should preserve package relationships bytes");
+        "external link worksheet rewrite should write replacement worksheet XML");
+    const std::string output_workbook = output_reader.read_entry("xl/workbook.xml");
+    check_contains(output_workbook, "<externalReferences>",
+        "external link worksheet rewrite should preserve workbook externalReferences");
+    check_contains(output_workbook, R"(r:id="rIdExternalLink")",
+        "external link worksheet rewrite should preserve workbook externalReference id");
+    check_contains(output_workbook, R"(<calcPr calcId="124519" fullCalcOnLoad="1"/>)",
+        "external link worksheet rewrite should still request full calculation");
     check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
             == source.workbook_relationships,
-        "comments worksheet rewrite should preserve workbook relationships bytes");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "comments worksheet rewrite should preserve unknown bytes");
-
-    const auto* worksheet_relationships = output_reader.relationships_for(worksheet_part);
-    check(worksheet_relationships != nullptr,
-        "comments worksheet rewrite should keep worksheet relationships readable");
-    const auto* comments_relationship = worksheet_relationships->find_by_id("rId1");
-    check(comments_relationship != nullptr,
-        "comments worksheet rewrite should keep comments relationship id");
-    check(comments_relationship->target == "../comments/comment1.xml",
-        "comments worksheet rewrite should not rewrite comments target");
-    check(comments_relationship->target_mode
-            == fastxlsx::detail::Relationship::TargetMode::Internal,
-        "comments worksheet rewrite should keep comments target mode");
-    check(output_reader.relationships_for(comments_part) == nullptr,
-        "comments worksheet rewrite should not invent comments owner relationships");
-    check(output_reader.content_types().override_for(comments_part) != nullptr,
-        "comments worksheet rewrite should preserve comments content type override");
-}
-
-void test_package_editor_worksheet_rewrite_preserves_threaded_comments_and_persons()
-{
-    const ThreadedCommentsSourcePackage source =
-        write_threaded_comments_source_package(
-            "fastxlsx-package-editor-threaded-comments-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-threaded-comments-output.xlsx");
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName legacy_comments_part("/xl/comments/comment1.xml");
-    const fastxlsx::detail::PartName threaded_comments_part(
-        "/xl/threadedComments/threadedComment1.xml");
-    const fastxlsx::detail::PartName persons_part("/xl/persons/person.xml");
-    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
-
-    const std::string replacement_sheet =
-        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheetData><row r="1"><c r="A1"><v>84</v></c></row></sheetData>)"
-        R"(</worksheet>)";
-    replace_worksheet_part_from_single_chunk_source(editor, worksheet_part, replacement_sheet);
-
-    const auto* threaded_plan = editor.edit_plan().find_part(threaded_comments_part);
-    check(threaded_plan != nullptr,
-        "threaded comments part should remain visible in worksheet rewrite edit plan");
-    check(threaded_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "threaded comments part should remain copy-original during worksheet rewrite");
-    check(threaded_plan->reason.find("worksheet relationship rIdThreaded")
-            != std::string::npos,
-        "threaded comments copy reason should come from worksheet relationship traversal");
-    check(threaded_plan->reason.find("relationships/threadedComment") != std::string::npos,
-        "threaded comments copy reason should include relationship type");
-    check(threaded_plan->relationship_owner_part == worksheet_part.value(),
-        "threaded comments copy audit should keep structured relationship owner");
-    check(threaded_plan->relationship_id == "rIdThreaded",
-        "threaded comments copy audit should keep structured relationship id");
-    check(threaded_plan->relationship_type
-            == "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment",
-        "threaded comments copy audit should keep structured relationship type");
-    check(threaded_plan->relationship_target == "../threadedComments/threadedComment1.xml",
-        "threaded comments copy audit should keep structured relationship target");
-
-    const auto* legacy_comments_plan = editor.edit_plan().find_part(legacy_comments_part);
-    check(legacy_comments_plan != nullptr
-            && legacy_comments_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "legacy comments should remain copy-original alongside threaded comments");
-    const auto* persons_plan = editor.edit_plan().find_part(persons_part);
-    check(persons_plan != nullptr
-            && persons_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "persons part should remain copy-original during worksheet rewrite");
-    check(editor.edit_plan().find_part(unknown_part)->write_mode
-            == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "threaded comments worksheet rewrite should keep unrelated unknown part copy-original");
-
-    const auto* worksheet_relationships_plan =
-        editor.edit_plan().find_package_entry("xl/worksheets/_rels/sheet1.xml.rels");
-    check(worksheet_relationships_plan != nullptr,
-        "threaded comments worksheet rewrite should audit preserved worksheet relationships");
-    check(worksheet_relationships_plan->write_mode
-            == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "threaded comments worksheet relationships should be copy-original in package-entry audit");
-    check(worksheet_relationships_plan->audit_kind
-            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
-        "threaded comments worksheet relationships audit should keep structured role");
-    check(worksheet_relationships_plan->owner_part == worksheet_part.value(),
-        "threaded comments worksheet relationships audit should keep owner part");
-    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
-        "threaded comments worksheet rewrite should not rewrite content types without calcChain");
-
-    editor.save_as(output);
-
-    const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/threadedComments/threadedComment1.xml") != entries.end(),
-        "threaded comments worksheet rewrite output should keep threaded comments part");
-    check(entries.find("xl/persons/person.xml") != entries.end(),
-        "threaded comments worksheet rewrite output should keep persons part");
-    check(entries.find("xl/worksheets/_rels/sheet1.xml.rels") != entries.end(),
-        "threaded comments worksheet rewrite output should keep worksheet relationships");
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == replacement_sheet,
-        "threaded comments worksheet rewrite should write replacement worksheet XML");
-    check(output_reader.read_entry("xl/comments/comment1.xml") == source.comments,
-        "threaded comments worksheet rewrite should preserve legacy comments bytes");
-    check(output_reader.read_entry("xl/threadedComments/threadedComment1.xml")
-            == source.threaded_comments,
-        "threaded comments worksheet rewrite should preserve threaded comments bytes");
-    check(output_reader.read_entry("xl/persons/person.xml") == source.persons,
-        "threaded comments worksheet rewrite should preserve persons bytes");
-    check(output_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
-            == source.worksheet_relationships,
-        "threaded comments worksheet rewrite should preserve worksheet relationships bytes");
-    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
-            == source.workbook_relationships,
-        "threaded comments worksheet rewrite should preserve workbook relationships bytes");
+        "external link worksheet rewrite should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            == source.external_link,
+        "external link worksheet rewrite should preserve externalLink bytes");
+    check(output_reader.read_entry("xl/externalLinks/_rels/externalLink1.xml.rels")
+            == source.external_link_relationships,
+        "external link worksheet rewrite should preserve externalLink relationships bytes");
     check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
-        "threaded comments worksheet rewrite should preserve content types bytes");
+        "external link worksheet rewrite should preserve content types bytes");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "threaded comments worksheet rewrite should preserve unknown bytes");
+        "external link worksheet rewrite should preserve unknown bytes");
 
-    const auto* worksheet_relationships = output_reader.relationships_for(worksheet_part);
-    check(worksheet_relationships != nullptr,
-        "threaded comments worksheet rewrite should keep worksheet relationships readable");
-    const auto* threaded_relationship = worksheet_relationships->find_by_id("rIdThreaded");
-    check(threaded_relationship != nullptr,
-        "threaded comments worksheet rewrite should keep threaded comments relationship id");
-    check(threaded_relationship->target == "../threadedComments/threadedComment1.xml",
-        "threaded comments worksheet rewrite should not rewrite threaded comments target");
-    check(threaded_relationship->target_mode
-            == fastxlsx::detail::Relationship::TargetMode::Internal,
-        "threaded comments worksheet rewrite should keep threaded comments target mode");
     const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
     check(workbook_relationships != nullptr,
-        "threaded comments worksheet rewrite should keep workbook relationships readable");
-    const auto* person_relationship = workbook_relationships->find_by_id("rIdPerson");
-    check(person_relationship != nullptr,
-        "threaded comments worksheet rewrite should keep persons workbook relationship id");
-    check(person_relationship->target == "persons/person.xml",
-        "threaded comments worksheet rewrite should not rewrite persons target");
+        "external link worksheet rewrite should keep workbook relationships readable");
+    const auto* external_link_relationship =
+        workbook_relationships->find_by_id("rIdExternalLink");
+    check(external_link_relationship != nullptr,
+        "external link worksheet rewrite should keep workbook externalLink relationship id");
+    check(external_link_relationship->target == "externalLinks/externalLink1.xml",
+        "external link worksheet rewrite should not rewrite workbook externalLink target");
+
+    const auto* external_link_relationships =
+        output_reader.relationships_for(external_link_part);
+    check(external_link_relationships != nullptr,
+        "external link worksheet rewrite should keep externalLink relationships readable");
+    const auto* external_workbook_relationship =
+        external_link_relationships->find_by_id("rIdExternalWorkbook");
+    check(external_workbook_relationship != nullptr,
+        "external link worksheet rewrite should keep external workbook relationship id");
+    check(external_workbook_relationship->target
+            == "file:///C:/fastxlsx/source.xlsx",
+        "external link worksheet rewrite should preserve external workbook target");
+    check(external_workbook_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::External,
+        "external link worksheet rewrite should preserve external target mode");
 
     const fastxlsx::detail::RelationshipGraph output_graph =
         output_reader.relationship_graph();
-    check(output_graph.relationships_for(worksheet_part)->find_by_id("rIdThreaded") != nullptr,
-        "relationship graph should keep worksheet threaded comments relationship");
-    check(output_graph.relationships_for(workbook_part)->find_by_id("rIdPerson") != nullptr,
-        "relationship graph should keep workbook persons relationship");
-    check(output_reader.relationships_for(threaded_comments_part) == nullptr,
-        "threaded comments worksheet rewrite should not invent threaded comments owner relationships");
-    check(output_reader.relationships_for(persons_part) == nullptr,
-        "threaded comments worksheet rewrite should not invent persons owner relationships");
-    check(output_reader.content_types().override_for(threaded_comments_part) != nullptr,
-        "threaded comments worksheet rewrite should preserve threaded comments content type override");
-    check(output_reader.content_types().override_for(persons_part) != nullptr,
-        "threaded comments worksheet rewrite should preserve persons content type override");
+    check(output_graph.relationships_for(workbook_part)->find_by_id("rIdExternalLink")
+            != nullptr,
+        "relationship graph should keep workbook externalLink relationship");
+    check(output_graph.relationships_for(external_link_part)
+                ->find_by_id("rIdExternalWorkbook")
+            != nullptr,
+        "relationship graph should keep externalLink external workbook relationship");
+    check(output_reader.content_types().override_for(external_link_part) != nullptr,
+        "external link worksheet rewrite should preserve externalLink content type override");
+}
+
+void test_package_editor_replaces_external_link_and_preserves_workbook_links()
+{
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package(
+            "fastxlsx-package-editor-replace-external-link-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-replace-external-link-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::string replacement_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="PatchedExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+    replace_part_with_memory_chunks(editor, external_link_part, replacement_external_link,
+        "externalLink local-DOM rewrite");
+
+    const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
+    check(external_link_plan != nullptr,
+        "externalLink replacement should be present in the edit plan");
+    check(external_link_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "externalLink replacement should be local-DOM-rewrite");
+    check_manifest_write_mode(editor, external_link_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "externalLink replacement should mirror write mode into manifest");
+    const auto* external_link_relationships_plan =
+        editor.edit_plan().find_package_entry(
+            "xl/externalLinks/_rels/externalLink1.xml.rels");
+    check(external_link_relationships_plan != nullptr,
+        "externalLink replacement should audit preserved owner relationships");
+    check(external_link_relationships_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink owner relationships should remain copy-original");
+    check(external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink owner relationships audit should keep structured role");
+    check(external_link_relationships_plan->owner_part == external_link_part.value(),
+        "externalLink owner relationships audit should keep owner part");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement should keep unknown part copy-original");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(
+        editor.reader(), output_reader, external_link_part.zip_path());
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            == replacement_external_link,
+        "externalLink replacement should write replacement externalLink XML");
+    check(output_reader.read_entry("xl/externalLinks/_rels/externalLink1.xml.rels")
+            == source.external_link_relationships,
+        "externalLink replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "externalLink replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "externalLink replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "externalLink replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "externalLink replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "externalLink replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "externalLink replacement should preserve unknown bytes");
+
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "externalLink replacement should keep workbook relationships readable");
+    const auto* external_link_relationship =
+        workbook_relationships->find_by_id("rIdExternalLink");
+    check(external_link_relationship != nullptr,
+        "externalLink replacement should keep workbook externalLink relationship id");
+    check(external_link_relationship->target == "externalLinks/externalLink1.xml",
+        "externalLink replacement should not rewrite workbook externalLink target");
+
+    const auto* external_link_relationships =
+        output_reader.relationships_for(external_link_part);
+    check(external_link_relationships != nullptr,
+        "externalLink replacement should keep owner relationships readable");
+    const auto* external_workbook_relationship =
+        external_link_relationships->find_by_id("rIdExternalWorkbook");
+    check(external_workbook_relationship != nullptr,
+        "externalLink replacement should keep external workbook relationship id");
+    check(external_workbook_relationship->target
+            == "file:///C:/fastxlsx/source.xlsx",
+        "externalLink replacement should preserve external workbook target");
+    check(external_workbook_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::External,
+        "externalLink replacement should preserve external target mode");
+
+    const fastxlsx::detail::RelationshipGraph output_graph =
+        output_reader.relationship_graph();
+    check(output_graph.relationships_for(workbook_part)->find_by_id("rIdExternalLink")
+            != nullptr,
+        "relationship graph should keep workbook externalLink relationship after replacement");
+    check(output_graph.relationships_for(external_link_part)
+                ->find_by_id("rIdExternalWorkbook")
+            != nullptr,
+        "relationship graph should keep external workbook relationship after replacement");
+    check(output_reader.content_types().override_for(external_link_part) != nullptr,
+        "externalLink replacement should keep externalLink content type override");
+}
+
+void test_package_editor_repeated_external_link_replacement_updates_final_state()
+{
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package(
+            "fastxlsx-package-editor-repeat-external-link-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-repeat-external-link-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+    const std::string external_link_relationships_entry =
+        "xl/externalLinks/_rels/externalLink1.xml.rels";
+
+    const std::string stale_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="StaleExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+    const std::string final_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="FinalExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+
+    replace_part_with_memory_chunks(editor, external_link_part, stale_external_link,
+        "stale repeated externalLink local-DOM rewrite");
+    replace_part_with_memory_chunks(editor, external_link_part, final_external_link,
+        "final repeated externalLink local-DOM rewrite");
+
+    const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
+    check(external_link_plan != nullptr,
+        "repeated externalLink replacement should keep an active edit-plan part");
+    check(external_link_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated externalLink replacement should keep final local-DOM-rewrite mode");
+    check(external_link_plan->reason.find("final repeated") != std::string::npos,
+        "repeated externalLink replacement should keep final reason");
+    check(external_link_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated externalLink replacement should drop stale reason");
+    check_manifest_write_mode(editor, external_link_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "repeated externalLink replacement should mirror final write mode into manifest");
+    check(editor.manifest().content_types().override_for(external_link_part) != nullptr,
+        "repeated externalLink replacement should keep externalLink content type override");
+    check(editor.edit_plan().find_removed_part(external_link_part) == nullptr,
+        "repeated externalLink replacement should not leave removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(external_link_relationships_entry)
+            == nullptr,
+        "repeated externalLink replacement should not leave owner relationships omission");
+    const auto* external_link_relationships_audit =
+        editor.edit_plan().find_package_entry(external_link_relationships_entry);
+    check(external_link_relationships_audit != nullptr,
+        "repeated externalLink replacement should preserve owner relationships audit");
+    check(external_link_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should preserve owner relationships bytes");
+    check(external_link_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated externalLink replacement should keep owner relationship audit role");
+    check(external_link_relationships_audit->owner_part == external_link_part.value(),
+        "repeated externalLink replacement should keep owner relationship context");
+    check(editor.edit_plan().find_package_entry("[Content_Types].xml") == nullptr,
+        "repeated externalLink replacement should not rewrite content types audit");
+    check(editor.edit_plan().find_package_entry("xl/_rels/workbook.xml.rels") == nullptr,
+        "repeated externalLink replacement should not rewrite workbook relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "repeated externalLink replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "repeated externalLink replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "repeated externalLink replacement output plan should preserve calcChain policy");
+    check(output_plan.relationship_target_audits.empty(),
+        "repeated externalLink replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "repeated externalLink replacement output plan should not expose removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "repeated externalLink replacement output plan should not omit package entries");
+    check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "repeated externalLink replacement output plan should rewrite externalLink");
+    const auto* output_external_link_plan =
+        find_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml");
+    check(output_external_link_plan->reason.find("final repeated") != std::string::npos,
+        "repeated externalLink replacement output plan should keep final reason");
+    check(output_external_link_plan->reason.find("stale repeated") == std::string::npos,
+        "repeated externalLink replacement output plan should drop stale reason");
+    check_output_entry_plan(output_plan.entries, external_link_relationships_entry,
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated externalLink replacement output plan should preserve owner relationships");
+    const auto* output_external_link_relationships_plan =
+        find_output_entry_plan(output_plan.entries, external_link_relationships_entry);
+    check(output_external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "repeated externalLink replacement output plan should keep owner relationship audit role");
+    check(output_external_link_relationships_plan->owner_part
+            == external_link_part.value(),
+        "repeated externalLink replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated externalLink replacement output plan should preserve content types");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "repeated externalLink replacement output plan should preserve workbook relationships");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            == final_external_link,
+        "repeated externalLink replacement should write final externalLink XML");
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            != stale_external_link,
+        "repeated externalLink replacement should not write stale externalLink XML");
+    check(output_reader.read_entry(external_link_relationships_entry)
+            == source.external_link_relationships,
+        "repeated externalLink replacement should preserve owner relationships bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "repeated externalLink replacement should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "repeated externalLink replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "repeated externalLink replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "repeated externalLink replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "repeated externalLink replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "repeated externalLink replacement should preserve unknown bytes");
+
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "repeated externalLink replacement should keep workbook relationships readable");
+    const auto* external_link_relationship =
+        workbook_relationships->find_by_id("rIdExternalLink");
+    check(external_link_relationship != nullptr,
+        "repeated externalLink replacement should keep workbook externalLink relationship id");
+    check(external_link_relationship->target == "externalLinks/externalLink1.xml",
+        "repeated externalLink replacement should preserve workbook externalLink target");
+    const auto* external_link_relationships =
+        output_reader.relationships_for(external_link_part);
+    check(external_link_relationships != nullptr,
+        "repeated externalLink replacement should keep owner relationships readable");
+    const auto* external_workbook_relationship =
+        external_link_relationships->find_by_id("rIdExternalWorkbook");
+    check(external_workbook_relationship != nullptr,
+        "repeated externalLink replacement should keep external workbook relationship id");
+    check(external_workbook_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::External,
+        "repeated externalLink replacement should keep external workbook target mode");
+    check(output_reader.content_types().override_for(external_link_part) != nullptr,
+        "repeated externalLink replacement should keep externalLink content type override");
+}
+
+void test_package_editor_removes_external_link_and_preserves_workbook_links()
+{
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package(
+            "fastxlsx-package-editor-remove-external-link-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-remove-external-link-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    editor.remove_part(external_link_part, "explicit externalLink part removal");
+
+    check(editor.edit_plan().find_part(external_link_part) == nullptr,
+        "externalLink removal should clear the active edit-plan part");
+    const auto* removed_external_link =
+        editor.edit_plan().find_removed_part(external_link_part);
+    check(removed_external_link != nullptr,
+        "externalLink removal should record removed-part audit");
+    check(removed_external_link->reason.find("externalLink part") != std::string::npos,
+        "externalLink removal should retain the removal reason");
+    check(removed_external_link->reason.find("inbound relationship preserved")
+            != std::string::npos,
+        "externalLink removal should audit preserved inbound relationships");
+    check(removed_external_link->inbound_relationships.size() == 1,
+        "externalLink removal should keep structured inbound audit");
+    const auto& external_link_inbound =
+        removed_external_link->inbound_relationships.front();
+    check(external_link_inbound.owner_part == workbook_part.value(),
+        "externalLink removal should keep inbound owner part");
+    check(external_link_inbound.owner_entry == "xl/_rels/workbook.xml.rels",
+        "externalLink removal should keep inbound owner relationship entry");
+    check(external_link_inbound.relationship_id == "rIdExternalLink",
+        "externalLink removal should keep inbound relationship id");
+    check(external_link_inbound.relationship_type
+            == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink",
+        "externalLink removal should keep inbound relationship type");
+    check(external_link_inbound.relationship_target == "externalLinks/externalLink1.xml",
+        "externalLink removal should keep inbound raw target");
+    check(external_link_inbound.target_part == external_link_part,
+        "externalLink removal should keep normalized target part");
+    check(editor.manifest().find_part(external_link_part) == nullptr,
+        "externalLink removal should remove the part from the manifest");
+    check(editor.manifest().content_types().override_for(external_link_part) == nullptr,
+        "externalLink removal should remove the manifest content type override");
+    const auto* content_types_entry =
+        editor.edit_plan().find_package_entry("[Content_Types].xml");
+    check(content_types_entry != nullptr,
+        "externalLink removal should record content types rewrite");
+    check(content_types_entry->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "externalLink removal content types rewrite should be local-DOM-rewrite");
+    check(content_types_entry->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::ContentTypes,
+        "externalLink removal content types audit should keep structured role");
+    check(editor.edit_plan().find_removed_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            != nullptr,
+        "externalLink removal should omit owner relationships entry");
+    check(editor.edit_plan().find_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            == nullptr,
+        "externalLink removal should not keep active owner relationships audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink removal should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink removal should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink removal should keep unknown part copy-original");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/externalLinks/externalLink1.xml") == entries.end(),
+        "externalLink removal output should omit externalLink part");
+    check(entries.find("xl/externalLinks/_rels/externalLink1.xml.rels") == entries.end(),
+        "externalLink removal output should omit externalLink owner relationships");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.content_types().override_for(external_link_part) == nullptr,
+        "externalLink removal output should remove externalLink content type override");
+    const std::string output_content_types = output_reader.read_entry("[Content_Types].xml");
+    check_not_contains(output_content_types, "/xl/externalLinks/externalLink1.xml",
+        "externalLink removal content types XML should omit externalLink override");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "externalLink removal should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "externalLink removal should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "externalLink removal should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "externalLink removal should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "externalLink removal should preserve unknown bytes");
+
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "externalLink removal should keep workbook relationships readable");
+    const auto* external_link_relationship =
+        workbook_relationships->find_by_id("rIdExternalLink");
+    check(external_link_relationship != nullptr,
+        "externalLink removal should keep inbound workbook relationship id");
+    check(external_link_relationship->target == "externalLinks/externalLink1.xml",
+        "externalLink removal should not rewrite inbound externalLink target");
+    check(external_link_relationship->target_mode
+            == fastxlsx::detail::Relationship::TargetMode::Internal,
+        "externalLink removal should keep inbound externalLink target mode");
+    const fastxlsx::detail::RelationshipGraph output_graph =
+        output_reader.relationship_graph();
+    check(output_graph.relationships_for(workbook_part)->find_by_id("rIdExternalLink")
+            != nullptr,
+        "relationship graph should keep inbound externalLink relationship after removal");
+    check(output_reader.relationships_for(external_link_part) == nullptr,
+        "externalLink removal should not keep owner relationships for absent part");
+}
+
+void test_package_editor_external_link_replacement_restores_prior_removal()
+{
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package(
+            "fastxlsx-package-editor-replace-after-remove-external-link-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-replace-after-remove-external-link-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    editor.remove_part(external_link_part, "temporary externalLink removal");
+    check(editor.edit_plan().find_removed_part(external_link_part) != nullptr,
+        "setup should record removed externalLink before replacement restore");
+    check(editor.edit_plan().find_removed_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            != nullptr,
+        "setup should omit externalLink owner relationships before replacement restore");
+    check(editor.manifest().find_part(external_link_part) == nullptr,
+        "setup should remove externalLink from manifest before replacement restore");
+
+    const std::string restored_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="RestoredExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+    replace_part_with_memory_chunks(editor, external_link_part, restored_external_link,
+        "restored externalLink after removal");
+
+    check(editor.edit_plan().find_removed_part(external_link_part) == nullptr,
+        "externalLink replacement after removal should clear stale removed-part audit");
+    check(editor.edit_plan().find_removed_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            == nullptr,
+        "externalLink replacement after removal should clear stale owner relationships omission");
+    const auto* external_link_plan = editor.edit_plan().find_part(external_link_part);
+    check(external_link_plan != nullptr,
+        "externalLink replacement after removal should restore active edit-plan part");
+    check(external_link_plan->write_mode
+            == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "externalLink replacement after removal should keep final write mode");
+    check(external_link_plan->reason.find("after removal") != std::string::npos,
+        "externalLink replacement after removal should keep final replacement reason");
+    check_manifest_write_mode(editor, external_link_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "externalLink replacement after removal should restore manifest part write mode");
+    const auto* external_link_relationships_audit =
+        editor.edit_plan().find_package_entry(
+            "xl/externalLinks/_rels/externalLink1.xml.rels");
+    check(external_link_relationships_audit != nullptr,
+        "externalLink replacement after removal should restore owner relationships audit");
+    check(external_link_relationships_audit->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement after removal owner relationships should be copy-original");
+    check(external_link_relationships_audit->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink replacement after removal owner relationships should keep source role");
+    check(external_link_relationships_audit->owner_part == external_link_part.value(),
+        "externalLink replacement after removal owner relationships should keep owner part");
+    const auto* content_types_entry =
+        editor.edit_plan().find_package_entry("[Content_Types].xml");
+    check(content_types_entry != nullptr,
+        "externalLink replacement after removal should keep content types audit");
+    check(content_types_entry->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement after removal should restore source content types audit");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement after removal should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement after removal should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink replacement after removal should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "externalLink replacement after removal output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "externalLink replacement after removal output plan should keep calcChain preserve state");
+    check(output_plan.relationship_target_audits.empty(),
+        "externalLink replacement after removal output plan should not invent dependency audits");
+    check(output_plan.removed_parts.empty(),
+        "externalLink replacement after removal output plan should clear stale removed parts");
+    check(output_plan.removed_package_entries.empty(),
+        "externalLink replacement after removal output plan should clear stale omitted entries");
+    check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "externalLink replacement after removal output plan should rewrite externalLink part");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/externalLinks/externalLink1.xml", true, external_link_part.value(),
+        "externalLink replacement after removal output plan should classify rewritten externalLink");
+    const auto* output_external_link_plan =
+        find_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml");
+    check(output_external_link_plan->reason.find("after removal") != std::string::npos,
+        "externalLink replacement after removal output plan should keep replacement reason");
+    check_output_entry_plan(output_plan.entries,
+        "xl/externalLinks/_rels/externalLink1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve owner relationships");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/externalLinks/_rels/externalLink1.xml.rels", false, "",
+        "externalLink replacement after removal output plan should classify owner relationships as metadata");
+    const auto* output_external_link_relationships_plan =
+        find_output_entry_plan(output_plan.entries,
+            "xl/externalLinks/_rels/externalLink1.xml.rels");
+    check(output_external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink replacement after removal output plan should classify owner relationships metadata");
+    check(output_external_link_relationships_plan->owner_part == external_link_part.value(),
+        "externalLink replacement after removal output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "externalLink replacement after removal output plan should classify content types as metadata");
+    const auto* output_content_types_plan =
+        find_output_entry_plan(output_plan.entries, "[Content_Types].xml");
+    check(output_content_types_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::ContentTypes,
+        "externalLink replacement after removal output plan should classify content types metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink replacement after removal output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/externalLinks/externalLink1.xml") != entries.end(),
+        "externalLink replacement after removal output should restore externalLink entry");
+    check(entries.find("xl/externalLinks/_rels/externalLink1.xml.rels") != entries.end(),
+        "externalLink replacement after removal output should restore owner relationships");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_preserved_source_entries(
+        editor.reader(), output_reader, external_link_part.zip_path());
+    check(output_reader.read_entry("xl/externalLinks/externalLink1.xml")
+            == restored_external_link,
+        "externalLink replacement after removal should write restored payload");
+    check(output_reader.read_entry("xl/externalLinks/_rels/externalLink1.xml.rels")
+            == source.external_link_relationships,
+        "externalLink replacement after removal should preserve owner relationships bytes");
+    check(output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "externalLink replacement after removal should preserve content types bytes");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "externalLink replacement after removal should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "externalLink replacement after removal should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "externalLink replacement after removal should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "externalLink replacement after removal should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "externalLink replacement after removal should preserve unknown bytes");
+
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "externalLink replacement after removal should keep workbook relationships readable");
+    check(workbook_relationships->find_by_id("rIdExternalLink") != nullptr,
+        "externalLink replacement after removal should keep workbook inbound relationship");
+    const auto* external_link_relationships =
+        output_reader.relationships_for(external_link_part);
+    check(external_link_relationships != nullptr,
+        "externalLink replacement after removal should keep owner relationships readable");
+    check(external_link_relationships->find_by_id("rIdExternalWorkbook") != nullptr,
+        "externalLink replacement after removal should keep external workbook relationship");
+    check(output_reader.content_types().override_for(external_link_part) != nullptr,
+        "externalLink replacement after removal should keep externalLink content type override");
+}
+
+void test_package_editor_external_link_removal_overrides_prior_replacement()
+{
+    const ExternalLinksSourcePackage source =
+        write_external_links_source_package(
+            "fastxlsx-package-editor-remove-after-replace-external-link-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-remove-after-replace-external-link-output.xlsx");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName external_link_part(
+        "/xl/externalLinks/externalLink1.xml");
+    const fastxlsx::detail::PartName unknown_part("/custom/opaque.bin");
+
+    const std::string stale_external_link =
+        R"(<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<externalBook r:id="rIdExternalWorkbook">)"
+        R"(<sheetNames><sheetName val="StaleExternalSheet"/></sheetNames>)"
+        R"(</externalBook>)"
+        R"(</externalLink>)";
+    replace_part_with_memory_chunks(editor, external_link_part, stale_external_link,
+        "stale externalLink replacement before removal");
+    check(editor.edit_plan().find_part(external_link_part) != nullptr,
+        "setup should record active externalLink replacement before removal");
+    check(editor.edit_plan().find_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            != nullptr,
+        "setup should preserve owner relationships before final removal");
+
+    editor.remove_part(external_link_part, "final externalLink removal after replacement");
+
+    check(editor.edit_plan().find_part(external_link_part) == nullptr,
+        "externalLink removal after replacement should clear active replacement");
+    const auto* removed_external_link =
+        editor.edit_plan().find_removed_part(external_link_part);
+    check(removed_external_link != nullptr,
+        "externalLink removal after replacement should record removed-part audit");
+    check(removed_external_link->reason.find("after replacement") != std::string::npos,
+        "externalLink removal after replacement should keep final removal reason");
+    check(removed_external_link->inbound_relationships.size() == 1,
+        "externalLink removal after replacement should keep workbook inbound audit");
+    check(editor.edit_plan().find_removed_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            != nullptr,
+        "externalLink removal after replacement should omit owner relationships entry");
+    check(editor.edit_plan().find_package_entry(
+              "xl/externalLinks/_rels/externalLink1.xml.rels")
+            == nullptr,
+        "externalLink removal after replacement should clear active owner relationships audit");
+    check(editor.manifest().find_part(external_link_part) == nullptr,
+        "externalLink removal after replacement should remove manifest part");
+    check(editor.manifest().content_types().override_for(external_link_part) == nullptr,
+        "externalLink removal after replacement should remove manifest content type override");
+    const auto* content_types_entry =
+        editor.edit_plan().find_package_entry("[Content_Types].xml");
+    check(content_types_entry != nullptr,
+        "externalLink removal after replacement should record content types rewrite");
+    check(content_types_entry->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "externalLink removal after replacement content types rewrite should be local-DOM-rewrite");
+    check(editor.edit_plan().find_part(workbook_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink removal after replacement should keep workbook copy-original");
+    check(editor.edit_plan().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink removal after replacement should keep worksheet copy-original");
+    check(editor.edit_plan().find_part(unknown_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "externalLink removal after replacement should keep unknown copy-original");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check(!output_plan.full_calculation_on_load,
+        "externalLink removal after replacement output plan should not request full calculation");
+    check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Preserve,
+        "externalLink removal after replacement output plan should keep calcChain preserve state");
+    check(output_plan.relationship_target_audits.empty(),
+        "externalLink removal after replacement output plan should not invent dependency audits");
+    check(output_plan.removed_parts.size() == 1,
+        "externalLink removal after replacement output plan should expose one removed part");
+    check(output_plan.removed_parts.front().part_name == external_link_part,
+        "externalLink removal after replacement output plan should expose removed externalLink");
+    check(output_plan.removed_parts.front().reason.find("after replacement")
+            != std::string::npos,
+        "externalLink removal after replacement output plan should keep removed-part reason");
+    check(output_plan.removed_parts.front().inbound_relationships.size() == 1,
+        "externalLink removal after replacement output plan should expose removed-part inbound audit");
+    check(output_plan.removed_package_entries.size() == 1,
+        "externalLink removal after replacement output plan should expose owner relationships omission");
+    check(output_plan.removed_package_entries.front().entry_name
+            == "xl/externalLinks/_rels/externalLink1.xml.rels",
+        "externalLink removal after replacement output plan should omit externalLink owner relationships");
+    check(output_plan.removed_package_entries.front().audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink removal after replacement output plan should classify omitted owner relationships");
+    check(output_plan.removed_package_entries.front().owner_part
+            == external_link_part.value(),
+        "externalLink removal after replacement output plan should keep omitted owner context");
+    check_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "externalLink removal after replacement output plan should omit externalLink part");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/externalLinks/externalLink1.xml", true, external_link_part.value(),
+        "externalLink removal after replacement output plan should classify omitted externalLink");
+    const auto* output_external_link_plan =
+        find_output_entry_plan(output_plan.entries, "xl/externalLinks/externalLink1.xml");
+    check(output_external_link_plan->reason.find("after replacement") != std::string::npos,
+        "externalLink removal after replacement output plan should keep final removal reason");
+    check(output_external_link_plan->inbound_relationships.size() == 1,
+        "externalLink removal after replacement output plan should expose workbook inbound audit");
+    check_output_entry_has_inbound_relationship(output_plan.entries,
+        "xl/externalLinks/externalLink1.xml", workbook_part.value(),
+        "xl/_rels/workbook.xml.rels", "rIdExternalLink",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink",
+        "externalLinks/externalLink1.xml", external_link_part,
+        "externalLink removal after replacement output plan should keep workbook inbound audit");
+    check_output_entry_plan(output_plan.entries,
+        "xl/externalLinks/_rels/externalLink1.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "externalLink removal after replacement output plan should omit owner relationships");
+    check_output_entry_part_context(output_plan.entries,
+        "xl/externalLinks/_rels/externalLink1.xml.rels", false, "",
+        "externalLink removal after replacement output plan should classify owner relationships as metadata");
+    const auto* output_external_link_relationships_plan =
+        find_output_entry_plan(output_plan.entries,
+            "xl/externalLinks/_rels/externalLink1.xml.rels");
+    check(output_external_link_relationships_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::SourceRelationships,
+        "externalLink removal after replacement output plan should classify owner relationships metadata");
+    check(output_external_link_relationships_plan->owner_part == external_link_part.value(),
+        "externalLink removal after replacement output plan should keep owner relationship context");
+    check_output_entry_plan(output_plan.entries, "[Content_Types].xml",
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+        "externalLink removal after replacement output plan should rewrite content types");
+    check_output_entry_part_context(output_plan.entries, "[Content_Types].xml", false, "",
+        "externalLink removal after replacement output plan should classify content types as metadata");
+    const auto* output_content_types_plan =
+        find_output_entry_plan(output_plan.entries, "[Content_Types].xml");
+    check(output_content_types_plan->audit_kind
+            == fastxlsx::detail::PackageEntryAuditKind::ContentTypes,
+        "externalLink removal after replacement output plan should classify content types metadata");
+    check_output_entry_plan(output_plan.entries, "_rels/.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink removal after replacement output plan should preserve package relationships");
+    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink removal after replacement output plan should preserve workbook");
+    check_output_entry_plan(output_plan.entries, "xl/_rels/workbook.xml.rels",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink removal after replacement output plan should preserve inbound workbook relationships");
+    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink removal after replacement output plan should preserve worksheet");
+    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "externalLink removal after replacement output plan should preserve unknown entry");
+
+    editor.save_as(output);
+
+    const auto entries = fastxlsx::test::read_zip_entries(output);
+    check(entries.find("xl/externalLinks/externalLink1.xml") == entries.end(),
+        "externalLink removal after replacement output should omit externalLink entry");
+    check(entries.find("xl/externalLinks/_rels/externalLink1.xml.rels") == entries.end(),
+        "externalLink removal after replacement output should omit owner relationships");
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.content_types().override_for(external_link_part) == nullptr,
+        "externalLink removal after replacement output should remove externalLink content type override");
+    check_not_contains(output_reader.read_entry("[Content_Types].xml"),
+        "/xl/externalLinks/externalLink1.xml",
+        "externalLink removal after replacement content types should omit externalLink override");
+    check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "externalLink removal after replacement should preserve package relationships bytes");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "externalLink removal after replacement should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "externalLink removal after replacement should preserve workbook relationships bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "externalLink removal after replacement should preserve worksheet bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "externalLink removal after replacement should preserve unknown bytes");
+    const auto* workbook_relationships = output_reader.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "externalLink removal after replacement should keep workbook relationships readable");
+    check(workbook_relationships->find_by_id("rIdExternalLink") != nullptr,
+        "externalLink removal after replacement should keep inbound workbook relationship");
+    check(output_reader.relationships_for(external_link_part) == nullptr,
+        "externalLink removal after replacement should not keep owner relationships for absent part");
 }
 
 
@@ -1859,9 +2618,13 @@ int main(int argc, char* argv[])
         const std::string_view shard = package_editor_shard_from_args(argc, argv);
         std::cout << "fastxlsx.package_editor preservation shard: " << shard << '\n';
 
-        if (should_run_package_editor_shard(shard, "preservation-linked")) {
-            test_package_editor_worksheet_rewrite_preserves_registered_comments_part();
-            test_package_editor_worksheet_rewrite_preserves_threaded_comments_and_persons();
+        if (should_run_package_editor_shard(shard, "preservation-linked-external-links")) {
+            test_package_editor_worksheet_rewrite_preserves_external_links();
+            test_package_editor_replaces_external_link_and_preserves_workbook_links();
+            test_package_editor_repeated_external_link_replacement_updates_final_state();
+            test_package_editor_removes_external_link_and_preserves_workbook_links();
+            test_package_editor_external_link_replacement_restores_prior_removal();
+            test_package_editor_external_link_removal_overrides_prior_replacement();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

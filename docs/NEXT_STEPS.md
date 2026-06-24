@@ -1815,6 +1815,19 @@ retry, public-state, and guardrail bodies into
 `fastxlsx.workbook_editor.public-guards` names are added, and
 `fastxlsx_workbook_editor_tests` remains a build-only aggregate. This is still
 test organization only.
+The linked-object PackageEditor preservation shard split keeps
+`tests/test_package_editor_preservation_linked.cpp` as the comments /
+threaded-comments base shard and moves pivot/cache, external-link, and custom
+XML coverage into
+`tests/test_package_editor_preservation_linked_pivot.cpp`,
+`tests/test_package_editor_preservation_linked_external_links.cpp`, and
+`tests/test_package_editor_preservation_linked_custom_xml.cpp`. The existing
+`fastxlsx.package_editor.preservation-linked` CTest name stays stable, the new
+`fastxlsx.package_editor.preservation-linked-pivot`,
+`fastxlsx.package_editor.preservation-linked-external-links`, and
+`fastxlsx.package_editor.preservation-linked-custom-xml` names are added, and
+`fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
+This is still test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

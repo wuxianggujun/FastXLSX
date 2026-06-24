@@ -29502,6 +29502,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.692 - Split PackageEditor linked preservation shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: reduce the largest remaining PackageEditor preservation source by
+splitting linked-object preservation coverage into object-family executables
+while preserving the existing base `preservation-linked` CTest name.
+
+Output:
+- Kept `tests/test_package_editor_preservation_linked.cpp` focused on
+  comments, threaded comments, and persons preservation coverage.
+- Added:
+  - `tests/test_package_editor_preservation_linked_pivot.cpp`.
+  - `tests/test_package_editor_preservation_linked_external_links.cpp`.
+  - `tests/test_package_editor_preservation_linked_custom_xml.cpp`.
+- Added executable targets:
+  `fastxlsx_package_editor_preservation_linked_pivot_tests`,
+  `fastxlsx_package_editor_preservation_linked_external_links_tests`, and
+  `fastxlsx_package_editor_preservation_linked_custom_xml_tests`.
+- Kept `fastxlsx_package_editor_preservation_tests` as a build-only aggregate
+  target depending on all preservation shard executables.
+- Kept the existing CTest name
+  `fastxlsx.package_editor.preservation-linked`, and added
+  `fastxlsx.package_editor.preservation-linked-pivot`,
+  `fastxlsx.package_editor.preservation-linked-external-links`, and
+  `fastxlsx.package_editor.preservation-linked-custom-xml`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no linked-object semantic expansion, no relationship repair/pruning
+  expansion, no object lifecycle expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_preservation_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

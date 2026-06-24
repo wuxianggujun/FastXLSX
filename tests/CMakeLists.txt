@@ -265,16 +265,41 @@ add_fastxlsx_package_editor_shard(preservation-removal 60)
 add_fastxlsx_package_editor_shard(preservation-resources 60)
 add_fastxlsx_package_editor_shard(preservation-comments 60)
 add_fastxlsx_package_editor_shard(preservation-linked 60)
-add_fastxlsx_package_editor_shard(cellstore-core 60)
-add_fastxlsx_package_editor_shard(cellstore-chunks 60)
-add_fastxlsx_package_editor_shard(cellstore-source 60)
-add_fastxlsx_package_editor_shard(cellstore-failures 60)
-add_fastxlsx_package_editor_shard(cellstore-catalog 60)
 add_fastxlsx_package_editor_shard(sheetdata 60)
 add_fastxlsx_package_editor_shard(sheetdata-catalog 60)
 add_fastxlsx_package_editor_shard(sheetdata-guards 60)
 add_fastxlsx_package_editor_shard(sheetdata-linked 60)
 add_fastxlsx_package_editor_shard(policy 60)
+
+add_executable(fastxlsx_package_editor_cellstore_tests
+    test_package_editor_cellstore.cpp
+)
+
+target_link_libraries(fastxlsx_package_editor_cellstore_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_package_editor_cellstore_tests PRIVATE cxx_std_20)
+target_compile_definitions(fastxlsx_package_editor_cellstore_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+target_include_directories(fastxlsx_package_editor_cellstore_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    target_link_libraries(fastxlsx_package_editor_cellstore_tests PRIVATE MINIZIP::minizip-ng)
+    target_compile_definitions(fastxlsx_package_editor_cellstore_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+endif()
+
+function(add_fastxlsx_package_editor_cellstore_shard shard timeout_seconds)
+    add_test(
+        NAME fastxlsx.package_editor.${shard}
+        COMMAND fastxlsx_package_editor_cellstore_tests --shard=${shard}
+    )
+    set_tests_properties(fastxlsx.package_editor.${shard} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
+add_fastxlsx_package_editor_cellstore_shard(cellstore-core 60)
+add_fastxlsx_package_editor_cellstore_shard(cellstore-chunks 60)
+add_fastxlsx_package_editor_cellstore_shard(cellstore-source 60)
+add_fastxlsx_package_editor_cellstore_shard(cellstore-failures 60)
+add_fastxlsx_package_editor_cellstore_shard(cellstore-catalog 60)
 
 add_executable(fastxlsx_workbook_editor_tests
     test_workbook_editor.cpp

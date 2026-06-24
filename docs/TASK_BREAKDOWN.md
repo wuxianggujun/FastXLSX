@@ -29214,6 +29214,37 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor(\.|_)" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.684 - Split PackageEditor CellStore shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: reduce `tests/test_package_editor.cpp` by moving the CellStore-backed
+PackageEditor shard bodies into a dedicated test executable while keeping the
+existing CTest names and coverage.
+
+Output:
+- Added `tests/test_package_editor_cellstore.cpp`.
+- Added `fastxlsx_package_editor_cellstore_tests`.
+- Moved the existing `cellstore-core`, `cellstore-chunks`,
+  `cellstore-source`, `cellstore-failures`, and `cellstore-catalog` shard
+  bodies out of the monolithic `test_package_editor.cpp`.
+- Kept the public CTest names as `fastxlsx.package_editor.cellstore-*`; only
+  the executable target behind those names changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no CellStore materialization policy change, no formula/calcChain
+  behavior change, no relationship repair expansion, and no CTest coverage
+  removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests fastxlsx_package_editor_cellstore_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

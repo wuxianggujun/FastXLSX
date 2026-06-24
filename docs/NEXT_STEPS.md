@@ -1749,6 +1749,11 @@ former monolithic `facade`, `source-success`, `source-failure-*`, and
 shards. This is test layout and CTest budget hygiene only; it does not change
 runtime behavior, public API, package output semantics, source materialization
 policy, materialized-session behavior, or formula/image/docProps features.
+The next package-editor test-layout step is now the CellStore shard split:
+`tests/test_package_editor_cellstore.cpp` owns the `cellstore-*` CTest names
+while `tests/test_package_editor.cpp` keeps the remaining shards. This is the
+same kind of CTest budget hygiene only; it does not change PackageEditor
+behavior.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

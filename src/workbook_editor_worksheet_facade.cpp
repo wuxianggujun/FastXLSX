@@ -138,6 +138,42 @@ void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const Ce
     }
 }
 
+void WorksheetEditor::set_cells(std::span<const WorksheetCellUpdate> cells)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        for (const WorksheetCellUpdate& cell : cells) {
+            detail::validate_worksheet_editor_cell_coordinate(
+                cell.reference.row, cell.reference.column);
+            if (has_non_default_style(cell.value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::set_cells() does not support non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (cells.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = session->store();
+        for (const WorksheetCellUpdate& cell : cells) {
+            staged_store.set_cell(cell.reference.row, cell.reference.column, cell.value);
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::set_cell_value(
     std::uint32_t row, std::uint32_t column, const CellValue& value)
 {

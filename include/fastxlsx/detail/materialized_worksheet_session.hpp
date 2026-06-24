@@ -65,6 +65,12 @@ public:
         dirty_ = true;
     }
 
+    void replace_store(CellStore store)
+    {
+        store_ = std::move(store);
+        dirty_ = true;
+    }
+
     void replace_formula_text(
         std::uint32_t row, std::uint32_t column, std::string formula_text)
     {

@@ -33015,6 +33015,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.720 - WorksheetEditor sparse batch full-cell replacement boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook sparse batch mutation API; no
+dense range writer and no style-preserving batch semantics.
+
+Goal: provide a safe batch counterpart to `set_cell()` for small-file
+In-memory editing. `WorksheetEditor::set_cells()` accepts a span of explicit
+row/column `WorksheetCellUpdate` values, validates the whole batch before
+committing, and applies duplicate coordinates in input order so later updates
+win. Empty input is a successful no-op.
+
+Output:
+- Added public `WorksheetCellUpdate` and `WorksheetEditor::set_cells()` with
+  Doxygen boundary notes.
+- Added staged `CellStore` batch application so coordinate, caller-supplied
+  non-default style id, `max_cells`, and `memory_budget_bytes` failures reject
+  the whole batch without mutating the active materialized session.
+- Extended public source-style regressions to prove batch style rejection
+  no-state-pollution, empty batch no-op diagnostic cleanup, duplicate-coordinate
+  later-wins behavior, unstyled explicit blank batch writes, and dirty
+  save-as projection.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  batch full-cell replacement from dense range editing, A1 range parsing,
+  style-preserving value edits, style migration/merge, range metadata
+  recalculation, and large-file low-memory random editing.
+
+Non-goals / boundary:
+- No dense matrix/range writer, no A1 range string parser, no style-preserving
+  batch API, no style id write API, no styles.xml creation, no style migration
+  or merge, no sharedStrings migration expansion, no row/column insert/delete,
+  no range metadata recalculation, no relationship/content-type repair, and no
+  large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -269,9 +269,10 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`set_cell_value()`、`clear_cell_value()`、`clear_cell_values(CellRange)`、
-  `erase_cell()`、row/column coordinate guardrails、这些 single-cell API 的
-  strict uppercase A1 string overload、`WorksheetCellReference`、`WorksheetCellSnapshot`、
+  `set_cell()`、`set_cells()`、`set_cell_value()`、`clear_cell_value()`、
+  `clear_cell_values(CellRange)`、`erase_cell()`、row/column coordinate guardrails、
+  single-cell mutation/read API 的 strict uppercase A1 string overload、
+  `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
   `cell_count()` 和 `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；caller-supplied default `StyleId{0}`
@@ -530,8 +531,12 @@ range recalculation、relationship pruning、repair 或语义同步。
 `WorksheetEditor::set_cell()` 接受 caller-supplied `StyleId{0}`，但会把它归一化为
 no style handle；dirty output 不写 `s="0"`。非默认 style ids 仍会被拒绝，
 row/column 和 A1 overload 的失败都不会 mutate sparse store、dirty materialized
-session 或 queue pending edit。`WorksheetEditor::set_cell_value()` 是 value-only
-编辑，会保留目标 cell 当前 materialized source style handle；
+session 或 queue pending edit。`WorksheetEditor::set_cells()` 是稀疏 full-cell
+replacement batch：输入是显式 row/column 坐标序列，duplicate coordinates 允许且后者
+覆盖前者；空 batch 是成功 no-op；任一坐标、非默认 style id、`max_cells` 或
+`memory_budget_bytes` 失败都会在状态变更前拒绝整个 batch。它不是 dense range writer
+或 A1 range parser，也不会保留被覆盖 cell 的旧 style。`WorksheetEditor::set_cell_value()`
+是 value-only 编辑，会保留目标 cell 当前 materialized source style handle；
 `clear_cell_value()` / `clear_cell_values(CellRange)` 会把已有 cell 转成显式 blank
 并保留该 style；range 版本只清 already represented sparse records，不补齐 missing
 cells。missing cell / missing-only range 是成功 no-op，不写 tombstone。
@@ -571,6 +576,12 @@ sheet.set_cell(1, 1, fastxlsx::CellValue::text("updated"));
 sheet.set_cell(1, 2, fastxlsx::CellValue::text("default style")
     .with_style(fastxlsx::StyleId{})); // Normalized to no style handle.
 sheet.set_cell("D4", fastxlsx::CellValue::text("strict A1 ref"));
+std::vector<fastxlsx::WorksheetCellUpdate> updates = {
+    {{3, 1}, fastxlsx::CellValue::text("batch row/column update")},
+    {{3, 1}, fastxlsx::CellValue::text("later duplicate wins")},
+    {{3, 2}, fastxlsx::CellValue::blank()},
+};
+sheet.set_cells(updates);
 sheet.clear_cell_value("B2");
 sheet.clear_cell_values(fastxlsx::CellRange{1, 1, 10, 5});
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
@@ -590,7 +601,7 @@ editor.save_as("edited.xlsx");
 `A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
 行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
-`set_cell()` / `erase_cell()` throws、updates `last_edit_error()`，并且不会 dirty 或
+`set_cell()` / `set_cells()` / `erase_cell()` throws、updates `last_edit_error()`，并且不会 dirty 或
 mutate sparse store；连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
 mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，

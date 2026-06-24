@@ -186,6 +186,18 @@ struct WorksheetCellSnapshot {
     CellValue value;
 };
 
+/// Public sparse full-cell update for WorksheetEditor::set_cells().
+///
+/// API mode: In-memory / existing-workbook small-file mutation. Each update is
+/// an explicit 1-based coordinate plus an owning CellValue payload. The batch
+/// API consumes these values synchronously; it does not borrow caller storage,
+/// parse A1 ranges, allocate dense matrices, or provide streaming random
+/// editing semantics.
+struct WorksheetCellUpdate {
+    WorksheetCellReference reference;
+    CellValue value;
+};
+
 /// Public diagnostic for a materialized formula's sheet-qualified reference.
 ///
 /// API mode: In-memory inspection over already-materialized worksheets. This
@@ -589,14 +601,17 @@ struct WorkbookEditorRenameOptions {
 /// during materialization. Canonical non-zero unsigned decimal source style ids
 /// are validated against the source styles.xml `cellXfs` table, materialized as
 /// numeric passthrough handles, and written back by dirty projection while the
-/// source styles part is preserved. `set_cell_value()` can replace a cell value
-/// while preserving the currently materialized source style handle on that same
-/// coordinate. `clear_cell_value()` and `clear_cell_values(CellRange)` can turn
-/// existing materialized cells into explicit blanks while preserving those same
-/// style handles; missing cells are successful no-ops and range clears do not
-/// synthesize blank records for missing coordinates. This does not migrate or
-/// merge styles, synthesize styles for missing cells, create tombstones, or
-/// allow caller-supplied foreign style handles. Empty,
+/// source styles part is preserved. `set_cells()` shares the full-cell
+/// replacement semantics of `set_cell()`: caller-supplied non-default style ids
+/// are rejected, and prior source styles on overwritten cells are dropped.
+/// `set_cell_value()` can replace a cell value while preserving the currently
+/// materialized source style handle on that same coordinate. `clear_cell_value()`
+/// and `clear_cell_values(CellRange)` can turn existing materialized cells into
+/// explicit blanks while preserving those same style handles; missing cells are
+/// successful no-ops and range clears do not synthesize blank records for
+/// missing coordinates. This does not migrate or merge styles, synthesize styles
+/// for missing cells, create tombstones, or allow caller-supplied foreign style
+/// handles. Empty,
 /// valueless, unquoted, unterminated, padded, signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -667,6 +682,23 @@ public:
     /// default StyleId{0} is accepted and normalized to no style handle. A
     /// rejected call does not mutate or dirty the sparse store.
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
+
+    /// Applies sparse full-cell replacements as one preflighted batch.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Each update
+    /// names one explicit 1-based row/column coordinate. The input order is
+    /// respected and duplicate coordinates are allowed; later updates win after
+    /// the whole batch passes validation. Empty input is a successful no-op that
+    /// does not dirty the materialized session and clears prior public edit
+    /// diagnostics. Invalid coordinates, caller-supplied non-default StyleId
+    /// handles, max_cells violations, or memory_budget_bytes violations reject
+    /// the entire batch before the active sparse store is mutated.
+    ///
+    /// This is a sparse convenience over full-cell replacement, not a dense
+    /// range writer, A1 range parser, style-preserving value edit, style
+    /// migration/merge API, range metadata recalculation, or large-file
+    /// low-memory random-editing path.
+    void set_cells(std::span<const WorksheetCellUpdate> cells);
 
     /// Replaces one sparse-store cell value while preserving its current style.
     ///

@@ -54,6 +54,13 @@ existing materialized cells become explicit blank cells while preserving the
 current source style handle, range clears affect only already represented sparse
 records, missing targets / missing-only ranges are successful no-ops, and the
 output remains non-tombstone sparse projection.
+`WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
+replacement case for small files: every update carries an explicit row/column
+coordinate and `CellValue`, duplicate coordinates are allowed with later input
+winning, empty batches are no-ops, and any coordinate/style/budget failure
+rejects the entire batch before mutating the active materialized session. This
+is still not a dense range writer, style-preserving edit, A1 range parser, or
+large-file low-memory random-editing path.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
@@ -2669,12 +2676,14 @@ schema validation.
   - `WorksheetEditor::try_cell()`
   - `WorksheetEditor::get_cell()`
   - `WorksheetEditor::set_cell()`
+  - `WorksheetEditor::set_cells()`
   - `WorksheetEditor::set_cell_value()`
   - `WorksheetEditor::clear_cell_value()`
   - `WorksheetEditor::clear_cell_values(CellRange)`
   - `WorksheetEditor::erase_cell()`
   - `WorksheetEditor` strict uppercase single-cell A1 overloads
   - `WorksheetCellReference`
+  - `WorksheetCellUpdate`
   - `WorksheetCellSnapshot`
   - `WorksheetEditor::has_pending_changes()`
   - `WorksheetEditor::sparse_cells()`

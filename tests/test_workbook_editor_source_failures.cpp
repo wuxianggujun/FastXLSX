@@ -669,6 +669,15 @@ void reject_public_two_clean_retry_invalid_mutations(
             public_two_clean_retry_rejected_mutation_value(
                 rejected_prefix, "-a1-column-overflow"));
     }), label + " should reject A1 column-overflow set_cell");
+    const std::vector<fastxlsx::WorksheetCellUpdate> invalid_batch = {
+        {fastxlsx::WorksheetCellReference {1, 1},
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-batch-valid-before-failure")},
+        {fastxlsx::WorksheetCellReference {0, 1},
+            public_two_clean_retry_rejected_mutation_value(
+                rejected_prefix, "-batch-row-zero")}};
+    check(threw_fastxlsx_error([&] { data_again.set_cells(invalid_batch); }),
+        label + " should reject row-zero set_cells without applying earlier batch updates");
     check(threw_fastxlsx_error([&] { data.clear_cell_value(0, 1); }),
         label + " should reject row-zero clear_cell_value");
     check(threw_fastxlsx_error([&] { untouched.clear_cell_value("XFE1"); }),
@@ -2926,6 +2935,26 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
                 && editor.last_edit_error()->find("set_cell_value()") != std::string::npos,
             "rejected style-preserving value edit should update last_edit_error");
 
+        const std::vector<fastxlsx::WorksheetCellUpdate> rejected_caller_style_batch = {
+            {fastxlsx::WorksheetCellReference {1, 2},
+                fastxlsx::CellValue::text("must-not-overwrite-batch-style")
+                    .with_style(number_style)}};
+        const bool rejected_batch_style = threw_fastxlsx_error(
+            [&sheet, &rejected_caller_style_batch]() {
+                sheet.set_cells(rejected_caller_style_batch);
+            });
+        check(rejected_batch_style,
+            "WorksheetEditor::set_cells should reject caller-supplied non-default style ids");
+        const fastxlsx::CellValue preserved_b1_after_batch_reject = sheet.get_cell("B1");
+        check(preserved_b1_after_batch_reject.kind() == fastxlsx::CellValueKind::Text
+                && preserved_b1_after_batch_reject.text_value() == "clear-source"
+                && preserved_b1_after_batch_reject.has_style()
+                && preserved_b1_after_batch_reject.style_id().value() == number_style.value(),
+            "rejected batch style edit should not mutate the source cell");
+        check(editor.last_edit_error().has_value()
+                && editor.last_edit_error()->find("set_cells()") != std::string::npos,
+            "rejected batch style edit should update last_edit_error");
+
         sheet.clear_cell_value("E1");
         check(!sheet.try_cell("E1").has_value(),
             "WorksheetEditor::clear_cell_value should not synthesize a missing cell");
@@ -2941,6 +2970,13 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             "missing-only clear_cell_values should not dirty the materialized session");
         check(!editor.last_edit_error().has_value(),
             "missing-only clear_cell_values should keep public edit diagnostics clear");
+
+        const std::vector<fastxlsx::WorksheetCellUpdate> empty_batch;
+        sheet.set_cells(empty_batch);
+        check(!sheet.has_pending_changes(),
+            "empty set_cells batch should not dirty the materialized session");
+        check(!editor.last_edit_error().has_value(),
+            "empty set_cells batch should keep public edit diagnostics clear");
 
         sheet.set_cell_value("A1",
             fastxlsx::CellValue::text("style-preserved-value-edit"));
@@ -2974,7 +3010,30 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
         check(!sheet.try_cell("C2").has_value(),
             "WorksheetEditor::clear_cell_values should not synthesize missing cells");
 
-        sheet.set_cell("C1", fastxlsx::CellValue::text("style-passthrough-edit"));
+        const std::vector<fastxlsx::WorksheetCellUpdate> batch_updates = {
+            {fastxlsx::WorksheetCellReference {1, 3},
+                fastxlsx::CellValue::text("batch-full-replace")},
+            {fastxlsx::WorksheetCellReference {3, 1},
+                fastxlsx::CellValue::text("batch-first")},
+            {fastxlsx::WorksheetCellReference {3, 1},
+                fastxlsx::CellValue::text("batch-last")},
+            {fastxlsx::WorksheetCellReference {3, 2}, fastxlsx::CellValue::blank()}};
+        sheet.set_cells(batch_updates);
+        const fastxlsx::CellValue replaced_c1 = sheet.get_cell("C1");
+        check(replaced_c1.kind() == fastxlsx::CellValueKind::Text
+                && replaced_c1.text_value() == "batch-full-replace"
+                && !replaced_c1.has_style(),
+            "WorksheetEditor::set_cells should drop source style ids on full replacement");
+        const fastxlsx::CellValue duplicate_target_a3 = sheet.get_cell("A3");
+        check(duplicate_target_a3.kind() == fastxlsx::CellValueKind::Text
+                && duplicate_target_a3.text_value() == "batch-last",
+            "WorksheetEditor::set_cells should apply duplicate coordinates in input order");
+        const fastxlsx::CellValue blank_b3 = sheet.get_cell("B3");
+        check(blank_b3.kind() == fastxlsx::CellValueKind::Blank && !blank_b3.has_style(),
+            "WorksheetEditor::set_cells should allow explicit unstyled blank replacements");
+        check(!editor.last_edit_error().has_value(),
+            "successful set_cells batch should keep public edit diagnostics clear");
+
         sheet.set_cell_value(1, 4, fastxlsx::CellValue::text("value-edit-no-source-style"));
         editor.save_as(output);
 
@@ -2992,11 +3051,16 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
         check_contains(output_xml, R"(<c r="B2" s="1"/>)",
             "dirty source-style projection should write every represented range cell as blank");
         check_contains(output_xml,
-            R"(<c r="C1" t="inlineStr"><is><t>style-passthrough-edit</t></is></c>)",
-            "dirty source-style projection should drop styles on full cell replacement");
+            R"(<c r="C1" t="inlineStr"><is><t>batch-full-replace</t></is></c>)",
+            "dirty source-style projection should drop styles on batch full cell replacement");
         check_contains(output_xml,
             R"(<c r="D1" t="inlineStr"><is><t>value-edit-no-source-style</t></is></c>)",
             "style-preserving value edit on a missing cell should not synthesize styles");
+        check_contains(output_xml,
+            R"(<c r="A3" t="inlineStr"><is><t>batch-last</t></is></c>)",
+            "dirty source-style projection should persist the later duplicate batch update");
+        check_contains(output_xml, R"(<c r="B3"/>)",
+            "dirty source-style projection should persist unstyled explicit batch blanks");
         check_not_contains(output_xml, R"(r="E1")",
             "missing clear_cell_value should not synthesize an output cell");
         check_not_contains(output_xml, R"(r="C2")",

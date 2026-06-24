@@ -33275,6 +33275,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.727 - WorksheetEditor sparse append-row boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse append convenience API; no row
+insertion and no metadata recalculation.
+
+Goal: provide a simple append-row UX for existing-workbook small-file In-memory
+editing without adding dense row insertion semantics. `WorksheetEditor::append_row()`
+uses the current materialized sparse store, writes values to columns 1..N on the
+row after the maximum represented row, treats empty input as a no-op, and stages
+the whole append so validation / guardrail failures do not mutate the active
+store.
+
+Output:
+- Added public `WorksheetEditor::append_row(span<const CellValue>)` and
+  `append_row(initializer_list<CellValue>)` with Doxygen boundary notes.
+- Implemented staged sparse-store append with Excel column count and row-limit
+  guards, caller-supplied non-default style rejection, and existing CellStore
+  max_cells / memory_budget_bytes enforcement.
+- Added public-state regressions for normal append output, explicit blank and
+  formula projection, empty-input diagnostic cleanup, width and row-limit
+  failures, max_cells failure state hygiene, and budget-release recovery after
+  erase.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  append from row insertion, row metadata creation, table/range metadata
+  recalculation, style/sharedStrings migration, and large-file random editing.
+
+Non-goals / boundary:
+- No row insertion, row metadata model, table/range/definedName/drawing metadata
+  recalculation, style migration/merge, sharedStrings migration, relationship
+  repair, dense range writer, A1 range parser, or large-file low-memory random
+  editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

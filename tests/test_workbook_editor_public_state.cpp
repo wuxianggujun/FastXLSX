@@ -3155,6 +3155,181 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         "initializer-list batch overloads should preserve untouched worksheets");
 }
 
+void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-append-row-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.append_row({
+        fastxlsx::CellValue::text("appended-a3"),
+        fastxlsx::CellValue::number(7.0),
+        fastxlsx::CellValue::formula("A3+B1"),
+        fastxlsx::CellValue::blank(),
+    });
+
+    check(sheet.cell_count() == 7,
+        "append_row should add one sparse record for each appended value");
+    check(sheet.get_cell("A3").text_value() == "appended-a3",
+        "append_row should write the first value to column A of the next sparse row");
+    check(sheet.get_cell("B3").number_value() == 7.0,
+        "append_row should write numeric values by input order");
+    const fastxlsx::CellValue formula = sheet.get_cell("C3");
+    check(formula.kind() == fastxlsx::CellValueKind::Formula
+            && formula.text_value() == "A3+B1",
+        "append_row should preserve formula text as a formula cell");
+    check(sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Blank,
+        "append_row should represent explicit blank values");
+    check(sheet.has_pending_changes(),
+        "append_row should dirty the materialized worksheet when values are appended");
+    check(editor.pending_materialized_cell_count() == 7,
+        "append_row should contribute appended sparse records to aggregate diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "successful append_row should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D3"/>)",
+        "append_row should extend the dirty worksheet dimension to the appended row");
+    check_contains(worksheet_xml,
+        R"(<row r="3"><c r="A3" t="inlineStr"><is><t>appended-a3</t></is></c>)",
+        "append_row should persist text in the appended sparse row");
+    check_contains(worksheet_xml, R"(<c r="B3"><v>7</v></c>)",
+        "append_row should persist numeric cells in input order");
+    check_contains(worksheet_xml, R"(<c r="C3"><f>A3+B1</f></c>)",
+        "append_row should persist formula cells in input order");
+    check_contains(worksheet_xml, R"(<c r="D3"/>)",
+        "append_row should persist explicit blank cells in input order");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "append_row should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_append_row_noop_and_guardrails()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-append-row-guards-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before append_row empty no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before append_row empty no-op");
+
+        sheet.append_row({});
+        check(!editor.last_edit_error().has_value(),
+            "empty append_row should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "empty append_row should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "empty append_row should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "empty append_row should not create sparse row metadata");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        std::vector<fastxlsx::CellValue> too_wide(
+            16385, fastxlsx::CellValue::number(1.0));
+
+        bool failed = false;
+        try {
+            sheet.append_row(too_wide);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "16384",
+                "append_row width failure should expose the Excel column limit");
+        }
+        check(failed, "append_row should reject more than 16384 values");
+        check(!sheet.has_pending_changes(),
+            "width failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "width failure should preserve sparse cell count");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        sheet.set_cell("XFD1048576", fastxlsx::CellValue::text("edge-row"));
+        const std::size_t dirty_count = sheet.cell_count();
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text("past-edge")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "1048576",
+                "append_row row-limit failure should expose the Excel row limit");
+        }
+        check(failed, "append_row should reject appending past the Excel row limit");
+        check(sheet.cell_count() == dirty_count,
+            "row-limit failure should preserve the previously dirty sparse store");
+        check(sheet.get_cell("XFD1048576").text_value() == "edge-row",
+            "row-limit failure should preserve the existing edge-row edit");
+        check(!sheet.try_cell("A3").has_value(),
+            "row-limit failure should not leak rejected appended values");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text("max-cells-rejected")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+                "append_row should expose CellStore max_cells guardrail diagnostics");
+        }
+        check(failed, "append_row should enforce max_cells on new sparse records");
+        check(editor.last_edit_error().has_value(),
+            "failed append_row max_cells mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "failed append_row max_cells mutation should not dirty the session");
+        check(sheet.cell_count() == 3,
+            "failed append_row max_cells mutation should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed append_row max_cells mutation should preserve sparse memory estimate");
+        check(!sheet.try_cell("A3").has_value(),
+            "failed append_row max_cells mutation should not leave rejected cells readable");
+
+        sheet.erase_cell("A2");
+        sheet.append_row({fastxlsx::CellValue::text("append-after-erase")});
+        check(!editor.last_edit_error().has_value(),
+            "successful append_row after budget release should clear last_edit_error");
+        check(sheet.get_cell("A2").text_value() == "append-after-erase",
+            "append_row should use the current maximum represented row after erase");
+        check(sheet.cell_count() == 3,
+            "append_row after erase should stay within the exact max_cells budget");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "append-after-erase",
+            "append_row after guardrail recovery should persist through save_as");
+        check_not_contains(worksheet_xml, "max-cells-rejected",
+            "rejected append_row value should not leak into saved output");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "append_row after erase should not resurrect erased source cells");
+    }
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -4077,6 +4252,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
             test_public_worksheet_editor_erase_cells_range_reacquires_saved_state();
             test_public_worksheet_editor_initializer_list_batch_overloads();
+            test_public_worksheet_editor_append_row_appends_after_sparse_max_row();
+            test_public_worksheet_editor_append_row_noop_and_guardrails();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

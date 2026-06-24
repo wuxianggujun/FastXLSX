@@ -711,6 +711,35 @@ public:
     /// non-goals are identical.
     void set_cells(std::initializer_list<WorksheetCellUpdate> cells);
 
+    /// Appends one sparse row after the current maximum represented row.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The appended
+    /// row is derived from the materialized sparse store, not from worksheet row
+    /// metadata: if the store is empty, values are written to row 1; otherwise
+    /// they are written to `max(represented row) + 1`. Values are written to
+    /// columns 1..N in input order. Empty input is a successful no-op that does
+    /// not create row metadata, does not dirty the materialized session, and
+    /// clears prior public edit diagnostics.
+    ///
+    /// The entire append is preflighted and staged. More than 16,384 values,
+    /// appending past Excel row 1,048,576, caller-supplied non-default StyleId
+    /// handles, max_cells violations, or memory_budget_bytes violations reject
+    /// the append before the active sparse store is mutated. Explicit
+    /// CellValue::blank() values are represented as blank cells in the appended
+    /// row and are subject to the same sparse-store guardrails.
+    ///
+    /// This is not row insertion, row metadata creation, table/range metadata
+    /// recalculation, style migration/merge, sharedStrings migration, or a
+    /// large-file low-memory random-editing path.
+    void append_row(std::span<const CellValue> values);
+
+    /// Appends one sparse row from a small literal value list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so row selection, empty-input no-op
+    /// behavior, guardrails, diagnostics, and non-goals are identical.
+    void append_row(std::initializer_list<CellValue> values);
+
     /// Replaces one sparse-store cell value while preserving its current style.
     ///
     /// This is the safe existing-workbook style boundary for value-only edits:

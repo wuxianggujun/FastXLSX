@@ -87,6 +87,13 @@ overloads: `set_cells(initializer_list<WorksheetCellUpdate>)`,
 delegate to the span overloads, preserving the same preflight, duplicate /
 missing-coordinate, guardrail, and diagnostic behavior without adding dense
 range editing or A1 range parsing.
+`WorksheetEditor::append_row()` now covers a small-file sparse append convenience:
+it writes input values to columns 1..N on the row after the current maximum
+represented sparse row, treats empty input as a no-op, and stages the append so
+width, row-limit, style, max_cells, and memory-budget failures do not mutate the
+active sparse store. This is not row insertion, row metadata creation,
+table/range metadata recalculation, sharedStrings/styles migration, or
+large-file low-memory random editing.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
@@ -2704,6 +2711,8 @@ schema validation.
   - `WorksheetEditor::set_cell()`
   - `WorksheetEditor::set_cells()`
   - `WorksheetEditor::set_cells(initializer_list<WorksheetCellUpdate>)`
+  - `WorksheetEditor::append_row()`
+  - `WorksheetEditor::append_row(initializer_list<CellValue>)`
   - `WorksheetEditor::set_cell_value()`
   - `WorksheetEditor::set_cell_values()`
   - `WorksheetEditor::set_cell_values(initializer_list<WorksheetCellUpdate>)`

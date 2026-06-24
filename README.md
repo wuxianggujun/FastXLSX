@@ -270,6 +270,7 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
   `set_cell()`、`set_cells()`、`set_cells(initializer_list<WorksheetCellUpdate>)`、
+  `append_row()`、`append_row(initializer_list<CellValue>)`、
   `set_cell_value()`、`set_cell_values()`、
   `set_cell_values(initializer_list<WorksheetCellUpdate>)`、
   `clear_cell_value()`、`clear_cell_values(CellRange)`、
@@ -542,11 +543,18 @@ session 或 queue pending edit。`WorksheetEditor::set_cells()` 是稀疏 full-c
 replacement batch：输入是显式 row/column 坐标序列，duplicate coordinates 允许且后者
 覆盖前者；空 batch 是成功 no-op；任一坐标、非默认 style id、`max_cells` 或
 `memory_budget_bytes` 失败都会在状态变更前拒绝整个 batch。它不是 dense range writer
-或 A1 range parser，也不会保留被覆盖 cell 的旧 style。`set_cells()`、
+或 A1 range parser，也不会保留被覆盖 cell 的旧 style。`append_row()` 是小文件
+sparse-store 便利 API：它按当前 represented 最大行追加到下一行，值写入 columns
+1..N；empty input 不创建 row metadata，超过 16,384 个值、超过 Excel row
+1,048,576、非默认 style id 或 sparse-store guardrail 失败都会在状态变更前拒绝。
+它不是 row insertion、row metadata creation、table/range metadata recalculation 或
+大文件低内存 random editing。`set_cells()`、
 `set_cell_values()`、`clear_cell_values(span<WorksheetCellReference>)` 和
-`erase_cells(span<WorksheetCellReference>)` 都有 initializer-list 便利重载，适合小型
-literal batch；这些重载同步消费输入并委托 span 路径，不改变 preflight、duplicate /
-missing-coordinate、guardrail 或 diagnostic 语义。`WorksheetEditor::set_cell_value()`
+`erase_cells(span<WorksheetCellReference>)`，以及 `append_row()` 都有
+initializer-list 便利重载，适合小型
+literal batch；这些重载同步消费输入并委托 span 路径，不改变各自的 preflight、
+duplicate / missing-coordinate（坐标批量 API）、guardrail 或 diagnostic 语义。
+`WorksheetEditor::set_cell_value()`
 和 `set_cell_values()` 是 value-only 编辑，会保留目标 cell 当前 materialized source
 style handle；批量版本同样支持 duplicate coordinates 后者覆盖前者、empty no-op 和
 失败不污染。`clear_cell_value()` / `clear_cell_values(CellRange)` /
@@ -605,6 +613,11 @@ sheet.set_cells({
     {{3, 3}, fastxlsx::CellValue::text("literal batch update")},
     {{3, 3}, fastxlsx::CellValue::text("literal duplicate wins")},
 });
+sheet.append_row({
+    fastxlsx::CellValue::text("append next represented row"),
+    fastxlsx::CellValue::number(42.0),
+    fastxlsx::CellValue::blank(),
+});
 std::vector<fastxlsx::WorksheetCellUpdate> value_updates = {
     {{1, 1}, fastxlsx::CellValue::text("value-only keeps existing style")},
     {{4, 1}, fastxlsx::CellValue::text("missing target has no style")},
@@ -645,7 +658,7 @@ editor.save_as("edited.xlsx");
 `A1` 或 `XFD1048576`；`a1`、`A1:B2`、`A0`、`A01` 和超出 Excel
 行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
-`set_cell()` / `set_cells()` / `set_cell_values()` / `clear_cell_values(span)` /
+`set_cell()` / `set_cells()` / `append_row()` / `set_cell_values()` / `clear_cell_values(span)` /
 `erase_cell()` / `erase_cells(CellRange)` / `erase_cells(span)` throws、updates `last_edit_error()`，并且不会 dirty 或 mutate sparse store；
 连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
 mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。

@@ -17,6 +17,9 @@ namespace fastxlsx {
 
 namespace {
 
+constexpr std::uint32_t max_excel_rows = 1048576U;
+constexpr std::size_t max_excel_columns = 16384U;
+
 [[nodiscard]] bool has_non_default_style(const CellValue& value) noexcept
 {
     return value.has_style() && value.style_id().value() != 0;
@@ -177,6 +180,61 @@ void WorksheetEditor::set_cells(std::span<const WorksheetCellUpdate> cells)
 void WorksheetEditor::set_cells(std::initializer_list<WorksheetCellUpdate> cells)
 {
     set_cells(std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
+}
+
+void WorksheetEditor::append_row(std::span<const CellValue> values)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        if (values.size() > max_excel_columns) {
+            throw FastXlsxError(
+                "WorksheetEditor::append_row() cannot append more than 16384 cells");
+        }
+        for (const CellValue& value : values) {
+            if (has_non_default_style(value)) {
+                throw FastXlsxError(
+                    "WorksheetEditor::append_row() does not support non-default StyleId values");
+            }
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (values.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        const detail::CellStore& current_store = session->store();
+        std::uint32_t append_row = 1;
+        if (!current_store.empty()) {
+            const std::uint32_t last_row = current_store.records().rbegin()->first.row;
+            if (last_row >= max_excel_rows) {
+                throw FastXlsxError(
+                    "WorksheetEditor::append_row() cannot append past Excel row 1048576");
+            }
+            append_row = last_row + 1U;
+        }
+
+        detail::CellStore staged_store = current_store;
+        for (std::size_t index = 0; index < values.size(); ++index) {
+            staged_store.set_cell(
+                append_row, static_cast<std::uint32_t>(index + 1U), values[index]);
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::append_row(std::initializer_list<CellValue> values)
+{
+    append_row(std::span<const CellValue>(values.begin(), values.size()));
 }
 
 void WorksheetEditor::set_cell_value(

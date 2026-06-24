@@ -33395,6 +33395,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.730 - WorksheetEditor sparse column erase boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse column erase convenience API;
+no column delete/shift and no metadata recalculation.
+
+Goal: provide explicit column-level erase UX for existing-workbook small-file
+In-memory editing without implying dense column deletion semantics.
+`WorksheetEditor::erase_column()` and `WorksheetEditor::erase_columns()` delete
+only represented active sparse records from a 1-based column or inclusive
+column range, treat missing columns / missing-only ranges as successful no-ops,
+and stage deletion before replacing the active sparse store.
+
+Output:
+- Added public `WorksheetEditor::erase_column(column)` and
+  `erase_columns(first_column, last_column)` with Doxygen boundary notes.
+- Implemented staged sparse-store column / column-range erase with Excel
+  column guards, reversed-range rejection, missing-only diagnostic cleanup, and
+  no dirty-state mutation for no-op inputs.
+- Added public-state regressions for normal column erase output, column-range
+  erase, missing column no-op diagnostic cleanup, invalid column / reversed
+  range failure hygiene, and max_cells budget release before later insertion.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  column record erase from column deletion, column shifting, column metadata
+  editing, dense range deletion, tombstones, table/range metadata recalculation,
+  relationship repair, and large-file random editing.
+
+Non-goals / boundary:
+- No column insertion, column deletion, column shifting, column metadata model,
+  dense range deletion, tombstone output, table/range/definedName/drawing
+  metadata recalculation, style/sharedStrings migration, relationship repair,
+  A1 range parser, or large-file low-memory random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

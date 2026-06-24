@@ -272,7 +272,7 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `set_cell()`、`set_cells()`、`set_cells(initializer_list<WorksheetCellUpdate>)`、
   `append_row()`、`append_row(initializer_list<CellValue>)`、
   `set_row()`、`set_row(initializer_list<CellValue>)`、
-  `erase_row()`、`erase_rows()`、
+  `erase_row()`、`erase_rows()`、`erase_column()`、`erase_columns()`、
   `set_cell_value()`、`set_cell_values()`、
   `set_cell_values(initializer_list<WorksheetCellUpdate>)`、
   `clear_cell_value()`、`clear_cell_values(CellRange)`、
@@ -293,7 +293,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   匹配，namespace URI 不参与判断；`WorksheetEditorOptions::max_cells` 和
   `memory_budget_bytes` 会约束 source materialization 与后续 sparse-store
   mutations，且 source-load / mutation guardrail failure paths 均保持
-  no-state-pollution hygiene；`erase_cell()` / `erase_cells()` 会移除 active sparse record，并为后续
+  no-state-pollution hygiene；`erase_cell()` / `erase_cells()` / `erase_row()` /
+  `erase_rows()` / `erase_column()` / `erase_columns()` 会移除 active sparse record，并为后续
   insertions 释放这些 sparse-store guardrail budgets；missing-cell `erase_cell()`
   保持 clean no-op，并会清除先前 public mutation diagnostic；explicit blank
   insertion 作为 active sparse record 也受这些 guardrail 约束；不支持 namespace validation/repair、non-default `StyleId`、
@@ -559,6 +560,11 @@ insert/delete、row shifting、row metadata edit、table/range metadata recalcul
 行记录删除便利 API：它们只删除目标 row / inclusive row range 中已经 represented 的
 active sparse records，missing row / missing-only range 是成功 no-op。它们不是 row
 delete、row shifting、row metadata edit、dense range delete、tombstone output、
+table/range metadata recalculation 或大文件低内存 random editing。
+`erase_column()` / `erase_columns()` 是对称的 sparse-store 列记录删除便利 API：它们只删除
+目标 column / inclusive column range 中已经 represented 的 active sparse records，
+missing column / missing-only range 是成功 no-op。它们不是 column delete、column
+shifting、column metadata edit、dense range delete、tombstone output、
 table/range metadata recalculation 或大文件低内存 random editing。`set_cells()`、
 `set_cell_values()`、`clear_cell_values(span<WorksheetCellReference>)` 和
 `erase_cells(span<WorksheetCellReference>)`，以及 `append_row()` / `set_row()` 都有
@@ -637,6 +643,8 @@ std::vector<fastxlsx::CellValue> empty_row;
 sheet.set_row(5, empty_row); // Clear represented row 5; missing row 5 is a no-op.
 sheet.erase_row(6);
 sheet.erase_rows(7, 9);
+sheet.erase_column(2);
+sheet.erase_columns(3, 4);
 std::vector<fastxlsx::WorksheetCellUpdate> value_updates = {
     {{1, 1}, fastxlsx::CellValue::text("value-only keeps existing style")},
     {{4, 1}, fastxlsx::CellValue::text("missing target has no style")},
@@ -678,7 +686,7 @@ editor.save_as("edited.xlsx");
 行列上限的引用会被拒绝。row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
 `set_cell()` / `set_cells()` / `append_row()` / `set_row()` / `erase_row()` /
-`erase_rows()` / `set_cell_values()` / `clear_cell_values(span)` /
+`erase_rows()` / `erase_column()` / `erase_columns()` / `set_cell_values()` / `clear_cell_values(span)` /
 `erase_cell()` / `erase_cells(CellRange)` / `erase_cells(span)` throws、updates `last_edit_error()`，并且不会 dirty 或 mutate sparse store；
 连续失败 mutation 只保留最新 `last_edit_error()`，后续成功
 mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
@@ -702,6 +710,10 @@ coordinate 允许且后续重复项是 no-op。
 `erase_row()` / `erase_rows()` 使用同样的 1-based row guardrail 删除目标行内已经
 represented 的 active sparse records；missing row / missing-only row range 是成功 no-op，
 反向 row range 会失败且不污染状态。它们不做 row deletion、row shifting 或 row metadata edit。
+`erase_column()` / `erase_columns()` 使用同样的 1-based column guardrail 删除目标列内已经
+represented 的 active sparse records；missing column / missing-only column range 是成功
+no-op，反向 column range 会失败且不污染状态。它们不做 column deletion、column shifting
+或 column metadata edit。
 `WorksheetEditor::has_pending_changes()` 只检查该 borrowed handle 对应的
 materialized session 是否 dirty；它不触发 flush、不增加
 `WorkbookEditor::pending_change_count()`，也不更新 `last_edit_error()`。

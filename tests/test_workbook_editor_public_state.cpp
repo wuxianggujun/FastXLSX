@@ -3767,6 +3767,183 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
     }
 }
 
+void test_public_worksheet_editor_erase_column_removes_sparse_column()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-column-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.erase_column(1);
+    check(sheet.cell_count() == 1,
+        "erase_column should remove all represented cells in the target sparse column");
+    check(!sheet.try_cell("A1").has_value(),
+        "erase_column should remove target-column row-one text cells");
+    check(!sheet.try_cell("A2").has_value(),
+        "erase_column should remove target-column row-two text cells");
+    check(sheet.get_cell("B1").number_value() == 1.0,
+        "erase_column should preserve represented cells outside the target column");
+    check(sheet.has_pending_changes(),
+        "erase_column should dirty the materialized worksheet when records are removed");
+    check(editor.pending_materialized_cell_count() == 1,
+        "erase_column should update aggregate materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "successful erase_column should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="B1"/>)",
+        "erase_column should shrink the projected dimension to remaining sparse cells");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "erase_column should persist non-target column source cells");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "erase_column should omit erased column row-one text cells");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "erase_column should omit erased column row-two text cells");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "erase_column should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-columns-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before missing erase_column no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before missing erase_column no-op");
+
+        sheet.erase_column(3);
+        check(!editor.last_edit_error().has_value(),
+            "missing erase_column should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "missing erase_column should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "missing erase_column should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "missing erase_column should not create or remove sparse records");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-columns-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 4, fastxlsx::CellValue::text("column-range-extra"));
+        sheet.erase_columns(1, 2);
+        check(sheet.cell_count() == 1,
+            "erase_columns should remove represented sparse records in all target columns");
+        check(!sheet.try_cell("A1").has_value(),
+            "erase_columns should remove first column row-one text cells");
+        check(!sheet.try_cell("A2").has_value(),
+            "erase_columns should remove first column row-two text cells");
+        check(!sheet.try_cell("B1").has_value(),
+            "erase_columns should remove second column numeric cells");
+        check(sheet.get_cell("D4").text_value() == "column-range-extra",
+            "erase_columns should preserve represented cells outside the column range");
+        check(sheet.has_pending_changes(),
+            "erase_columns should keep the materialized worksheet dirty after mutation");
+        check(!editor.last_edit_error().has_value(),
+            "successful erase_columns should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="D4"/>)",
+            "erase_columns should shrink the projected dimension to remaining sparse cells");
+        check_contains(worksheet_xml, "column-range-extra",
+            "erase_columns should persist non-target column edits");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "erase_columns should omit erased column row-one text cells");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "erase_columns should omit erased column row-two text cells");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "erase_columns should omit erased second-column numeric cells");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool invalid_failed = false;
+        try {
+            sheet.erase_column(0);
+        } catch (const fastxlsx::FastXlsxError&) {
+            invalid_failed = true;
+        }
+        check(invalid_failed, "erase_column should reject invalid column numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed erase_column invalid-column mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "erase_column invalid-column failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "erase_column invalid-column failure should preserve sparse cell count");
+
+        bool reversed_failed = false;
+        try {
+            sheet.erase_columns(2, 1);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            reversed_failed = true;
+            check_contains(error.what(), "first_column <= last_column",
+                "erase_columns reversed failure should expose the column ordering rule");
+        }
+        check(reversed_failed, "erase_columns should reject reversed column ranges");
+        check(editor.last_edit_error().has_value(),
+            "failed erase_columns reversed mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "erase_columns reversed failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "erase_columns reversed failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "erase_columns reversed failure should preserve existing cells");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-budget-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+        sheet.erase_column(1);
+        check(sheet.cell_count() == 1,
+            "erase_column should release sparse records under an exact max_cells budget");
+        sheet.set_cell(3, 1, fastxlsx::CellValue::text("after-erase-column-budget"));
+        check(!editor.last_edit_error().has_value(),
+            "successful set_cell after erase_column budget release should clear diagnostics");
+        check(sheet.cell_count() == 2,
+            "set_cell after erase_column should stay within the exact max_cells budget");
+        check(sheet.get_cell("A3").text_value() == "after-erase-column-budget",
+            "set_cell after erase_column should insert the new sparse record");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "after-erase-column-budget",
+            "budget-released insertion after erase_column should persist through save_as");
+        check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "budget-released insertion should preserve non-target column source cells");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "budget-released insertion should not resurrect erased column row-one text cells");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "budget-released insertion should not resurrect erased column row-two text cells");
+    }
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -4695,6 +4872,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_set_row_empty_and_guardrails();
             test_public_worksheet_editor_erase_row_removes_sparse_row();
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
+            test_public_worksheet_editor_erase_column_removes_sparse_column();
+            test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

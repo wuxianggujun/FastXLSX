@@ -110,6 +110,14 @@ replacing the active sparse store. They do not add row deletion, row shifting,
 row metadata editing, dense range deletion, tombstone output, table/range
 metadata recalculation, relationship repair, or large-file low-memory random
 editing.
+`WorksheetEditor::erase_column()` and `WorksheetEditor::erase_columns()` now
+cover the symmetric sparse column delete convenience for small files: they
+delete only represented active sparse records from one column or inclusive
+column range, treat missing columns / missing-only ranges as successful no-ops,
+and stage deletion before replacing the active sparse store. They do not add
+column deletion, column shifting, column metadata editing, dense range deletion,
+tombstone output, table/range metadata recalculation, relationship repair, or
+large-file low-memory random editing.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
@@ -2733,6 +2741,8 @@ schema validation.
   - `WorksheetEditor::set_row(initializer_list<CellValue>)`
   - `WorksheetEditor::erase_row()`
   - `WorksheetEditor::erase_rows()`
+  - `WorksheetEditor::erase_column()`
+  - `WorksheetEditor::erase_columns()`
   - `WorksheetEditor::set_cell_value()`
   - `WorksheetEditor::set_cell_values()`
   - `WorksheetEditor::set_cell_values(initializer_list<WorksheetCellUpdate>)`

@@ -613,9 +613,9 @@ struct WorkbookEditorRenameOptions {
 /// batch clears do not synthesize blank records for missing coordinates. This
 /// does not migrate or merge styles, synthesize styles for missing cells,
 /// create tombstones, or allow caller-supplied foreign style handles.
-/// `erase_cell()`, `erase_cells()`, `erase_row()`, and `erase_rows()` remove
-/// active sparse records instead of writing explicit blanks. Empty, valueless,
-/// unquoted, unterminated, padded,
+/// `erase_cell()`, `erase_cells()`, `erase_row()`, `erase_rows()`,
+/// `erase_column()`, and `erase_columns()` remove active sparse records instead
+/// of writing explicit blanks. Empty, valueless, unquoted, unterminated, padded,
 /// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -802,6 +802,39 @@ public:
     /// table/range metadata recalculation, relationship repair, or a large-file
     /// low-memory random-editing path.
     void erase_rows(std::uint32_t first_row, std::uint32_t last_row);
+
+    /// Removes represented sparse cells from one column.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The column
+    /// is a 1-based Excel column number. Only active sparse records already
+    /// present in that column are removed; missing columns are successful
+    /// no-ops that do not dirty the materialized session and clear prior public
+    /// edit diagnostics. Invalid column numbers are mutation failures and
+    /// update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// may shrink the worksheet dimension. This is not column deletion, column
+    /// shifting, column metadata editing, dense range deletion, tombstone
+    /// output, table/range metadata recalculation, relationship repair, or a
+    /// large-file low-memory random-editing path.
+    void erase_column(std::uint32_t column);
+
+    /// Removes represented sparse cells from an inclusive column range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// column-range bounds are 1-based Excel column numbers and must satisfy
+    /// `first_column <= last_column`. Only active sparse records already
+    /// present in those columns are removed; missing-only ranges are successful
+    /// no-ops that do not dirty the materialized session and clear prior public
+    /// edit diagnostics. Invalid or reversed ranges reject before mutating the
+    /// sparse store and update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// may shrink the worksheet dimension. This is not column deletion, column
+    /// shifting, column metadata editing, dense range deletion, tombstone
+    /// output, table/range metadata recalculation, relationship repair, or a
+    /// large-file low-memory random-editing path.
+    void erase_columns(std::uint32_t first_column, std::uint32_t last_column);
 
     /// Replaces one sparse-store cell value while preserving its current style.
     ///

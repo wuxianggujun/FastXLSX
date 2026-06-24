@@ -342,6 +342,54 @@ void WorksheetEditor::erase_rows(std::uint32_t first_row, std::uint32_t last_row
     }
 }
 
+void WorksheetEditor::erase_column(std::uint32_t column)
+{
+    erase_columns(column, column);
+}
+
+void WorksheetEditor::erase_columns(std::uint32_t first_column, std::uint32_t last_column)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(1, first_column);
+        detail::validate_worksheet_editor_cell_coordinate(1, last_column);
+        if (first_column > last_column) {
+            throw FastXlsxError(
+                "WorksheetEditor::erase_columns() requires first_column <= last_column");
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        const detail::CellStore& current_store = session->store();
+        std::vector<detail::CellPosition> column_positions;
+        for (const auto& [position, record] : current_store.records()) {
+            (void)record;
+            if (position.column >= first_column && position.column <= last_column) {
+                column_positions.push_back(position);
+            }
+        }
+        if (column_positions.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = current_store;
+        for (const detail::CellPosition& position : column_positions) {
+            staged_store.erase_cell(position.row, position.column);
+        }
+
+        session->replace_store(std::move(staged_store));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::set_cell_value(
     std::uint32_t row, std::uint32_t column, const CellValue& value)
 {

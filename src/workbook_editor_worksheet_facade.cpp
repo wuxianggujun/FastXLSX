@@ -190,6 +190,39 @@ void WorksheetEditor::set_cell_value(std::string_view cell_reference, const Cell
     }
 }
 
+void WorksheetEditor::clear_cell_value(std::uint32_t row, std::uint32_t column)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(row, column);
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->clear_cell_value(row, column);
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::clear_cell_value(std::string_view cell_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        const detail::WorksheetEditorCellCoordinate coordinate =
+            detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
+        clear_cell_value(coordinate.row, coordinate.column);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

@@ -529,13 +529,18 @@ range recalculation、relationship pruning、repair 或语义同步。
 `WorksheetEditor::set_cell()` 接受 caller-supplied `StyleId{0}`，但会把它归一化为
 no style handle；dirty output 不写 `s="0"`。非默认 style ids 仍会被拒绝，
 row/column 和 A1 overload 的失败都不会 mutate sparse store、dirty materialized
-session 或 queue pending edit。
+session 或 queue pending edit。`WorksheetEditor::set_cell_value()` 是 value-only
+编辑，会保留目标 cell 当前 materialized source style handle；
+`clear_cell_value()` 会把已有 cell 转成显式 blank 并保留该 style，missing cell
+是成功 no-op，不写 tombstone。
 读取 source worksheet 时，显式默认 `s` 属性值精确为 `0`（例如 `s="0"`、
 `s='0'` 或 `s = "0"`）也会归一化为 no style handle；非默认 source style ids
-仍不导入、不迁移、不合并。这个 source 归一化不做数值宽松解析：空值、缺失值、
-未加引号、未闭合引号、带符号、前导零、前后空白、entity 编码或重复的
-default-like style attribute 仍会失败；`x:s` 这类 qualified style-like
-attribute 也会作为 unsupported cell metadata 失败。
+会先按 source `xl/styles.xml` 的 `cellXfs` 边界验证，再作为 workbook-local
+numeric passthrough handle materialize / dirty projection 回写；这仍不是 style
+migration、style merge 或 style creation。这个 source 归一化不做数值宽松解析：
+空值、缺失值、未加引号、未闭合引号、带符号、前导零、前后空白、entity 编码或
+重复的 default-like style attribute 仍会失败；`x:s` 这类 qualified
+style-like attribute 也会作为 unsupported cell metadata 失败。
 移动或 move-assign owning `WorkbookEditor` 后，之前取得的 `WorksheetEditor`
 handle 不会自动跟随新 owner；除 `name()` 这个本地 planned-name label 外，
 继续读写/检查 session 会抛 `FastXlsxError`，调用方必须从 moved-to / assigned-to

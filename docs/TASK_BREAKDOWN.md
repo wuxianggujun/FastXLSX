@@ -32944,6 +32944,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.718 - WorksheetEditor style-preserving clear value boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook value clear API; no tombstone
+model and no style migration.
+
+Goal: provide a safe "clear contents" counterpart to `set_cell_value()`.
+When an existing materialized cell has a validated non-default source style id,
+`WorksheetEditor::clear_cell_value()` converts that cell to an explicit blank
+record while keeping the same workbook-local style handle. Missing targets are
+successful no-ops and do not synthesize blank cells.
+
+Output:
+- Added row/column and strict A1 `WorksheetEditor::clear_cell_value()` overloads.
+- Added materialized-session clear logic that preserves the existing sparse
+  record style id and only dirties the session when a target record exists.
+- Extended public source-style regressions to cover missing clear no-op
+  diagnostic cleanup, styled explicit blank projection, full replacement style
+  drop, missing value-edit style non-synthesis, and invalid clear coordinate
+  hygiene.
+- Updated public docs to distinguish explicit blank clear from erase/removal and
+  tombstone output.
+
+Non-goals / boundary:
+- No tombstone model, no style id write API, no styles.xml creation, no style
+  migration or merge, no missing-cell synthesis, no relationship/content-type
+  repair, and no large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

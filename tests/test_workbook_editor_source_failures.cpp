@@ -669,6 +669,10 @@ void reject_public_two_clean_retry_invalid_mutations(
             public_two_clean_retry_rejected_mutation_value(
                 rejected_prefix, "-a1-column-overflow"));
     }), label + " should reject A1 column-overflow set_cell");
+    check(threw_fastxlsx_error([&] { data.clear_cell_value(0, 1); }),
+        label + " should reject row-zero clear_cell_value");
+    check(threw_fastxlsx_error([&] { untouched.clear_cell_value("XFE1"); }),
+        label + " should reject A1 column-overflow clear_cell_value");
     check(threw_fastxlsx_error([&] { data.erase_cell(0, 1); }),
         label + " should reject row-zero erase");
     check(threw_fastxlsx_error([&] { untouched.erase_cell(1, 16385); }),
@@ -2875,7 +2879,9 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             number_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
             fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
             data.append_row({fastxlsx::CellView::text("styled-source")
-                    .with_style(number_style)});
+                    .with_style(number_style),
+                fastxlsx::CellView::text("clear-source").with_style(number_style),
+                fastxlsx::CellView::text("full-replace-source").with_style(number_style)});
             fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
             untouched.append_row({fastxlsx::CellView::text("keep-source-style")});
             writer.close();
@@ -2911,6 +2917,14 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
                 && editor.last_edit_error()->find("set_cell_value()") != std::string::npos,
             "rejected style-preserving value edit should update last_edit_error");
 
+        sheet.clear_cell_value("E1");
+        check(!sheet.try_cell("E1").has_value(),
+            "WorksheetEditor::clear_cell_value should not synthesize a missing cell");
+        check(!sheet.has_pending_changes(),
+            "missing clear_cell_value should not dirty the materialized session");
+        check(!editor.last_edit_error().has_value(),
+            "missing clear_cell_value should clear prior edit diagnostics");
+
         sheet.set_cell_value("A1",
             fastxlsx::CellValue::text("style-preserved-value-edit"));
         const fastxlsx::CellValue updated_a1 = sheet.get_cell("A1");
@@ -2921,8 +2935,16 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             "WorksheetEditor::set_cell_value should preserve the existing source style id");
         check(!editor.last_edit_error().has_value(),
             "successful style-preserving value edit should clear prior edit diagnostics");
-        sheet.set_cell_value(1, 3, fastxlsx::CellValue::text("value-edit-no-source-style"));
-        sheet.set_cell("B1", fastxlsx::CellValue::text("style-passthrough-edit"));
+
+        sheet.clear_cell_value(1, 2);
+        const fastxlsx::CellValue cleared_b1 = sheet.get_cell("B1");
+        check(cleared_b1.kind() == fastxlsx::CellValueKind::Blank
+                && cleared_b1.has_style()
+                && cleared_b1.style_id().value() == number_style.value(),
+            "WorksheetEditor::clear_cell_value should preserve the existing source style id");
+
+        sheet.set_cell("C1", fastxlsx::CellValue::text("style-passthrough-edit"));
+        sheet.set_cell_value(1, 4, fastxlsx::CellValue::text("value-edit-no-source-style"));
         editor.save_as(output);
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -2932,12 +2954,16 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
         check_contains(output_xml,
             R"(<c r="A1" s="1" t="inlineStr"><is><t>style-preserved-value-edit</t></is></c>)",
             "dirty source-style projection should preserve style ids on value-only edits");
+        check_contains(output_xml, R"(<c r="B1" s="1"/>)",
+            "dirty source-style projection should write styled explicit blanks for clear_cell_value");
         check_contains(output_xml,
-            R"(<c r="B1" t="inlineStr"><is><t>style-passthrough-edit</t></is></c>)",
-            "dirty source-style projection should write new unstyled edits");
+            R"(<c r="C1" t="inlineStr"><is><t>style-passthrough-edit</t></is></c>)",
+            "dirty source-style projection should drop styles on full cell replacement");
         check_contains(output_xml,
-            R"(<c r="C1" t="inlineStr"><is><t>value-edit-no-source-style</t></is></c>)",
+            R"(<c r="D1" t="inlineStr"><is><t>value-edit-no-source-style</t></is></c>)",
             "style-preserving value edit on a missing cell should not synthesize styles");
+        check_not_contains(output_xml, R"(r="E1")",
+            "missing clear_cell_value should not synthesize an output cell");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-source-style",
             "dirty source-style projection should preserve untouched sheets");
     }

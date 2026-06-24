@@ -89,6 +89,21 @@ public:
         dirty_ = dirty_ || had_record;
     }
 
+    void clear_cell_value(std::uint32_t row, std::uint32_t column)
+    {
+        const CellRecord* existing = store_.try_cell(row, column);
+        if (existing == nullptr) {
+            return;
+        }
+
+        CellValue value = CellValue::blank();
+        if (existing->style_id.has_value()) {
+            value = value.with_style(*existing->style_id);
+        }
+        store_.set_cell(row, column, value);
+        dirty_ = true;
+    }
+
     [[nodiscard]] const CellRecord* try_cell(
         std::uint32_t row, std::uint32_t column) const
     {

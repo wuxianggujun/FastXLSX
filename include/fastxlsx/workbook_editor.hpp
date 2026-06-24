@@ -591,8 +591,10 @@ struct WorkbookEditorRenameOptions {
 /// numeric passthrough handles, and written back by dirty projection while the
 /// source styles part is preserved. `set_cell_value()` can replace a cell value
 /// while preserving the currently materialized source style handle on that same
-/// coordinate. This does not migrate or merge styles, synthesize styles for
-/// missing cells, or allow caller-supplied foreign style handles. Empty,
+/// coordinate. `clear_cell_value()` can turn an existing materialized cell into
+/// an explicit blank while preserving that same style handle; missing cells are
+/// a successful no-op. This does not migrate or merge styles, synthesize styles
+/// for missing cells, create tombstones, or allow caller-supplied foreign style handles. Empty,
 /// valueless, unquoted, unterminated, padded, signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -701,6 +703,28 @@ public:
     /// row/column set_cell_value() overload. This remains a value-only
     /// convenience, not a public style migration or style editing API.
     void set_cell_value(std::string_view cell_reference, const CellValue& value);
+
+    /// Clears the value of one represented cell while preserving its style.
+    ///
+    /// Existing cells are converted to explicit CellValue::blank() records.
+    /// If the existing materialized cell has a non-default source StyleId, the
+    /// blank keeps that workbook-local handle and dirty save_as() projects an
+    /// empty styled `<c>` cell. Existing unstyled cells become unstyled explicit
+    /// blanks. A missing target cell is a successful no-op: it does not insert a
+    /// blank, does not dirty the session, and clears prior public edit
+    /// diagnostics. Invalid coordinates are mutation failures and update the
+    /// owning WorkbookEditor::last_edit_error(). This is not erase_cell(), does
+    /// not create tombstones, and does not migrate, merge, validate, or create
+    /// styles.
+    void clear_cell_value(std::uint32_t row, std::uint32_t column);
+
+    /// Clears the value of one represented cell by strict uppercase A1 reference
+    /// while preserving the target cell's current source style handle.
+    ///
+    /// The reference parsing, coordinate guardrails, missing-cell no-op
+    /// behavior, and non-tombstone explicit-blank semantics follow the
+    /// row/column clear_cell_value() overload.
+    void clear_cell_value(std::string_view cell_reference);
 
     /// Removes one sparse-store cell record.
     ///

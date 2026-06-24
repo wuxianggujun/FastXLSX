@@ -29801,6 +29801,48 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_success" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.699 - Split PackageEditor linked-pivot executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageEditor linked-pivot test executable by moving the
+pivot-table, pivot-cache-definition, and pivot-cache-records families into
+focused source files and executables, while keeping the existing
+`fastxlsx.package_editor.preservation-linked-pivot` CTest name stable for the
+pivot-table core shard.
+
+Output:
+- Extracted shared linked-pivot helpers to
+  `tests/test_package_editor_preservation_linked_pivot_common.hpp`.
+- Kept `tests/test_package_editor_preservation_linked_pivot.cpp` focused on the
+  worksheet rewrite and pivot-table part lifecycle coverage.
+- Added:
+  - `tests/test_package_editor_preservation_linked_pivot_cache_definition.cpp`.
+  - `tests/test_package_editor_preservation_linked_pivot_cache_records.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_preservation_linked_pivot_core_tests`,
+  `fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests`,
+  and `fastxlsx_package_editor_preservation_linked_pivot_cache_records_tests`.
+- Kept `fastxlsx_package_editor_preservation_linked_pivot_tests` as a
+  build-only aggregate target depending on all linked-pivot shard executables.
+- Kept `fastxlsx.package_editor.preservation-linked-pivot` for the pivot-table
+  core shard and added
+  `fastxlsx.package_editor.preservation-linked-pivot-cache-definition` and
+  `fastxlsx.package_editor.preservation-linked-pivot-cache-records`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no pivot-table or pivot-cache semantic expansion, and no CTest
+  coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_preservation_linked_pivot_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-linked-pivot" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

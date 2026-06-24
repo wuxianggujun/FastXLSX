@@ -424,8 +424,16 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_linked.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
-    fastxlsx_package_editor_preservation_linked_pivot_tests
+    fastxlsx_package_editor_preservation_linked_pivot_core_tests
     test_package_editor_preservation_linked_pivot.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests
+    test_package_editor_preservation_linked_pivot_cache_definition.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_linked_pivot_cache_records_tests
+    test_package_editor_preservation_linked_pivot_cache_records.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_linked_external_links_tests
@@ -434,6 +442,13 @@ add_fastxlsx_package_editor_preservation_target(
 add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_linked_custom_xml_tests
     test_package_editor_preservation_linked_custom_xml.cpp
+)
+
+add_custom_target(fastxlsx_package_editor_preservation_linked_pivot_tests
+    DEPENDS
+        fastxlsx_package_editor_preservation_linked_pivot_core_tests
+        fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests
+        fastxlsx_package_editor_preservation_linked_pivot_cache_records_tests
 )
 
 add_custom_target(fastxlsx_package_editor_preservation_tests
@@ -486,7 +501,15 @@ add_fastxlsx_package_editor_preservation_shard(
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked-pivot
-    fastxlsx_package_editor_preservation_linked_pivot_tests 60
+    fastxlsx_package_editor_preservation_linked_pivot_core_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-linked-pivot-cache-definition
+    fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-linked-pivot-cache-records
+    fastxlsx_package_editor_preservation_linked_pivot_cache_records_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked-external-links

@@ -1828,6 +1828,16 @@ XML coverage into
 `fastxlsx.package_editor.preservation-linked-custom-xml` names are added, and
 `fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
 This is still test organization only.
+The linked-pivot preservation executable is now split further:
+`tests/test_package_editor_preservation_linked_pivot.cpp` keeps the worksheet
+rewrite and pivot-table part lifecycle coverage, while
+`tests/test_package_editor_preservation_linked_pivot_cache_definition.cpp` and
+`tests/test_package_editor_preservation_linked_pivot_cache_records.cpp` own the
+cache-definition and cache-records lifecycle families. The existing
+`fastxlsx.package_editor.preservation-linked-pivot` CTest name stays stable for
+the pivot-table core shard, the new cache shard names are added, and
+`fastxlsx_package_editor_preservation_linked_pivot_tests` remains a build-only
+aggregate. This is still test organization only.
 The same preservation lane also splits the large core shard further: the
 base `tests/test_package_editor_preservation_core.cpp` keeps drawing,
 unknown-extension, media, chart, and table coverage, while
@@ -2335,6 +2345,11 @@ schema validation.
   - `fastxlsx.package_editor.preservation-resources`
   - `fastxlsx.package_editor.preservation-comments`
   - `fastxlsx.package_editor.preservation-linked`
+  - `fastxlsx.package_editor.preservation-linked-pivot`
+  - `fastxlsx.package_editor.preservation-linked-pivot-cache-definition`
+  - `fastxlsx.package_editor.preservation-linked-pivot-cache-records`
+  - `fastxlsx.package_editor.preservation-linked-external-links`
+  - `fastxlsx.package_editor.preservation-linked-custom-xml`
   - `fastxlsx.package_editor.cellstore-core`
   - `fastxlsx.package_editor.cellstore-chunks`
   - `fastxlsx.package_editor.cellstore-source`

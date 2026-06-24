@@ -302,6 +302,14 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_core.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_core_drawings_tests
+    test_package_editor_preservation_core_drawings.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_core_docparts_tests
+    test_package_editor_preservation_core_docparts.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_removal_tests
     test_package_editor_preservation_removal.cpp
 )
@@ -333,6 +341,8 @@ add_fastxlsx_package_editor_preservation_target(
 add_custom_target(fastxlsx_package_editor_preservation_tests
     DEPENDS
         fastxlsx_package_editor_preservation_core_tests
+        fastxlsx_package_editor_preservation_core_drawings_tests
+        fastxlsx_package_editor_preservation_core_docparts_tests
         fastxlsx_package_editor_preservation_removal_tests
         fastxlsx_package_editor_preservation_resources_tests
         fastxlsx_package_editor_preservation_comments_tests
@@ -355,6 +365,14 @@ endfunction()
 
 add_fastxlsx_package_editor_preservation_shard(
     preservation-core fastxlsx_package_editor_preservation_core_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-core-drawings
+    fastxlsx_package_editor_preservation_core_drawings_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-core-docparts
+    fastxlsx_package_editor_preservation_core_docparts_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-removal fastxlsx_package_editor_preservation_removal_tests 60

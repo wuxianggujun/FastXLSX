@@ -1828,6 +1828,17 @@ XML coverage into
 `fastxlsx.package_editor.preservation-linked-custom-xml` names are added, and
 `fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
 This is still test organization only.
+The same preservation lane also splits the large core shard further: the
+base `tests/test_package_editor_preservation_core.cpp` keeps drawing,
+unknown-extension, media, chart, and table coverage, while
+`tests/test_package_editor_preservation_core_drawings.cpp` and
+`tests/test_package_editor_preservation_core_docparts.cpp` hold the VML /
+percent-decoded drawing and doc-part families. The existing
+`fastxlsx.package_editor.preservation-core` CTest name stays stable, the new
+`fastxlsx.package_editor.preservation-core-drawings` and
+`fastxlsx.package_editor.preservation-core-docparts` names are added, and
+`fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
+This is still test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

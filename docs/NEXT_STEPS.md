@@ -1765,6 +1765,16 @@ The next preservation layout split moves `preservation-core`,
 the same CTest names. This is still CTest budget hygiene only: no runtime
 behavior, public API, PackageEditor semantics, relationship repair, linked
 object lifecycle, or preservation guarantees changed.
+The follow-up preservation executable split then replaces that aggregate source
+with five per-shard files:
+`tests/test_package_editor_preservation_core.cpp`,
+`tests/test_package_editor_preservation_removal.cpp`,
+`tests/test_package_editor_preservation_resources.cpp`,
+`tests/test_package_editor_preservation_comments.cpp`, and
+`tests/test_package_editor_preservation_linked.cpp`. The
+`fastxlsx.package_editor.preservation-*` CTest names stay stable, and
+`fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
+This remains test-source and CTest budget hygiene only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

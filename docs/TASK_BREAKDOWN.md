@@ -29307,6 +29307,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.687 - Split PackageEditor preservation executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: reduce the newly extracted preservation test source by splitting each
+preservation shard into its own source file and executable while preserving the
+existing CTest names.
+
+Output:
+- Replaced `tests/test_package_editor_preservation.cpp` with:
+  - `tests/test_package_editor_preservation_core.cpp`.
+  - `tests/test_package_editor_preservation_removal.cpp`.
+  - `tests/test_package_editor_preservation_resources.cpp`.
+  - `tests/test_package_editor_preservation_comments.cpp`.
+  - `tests/test_package_editor_preservation_linked.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_preservation_core_tests`,
+  `fastxlsx_package_editor_preservation_removal_tests`,
+  `fastxlsx_package_editor_preservation_resources_tests`,
+  `fastxlsx_package_editor_preservation_comments_tests`, and
+  `fastxlsx_package_editor_preservation_linked_tests`.
+- Kept `fastxlsx_package_editor_preservation_tests` as a build-only aggregate
+  target depending on the per-shard executables.
+- Kept the public CTest names as `fastxlsx.package_editor.preservation-*`; only
+  the executable behind each name changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no relationship repair expansion, no linked-object lifecycle
+  expansion, no preservation semantic expansion, and no CTest coverage
+  removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_preservation_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -262,23 +262,54 @@ add_fastxlsx_package_editor_shard(core 60)
 add_fastxlsx_package_editor_shard(c5 60)
 add_fastxlsx_package_editor_shard(policy 60)
 
-add_executable(fastxlsx_package_editor_preservation_tests
-    test_package_editor_preservation.cpp
+function(add_fastxlsx_package_editor_preservation_target target source_file)
+    add_executable(${target}
+        ${source_file}
+    )
+    target_link_libraries(${target} PRIVATE FastXLSX::fastxlsx)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_compile_definitions(${target} PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    if(FASTXLSX_ENABLE_MINIZIP_NG)
+        target_link_libraries(${target} PRIVATE MINIZIP::minizip-ng)
+        target_compile_definitions(${target} PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+    endif()
+endfunction()
+
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_core_tests
+    test_package_editor_preservation_core.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_removal_tests
+    test_package_editor_preservation_removal.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_resources_tests
+    test_package_editor_preservation_resources.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_comments_tests
+    test_package_editor_preservation_comments.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_linked_tests
+    test_package_editor_preservation_linked.cpp
 )
 
-target_link_libraries(fastxlsx_package_editor_preservation_tests PRIVATE FastXLSX::fastxlsx)
-target_compile_features(fastxlsx_package_editor_preservation_tests PRIVATE cxx_std_20)
-target_compile_definitions(fastxlsx_package_editor_preservation_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
-target_include_directories(fastxlsx_package_editor_preservation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-if(FASTXLSX_ENABLE_MINIZIP_NG)
-    target_link_libraries(fastxlsx_package_editor_preservation_tests PRIVATE MINIZIP::minizip-ng)
-    target_compile_definitions(fastxlsx_package_editor_preservation_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
-endif()
+add_custom_target(fastxlsx_package_editor_preservation_tests
+    DEPENDS
+        fastxlsx_package_editor_preservation_core_tests
+        fastxlsx_package_editor_preservation_removal_tests
+        fastxlsx_package_editor_preservation_resources_tests
+        fastxlsx_package_editor_preservation_comments_tests
+        fastxlsx_package_editor_preservation_linked_tests
+)
 
-function(add_fastxlsx_package_editor_preservation_shard shard timeout_seconds)
+function(add_fastxlsx_package_editor_preservation_shard shard target timeout_seconds)
     add_test(
         NAME fastxlsx.package_editor.${shard}
-        COMMAND fastxlsx_package_editor_preservation_tests --shard=${shard}
+        COMMAND ${target} --shard=${shard}
     )
     set_tests_properties(fastxlsx.package_editor.${shard} PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -286,11 +317,21 @@ function(add_fastxlsx_package_editor_preservation_shard shard timeout_seconds)
     )
 endfunction()
 
-add_fastxlsx_package_editor_preservation_shard(preservation-core 60)
-add_fastxlsx_package_editor_preservation_shard(preservation-removal 60)
-add_fastxlsx_package_editor_preservation_shard(preservation-resources 60)
-add_fastxlsx_package_editor_preservation_shard(preservation-comments 60)
-add_fastxlsx_package_editor_preservation_shard(preservation-linked 60)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-core fastxlsx_package_editor_preservation_core_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-removal fastxlsx_package_editor_preservation_removal_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-resources fastxlsx_package_editor_preservation_resources_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-comments fastxlsx_package_editor_preservation_comments_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-linked fastxlsx_package_editor_preservation_linked_tests 60
+)
 
 add_executable(fastxlsx_package_editor_sheetdata_tests
     test_package_editor_sheetdata.cpp

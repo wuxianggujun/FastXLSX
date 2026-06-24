@@ -1839,6 +1839,16 @@ percent-decoded drawing and doc-part families. The existing
 `fastxlsx.package_editor.preservation-core-docparts` names are added, and
 `fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
 This is still test organization only.
+The base PackageEditor core executable is now split too:
+`tests/test_package_editor_core.cpp` keeps staged-chunk, worksheet routing,
+replacement-state, and docProps coverage, while
+`tests/test_package_editor_core_calc.cpp` owns calc metadata regressions and
+`tests/test_package_editor_core_linked.cpp` owns the linked-fixture plus
+minizip-backed cases. The existing `fastxlsx.package_editor.core` CTest name
+stays stable, `fastxlsx.package_editor.core-calc` and
+`fastxlsx.package_editor.core-linked` are added, and
+`fastxlsx_package_editor_tests` remains a build-only aggregate. This is still
+test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

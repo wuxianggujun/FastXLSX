@@ -253,6 +253,14 @@ add_fastxlsx_package_editor_target(
     test_package_editor_core.cpp
 )
 add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_core_calc_tests
+    test_package_editor_core_calc.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_core_linked_tests
+    test_package_editor_core_linked.cpp
+)
+add_fastxlsx_package_editor_target(
     fastxlsx_package_editor_c5_tests
     test_package_editor_c5.cpp
 )
@@ -264,6 +272,8 @@ add_fastxlsx_package_editor_target(
 add_custom_target(fastxlsx_package_editor_tests
     DEPENDS
         fastxlsx_package_editor_core_tests
+        fastxlsx_package_editor_core_calc_tests
+        fastxlsx_package_editor_core_linked_tests
         fastxlsx_package_editor_c5_tests
         fastxlsx_package_editor_policy_tests
 )
@@ -280,6 +290,8 @@ function(add_fastxlsx_package_editor_shard shard target timeout_seconds)
 endfunction()
 
 add_fastxlsx_package_editor_shard(core fastxlsx_package_editor_core_tests 60)
+add_fastxlsx_package_editor_shard(core-calc fastxlsx_package_editor_core_calc_tests 60)
+add_fastxlsx_package_editor_shard(core-linked fastxlsx_package_editor_core_linked_tests 60)
 add_fastxlsx_package_editor_shard(c5 fastxlsx_package_editor_c5_tests 60)
 add_fastxlsx_package_editor_shard(policy fastxlsx_package_editor_policy_tests 60)
 

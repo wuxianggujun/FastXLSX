@@ -29578,6 +29578,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.694 - Split PackageEditor core executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep the core PackageEditor regression suite under the shard budget by
+separating the staged-chunk/docProps family, calc metadata family, and
+linked-fixture/minizip family while preserving the base `core` CTest name.
+
+Output:
+- Kept `tests/test_package_editor_core.cpp` focused on staged chunk handling,
+  worksheet source/chunk routing, repeated replacement state, and document
+  properties coverage.
+- Added:
+  - `tests/test_package_editor_core_calc.cpp`.
+  - `tests/test_package_editor_core_linked.cpp`.
+- Added executable targets:
+  `fastxlsx_package_editor_core_calc_tests` and
+  `fastxlsx_package_editor_core_linked_tests`.
+- Kept `fastxlsx_package_editor_tests` as a build-only aggregate target
+  depending on all PackageEditor core shard executables.
+- Kept the existing CTest name `fastxlsx.package_editor.core`, and added
+  `fastxlsx.package_editor.core-calc` and `fastxlsx.package_editor.core-linked`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no calc or linked-object semantic expansion, no relationship repair
+  expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

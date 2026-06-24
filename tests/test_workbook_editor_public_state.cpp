@@ -2579,6 +2579,151 @@ void test_public_worksheet_editor_a1_overloads_reject_invalid_references()
         "invalid A1 erase_cell should update last_edit_error");
 }
 
+void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-a1-range-mutation-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-a1-range-mutation-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("a1-range-clear-target"));
+    sheet.set_cell("D4", fastxlsx::CellValue::text("outside-a1-range"));
+
+    sheet.clear_cell_values("B1:C3");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "A1 range clear should blank represented B1");
+    check(sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "A1 range clear should blank represented C3");
+    check(!sheet.try_cell("B2").has_value(),
+        "A1 range clear should not synthesize missing cells inside the rectangle");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cleared_range =
+        sheet.sparse_cells("B1:C3");
+    check(cleared_range.size() == 2,
+        "A1 range clear should keep the mutation sparse, not dense");
+    if (cleared_range.size() == 2) {
+        check(cleared_range[0].reference.row == 1 && cleared_range[0].reference.column == 2 &&
+                cleared_range[0].value.kind() == fastxlsx::CellValueKind::Blank,
+            "A1 range clear should expose the blanked B1 record");
+        check(cleared_range[1].reference.row == 3 && cleared_range[1].reference.column == 3 &&
+                cleared_range[1].value.kind() == fastxlsx::CellValueKind::Blank,
+            "A1 range clear should expose the blanked C3 record");
+    }
+
+    sheet.erase_cells("A1:A2");
+    check(!sheet.try_cell("A1").has_value(),
+        "A1 range erase should remove represented A1");
+    check(!sheet.try_cell("A2").has_value(),
+        "A1 range erase should remove represented A2");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "A1 range erase should leave unrelated blanked B1 intact");
+    check(sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "A1 range erase should leave unrelated blanked C3 intact");
+
+    sheet.erase_cells("B2:C2");
+    check(!editor.last_edit_error().has_value(),
+        "missing-only A1 range erase should be a successful no-op");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="B1"/>)",
+        "A1 range clear should persist the B1 explicit blank");
+    check_contains(worksheet_xml, R"(<c r="C3"/>)",
+        "A1 range clear should persist the C3 explicit blank");
+    check_contains(worksheet_xml, "outside-a1-range",
+        "A1 range mutations should preserve cells outside the selected range");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "A1 range erase should omit erased A1 source text");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "A1 range erase should omit erased A2 source text");
+    check_not_contains(worksheet_xml, "a1-range-clear-target",
+        "A1 range clear should omit the prior C3 text payload");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "A1 range mutations should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_a1_range_mutations_invalid_references()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-a1-range-invalid-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-a1-range-invalid-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before = sheet.cell_count();
+    const std::size_t memory_before = sheet.estimated_memory_usage();
+    const std::array<std::string_view, 13> invalid_range_references {
+        "",
+        "a1:B2",
+        "A1:b2",
+        "A0:B2",
+        "A01:B2",
+        "XFE1:XFE2",
+        "A1:A1048577",
+        "A1:B2:C3",
+        "B2:A1",
+        "A:C",
+        "1:3",
+        "$A$1:$B$2",
+        "Data!A1:B2",
+    };
+
+    for (const std::string_view invalid_reference : invalid_range_references) {
+        check(threw_fastxlsx_error([&] { sheet.clear_cell_values(invalid_reference); }),
+            "A1 range clear should reject invalid references");
+        check(editor.last_edit_error().has_value(),
+            "invalid A1 range clear should update last_edit_error");
+        check(threw_fastxlsx_error([&] { sheet.erase_cells(invalid_reference); }),
+            "A1 range erase should reject invalid references");
+        check(editor.last_edit_error().has_value(),
+            "invalid A1 range erase should update last_edit_error");
+    }
+
+    check(!sheet.has_pending_changes(),
+        "invalid A1 range mutations should not dirty the materialized sheet");
+    check(!editor.has_pending_changes(),
+        "invalid A1 range mutations should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "invalid A1 range mutations should not increment public edit count");
+    check(sheet.cell_count() == cell_count_before,
+        "invalid A1 range mutations should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == memory_before,
+        "invalid A1 range mutations should preserve sparse memory estimate");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "invalid A1 range mutations should preserve existing source cells");
+
+    sheet.clear_cell_values("Z10:Z11");
+    check(!editor.last_edit_error().has_value(),
+        "valid missing-only A1 range clear should clear prior diagnostics");
+    check(!sheet.has_pending_changes(),
+        "valid missing-only A1 range clear should remain clean");
+
+    check(threw_fastxlsx_error([&] { sheet.erase_cells("A0:A1"); }),
+        "invalid A1 range erase should seed a diagnostic before recovery");
+    check(editor.last_edit_error().has_value(),
+        "invalid A1 range erase should record a diagnostic before recovery");
+    sheet.erase_cells("Z10:Z11");
+    check(!editor.last_edit_error().has_value(),
+        "valid missing-only A1 range erase should clear prior diagnostics");
+    check(!sheet.has_pending_changes(),
+        "valid missing-only A1 range erase should remain clean");
+    check(sheet.cell_count() == cell_count_before,
+        "valid missing-only A1 range mutations should not synthesize cells");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after invalid A1 range mutations should copy source entries");
+}
+
 void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates()
 {
     const std::filesystem::path source =
@@ -6081,6 +6226,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_get_cell_missing_and_blank_semantics();
             test_public_worksheet_editor_a1_overloads_read_mutate_and_save();
             test_public_worksheet_editor_a1_overloads_reject_invalid_references();
+            test_public_worksheet_editor_a1_range_mutations_sparse_semantics();
+            test_public_worksheet_editor_a1_range_mutations_invalid_references();
             test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates();
             test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic();
             test_public_worksheet_editor_sparse_cells_snapshot();

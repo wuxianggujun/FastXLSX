@@ -1104,8 +1104,25 @@ public:
     /// Invalid ranges are mutation failures and update
     /// WorkbookEditor::last_edit_error(). This is not dense range editing,
     /// erase/tombstone semantics, range metadata recalculation, style
-    /// migration/merge/creation, or an A1 range parser.
+    /// migration/merge/creation.
     void clear_cell_values(CellRange range);
+
+    /// Clears represented cell values inside a strict uppercase A1 range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The range
+    /// reference accepts one cell (`A1`) or one inclusive rectangular range
+    /// (`A1:C3`) using uppercase A1 syntax. It delegates to the CellRange
+    /// overload after parsing, so only active sparse records already present in
+    /// the materialized store are converted to explicit blanks; missing cells
+    /// inside the range are not synthesized. Invalid references are mutation
+    /// failures and update WorkbookEditor::last_edit_error().
+    ///
+    /// This is not dense range editing, sheet-qualified reference parsing,
+    /// multi-area ranges, whole-row/whole-column references, absolute `$A$1`
+    /// parsing, erase/tombstone semantics, range metadata recalculation, style
+    /// migration/merge/creation, or a large-file low-memory random-editing
+    /// path.
+    void clear_cell_values(std::string_view range_reference);
 
     /// Clears represented cell values at explicit sparse coordinates.
     ///
@@ -1149,6 +1166,23 @@ public:
     /// row/column delete, tombstone output, range metadata recalculation,
     /// relationship repair, or a large-file low-memory random-editing path.
     void erase_cells(CellRange range);
+
+    /// Removes sparse-store cell records inside a strict uppercase A1 range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The range
+    /// reference accepts one cell (`A1`) or one inclusive rectangular range
+    /// (`A1:C3`) using uppercase A1 syntax. It delegates to the CellRange
+    /// overload after parsing, so only active sparse records already present in
+    /// the materialized store are removed; missing cells inside the range are
+    /// not synthesized and are not represented by tombstones. Invalid
+    /// references are mutation failures and update
+    /// WorkbookEditor::last_edit_error().
+    ///
+    /// This is not dense range deletion, sheet-qualified reference parsing,
+    /// multi-area ranges, whole-row/whole-column references, absolute `$A$1`
+    /// parsing, row/column delete, range metadata recalculation, relationship
+    /// repair, or a large-file low-memory random-editing path.
+    void erase_cells(std::string_view range_reference);
 
     /// Removes sparse-store cell records at explicit sparse coordinates.
     ///

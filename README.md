@@ -280,9 +280,11 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `set_column_values()`、`set_column_values(initializer_list<CellValue>)`、
   `clear_cell_value()`、`clear_row()`、`clear_rows()`、`clear_column()`、
   `clear_columns()`、`clear_cell_values(CellRange)`、
+  `clear_cell_values(std::string_view)`、
   `clear_cell_values(span<WorksheetCellReference>)`、
   `clear_cell_values(initializer_list<WorksheetCellReference>)`、`erase_cell()`、
-  `erase_cells(CellRange)`、`erase_cells(span<WorksheetCellReference>)`、
+  `erase_cells(CellRange)`、`erase_cells(std::string_view)`、
+  `erase_cells(span<WorksheetCellReference>)`、
   `erase_cells(initializer_list<WorksheetCellReference>)`、
   row/column coordinate guardrails、
   single-cell mutation/read API 的 strict uppercase A1 string overload、
@@ -599,12 +601,14 @@ no-op。它们不是 `set_row()` / `set_column()` 这种整行/整列 replacemen
 cells，也不做行列插入/删除、dense range writing、metadata recalculation 或 style
 migration。`clear_cell_value()` / `clear_row()` / `clear_rows()` /
 `clear_column()` / `clear_columns()` / `clear_cell_values(CellRange)` /
+`clear_cell_values(std::string_view)` /
 `clear_cell_values(span<WorksheetCellReference>)` 会把已有 cell 转成显式 blank 并保留该
-style；row/column/range/坐标批量版本都只清 already represented sparse records，不补齐
-missing cells。missing cell / missing-only row/column/range / missing-only coordinate
+style；row/column/range/A1 range/坐标批量版本都只清 already represented sparse records，不补齐
+missing cells。missing cell / missing-only row/column/range/A1 range / missing-only coordinate
 batch 是成功 no-op，不写 tombstone。`erase_cells(CellRange)` 是 `erase_cell()` 的矩形 sparse range
 版本：它使用 1-based inclusive `CellRange` guardrail，只删除 range 内已经 represented
-的 active sparse records，missing-only range 是成功 no-op。`erase_cells(span<WorksheetCellReference>)`
+的 active sparse records，missing-only range 是成功 no-op。`erase_cells(std::string_view)`
+是同一语义的 strict uppercase A1 range convenience。`erase_cells(span<WorksheetCellReference>)`
 是显式坐标批量版本：它预先验证所有坐标，删除已有 active sparse records，duplicate
 coordinate 在首次删除后成为 no-op，missing-only batch 是成功 no-op，dirty output
 省略这些 erased records 而不是写 explicit blank 或 tombstone。
@@ -697,6 +701,7 @@ sheet.clear_rows(2, 3);
 sheet.clear_column(4);
 sheet.clear_columns(5, 6);
 sheet.clear_cell_values(fastxlsx::CellRange{1, 1, 10, 5});
+sheet.clear_cell_values("A1:E10"); // Strict uppercase A1 range, still sparse.
 std::vector<fastxlsx::WorksheetCellReference> clear_targets = {
     {4, 1},
     {4, 2}, // Missing cells are not synthesized.
@@ -708,6 +713,7 @@ std::vector<fastxlsx::WorksheetCellReference> erase_targets = {
     {5, 2}, // Missing cells are successful no-ops.
 };
 sheet.erase_cells(fastxlsx::CellRange{5, 1, 10, 5});
+sheet.erase_cells("A5:E10"); // Removes represented records only.
 sheet.erase_cells(erase_targets);
 sheet.erase_cells({{6, 1}, {6, 2}});
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
@@ -731,6 +737,10 @@ editor.save_as("edited.xlsx");
 行列上限的引用会被拒绝。`sparse_cells(std::string_view)` 是只读 strict uppercase
 A1 range convenience，接受 `A1` 或 `A1:B2`，但拒绝 lowercase、sheet-qualified、
 absolute、whole-row / whole-column、multi-area 和 reversed range references。
+`clear_cell_values(std::string_view)` 和 `erase_cells(std::string_view)` 复用同一 strict
+uppercase A1 range 语法做 mutation convenience；它们仍是 sparse 操作，只清空或删除
+already represented active records，不会把矩形范围内的 missing cells densify 成 blank
+或 tombstone。
 row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
 `set_cell()` / `set_cells()` / `append_row()` / `set_row()` / `set_column()` / `erase_row()` /
@@ -751,7 +761,9 @@ iterator/lifetime，不是 dense range read、dense row/column read 或 streamin
 iterator，也不会同步 worksheet metadata。
 `clear_cell_values(CellRange)` 使用同样的 1-based inclusive range guardrail，只把
 range 内已经存在的 active records 清成 explicit blanks 并保留各自 source style
-handle；missing cells 不会被合成，且当前没有 A1 range string parser。
+handle；missing cells 不会被合成。`clear_cell_values(std::string_view)` 只是该
+CellRange 路径的 strict uppercase A1 range parser convenience，不增加 dense range
+editing。
 `clear_cell_values(span<WorksheetCellReference>)` 使用显式坐标列表做同样的清值语义：
 invalid coordinate 会拒绝整个 batch，missing coordinate 不合成 blank，duplicate
 coordinate 允许。
@@ -765,7 +777,8 @@ handle；missing column / missing-only column range 是成功 no-op，反向 col
 它们不做 column deletion、column shifting、column metadata edit 或 tombstone output。
 `erase_cells(CellRange)` 使用同样的 1-based inclusive range guardrail，只删除
 range 内已经存在的 active sparse records；missing cells 不会被合成 tombstone，
-missing-only range 是成功 no-op，且当前没有 A1 range string parser。
+missing-only range 是成功 no-op。`erase_cells(std::string_view)` 只是该 CellRange
+路径的 strict uppercase A1 range parser convenience，不增加 dense range deletion。
 `erase_cells(span<WorksheetCellReference>)` 使用显式坐标列表做批量 remove 语义：
 invalid coordinate 会拒绝整个 batch，missing coordinate 不合成 tombstone，duplicate
 coordinate 允许且后续重复项是 no-op。

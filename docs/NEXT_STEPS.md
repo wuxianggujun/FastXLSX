@@ -136,8 +136,18 @@ uppercase A1 range convenience over the same sparse snapshot path: `A1` is a
 single-cell range, `A1:C3` is a rectangular range, and lowercase,
 sheet-qualified, absolute, whole-row / whole-column, multi-area, reversed,
 leading-zero, and out-of-limit references are rejected without changing
-`last_edit_error()`. This is not an A1 range mutation parser, dense range read,
-iterator, metadata recalculation, or large-file low-memory random access.
+`last_edit_error()`. This is not a dense range read, iterator, metadata
+recalculation, or large-file low-memory random access.
+`WorksheetEditor::clear_cell_values(std::string_view)` and
+`erase_cells(std::string_view)` now add the matching strict uppercase A1 range
+mutation convenience over the existing `CellRange` sparse clear/erase paths:
+`A1` and `A1:C3` are accepted; lowercase, sheet-qualified, absolute,
+whole-row / whole-column, multi-area, reversed, leading-zero, and out-of-limit
+references are rejected and update `last_edit_error()` as mutation failures.
+They still only clear or remove represented active sparse records, never
+synthesize missing cells, and do not add dense range writes, tombstones,
+metadata recalculation, relationship repair, or large-file low-memory random
+editing.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit
@@ -2799,10 +2809,12 @@ schema validation.
   - `WorksheetEditor::clear_column()`
   - `WorksheetEditor::clear_columns()`
   - `WorksheetEditor::clear_cell_values(CellRange)`
+  - `WorksheetEditor::clear_cell_values(std::string_view)`
   - `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
   - `WorksheetEditor::clear_cell_values(initializer_list<WorksheetCellReference>)`
   - `WorksheetEditor::erase_cell()`
   - `WorksheetEditor::erase_cells(CellRange)`
+  - `WorksheetEditor::erase_cells(std::string_view)`
   - `WorksheetEditor::erase_cells(span<WorksheetCellReference>)`
   - `WorksheetEditor::erase_cells(initializer_list<WorksheetCellReference>)`
   - `WorksheetEditor` strict uppercase single-cell A1 overloads

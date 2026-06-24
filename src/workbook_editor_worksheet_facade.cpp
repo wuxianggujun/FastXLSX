@@ -792,6 +792,20 @@ void WorksheetEditor::clear_cell_values(CellRange range)
     }
 }
 
+void WorksheetEditor::clear_cell_values(std::string_view range_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange range {};
+    try {
+        range = detail::parse_worksheet_editor_a1_cell_range(range_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+
+    clear_cell_values(range);
+}
+
 void WorksheetEditor::clear_cell_values(std::span<const WorksheetCellReference> cells)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -859,6 +873,20 @@ void WorksheetEditor::erase_cells(CellRange range)
         state.record_last_edit_error(error);
         throw;
     }
+}
+
+void WorksheetEditor::erase_cells(std::string_view range_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange range {};
+    try {
+        range = detail::parse_worksheet_editor_a1_cell_range(range_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+
+    erase_cells(range);
 }
 
 void WorksheetEditor::erase_cells(std::span<const WorksheetCellReference> cells)

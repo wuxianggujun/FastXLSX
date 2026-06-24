@@ -33624,8 +33624,7 @@ Acceptance:
 Status: done.
 
 Type: public `WorksheetEditor` small-file sparse range read convenience API;
-read-only strict A1 range parser, no A1 range mutation parser and no dense range
-read.
+read-only strict A1 range parser and no dense range read.
 
 Depends on: P8.382, P8.734.
 
@@ -33657,16 +33656,69 @@ Output:
   A1 range rejection, diagnostic preservation, and dirty-session save_as
   non-interference.
 - Updated README, API design notes, and next-step status to distinguish this
-  read-only A1 range parser from dense range reads, A1 range mutation APIs,
-  iterators, metadata recalculation, and large-file random access.
+  read-only A1 range parser from dense range reads, sparse mutation
+  conveniences, iterators, metadata recalculation, and large-file random access.
 
 Non-goals / boundary:
-- No dense range read, A1 range mutation parser, A1 range write/clear/erase
-  overloads, whole-row / whole-column range parser, multi-area ranges,
+- No dense range read, A1 range write, whole-row / whole-column range parser,
+  multi-area ranges,
   lowercase normalization, sheet-qualified range parsing, absolute `$A$1`
   parsing, iterator/lifetime exposure, missing-cell synthesis, metadata
   recalculation, source reload, save-as flush, or large-file low-memory random
   editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+## P8.736 - WorksheetEditor strict A1 sparse range clear/erase
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse range mutation convenience API;
+strict A1 range parser over existing sparse clear/erase paths, no dense range
+write/delete.
+
+Depends on: P8.724, P8.725, P8.735.
+
+Touch files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: provide user-facing strict uppercase A1 range convenience for existing
+small-file sparse clear/erase mutations without changing the underlying
+`CellRange` semantics. `WorksheetEditor::clear_cell_values(std::string_view)`
+and `WorksheetEditor::erase_cells(std::string_view)` accept `A1` and `A1:C3`,
+then delegate to the existing sparse `CellRange` clear/erase paths. They only
+clear or remove represented active sparse records and never synthesize missing
+cells.
+
+Output:
+- Added public `WorksheetEditor::clear_cell_values(std::string_view)` and
+  `WorksheetEditor::erase_cells(std::string_view)` declarations with Doxygen
+  boundaries.
+- Reused `parse_worksheet_editor_a1_cell_range()` in the worksheet facade and
+  recorded parse failures through `WorkbookEditor::last_edit_error()` because
+  these are mutation APIs.
+- Added public-state coverage for sparse A1 range clear, sparse A1 range erase,
+  missing-only no-op recovery, invalid A1 range diagnostics, no-state-pollution
+  failure hygiene, and save_as projection of explicit blanks / erased records.
+- Updated README, API design notes, next-step status, and this task breakdown
+  to distinguish sparse A1 clear/erase from dense range writes/deletes.
+
+Non-goals / boundary:
+- No dense range write/delete, A1 range write API, whole-row / whole-column
+  range parser, multi-area ranges, lowercase normalization, sheet-qualified
+  range parsing, absolute `$A$1` parsing, tombstone output, missing-cell
+  synthesis, metadata recalculation, relationship repair, source reload, or
+  large-file low-memory random editing.
 
 Acceptance:
 - `git diff --check` passes.

@@ -139,9 +139,11 @@ In-memory `WorksheetEditor` 切片：`WorksheetEditorOptions`、
 `clear_cell_value()` /
 `clear_row()` / `clear_rows()` / `clear_column()` / `clear_columns()` /
 `set_cell_values(initializer_list<WorksheetCellUpdate>)` /
-`clear_cell_values(CellRange)` / `clear_cell_values(span<WorksheetCellReference>)` /
+`clear_cell_values(CellRange)` / `clear_cell_values(std::string_view)` /
+`clear_cell_values(span<WorksheetCellReference>)` /
 `clear_cell_values(initializer_list<WorksheetCellReference>)` /
 `erase_cell()` / `erase_cells(CellRange)` /
+`erase_cells(std::string_view)` /
 `erase_cells(span<WorksheetCellReference>)` /
 `erase_cells(initializer_list<WorksheetCellReference>)`、
 `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
@@ -267,8 +269,20 @@ as a strict uppercase A1 read-only range convenience over
 rejects lowercase, sheet-qualified, absolute, whole-row / whole-column,
 multi-area, reversed, leading-zero, and out-of-limit references, returns only
 active sparse records without missing-cell synthesis, preserves read
-diagnostics, and is not an A1 range mutation parser, dense range read,
-iterator, metadata recalculation, or large-file random access.
+diagnostics, and is not dense range read, iterator, metadata recalculation, or
+large-file random access.
+
+Matrix addendum: P8.736 adds
+`WorksheetEditor::clear_cell_values(std::string_view)` and
+`WorksheetEditor::erase_cells(std::string_view)` as strict uppercase A1 range
+mutation conveniences over the existing `CellRange` sparse clear/erase paths.
+They accept `A1` and rectangular `A1:C3` references, reject lowercase,
+sheet-qualified, absolute, whole-row / whole-column, multi-area, reversed,
+leading-zero, and out-of-limit references, update `last_edit_error()` on
+invalid mutation inputs, and only clear or remove represented active sparse
+records without missing-cell synthesis. They do not add dense range
+write/delete, A1 range writes, tombstones, row/column delete, range metadata
+recalculation, relationship repair, or large-file random editing.
 
 因此接下来的 API 推进重点是继续保持三条路径清晰：`WorkbookEditor` 统一承载
 existing-file facade，但 whole-`<sheetData>` replacement 属于 Patch，`WorksheetEditor`
@@ -501,8 +515,10 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `clear_cell_value(row, column)`、`clear_row(row)`、
   `clear_rows(first_row, last_row)`、`clear_column(column)`、
   `clear_columns(first_column, last_column)`、`clear_cell_values(CellRange)`、
+  `clear_cell_values(std::string_view)`、
   `clear_cell_values(span<WorksheetCellReference>)`、`erase_cell(row, column)`、
-  `erase_cells(CellRange)`、`erase_cells(span<WorksheetCellReference>)`、除
+  `erase_cells(CellRange)`、`erase_cells(std::string_view)`、
+  `erase_cells(span<WorksheetCellReference>)`、除
   `set_cells()`、`set_cell_values()` 和 clear/erase batch/range 以外的 single-cell
   read/mutation API 的 strict uppercase A1 string overload、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
@@ -517,6 +533,10 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   read-only strict uppercase A1 range convenience，接受 `A1` 或 `A1:B2`，
   但拒绝 lowercase、sheet-qualified、absolute、whole-row / whole-column、
   multi-area、reversed、leading-zero 和 out-of-limit references。
+  `clear_cell_values(std::string_view)` 和 `erase_cells(std::string_view)` 复用
+  同一 strict uppercase A1 range 语法做 sparse mutation convenience；它们仍只
+  清空或删除 already represented active records，不把 missing cells 合成为
+  explicit blanks 或 tombstones。
   `sparse_cells()` 返回 owning row-major `WorksheetCellSnapshot` vector，包含
   explicit blank records。`sparse_cells(CellRange)` 和
   `sparse_cells(std::string_view)` 返回 1-based inclusive range 内已经存在的
@@ -582,17 +602,21 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `clear_cell_values(CellRange)` 使用 1-based inclusive range guardrail，只把
   range 内已有 active sparse records 清成 explicit blanks 并保留各自 current source
   style handle；missing cells 不合成，missing-only range 是 successful no-op。它不是
-  A1 range parser、dense range writer、tombstone API、range metadata recalculation、
+  dense range writer、tombstone API、range metadata recalculation、
   style migration/merge/creation 或 large-file low-memory random edit。
+  `clear_cell_values(std::string_view)` 只是该路径的 strict uppercase A1 range parser
+  convenience，语义仍是 sparse clear。
   `clear_cell_values(span<WorksheetCellReference>)` 是显式坐标 batch clear：invalid
   coordinate 会在状态变更前拒绝整个 batch；已有 sparse records 会变为保留 style 的
   explicit blank，missing coordinates 不合成 records，missing-only batch 是
   successful no-op。
   `erase_cells(CellRange)` 使用同样的 1-based inclusive range guardrail，只删除
   range 内已有 active sparse records；missing cells 不合成 tombstone，missing-only
-  range 是 successful no-op。它不是 A1 range parser、dense range deletion、
+  range 是 successful no-op。它不是 dense range deletion、
   row/column delete、range metadata recalculation、relationship repair 或 large-file
   low-memory random edit。
+  `erase_cells(std::string_view)` 只是该路径的 strict uppercase A1 range parser
+  convenience，语义仍是 sparse erase。
   `erase_cells(span<WorksheetCellReference>)` 是显式坐标 batch remove：invalid
   coordinate 会在状态变更前拒绝整个 batch；已有 sparse records 会被删除，
   duplicate coordinates 在首次删除后成为 no-op，missing coordinates 不合成
@@ -636,7 +660,8 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `clear_cell_value(row, column)`、`clear_row(row)`、
   `clear_rows(first_row, last_row)`、`clear_column(column)`、
   `clear_columns(first_column, last_column)`、`clear_cell_values(CellRange)`、
-  `erase_cell(row, column)`、`erase_cells(CellRange)`、
+  `clear_cell_values(std::string_view)`、`erase_cell(row, column)`、
+  `erase_cells(CellRange)`、`erase_cells(std::string_view)`、
   `erase_cells(span<WorksheetCellReference>)`、
   strict uppercase single-cell A1 overload、
   `has_pending_changes()` dirty-state inspection、
@@ -645,7 +670,7 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `row_cells()` / `column_cells()` sparse row/column owning snapshots、
   `cell_count()`、`estimated_memory_usage()`。
 - 候选：broader range iteration / streaming sparse record iterator / dense
-  range read / A1 range mutation parser。
+  range read / dense range write。
 - `insert_rows(...)`、`delete_rows(...)`：只作为后续小文件能力候选；
   需要先证明 dimension/range metadata/operation mixing，不写成 ready API。
 
@@ -675,9 +700,11 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `clear_cell_value(ref)` 把现有 active record 转成显式 blank 并保留该 style，
   missing target 是 successful no-op；`clear_row()` / `clear_rows()` 和
   `clear_column()` / `clear_columns()` 对 row/column 内已有 active records 执行同样
-  value-clear 语义，missing-only row/column 输入不合成 cells；`clear_cell_values(CellRange)` 对 range 内已有
-  active records 执行同样 value-clear 语义，missing cells 不合成；`erase_cell(ref)` 和
-  `erase_cells(CellRange)` / `erase_cells(span<WorksheetCellReference>)` 删除 active record；
+  value-clear 语义，missing-only row/column 输入不合成 cells；`clear_cell_values(CellRange)` /
+  `clear_cell_values(std::string_view)` 对 range 内已有 active records 执行同样
+  value-clear 语义，missing cells 不合成；`erase_cell(ref)` 和
+  `erase_cells(CellRange)` / `erase_cells(std::string_view)` /
+  `erase_cells(span<WorksheetCellReference>)` 删除 active record；
   `CellValue::blank()` 表示 caller 明确写入 blank replacement cell。当前 dirty
   projection 写空 `<c>`，styled blank 写 `s="N"`，但不会生成 tombstone。
 - Existing-file handoff：source-backed in-memory edits 仍通过 `save_as(output_path)`

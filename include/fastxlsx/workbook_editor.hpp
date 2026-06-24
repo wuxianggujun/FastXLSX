@@ -740,6 +740,35 @@ public:
     /// behavior, guardrails, diagnostics, and non-goals are identical.
     void append_row(std::initializer_list<CellValue> values);
 
+    /// Replaces one represented sparse row.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The row is
+    /// a 1-based Excel row number. The method removes all currently represented
+    /// sparse cells in that row, then writes `values` to columns 1..N in input
+    /// order. Passing an empty value list clears the represented row; if the row
+    /// has no represented sparse cells, it is a successful no-op that does not
+    /// create row metadata, does not dirty the materialized session, and clears
+    /// prior public edit diagnostics.
+    ///
+    /// The entire replacement is preflighted and staged. Invalid row numbers,
+    /// more than 16,384 values, caller-supplied non-default StyleId handles,
+    /// max_cells violations, or memory_budget_bytes violations reject the
+    /// replacement before the active sparse store is mutated. Explicit
+    /// CellValue::blank() values are represented as blank cells and are subject
+    /// to the same sparse-store guardrails.
+    ///
+    /// This is not row insertion/deletion, row shifting, row metadata editing,
+    /// table/range metadata recalculation, style migration/merge,
+    /// sharedStrings migration, or a large-file low-memory random-editing path.
+    void set_row(std::uint32_t row, std::span<const CellValue> values);
+
+    /// Replaces one represented sparse row from a small literal value list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so row replacement, row-clear
+    /// no-op behavior, guardrails, diagnostics, and non-goals are identical.
+    void set_row(std::uint32_t row, std::initializer_list<CellValue> values);
+
     /// Replaces one sparse-store cell value while preserving its current style.
     ///
     /// This is the safe existing-workbook style boundary for value-only edits:

@@ -94,6 +94,14 @@ width, row-limit, style, max_cells, and memory-budget failures do not mutate the
 active sparse store. This is not row insertion, row metadata creation,
 table/range metadata recalculation, sharedStrings/styles migration, or
 large-file low-memory random editing.
+`WorksheetEditor::set_row()` now covers the matching sparse represented-row
+replacement convenience for small files: it deletes currently represented cells
+in the target row, writes input values to columns 1..N, treats empty input as a
+row clear, and treats an empty missing row as a no-op. Invalid rows, width,
+style, max_cells, and memory-budget failures are staged and do not mutate the
+active sparse store. This is not row insertion/deletion, row shifting, row
+metadata editing, table/range metadata recalculation, sharedStrings/styles
+migration, or large-file low-memory random editing.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

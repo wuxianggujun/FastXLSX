@@ -3330,6 +3330,266 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     }
 }
 
+void test_public_worksheet_editor_set_row_replaces_sparse_row()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-set-row-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-set-row-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_row(1, {
+        fastxlsx::CellValue::text("set-row-a1"),
+        fastxlsx::CellValue::number(22.0),
+        fastxlsx::CellValue::formula("A1+B2"),
+        fastxlsx::CellValue::blank(),
+    });
+
+    check(sheet.cell_count() == 5,
+        "set_row should replace the target sparse row without clearing other rows");
+    check(sheet.get_cell("A1").text_value() == "set-row-a1",
+        "set_row should write the first value to column A of the target row");
+    check(sheet.get_cell("B1").number_value() == 22.0,
+        "set_row should write numeric values by input order");
+    const fastxlsx::CellValue formula = sheet.get_cell("C1");
+    check(formula.kind() == fastxlsx::CellValueKind::Formula
+            && formula.text_value() == "A1+B2",
+        "set_row should preserve formula text as a formula cell");
+    check(sheet.get_cell("D1").kind() == fastxlsx::CellValueKind::Blank,
+        "set_row should represent explicit blank values");
+    check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "set_row should preserve represented cells outside the target row");
+    check(!sheet.try_cell("B2").has_value(),
+        "set_row should not synthesize cells outside the target row");
+    check(sheet.has_pending_changes(),
+        "set_row should dirty the materialized worksheet when values are replaced");
+    check(editor.pending_materialized_cell_count() == 5,
+        "set_row should contribute the replaced sparse records to aggregate diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "successful set_row should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "set_row should refresh the dirty worksheet dimension");
+    check_contains(worksheet_xml,
+        R"(<row r="1"><c r="A1" t="inlineStr"><is><t>set-row-a1</t></is></c>)",
+        "set_row should persist target-row text in column order");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>22</v></c>)",
+        "set_row should persist target-row numeric cells");
+    check_contains(worksheet_xml, R"(<c r="C1"><f>A1+B2</f></c>)",
+        "set_row should persist target-row formula cells");
+    check_contains(worksheet_xml, R"(<c r="D1"/>)",
+        "set_row should persist explicit blank cells");
+    check_contains(worksheet_xml, "placeholder-a2",
+        "set_row should keep non-target row source cells");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "set_row should omit the old target-row text");
+    check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "set_row should omit the old target-row numeric value");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "set_row should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_set_row_empty_and_guardrails()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-set-row-guards-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before set_row empty no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before set_row empty no-op");
+
+        const std::vector<fastxlsx::CellValue> empty_row;
+        sheet.set_row(3, empty_row);
+        check(!editor.last_edit_error().has_value(),
+            "empty set_row on a missing row should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "empty set_row on a missing row should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "empty set_row on a missing row should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "empty set_row on a missing row should not create sparse row metadata");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-row-clear-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const std::vector<fastxlsx::CellValue> empty_row;
+
+        sheet.set_row(1, empty_row);
+        check(sheet.cell_count() == 1,
+            "empty set_row on a represented row should clear that sparse row");
+        check(!sheet.try_cell("A1").has_value(),
+            "empty set_row should remove target-row text cells");
+        check(!sheet.try_cell("B1").has_value(),
+            "empty set_row should remove target-row numeric cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "empty set_row should preserve non-target rows");
+        check(sheet.has_pending_changes(),
+            "empty set_row on a represented row should dirty the materialized worksheet");
+        check(!editor.last_edit_error().has_value(),
+            "successful row clear should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "placeholder-a2",
+            "row clear should persist non-target row source cells");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "row clear should omit cleared text cells");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "row clear should omit cleared numeric cells");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        std::vector<fastxlsx::CellValue> too_wide(
+            16385, fastxlsx::CellValue::number(1.0));
+
+        bool failed = false;
+        try {
+            sheet.set_row(1, too_wide);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "16384",
+                "set_row width failure should expose the Excel column limit");
+        }
+        check(failed, "set_row should reject more than 16384 values");
+        check(!sheet.has_pending_changes(),
+            "set_row width failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "set_row width failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "set_row width failure should preserve existing cells");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool failed = false;
+        try {
+            sheet.set_row(0, {fastxlsx::CellValue::text("invalid-row")});
+        } catch (const fastxlsx::FastXlsxError&) {
+            failed = true;
+        }
+        check(failed, "set_row should reject invalid row numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed set_row invalid-row mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "set_row invalid-row failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "set_row invalid-row failure should preserve sparse cell count");
+    }
+
+    {
+        const std::filesystem::path style_artifact =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-row-style-source.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_artifact);
+            {
+                fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+                non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+                styled_sheet.append_row({
+                    fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                });
+            }
+            writer.close();
+        }
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool failed = false;
+        try {
+            sheet.set_row(1, {
+                fastxlsx::CellValue::text("styled-row").with_style(non_default_style),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "StyleId",
+                "set_row style failure should expose the unsupported StyleId boundary");
+        }
+        check(failed, "set_row should reject caller-supplied non-default StyleId values");
+        check(editor.last_edit_error().has_value(),
+            "failed set_row style mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "set_row style failure should not dirty the materialized worksheet");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "set_row style failure should preserve existing cells");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-row-guards-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+        bool failed = false;
+        try {
+            sheet.set_row(3, {fastxlsx::CellValue::text("max-cells-rejected")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+                "set_row should expose CellStore max_cells guardrail diagnostics");
+        }
+        check(failed, "set_row should enforce max_cells on staged row replacement");
+        check(editor.last_edit_error().has_value(),
+            "failed set_row max_cells mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "failed set_row max_cells mutation should not dirty the session");
+        check(sheet.cell_count() == 3,
+            "failed set_row max_cells mutation should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed set_row max_cells mutation should preserve sparse memory estimate");
+        check(!sheet.try_cell("A3").has_value(),
+            "failed set_row max_cells mutation should not leave rejected cells readable");
+
+        sheet.set_row(1, {fastxlsx::CellValue::text("replace-row-a1")});
+        check(!editor.last_edit_error().has_value(),
+            "successful in-budget set_row should clear last_edit_error");
+        check(sheet.cell_count() == 2,
+            "in-budget set_row should release old target-row records before writing new ones");
+        check(sheet.get_cell("A1").text_value() == "replace-row-a1",
+            "in-budget set_row should replace the target row");
+        check(!sheet.try_cell("B1").has_value(),
+            "in-budget set_row should remove old target-row tail cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "in-budget set_row should preserve non-target rows");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "replace-row-a1",
+            "in-budget set_row should persist through save_as");
+        check_not_contains(worksheet_xml, "max-cells-rejected",
+            "rejected set_row value should not leak into saved output");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "in-budget set_row should not resurrect replaced cells");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "in-budget set_row should not persist old target-row tail cells");
+    }
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -4254,6 +4514,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_initializer_list_batch_overloads();
             test_public_worksheet_editor_append_row_appends_after_sparse_max_row();
             test_public_worksheet_editor_append_row_noop_and_guardrails();
+            test_public_worksheet_editor_set_row_replaces_sparse_row();
+            test_public_worksheet_editor_set_row_empty_and_guardrails();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

@@ -32793,6 +32793,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-comments" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.714 - Split WorkbookEditor public-retry executable by retry phase
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep `fastxlsx.workbook_editor.public-retry` focused on core retry
+state coverage while moving reacquire-state, read/mutation guard, and
+projection checks into focused CTest shards.
+
+Output:
+- Added `tests/test_workbook_editor_public_retry_common.hpp` for shared retry
+  fixture/helper code.
+- Kept `tests/test_workbook_editor_public_retry.cpp` as the core retry shard
+  behind the existing `fastxlsx.workbook_editor.public-retry` CTest name.
+- Added:
+  - `tests/test_workbook_editor_public_retry_reacquire.cpp`.
+  - `tests/test_workbook_editor_public_retry_guards.cpp`.
+  - `tests/test_workbook_editor_public_retry_projection.cpp`.
+- Added CTest names:
+  - `fastxlsx.workbook_editor.public-retry-reacquire`.
+  - `fastxlsx.workbook_editor.public-retry-guards`.
+  - `fastxlsx.workbook_editor.public-retry-projection`.
+- Wired the new targets into `fastxlsx_workbook_editor_tests`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no retry/save-as semantic
+  change, no worksheet projection behavior change, and no coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-retry" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

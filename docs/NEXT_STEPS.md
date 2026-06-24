@@ -1874,6 +1874,15 @@ retry, public-state, and guardrail bodies into
 `fastxlsx.workbook_editor.public-guards` names are added, and
 `fastxlsx_workbook_editor_tests` remains a build-only aggregate. This is still
 test organization only.
+The public-retry executable is now split further: the base retry cases remain
+in `tests/test_workbook_editor_public_retry.cpp`, while reacquire state,
+read/mutation guard, and projection coverage move into
+`tests/test_workbook_editor_public_retry_reacquire.cpp`,
+`tests/test_workbook_editor_public_retry_guards.cpp`, and
+`tests/test_workbook_editor_public_retry_projection.cpp`, with shared helpers
+in `tests/test_workbook_editor_public_retry_common.hpp`. The original
+`fastxlsx.workbook_editor.public-retry` CTest name remains the core retry
+shard; the new names are test-organization only.
 The linked-object PackageEditor preservation shard split keeps
 `tests/test_package_editor_preservation_linked.cpp` as the comments /
 threaded-comments base shard and moves pivot/cache, external-link, and custom
@@ -2473,6 +2482,12 @@ schema validation.
   - `fastxlsx.workbook_editor.core`
   - `fastxlsx.workbook_editor.public`
   - `fastxlsx.workbook_editor.public-edge`
+  - `fastxlsx.workbook_editor.public-retry`
+  - `fastxlsx.workbook_editor.public-retry-reacquire`
+  - `fastxlsx.workbook_editor.public-retry-guards`
+  - `fastxlsx.workbook_editor.public-retry-projection`
+  - `fastxlsx.workbook_editor.public-state`
+  - `fastxlsx.workbook_editor.public-guards`
   - `fastxlsx.workbook_editor_source_success`
   - `fastxlsx.workbook_editor_source_success_shared_strings`
   - `fastxlsx.workbook_editor_source_success_max_coordinate`

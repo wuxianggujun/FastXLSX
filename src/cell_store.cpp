@@ -663,13 +663,17 @@ std::string decode_percent_encoded_relationship_target(std::string_view target)
 }
 
 std::string resolve_internal_relationship_target_path(
-    const PartName& source_part, const Relationship& relationship)
+    const PartName& source_part,
+    const Relationship& relationship,
+    std::string_view relationship_role)
 {
     if (relationship.target_mode == Relationship::TargetMode::External) {
-        throw FastXlsxError("sharedStrings relationship target cannot be external");
+        throw FastXlsxError(
+            std::string(relationship_role) + " relationship target cannot be external");
     }
     if (relationship.target.find_first_of("?#") != std::string::npos) {
-        throw FastXlsxError("sharedStrings relationship target must be a package part");
+        throw FastXlsxError(
+            std::string(relationship_role) + " relationship target must be a package part");
     }
 
     const std::string decoded_target =
@@ -922,6 +926,151 @@ std::vector<std::string> parse_shared_strings_xml(std::string_view xml)
     return strings;
 }
 
+std::size_t parse_unsigned_count_attribute(
+    std::string_view value, std::string_view context)
+{
+    std::uint64_t parsed = 0;
+    const char* const begin = value.data();
+    const char* const end = begin + value.size();
+    const auto result = std::from_chars(begin, end, parsed);
+    if (value.empty() || result.ec != std::errc {} || result.ptr != end
+        || parsed > std::numeric_limits<std::size_t>::max()) {
+        throw FastXlsxError(std::string(context) + " found an invalid count attribute");
+    }
+    return static_cast<std::size_t>(parsed);
+}
+
+std::size_t parse_styles_cell_xfs_count(std::string_view xml)
+{
+    std::vector<std::string> element_stack;
+    bool saw_root = false;
+    bool closed_root = false;
+    bool saw_cell_xfs = false;
+    std::optional<std::size_t> declared_cell_xfs_count;
+    std::size_t cell_xfs_count = 0;
+
+    const auto capture_text = [](std::string_view text) {
+        if (has_non_whitespace(text)) {
+            throw FastXlsxError("CellStore styles loader found text outside supported metadata");
+        }
+    };
+
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = xml.find('<', offset);
+        if (open == std::string_view::npos) {
+            capture_text(xml.substr(offset));
+            break;
+        }
+
+        capture_text(xml.substr(offset, open - offset));
+        if (open + 1 >= xml.size()) {
+            throw FastXlsxError("CellStore styles loader found a truncated XML tag");
+        }
+
+        if (xml.substr(open, 4) == "<!--") {
+            const std::size_t close = xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                throw FastXlsxError("CellStore styles loader found an unterminated comment");
+            }
+            offset = close + 3;
+            continue;
+        }
+
+        const char marker = xml[open + 1];
+        const std::size_t close = find_xml_tag_end(xml, open);
+        const std::string_view raw_tag = xml.substr(open, close - open + 1);
+
+        if (marker == '?') {
+            offset = close + 1;
+            continue;
+        }
+        if (marker == '!') {
+            throw FastXlsxError("CellStore styles loader found unsupported markup declaration");
+        }
+
+        validate_raw_tag_attribute_syntax(raw_tag, "CellStore styles loader");
+        const std::string_view name = raw_tag_name(raw_tag);
+        const bool closing = marker == '/';
+        const bool self_closing = is_self_closing_raw_tag(raw_tag);
+
+        if (closing) {
+            if (element_stack.empty() || element_stack.back() != name) {
+                throw FastXlsxError("CellStore styles loader found mismatched closing tags");
+            }
+            if (name == "cellXfs" && declared_cell_xfs_count.has_value()
+                && *declared_cell_xfs_count != cell_xfs_count) {
+                throw FastXlsxError("CellStore styles loader found a cellXfs count mismatch");
+            }
+            element_stack.pop_back();
+            if (element_stack.empty()) {
+                closed_root = true;
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (closed_root) {
+            throw FastXlsxError("CellStore styles loader found markup after the root");
+        }
+
+        if (!saw_root) {
+            if (name != "styleSheet") {
+                throw FastXlsxError(
+                    "CellStore styles loader root is missing a styleSheet element");
+            }
+            saw_root = true;
+            if (!self_closing) {
+                element_stack.push_back(std::string(name));
+            } else {
+                closed_root = true;
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        const std::string_view parent =
+            element_stack.empty() ? std::string_view {} : element_stack.back();
+        if (parent == "styleSheet" && name == "cellXfs") {
+            if (saw_cell_xfs) {
+                throw FastXlsxError("CellStore styles loader found duplicate cellXfs elements");
+            }
+            saw_cell_xfs = true;
+            if (const std::optional<std::string_view> count =
+                    unqualified_attribute_value(raw_tag, "count")) {
+                declared_cell_xfs_count =
+                    parse_unsigned_count_attribute(*count, "CellStore styles loader cellXfs");
+            }
+            if (self_closing) {
+                if (declared_cell_xfs_count.has_value()
+                    && *declared_cell_xfs_count != cell_xfs_count) {
+                    throw FastXlsxError(
+                        "CellStore styles loader found a cellXfs count mismatch");
+                }
+            } else {
+                element_stack.push_back(std::string(name));
+            }
+            offset = close + 1;
+            continue;
+        }
+
+        if (parent == "cellXfs" && name == "xf") {
+            ++cell_xfs_count;
+        }
+        if (!self_closing) {
+            element_stack.push_back(std::string(name));
+        }
+        offset = close + 1;
+    }
+
+    if (!saw_root || !element_stack.empty()) {
+        throw FastXlsxError("CellStore styles loader found malformed XML");
+    }
+    if (!saw_cell_xfs) {
+        throw FastXlsxError("CellStore styles loader found no cellXfs records");
+    }
+    return cell_xfs_count;
+}
+
 std::optional<std::vector<std::string>> load_shared_strings_from_workbook(
     const PackageReader& reader)
 {
@@ -949,7 +1098,7 @@ std::optional<std::vector<std::string>> load_shared_strings_from_workbook(
     }
 
     const PartName shared_strings_part(resolve_internal_relationship_target_path(
-        workbook_part, *shared_strings_relationship));
+        workbook_part, *shared_strings_relationship, "sharedStrings"));
     const PackagePart* package_part = reader.part_index().find_part(shared_strings_part);
     if (package_part == nullptr) {
         throw FastXlsxError(
@@ -967,6 +1116,52 @@ std::optional<std::vector<std::string>> load_shared_strings_from_workbook(
         throw FastXlsxError("failed to load workbook sharedStrings part '"
             + shared_strings_part.value() + "' ZIP entry '" + shared_strings_part.zip_path()
             + "': " + error.what());
+    }
+}
+
+std::size_t load_styles_cell_xfs_count_from_workbook(const PackageReader& reader)
+{
+    const PartName workbook_part = reader.workbook_part();
+    const RelationshipSet* workbook_relationships = reader.relationships_for(workbook_part);
+    if (workbook_relationships == nullptr) {
+        throw FastXlsxError(
+            "CellStore worksheet loader found source style ids without a styles part");
+    }
+
+    const Relationship* styles_relationship = nullptr;
+    for (const Relationship& relationship : workbook_relationships->relationships()) {
+        if (relationship.type !=
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles") {
+            continue;
+        }
+        if (styles_relationship != nullptr) {
+            throw FastXlsxError(
+                "workbook styles lookup found multiple styles relationships");
+        }
+        styles_relationship = &relationship;
+    }
+
+    if (styles_relationship == nullptr) {
+        throw FastXlsxError(
+            "CellStore worksheet loader found source style ids without a styles part");
+    }
+
+    const PartName styles_part(resolve_internal_relationship_target_path(
+        workbook_part, *styles_relationship, "styles"));
+    const PackagePart* package_part = reader.part_index().find_part(styles_part);
+    if (package_part == nullptr) {
+        throw FastXlsxError("workbook styles relationship targets an unknown package part");
+    }
+    if (package_part->content_type
+        != "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml") {
+        throw FastXlsxError("workbook styles relationship target is not a styles part");
+    }
+
+    try {
+        return parse_styles_cell_xfs_count(reader.read_entry(styles_part.zip_path()));
+    } catch (const std::exception& error) {
+        throw FastXlsxError("failed to load workbook styles part '" + styles_part.value()
+            + "' ZIP entry '" + styles_part.zip_path() + "': " + error.what());
     }
 }
 
@@ -1419,6 +1614,7 @@ struct ActiveSourceCell {
 };
 
 using SharedStringsProvider = std::function<const std::vector<std::string>&()>;
+using SourceStyleValidator = std::function<void(StyleId)>;
 
 struct SharedFormulaDefinition {
     CellPosition base;
@@ -1602,9 +1798,12 @@ void reject_unsupported_value_shape(const ActiveSourceCell& cell, std::string_vi
 class CellStoreWorksheetLoader {
 public:
     explicit CellStoreWorksheetLoader(
-        CellStoreOptions options, const SharedStringsProvider* shared_strings_provider = nullptr)
+        CellStoreOptions options,
+        const SharedStringsProvider* shared_strings_provider = nullptr,
+        const SourceStyleValidator* source_style_validator = nullptr)
         : store_(std::move(options))
         , shared_strings_provider_(shared_strings_provider)
+        , source_style_validator_(source_style_validator)
     {
     }
 
@@ -1728,6 +1927,9 @@ private:
         }
         const std::optional<StyleId> style_id =
             parse_source_style_attribute_for_load(event.raw_xml);
+        if (style_id.has_value() && source_style_validator_ != nullptr) {
+            (*source_style_validator_)(*style_id);
+        }
         if (raw_tag_has_unsupported_attributes(
                 event.raw_xml, {"r", "t", "s", "ph"})) {
             throw FastXlsxError(
@@ -2078,6 +2280,7 @@ private:
 
     CellStore store_;
     const SharedStringsProvider* shared_strings_provider_ = nullptr;
+    const SourceStyleValidator* source_style_validator_ = nullptr;
     std::set<std::uint32_t> seen_rows_;
     std::optional<std::uint32_t> last_explicit_row_;
     std::optional<CellPosition> last_source_cell_;
@@ -2175,7 +2378,8 @@ CellStore load_cell_store_from_worksheet_chunks_with_shared_strings(
     const WorksheetInputChunkCallback& read_next_chunk,
     CellStoreOptions options,
     WorksheetEventReaderOptions reader_options,
-    const std::vector<std::string>* shared_strings)
+    const std::vector<std::string>* shared_strings,
+    const SourceStyleValidator* source_style_validator = nullptr)
 {
     std::optional<SharedStringsProvider> shared_strings_provider;
     if (shared_strings != nullptr) {
@@ -2185,7 +2389,8 @@ CellStore load_cell_store_from_worksheet_chunks_with_shared_strings(
     }
     CellStoreWorksheetLoader loader(
         std::move(options),
-        shared_strings_provider.has_value() ? &*shared_strings_provider : nullptr);
+        shared_strings_provider.has_value() ? &*shared_strings_provider : nullptr,
+        source_style_validator);
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
         [&loader](const WorksheetEvent& event) {
@@ -2199,9 +2404,11 @@ CellStore load_cell_store_from_worksheet_chunks_with_shared_strings_provider(
     const WorksheetInputChunkCallback& read_next_chunk,
     CellStoreOptions options,
     WorksheetEventReaderOptions reader_options,
-    const SharedStringsProvider* shared_strings_provider)
+    const SharedStringsProvider* shared_strings_provider,
+    const SourceStyleValidator* source_style_validator = nullptr)
 {
-    CellStoreWorksheetLoader loader(std::move(options), shared_strings_provider);
+    CellStoreWorksheetLoader loader(
+        std::move(options), shared_strings_provider, source_style_validator);
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
         [&loader](const WorksheetEvent& event) {
@@ -2268,10 +2475,22 @@ CellStore load_cell_store_from_workbook_sheet(
             }
             return *shared_strings;
         };
+        std::optional<std::size_t> cell_xfs_count;
+        SourceStyleValidator source_style_validator =
+            [&reader, &cell_xfs_count](StyleId style_id) {
+                if (!cell_xfs_count.has_value()) {
+                    cell_xfs_count = load_styles_cell_xfs_count_from_workbook(reader);
+                }
+                if (style_id.value() >= *cell_xfs_count) {
+                    throw FastXlsxError(
+                        "CellStore worksheet loader found a source style id out of range");
+                }
+            };
         return load_cell_store_from_worksheet_chunks_with_shared_strings_provider(
             reader.entry_chunk_source(worksheet_zip_entry),
             std::move(options), reader_options,
-            &shared_strings_provider);
+            &shared_strings_provider,
+            &source_style_validator);
     } catch (const std::exception& error) {
         throw FastXlsxError("failed to load CellStore from workbook sheet '"
             + std::string(sheet_name) + "' worksheet part '" + worksheet_part.value()

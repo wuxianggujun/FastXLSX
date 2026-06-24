@@ -187,11 +187,12 @@ private:
 /// are not inspected, so this is not namespace URI validation, namespace
 /// repair, or schema validation. Unsupported local-names still fail fast even
 /// when their namespace URI is ignored. The
-/// supplied CellStoreOptions are enforced during loading. This does not migrate
-/// sharedStrings, validate source style ids against styles.xml, merge styles,
-/// repair relationships, recalculate formulas, implement a complete formula
-/// parser, preserve formula metadata or cached formula results for formula-text
-/// cells, preserve inline rich text formatting, or expose a public
+/// supplied CellStoreOptions are enforced during loading. Generic worksheet
+/// XML/chunk loading still cannot validate source style ids against
+/// workbook-level styles.xml. This does not migrate sharedStrings, merge
+/// styles, repair relationships, recalculate formulas, implement a complete
+/// formula parser, preserve formula metadata or cached formula results for
+/// formula-text cells, preserve inline rich text formatting, or expose a public
 /// WorksheetEditor.
 [[nodiscard]] CellStore load_cell_store_from_worksheet_chunks(
     const WorksheetInputChunkCallback& read_next_chunk,
@@ -279,12 +280,14 @@ private:
 /// targets, and invalid indexes fail rather than being repaired or guessed.
 /// Failures are wrapped with sheet-name, worksheet part, and ZIP-entry context
 /// where available. This does not rebuild, migrate, or write back
-/// sharedStrings indexes. Source style ids are only numeric passthrough: `s="0"`
-/// is normalized to no style handle, canonical non-zero unsigned decimal source
-/// style ids are written back by dirty projection when styles.xml is preserved,
-/// and malformed/default-like style tokens or qualified style-like attributes
-/// still fail. This is not source style validation, style migration, style
-/// merge, or existing-workbook style registry support.
+/// sharedStrings indexes. Source style ids are same-workbook numeric
+/// passthrough: `s="0"` is normalized to no style handle, canonical non-zero
+/// unsigned decimal source style ids are validated against the source
+/// styles.xml `cellXfs` table, then written back by dirty projection while
+/// preserving styles.xml bytes. Malformed/default-like style tokens, missing
+/// or invalid styles metadata, out-of-range style ids, or qualified style-like
+/// attributes still fail. This is not style migration, style merge, or
+/// existing-workbook style registry support.
 [[nodiscard]] CellStore load_cell_store_from_workbook_sheet(
     const PackageReader& reader, std::string_view sheet_name,
     CellStoreOptions options = {}, WorksheetEventReaderOptions reader_options = {});

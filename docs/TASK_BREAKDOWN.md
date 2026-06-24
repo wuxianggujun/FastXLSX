@@ -74,9 +74,11 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   已有 worksheet XML chunk/string loader 和 `PackageReader` sheet-name helper
   首片，F2.2 internal `try_cell(row, column)` 读语义已落地，F2.3 首个
   source-loaded `CellStore` -> by-name `sheetData` Patch handoff smoke 已覆盖，
-  F2.4 首个 loader dependency guardrail 回归已固定 non-default source style id 和
-  unsupported source cell shape 的拒绝策略；explicit source `s="0"` 现在归一化为
-  no style handle；workbook-backed source sharedStrings
+  F2.4 首个 loader dependency guardrail 回归已固定 malformed source style
+  attributes 和 unsupported source cell shape 的拒绝策略；explicit source `s="0"`
+  现在归一化为 no style handle；workbook-backed canonical non-zero source style
+  ids 现在会先验证 source styles.xml `cellXfs` 再作为同 workbook numeric
+  passthrough materialize / dirty-project；workbook-backed source sharedStrings
   当前可只读 materialize 为 plain text，invalid sharedStrings metadata / indexes
   仍 fail fast，standalone generic worksheet loaders 仍因缺少 workbook-level
   sharedStrings context 而拒绝 `t="s"`；date-like/custom source cell types remain
@@ -410,11 +412,12 @@ F2 `WorksheetEditor` / In-memory random editing 首片：
   materialization / failure-before-state-change guardrail 场景或小型 save-as handoff
   缺口。当前策略先冻结为：
   `erase_cell()` 只是移除 sparse record，不是 tombstone；`CellValue::blank()` 是显式
-  blank replacement cell；canonical non-zero source style ids 只做 numeric
-  passthrough，explicit source `s="0"` 归一化为 no style handle，但只有 exact
-  token 被接受；empty / padded / signed / leading-zero / entity-encoded /
-  duplicate / qualified source style attributes 仍 fail，不做 styles.xml
-  validation / migrate / merge。
+  blank replacement cell；canonical non-zero source style ids 会验证 source
+  styles.xml `cellXfs` 后做 same-workbook numeric passthrough，explicit source
+  `s="0"` 归一化为 no style handle，但只有 exact token 被接受；empty / padded
+  / signed / leading-zero / entity-encoded / duplicate / qualified source style
+  attributes、missing/invalid styles metadata 和 out-of-range ids 仍 fail，不做
+  migrate / merge。
   当前已固定的 source dependency/shape fail policy 不能写成 migration、repair 或
   preservation。仍只做内部回归，不公开 `WorksheetEditor`，不处理 sharedStrings/style
   migration 或 relationship repair。

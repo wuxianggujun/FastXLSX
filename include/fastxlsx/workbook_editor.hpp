@@ -562,7 +562,7 @@ struct WorkbookEditorRenameOptions {
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
 /// or unsupported cell metadata attributes, coerce invalid numeric payloads, migrate
-/// sharedStrings indexes, validate or merge source style ids, import
+/// sharedStrings indexes, migrate or merge source style ids, import
 /// unsupported value-wrapper shapes, tolerate non-whitespace source worksheet
 /// text outside wrapper metadata or sheetData, source sheetData text outside
 /// rows, source row text outside cells, or source cell text outside `<v>` /
@@ -582,12 +582,13 @@ struct WorkbookEditorRenameOptions {
 /// `s="0"`. Source cells with an unqualified `s` value exactly equal to `0`
 /// (for example `s="0"`, `s='0'`, or `s = "0"`) are normalized the same way
 /// during materialization. Canonical non-zero unsigned decimal source style ids
-/// are materialized as numeric passthrough handles and written back by dirty
-/// projection when the source styles part is preserved. This does not validate
-/// those ids against styles.xml, merge styles, or allow caller-supplied foreign
-/// style handles. Empty, valueless, unquoted, unterminated, padded, signed,
-/// leading-zero, or entity-encoded source style tokens, duplicate style
-/// attributes, and qualified style-like attributes such as `x:s` remain
+/// are validated against the source styles.xml `cellXfs` table, materialized as
+/// numeric passthrough handles, and written back by dirty projection while the
+/// source styles part is preserved. This does not migrate or merge styles, or
+/// allow caller-supplied foreign style handles. Empty, valueless, unquoted,
+/// unterminated, padded, signed, leading-zero, entity-encoded, missing
+/// workbook styles metadata, or out-of-range source style tokens, duplicate
+/// style attributes, and qualified style-like attributes such as `x:s` remain
 /// unsupported.
 class WorksheetEditor {
 public:
@@ -1319,13 +1320,15 @@ public:
     /// XML fail before returning a handle. Explicit source `s` attributes whose
     /// value is exactly `0` (for example `s="0"`, `s='0'`, or `s = "0"`) are
     /// normalized to no style handle rather than preserved. Canonical non-zero
-    /// unsigned decimal source style ids are materialized as numeric passthrough
-    /// handles and written back by dirty projection when styles.xml is
-    /// preserved; they are not validated or migrated. Source style tokens such
-    /// as empty values, valueless or unquoted syntax, unterminated attributes,
-    /// `s="00"`, `s="+0"`, padded values, entity-encoded values, or duplicate
-    /// attributes are still rejected. Qualified style-like attributes such as
-    /// `x:s` are unsupported cell metadata, not source style attributes.
+    /// unsigned decimal source style ids are validated against the source
+    /// styles.xml `cellXfs` table, materialized as numeric passthrough handles,
+    /// and written back by dirty projection while styles.xml is preserved; they
+    /// are not migrated or merged. Source style tokens such as empty values,
+    /// valueless or unquoted syntax, unterminated attributes, `s="00"`,
+    /// `s="+0"`, padded values, entity-encoded values, missing workbook styles
+    /// metadata, out-of-range ids, or duplicate attributes are still rejected.
+    /// Qualified style-like attributes such as `x:s` are unsupported cell
+    /// metadata, not source style attributes.
     ///
     /// Operation mixing: a worksheet with a queued replace_sheet_data() payload
     /// cannot be materialized, and replace_sheet_data() / rename_sheet() reject

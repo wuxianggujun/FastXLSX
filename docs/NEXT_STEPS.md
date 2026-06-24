@@ -2048,12 +2048,14 @@ sharedStrings structures/targets or invalid indexes fail fast, non-critical
 `count` / `uniqueCount` metadata does not drive materialization, and standalone
 worksheet XML/chunk loaders still reject `t="s"` without workbook-level table
 context.
-Source style id public facade hygiene is also pinned: non-default source style
-ids still throw through `try_worksheet()` / `worksheet()` without dirtying the
-editor or blocking later Patch edits, while explicit default `s="0"` source
-style attributes now materialize as no style handle and dirty projection omits
-`s="0"` / `s='0'` / `s = "0"`. This remains default-style normalization only,
-not style migration or merge. The normalization is exact-value only: empty,
+Source style id public facade hygiene is also pinned: explicit default `s="0"`
+source style attributes materialize as no style handle and dirty projection
+omits `s="0"` / `s='0'` / `s = "0"`, while workbook-backed canonical non-zero
+source style ids now validate against the source styles.xml `cellXfs` table and
+write the same numeric id back when the source styles part is preserved. Missing
+or invalid styles metadata and out-of-range ids fail without dirtying the editor
+or blocking later Patch edits. This remains same-workbook passthrough only, not
+style migration or merge. The normalization is exact-value only: empty,
 valueless, unquoted, unterminated, padded, signed, leading-zero, entity-encoded,
 or duplicate default-like source style attributes still fail instead of being
 coerced to default style, and duplicate exact default-style attributes now have
@@ -3160,9 +3162,10 @@ feature completion.
       unsupported cell types, and invalid boolean payloads. Explicit source `s`
       values are now normalized to no style handle only when the unqualified
       value is exactly `0` (`s="0"`, `s='0'`, or `s = "0"`); canonical
-      non-zero unsigned decimal source style ids materialize as numeric
-      passthrough handles and are written back when the source styles part is
-      preserved. Empty, valueless, unquoted, unterminated, padded, signed,
+      non-zero unsigned decimal source style ids validate against source
+      styles.xml `cellXfs`, materialize as numeric passthrough handles, and are
+      written back when the source styles part is preserved. Empty, valueless,
+      unquoted, unterminated, padded, signed,
       leading-zero, entity-encoded, or duplicate source style attributes still
       fail, with duplicate exact default-style attributes covered through the
       public facade hygiene path. Qualified style-like attributes such as
@@ -3389,8 +3392,9 @@ feature completion.
       Loader state-machine guardrails now reject nested cells.
       Tombstone / style-preservation policy is now explicitly frozen for the
       next gate: `erase_cell()` removes the sparse record, `CellValue::blank()`
-      is the explicit blank replacement cell, and source style ids are numeric
-      passthrough only rather than validated, migrated, or merged. Explicit
+      is the explicit blank replacement cell, and workbook-backed source style
+      ids are same-workbook numeric passthrough after validating source
+      styles.xml `cellXfs`, not migrated or merged. Explicit
       default source style references are normalized to no style handle, but
       only for unqualified `s` values exactly equal to `0` (`s="0"`, `s='0'`,
       or `s = "0"`); canonical non-zero unsigned decimal source style ids are
@@ -3702,8 +3706,9 @@ commit or short series with its own tests and docs update.
       guardrail coverage now rejects malformed source worksheet style
       attributes, standalone shared string indexes, unsupported cell types, and
       invalid boolean payloads before pretending migration or repair exists;
-      explicit source `s="0"` is normalized to no style handle, and canonical
-      non-zero source style ids are passthrough only. These
+       explicit source `s="0"` is normalized to no style handle, and canonical
+       non-zero source style ids validate source styles.xml `cellXfs` before
+       same-workbook passthrough. These
       failure paths
       do not expose a partial `CellStore`, and `CellStore` coordinate validation
       failures now also have no-state-pollution coverage.
@@ -4826,8 +4831,8 @@ Do:
 - Keep style validation before row-state mutation.
 - Add future full-font/full-fill/border/full-alignment slices through the same registry, not
   through ad hoc cell XML fragments.
-- Document every style API as Streaming / new-workbook-only until existing-file
-  style preservation exists.
+- Document every style API as Streaming / new-workbook-only until broader
+  existing-file style editing exists.
 
 Accept when:
 - CTest covers `xl/styles.xml`, style ids, worksheet `s="N"` references,

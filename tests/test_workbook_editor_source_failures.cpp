@@ -2911,6 +2911,88 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             "dirty source-style projection should preserve untouched sheets");
     }
 
+    constexpr std::string_view styles_relationship_type =
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+    const auto remove_workbook_relationship_by_type =
+        [](std::string& relationships_xml, std::string_view relationship_type) {
+            const std::string type_attribute =
+                std::string(R"(Type=")") + std::string(relationship_type) + R"(")";
+            const std::size_t type_position = relationships_xml.find(type_attribute);
+            if (type_position == std::string::npos) {
+                throw std::runtime_error("test workbook relationship type was not found");
+            }
+            const std::size_t relationship_begin =
+                relationships_xml.rfind("<Relationship", type_position);
+            const std::size_t relationship_end = relationships_xml.find("/>", type_position);
+            if (relationship_begin == std::string::npos
+                || relationship_end == std::string::npos) {
+                throw std::runtime_error("test workbook relationship element was not found");
+            }
+            relationships_xml.erase(
+                relationship_begin, relationship_end + 2 - relationship_begin);
+        };
+
+    const auto write_source_with_valid_style_id = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+            const fastxlsx::StyleId number_style =
+                writer.add_style(fastxlsx::CellStyle {"0.00"});
+            fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+            data.append_row({fastxlsx::CellView::text("styled-source")
+                    .with_style(number_style)});
+            fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+            untouched.append_row({fastxlsx::CellView::text("keep-source-style")});
+            writer.close();
+        }
+        return source;
+    };
+
+    expect_public_style_materialization_failure(
+        "missing-styles-relationship",
+        [&](std::string_view name) {
+            const std::filesystem::path source = write_source_with_valid_style_id(name);
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            remove_workbook_relationship_by_type(
+                entries.at("xl/_rels/workbook.xml.rels"), styles_relationship_type);
+            write_stored_zip_entries(source, entries);
+            return source;
+        },
+        "source style ids without a styles part",
+        "non-default source style id without a workbook styles relationship");
+
+    expect_public_style_materialization_failure(
+        "wrong-styles-content-type",
+        [&](std::string_view name) {
+            const std::filesystem::path source = write_source_with_valid_style_id(name);
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            replace_first_or_throw(entries.at("[Content_Types].xml"),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml");
+            write_stored_zip_entries(source, entries);
+            return source;
+        },
+        "workbook styles relationship target is not a styles part",
+        "non-default source style id with wrong styles content type");
+
+    expect_public_style_materialization_failure(
+        "out-of-range-style-id",
+        [&](std::string_view name) {
+            const std::filesystem::path source = write_source_with_valid_style_id(name);
+            std::map<std::string, std::string> entries =
+                fastxlsx::test::read_zip_entries(source);
+            entries.at("xl/styles.xml") =
+                R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+                R"(<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>)"
+                R"(</styleSheet>)";
+            write_stored_zip_entries(source, entries);
+            return source;
+        },
+        "source style id out of range",
+        "non-default source style id outside source styles cellXfs");
+
     const auto write_source_with_style_attribute = [](std::string_view style_attribute) {
         return [style_attribute = std::string(style_attribute)](std::string_view name) {
             const std::filesystem::path source = artifact(name);

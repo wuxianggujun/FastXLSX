@@ -79,6 +79,14 @@ staged sparse-store hygiene: `set_cell_values()` preserves existing source
 styles while duplicate coordinates remain later-wins, and
 `clear_cell_values(span<WorksheetCellReference>)` clears only represented
 coordinates without synthesizing missing cells.
+The sparse batch mutation APIs also have small literal-batch convenience
+overloads: `set_cells(initializer_list<WorksheetCellUpdate>)`,
+`set_cell_values(initializer_list<WorksheetCellUpdate>)`,
+`clear_cell_values(initializer_list<WorksheetCellReference>)`, and
+`erase_cells(initializer_list<WorksheetCellReference>)` all synchronously
+delegate to the span overloads, preserving the same preflight, duplicate /
+missing-coordinate, guardrail, and diagnostic behavior without adding dense
+range editing or A1 range parsing.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the
@@ -2695,14 +2703,18 @@ schema validation.
   - `WorksheetEditor::get_cell()`
   - `WorksheetEditor::set_cell()`
   - `WorksheetEditor::set_cells()`
+  - `WorksheetEditor::set_cells(initializer_list<WorksheetCellUpdate>)`
   - `WorksheetEditor::set_cell_value()`
   - `WorksheetEditor::set_cell_values()`
+  - `WorksheetEditor::set_cell_values(initializer_list<WorksheetCellUpdate>)`
   - `WorksheetEditor::clear_cell_value()`
   - `WorksheetEditor::clear_cell_values(CellRange)`
   - `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
+  - `WorksheetEditor::clear_cell_values(initializer_list<WorksheetCellReference>)`
   - `WorksheetEditor::erase_cell()`
   - `WorksheetEditor::erase_cells(CellRange)`
   - `WorksheetEditor::erase_cells(span<WorksheetCellReference>)`
+  - `WorksheetEditor::erase_cells(initializer_list<WorksheetCellReference>)`
   - `WorksheetEditor` strict uppercase single-cell A1 overloads
   - `WorksheetCellReference`
   - `WorksheetCellUpdate`

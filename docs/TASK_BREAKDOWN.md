@@ -33241,6 +33241,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.726 - WorksheetEditor sparse batch initializer-list overloads
+
+Status: done.
+
+Type: public `WorksheetEditor` sparse batch convenience API; no new mutation
+semantics.
+
+Goal: make small literal batches ergonomic while preserving the existing span
+overload behavior.
+
+Output:
+- Added public initializer-list overloads for
+  `WorksheetEditor::set_cells()`, `set_cell_values()`,
+  coordinate-batch `clear_cell_values()`, and coordinate-batch `erase_cells()`.
+- Implemented every overload as a synchronous delegate to the existing
+  `std::span` overload, so validation, duplicate-coordinate ordering,
+  missing-coordinate no-op behavior, guardrails, diagnostics, and dirty-session
+  semantics remain identical.
+- Added a public-state regression that exercises all four initializer-list
+  overloads, checks duplicate-coordinate later-wins behavior, explicit blank
+  persistence, missing-coordinate no-synthesis, erased-cell omission, and
+  untouched worksheet preservation.
+- Updated README, API design notes, and next-step status.
+
+Non-goals / boundary:
+- No dense range writer, A1 range parser, style migration/merge, tombstone model,
+  row/column delete/insert, range metadata recalculation, relationship repair,
+  or large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

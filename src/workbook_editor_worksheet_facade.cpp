@@ -174,6 +174,11 @@ void WorksheetEditor::set_cells(std::span<const WorksheetCellUpdate> cells)
     }
 }
 
+void WorksheetEditor::set_cells(std::initializer_list<WorksheetCellUpdate> cells)
+{
+    set_cells(std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
+}
+
 void WorksheetEditor::set_cell_value(
     std::uint32_t row, std::uint32_t column, const CellValue& value)
 {
@@ -237,6 +242,11 @@ void WorksheetEditor::set_cell_values(std::span<const WorksheetCellUpdate> cells
         state.record_last_edit_error(error);
         throw;
     }
+}
+
+void WorksheetEditor::set_cell_values(std::initializer_list<WorksheetCellUpdate> cells)
+{
+    set_cell_values(std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
 void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue& value)
@@ -362,6 +372,11 @@ void WorksheetEditor::clear_cell_values(std::span<const WorksheetCellReference> 
     }
 }
 
+void WorksheetEditor::clear_cell_values(std::initializer_list<WorksheetCellReference> cells)
+{
+    clear_cell_values(std::span<const WorksheetCellReference>(cells.begin(), cells.size()));
+}
+
 void WorksheetEditor::erase_cells(CellRange range)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -419,6 +434,11 @@ void WorksheetEditor::erase_cells(std::span<const WorksheetCellReference> cells)
         state.record_last_edit_error(error);
         throw;
     }
+}
+
+void WorksheetEditor::erase_cells(std::initializer_list<WorksheetCellReference> cells)
+{
+    erase_cells(std::span<const WorksheetCellReference>(cells.begin(), cells.size()));
 }
 
 void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)

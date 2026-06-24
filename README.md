@@ -269,10 +269,14 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
 - In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
   `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
   `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`set_cells()`、`set_cell_value()`、`set_cell_values()`、
+  `set_cell()`、`set_cells()`、`set_cells(initializer_list<WorksheetCellUpdate>)`、
+  `set_cell_value()`、`set_cell_values()`、
+  `set_cell_values(initializer_list<WorksheetCellUpdate>)`、
   `clear_cell_value()`、`clear_cell_values(CellRange)`、
-  `clear_cell_values(span<WorksheetCellReference>)`、`erase_cell()`、
+  `clear_cell_values(span<WorksheetCellReference>)`、
+  `clear_cell_values(initializer_list<WorksheetCellReference>)`、`erase_cell()`、
   `erase_cells(CellRange)`、`erase_cells(span<WorksheetCellReference>)`、
+  `erase_cells(initializer_list<WorksheetCellReference>)`、
   row/column coordinate guardrails、
   single-cell mutation/read API 的 strict uppercase A1 string overload、
   `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
@@ -538,7 +542,11 @@ session 或 queue pending edit。`WorksheetEditor::set_cells()` 是稀疏 full-c
 replacement batch：输入是显式 row/column 坐标序列，duplicate coordinates 允许且后者
 覆盖前者；空 batch 是成功 no-op；任一坐标、非默认 style id、`max_cells` 或
 `memory_budget_bytes` 失败都会在状态变更前拒绝整个 batch。它不是 dense range writer
-或 A1 range parser，也不会保留被覆盖 cell 的旧 style。`WorksheetEditor::set_cell_value()`
+或 A1 range parser，也不会保留被覆盖 cell 的旧 style。`set_cells()`、
+`set_cell_values()`、`clear_cell_values(span<WorksheetCellReference>)` 和
+`erase_cells(span<WorksheetCellReference>)` 都有 initializer-list 便利重载，适合小型
+literal batch；这些重载同步消费输入并委托 span 路径，不改变 preflight、duplicate /
+missing-coordinate、guardrail 或 diagnostic 语义。`WorksheetEditor::set_cell_value()`
 和 `set_cell_values()` 是 value-only 编辑，会保留目标 cell 当前 materialized source
 style handle；批量版本同样支持 duplicate coordinates 后者覆盖前者、empty no-op 和
 失败不污染。`clear_cell_value()` / `clear_cell_values(CellRange)` /
@@ -593,11 +601,18 @@ std::vector<fastxlsx::WorksheetCellUpdate> updates = {
     {{3, 2}, fastxlsx::CellValue::blank()},
 };
 sheet.set_cells(updates);
+sheet.set_cells({
+    {{3, 3}, fastxlsx::CellValue::text("literal batch update")},
+    {{3, 3}, fastxlsx::CellValue::text("literal duplicate wins")},
+});
 std::vector<fastxlsx::WorksheetCellUpdate> value_updates = {
     {{1, 1}, fastxlsx::CellValue::text("value-only keeps existing style")},
     {{4, 1}, fastxlsx::CellValue::text("missing target has no style")},
 };
 sheet.set_cell_values(value_updates);
+sheet.set_cell_values({
+    {{4, 2}, fastxlsx::CellValue::boolean(true)},
+});
 sheet.clear_cell_value("B2");
 sheet.clear_cell_values(fastxlsx::CellRange{1, 1, 10, 5});
 std::vector<fastxlsx::WorksheetCellReference> clear_targets = {
@@ -605,12 +620,14 @@ std::vector<fastxlsx::WorksheetCellReference> clear_targets = {
     {4, 2}, // Missing cells are not synthesized.
 };
 sheet.clear_cell_values(clear_targets);
+sheet.clear_cell_values({{4, 3}, {4, 4}});
 std::vector<fastxlsx::WorksheetCellReference> erase_targets = {
     {5, 1},
     {5, 2}, // Missing cells are successful no-ops.
 };
 sheet.erase_cells(fastxlsx::CellRange{5, 1, 10, 5});
 sheet.erase_cells(erase_targets);
+sheet.erase_cells({{6, 1}, {6, 2}});
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.erase_cell(2, 1);

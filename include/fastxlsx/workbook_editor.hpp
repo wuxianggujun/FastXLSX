@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <span>
@@ -702,6 +703,14 @@ public:
     /// low-memory random-editing path.
     void set_cells(std::span<const WorksheetCellUpdate> cells);
 
+    /// Applies sparse full-cell replacements from a small literal batch.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so validation, duplicate-coordinate
+    /// ordering, empty-batch no-op behavior, guardrails, diagnostics, and
+    /// non-goals are identical.
+    void set_cells(std::initializer_list<WorksheetCellUpdate> cells);
+
     /// Replaces one sparse-store cell value while preserving its current style.
     ///
     /// This is the safe existing-workbook style boundary for value-only edits:
@@ -732,6 +741,14 @@ public:
     /// range parser, style migration/merge API, range metadata recalculation,
     /// or large-file low-memory random-editing path.
     void set_cell_values(std::span<const WorksheetCellUpdate> cells);
+
+    /// Applies sparse value-only replacements from a small literal batch.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so style-preserving value semantics,
+    /// duplicate-coordinate ordering, empty-batch no-op behavior, guardrails,
+    /// diagnostics, and non-goals are identical.
+    void set_cell_values(std::initializer_list<WorksheetCellUpdate> cells);
 
     /// Sets or replaces one sparse-store cell value by strict uppercase A1
     /// reference.
@@ -816,6 +833,14 @@ public:
     /// parser.
     void clear_cell_values(std::span<const WorksheetCellReference> cells);
 
+    /// Clears represented sparse coordinates from a small literal batch.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so coordinate preflight,
+    /// missing-cell no-op behavior, style preservation, diagnostics, and
+    /// non-goals are identical.
+    void clear_cell_values(std::initializer_list<WorksheetCellReference> cells);
+
     /// Removes sparse-store cell records inside a rectangular range.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The
@@ -849,6 +874,14 @@ public:
     /// row/column delete, tombstone output, range metadata recalculation,
     /// relationship repair, or a large-file low-memory random-editing path.
     void erase_cells(std::span<const WorksheetCellReference> cells);
+
+    /// Removes sparse-store cell records from a small literal coordinate batch.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so coordinate preflight, duplicate
+    /// and missing-cell no-op behavior, diagnostics, and non-goals are
+    /// identical.
+    void erase_cells(std::initializer_list<WorksheetCellReference> cells);
 
     /// Removes one sparse-store cell record.
     ///

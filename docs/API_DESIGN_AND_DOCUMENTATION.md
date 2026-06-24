@@ -128,10 +128,14 @@ In-memory `WorksheetEditor` 切片：`WorksheetEditorOptions`、
 `WorkbookEditor::worksheet(name, options)`、
 `WorkbookEditor::try_worksheet(name, options)`、
 `WorksheetEditor::try_cell()` / `get_cell()` / `set_cell()` / `set_cells()` /
+`set_cells(initializer_list<WorksheetCellUpdate>)` /
 `set_cell_value()` / `set_cell_values()` / `clear_cell_value()` /
+`set_cell_values(initializer_list<WorksheetCellUpdate>)` /
 `clear_cell_values(CellRange)` / `clear_cell_values(span<WorksheetCellReference>)` /
+`clear_cell_values(initializer_list<WorksheetCellReference>)` /
 `erase_cell()` / `erase_cells(CellRange)` /
-`erase_cells(span<WorksheetCellReference>)`、
+`erase_cells(span<WorksheetCellReference>)` /
+`erase_cells(initializer_list<WorksheetCellReference>)`、
 `has_pending_changes()`、`cell_count()` 和 `estimated_memory_usage()`。Small new-workbook
 `Workbook::rename_worksheet()` / `Workbook::remove_worksheet()` 也已落地，只修改
 当前待生成 workbook 中的 in-memory sheet buffer，并不编辑已有 XLSX；`Workbook` /
@@ -165,6 +169,13 @@ range erase. It deletes only represented active sparse records inside a
 validated 1-based inclusive `CellRange`, treats missing-only ranges as
 successful no-ops, and does not add dense range deletion, tombstones,
 row/column delete, relationship repair, or large-file low-memory random edit.
+
+Matrix addendum: P8.726 adds initializer-list convenience overloads for the
+sparse batch APIs: `set_cells()`, `set_cell_values()`, coordinate-batch
+`clear_cell_values()`, and coordinate-batch `erase_cells()`. These overloads are
+small literal-batch UX only; they synchronously delegate to the existing span
+overloads and preserve identical preflight, duplicate/missing-coordinate,
+guardrail, diagnostic, and non-goal boundaries.
 
 因此接下来的 API 推进重点是继续保持三条路径清晰：`WorkbookEditor` 统一承载
 existing-file facade，但 whole-`<sheetData>` replacement 属于 Patch，`WorksheetEditor`

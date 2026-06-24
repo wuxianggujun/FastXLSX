@@ -3080,6 +3080,81 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "erased B1 numeric cell should not reappear after post-reacquire mutation");
 }
 
+void test_public_worksheet_editor_initializer_list_batch_overloads()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-init-list-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-init-list-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cells({
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("init-list-full-replace")},
+        {fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::CellValue::text("init-list-first")},
+        {fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::CellValue::formula("A1+B1")},
+    });
+    check(sheet.get_cell("A1").text_value() == "init-list-full-replace",
+        "initializer-list set_cells should replace existing sparse cells");
+    const fastxlsx::CellValue duplicate_full_update = sheet.get_cell("C3");
+    check(duplicate_full_update.kind() == fastxlsx::CellValueKind::Formula
+            && duplicate_full_update.text_value() == "A1+B1",
+        "initializer-list set_cells should keep duplicate-coordinate later-wins semantics");
+
+    sheet.set_cell_values({
+        {fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::CellValue::number(42.0)},
+        {fastxlsx::WorksheetCellReference {4, 4},
+            fastxlsx::CellValue::boolean(true)},
+    });
+    check(sheet.get_cell("B1").number_value() == 42.0,
+        "initializer-list set_cell_values should update existing sparse cells");
+    check(sheet.get_cell("D4").boolean_value(),
+        "initializer-list set_cell_values should insert missing sparse cells");
+
+    sheet.clear_cell_values({
+        fastxlsx::WorksheetCellReference {1, 2},
+        fastxlsx::WorksheetCellReference {6, 6},
+    });
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "initializer-list clear_cell_values should clear represented cells");
+    check(!sheet.try_cell("F6").has_value(),
+        "initializer-list clear_cell_values should not synthesize missing cells");
+
+    sheet.erase_cells({
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {3, 3},
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {8, 8},
+    });
+    check(!sheet.try_cell("A1").has_value(),
+        "initializer-list erase_cells should remove represented cells");
+    check(!sheet.try_cell("C3").has_value(),
+        "initializer-list erase_cells should remove represented duplicate target");
+    check(!sheet.try_cell("H8").has_value(),
+        "initializer-list erase_cells should not synthesize missing cells");
+    check(!editor.last_edit_error().has_value(),
+        "successful initializer-list batch overloads should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<c r="B1"/>)",
+        "initializer-list clear_cell_values should persist explicit blank cells");
+    check_contains(worksheet_xml, R"(<c r="D4" t="b"><v>1</v></c>)",
+        "initializer-list set_cell_values should persist inserted boolean cells");
+    check_not_contains(worksheet_xml, "init-list-full-replace",
+        "initializer-list erase_cells should omit erased full replacement text");
+    check_not_contains(worksheet_xml, "A1+B1",
+        "initializer-list erase_cells should omit erased formula text");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "initializer-list batch overloads should preserve untouched worksheets");
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -4001,6 +4076,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();
             test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
             test_public_worksheet_editor_erase_cells_range_reacquires_saved_state();
+            test_public_worksheet_editor_initializer_list_batch_overloads();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

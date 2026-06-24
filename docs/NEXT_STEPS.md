@@ -1886,7 +1886,7 @@ shard; the new names are test-organization only.
 The linked-object PackageEditor preservation shard split keeps
 `tests/test_package_editor_preservation_linked.cpp` as the comments /
 threaded-comments base shard and moves pivot/cache, external-link, and custom
-XML coverage into
+XML item core coverage into
 `tests/test_package_editor_preservation_linked_pivot.cpp`,
 `tests/test_package_editor_preservation_linked_external_links.cpp`, and
 `tests/test_package_editor_preservation_linked_custom_xml.cpp`. The existing
@@ -1906,6 +1906,19 @@ cache-definition and cache-records lifecycle families. The existing
 the pivot-table core shard, the new cache shard names are added, and
 `fastxlsx_package_editor_preservation_linked_pivot_tests` remains a build-only
 aggregate. This is still test organization only.
+The linked custom XML preservation executable is now split further:
+`tests/test_package_editor_preservation_linked_custom_xml.cpp` keeps worksheet
+rewrite plus custom XML item lifecycle coverage, while
+`tests/test_package_editor_preservation_linked_custom_xml_properties.cpp` and
+`tests/test_package_editor_preservation_linked_custom_xml_ordering.cpp` own
+custom XML properties and item/properties ordering coverage, with shared
+helpers in
+`tests/test_package_editor_preservation_linked_custom_xml_common.hpp`. The
+existing `fastxlsx.package_editor.preservation-linked-custom-xml` CTest name
+stays stable for the item core shard, the new properties/ordering shard names
+are added, and
+`fastxlsx_package_editor_preservation_linked_custom_xml_all_tests` remains a
+build-only aggregate. This is still test organization only.
 The same preservation lane also splits the large core shard further: the
 base `tests/test_package_editor_preservation_core.cpp` keeps drawing,
 unknown-extension, media, chart, and table coverage, while
@@ -2460,6 +2473,8 @@ schema validation.
   - `fastxlsx.package_editor.preservation-linked-pivot-cache-records`
   - `fastxlsx.package_editor.preservation-linked-external-links`
   - `fastxlsx.package_editor.preservation-linked-custom-xml`
+  - `fastxlsx.package_editor.preservation-linked-custom-xml-properties`
+  - `fastxlsx.package_editor.preservation-linked-custom-xml-ordering`
   - `fastxlsx.package_editor.policy`
   - `fastxlsx.package_editor.policy-save-as-guards`
   - `fastxlsx.package_editor.policy-invalid-inputs`

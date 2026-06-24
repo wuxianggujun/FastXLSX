@@ -1898,12 +1898,18 @@ name stays stable for the base shard, the new removal shard names are added,
 and `fastxlsx_package_editor_preservation_removal_tests` remains a build-only
 aggregate. This is still test organization only.
 The base PackageEditor core executable is now split too:
-`tests/test_package_editor_core.cpp` keeps staged-chunk, worksheet routing,
-replacement-state, and docProps coverage, while
-`tests/test_package_editor_core_calc.cpp` owns calc metadata regressions and
-`tests/test_package_editor_core_linked.cpp` owns the linked-fixture plus
-minizip-backed cases. The existing `fastxlsx.package_editor.core` CTest name
-stays stable, `fastxlsx.package_editor.core-calc` and
+`tests/test_package_editor_core.cpp` keeps no-op save, copy-original,
+single-part replacement, staged chunk write, and staged chunk guardrails.
+`tests/test_package_editor_core_worksheet.cpp` owns worksheet routing and
+worksheet chunk-source replacement, and
+`tests/test_package_editor_core_docprops.cpp` owns replacement-state plus
+document-properties helpers. `tests/test_package_editor_core_calc.cpp` owns
+calc metadata regressions, and `tests/test_package_editor_core_linked.cpp`
+owns the linked-fixture plus minizip-backed cases. The existing
+`fastxlsx.package_editor.core` CTest name stays stable,
+`fastxlsx.package_editor.core-worksheet`,
+`fastxlsx.package_editor.core-docprops`,
+`fastxlsx.package_editor.core-calc`, and
 `fastxlsx.package_editor.core-linked` are added, and
 `fastxlsx_package_editor_tests` remains a build-only aggregate. This is still
 test organization only.
@@ -2389,6 +2395,10 @@ schema validation.
   - `fastxlsx.package_reader.workbook`
   - `fastxlsx.package_reader.zip-failures`
   - `fastxlsx.package_editor.core`
+  - `fastxlsx.package_editor.core-worksheet`
+  - `fastxlsx.package_editor.core-docprops`
+  - `fastxlsx.package_editor.core-calc`
+  - `fastxlsx.package_editor.core-linked`
   - `fastxlsx.package_editor.c5`
   - `fastxlsx.package_editor.preservation-core`
   - `fastxlsx.package_editor.preservation-core-drawings`

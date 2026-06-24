@@ -30092,6 +30092,48 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.710 - Split PackageEditor core executable by worksheet and docProps families
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: shrink the remaining `tests/test_package_editor_core.cpp` shard by
+moving worksheet-routing / worksheet chunk-source coverage and document
+properties coverage into dedicated executables, while preserving the existing
+`fastxlsx.package_editor.core` CTest name for no-op save, copy-original,
+single-part replacement, staged chunk write, and staged chunk guardrail
+coverage.
+
+Output:
+- Extracted shared helpers to `tests/test_package_editor_core_common.hpp`.
+- Kept `tests/test_package_editor_core.cpp` focused on no-op save,
+  copy-original source handling, single-part replacement, staged part chunks,
+  and staged chunk guardrails.
+- Added:
+  - `tests/test_package_editor_core_worksheet.cpp`.
+  - `tests/test_package_editor_core_docprops.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_core_tests`,
+  `fastxlsx_package_editor_core_worksheet_tests`, and
+  `fastxlsx_package_editor_core_docprops_tests`.
+- Kept `fastxlsx_package_editor_tests` as a build-only aggregate target
+  depending on all PackageEditor shard executables.
+- Kept the existing CTest name `fastxlsx.package_editor.core` for the base
+  shard, and added `fastxlsx.package_editor.core-worksheet` and
+  `fastxlsx.package_editor.core-docprops`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no docProps semantic expansion, no worksheet rewrite semantic
+  expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.(core|core-worksheet|core-docprops)" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

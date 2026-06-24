@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -145,8 +146,14 @@ public:
     /// keep the session alive and unmodified until the callback is fully
     /// consumed. This is an internal save-as handoff bridge only and does not
     /// imply public WorksheetEditor persistence.
-    [[nodiscard]] WorksheetInputChunkCallback worksheet_chunk_source() const
+    [[nodiscard]] WorksheetInputChunkCallback worksheet_chunk_source(
+        std::shared_ptr<const CellStoreSharedStringIndexProvider>
+            shared_string_index_provider = {}) const
     {
+        if (shared_string_index_provider) {
+            return cell_store_worksheet_chunk_source_with_shared_strings(
+                store_, std::move(shared_string_index_provider));
+        }
         return cell_store_worksheet_chunk_source(store_);
     }
 
@@ -337,7 +344,9 @@ public:
     /// sessions until the callbacks are fully consumed. This is an internal
     /// projection collection only; it does not queue package edits or save.
     [[nodiscard]] std::vector<MaterializedWorksheetProjection>
-    dirty_worksheet_chunk_sources() const
+    dirty_worksheet_chunk_sources(
+        std::shared_ptr<const CellStoreSharedStringIndexProvider>
+            shared_string_index_provider = {}) const
     {
         std::vector<MaterializedWorksheetProjection> projections;
         for (const auto& [_, session] : sessions_) {
@@ -347,7 +356,7 @@ public:
             projections.push_back(
                 MaterializedWorksheetProjection {
                     session.planned_name(),
-                    session.worksheet_chunk_source(),
+                    session.worksheet_chunk_source(shared_string_index_provider),
                 });
         }
         return projections;

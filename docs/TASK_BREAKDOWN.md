@@ -32869,6 +32869,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-linked-custom-xml" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.716 - WorksheetEditor sharedStrings append projection boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook sharedStrings projection
+hardening; no broad migration or relationship repair.
+
+Goal: make dirty small-file `WorksheetEditor` save-as reuse a safe existing
+workbook sharedStrings table instead of always projecting text as inlineStr.
+When the source workbook has one valid, appendable ordinary `<sst>` table,
+dirty worksheet text cells save as stable `t="s"` indexes and only new plain
+strings are appended to `xl/sharedStrings.xml`. Workbooks without a
+sharedStrings table, or with stale/malformed/prefixed/count-inconsistent tables
+outside that narrow append boundary, keep the inline-string fallback and never
+create new sharedStrings metadata.
+
+Output:
+- Added internal `CellStoreSharedStringIndexProvider` chunk-source projection
+  helpers so sparse-store worksheet output can write text cells as shared
+  string indexes when the caller provides a stable workbook-local index map.
+- Added `WorkbookSharedStringsSnapshot` loading and conservative
+  `try_build_shared_strings_append_xml()` append rewrite helper.
+- Updated dirty materialized-session flush planning to stage a
+  `replace_part_chunks()` update for `xl/sharedStrings.xml` only when a safe
+  append plan exists.
+- Updated public source sharedStrings success regressions to verify source
+  index reuse, new-string append, conservative `count`, `uniqueCount`, and
+  fallback preservation for unsupported source shapes.
+
+Non-goals / boundary:
+- No creation of missing sharedStrings tables, no broad sharedStrings rebuild,
+  no relationship/content-type repair, no schema count repair, no rich-text
+  preservation for appended strings, no style migration, no formula evaluation,
+  no calcChain rebuild, and no large-file sharedStrings DOM guarantee.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_success_shared_strings_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.source-success-shared-strings" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

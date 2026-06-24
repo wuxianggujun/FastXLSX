@@ -1074,49 +1074,12 @@ std::size_t parse_styles_cell_xfs_count(std::string_view xml)
 std::optional<std::vector<std::string>> load_shared_strings_from_workbook(
     const PackageReader& reader)
 {
-    const PartName workbook_part = reader.workbook_part();
-    const RelationshipSet* workbook_relationships = reader.relationships_for(workbook_part);
-    if (workbook_relationships == nullptr) {
+    std::optional<WorkbookSharedStringsSnapshot> snapshot =
+        load_workbook_shared_strings_snapshot(reader);
+    if (!snapshot.has_value()) {
         return std::nullopt;
     }
-
-    const Relationship* shared_strings_relationship = nullptr;
-    for (const Relationship& relationship : workbook_relationships->relationships()) {
-        if (relationship.type !=
-            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings") {
-            continue;
-        }
-        if (shared_strings_relationship != nullptr) {
-            throw FastXlsxError(
-                "workbook sharedStrings lookup found multiple sharedStrings relationships");
-        }
-        shared_strings_relationship = &relationship;
-    }
-
-    if (shared_strings_relationship == nullptr) {
-        return std::nullopt;
-    }
-
-    const PartName shared_strings_part(resolve_internal_relationship_target_path(
-        workbook_part, *shared_strings_relationship, "sharedStrings"));
-    const PackagePart* package_part = reader.part_index().find_part(shared_strings_part);
-    if (package_part == nullptr) {
-        throw FastXlsxError(
-            "workbook sharedStrings relationship targets an unknown package part");
-    }
-    if (package_part->content_type
-        != "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml") {
-        throw FastXlsxError(
-            "workbook sharedStrings relationship target is not a sharedStrings part");
-    }
-
-    try {
-        return parse_shared_strings_xml(reader.read_entry(shared_strings_part.zip_path()));
-    } catch (const std::exception& error) {
-        throw FastXlsxError("failed to load workbook sharedStrings part '"
-            + shared_strings_part.value() + "' ZIP entry '" + shared_strings_part.zip_path()
-            + "': " + error.what());
-    }
+    return std::move(snapshot->strings);
 }
 
 std::size_t load_styles_cell_xfs_count_from_workbook(const PackageReader& reader)
@@ -1377,7 +1340,8 @@ void append_style_attribute(std::string& xml, const CellRecord& record)
     xml += "\"";
 }
 
-void append_cell_xml(std::string& xml, const CellPosition& position, const CellRecord& record)
+void append_cell_xml(std::string& xml, const CellPosition& position, const CellRecord& record,
+    const CellStoreSharedStringIndexProvider* shared_string_index_provider)
 {
     xml += "<c r=\"";
     append_cell_reference(xml, position.row, position.column);
@@ -1394,9 +1358,15 @@ void append_cell_xml(std::string& xml, const CellPosition& position, const CellR
         xml += "</v></c>";
         break;
     case CellValueKind::Text:
-        xml += " t=\"inlineStr\"><is>";
-        append_text_element(xml, record.text_value);
-        xml += "</is></c>";
+        if (shared_string_index_provider != nullptr) {
+            xml += " t=\"s\"><v>";
+            append_unsigned_decimal(xml, (*shared_string_index_provider)(record.text_value));
+            xml += "</v></c>";
+        } else {
+            xml += " t=\"inlineStr\"><is>";
+            append_text_element(xml, record.text_value);
+            xml += "</is></c>";
+        }
         break;
     case CellValueKind::Boolean:
         xml += " t=\"b\"><v>";
@@ -1418,9 +1388,12 @@ void append_cell_xml(std::string& xml, const CellPosition& position, const CellR
 
 class CellStoreSheetDataChunkSourceState {
 public:
-    explicit CellStoreSheetDataChunkSourceState(const CellStore& store)
+    explicit CellStoreSheetDataChunkSourceState(const CellStore& store,
+        std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider =
+            {})
         : current_(store.records().begin())
         , end_(store.records().end())
+        , shared_string_index_provider_(std::move(shared_string_index_provider))
     {
     }
 
@@ -1443,7 +1416,8 @@ public:
                 return true;
             }
 
-            append_cell_xml(chunk, current_->first, current_->second);
+            append_cell_xml(chunk, current_->first, current_->second,
+                shared_string_index_provider_.get());
             ++current_;
             return true;
         }
@@ -1478,6 +1452,7 @@ private:
 
     RecordIterator current_;
     RecordIterator end_;
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider_;
     std::uint32_t current_row_ = 0;
     bool emitted_start_ = false;
     bool emitted_end_ = false;
@@ -1486,8 +1461,14 @@ private:
 
 class CellStoreWorksheetChunkSourceState {
 public:
-    explicit CellStoreWorksheetChunkSourceState(const CellStore& store)
-        : sheet_data_source_(cell_store_sheet_data_chunk_source(store))
+    explicit CellStoreWorksheetChunkSourceState(const CellStore& store,
+        std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider =
+            {})
+        : sheet_data_source_(
+              shared_string_index_provider
+                  ? cell_store_sheet_data_chunk_source_with_shared_strings(
+                        store, std::move(shared_string_index_provider))
+                  : cell_store_sheet_data_chunk_source(store))
         , dimension_reference_(cell_store_dimension_reference(store))
     {
     }
@@ -2291,7 +2272,348 @@ private:
     SharedFormulaDefinitions shared_formula_definitions_;
 };
 
+bool shared_strings_projection_root_allows_attribute(std::string_view name)
+{
+    return name == "xmlns" || name == "count" || name == "uniqueCount";
+}
+
+bool shared_strings_projection_root_has_supported_attributes(std::string_view raw_tag)
+{
+    std::string_view body = tag_body(raw_tag);
+    std::size_t position = 0;
+    while (position < body.size() && !is_space(body[position])) {
+        ++position;
+    }
+
+    while (position < body.size()) {
+        while (position < body.size() && is_space(body[position])) {
+            ++position;
+        }
+        if (position >= body.size() || body[position] == '/' || body[position] == '?') {
+            return true;
+        }
+
+        const std::size_t name_begin = position;
+        while (position < body.size() && !is_space(body[position]) && body[position] != '='
+            && body[position] != '/' && body[position] != '?') {
+            ++position;
+        }
+        const std::string_view name = body.substr(name_begin, position - name_begin);
+        if (!shared_strings_projection_root_allows_attribute(name)) {
+            return false;
+        }
+
+        while (position < body.size() && is_space(body[position])) {
+            ++position;
+        }
+        if (position >= body.size() || body[position] != '=') {
+            return false;
+        }
+        ++position;
+        while (position < body.size() && is_space(body[position])) {
+            ++position;
+        }
+        if (position >= body.size() || (body[position] != '"' && body[position] != '\'')) {
+            return false;
+        }
+
+        const char quote = body[position];
+        ++position;
+        while (position < body.size() && body[position] != quote) {
+            ++position;
+        }
+        if (position >= body.size()) {
+            return false;
+        }
+        ++position;
+    }
+
+    return true;
+}
+
+std::optional<std::string_view> first_shared_strings_projection_root_tag(
+    std::string_view xml)
+{
+    bool saw_prolog_trivia = false;
+    for (std::size_t offset = 0;;) {
+        const std::size_t open = xml.find('<', offset);
+        const std::string_view text =
+            open == std::string_view::npos ? xml.substr(offset)
+                                           : xml.substr(offset, open - offset);
+        if (has_non_whitespace(text)) {
+            return std::nullopt;
+        }
+        if (open == std::string_view::npos) {
+            return std::nullopt;
+        }
+        if (open + 1 >= xml.size()) {
+            return std::nullopt;
+        }
+
+        if (xml.substr(open, 4) == "<!--") {
+            const std::size_t close = xml.find("-->", open + 4);
+            if (close == std::string_view::npos) {
+                return std::nullopt;
+            }
+            saw_prolog_trivia = true;
+            offset = close + 3;
+            continue;
+        }
+
+        const char marker = xml[open + 1];
+        const std::size_t close = find_xml_tag_end(xml, open);
+        const std::string_view raw_tag = xml.substr(open, close - open + 1);
+        if (marker == '?') {
+            if (is_xml_declaration_tag(raw_tag)) {
+                if (saw_prolog_trivia) {
+                    return std::nullopt;
+                }
+                try {
+                    validate_shared_strings_xml_declaration(raw_tag);
+                } catch (const std::exception&) {
+                    return std::nullopt;
+                }
+            } else {
+                try {
+                    validate_shared_strings_processing_instruction(raw_tag);
+                } catch (const std::exception&) {
+                    return std::nullopt;
+                }
+                if (is_reserved_xml_processing_instruction_target(raw_tag)) {
+                    return std::nullopt;
+                }
+                saw_prolog_trivia = true;
+            }
+            offset = close + 1;
+            continue;
+        }
+        if (marker == '!') {
+            return std::nullopt;
+        }
+        try {
+            validate_raw_tag_attribute_syntax(raw_tag, "CellStore sharedStrings projection");
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+        return raw_tag;
+    }
+}
+
+bool shared_strings_snapshot_supports_projection(
+    const WorkbookSharedStringsSnapshot& snapshot)
+{
+    const std::optional<std::string_view> raw_root =
+        first_shared_strings_projection_root_tag(snapshot.xml);
+    if (!raw_root.has_value()) {
+        return false;
+    }
+    if (raw_tag_name(*raw_root) != "sst" || is_self_closing_raw_tag(*raw_root)) {
+        return false;
+    }
+    if (!shared_strings_projection_root_has_supported_attributes(*raw_root)) {
+        return false;
+    }
+
+    const std::optional<std::string_view> count =
+        unqualified_attribute_value(*raw_root, "count");
+    const std::optional<std::string_view> unique_count =
+        unqualified_attribute_value(*raw_root, "uniqueCount");
+    if (!count.has_value() || !unique_count.has_value()) {
+        return false;
+    }
+
+    std::size_t parsed_count = 0;
+    std::size_t parsed_unique_count = 0;
+    try {
+        parsed_count = parse_unsigned_count_attribute(
+            *count, "CellStore sharedStrings projection count");
+        parsed_unique_count = parse_unsigned_count_attribute(
+            *unique_count, "CellStore sharedStrings projection uniqueCount");
+    } catch (const std::exception&) {
+        return false;
+    }
+    if (parsed_unique_count != snapshot.strings.size()
+        || parsed_count < parsed_unique_count) {
+        return false;
+    }
+
+    return snapshot.xml.rfind("</sst>") != std::string::npos;
+}
+
+bool replace_shared_strings_root_attribute(
+    std::string& xml, std::string_view attribute_name, std::string_view replacement_value)
+{
+    const std::optional<std::string_view> raw_root = first_shared_strings_projection_root_tag(xml);
+    if (!raw_root.has_value()) {
+        return false;
+    }
+    const std::size_t root_offset =
+        static_cast<std::size_t>(raw_root->data() - xml.data());
+    const std::size_t root_end = root_offset + raw_root->size();
+    std::size_t position = root_offset + 1;
+    while (position < root_end && !is_space(xml[position])) {
+        ++position;
+    }
+
+    while (position < root_end) {
+        while (position < root_end && is_space(xml[position])) {
+            ++position;
+        }
+        if (position >= root_end || xml[position] == '/' || xml[position] == '?') {
+            return false;
+        }
+
+        const std::size_t name_begin = position;
+        while (position < root_end && !is_space(xml[position]) && xml[position] != '='
+            && xml[position] != '/' && xml[position] != '?') {
+            ++position;
+        }
+        const std::string_view name(xml.data() + name_begin, position - name_begin);
+        while (position < root_end && is_space(xml[position])) {
+            ++position;
+        }
+        if (position >= root_end || xml[position] != '=') {
+            return false;
+        }
+        ++position;
+        while (position < root_end && is_space(xml[position])) {
+            ++position;
+        }
+        if (position >= root_end || (xml[position] != '"' && xml[position] != '\'')) {
+            return false;
+        }
+        const char quote = xml[position];
+        ++position;
+        const std::size_t value_begin = position;
+        while (position < root_end && xml[position] != quote) {
+            ++position;
+        }
+        if (position >= root_end) {
+            return false;
+        }
+        if (name == attribute_name) {
+            xml.replace(value_begin, position - value_begin, replacement_value);
+            return true;
+        }
+        ++position;
+    }
+
+    return false;
+}
+
 } // namespace
+
+std::optional<WorkbookSharedStringsSnapshot> load_workbook_shared_strings_snapshot(
+    const PackageReader& reader)
+{
+    const PartName workbook_part = reader.workbook_part();
+    const RelationshipSet* workbook_relationships = reader.relationships_for(workbook_part);
+    if (workbook_relationships == nullptr) {
+        return std::nullopt;
+    }
+
+    const Relationship* shared_strings_relationship = nullptr;
+    for (const Relationship& relationship : workbook_relationships->relationships()) {
+        if (relationship.type !=
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings") {
+            continue;
+        }
+        if (shared_strings_relationship != nullptr) {
+            throw FastXlsxError(
+                "workbook sharedStrings lookup found multiple sharedStrings relationships");
+        }
+        shared_strings_relationship = &relationship;
+    }
+
+    if (shared_strings_relationship == nullptr) {
+        return std::nullopt;
+    }
+
+    const PartName shared_strings_part(resolve_internal_relationship_target_path(
+        workbook_part, *shared_strings_relationship, "sharedStrings"));
+    const PackagePart* package_part = reader.part_index().find_part(shared_strings_part);
+    if (package_part == nullptr) {
+        throw FastXlsxError(
+            "workbook sharedStrings relationship targets an unknown package part");
+    }
+    if (package_part->content_type
+        != "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml") {
+        throw FastXlsxError(
+            "workbook sharedStrings relationship target is not a sharedStrings part");
+    }
+
+    try {
+        WorkbookSharedStringsSnapshot snapshot;
+        snapshot.part_name = shared_strings_part.value();
+        snapshot.zip_path = shared_strings_part.zip_path();
+        snapshot.xml = reader.read_entry(snapshot.zip_path);
+        snapshot.strings = parse_shared_strings_xml(snapshot.xml);
+        return snapshot;
+    } catch (const std::exception& error) {
+        throw FastXlsxError("failed to load workbook sharedStrings part '"
+            + shared_strings_part.value() + "' ZIP entry '" + shared_strings_part.zip_path()
+            + "': " + error.what());
+    }
+}
+
+std::optional<std::string> try_build_shared_strings_append_xml(
+    const WorkbookSharedStringsSnapshot& snapshot,
+    const std::vector<std::string>& appended_strings,
+    std::size_t appended_reference_count)
+{
+    if (!shared_strings_snapshot_supports_projection(snapshot)) {
+        return std::nullopt;
+    }
+
+    std::string replacement_xml = snapshot.xml;
+    const std::optional<std::string_view> raw_root =
+        first_shared_strings_projection_root_tag(replacement_xml);
+    if (!raw_root.has_value()) {
+        return std::nullopt;
+    }
+
+    const std::optional<std::string_view> count =
+        unqualified_attribute_value(*raw_root, "count");
+    if (!count.has_value()) {
+        return std::nullopt;
+    }
+
+    std::size_t parsed_count = 0;
+    try {
+        parsed_count = parse_unsigned_count_attribute(
+            *count, "CellStore sharedStrings projection count");
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+
+    if (appended_reference_count > std::numeric_limits<std::size_t>::max() - parsed_count) {
+        return std::nullopt;
+    }
+    const std::size_t new_count = parsed_count + appended_reference_count;
+    const std::size_t new_unique_count = snapshot.strings.size() + appended_strings.size();
+    std::string count_text;
+    append_unsigned_decimal(count_text, new_count);
+    std::string unique_count_text;
+    append_unsigned_decimal(unique_count_text, new_unique_count);
+    if (!replace_shared_strings_root_attribute(replacement_xml, "count", count_text)
+        || !replace_shared_strings_root_attribute(
+            replacement_xml, "uniqueCount", unique_count_text)) {
+        return std::nullopt;
+    }
+
+    std::string appended_xml;
+    for (const std::string& value : appended_strings) {
+        appended_xml += "<si>";
+        append_text_element(appended_xml, value);
+        appended_xml += "</si>";
+    }
+    const std::size_t close = replacement_xml.rfind("</sst>");
+    if (close == std::string::npos) {
+        return std::nullopt;
+    }
+    replacement_xml.insert(close, appended_xml);
+    return replacement_xml;
+}
 
 CellRecord CellRecord::from_value(const CellValue& value)
 {
@@ -2344,9 +2666,31 @@ WorksheetInputChunkCallback cell_store_sheet_data_chunk_source(const CellStore& 
     };
 }
 
+WorksheetInputChunkCallback cell_store_sheet_data_chunk_source_with_shared_strings(
+    const CellStore& store,
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider)
+{
+    auto state = std::make_shared<CellStoreSheetDataChunkSourceState>(
+        store, std::move(shared_string_index_provider));
+    return [state = std::move(state)](std::string& output_chunk) mutable {
+        return state->read(output_chunk);
+    };
+}
+
 WorksheetInputChunkCallback cell_store_worksheet_chunk_source(const CellStore& store)
 {
     auto state = std::make_shared<CellStoreWorksheetChunkSourceState>(store);
+    return [state = std::move(state)](std::string& output_chunk) mutable {
+        return state->read(output_chunk);
+    };
+}
+
+WorksheetInputChunkCallback cell_store_worksheet_chunk_source_with_shared_strings(
+    const CellStore& store,
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider)
+{
+    auto state = std::make_shared<CellStoreWorksheetChunkSourceState>(
+        store, std::move(shared_string_index_provider));
     return [state = std::move(state)](std::string& output_chunk) mutable {
         return state->read(output_chunk);
     };

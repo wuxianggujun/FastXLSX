@@ -509,16 +509,14 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         "source max-coordinate shared string erase output should omit the erased edge reference");
     check_not_contains(worksheet_xml, "source-shared-edge",
         "source max-coordinate shared string erase output should omit the erased edge text");
-    check_not_contains(worksheet_xml, R"(t="s")",
-        "source max-coordinate shared string erase output should flush remaining text as inline strings");
     check_contains(worksheet_xml,
-        R"(<c r="A1" t="inlineStr"><is><t>source-shared-a1</t></is></c>)",
-        "source max-coordinate shared string erase output should preserve source A1 as inline text");
+        R"(<c r="A1" t="s"><v>0</v></c>)",
+        "source max-coordinate shared string erase output should preserve source A1 as shared string index");
     check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
         "source max-coordinate shared string erase output should preserve source B1");
     check_contains(worksheet_xml,
-        R"(<c r="A2" t="inlineStr"><is><t>source-shared-a2</t></is></c>)",
-        "source max-coordinate shared string erase output should preserve source A2 as inline text");
+        R"(<c r="A2" t="s"><v>2</v></c>)",
+        "source max-coordinate shared string erase output should preserve source A2 as shared string index");
     check(erase_entries.find("xl/sharedStrings.xml") != erase_entries.end()
             && erase_entries.at("xl/sharedStrings.xml") == shared_strings_before,
         "source max-coordinate shared string erase output should preserve source sharedStrings bytes");
@@ -1084,13 +1082,13 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
     check_not_contains(erase_worksheet_xml, "rich-A&amp;B",
         "source max-coordinate rich shared string erase output should omit the erased flattened text");
     check_contains(erase_worksheet_xml,
-        R"(<c r="A1" t="inlineStr"><is><t>source-rich-a1</t></is></c>)",
-        "source max-coordinate rich shared string erase output should project source A1 as inline text");
+        R"(<c r="A1" t="s"><v>0</v></c>)",
+        "source max-coordinate rich shared string erase output should project source A1 as shared string index");
     check_contains(erase_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
         "source max-coordinate rich shared string erase output should preserve source B1");
     check_contains(erase_worksheet_xml,
-        R"(<c r="A2" t="inlineStr"><is><t>source-rich-a2</t></is></c>)",
-        "source max-coordinate rich shared string erase output should project source A2 as inline text");
+        R"(<c r="A2" t="s"><v>2</v></c>)",
+        "source max-coordinate rich shared string erase output should project source A2 as shared string index");
     check(erase_entries.find("xl/sharedStrings.xml") != erase_entries.end() &&
             erase_entries.at("xl/sharedStrings.xml") == shared_strings_before,
         "source max-coordinate rich shared string erase output should preserve source sharedStrings bytes");

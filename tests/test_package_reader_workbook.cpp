@@ -650,7 +650,9 @@ void test_package_reader_cell_store_loader_rejects_styles_and_loads_shared_strin
     const std::string shared_strings =
         R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>from sst</t></si></sst>)";
     const std::string styles =
-        R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>)";
+        R"(<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<cellXfs count="2"><xf/><xf/></cellXfs>)"
+        R"(</styleSheet>)";
 
     const std::filesystem::path styled_path =
         output_path("fastxlsx-package-reader-cell-store-styled-source.xlsx");

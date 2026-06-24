@@ -30,14 +30,18 @@ outputs with ZIP/XML and `openpyxl`, and can optionally invoke the Excel COM
 sidecar for no-repair open checks. This is local compatibility evidence for the
 covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
 not a broad guarantee for unsupported Excel object models.
-The current `WorksheetEditor` source loader can now
-read source `t="s"` cells through the existing workbook `xl/sharedStrings.xml`
-and materialize them as `CellValue::text(...)`; `save_as()` still writes the
-materialized sparse store as inline strings and preserves the source
-sharedStrings part instead of rebuilding, migrating, or writing it back. The
-failure matrix is also pinned: duplicate or invalid sharedStrings
-relationships/targets, missing or wrong-typed parts, malformed sharedStrings
-XML, and invalid indexes fail fast instead of being repaired or guessed.
+The current `WorksheetEditor` source loader can now read source `t="s"` cells
+through the existing workbook `xl/sharedStrings.xml` and materialize them as
+`CellValue::text(...)`; dirty `save_as()` can reuse that same source
+sharedStrings part when it has a narrow appendable `<sst>` shape, writes text
+cells as stable shared string indexes, and appends only new plain shared string
+items. If the workbook has no sharedStrings table, or the existing table is
+stale, malformed, prefixed/wrong-namespace, count-inconsistent, or otherwise
+outside that append boundary, dirty save falls back to inline strings and never
+creates a new sharedStrings part. The failure matrix is also pinned: duplicate
+or invalid sharedStrings relationships/targets, missing or wrong-typed parts,
+malformed sharedStrings XML, and invalid indexes fail fast for worksheets that
+actually require source shared strings instead of being repaired or guessed.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

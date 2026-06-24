@@ -5,15 +5,28 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fastxlsx::detail {
 
 class CellStore;
 class PackageReader;
+
+using CellStoreSharedStringIndexProvider =
+    std::function<std::uint32_t(std::string_view text)>;
+
+struct WorkbookSharedStringsSnapshot {
+    std::string part_name;
+    std::string zip_path;
+    std::string xml;
+    std::vector<std::string> strings;
+};
 
 /// Worksheet-local sparse coordinate for the internal in-memory editor store.
 struct CellPosition {
@@ -53,6 +66,17 @@ struct CellRecord {
 [[nodiscard]] WorksheetInputChunkCallback cell_store_sheet_data_chunk_source(
     const CellStore& store);
 
+/// Creates a `<sheetData>` chunk source that writes text cells as shared string
+/// indexes resolved by `shared_string_index_provider`.
+///
+/// The provider is owned by the returned callback. Callers must ensure every
+/// text record in `store` has a stable provider result for the callback
+/// lifetime. This only changes the text cell projection form; it does not
+/// create, repair, or validate workbook sharedStrings relationships.
+[[nodiscard]] WorksheetInputChunkCallback cell_store_sheet_data_chunk_source_with_shared_strings(
+    const CellStore& store,
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider);
+
 /// Creates a pull-based chunk source for a minimal worksheet XML part projected
 /// from the internal sparse store.
 ///
@@ -67,6 +91,42 @@ struct CellRecord {
 /// WorksheetEditor.
 [[nodiscard]] WorksheetInputChunkCallback cell_store_worksheet_chunk_source(
     const CellStore& store);
+
+/// Creates a minimal worksheet XML chunk source that writes text cells through
+/// an existing sharedStrings table.
+///
+/// This is an internal WorkbookEditor save-as projection helper. It assumes the
+/// caller has already planned the corresponding `xl/sharedStrings.xml` table
+/// reuse/append and falls back to no relationship or content-type mutation by
+/// itself.
+[[nodiscard]] WorksheetInputChunkCallback cell_store_worksheet_chunk_source_with_shared_strings(
+    const CellStore& store,
+    std::shared_ptr<const CellStoreSharedStringIndexProvider> shared_string_index_provider);
+
+/// Resolves and parses the source workbook sharedStrings part when the workbook
+/// has a single valid sharedStrings relationship and content type.
+///
+/// Missing sharedStrings returns nullopt. Stale relationships, duplicate
+/// relationships, wrong content types, malformed XML, or unreadable entries
+/// still throw so materialization paths that actually need `t="s"` cells fail
+/// precisely. WorkbookEditor dirty projection may catch those failures and keep
+/// its inline-string fallback for sheets that did not require sharedStrings at
+/// read time.
+[[nodiscard]] std::optional<WorkbookSharedStringsSnapshot>
+load_workbook_shared_strings_snapshot(const PackageReader& reader);
+
+/// Attempts a conservative append-only sharedStrings rewrite.
+///
+/// Returns nullopt when the source XML shape is outside the narrow safe
+/// boundary for dirty WorksheetEditor projection, such as a prefixed/wrong root
+/// element, unsupported root attributes, missing/inconsistent uniqueCount, or a
+/// missing ordinary `</sst>` close tag. Successful output preserves existing
+/// shared string item order and inserts new plain `<si><t>...</t></si>` records
+/// before `</sst>`, so untouched worksheets keep their original indexes.
+[[nodiscard]] std::optional<std::string> try_build_shared_strings_append_xml(
+    const WorkbookSharedStringsSnapshot& snapshot,
+    const std::vector<std::string>& appended_strings,
+    std::size_t appended_reference_count);
 
 /// Returns the worksheet `<dimension>` reference implied by the active sparse
 /// records in `store`.

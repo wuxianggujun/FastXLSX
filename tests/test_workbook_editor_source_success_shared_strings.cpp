@@ -358,17 +358,28 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml,
-        R"(<c r="A1" t="inlineStr"><is><t>shared-a</t></is></c>)",
-        "flushed WorksheetEditor source shared string should be projected as inline text");
+        R"(<c r="A1" t="s"><v>0</v></c>)",
+        "flushed WorksheetEditor source shared string should reuse its existing shared string index");
     check_contains(worksheet_xml,
-        R"(<c r="B1" t="inlineStr"><is><t>A&amp;B &lt;C&gt;</t></is></c>)",
-        "flushed WorksheetEditor source shared string should be XML escaped inline text");
+        R"(<c r="B1" t="s"><v>1</v></c>)",
+        "flushed WorksheetEditor source shared string should keep the decoded table index");
     check_contains(worksheet_xml,
-        R"(<c r="C3" t="inlineStr"><is><t>new-inline</t></is></c>)",
-        "new WorksheetEditor text should continue to write inline strings");
-    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
-            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
-        "WorksheetEditor save_as should preserve source sharedStrings bytes, not rebuild them");
+        R"(<c r="A2" t="s"><v>0</v></c>)",
+        "flushed WorksheetEditor repeated source text should reuse the same shared string index");
+    check_contains(worksheet_xml,
+        R"(<c r="C3" t="s"><v>3</v></c>)",
+        "new WorksheetEditor text should append to the existing sharedStrings table");
+    const std::string shared_strings_after = output_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_after,
+        R"(<?fastxlsx sharedStrings-trivia?>)",
+        "WorksheetEditor sharedStrings append should preserve source prolog trivia");
+    check_contains(shared_strings_after,
+        R"(<si><t>new-inline</t></si></sst>)",
+        "WorksheetEditor sharedStrings append should add the dirty text item before the sst close");
+    check_contains(shared_strings_after, R"(count="5")",
+        "WorksheetEditor sharedStrings append should advance the conservative count metadata");
+    check_contains(shared_strings_after, R"(uniqueCount="4")",
+        "WorksheetEditor sharedStrings append should advance uniqueCount metadata");
 }
 
 void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()
@@ -440,18 +451,23 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml,
-            std::string(R"(<c r="A1" t="inlineStr"><is><t>)")
-                + std::string(test_case.expected_text) + R"(</t></is></c>)",
+            R"(<c r="A1" t="s"><v>0</v></c>)",
             std::string(test_case.name)
-                + " dirty projection should write materialized text inline");
+                + " dirty projection should reuse materialized shared string index");
         check_contains(worksheet_xml,
-            R"(<c r="B2" t="inlineStr"><is><t>legal-declaration-new-inline</t></is></c>)",
+            R"(<c r="B2" t="s"><v>2</v></c>)",
             std::string(test_case.name)
-                + " dirty projection should include edits beside legal declaration source text");
-        check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
-                && output_entries.at("xl/sharedStrings.xml") == shared_strings_xml,
+                + " dirty projection should append edits beside legal declaration source text");
+        check_contains(output_entries.at("xl/sharedStrings.xml"),
+            R"(<si><t>legal-declaration-new-inline</t></si></sst>)",
             std::string(test_case.name)
-                + " dirty projection should preserve legal declaration sharedStrings bytes");
+                + " dirty projection should append legal declaration dirty text to sharedStrings");
+        check_contains(output_entries.at("xl/sharedStrings.xml"), R"(count="3")",
+            std::string(test_case.name)
+                + " dirty projection should update legal declaration count metadata");
+        check_contains(output_entries.at("xl/sharedStrings.xml"), R"(uniqueCount="3")",
+            std::string(test_case.name)
+                + " dirty projection should update legal declaration uniqueCount metadata");
         check(output_entries.at("xl/worksheets/sheet2.xml")
                 == source_entries.at("xl/worksheets/sheet2.xml"),
             std::string(test_case.name)
@@ -721,7 +737,6 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
     rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", shared_strings);
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
-    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -749,17 +764,22 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
     const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml,
-        R"(<c r="A1" t="inlineStr"><is><t xml:space="preserve">  plain &amp; space  </t></is></c>)",
-        "dirty projection should write source sharedStrings whitespace as inline text with xml:space");
+        R"(<c r="A1" t="s"><v>0</v></c>)",
+        "dirty projection should preserve source sharedStrings whitespace via shared string index");
     check_contains(worksheet_xml,
-        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve">  rich &amp; B tail  </t></is></c>)",
-        "dirty projection should flatten rich sharedStrings whitespace into inline text with xml:space");
+        R"(<c r="B1" t="s"><v>1</v></c>)",
+        "dirty projection should preserve flattened rich sharedStrings text via shared string index");
     check_contains(worksheet_xml,
-        R"(<c r="C1" t="inlineStr"><is><t>dirty-space-trigger</t></is></c>)",
-        "dirty projection should include the new trigger edit");
-    check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
-            && output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
-        "dirty projection should preserve source sharedStrings bytes with xml:space markup");
+        R"(<c r="C1" t="s"><v>2</v></c>)",
+        "dirty projection should append the new trigger edit to sharedStrings");
+    const std::string shared_strings_after = output_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_after,
+        R"(<si><t>dirty-space-trigger</t></si></sst>)",
+        "dirty projection should append new text while preserving source sharedStrings markup");
+    check_contains(shared_strings_after, R"(count="3")",
+        "dirty projection should update sharedStrings xml:space count metadata");
+    check_contains(shared_strings_after, R"(uniqueCount="3")",
+        "dirty projection should update sharedStrings xml:space uniqueCount metadata");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "source sharedStrings xml:space projection should not mutate the source package");
 }

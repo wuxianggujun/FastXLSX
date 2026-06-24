@@ -388,8 +388,10 @@ struct WorkbookEditorRenameOptions {
 /// blank, numeric/boolean/scalar `t="str"`, formula, plain inline, simple
 /// inline rich text, and workbook-backed shared-string cells materialize into
 /// CellValue variants;
-/// sharedStrings are read-only imports that dirty save_as() projects back as
-/// inline strings while preserving the source sharedStrings part; supported
+/// dirty save_as() can reuse and append to an existing safe source
+/// sharedStrings table for text projection, while falling back to inline
+/// strings when the workbook has no table or the source table shape is outside
+/// the narrow append boundary; supported
 /// worksheet/inline/sharedStrings/rich-run element names are matched by
 /// local-name without namespace URI validation; ignored source rich metadata
 /// under `rPh` / `phoneticPr` / `extLst` is omitted, self-closing ignored
@@ -420,7 +422,7 @@ struct WorkbookEditorRenameOptions {
 /// characters such as letters, `_`, and `:`, and continuation characters such
 /// as digits, `-`, and `.`, remain ignored trivia. Empty-data ordinary PIs
 /// whose target is followed immediately by `?>` remain ignored trivia. This
-/// summary is not sharedStrings writeback, style migration, rich-text
+/// summary is not broad sharedStrings migration, style migration, rich-text
 /// preservation, XML repair, namespace repair, relationship repair/pruning,
 /// semantic metadata sync, or large-file low-memory random editing.
 /// Source cells, including blank/scalar cells, scalar `t="str"` string cells,
@@ -431,14 +433,15 @@ struct WorkbookEditorRenameOptions {
 /// such as `XFD1048576` are materialized sparsely and can be erased like any
 /// other source-backed record.
 ///
-/// This first slice writes text as inline strings, formulas as formula text, and
-/// booleans/numbers as scalar cells. Source `t="str"` scalar string cells are
+/// This first slice writes text through an existing appendable sharedStrings
+/// table when available, otherwise as inline strings. It writes formulas as
+/// formula text, and booleans/numbers as scalar cells. Source `t="str"` scalar string cells are
 /// materialized as text, and `t="str"` formula cells keep the formula text
 /// while dropping cached values. Workbook-backed source `t="s"` cells are
 /// read through the existing sharedStrings part and materialized as plain text;
 /// source sharedStrings `xml:space` whitespace is kept in the materialized text,
 /// and simple source sharedStrings rich text runs are flattened to text while
-/// the source sharedStrings part is still preserved. Declared sharedStrings
+/// the source sharedStrings part is preserved or append-only updated. Declared sharedStrings
 /// `count` / `uniqueCount` values and otherwise well-formed unknown
 /// sharedStrings attributes do not drive materialization; the actual `<si>`
 /// table order and text are used. Prefixed sharedStrings `sst` / `si` / `t` /
@@ -509,10 +512,12 @@ struct WorkbookEditorRenameOptions {
 /// Empty inline strings materialize as empty text, and inlineStr cells without
 /// text materialize as explicit blank records. Empty source worksheets,
 /// including missing or self-closing `sheetData`, materialize as empty sparse
-/// stores. save_as() still writes sparse-store text values as inline strings
-/// and formula records as formula text. Dirty text projection XML-escapes text
-/// nodes, uses `xml:space="preserve"` for leading or trailing whitespace, and
-/// writes empty text as an empty `<t></t>` element. Dirty projection writes
+/// stores. save_as() writes sparse-store text values as shared string indexes
+/// only when it can reuse an existing appendable sharedStrings part; otherwise
+/// it writes inline strings and never creates `xl/sharedStrings.xml` from
+/// scratch. Dirty inline text projection XML-escapes text nodes, uses
+/// `xml:space="preserve"` for leading or trailing whitespace, and writes empty
+/// text as an empty `<t></t>` element. Dirty projection writes
 /// numbers as scalar `<v>` values and booleans as `t="b"` scalar values,
 /// including at legal edge coordinates such as `XFD1048576`; formulas write
 /// escaped `<f>` text without cached results at the same sparse boundary.
@@ -823,13 +828,18 @@ private:
 /// WorksheetEditor edits are automatically flushed into the Patch plan by
 /// save_as(). Source worksheet `t="s"` cells are read through the existing
 /// workbook `xl/sharedStrings.xml` and materialized as `CellValue::text(...)`
-/// for this small-file editor path; save_as() still projects the materialized
-/// sparse store as inline strings and preserves the source sharedStrings part
-/// rather than rebuilding or migrating it. Rich text in sharedStrings is
+/// for this small-file editor path; dirty save_as() can project text cells
+/// through that same workbook sharedStrings part when it has a narrow
+/// appendable `<sst>` shape, appending only new plain shared string items while
+/// keeping existing indexes stable. If no source sharedStrings part exists, or
+/// if the existing table is prefixed/wrong-namespace, count-inconsistent,
+/// relationship-stale, malformed, or otherwise outside that narrow boundary,
+/// dirty save_as() falls back to inline strings and never creates a new
+/// `xl/sharedStrings.xml`. Rich text in sharedStrings is
 /// flattened to plain text on import. The compact source materialization
 /// boundary is maintained in docs/API_DESIGN_AND_DOCUMENTATION.md and on
-/// WorksheetEditor; it remains a read-only import/projection contract, not a
-/// sharedStrings/style/relationship migration contract. Declared
+/// WorksheetEditor; it remains a narrow same-workbook import/projection
+/// contract, not a sharedStrings/style/relationship migration contract. Declared
 /// sharedStrings `count` / `uniqueCount` values and otherwise well-formed
 /// unknown sharedStrings attributes are not used to drive materialization or
 /// repair. Prefixed
@@ -877,8 +887,9 @@ private:
 /// sharedStrings relationship/table is resolved on demand only when the
 /// selected worksheet actually contains `t="s"` cells; stale or malformed
 /// sharedStrings relationship/content-type metadata or payloads do not block
-/// supported non-shared-string cells, are not repaired, and still fail if
-/// shared string indexes are encountered.
+/// supported non-shared-string cells or unrelated inline fallback projection,
+/// are not repaired, and still fail if shared string indexes are encountered
+/// during source materialization.
 /// Source cell `ph` phonetic markers are ignored. Known formula metadata
 /// attributes `t` / `ref` / `si` / `aca` / `ca` / `bx` / `dt2D` / `dtr` /
 /// `del1` / `del2` / `r1` / `r2` are treated as source metadata, not

@@ -102,6 +102,14 @@ style, max_cells, and memory-budget failures are staged and do not mutate the
 active sparse store. This is not row insertion/deletion, row shifting, row
 metadata editing, table/range metadata recalculation, sharedStrings/styles
 migration, or large-file low-memory random editing.
+`WorksheetEditor::set_column()` now covers the symmetric sparse represented-column
+replacement convenience for small files: it deletes currently represented cells
+in the target column, writes input values to rows 1..N, treats empty input as a
+column clear, and treats an empty missing column as a no-op. Invalid columns,
+height, style, max_cells, and memory-budget failures are staged and do not mutate
+the active sparse store. This is not column insertion/deletion, column shifting,
+column metadata editing, table/range metadata recalculation, sharedStrings/styles
+migration, or large-file low-memory random editing.
 `WorksheetEditor::erase_row()` and `WorksheetEditor::erase_rows()` now cover
 the sparse row delete convenience for small files: they delete only represented
 active sparse records from a single row or inclusive row range, treat missing
@@ -2739,6 +2747,8 @@ schema validation.
   - `WorksheetEditor::append_row(initializer_list<CellValue>)`
   - `WorksheetEditor::set_row()`
   - `WorksheetEditor::set_row(initializer_list<CellValue>)`
+  - `WorksheetEditor::set_column()`
+  - `WorksheetEditor::set_column(initializer_list<CellValue>)`
   - `WorksheetEditor::erase_row()`
   - `WorksheetEditor::erase_rows()`
   - `WorksheetEditor::erase_column()`

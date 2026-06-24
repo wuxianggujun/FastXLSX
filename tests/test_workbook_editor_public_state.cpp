@@ -3590,6 +3590,248 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
     }
 }
 
+void test_public_worksheet_editor_set_column_replaces_sparse_column()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-set-column-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-set-column-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_column(1, {
+        fastxlsx::CellValue::text("set-column-a1"),
+        fastxlsx::CellValue::number(44.0),
+        fastxlsx::CellValue::formula("A3+B1"),
+        fastxlsx::CellValue::blank(),
+    });
+
+    check(sheet.cell_count() == 5,
+        "set_column should replace the target sparse column without clearing other columns");
+    check(sheet.get_cell("A1").text_value() == "set-column-a1",
+        "set_column should write the first value to row one of the target column");
+    check(sheet.get_cell("A2").number_value() == 44.0,
+        "set_column should write numeric values by input order");
+    const fastxlsx::CellValue formula = sheet.get_cell("A3");
+    check(formula.kind() == fastxlsx::CellValueKind::Formula
+            && formula.text_value() == "A3+B1",
+        "set_column should preserve formula text as a formula cell");
+    check(sheet.get_cell("A4").kind() == fastxlsx::CellValueKind::Blank,
+        "set_column should represent explicit blank values");
+    check(sheet.get_cell("B1").number_value() == 1.0,
+        "set_column should preserve represented cells outside the target column");
+    check(!sheet.try_cell("B2").has_value(),
+        "set_column should not synthesize cells outside the target column");
+    check(sheet.has_pending_changes(),
+        "set_column should dirty the materialized worksheet when values are replaced");
+    check(editor.pending_materialized_cell_count() == 5,
+        "set_column should contribute the replaced sparse records to aggregate diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "successful set_column should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B4"/>)",
+        "set_column should refresh the dirty worksheet dimension");
+    check_contains(worksheet_xml,
+        R"(<row r="1"><c r="A1" t="inlineStr"><is><t>set-column-a1</t></is></c>)",
+        "set_column should persist target-column text in row order");
+    check_contains(worksheet_xml, R"(<c r="A2"><v>44</v></c>)",
+        "set_column should persist target-column numeric cells");
+    check_contains(worksheet_xml, R"(<c r="A3"><f>A3+B1</f></c>)",
+        "set_column should persist target-column formula cells");
+    check_contains(worksheet_xml, R"(<c r="A4"/>)",
+        "set_column should persist explicit blank cells");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "set_column should keep non-target column source cells");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "set_column should omit the old target-column row-one text");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "set_column should omit the old target-column row-two text");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "set_column should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_set_column_empty_and_guardrails()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-set-column-guards-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before set_column empty no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before set_column empty no-op");
+
+        const std::vector<fastxlsx::CellValue> empty_column;
+        sheet.set_column(3, empty_column);
+        check(!editor.last_edit_error().has_value(),
+            "empty set_column on a missing column should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "empty set_column on a missing column should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "empty set_column on a missing column should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "empty set_column on a missing column should not create sparse column metadata");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-column-clear-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const std::vector<fastxlsx::CellValue> empty_column;
+
+        sheet.set_column(1, empty_column);
+        check(sheet.cell_count() == 1,
+            "empty set_column on a represented column should clear that sparse column");
+        check(!sheet.try_cell("A1").has_value(),
+            "empty set_column should remove target-column row-one text cells");
+        check(!sheet.try_cell("A2").has_value(),
+            "empty set_column should remove target-column row-two text cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "empty set_column should preserve non-target columns");
+        check(sheet.has_pending_changes(),
+            "empty set_column on a represented column should dirty the materialized worksheet");
+        check(!editor.last_edit_error().has_value(),
+            "successful column clear should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="B1"/>)",
+            "column clear should shrink the projected dimension to remaining sparse cells");
+        check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "column clear should persist non-target column source cells");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "column clear should omit cleared row-one text cells");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "column clear should omit cleared row-two text cells");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool failed = false;
+        try {
+            sheet.set_column(0, {fastxlsx::CellValue::text("invalid-column")});
+        } catch (const fastxlsx::FastXlsxError&) {
+            failed = true;
+        }
+        check(failed, "set_column should reject invalid column numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed set_column invalid-column mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "set_column invalid-column failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "set_column invalid-column failure should preserve sparse cell count");
+    }
+
+    {
+        const std::filesystem::path style_artifact =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-column-style-source.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_artifact);
+            {
+                fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+                non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+                styled_sheet.append_row({
+                    fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                });
+            }
+            writer.close();
+        }
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool failed = false;
+        try {
+            sheet.set_column(1, {
+                fastxlsx::CellValue::text("styled-column").with_style(non_default_style),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "StyleId",
+                "set_column style failure should expose the unsupported StyleId boundary");
+        }
+        check(failed, "set_column should reject caller-supplied non-default StyleId values");
+        check(editor.last_edit_error().has_value(),
+            "failed set_column style mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "set_column style failure should not dirty the materialized worksheet");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "set_column style failure should preserve existing cells");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-column-budget-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+        bool failed = false;
+        try {
+            sheet.set_column(3, {
+                fastxlsx::CellValue::text("max-cells-rejected-c1"),
+                fastxlsx::CellValue::text("max-cells-rejected-c2"),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+                "set_column should expose CellStore max_cells guardrail diagnostics");
+        }
+        check(failed, "set_column should enforce max_cells on staged column replacement");
+        check(editor.last_edit_error().has_value(),
+            "failed set_column max_cells mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "failed set_column max_cells mutation should not dirty the session");
+        check(sheet.cell_count() == 3,
+            "failed set_column max_cells mutation should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed set_column max_cells mutation should preserve sparse memory estimate");
+        check(!sheet.try_cell("C1").has_value(),
+            "failed set_column max_cells mutation should not leave rejected cells readable");
+
+        sheet.set_column(1, {fastxlsx::CellValue::text("replace-column-a1")});
+        check(!editor.last_edit_error().has_value(),
+            "successful in-budget set_column should clear last_edit_error");
+        check(sheet.cell_count() == 2,
+            "in-budget set_column should release old target-column records before writing new ones");
+        check(sheet.get_cell("A1").text_value() == "replace-column-a1",
+            "in-budget set_column should replace the target column");
+        check(!sheet.try_cell("A2").has_value(),
+            "in-budget set_column should remove old target-column tail cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "in-budget set_column should preserve non-target columns");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "replace-column-a1",
+            "in-budget set_column should persist through save_as");
+        check_not_contains(worksheet_xml, "max-cells-rejected",
+            "rejected set_column value should not leak into saved output");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "in-budget set_column should not resurrect replaced cells");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "in-budget set_column should not persist old target-column tail cells");
+    }
+}
+
 void test_public_worksheet_editor_erase_row_removes_sparse_row()
 {
     const std::filesystem::path source =
@@ -4870,6 +5112,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_append_row_noop_and_guardrails();
             test_public_worksheet_editor_set_row_replaces_sparse_row();
             test_public_worksheet_editor_set_row_empty_and_guardrails();
+            test_public_worksheet_editor_set_column_replaces_sparse_column();
+            test_public_worksheet_editor_set_column_empty_and_guardrails();
             test_public_worksheet_editor_erase_row_removes_sparse_row();
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();

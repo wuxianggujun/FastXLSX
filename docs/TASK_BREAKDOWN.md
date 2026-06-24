@@ -33434,6 +33434,48 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.731 - WorksheetEditor sparse set-column boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse column replacement convenience
+API; no column insert/delete and no metadata recalculation.
+
+Goal: provide a simple represented-column replacement UX for existing-workbook
+small-file In-memory editing without adding dense column mutation semantics.
+`WorksheetEditor::set_column()` uses the current materialized sparse store,
+removes represented records in the target column, writes values to rows 1..N,
+treats empty input as a column clear, treats a missing empty column as a no-op,
+and stages the whole replacement so validation / guardrail failures do not
+mutate the active store.
+
+Output:
+- Added public `WorksheetEditor::set_column(column, span<const CellValue>)` and
+  `set_column(column, initializer_list<CellValue>)` with Doxygen boundary notes.
+- Implemented staged sparse-store column replacement with Excel column and row
+  guards, caller-supplied non-default style rejection, column-clear no-op
+  hygiene, and existing CellStore max_cells / memory_budget_bytes enforcement.
+- Added public-state regressions for normal column replacement output, explicit
+  blank and formula projection, empty missing-column no-op diagnostic cleanup,
+  represented-column clear output, invalid-column / style failures, max_cells
+  failure state hygiene, and in-budget replacement after old column cells are
+  released.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  represented-column replacement from column insertion/deletion, column
+  shifting, column metadata editing, table/range metadata recalculation,
+  style/sharedStrings migration, and large-file random editing.
+
+Non-goals / boundary:
+- No column insertion, column deletion, column shifting, column metadata model,
+  table/range/definedName/drawing metadata recalculation, style migration/merge,
+  sharedStrings migration, relationship repair, dense range writer, A1 range
+  parser, or large-file low-memory random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

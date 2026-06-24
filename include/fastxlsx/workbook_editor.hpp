@@ -770,6 +770,35 @@ public:
     /// no-op behavior, guardrails, diagnostics, and non-goals are identical.
     void set_row(std::uint32_t row, std::initializer_list<CellValue> values);
 
+    /// Replaces one represented sparse column.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The column
+    /// is a 1-based Excel column number. The method removes all currently
+    /// represented sparse cells in that column, then writes `values` to rows
+    /// 1..N in input order. Passing an empty value list clears the represented
+    /// column; if the column has no represented sparse cells, it is a successful
+    /// no-op that does not create column metadata, does not dirty the
+    /// materialized session, and clears prior public edit diagnostics.
+    ///
+    /// The entire replacement is preflighted and staged. Invalid column
+    /// numbers, more than 1,048,576 values, caller-supplied non-default StyleId
+    /// handles, max_cells violations, or memory_budget_bytes violations reject
+    /// the replacement before the active sparse store is mutated. Explicit
+    /// CellValue::blank() values are represented as blank cells and are subject
+    /// to the same sparse-store guardrails.
+    ///
+    /// This is not column insertion/deletion, column shifting, column metadata
+    /// editing, table/range metadata recalculation, style migration/merge,
+    /// sharedStrings migration, or a large-file low-memory random-editing path.
+    void set_column(std::uint32_t column, std::span<const CellValue> values);
+
+    /// Replaces one represented sparse column from a small literal value list.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so column replacement, column-clear
+    /// no-op behavior, guardrails, diagnostics, and non-goals are identical.
+    void set_column(std::uint32_t column, std::initializer_list<CellValue> values);
+
     /// Removes represented sparse cells from one row.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The row is

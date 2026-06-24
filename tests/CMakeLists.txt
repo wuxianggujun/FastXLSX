@@ -338,8 +338,16 @@ add_fastxlsx_package_editor_target(
     test_package_editor_c5_large.cpp
 )
 add_fastxlsx_package_editor_target(
-    fastxlsx_package_editor_policy_tests
+    fastxlsx_package_editor_policy_core_tests
     test_package_editor_policy.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_policy_save_as_guards_tests
+    test_package_editor_policy_save_as_guards.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_policy_invalid_inputs_tests
+    test_package_editor_policy_invalid_inputs.cpp
 )
 
 add_custom_target(fastxlsx_package_editor_c5_tests
@@ -349,6 +357,13 @@ add_custom_target(fastxlsx_package_editor_c5_tests
         fastxlsx_package_editor_c5_chunked_tests
         fastxlsx_package_editor_c5_guards_tests
         fastxlsx_package_editor_c5_large_tests
+)
+
+add_custom_target(fastxlsx_package_editor_policy_tests
+    DEPENDS
+        fastxlsx_package_editor_policy_core_tests
+        fastxlsx_package_editor_policy_save_as_guards_tests
+        fastxlsx_package_editor_policy_invalid_inputs_tests
 )
 
 add_custom_target(fastxlsx_package_editor_tests
@@ -379,7 +394,13 @@ add_fastxlsx_package_editor_shard(c5-linked fastxlsx_package_editor_c5_linked_te
 add_fastxlsx_package_editor_shard(c5-chunked fastxlsx_package_editor_c5_chunked_tests 60)
 add_fastxlsx_package_editor_shard(c5-guards fastxlsx_package_editor_c5_guards_tests 60)
 add_fastxlsx_package_editor_shard(c5-large fastxlsx_package_editor_c5_large_tests 60)
-add_fastxlsx_package_editor_shard(policy fastxlsx_package_editor_policy_tests 60)
+add_fastxlsx_package_editor_shard(policy fastxlsx_package_editor_policy_core_tests 60)
+add_fastxlsx_package_editor_shard(
+    policy-save-as-guards fastxlsx_package_editor_policy_save_as_guards_tests 60
+)
+add_fastxlsx_package_editor_shard(
+    policy-invalid-inputs fastxlsx_package_editor_policy_invalid_inputs_tests 60
+)
 
 function(add_fastxlsx_package_editor_preservation_target target source_file)
     add_executable(${target}

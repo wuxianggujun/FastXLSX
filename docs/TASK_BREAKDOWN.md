@@ -29970,6 +29970,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-removal" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.707 - Split PackageEditor policy executable by guard family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageEditor policy executable by moving the save-as
+guard and invalid-input families into separate source files and executables,
+while keeping the existing `fastxlsx.package_editor.policy` CTest name stable
+for the state/audit/recalculation core shard.
+
+Output:
+- Extracted shared policy helpers to `tests/test_package_editor_policy_common.hpp`.
+- Kept `tests/test_package_editor_policy.cpp` focused on state/audit and
+  recalculation regressions.
+- Added:
+  - `tests/test_package_editor_policy_save_as_guards.cpp`.
+  - `tests/test_package_editor_policy_invalid_inputs.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_policy_core_tests`,
+  `fastxlsx_package_editor_policy_save_as_guards_tests`, and
+  `fastxlsx_package_editor_policy_invalid_inputs_tests`.
+- Kept `fastxlsx_package_editor_policy_tests` as a build-only aggregate target
+  depending on all policy shard executables.
+- Kept `fastxlsx.package_editor.policy` for the core shard and added
+  `fastxlsx.package_editor.policy-save-as-guards` and
+  `fastxlsx.package_editor.policy-invalid-inputs`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no policy semantic expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_policy_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.policy" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

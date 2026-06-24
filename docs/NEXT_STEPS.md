@@ -1784,6 +1784,15 @@ The final PackageEditor monolith split removes
 `fastxlsx.package_editor.policy` CTest names stay stable, and
 `fastxlsx_package_editor_tests` remains a build-only aggregate. This is still
 test organization only.
+The policy executable is now split further:
+`tests/test_package_editor_policy.cpp` keeps the state/audit/recalculation
+core, while
+`tests/test_package_editor_policy_save_as_guards.cpp` and
+`tests/test_package_editor_policy_invalid_inputs.cpp` own the save-as guard and
+invalid-input families. The existing `fastxlsx.package_editor.policy` CTest
+name stays stable for the core shard, the new policy shard names are added,
+and `fastxlsx_package_editor_policy_tests` remains a build-only aggregate.
+This is still test organization only.
 The remaining WorkbookEditor monolith split removes
 `tests/test_workbook_editor.cpp` by moving `core`, `public`, and `public-edge`
 into `tests/test_workbook_editor_core.cpp`,
@@ -2376,6 +2385,9 @@ schema validation.
   - `fastxlsx.package_editor.preservation-linked-pivot-cache-records`
   - `fastxlsx.package_editor.preservation-linked-external-links`
   - `fastxlsx.package_editor.preservation-linked-custom-xml`
+  - `fastxlsx.package_editor.policy`
+  - `fastxlsx.package_editor.policy-save-as-guards`
+  - `fastxlsx.package_editor.policy-invalid-inputs`
   - `fastxlsx.package_editor.cellstore-core`
   - `fastxlsx.package_editor.cellstore-chunks`
   - `fastxlsx.package_editor.cellstore-source`

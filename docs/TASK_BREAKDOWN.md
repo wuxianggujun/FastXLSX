@@ -33208,6 +33208,39 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.725 - Pin WorksheetEditor range erase save/reacquire hygiene
+
+Status: done.
+
+Type: public `WorksheetEditor::erase_cells(CellRange)` state-hygiene
+regression; no production behavior change.
+
+Goal: prove sparse range erase remains stable across `save_as()` and
+matching-option `worksheet()` reacquire.
+
+Output:
+- Added a public-state regression that erases all represented cells from the
+  `Data` sheet with `erase_cells(CellRange)` and verifies the first saved
+  worksheet omits the erased cells, shrinks to dimension `A1`, and preserves the
+  untouched worksheet.
+- Verified matching `worksheet()` reacquire after `save_as()` reuses the clean
+  erased sparse state instead of rematerializing stale source cells.
+- Verified a missing-only range erase after matching reacquire stays clean and
+  diagnostic-free.
+- Verified a later post-reacquire mutation persists through a second `save_as()`
+  without resurrecting erased cells.
+- Updated `NEXT_STEPS.md` with the save/reacquire state boundary.
+
+Non-goals / boundary:
+- No production code change, A1 range parser, dense matrix/range deletion,
+  tombstone model, row/column delete/insert, relationship repair, range metadata
+  recalculation, or large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

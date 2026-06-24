@@ -2998,6 +2998,88 @@ void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
         "public WorksheetEditor erase_cell should shrink the projected dimension");
 }
 
+void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-range-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-second.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(sheet.cell_count() == 3,
+        "public WorksheetEditor should materialize all represented source cells before range erase");
+    sheet.erase_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    check(!sheet.try_cell("A1").has_value(),
+        "public WorksheetEditor range erase should remove A1");
+    check(!sheet.try_cell("B1").has_value(),
+        "public WorksheetEditor range erase should remove B1");
+    check(!sheet.try_cell("A2").has_value(),
+        "public WorksheetEditor range erase should remove A2");
+    check(sheet.cell_count() == 0,
+        "public WorksheetEditor range erase should update sparse cell count");
+    check(sheet.has_pending_changes(),
+        "public WorksheetEditor range erase should dirty the materialized sheet");
+    check(editor.has_pending_changes(),
+        "public WorksheetEditor range erase should dirty the owning editor");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "successful save_as should clear range-erased materialized sheet dirty state");
+    check(editor.pending_change_count() == 1,
+        "range erase save_as should expose one materialized worksheet handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1"/>)",
+        "range erase of all represented cells should shrink the projected dimension to A1");
+    check_not_contains(first_worksheet_xml, "placeholder-a1",
+        "range erase save_as should omit erased A1 text");
+    check_not_contains(first_worksheet_xml, "placeholder-a2",
+        "range erase save_as should omit erased A2 text");
+    check_not_contains(first_worksheet_xml, R"(r="B1")",
+        "range erase save_as should omit erased B1 numeric cell");
+    check_contains(first_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "range erase save_as should preserve untouched worksheets");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes(),
+        "matching worksheet reacquire after range erase save_as should be clean");
+    check(reacquired.cell_count() == 0,
+        "matching worksheet reacquire should reuse the erased sparse state");
+    check(!reacquired.try_cell("A1").has_value(),
+        "matching worksheet reacquire should keep erased A1 missing");
+    check(!reacquired.try_cell("B1").has_value(),
+        "matching worksheet reacquire should keep erased B1 missing");
+    check(!reacquired.try_cell("A2").has_value(),
+        "matching worksheet reacquire should keep erased A2 missing");
+
+    reacquired.erase_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    check(!reacquired.has_pending_changes(),
+        "missing-only range erase after matching reacquire should remain a clean no-op");
+    check(!editor.last_edit_error().has_value(),
+        "missing-only range erase after matching reacquire should leave diagnostics clear");
+
+    reacquired.set_cell(3, 3, fastxlsx::CellValue::text("range-erase-reacquired"));
+    check(reacquired.has_pending_changes(),
+        "post-reacquire mutation should dirty the reused materialized sheet");
+
+    editor.save_as(second_output);
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_worksheet_xml, "range-erase-reacquired",
+        "post-reacquire mutation should persist on the second save_as");
+    check_not_contains(second_worksheet_xml, "placeholder-a1",
+        "erased A1 text should not reappear after post-reacquire mutation");
+    check_not_contains(second_worksheet_xml, "placeholder-a2",
+        "erased A2 text should not reappear after post-reacquire mutation");
+    check_not_contains(second_worksheet_xml, R"(r="B1")",
+        "erased B1 numeric cell should not reappear after post-reacquire mutation");
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -3918,6 +4000,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_sparse_cells_range_snapshot();
             test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();
             test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
+            test_public_worksheet_editor_erase_cells_range_reacquires_saved_state();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

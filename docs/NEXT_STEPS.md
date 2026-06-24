@@ -62,6 +62,11 @@ cover the matching sparse delete cases: the range overload validates one
 before mutation, both delete only represented active sparse records, treat
 empty / missing-only inputs as successful no-ops, and write no tombstones or
 explicit blank cells for erased coordinates.
+The range erase save/reacquire state path is also pinned: after
+`erase_cells(CellRange)` removes all represented cells and `save_as()` flushes
+the materialized session, matching `worksheet()` reacquire reuses the clean
+erased sparse state, missing-only range erase remains a no-op, and later
+mutation persists without resurrecting erased cells.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

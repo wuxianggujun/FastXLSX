@@ -1849,6 +1849,15 @@ stays stable, `fastxlsx.package_editor.core-calc` and
 `fastxlsx.package_editor.core-linked` are added, and
 `fastxlsx_package_editor_tests` remains a build-only aggregate. This is still
 test organization only.
+The CellStore PackageEditor shard now follows the same pattern:
+`tests/test_package_editor_cellstore.cpp` keeps `cellstore-core`, while
+`tests/test_package_editor_cellstore_chunks.cpp`,
+`tests/test_package_editor_cellstore_source.cpp`,
+`tests/test_package_editor_cellstore_failures.cpp`, and
+`tests/test_package_editor_cellstore_catalog.cpp` own the remaining CellStore
+CTest shards. The existing `fastxlsx.package_editor.cellstore-*` CTest names
+stay stable, and `fastxlsx_package_editor_cellstore_tests` remains a build-only
+aggregate. This is still test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

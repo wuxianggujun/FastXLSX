@@ -472,23 +472,55 @@ add_fastxlsx_package_editor_sheetdata_shard(
     sheetdata-linked fastxlsx_package_editor_sheetdata_linked_tests 60
 )
 
-add_executable(fastxlsx_package_editor_cellstore_tests
+function(add_fastxlsx_package_editor_cellstore_target target source_file)
+    add_executable(${target}
+        ${source_file}
+    )
+
+    target_link_libraries(${target} PRIVATE FastXLSX::fastxlsx)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_compile_definitions(${target} PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    if(FASTXLSX_ENABLE_MINIZIP_NG)
+        target_link_libraries(${target} PRIVATE MINIZIP::minizip-ng)
+        target_compile_definitions(${target} PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+    endif()
+endfunction()
+
+add_fastxlsx_package_editor_cellstore_target(
+    fastxlsx_package_editor_cellstore_core_tests
     test_package_editor_cellstore.cpp
 )
+add_fastxlsx_package_editor_cellstore_target(
+    fastxlsx_package_editor_cellstore_chunks_tests
+    test_package_editor_cellstore_chunks.cpp
+)
+add_fastxlsx_package_editor_cellstore_target(
+    fastxlsx_package_editor_cellstore_source_tests
+    test_package_editor_cellstore_source.cpp
+)
+add_fastxlsx_package_editor_cellstore_target(
+    fastxlsx_package_editor_cellstore_failures_tests
+    test_package_editor_cellstore_failures.cpp
+)
+add_fastxlsx_package_editor_cellstore_target(
+    fastxlsx_package_editor_cellstore_catalog_tests
+    test_package_editor_cellstore_catalog.cpp
+)
 
-target_link_libraries(fastxlsx_package_editor_cellstore_tests PRIVATE FastXLSX::fastxlsx)
-target_compile_features(fastxlsx_package_editor_cellstore_tests PRIVATE cxx_std_20)
-target_compile_definitions(fastxlsx_package_editor_cellstore_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
-target_include_directories(fastxlsx_package_editor_cellstore_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-if(FASTXLSX_ENABLE_MINIZIP_NG)
-    target_link_libraries(fastxlsx_package_editor_cellstore_tests PRIVATE MINIZIP::minizip-ng)
-    target_compile_definitions(fastxlsx_package_editor_cellstore_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
-endif()
+add_custom_target(fastxlsx_package_editor_cellstore_tests
+    DEPENDS
+        fastxlsx_package_editor_cellstore_core_tests
+        fastxlsx_package_editor_cellstore_chunks_tests
+        fastxlsx_package_editor_cellstore_source_tests
+        fastxlsx_package_editor_cellstore_failures_tests
+        fastxlsx_package_editor_cellstore_catalog_tests
+)
 
-function(add_fastxlsx_package_editor_cellstore_shard shard timeout_seconds)
+function(add_fastxlsx_package_editor_cellstore_shard shard target timeout_seconds)
     add_test(
         NAME fastxlsx.package_editor.${shard}
-        COMMAND fastxlsx_package_editor_cellstore_tests --shard=${shard}
+        COMMAND ${target} --shard=${shard}
     )
     set_tests_properties(fastxlsx.package_editor.${shard} PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -496,11 +528,21 @@ function(add_fastxlsx_package_editor_cellstore_shard shard timeout_seconds)
     )
 endfunction()
 
-add_fastxlsx_package_editor_cellstore_shard(cellstore-core 60)
-add_fastxlsx_package_editor_cellstore_shard(cellstore-chunks 60)
-add_fastxlsx_package_editor_cellstore_shard(cellstore-source 60)
-add_fastxlsx_package_editor_cellstore_shard(cellstore-failures 60)
-add_fastxlsx_package_editor_cellstore_shard(cellstore-catalog 60)
+add_fastxlsx_package_editor_cellstore_shard(
+    cellstore-core fastxlsx_package_editor_cellstore_core_tests 60
+)
+add_fastxlsx_package_editor_cellstore_shard(
+    cellstore-chunks fastxlsx_package_editor_cellstore_chunks_tests 60
+)
+add_fastxlsx_package_editor_cellstore_shard(
+    cellstore-source fastxlsx_package_editor_cellstore_source_tests 60
+)
+add_fastxlsx_package_editor_cellstore_shard(
+    cellstore-failures fastxlsx_package_editor_cellstore_failures_tests 60
+)
+add_fastxlsx_package_editor_cellstore_shard(
+    cellstore-catalog fastxlsx_package_editor_cellstore_catalog_tests 60
+)
 
 function(add_fastxlsx_workbook_editor_target target source_file)
     add_executable(${target}

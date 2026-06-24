@@ -516,7 +516,7 @@ std::filesystem::path output_path(std::string_view name)
 
 bool is_package_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "cellstore-core";
+    return shard == "all" || shard == "cellstore-source";
 }
 
 std::string_view package_editor_shard_from_args(int argc, char* argv[])
@@ -1610,183 +1610,355 @@ void rewrite_linked_object_source_package(const LinkedObjectSourcePackage& sourc
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
 
-void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
+void test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-cellstore-sheetdata-source.xlsx");
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-semantic-source.xlsx");
+    source.worksheet =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>12.5</v></c>)"
+        R"(<c r="B1" t="b"><v>1</v></c>)"
+        R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)"
+        R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f><v>999</v></c>)"
+        R"(<c r="E1"/>)"
+        R"(<c r="F1" t="e"><v>#VALUE!</v></c>)"
+        R"(</row><row r="2"><c r="A2"><v>0</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(source);
     const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cellstore-sheetdata-output.xlsx");
+        output_path("fastxlsx-package-editor-source-cellstore-semantic-output.xlsx");
 
-    fastxlsx::detail::CellStore store;
-    store.set_cell(1, 1, fastxlsx::CellValue::number(42.25));
-    store.set_cell(1, 2, fastxlsx::CellValue::text(" <cell & value> "));
-    store.set_cell(2, 1, fastxlsx::CellValue::formula("SUM(A1:A1)&\"<done>\""));
-    store.set_cell(3, 3, fastxlsx::CellValue::boolean(false));
-    store.set_cell(4, 1, fastxlsx::CellValue::blank());
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    const fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+
+    check(store.cell_count() == 7,
+        "package-backed CellStore semantic loader should materialize explicit source cells");
+    const fastxlsx::detail::CellRecord* number = store.find_cell(1, 1);
+    check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number,
+        "package-backed CellStore semantic loader should load numeric cells");
+    check(number->number_value == 12.5,
+        "package-backed CellStore semantic loader numeric payload mismatch");
+    const fastxlsx::detail::CellRecord* boolean = store.find_cell(1, 2);
+    check(boolean != nullptr && boolean->kind == fastxlsx::CellValueKind::Boolean,
+        "package-backed CellStore semantic loader should load boolean cells");
+    check(boolean->boolean_value,
+        "package-backed CellStore semantic loader boolean payload mismatch");
+    const fastxlsx::detail::CellRecord* text = store.find_cell(1, 3);
+    check(text != nullptr && text->kind == fastxlsx::CellValueKind::Text,
+        "package-backed CellStore semantic loader should load inline string cells");
+    check(text->text_value == " hello & raw ",
+        "package-backed CellStore semantic loader should decode inline string text");
+    const fastxlsx::detail::CellRecord* formula = store.find_cell(1, 4);
+    check(formula != nullptr && formula->kind == fastxlsx::CellValueKind::Formula,
+        "package-backed CellStore semantic loader should load formula cells");
+    check(formula->text_value == "SUM(A1:B1)&\"<ok>\"",
+        "package-backed CellStore semantic loader should decode formula text and ignore cached values");
+    const fastxlsx::detail::CellRecord* blank = store.find_cell(1, 5);
+    check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
+        "package-backed CellStore semantic loader should keep explicit blank cells");
+    const fastxlsx::detail::CellRecord* error = store.find_cell(1, 6);
+    check(error != nullptr && error->kind == fastxlsx::CellValueKind::Error,
+        "package-backed CellStore semantic loader should load error cells");
+    check(error->text_value == "#VALUE!",
+        "package-backed CellStore semantic loader error payload mismatch");
+    const fastxlsx::detail::CellRecord* zero = store.find_cell(2, 1);
+    check(zero != nullptr && zero->kind == fastxlsx::CellValueKind::Number
+            && zero->number_value == 0.0,
+        "package-backed CellStore semantic loader should preserve zero numeric values");
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
     editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
         "Sheet1", replacement_sheet_data_source);
-
-    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
-    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
-
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr,
-        "CellStore sheetData handoff should resolve the target worksheet part");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "CellStore sheetData handoff should use bounded local worksheet rewrite");
-    check(worksheet_plan->reason.find("bounded local sheetData replacement")
-            != std::string::npos,
-        "CellStore sheetData handoff should disclose bounded local rewrite reason");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "CellStore sheetData handoff should mirror worksheet rewrite in the manifest");
-
-    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
-    check(workbook_plan != nullptr,
-        "CellStore sheetData handoff should plan workbook calc metadata rewrite");
-    check(workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "CellStore sheetData handoff should rewrite workbook calc metadata");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "CellStore sheetData handoff should remove stale calcChain by default");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "CellStore sheetData handoff should request full calculation");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"bounded local worksheet XML rewrite", "not the large-file streaming"}),
-        "CellStore sheetData handoff should retain bounded local rewrite audit note");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"by-name sheetData chunk-source replacement", "without routing through",
-                  "materialized sheetData string"}),
-        "CellStore sheetData handoff should not route through a materialized sheetData string");
-    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
-              worksheet_part, PayloadAuditKind::Formula,
-              PayloadAuditScope::SheetDataReplacement, "f",
-              {"formulas", "calcChain policy"}),
-        "CellStore sheetData handoff should audit formula payload dependencies");
-
-    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
-    check(output_plan.full_calculation_on_load,
-        "CellStore sheetData output plan should expose full calculation request");
-    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "CellStore sheetData output plan should expose workbook metadata rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "CellStore sheetData output plan should expose worksheet local-DOM rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
-        "CellStore sheetData output plan should omit stale calcChain");
-    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-        "CellStore sheetData output plan should preserve unknown bytes");
-    check(has_payload_audit(output_plan.worksheet_payload_dependency_audits,
-              worksheet_part, PayloadAuditKind::Formula,
-              PayloadAuditScope::SheetDataReplacement, "f",
-              {"formulas", "calcChain policy"}),
-        "CellStore sheetData output plan should keep formula dependency audit");
-
     editor.save_as(output);
-
-    const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/calcChain.xml") == entries.end(),
-        "CellStore sheetData output should omit stale calcChain");
 
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
-        "CellStore sheetData output should keep sheet lookup readable");
-
     const std::string worksheet_xml =
         output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<sheetData><row r="1"><c r="A1"><v>42.25</v></c>)",
-        "CellStore sheetData output should write generated first row payload");
-    check_contains(worksheet_xml, R"(</row><row r="2"><c r="A2"><f>)",
-        "CellStore sheetData output should group generated sparse rows");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>12.5</v></c>)",
+        "package-backed CellStore semantic output should write numeric cells");
+    check_contains(worksheet_xml, R"(<c r="B1" t="b"><v>1</v></c>)",
+        "package-backed CellStore semantic output should write boolean cells");
     check_contains(worksheet_xml,
-        R"(<t xml:space="preserve"> &lt;cell &amp; value&gt; </t>)",
-        "CellStore sheetData output should preserve and escape inline text");
-    check_contains(worksheet_xml, R"(<f>SUM(A1:A1)&amp;"&lt;done&gt;"</f>)",
-        "CellStore sheetData output should escape formula text");
-    check_contains(worksheet_xml, R"(<c r="C3" t="b"><v>0</v></c>)",
-        "CellStore sheetData output should write boolean records");
-    check_contains(worksheet_xml, R"(<c r="A4"/>)",
-        "CellStore sheetData output should write explicit blank records");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "CellStore sheetData output should remove old source formula rows");
-
-    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
-    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
-        "CellStore sheetData output should request workbook recalculation");
+        R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> hello &amp; raw </t></is></c>)",
+        "package-backed CellStore semantic output should re-escape inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="D1"><f>SUM(A1:B1)&amp;"&lt;ok&gt;"</f></c>)",
+        "package-backed CellStore semantic output should write semantic formula text without cached value");
+    check_contains(worksheet_xml, R"(<c r="E1"/>)",
+        "package-backed CellStore semantic output should preserve explicit blank cells");
+    check_contains(worksheet_xml, R"(<c r="F1" t="e"><v>#VALUE!</v></c>)",
+        "package-backed CellStore semantic output should write error cells");
+    check_contains(worksheet_xml, R"(<c r="A2"><v>0</v></c>)",
+        "package-backed CellStore semantic output should preserve zero numeric cells");
+    check_not_contains(worksheet_xml, "<v>999</v>",
+        "package-backed CellStore semantic output should drop old cached formula values");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "package-backed CellStore semantic output should omit stale calcChain");
+    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "package-backed CellStore semantic output should request workbook recalculation");
     check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
-        "CellStore sheetData output should remove calcChain content type");
+        "package-backed CellStore semantic output should remove calcChain content type");
     check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
         "relationships/calcChain",
-        "CellStore sheetData output should remove calcChain relationship");
+        "package-backed CellStore semantic output should remove calcChain relationship");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "CellStore sheetData output should preserve unknown bytes");
+        "package-backed CellStore semantic output should preserve unknown bytes");
 }
 
-void test_package_editor_patches_cell_store_sheet_data_with_writer_style()
+void test_package_editor_source_loaded_cell_store_preserves_unreferenced_styles()
 {
     const std::filesystem::path source_path =
-        output_path("fastxlsx-package-editor-cellstore-styled-sheetdata-source.xlsx");
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-styles-source.xlsx");
     const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cellstore-styled-sheetdata-output.xlsx");
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-styles-output.xlsx");
 
-    fastxlsx::StyleId text_style;
     {
         auto workbook = fastxlsx::WorkbookWriter::create(source_path);
-        text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
-        auto sheet = workbook.add_worksheet("Styled");
-        sheet.append_row({fastxlsx::CellView::text("old plain")});
+        const auto text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+        auto plain = workbook.add_worksheet("Plain");
+        auto style_owner = workbook.add_worksheet("StyleOwner");
+        plain.append_row({fastxlsx::CellView::text("unstyled source")});
+        style_owner.append_row({fastxlsx::CellView::text("styled keeper").with_style(text_style)});
         workbook.close();
     }
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
     check(source_entries.find("xl/styles.xml") != source_entries.end(),
-        "styled CellStore source should contain styles.xml");
+        "source-loaded CellStore unreferenced-style fixture should contain styles.xml");
     const std::string styles_before = source_entries.at("xl/styles.xml");
 
-    fastxlsx::detail::CellStore store;
-    store.set_cell(1, 1, fastxlsx::CellValue::text("styled replacement").with_style(text_style));
-    store.set_cell(1, 2,
-        fastxlsx::CellValue::text("explicit default").with_style(fastxlsx::StyleId {}));
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Plain");
+    const fastxlsx::detail::CellRecord* source_cell = store.try_cell(1, 1);
+    check(source_cell != nullptr && source_cell->kind == fastxlsx::CellValueKind::Text,
+        "source-loaded CellStore should load unstyled cells even when styles.xml exists");
+    check(!source_cell->style_id.has_value(),
+        "source-loaded CellStore should not invent style handles for unstyled source cells");
+    store.set_cell(1, 2, fastxlsx::CellValue::text("patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
     const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
         fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Plain", replacement_sheet_data_source);
+
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "source-loaded CellStore output plan should preserve unreferenced styles");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>unstyled source</t></is></c><c r="B1" t="inlineStr"><is><t>patched</t></is></c></row></sheetData>)",
+        "source-loaded CellStore should rewrite unstyled source cells without style attributes");
+    check_not_contains(worksheet_xml, R"(<c r="A1" s=)",
+        "source-loaded CellStore should not invent style references for unstyled source cells");
+    check_not_contains(worksheet_xml, R"(<c r="B1" s=)",
+        "source-loaded CellStore should not invent style references for new unstyled cells");
+    check(output_reader.read_entry("xl/styles.xml") == styles_before,
+        "source-loaded CellStore output should preserve unreferenced styles.xml bytes");
+    check(output_reader.content_types().override_for(styles_part) != nullptr,
+        "source-loaded CellStore output should preserve styles content type");
+    check_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/styles",
+        "source-loaded CellStore output should preserve unreferenced styles relationship");
+    const fastxlsx::detail::RelationshipGraph graph = output_reader.relationship_graph();
+    const fastxlsx::detail::RelationshipSet* workbook_relationships =
+        graph.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "source-loaded CellStore output graph should preserve workbook relationships");
+    check(std::any_of(workbook_relationships->relationships().begin(),
+              workbook_relationships->relationships().end(),
+              [](const fastxlsx::detail::Relationship& relationship) {
+                  return relationship.type
+                          == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"
+                      && relationship.target == "styles.xml"
+                      && relationship.target_mode
+                          == fastxlsx::detail::Relationship::TargetMode::Internal;
+              }),
+        "source-loaded CellStore output graph should re-read the styles relationship");
+}
+
+void test_package_editor_source_loaded_cell_store_preserves_unreferenced_shared_strings()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-sharedstrings-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-unreferenced-sharedstrings-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        auto plain = workbook.add_worksheet("Plain");
+        auto shared_owner = workbook.add_worksheet("SharedOwner");
+        plain.append_row({fastxlsx::CellView::number(123.0)});
+        shared_owner.append_row({fastxlsx::CellView::text("shared keeper")});
+        workbook.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    check(source_entries.find("xl/sharedStrings.xml") != source_entries.end(),
+        "source-loaded CellStore unreferenced-sharedStrings fixture should contain sharedStrings.xml");
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Plain");
+    const fastxlsx::detail::CellRecord* source_cell = store.try_cell(1, 1);
+    check(source_cell != nullptr && source_cell->kind == fastxlsx::CellValueKind::Number,
+        "source-loaded CellStore should load non-shared cells even when sharedStrings.xml exists");
+    store.set_cell(1, 2, fastxlsx::CellValue::text("patched inline"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
+        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Plain", replacement_sheet_data_source);
+
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName shared_strings_part("/xl/sharedStrings.xml");
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
+        "source-loaded CellStore output plan should preserve unreferenced sharedStrings");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<sheetData><row r="1"><c r="A1"><v>123</v></c><c r="B1" t="inlineStr"><is><t>patched inline</t></is></c></row></sheetData>)",
+        "source-loaded CellStore should rewrite non-shared source cells without shared string indexes");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "source-loaded CellStore should not invent shared string references");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == shared_strings_before,
+        "source-loaded CellStore output should preserve unreferenced sharedStrings bytes");
+    check(output_reader.content_types().override_for(shared_strings_part) != nullptr,
+        "source-loaded CellStore output should preserve sharedStrings content type");
+    check_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/sharedStrings",
+        "source-loaded CellStore output should preserve unreferenced sharedStrings relationship");
+    const fastxlsx::detail::RelationshipGraph graph = output_reader.relationship_graph();
+    const fastxlsx::detail::RelationshipSet* workbook_relationships =
+        graph.relationships_for(workbook_part);
+    check(workbook_relationships != nullptr,
+        "source-loaded CellStore output graph should preserve workbook relationships");
+    check(std::any_of(workbook_relationships->relationships().begin(),
+              workbook_relationships->relationships().end(),
+              [](const fastxlsx::detail::Relationship& relationship) {
+                  return relationship.type
+                          == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"
+                      && relationship.target == "sharedStrings.xml"
+                      && relationship.target_mode
+                          == fastxlsx::detail::Relationship::TargetMode::Internal;
+              }),
+        "source-loaded CellStore output graph should re-read the sharedStrings relationship");
+}
+
+void test_package_editor_source_loaded_cell_store_materializes_prefixed_shared_strings()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-sharedstrings-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-sharedstrings-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        auto data = workbook.add_worksheet("Data");
+        auto untouched = workbook.add_worksheet("Untouched");
+        data.append_row({fastxlsx::CellView::text("prefix-placeholder-a"),
+            fastxlsx::CellView::text("prefix-placeholder-b")});
+        untouched.append_row({fastxlsx::CellView::text("keep-prefixed-package")});
+        workbook.close();
+    }
+
+    const std::string prefixed_shared_strings =
+        R"(<?xml version='1.1' encoding='UTF_8-Test.1' standalone='no'?>)"
+        R"(<?xml-stylesheet type="text/xsl" href="prefixed-sharedStrings.xsl"?>)"
+        R"(<?fastxlsx.data-1:probe legal-target?>)"
+        R"(<?_fastxlsx legal-start?>)"
+        R"(<?:fastxlsx legal-colon-start?>)"
+        R"(<?fastxlsx?>)"
+        R"(<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test" count="2" uniqueCount="2">)"
+        R"(<x:si><x:t>package-prefixed-A&amp;B</x:t></x:si>)"
+        R"(<x:si><x:r><x:t>rich-</x:t></x:r><x:r><x:t xml:space="preserve"> tail </x:t></x:r>)"
+        R"(<x:rPh sb="1" eb="1"/><x:phoneticPr fontId="1"/><x:extLst/>)"
+        R"(<x:rPh sb="0" eb="1"><fx:opaque><x:r><x:t>ignored-nested-phonetic</x:t></x:r></fx:opaque></x:rPh>)"
+        R"(<x:phoneticPr fontId="1"/>)"
+        R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:r><x:t>ignored-nested-ext</x:t></x:r></fx:opaque></x:ext></x:extLst></x:si>)"
+        R"(<x:phoneticPr fontId="2"/><x:extLst/><x:extLst><x:ext uri="{fastxlsx-root}"><fx:opaque><x:t>ignored-root-ext</x:t></fx:opaque></x:ext></x:extLst>)"
+        R"(</x:sst>)";
+    check_contains(prefixed_shared_strings,
+        "version='1.1' encoding='UTF_8-Test.1' standalone='no'",
+        "package-backed prefixed sharedStrings fixture should cover legal declaration metadata");
+    check_contains(prefixed_shared_strings, "<?xml-stylesheet",
+        "package-backed prefixed sharedStrings fixture should cover xml-stylesheet PI trivia");
+    check_contains(prefixed_shared_strings, "<?fastxlsx.data-1:probe",
+        "package-backed prefixed sharedStrings fixture should cover legal PI target continuation trivia");
+    check_contains(prefixed_shared_strings, "<?_fastxlsx",
+        "package-backed prefixed sharedStrings fixture should cover underscore-start PI target trivia");
+    check_contains(prefixed_shared_strings, "<?:fastxlsx",
+        "package-backed prefixed sharedStrings fixture should cover colon-start PI target trivia");
+    check_contains(prefixed_shared_strings, "<?fastxlsx?>",
+        "package-backed prefixed sharedStrings fixture should cover empty-data PI trivia");
+    rewrite_package_entry_as_stored(source_path, "xl/sharedStrings.xml", prefixed_shared_strings);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Data");
+
+    const fastxlsx::detail::CellRecord* a1 = store.try_cell(1, 1);
+    const fastxlsx::detail::CellRecord* b1 = store.try_cell(1, 2);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
+            && a1->text_value == "package-prefixed-A&B",
+        "package-backed CellStore should materialize prefixed sharedStrings text");
+    check(b1 != nullptr && b1->kind == fastxlsx::CellValueKind::Text
+            && b1->text_value == "rich- tail ",
+        "package-backed CellStore should flatten prefixed rich sharedStrings by local-name");
+    check_contains(shared_strings_before, "ignored-nested-ext",
+        "package-backed prefixed sharedStrings fixture should carry nested ignored extension text");
+    check_contains(shared_strings_before, "ignored-root-ext",
+        "package-backed prefixed sharedStrings fixture should carry root-level ignored extension text");
+    check_contains(shared_strings_before, "<x:extLst/>",
+        "package-backed prefixed sharedStrings fixture should carry self-closing ignored metadata");
+
+    store.set_cell(1, 3, fastxlsx::CellValue::text("package-prefixed-patched"));
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source_path);
     editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Styled", replacement_sheet_data_source);
-
-    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
-    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
-
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
-    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
-              worksheet_part, PayloadAuditKind::Styles,
-              PayloadAuditScope::SheetDataReplacement, "c",
-              {"style id references", "xl/styles.xml"}),
-        "CellStore styled sheetData handoff should audit style id references");
+        "Data", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
-    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
+    check_output_entry_plan(output_plan.entries, "xl/sharedStrings.xml",
         fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-        "CellStore styled sheetData output plan should preserve styles");
-    check(has_payload_audit(output_plan.worksheet_payload_dependency_audits,
-              worksheet_part, PayloadAuditKind::Styles,
-              PayloadAuditScope::SheetDataReplacement, "c",
-              {"style id references", "xl/styles.xml"}),
-        "CellStore styled sheetData output plan should keep style dependency audit");
+        "prefixed sharedStrings CellStore output plan should preserve sharedStrings");
 
     editor.save_as(output);
 
@@ -1795,441 +1967,388 @@ void test_package_editor_patches_cell_store_sheet_data_with_writer_style()
     const std::string worksheet_xml =
         output_reader.read_entry("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml,
-        R"(<c r="A1" s="1" t="inlineStr"><is><t>styled replacement</t></is></c>)",
-        "CellStore styled sheetData output should write caller-supplied StyleId");
+        R"(<c r="A1" t="inlineStr"><is><t>package-prefixed-A&amp;B</t></is></c>)",
+        "prefixed sharedStrings CellStore output should project A1 as inline text");
     check_contains(worksheet_xml,
-        R"(<c r="B1" t="inlineStr"><is><t>explicit default</t></is></c>)",
-        "CellStore styled sheetData output should omit explicit default StyleId");
-    check_not_contains(worksheet_xml, R"(s="0")",
-        "CellStore styled sheetData output should not write default style attributes");
-    check(output_reader.read_entry("xl/styles.xml") == styles_before,
-        "CellStore styled sheetData output should preserve styles.xml bytes");
-    check(output_reader.content_types().override_for(styles_part) != nullptr,
-        "CellStore styled sheetData output should preserve styles content type");
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve">rich- tail </t></is></c>)",
+        "prefixed sharedStrings CellStore output should preserve flattened whitespace");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>package-prefixed-patched</t></is></c>)",
+        "prefixed sharedStrings CellStore output should include the new edit");
+    check_not_contains(worksheet_xml, "ignored-nested-phonetic",
+        "prefixed sharedStrings CellStore output should not leak nested ignored phonetic text");
+    check_not_contains(worksheet_xml, "ignored-nested-ext",
+        "prefixed sharedStrings CellStore output should not leak nested ignored extension text");
+    check_not_contains(worksheet_xml, "ignored-root-ext",
+        "prefixed sharedStrings CellStore output should not leak root-level ignored extension text");
+    check_not_contains(worksheet_xml, R"(t="s")",
+        "prefixed sharedStrings CellStore output should not write shared string indexes");
+    check(output_reader.read_entry("xl/sharedStrings.xml") == shared_strings_before,
+        "prefixed sharedStrings CellStore output should preserve sharedStrings bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "prefixed sharedStrings CellStore output should preserve untouched sheets");
 }
 
-void test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name()
+void test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_strings()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheetdata-source.xlsx");
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-inline-source.xlsx");
     const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-sheetdata-output.xlsx");
+        output_path("fastxlsx-package-editor-source-cellstore-prefixed-inline-output.xlsx");
+
+    {
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path);
+        auto data = workbook.add_worksheet("Data");
+        auto untouched = workbook.add_worksheet("Untouched");
+        data.append_row({fastxlsx::CellView::text("prefixed-inline-placeholder")});
+        untouched.append_row({fastxlsx::CellView::text("keep-prefixed-inline-package")});
+        workbook.close();
+    }
+
+    const std::string worksheet_xml =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test">)"
+          R"(<x:sheetData>)"
+          R"(<x:row r="1">)"
+          R"(<x:c r="A1" t="inlineStr"><x:is><x:t>package-prefixed-inline</x:t></x:is></x:c>)"
+          R"(<x:c r="B1" t="inlineStr"><x:is><x:t xml:space="preserve"> package space </x:t></x:is></x:c>)"
+          R"(<x:c r="C1" t="inlineStr"><x:is>)"
+          R"(<x:r><x:rPr><x:b/></x:rPr><x:t>pkg-rich-</x:t></x:r>)"
+          R"(<x:r><x:t>tail</x:t></x:r>)"
+          R"(<x:rPh sb="1" eb="1"/><x:phoneticPr fontId="1"/><x:extLst/>)"
+          R"(<x:rPh sb="0" eb="1"><fx:opaque><x:r><x:t>ignored-nested-phonetic</x:t></x:r></fx:opaque></x:rPh>)"
+          R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:r><x:t>ignored-nested-ext</x:t></x:r></fx:opaque></x:ext></x:extLst>)"
+          R"(</x:is></x:c>)"
+          R"(</x:row>)"
+          R"(<x:row r="2">)"
+          R"(<x:c r="A2"><x:v>42</x:v></x:c>)"
+          R"(<x:c r="B2" t="b"><x:v>1</x:v></x:c>)"
+          R"(<x:c r="C2"><x:f>SUM(A2:A2)</x:f><x:v>999</x:v></x:c>)"
+          R"(<x:c r="D2"><x:f t="array" ref="D2" aca="1" ca="1" bx="1">SUM(A2:A2)</x:f><x:v>42</x:v></x:c>)"
+          R"(<x:c r="E2"><x:f t="shared" si="0" dt2D="1" dtr="1" del1="0" del2="0" r1="A1" r2="B1"/><x:v>7</x:v></x:c>)"
+          R"(<x:c r="F2" ph="1"><x:v>8</x:v></x:c>)"
+          R"(</x:row>)"
+          R"(</x:sheetData>)"
+          R"(</x:worksheet>)";
+    rewrite_package_entry_as_stored(source_path, "xl/worksheets/sheet1.xml", worksheet_xml);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "ignored-nested-ext",
+        "package-backed prefixed inline fixture should carry nested ignored extension text");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<x:extLst/>",
+        "package-backed prefixed inline fixture should carry self-closing ignored metadata");
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Data");
+
+    const fastxlsx::detail::CellRecord* a1 = store.try_cell(1, 1);
+    const fastxlsx::detail::CellRecord* b1 = store.try_cell(1, 2);
+    const fastxlsx::detail::CellRecord* c1 = store.try_cell(1, 3);
+    const fastxlsx::detail::CellRecord* a2 = store.try_cell(2, 1);
+    const fastxlsx::detail::CellRecord* b2 = store.try_cell(2, 2);
+    const fastxlsx::detail::CellRecord* c2 = store.try_cell(2, 3);
+    const fastxlsx::detail::CellRecord* d2 = store.try_cell(2, 4);
+    const fastxlsx::detail::CellRecord* e2 = store.try_cell(2, 5);
+    const fastxlsx::detail::CellRecord* f2 = store.try_cell(2, 6);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
+            && a1->text_value == "package-prefixed-inline",
+        "package-backed CellStore should materialize prefixed inline text by local-name");
+    check(b1 != nullptr && b1->kind == fastxlsx::CellValueKind::Text
+            && b1->text_value == " package space ",
+        "package-backed CellStore should keep prefixed inline xml:space text");
+    check(c1 != nullptr && c1->kind == fastxlsx::CellValueKind::Text
+            && c1->text_value == "pkg-rich-tail",
+        "package-backed CellStore should flatten prefixed inline rich text by local-name");
+    check(a2 != nullptr && a2->kind == fastxlsx::CellValueKind::Number
+            && a2->number_value == 42.0,
+        "package-backed CellStore should materialize prefixed numeric values");
+    check(b2 != nullptr && b2->kind == fastxlsx::CellValueKind::Boolean
+            && b2->boolean_value,
+        "package-backed CellStore should materialize prefixed boolean values");
+    check(c2 != nullptr && c2->kind == fastxlsx::CellValueKind::Formula
+            && c2->text_value == "SUM(A2:A2)",
+        "package-backed CellStore should materialize prefixed formula wrappers");
+    check(d2 != nullptr && d2->kind == fastxlsx::CellValueKind::Formula
+            && d2->text_value == "SUM(A2:A2)",
+        "package-backed CellStore should flatten prefixed formula metadata attributes");
+    check(e2 != nullptr && e2->kind == fastxlsx::CellValueKind::Number
+            && e2->number_value == 7.0,
+        "package-backed CellStore should materialize cached values for metadata-only formulas");
+    check(f2 != nullptr && f2->kind == fastxlsx::CellValueKind::Number
+            && f2->number_value == 8.0,
+        "package-backed CellStore should ignore source phonetic cell metadata attributes");
+
+    store.set_cell(2, 7, fastxlsx::CellValue::text("package-prefixed-inline-patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Data", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string output_worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>package-prefixed-inline</t></is></c>)",
+        "source-loaded CellStore should project prefixed inline text as inlineStr");
+    check_contains(output_worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t xml:space="preserve"> package space </t></is></c>)",
+        "source-loaded CellStore should preserve prefixed inline whitespace in projection");
+    check_contains(output_worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>pkg-rich-tail</t></is></c>)",
+        "source-loaded CellStore should project flattened prefixed inline rich text");
+    check_contains(output_worksheet_xml, R"(<c r="A2"><v>42</v></c>)",
+        "source-loaded CellStore should project prefixed numeric values");
+    check_contains(output_worksheet_xml, R"(<c r="B2" t="b"><v>1</v></c>)",
+        "source-loaded CellStore should project prefixed boolean values");
+    check_contains(output_worksheet_xml, R"(<c r="C2"><f>SUM(A2:A2)</f></c>)",
+        "source-loaded CellStore should project formulas without cached values");
+    check_contains(output_worksheet_xml, R"(<c r="D2"><f>SUM(A2:A2)</f></c>)",
+        "source-loaded CellStore should project flattened formula metadata without cached values");
+    check_contains(output_worksheet_xml, R"(<c r="E2"><v>7</v></c>)",
+        "source-loaded CellStore should project metadata-only shared formulas as cached values");
+    check_contains(output_worksheet_xml, R"(<c r="F2"><v>8</v></c>)",
+        "source-loaded CellStore should project source phonetic cells without ph metadata");
+    check_contains(output_worksheet_xml,
+        R"(<c r="G2" t="inlineStr"><is><t>package-prefixed-inline-patched</t></is></c>)",
+        "source-loaded CellStore should include edits beside prefixed source cells");
+    check_not_contains(output_worksheet_xml, "ignored-phonetic",
+        "source-loaded CellStore projection should not keep prefixed phonetic text");
+    check_not_contains(output_worksheet_xml, "ignored-ext",
+        "source-loaded CellStore projection should not keep prefixed extension text");
+    check_not_contains(output_worksheet_xml, "ignored-nested-phonetic",
+        "source-loaded CellStore projection should not keep nested ignored phonetic text");
+    check_not_contains(output_worksheet_xml, "ignored-nested-ext",
+        "source-loaded CellStore projection should not keep nested ignored extension text");
+    check_not_contains(output_worksheet_xml, "<x:v>999</x:v>",
+        "source-loaded CellStore projection should not keep stale cached values");
+    check_not_contains(output_worksheet_xml, R"(ca="1")",
+        "source-loaded CellStore projection should not preserve formula calc metadata");
+    check_not_contains(output_worksheet_xml, R"(dt2D="1")",
+        "source-loaded CellStore projection should not preserve dataTable formula metadata");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "prefixed inline CellStore output should preserve untouched sheets");
+}
+
+void test_package_editor_source_loaded_cell_store_materializes_local_names_without_namespace_validation()
+{
+    const std::filesystem::path source_path =
+        output_path("fastxlsx-package-editor-source-cellstore-local-name-no-namespace-validation-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-local-name-no-namespace-validation-output.xlsx");
+
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        auto workbook = fastxlsx::WorkbookWriter::create(source_path, options);
+        auto data = workbook.add_worksheet("Data");
+        auto untouched = workbook.add_worksheet("Untouched");
+        data.append_row({fastxlsx::CellView::text("wrong-ns-package-a"),
+            fastxlsx::CellView::text("wrong-ns-package-b")});
+        untouched.append_row({fastxlsx::CellView::text("keep-wrong-ns-package")});
+        workbook.close();
+    }
+
+    const std::string wrong_namespace_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<bad:sst xmlns:bad="urn:fastxlsx:not-spreadsheetml" count="2" uniqueCount="2">)"
+        R"(<bad:si><bad:t>package-wrong-ns-shared</bad:t></bad:si>)"
+        R"(<bad:si><bad:r><bad:t>package-wrong-rich-</bad:t></bad:r><bad:r><bad:t>tail</bad:t></bad:r></bad:si>)"
+        R"(</bad:sst>)";
+    rewrite_package_entry_as_stored(
+        source_path, "xl/sharedStrings.xml", wrong_namespace_shared_strings);
+
+    const std::string wrong_namespace_worksheet =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml">)"
+          R"(<bad:sheetData><bad:row r="1">)"
+          R"(<bad:c r="A1" t="s"><bad:v>0</bad:v></bad:c>)"
+          R"(<bad:c r="B1" t="inlineStr"><bad:is><bad:t>package-wrong-ns-inline</bad:t></bad:is></bad:c>)"
+          R"(<bad:c r="C1" t="s"><bad:v>1</bad:v></bad:c>)"
+          R"(</bad:row></bad:sheetData>)"
+          R"(</bad:worksheet>)";
+    rewrite_package_entry_as_stored(
+        source_path, "xl/worksheets/sheet1.xml", wrong_namespace_worksheet);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source_path);
+    fastxlsx::detail::CellStore store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Data");
+
+    const fastxlsx::detail::CellRecord* a1 = store.try_cell(1, 1);
+    const fastxlsx::detail::CellRecord* b1 = store.try_cell(1, 2);
+    const fastxlsx::detail::CellRecord* c1 = store.try_cell(1, 3);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Text
+            && a1->text_value == "package-wrong-ns-shared",
+        "package-backed CellStore should materialize sharedStrings by local-name without namespace URI validation");
+    check(b1 != nullptr && b1->kind == fastxlsx::CellValueKind::Text
+            && b1->text_value == "package-wrong-ns-inline",
+        "package-backed CellStore should materialize inline text by local-name without namespace URI validation");
+    check(c1 != nullptr && c1->kind == fastxlsx::CellValueKind::Text
+            && c1->text_value == "package-wrong-rich-tail",
+        "package-backed CellStore should flatten rich sharedStrings without namespace URI validation");
+
+    store.set_cell(1, 4, fastxlsx::CellValue::text("package-wrong-ns-patched"));
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source_path);
+    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Data", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml =
+        output_reader.read_entry("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>package-wrong-ns-shared</t></is></c>)",
+        "wrong-namespace CellStore output should project sharedStrings text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>package-wrong-ns-inline</t></is></c>)",
+        "wrong-namespace CellStore output should project inline text as inline text");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>package-wrong-rich-tail</t></is></c>)",
+        "wrong-namespace CellStore output should project flattened rich sharedStrings text");
+    check_contains(worksheet_xml,
+        R"(<c r="D1" t="inlineStr"><is><t>package-wrong-ns-patched</t></is></c>)",
+        "wrong-namespace CellStore output should include edits beside source-loaded cells");
+    check(output_reader.read_entry("xl/sharedStrings.xml")
+            == source_entries.at("xl/sharedStrings.xml"),
+        "wrong-namespace CellStore output should preserve source sharedStrings bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "wrong-namespace CellStore output should preserve untouched sheets");
+}
+
+void test_package_editor_source_loaded_cell_store_distinguishes_blank_and_erase()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-blank-erase-source.xlsx");
+    source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1"><v>22</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-blank-erase-output.xlsx");
 
     const fastxlsx::detail::PackageReader source_reader =
         fastxlsx::detail::PackageReader::open(source.path);
     fastxlsx::detail::CellStore store =
         fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    check(store.cell_count() == 1,
-        "source-backed CellStore handoff should load the source worksheet cells");
-    const fastxlsx::detail::CellRecord* source_formula = store.try_cell(1, 1);
-    check(source_formula != nullptr && source_formula->kind == fastxlsx::CellValueKind::Formula,
-        "source-backed CellStore handoff should load source formula cells");
-    check(source_formula->text_value == "SUM(B1:C1)",
-        "source-backed CellStore handoff formula payload mismatch");
+    check(store.cell_count() == 2,
+        "blank-vs-erase source-backed CellStore should load source cells");
+    check(store.try_cell(1, 1) != nullptr && store.try_cell(1, 2) != nullptr,
+        "blank-vs-erase source-backed CellStore should expose both source cells");
 
-    store.erase_cell(1, 1);
-    store.set_cell(1, 2, fastxlsx::CellValue::text("loaded & patched"));
-    store.set_cell(1, 3, fastxlsx::CellValue::blank());
-    check(store.try_cell(1, 1) == nullptr,
-        "source-backed CellStore mutation should remove erased records");
-    check(store.try_cell(1, 3) != nullptr
-            && store.try_cell(1, 3)->kind == fastxlsx::CellValueKind::Blank,
-        "source-backed CellStore mutation should keep explicit blank records");
+    store.set_cell(1, 1, fastxlsx::CellValue::blank());
+    store.erase_cell(1, 2);
+    const fastxlsx::detail::CellRecord* blank = store.try_cell(1, 1);
+    check(blank != nullptr && blank->kind == fastxlsx::CellValueKind::Blank,
+        "blank-vs-erase CellStore should keep explicit blank overwrite records");
+    check(store.try_cell(1, 2) == nullptr,
+        "blank-vs-erase CellStore should remove erased source records");
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
     editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Sheet1", replacement_sheet_data_source);
-
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr,
-        "source-backed CellStore handoff should plan the worksheet rewrite");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore handoff should use bounded sheetData rewrite");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore handoff should remove stale calcChain by default");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore handoff should request workbook recalculation");
+        "Sheet1", fastxlsx::detail::cell_store_sheet_data_chunk_source(store));
 
     editor.save_as(output);
 
     const auto entries = fastxlsx::test::read_zip_entries(output);
     check(entries.find("xl/calcChain.xml") == entries.end(),
-        "source-backed CellStore output should omit stale calcChain");
+        "blank-vs-erase source-backed CellStore output should omit stale calcChain");
 
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
-        "source-backed CellStore output should keep sheet lookup readable");
-
     const std::string worksheet_xml =
         output_reader.read_entry("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml,
-        R"(<sheetData><row r="1"><c r="B1" t="inlineStr"><is><t>loaded &amp; patched</t></is></c><c r="C1"/></row></sheetData>)",
-        "source-backed CellStore output should write mutated sparse sheetData");
-    check_not_contains(worksheet_xml, R"(r="A1")",
-        "source-backed CellStore output should omit erased source records");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "source-backed CellStore output should remove old source formula payload");
-
-    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
-        "source-backed CellStore output should request workbook recalculation");
-    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
-        "source-backed CellStore output should remove calcChain content type");
-    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
-        "relationships/calcChain",
-        "source-backed CellStore output should remove calcChain relationship");
+        R"(<sheetData><row r="1"><c r="A1"/></row></sheetData>)",
+        "blank-vs-erase output should write explicit blank source overwrite");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "blank-vs-erase output should omit erased source cells");
+    check_not_contains(worksheet_xml, R"(<v>11</v>)",
+        "blank-vs-erase output should remove the old blanked source value");
+    check_not_contains(worksheet_xml, R"(<v>22</v>)",
+        "blank-vs-erase output should remove the old erased source value");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore output should preserve unknown bytes");
+        "blank-vs-erase source-backed CellStore output should preserve unknown bytes");
 }
 
-void test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename()
+void test_package_editor_source_loaded_cell_store_preserves_loader_options()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-planned-rename-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-planned-rename-output.xlsx");
+    CalcSourcePackage max_source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-option-max-source.xlsx");
+    max_source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c><c r="B1"><v>22</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(max_source);
 
-    const fastxlsx::detail::PackageReader source_reader =
-        fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    check(store.try_cell(1, 1) != nullptr
-            && store.try_cell(1, 1)->kind == fastxlsx::CellValueKind::Formula,
-        "source-backed CellStore planned-name test should load source formula");
-    store.set_cell(2, 2, fastxlsx::CellValue::text("planned-name handoff"));
+    const fastxlsx::detail::PackageReader max_source_reader =
+        fastxlsx::detail::PackageReader::open(max_source.path);
+    fastxlsx::detail::CellStoreOptions max_options;
+    max_options.max_cells = 2;
+    fastxlsx::detail::CellStore max_guarded_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            max_source_reader, "Sheet1", max_options);
+    check(max_guarded_store.options().max_cells == 2,
+        "package-backed CellStore loader should preserve max_cells options");
 
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    editor.rename_sheet_catalog_entry("Sheet1", "Loaded Data");
-
-    const std::size_t renamed_plan_size = editor.edit_plan().size();
-    const std::size_t renamed_note_count = editor.edit_plan().notes().size();
-    const fastxlsx::detail::CalcChainAction renamed_calc_chain_action =
-        editor.edit_plan().calc_chain_action();
-
-    std::size_t sheet_data_chunk_reads = 0;
-    fastxlsx::detail::WorksheetInputChunkCallback sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    fastxlsx::detail::WorksheetInputChunkCallback counted_sheet_data_source =
-        [&sheet_data_source, &sheet_data_chunk_reads](std::string& output_chunk) {
-            ++sheet_data_chunk_reads;
-            return sheet_data_source(output_chunk);
-        };
-
-    bool failed_old_name = false;
+    bool max_failed = false;
     try {
-        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            "Sheet1", counted_sheet_data_source);
-    } catch (const fastxlsx::FastXlsxError& error) {
-        failed_old_name = true;
-        check_contains(error.what(), "workbook sheet name is not present",
-            "source-backed CellStore old-name handoff should use planned catalog");
+        max_guarded_store.set_cell(1, 3, fastxlsx::CellValue::number(33.0));
+    } catch (const fastxlsx::FastXlsxError&) {
+        max_failed = true;
     }
-    check(failed_old_name,
-        "PackageEditor should reject source name after queued rename for CellStore handoff");
+    check(max_failed,
+        "package-backed CellStore loader returned store should keep enforcing max_cells");
+    check(max_guarded_store.cell_count() == 2,
+        "package-backed CellStore max_cells failure should preserve source-loaded records");
+    check(max_guarded_store.find_cell(1, 3) == nullptr,
+        "package-backed CellStore max_cells failure should not leave rejected records");
 
-    check(editor.edit_plan().size() == renamed_plan_size,
-        "source-backed CellStore old-name failure should preserve queued rename plan size");
-    check(editor.edit_plan().notes().size() == renamed_note_count,
-        "source-backed CellStore old-name failure should not append notes");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
-        "source-backed CellStore old-name failure should not queue calcChain removal");
-    check(!editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore old-name failure should not request recalculation");
-    check(editor.edit_plan().calc_chain_action() == renamed_calc_chain_action,
-        "source-backed CellStore old-name failure should not change calcChain policy");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore old-name failure should preserve workbook rename rewrite");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "source-backed CellStore old-name failure should leave worksheet copy-original");
-    check_manifest_write_mode(editor, calc_chain_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "source-backed CellStore old-name failure should leave calcChain copy-original");
-    check(sheet_data_chunk_reads == 0,
-        "source-backed CellStore old-name failure should not consume sheetData chunks");
+    CalcSourcePackage memory_source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-option-memory-source.xlsx");
+    memory_source.worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(memory_source);
 
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Loaded Data", counted_sheet_data_source);
-    check(sheet_data_chunk_reads > 0,
-        "source-backed CellStore planned-name handoff should consume sheetData chunks");
+    fastxlsx::detail::CellStore memory_sizing_store;
+    memory_sizing_store.set_cell(1, 1, fastxlsx::CellValue::text("a"));
+    fastxlsx::detail::CellStoreOptions memory_options;
+    memory_options.memory_budget_bytes = memory_sizing_store.estimated_memory_usage();
 
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr
-            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore planned-name handoff should rewrite the worksheet");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore planned-name handoff should remove stale calcChain");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore planned-name handoff should request recalculation");
+    const fastxlsx::detail::PackageReader memory_source_reader =
+        fastxlsx::detail::PackageReader::open(memory_source.path);
+    fastxlsx::detail::CellStore memory_guarded_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(
+            memory_source_reader, "Sheet1", memory_options);
+    check(memory_guarded_store.options().memory_budget_bytes
+            == memory_sizing_store.estimated_memory_usage(),
+        "package-backed CellStore loader should preserve memory budget options");
 
-    editor.save_as(output);
-
-    const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/calcChain.xml") == entries.end(),
-        "source-backed CellStore planned-name output should omit stale calcChain");
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Loaded Data") == worksheet_part,
-        "source-backed CellStore planned-name output should expose renamed sheet");
-
-    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
-    check_contains(workbook_xml, R"(name="Loaded Data")",
-        "source-backed CellStore planned-name output should preserve renamed catalog");
-    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
-        "source-backed CellStore planned-name output should request workbook recalculation");
-
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<f>SUM(B1:C1)</f>)",
-        "source-backed CellStore planned-name output should retain loaded source formula");
-    check_contains(worksheet_xml,
-        R"(<c r="B2" t="inlineStr"><is><t>planned-name handoff</t></is></c>)",
-        "source-backed CellStore planned-name output should write the mutated cell");
-    check_not_contains(worksheet_xml, "<v>3</v>",
-        "source-backed CellStore planned-name output should drop old cached formula value");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore planned-name output should preserve unknown bytes");
-}
-
-void test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement()
-{
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-queued-worksheet-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-queued-worksheet-output.xlsx");
-
-    const fastxlsx::detail::PackageReader source_reader =
-        fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    check(store.try_cell(1, 1) != nullptr
-            && store.try_cell(1, 1)->kind == fastxlsx::CellValueKind::Formula,
-        "source-backed CellStore queued-worksheet test should load source formula");
-    store.erase_cell(1, 1);
-    store.set_cell(2, 2, fastxlsx::CellValue::text("queued CellStore patch"));
-    store.set_cell(4, 1, fastxlsx::CellValue::blank());
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    const std::string queued_worksheet =
-        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheetViews><sheetView workbookViewId="24"/></sheetViews>)"
-        R"(<sheetData><row r="9"><c r="C9"><v>999</v></c></row></sheetData>)"
-        R"(<autoFilter ref="B2:C4"/>)"
-        R"(<extLst><ext uri="{cellstore-queued-wrapper}"/></extLst>)"
-        R"(</worksheet>)";
-    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", queued_worksheet);
-
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Sheet1", replacement_sheet_data_source);
-
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr,
-        "source-backed CellStore queued worksheet patch should keep worksheet in the edit plan");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore queued worksheet patch should finish as local-DOM rewrite");
-    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
-    check(workbook_plan != nullptr
-            && workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore queued worksheet patch should keep workbook calc rewrite");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore queued worksheet patch should keep stale calcChain removed");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore queued worksheet patch should keep full calculation request");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"pull-based chunk source", "file-backed staged chunk",
-                  "follow-up planned-input transforms"}),
-        "source-backed CellStore queued worksheet patch should preserve staged-input evidence");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"sheetData replacement", "view metadata", "caller review"}),
-        "source-backed CellStore queued worksheet patch should audit queued view metadata");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"sheetData replacement", "autoFilter metadata", "caller review"}),
-        "source-backed CellStore queued worksheet patch should audit queued autoFilter metadata");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"sheetData replacement", "extension metadata", "caller review"}),
-        "source-backed CellStore queued worksheet patch should audit queued extension metadata");
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml,
-        R"(<sheetViews><sheetView workbookViewId="24"/></sheetViews>)",
-        "source-backed CellStore queued worksheet output should preserve queued sheetViews");
-    check_contains(worksheet_xml,
-        R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>queued CellStore patch</t></is></c></row><row r="4"><c r="A4"/></row></sheetData>)",
-        "source-backed CellStore queued worksheet output should write CellStore sheetData");
-    check_contains(worksheet_xml, R"(<autoFilter ref="B2:C4"/>)",
-        "source-backed CellStore queued worksheet output should preserve queued autoFilter");
-    check_contains(worksheet_xml, R"(<extLst><ext uri="{cellstore-queued-wrapper}"/></extLst>)",
-        "source-backed CellStore queued worksheet output should preserve queued extLst");
-    check_not_contains(worksheet_xml, R"(<v>999</v>)",
-        "source-backed CellStore queued worksheet output should remove queued old rows");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "source-backed CellStore queued worksheet output should not resurrect erased source formula");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "source-backed CellStore queued worksheet output should keep stale calcChain omitted");
-    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
-        "source-backed CellStore queued worksheet output should keep workbook recalculation request");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore queued worksheet output should preserve unknown bytes");
-}
-
-void test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet()
-{
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-output.xlsx");
-
-    const fastxlsx::detail::PackageReader source_reader =
-        fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    store.erase_cell(1, 1);
-    store.set_cell(2, 2, fastxlsx::CellValue::text("renamed queued CellStore patch"));
-    store.set_cell(3, 3, fastxlsx::CellValue::blank());
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    editor.rename_sheet_catalog_entry("Sheet1", "Renamed Queued");
-    const std::string queued_worksheet =
-        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheetViews><sheetView workbookViewId="52"/></sheetViews>)"
-        R"(<sheetData><row r="8"><c r="D8"><v>888</v></c></row></sheetData>)"
-        R"(<autoFilter ref="B2:D8"/>)"
-        R"(<extLst><ext uri="{renamed-queued-wrapper}"/></extLst>)"
-        R"(</worksheet>)";
-    replace_worksheet_part_by_name_from_single_chunk_source(
-        editor, "Renamed Queued", queued_worksheet);
-
-    const std::size_t queued_plan_size = editor.edit_plan().size();
-    const std::size_t queued_note_count = editor.edit_plan().notes().size();
-    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
-        editor.edit_plan().calc_chain_action();
-
-    std::size_t sheet_data_chunk_reads = 0;
-    fastxlsx::detail::WorksheetInputChunkCallback sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    fastxlsx::detail::WorksheetInputChunkCallback counted_sheet_data_source =
-        [&sheet_data_source, &sheet_data_chunk_reads](std::string& output_chunk) {
-            ++sheet_data_chunk_reads;
-            return sheet_data_source(output_chunk);
-        };
-
-    bool failed_old_name = false;
+    bool memory_failed = false;
     try {
-        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            "Sheet1", counted_sheet_data_source);
-    } catch (const fastxlsx::FastXlsxError& error) {
-        failed_old_name = true;
-        check_contains(error.what(), "workbook sheet name is not present",
-            "source-backed CellStore rename+queued worksheet old-name failure should use planned catalog");
+        memory_guarded_store.set_cell(
+            1, 1, fastxlsx::CellValue::text(std::string(1024, 'x')));
+    } catch (const fastxlsx::FastXlsxError&) {
+        memory_failed = true;
     }
-    check(failed_old_name,
-        "PackageEditor should reject source name after queued rename and worksheet replacement");
-
-    check(editor.edit_plan().size() == queued_plan_size,
-        "source-backed CellStore rename+queued worksheet old-name failure should preserve edit-plan size");
-    check(editor.edit_plan().notes().size() == queued_note_count,
-        "source-backed CellStore rename+queued worksheet old-name failure should not append notes");
-    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
-        "source-backed CellStore rename+queued worksheet old-name failure should preserve calc policy");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep stale calcChain removed");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore rename+queued worksheet old-name failure should keep recalculation request");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep workbook rewrite");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep queued worksheet rewrite");
-    check(editor.manifest().find_part(calc_chain_part) == nullptr,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep calcChain omitted");
-    check(sheet_data_chunk_reads == 0,
-        "source-backed CellStore rename+queued worksheet old-name failure should not consume chunks");
-
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Renamed Queued", counted_sheet_data_source);
-    check(sheet_data_chunk_reads > 0,
-        "source-backed CellStore rename+queued worksheet planned-name handoff should consume chunks");
-
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr
-            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore rename+queued worksheet planned-name handoff should local-DOM-rewrite worksheet");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore rename+queued worksheet planned-name handoff should keep stale calcChain removed");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore rename+queued worksheet planned-name handoff should keep recalculation request");
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Renamed Queued") == worksheet_part,
-        "source-backed CellStore rename+queued worksheet output should expose planned sheet name");
-    bool old_name_failed = false;
-    try {
-        (void)output_reader.worksheet_part_by_sheet_name("Sheet1");
-    } catch (const std::exception&) {
-        old_name_failed = true;
-    }
-    check(old_name_failed,
-        "source-backed CellStore rename+queued worksheet output should not expose old sheet name");
-
-    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
-    check_contains(workbook_xml, R"(name="Renamed Queued")",
-        "source-backed CellStore rename+queued worksheet output should preserve renamed catalog");
-    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
-        "source-backed CellStore rename+queued worksheet output should keep recalculation request");
-
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml,
-        R"(<sheetViews><sheetView workbookViewId="52"/></sheetViews>)",
-        "source-backed CellStore rename+queued worksheet output should preserve queued sheetViews");
-    check_contains(worksheet_xml,
-        R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>renamed queued CellStore patch</t></is></c></row><row r="3"><c r="C3"/></row></sheetData>)",
-        "source-backed CellStore rename+queued worksheet output should write planned-name CellStore sheetData");
-    check_contains(worksheet_xml, R"(<autoFilter ref="B2:D8"/>)",
-        "source-backed CellStore rename+queued worksheet output should preserve queued autoFilter");
-    check_contains(worksheet_xml, R"(<extLst><ext uri="{renamed-queued-wrapper}"/></extLst>)",
-        "source-backed CellStore rename+queued worksheet output should preserve queued extLst");
-    check_not_contains(worksheet_xml, R"(<v>888</v>)",
-        "source-backed CellStore rename+queued worksheet output should remove queued old rows");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "source-backed CellStore rename+queued worksheet output should not resurrect erased source formula");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "source-backed CellStore rename+queued worksheet output should keep stale calcChain omitted");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore rename+queued worksheet output should preserve unknown bytes");
+    check(memory_failed,
+        "package-backed CellStore loader returned store should keep enforcing memory budget");
+    const fastxlsx::detail::CellRecord* memory_guarded_cell =
+        memory_guarded_store.find_cell(1, 1);
+    check(memory_guarded_cell != nullptr,
+        "package-backed CellStore memory failure should preserve the source-loaded cell");
+    check(memory_guarded_cell->text_value == "a",
+        "package-backed CellStore memory failure should preserve the source-loaded payload");
 }
 
 
@@ -2241,13 +2360,15 @@ int main(int argc, char* argv[])
         const std::string_view shard = package_editor_shard_from_args(argc, argv);
         std::cout << "fastxlsx.package_editor cellstore shard: " << shard << '\n';
 
-        if (should_run_package_editor_shard(shard, "cellstore-core")) {
-            test_package_editor_patches_cell_store_sheet_data_by_sheet_name();
-            test_package_editor_patches_cell_store_sheet_data_with_writer_style();
-            test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name();
-            test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename();
-            test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement();
-            test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet();
+        if (should_run_package_editor_shard(shard, "cellstore-source")) {
+            test_package_editor_source_loaded_cell_store_loads_semantic_values_by_name();
+            test_package_editor_source_loaded_cell_store_preserves_unreferenced_styles();
+            test_package_editor_source_loaded_cell_store_preserves_unreferenced_shared_strings();
+            test_package_editor_source_loaded_cell_store_materializes_prefixed_shared_strings();
+            test_package_editor_source_loaded_cell_store_materializes_prefixed_inline_strings();
+            test_package_editor_source_loaded_cell_store_materializes_local_names_without_namespace_validation();
+            test_package_editor_source_loaded_cell_store_distinguishes_blank_and_erase();
+            test_package_editor_source_loaded_cell_store_preserves_loader_options();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

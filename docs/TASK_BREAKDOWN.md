@@ -29614,6 +29614,50 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.695 - Split PackageEditor CellStore executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large multi-shard CellStore PackageEditor test executable by
+moving each existing CellStore shard into its own source file and executable
+while preserving all public CTest names.
+
+Output:
+- Kept `tests/test_package_editor_cellstore.cpp` focused on the
+  `cellstore-core` shard.
+- Added:
+  - `tests/test_package_editor_cellstore_chunks.cpp`.
+  - `tests/test_package_editor_cellstore_source.cpp`.
+  - `tests/test_package_editor_cellstore_failures.cpp`.
+  - `tests/test_package_editor_cellstore_catalog.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_cellstore_core_tests`,
+  `fastxlsx_package_editor_cellstore_chunks_tests`,
+  `fastxlsx_package_editor_cellstore_source_tests`,
+  `fastxlsx_package_editor_cellstore_failures_tests`, and
+  `fastxlsx_package_editor_cellstore_catalog_tests`.
+- Kept `fastxlsx_package_editor_cellstore_tests` as a build-only aggregate
+  target depending on all CellStore shard executables.
+- Kept the existing CTest names `fastxlsx.package_editor.cellstore-core`,
+  `fastxlsx.package_editor.cellstore-chunks`,
+  `fastxlsx.package_editor.cellstore-source`,
+  `fastxlsx.package_editor.cellstore-failures`, and
+  `fastxlsx.package_editor.cellstore-catalog`; only the executable behind each
+  name changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor or CellStore
+  behavior change, no source-loading semantic expansion, no catalog repair
+  expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_cellstore_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.cellstore" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

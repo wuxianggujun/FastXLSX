@@ -516,7 +516,7 @@ std::filesystem::path output_path(std::string_view name)
 
 bool is_package_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "cellstore-core";
+    return shard == "all" || shard == "cellstore-catalog";
 }
 
 std::string_view package_editor_shard_from_args(int argc, char* argv[])
@@ -1610,626 +1610,924 @@ void rewrite_linked_object_source_package(const LinkedObjectSourcePackage& sourc
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
 
-void test_package_editor_patches_cell_store_sheet_data_by_sheet_name()
+void test_package_editor_source_loaded_cell_store_missing_entry_failure_preserves_editor_state()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-cellstore-sheetdata-source.xlsx");
+    SourcePackage source = write_missing_worksheet_entry_source_package(
+        "fastxlsx-package-editor-source-cellstore-missing-entry-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"docProps/core.xml", source.core_properties},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
     const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cellstore-sheetdata-output.xlsx");
-
-    fastxlsx::detail::CellStore store;
-    store.set_cell(1, 1, fastxlsx::CellValue::number(42.25));
-    store.set_cell(1, 2, fastxlsx::CellValue::text(" <cell & value> "));
-    store.set_cell(2, 1, fastxlsx::CellValue::formula("SUM(A1:A1)&\"<done>\""));
-    store.set_cell(3, 3, fastxlsx::CellValue::boolean(false));
-    store.set_cell(4, 1, fastxlsx::CellValue::blank());
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+        output_path("fastxlsx-package-editor-source-cellstore-missing-entry-output.xlsx");
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Sheet1", replacement_sheet_data_source);
-
-    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
-    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
-
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr,
-        "CellStore sheetData handoff should resolve the target worksheet part");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "CellStore sheetData handoff should use bounded local worksheet rewrite");
-    check(worksheet_plan->reason.find("bounded local sheetData replacement")
-            != std::string::npos,
-        "CellStore sheetData handoff should disclose bounded local rewrite reason");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "CellStore sheetData handoff should mirror worksheet rewrite in the manifest");
-
-    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
-    check(workbook_plan != nullptr,
-        "CellStore sheetData handoff should plan workbook calc metadata rewrite");
-    check(workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "CellStore sheetData handoff should rewrite workbook calc metadata");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "CellStore sheetData handoff should remove stale calcChain by default");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "CellStore sheetData handoff should request full calculation");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"bounded local worksheet XML rewrite", "not the large-file streaming"}),
-        "CellStore sheetData handoff should retain bounded local rewrite audit note");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"by-name sheetData chunk-source replacement", "without routing through",
-                  "materialized sheetData string"}),
-        "CellStore sheetData handoff should not route through a materialized sheetData string");
-    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
-              worksheet_part, PayloadAuditKind::Formula,
-              PayloadAuditScope::SheetDataReplacement, "f",
-              {"formulas", "calcChain policy"}),
-        "CellStore sheetData handoff should audit formula payload dependencies");
-
-    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
-    check(output_plan.full_calculation_on_load,
-        "CellStore sheetData output plan should expose full calculation request");
-    check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "CellStore sheetData output plan should expose workbook metadata rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-        "CellStore sheetData output plan should expose worksheet local-DOM rewrite");
-    check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
-        "CellStore sheetData output plan should omit stale calcChain");
-    check_output_entry_plan(output_plan.entries, "custom/opaque.bin",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-        "CellStore sheetData output plan should preserve unknown bytes");
-    check(has_payload_audit(output_plan.worksheet_payload_dependency_audits,
-              worksheet_part, PayloadAuditKind::Formula,
-              PayloadAuditScope::SheetDataReplacement, "f",
-              {"formulas", "calcChain policy"}),
-        "CellStore sheetData output plan should keep formula dependency audit");
-
-    editor.save_as(output);
-
-    const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/calcChain.xml") == entries.end(),
-        "CellStore sheetData output should omit stale calcChain");
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
-        "CellStore sheetData output should keep sheet lookup readable");
-
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<sheetData><row r="1"><c r="A1"><v>42.25</v></c>)",
-        "CellStore sheetData output should write generated first row payload");
-    check_contains(worksheet_xml, R"(</row><row r="2"><c r="A2"><f>)",
-        "CellStore sheetData output should group generated sparse rows");
-    check_contains(worksheet_xml,
-        R"(<t xml:space="preserve"> &lt;cell &amp; value&gt; </t>)",
-        "CellStore sheetData output should preserve and escape inline text");
-    check_contains(worksheet_xml, R"(<f>SUM(A1:A1)&amp;"&lt;done&gt;"</f>)",
-        "CellStore sheetData output should escape formula text");
-    check_contains(worksheet_xml, R"(<c r="C3" t="b"><v>0</v></c>)",
-        "CellStore sheetData output should write boolean records");
-    check_contains(worksheet_xml, R"(<c r="A4"/>)",
-        "CellStore sheetData output should write explicit blank records");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "CellStore sheetData output should remove old source formula rows");
-
-    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
-    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
-        "CellStore sheetData output should request workbook recalculation");
-    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
-        "CellStore sheetData output should remove calcChain content type");
-    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
-        "relationships/calcChain",
-        "CellStore sheetData output should remove calcChain relationship");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "CellStore sheetData output should preserve unknown bytes");
-}
-
-void test_package_editor_patches_cell_store_sheet_data_with_writer_style()
-{
-    const std::filesystem::path source_path =
-        output_path("fastxlsx-package-editor-cellstore-styled-sheetdata-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cellstore-styled-sheetdata-output.xlsx");
-
-    fastxlsx::StyleId text_style;
-    {
-        auto workbook = fastxlsx::WorkbookWriter::create(source_path);
-        text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
-        auto sheet = workbook.add_worksheet("Styled");
-        sheet.append_row({fastxlsx::CellView::text("old plain")});
-        workbook.close();
-    }
-
-    const auto source_entries = fastxlsx::test::read_zip_entries(source_path);
-    check(source_entries.find("xl/styles.xml") != source_entries.end(),
-        "styled CellStore source should contain styles.xml");
-    const std::string styles_before = source_entries.at("xl/styles.xml");
-
-    fastxlsx::detail::CellStore store;
-    store.set_cell(1, 1, fastxlsx::CellValue::text("styled replacement").with_style(text_style));
-    store.set_cell(1, 2,
-        fastxlsx::CellValue::text("explicit default").with_style(fastxlsx::StyleId {}));
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source_path);
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Styled", replacement_sheet_data_source);
-
-    using PayloadAuditKind = fastxlsx::detail::WorksheetPayloadDependencyAuditKind;
-    using PayloadAuditScope = fastxlsx::detail::WorksheetPayloadDependencyAuditScope;
-
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName styles_part("/xl/styles.xml");
-    check(has_payload_audit(editor.edit_plan().worksheet_payload_dependency_audits(),
-              worksheet_part, PayloadAuditKind::Styles,
-              PayloadAuditScope::SheetDataReplacement, "c",
-              {"style id references", "xl/styles.xml"}),
-        "CellStore styled sheetData handoff should audit style id references");
-
-    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
-    check_output_entry_plan(output_plan.entries, "xl/styles.xml",
-        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, true, false,
-        "CellStore styled sheetData output plan should preserve styles");
-    check(has_payload_audit(output_plan.worksheet_payload_dependency_audits,
-              worksheet_part, PayloadAuditKind::Styles,
-              PayloadAuditScope::SheetDataReplacement, "c",
-              {"style id references", "xl/styles.xml"}),
-        "CellStore styled sheetData output plan should keep style dependency audit");
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml,
-        R"(<c r="A1" s="1" t="inlineStr"><is><t>styled replacement</t></is></c>)",
-        "CellStore styled sheetData output should write caller-supplied StyleId");
-    check_contains(worksheet_xml,
-        R"(<c r="B1" t="inlineStr"><is><t>explicit default</t></is></c>)",
-        "CellStore styled sheetData output should omit explicit default StyleId");
-    check_not_contains(worksheet_xml, R"(s="0")",
-        "CellStore styled sheetData output should not write default style attributes");
-    check(output_reader.read_entry("xl/styles.xml") == styles_before,
-        "CellStore styled sheetData output should preserve styles.xml bytes");
-    check(output_reader.content_types().override_for(styles_part) != nullptr,
-        "CellStore styled sheetData output should preserve styles content type");
-}
-
-void test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name()
-{
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheetdata-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-sheetdata-output.xlsx");
 
     const fastxlsx::detail::PackageReader source_reader =
         fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    check(store.cell_count() == 1,
-        "source-backed CellStore handoff should load the source worksheet cells");
-    const fastxlsx::detail::CellRecord* source_formula = store.try_cell(1, 1);
-    check(source_formula != nullptr && source_formula->kind == fastxlsx::CellValueKind::Formula,
-        "source-backed CellStore handoff should load source formula cells");
-    check(source_formula->text_value == "SUM(B1:C1)",
-        "source-backed CellStore handoff formula payload mismatch");
-
-    store.erase_cell(1, 1);
-    store.set_cell(1, 2, fastxlsx::CellValue::text("loaded & patched"));
-    store.set_cell(1, 3, fastxlsx::CellValue::blank());
-    check(store.try_cell(1, 1) == nullptr,
-        "source-backed CellStore mutation should remove erased records");
-    check(store.try_cell(1, 3) != nullptr
-            && store.try_cell(1, 3)->kind == fastxlsx::CellValueKind::Blank,
-        "source-backed CellStore mutation should keep explicit blank records");
-
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Sheet1", replacement_sheet_data_source);
-
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr,
-        "source-backed CellStore handoff should plan the worksheet rewrite");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore handoff should use bounded sheetData rewrite");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore handoff should remove stale calcChain by default");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore handoff should request workbook recalculation");
-
-    editor.save_as(output);
-
-    const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/calcChain.xml") == entries.end(),
-        "source-backed CellStore output should omit stale calcChain");
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Sheet1") == worksheet_part,
-        "source-backed CellStore output should keep sheet lookup readable");
-
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml,
-        R"(<sheetData><row r="1"><c r="B1" t="inlineStr"><is><t>loaded &amp; patched</t></is></c><c r="C1"/></row></sheetData>)",
-        "source-backed CellStore output should write mutated sparse sheetData");
-    check_not_contains(worksheet_xml, R"(r="A1")",
-        "source-backed CellStore output should omit erased source records");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "source-backed CellStore output should remove old source formula payload");
-
-    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
-        "source-backed CellStore output should request workbook recalculation");
-    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
-        "source-backed CellStore output should remove calcChain content type");
-    check_not_contains(output_reader.read_entry("xl/_rels/workbook.xml.rels"),
-        "relationships/calcChain",
-        "source-backed CellStore output should remove calcChain relationship");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore output should preserve unknown bytes");
-}
-
-void test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename()
-{
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-planned-rename-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-planned-rename-output.xlsx");
-
-    const fastxlsx::detail::PackageReader source_reader =
-        fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    check(store.try_cell(1, 1) != nullptr
-            && store.try_cell(1, 1)->kind == fastxlsx::CellValueKind::Formula,
-        "source-backed CellStore planned-name test should load source formula");
-    store.set_cell(2, 2, fastxlsx::CellValue::text("planned-name handoff"));
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    editor.rename_sheet_catalog_entry("Sheet1", "Loaded Data");
-
-    const std::size_t renamed_plan_size = editor.edit_plan().size();
-    const std::size_t renamed_note_count = editor.edit_plan().notes().size();
-    const fastxlsx::detail::CalcChainAction renamed_calc_chain_action =
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
         editor.edit_plan().calc_chain_action();
 
-    std::size_t sheet_data_chunk_reads = 0;
-    fastxlsx::detail::WorksheetInputChunkCallback sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    fastxlsx::detail::WorksheetInputChunkCallback counted_sheet_data_source =
-        [&sheet_data_source, &sheet_data_chunk_reads](std::string& output_chunk) {
-            ++sheet_data_chunk_reads;
-            return sheet_data_source(output_chunk);
-        };
-
-    bool failed_old_name = false;
+    bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            "Sheet1", counted_sheet_data_source);
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
     } catch (const fastxlsx::FastXlsxError& error) {
-        failed_old_name = true;
-        check_contains(error.what(), "workbook sheet name is not present",
-            "source-backed CellStore old-name handoff should use planned catalog");
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore missing entry failure should identify the workbook sheet");
+        check_contains(error.what(), "workbook sheet relationship targets an unknown part",
+            "source-backed CellStore missing entry failure should report the catalog target gap");
     }
-    check(failed_old_name,
-        "PackageEditor should reject source name after queued rename for CellStore handoff");
+    check(failed,
+        "source-backed CellStore load should fail when the target worksheet entry is missing");
 
-    check(editor.edit_plan().size() == renamed_plan_size,
-        "source-backed CellStore old-name failure should preserve queued rename plan size");
-    check(editor.edit_plan().notes().size() == renamed_note_count,
-        "source-backed CellStore old-name failure should not append notes");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
-        "source-backed CellStore old-name failure should not queue calcChain removal");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore missing entry failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore missing entry failure should not append notes");
+    check(editor.edit_plan().find_removed_part(worksheet_part) == nullptr,
+        "source-backed CellStore missing entry failure should not queue worksheet removal");
     check(!editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore old-name failure should not request recalculation");
-    check(editor.edit_plan().calc_chain_action() == renamed_calc_chain_action,
-        "source-backed CellStore old-name failure should not change calcChain policy");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore old-name failure should preserve workbook rename rewrite");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "source-backed CellStore old-name failure should leave worksheet copy-original");
-    check_manifest_write_mode(editor, calc_chain_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "source-backed CellStore old-name failure should leave calcChain copy-original");
-    check(sheet_data_chunk_reads == 0,
-        "source-backed CellStore old-name failure should not consume sheetData chunks");
-
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Loaded Data", counted_sheet_data_source);
-    check(sheet_data_chunk_reads > 0,
-        "source-backed CellStore planned-name handoff should consume sheetData chunks");
-
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr
-            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore planned-name handoff should rewrite the worksheet");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore planned-name handoff should remove stale calcChain");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore planned-name handoff should request recalculation");
+        "source-backed CellStore missing entry failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore missing entry failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part) == nullptr,
+        "source-backed CellStore missing entry failure should not invent the missing worksheet part");
 
     editor.save_as(output);
-
-    const auto entries = fastxlsx::test::read_zip_entries(output);
-    check(entries.find("xl/calcChain.xml") == entries.end(),
-        "source-backed CellStore planned-name output should omit stale calcChain");
-
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Loaded Data") == worksheet_part,
-        "source-backed CellStore planned-name output should expose renamed sheet");
-
-    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
-    check_contains(workbook_xml, R"(name="Loaded Data")",
-        "source-backed CellStore planned-name output should preserve renamed catalog");
-    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
-        "source-backed CellStore planned-name output should request workbook recalculation");
-
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<f>SUM(B1:C1)</f>)",
-        "source-backed CellStore planned-name output should retain loaded source formula");
-    check_contains(worksheet_xml,
-        R"(<c r="B2" t="inlineStr"><is><t>planned-name handoff</t></is></c>)",
-        "source-backed CellStore planned-name output should write the mutated cell");
-    check_not_contains(worksheet_xml, "<v>3</v>",
-        "source-backed CellStore planned-name output should drop old cached formula value");
+    check(output_reader.find_entry("xl/worksheets/sheet1.xml") == nullptr,
+        "source-backed CellStore missing entry output should not invent worksheet XML");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore missing entry output should preserve workbook bytes");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore planned-name output should preserve unknown bytes");
+        "source-backed CellStore missing entry output should preserve unknown bytes");
 }
 
-void test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement()
+void test_package_editor_source_loaded_cell_store_crc_failure_preserves_editor_state()
 {
     const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-queued-worksheet-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-queued-worksheet-output.xlsx");
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-crc-source.xlsx");
+    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(corrupted_source_bytes, "SUM(B1:C1)");
+    write_binary_file(source.path, corrupted_source_bytes);
 
     const fastxlsx::detail::PackageReader source_reader =
         fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    check(store.try_cell(1, 1) != nullptr
-            && store.try_cell(1, 1)->kind == fastxlsx::CellValueKind::Formula,
-        "source-backed CellStore queued-worksheet test should load source formula");
-    store.erase_cell(1, 1);
-    store.set_cell(2, 2, fastxlsx::CellValue::text("queued CellStore patch"));
-    store.set_cell(4, 1, fastxlsx::CellValue::blank());
-
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
     const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
     const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    const std::string queued_worksheet =
-        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheetViews><sheetView workbookViewId="24"/></sheetViews>)"
-        R"(<sheetData><row r="9"><c r="C9"><v>999</v></c></row></sheetData>)"
-        R"(<autoFilter ref="B2:C4"/>)"
-        R"(<extLst><ext uri="{cellstore-queued-wrapper}"/></extLst>)"
-        R"(</worksheet>)";
-    replace_worksheet_part_by_name_from_single_chunk_source(editor, "Sheet1", queued_worksheet);
-
-    const fastxlsx::detail::WorksheetInputChunkCallback replacement_sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Sheet1", replacement_sheet_data_source);
-
-    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-    check(worksheet_plan != nullptr,
-        "source-backed CellStore queued worksheet patch should keep worksheet in the edit plan");
-    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore queued worksheet patch should finish as local-DOM rewrite");
-    const auto* workbook_plan = editor.edit_plan().find_part(workbook_part);
-    check(workbook_plan != nullptr
-            && workbook_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore queued worksheet patch should keep workbook calc rewrite");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore queued worksheet patch should keep stale calcChain removed");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore queued worksheet patch should keep full calculation request");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"pull-based chunk source", "file-backed staged chunk",
-                  "follow-up planned-input transforms"}),
-        "source-backed CellStore queued worksheet patch should preserve staged-input evidence");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"sheetData replacement", "view metadata", "caller review"}),
-        "source-backed CellStore queued worksheet patch should audit queued view metadata");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"sheetData replacement", "autoFilter metadata", "caller review"}),
-        "source-backed CellStore queued worksheet patch should audit queued autoFilter metadata");
-    check(has_note_containing(editor.edit_plan().notes(),
-              {"sheetData replacement", "extension metadata", "caller review"}),
-        "source-backed CellStore queued worksheet patch should audit queued extension metadata");
-
-    editor.save_as(output);
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml,
-        R"(<sheetViews><sheetView workbookViewId="24"/></sheetViews>)",
-        "source-backed CellStore queued worksheet output should preserve queued sheetViews");
-    check_contains(worksheet_xml,
-        R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>queued CellStore patch</t></is></c></row><row r="4"><c r="A4"/></row></sheetData>)",
-        "source-backed CellStore queued worksheet output should write CellStore sheetData");
-    check_contains(worksheet_xml, R"(<autoFilter ref="B2:C4"/>)",
-        "source-backed CellStore queued worksheet output should preserve queued autoFilter");
-    check_contains(worksheet_xml, R"(<extLst><ext uri="{cellstore-queued-wrapper}"/></extLst>)",
-        "source-backed CellStore queued worksheet output should preserve queued extLst");
-    check_not_contains(worksheet_xml, R"(<v>999</v>)",
-        "source-backed CellStore queued worksheet output should remove queued old rows");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "source-backed CellStore queued worksheet output should not resurrect erased source formula");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "source-backed CellStore queued worksheet output should keep stale calcChain omitted");
-    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
-        "source-backed CellStore queued worksheet output should keep workbook recalculation request");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore queued worksheet output should preserve unknown bytes");
-}
-
-void test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet()
-{
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-source-cellstore-rename-queued-worksheet-output.xlsx");
-
-    const fastxlsx::detail::PackageReader source_reader =
-        fastxlsx::detail::PackageReader::open(source.path);
-    fastxlsx::detail::CellStore store =
-        fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
-    store.erase_cell(1, 1);
-    store.set_cell(2, 2, fastxlsx::CellValue::text("renamed queued CellStore patch"));
-    store.set_cell(3, 3, fastxlsx::CellValue::blank());
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-
-    editor.rename_sheet_catalog_entry("Sheet1", "Renamed Queued");
-    const std::string queued_worksheet =
-        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheetViews><sheetView workbookViewId="52"/></sheetViews>)"
-        R"(<sheetData><row r="8"><c r="D8"><v>888</v></c></row></sheetData>)"
-        R"(<autoFilter ref="B2:D8"/>)"
-        R"(<extLst><ext uri="{renamed-queued-wrapper}"/></extLst>)"
-        R"(</worksheet>)";
-    replace_worksheet_part_by_name_from_single_chunk_source(
-        editor, "Renamed Queued", queued_worksheet);
-
-    const std::size_t queued_plan_size = editor.edit_plan().size();
-    const std::size_t queued_note_count = editor.edit_plan().notes().size();
-    const fastxlsx::detail::CalcChainAction queued_calc_chain_action =
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
         editor.edit_plan().calc_chain_action();
 
-    std::size_t sheet_data_chunk_reads = 0;
-    fastxlsx::detail::WorksheetInputChunkCallback sheet_data_source =
-        fastxlsx::detail::cell_store_sheet_data_chunk_source(store);
-    fastxlsx::detail::WorksheetInputChunkCallback counted_sheet_data_source =
-        [&sheet_data_source, &sheet_data_chunk_reads](std::string& output_chunk) {
-            ++sheet_data_chunk_reads;
-            return sheet_data_source(output_chunk);
-        };
-
-    bool failed_old_name = false;
+    bool failed = false;
     try {
-        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            "Sheet1", counted_sheet_data_source);
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
     } catch (const fastxlsx::FastXlsxError& error) {
-        failed_old_name = true;
-        check_contains(error.what(), "workbook sheet name is not present",
-            "source-backed CellStore rename+queued worksheet old-name failure should use planned catalog");
+        failed = true;
+        check_contains(error.what(), "failed to load CellStore from workbook sheet 'Sheet1'",
+            "source-backed CellStore CRC failure should identify the workbook sheet");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "source-backed CellStore CRC failure should identify the worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "source-backed CellStore CRC failure should identify the worksheet ZIP entry");
+        check_contains(error.what(), "CRC mismatch",
+            "source-backed CellStore CRC failure should preserve the underlying ZIP error");
+        check_contains(error.what(), "expected",
+            "source-backed CellStore CRC failure should report expected CRC");
+        check_contains(error.what(), "actual",
+            "source-backed CellStore CRC failure should report actual CRC");
     }
-    check(failed_old_name,
-        "PackageEditor should reject source name after queued rename and worksheet replacement");
+    check(failed, "source-backed CellStore load should fail on corrupt worksheet bytes");
 
-    check(editor.edit_plan().size() == queued_plan_size,
-        "source-backed CellStore rename+queued worksheet old-name failure should preserve edit-plan size");
-    check(editor.edit_plan().notes().size() == queued_note_count,
-        "source-backed CellStore rename+queued worksheet old-name failure should not append notes");
-    check(editor.edit_plan().calc_chain_action() == queued_calc_chain_action,
-        "source-backed CellStore rename+queued worksheet old-name failure should preserve calc policy");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep stale calcChain removed");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore rename+queued worksheet old-name failure should keep recalculation request");
-    check_manifest_write_mode(editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep workbook rewrite");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep queued worksheet rewrite");
-    check(editor.manifest().find_part(calc_chain_part) == nullptr,
-        "source-backed CellStore rename+queued worksheet old-name failure should keep calcChain omitted");
-    check(sheet_data_chunk_reads == 0,
-        "source-backed CellStore rename+queued worksheet old-name failure should not consume chunks");
-
-    editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-        "Renamed Queued", counted_sheet_data_source);
-    check(sheet_data_chunk_reads > 0,
-        "source-backed CellStore rename+queued worksheet planned-name handoff should consume chunks");
-
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore CRC failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore CRC failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore CRC failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore CRC failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore CRC failure should not change calcChain policy");
     const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
     check(worksheet_plan != nullptr
-            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "source-backed CellStore rename+queued worksheet planned-name handoff should local-DOM-rewrite worksheet");
-    check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-        "source-backed CellStore rename+queued worksheet planned-name handoff should keep stale calcChain removed");
-    check(editor.edit_plan().full_calculation_on_load(),
-        "source-backed CellStore rename+queued worksheet planned-name handoff should keep recalculation request");
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore CRC failure should keep worksheet copy-original");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore CRC failure should not dirty the worksheet manifest");
+}
+
+void test_package_editor_source_loaded_cell_store_corrupt_workbook_catalog_preserves_editor_state()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-workbook-crc-source.xlsx");
+    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
+    corrupt_first_occurrence(corrupted_source_bytes, "Sheet1");
+    write_binary_file(source.path, corrupted_source_bytes);
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore workbook CRC failure should identify the requested sheet");
+        check_contains(error.what(), "failed to read materialized workbook sheet catalog XML",
+            "source-backed CellStore workbook CRC failure should identify catalog materialization");
+        check_contains(error.what(), "ZIP entry 'xl/workbook.xml'",
+            "source-backed CellStore workbook CRC failure should identify the workbook ZIP entry");
+        check_contains(error.what(), "CRC mismatch",
+            "source-backed CellStore workbook CRC failure should preserve the ZIP error");
+        check_contains(error.what(), "expected",
+            "source-backed CellStore workbook CRC failure should report expected CRC");
+        check_contains(error.what(), "actual",
+            "source-backed CellStore workbook CRC failure should report actual CRC");
+    }
+    check(failed, "source-backed CellStore load should fail on corrupt workbook catalog bytes");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore workbook CRC failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore workbook CRC failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore workbook CRC failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore workbook CRC failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore workbook CRC failure should not change calcChain policy");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr
+            && worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore workbook CRC failure should keep worksheet copy-original");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore workbook CRC failure should not dirty the worksheet manifest");
+}
+
+void test_package_editor_source_loaded_cell_store_duplicate_sheet_name_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-duplicate-sheet-source.xlsx");
+    source.content_types =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(<Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>)"
+        R"(</Types>)";
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>)"
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets>)"
+        R"(<sheet name="Sheet1" sheetId="1" r:id="rId1"/>)"
+        R"(<sheet name="Sheet1" sheetId="2" r:id="rId2"/>)"
+        R"(</sheets>)"
+        R"(<calcPr calcId="1" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+    const std::string second_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>222</v></c></row></sheetData></worksheet>)";
+    fastxlsx::detail::write_package(source.path,
+        {
+            {"[Content_Types].xml", source.content_types},
+            {"_rels/.rels", source.package_relationships},
+            {"xl/workbook.xml", source.workbook},
+            {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
+            {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"xl/worksheets/sheet2.xml", second_worksheet},
+            {"xl/calcChain.xml", source.calc_chain},
+            {"custom/opaque.bin", source.unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-duplicate-sheet-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName second_worksheet_part("/xl/worksheets/sheet2.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore duplicate sheet failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet name is ambiguous",
+            "source-backed CellStore duplicate sheet failure should preserve the catalog diagnostic");
+    }
+    check(failed, "source-backed CellStore load should fail on duplicate sheet names");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore duplicate sheet failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore duplicate sheet failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore duplicate sheet failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore duplicate sheet failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore duplicate sheet failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore duplicate sheet failure should keep first worksheet copy-original");
+    check(editor.manifest().find_part(second_worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore duplicate sheet failure should keep second worksheet copy-original");
 
     editor.save_as(output);
-
     const fastxlsx::detail::PackageReader output_reader =
         fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.worksheet_part_by_sheet_name("Renamed Queued") == worksheet_part,
-        "source-backed CellStore rename+queued worksheet output should expose planned sheet name");
-    bool old_name_failed = false;
-    try {
-        (void)output_reader.worksheet_part_by_sheet_name("Sheet1");
-    } catch (const std::exception&) {
-        old_name_failed = true;
-    }
-    check(old_name_failed,
-        "source-backed CellStore rename+queued worksheet output should not expose old sheet name");
-
-    const std::string workbook_xml = output_reader.read_entry("xl/workbook.xml");
-    check_contains(workbook_xml, R"(name="Renamed Queued")",
-        "source-backed CellStore rename+queued worksheet output should preserve renamed catalog");
-    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
-        "source-backed CellStore rename+queued worksheet output should keep recalculation request");
-
-    const std::string worksheet_xml =
-        output_reader.read_entry("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml,
-        R"(<sheetViews><sheetView workbookViewId="52"/></sheetViews>)",
-        "source-backed CellStore rename+queued worksheet output should preserve queued sheetViews");
-    check_contains(worksheet_xml,
-        R"(<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>renamed queued CellStore patch</t></is></c></row><row r="3"><c r="C3"/></row></sheetData>)",
-        "source-backed CellStore rename+queued worksheet output should write planned-name CellStore sheetData");
-    check_contains(worksheet_xml, R"(<autoFilter ref="B2:D8"/>)",
-        "source-backed CellStore rename+queued worksheet output should preserve queued autoFilter");
-    check_contains(worksheet_xml, R"(<extLst><ext uri="{renamed-queued-wrapper}"/></extLst>)",
-        "source-backed CellStore rename+queued worksheet output should preserve queued extLst");
-    check_not_contains(worksheet_xml, R"(<v>888</v>)",
-        "source-backed CellStore rename+queued worksheet output should remove queued old rows");
-    check_not_contains(worksheet_xml, "SUM(B1:C1)",
-        "source-backed CellStore rename+queued worksheet output should not resurrect erased source formula");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "source-backed CellStore rename+queued worksheet output should keep stale calcChain omitted");
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore duplicate sheet output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore duplicate sheet output should preserve first worksheet bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet2.xml") == second_worksheet,
+        "source-backed CellStore duplicate sheet output should preserve second worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore duplicate sheet output should preserve calcChain bytes");
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "source-backed CellStore rename+queued worksheet output should preserve unknown bytes");
+        "source-backed CellStore duplicate sheet output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_missing_sheet_relationship_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-missing-sheet-rel-source.xlsx");
+    source.workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="missingRel"/></sheets>)"
+        R"(<calcPr calcId="1" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-missing-sheet-rel-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore missing sheet relationship failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet relationship id is not present in workbook .rels",
+            "source-backed CellStore missing sheet relationship failure should preserve the catalog diagnostic");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the sheet relationship id is absent");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore missing sheet relationship failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore missing sheet relationship failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore missing sheet relationship failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore missing sheet relationship failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore missing sheet relationship failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore missing sheet relationship failure should keep worksheet copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore missing sheet relationship output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+        "source-backed CellStore missing sheet relationship output should preserve workbook rels bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore missing sheet relationship output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore missing sheet relationship output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore missing sheet relationship output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_catalog_attribute_preserves_editor_state()
+{
+    struct SheetCatalogAttributeFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* workbook_xml;
+        const char* expected_diagnostic;
+    };
+
+    const SheetCatalogAttributeFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-missing-sheet-rel-attr-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-missing-sheet-rel-attr-output.xlsx",
+            R"(<workbook><sheets><sheet name="Sheet1" sheetId="1"/></sheets></workbook>)",
+            "workbook sheet is missing relationship id",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-wrong-sheet-rel-ns-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-wrong-sheet-rel-ns-output.xlsx",
+            R"(<workbook xmlns:x="urn:fastxlsx:not-relationships"><sheets><sheet name="Sheet1" sheetId="1" x:id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing relationship id",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-unqualified-sheet-rel-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-unqualified-sheet-rel-output.xlsx",
+            R"(<workbook><sheets><sheet name="Sheet1" sheetId="1" id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing relationship id",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-name-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-name-output.xlsx",
+            R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:fastxlsx:not-workbook"><sheets><sheet x:name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing name",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-id-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-namespaced-sheet-id-output.xlsx",
+            R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:x="urn:fastxlsx:not-workbook"><sheets><sheet name="Sheet1" x:sheetId="1" r:id="rId1"/></sheets></workbook>)",
+            "workbook sheet is missing sheetId",
+        },
+    };
+
+    for (const SheetCatalogAttributeFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.workbook = test_case.workbook_xml;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+                "source-backed CellStore sheet catalog attribute failure should identify the requested sheet");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "source-backed CellStore sheet catalog attribute failure should preserve the catalog diagnostic");
+        }
+        check(failed,
+            "source-backed CellStore load should fail for invalid workbook sheet catalog attributes");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "source-backed CellStore sheet catalog attribute failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "source-backed CellStore sheet catalog attribute failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "source-backed CellStore sheet catalog attribute failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "source-backed CellStore sheet catalog attribute failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "source-backed CellStore sheet catalog attribute failure should not change calcChain policy");
+        check(editor.manifest().find_part(worksheet_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet catalog attribute failure should keep worksheet copy-original");
+        check(editor.manifest().find_part(calc_chain_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet catalog attribute failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "source-backed CellStore sheet catalog attribute output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "source-backed CellStore sheet catalog attribute output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "source-backed CellStore sheet catalog attribute output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "source-backed CellStore sheet catalog attribute output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "source-backed CellStore sheet catalog attribute output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_relationship_type_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheet-rel-type-source.xlsx");
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="worksheets/sheet1.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-sheet-rel-type-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore sheet relationship type failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet relationship is not a worksheet relationship",
+            "source-backed CellStore sheet relationship type failure should preserve the catalog diagnostic");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the sheet relationship type is not worksheet");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore sheet relationship type failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore sheet relationship type failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore sheet relationship type failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore sheet relationship type failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore sheet relationship type failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore sheet relationship type failure should keep worksheet copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore sheet relationship type output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+        "source-backed CellStore sheet relationship type output should preserve workbook rels bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore sheet relationship type output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore sheet relationship type output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore sheet relationship type output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_relationship_target_type_preserves_editor_state()
+{
+    CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-cellstore-sheet-target-type-source.xlsx");
+    source.workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="calcChain.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+        R"(</Relationships>)";
+    rewrite_calc_source_package(source);
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-source-cellstore-sheet-target-type-output.xlsx");
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+        editor.edit_plan().calc_chain_action();
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+            "source-backed CellStore sheet target type failure should identify the requested sheet");
+        check_contains(error.what(), "workbook sheet relationship target is not a worksheet part",
+            "source-backed CellStore sheet target type failure should preserve the catalog diagnostic");
+    }
+    check(failed,
+        "source-backed CellStore load should fail when the sheet relationship target is not a worksheet part");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "source-backed CellStore sheet target type failure should not mutate edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "source-backed CellStore sheet target type failure should not append notes");
+    check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+        "source-backed CellStore sheet target type failure should not queue calcChain removal");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "source-backed CellStore sheet target type failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+        "source-backed CellStore sheet target type failure should not change calcChain policy");
+    check(editor.manifest().find_part(worksheet_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore sheet target type failure should keep worksheet copy-original");
+    check(editor.manifest().find_part(calc_chain_part)->write_mode
+            == fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "source-backed CellStore sheet target type failure should keep calcChain copy-original");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+        "source-backed CellStore sheet target type output should preserve workbook bytes");
+    check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+        "source-backed CellStore sheet target type output should preserve workbook rels bytes");
+    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+        "source-backed CellStore sheet target type output should preserve worksheet bytes");
+    check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "source-backed CellStore sheet target type output should preserve calcChain bytes");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "source-backed CellStore sheet target type output should preserve unknown bytes");
+}
+
+void test_package_editor_source_loaded_cell_store_sheet_relationship_target_uri_preserves_editor_state()
+{
+    struct TargetFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* workbook_relationships;
+        const char* expected_diagnostic;
+    };
+
+    const TargetFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-external-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-external-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="https://example.invalid/sheet1.xml" TargetMode="External"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet relationship target cannot be external",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-uri-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-uri-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml?version=1"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet relationship target must be a package part",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-incomplete-percent-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-incomplete-percent-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml%"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is incomplete",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-invalid-percent-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-invalid-percent-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet%GG.xml"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is invalid",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-sheet-null-percent-target-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-sheet-null-percent-target-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet%00.xml"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target cannot contain null bytes",
+        },
+    };
+
+    for (const TargetFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.workbook_relationships = test_case.workbook_relationships;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+                "source-backed CellStore sheet target URI failure should identify the requested sheet");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "source-backed CellStore sheet target URI failure should preserve the catalog diagnostic");
+        }
+        check(failed,
+            "source-backed CellStore load should fail for external or URI-qualified sheet relationship targets");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "source-backed CellStore sheet target URI failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "source-backed CellStore sheet target URI failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "source-backed CellStore sheet target URI failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "source-backed CellStore sheet target URI failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "source-backed CellStore sheet target URI failure should not change calcChain policy");
+        check(editor.manifest().find_part(worksheet_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet target URI failure should keep worksheet copy-original");
+        check(editor.manifest().find_part(calc_chain_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore sheet target URI failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "source-backed CellStore sheet target URI output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "source-backed CellStore sheet target URI output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "source-backed CellStore sheet target URI output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "source-backed CellStore sheet target URI output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "source-backed CellStore sheet target URI output should preserve unknown bytes");
+    }
+}
+
+void test_package_editor_source_loaded_cell_store_office_document_catalog_preserves_editor_state()
+{
+    struct OfficeDocumentFailureCase {
+        const char* source_name;
+        const char* output_name;
+        const char* package_relationships;
+        const char* expected_diagnostic;
+    };
+
+    const OfficeDocumentFailureCase cases[] = {
+        {
+            "fastxlsx-package-editor-source-cellstore-missing-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-missing-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="custom/opaque.bin"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog requires package officeDocument relationship",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-duplicate-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-duplicate-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog has multiple officeDocument relationships",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-external-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-external-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="https://example.invalid/workbook.xml" TargetMode="External"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog officeDocument target cannot be external",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-uri-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-uri-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml?version=1"/>)"
+            R"(</Relationships>)",
+            "workbook sheet catalog officeDocument target must be a package part",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-invalid-percent-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-invalid-percent-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook%GG.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is invalid",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-incomplete-percent-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-incomplete-percent-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml%"/>)"
+            R"(</Relationships>)",
+            "relationship target percent escape is incomplete",
+        },
+        {
+            "fastxlsx-package-editor-source-cellstore-null-percent-office-document-source.xlsx",
+            "fastxlsx-package-editor-source-cellstore-null-percent-office-document-output.xlsx",
+            R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+            R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook%00.xml"/>)"
+            R"(</Relationships>)",
+            "relationship target cannot contain null bytes",
+        },
+    };
+
+    for (const OfficeDocumentFailureCase& test_case : cases) {
+        CalcSourcePackage source = write_calc_source_package(test_case.source_name);
+        source.package_relationships = test_case.package_relationships;
+        rewrite_calc_source_package(source);
+        const std::filesystem::path output = output_path(test_case.output_name);
+
+        const fastxlsx::detail::PackageReader source_reader =
+            fastxlsx::detail::PackageReader::open(source.path);
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+        const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+
+        bool failed = false;
+        try {
+            (void)fastxlsx::detail::load_cell_store_from_workbook_sheet(source_reader, "Sheet1");
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "failed to resolve workbook sheet 'Sheet1'",
+                "source-backed CellStore officeDocument catalog failure should identify the requested sheet");
+            check_contains(error.what(), test_case.expected_diagnostic,
+                "source-backed CellStore officeDocument catalog failure should preserve the catalog diagnostic");
+        }
+        check(failed,
+            "source-backed CellStore load should fail for invalid package officeDocument catalogs");
+
+        check(editor.edit_plan().size() == initial_plan_size,
+            "source-backed CellStore officeDocument catalog failure should not mutate edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "source-backed CellStore officeDocument catalog failure should not append notes");
+        check(editor.edit_plan().find_removed_part(calc_chain_part) == nullptr,
+            "source-backed CellStore officeDocument catalog failure should not queue calcChain removal");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "source-backed CellStore officeDocument catalog failure should not request recalculation");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "source-backed CellStore officeDocument catalog failure should not change calcChain policy");
+        check(editor.manifest().find_part(workbook_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore officeDocument catalog failure should keep workbook copy-original");
+        check(editor.manifest().find_part(worksheet_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore officeDocument catalog failure should keep worksheet copy-original");
+        check(editor.manifest().find_part(calc_chain_part)->write_mode
+                == fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "source-backed CellStore officeDocument catalog failure should keep calcChain copy-original");
+
+        editor.save_as(output);
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        check(output_reader.read_entry("_rels/.rels") == source.package_relationships,
+            "source-backed CellStore officeDocument catalog output should preserve package rels bytes");
+        check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
+            "source-backed CellStore officeDocument catalog output should preserve workbook bytes");
+        check(output_reader.read_entry("xl/_rels/workbook.xml.rels") == source.workbook_relationships,
+            "source-backed CellStore officeDocument catalog output should preserve workbook rels bytes");
+        check(output_reader.read_entry("xl/worksheets/sheet1.xml") == source.worksheet,
+            "source-backed CellStore officeDocument catalog output should preserve worksheet bytes");
+        check(output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+            "source-backed CellStore officeDocument catalog output should preserve calcChain bytes");
+        check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+            "source-backed CellStore officeDocument catalog output should preserve unknown bytes");
+    }
+
+    const std::filesystem::path root_source =
+        output_path("fastxlsx-package-editor-source-cellstore-root-office-document-source.xlsx");
+    const std::filesystem::path root_output =
+        output_path("fastxlsx-package-editor-source-cellstore-root-office-document-output.xlsx");
+    const std::string root_content_types =
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
+        R"(<Override PartName="/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)";
+    const std::string root_package_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="workbook.xml"/>)"
+        R"(</Relationships>)";
+    const std::string root_workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="sheet1.xml"/>)"
+        R"(</Relationships>)";
+    const std::string root_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<calcPr calcId="1" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+    const std::string root_worksheet =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>11</v></c></row></sheetData></worksheet>)";
+    const std::string root_unknown = std::string("root-office-document\0opaque", 27);
+    fastxlsx::detail::write_package(root_source,
+        {
+            {"[Content_Types].xml", root_content_types},
+            {"_rels/.rels", root_package_relationships},
+            {"workbook.xml", root_workbook},
+            {"_rels/workbook.xml.rels", root_workbook_relationships},
+            {"sheet1.xml", root_worksheet},
+            {"custom/opaque.bin", root_unknown},
+        },
+        {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
+
+    const fastxlsx::detail::PackageReader root_reader =
+        fastxlsx::detail::PackageReader::open(root_source);
+    fastxlsx::detail::CellStore root_store =
+        fastxlsx::detail::load_cell_store_from_workbook_sheet(root_reader, "Sheet1");
+    const fastxlsx::detail::CellRecord* a1 = root_store.try_cell(1, 1);
+    check(a1 != nullptr && a1->kind == fastxlsx::CellValueKind::Number
+            && a1->number_value == 11.0,
+        "source-backed CellStore should load root-level officeDocument worksheets");
+    root_store.set_cell(1, 2, fastxlsx::CellValue::text("root-edited"));
+
+    fastxlsx::detail::PackageEditor root_editor =
+        fastxlsx::detail::PackageEditor::open(root_source);
+    root_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+        "Sheet1", fastxlsx::detail::cell_store_sheet_data_chunk_source(root_store));
+    root_editor.save_as(root_output);
+
+    const fastxlsx::detail::PackageReader root_output_reader =
+        fastxlsx::detail::PackageReader::open(root_output);
+    check(root_output_reader.workbook_part() == fastxlsx::detail::PartName("/workbook.xml"),
+        "PackageEditor output should preserve the root-level officeDocument target");
+    check_contains(root_output_reader.read_entry("sheet1.xml"),
+        R"(<c r="B1" t="inlineStr"><is><t>root-edited</t></is></c>)",
+        "PackageEditor should patch root-level worksheet sheetData by name");
+    check_contains(root_output_reader.read_entry("workbook.xml"), R"(fullCalcOnLoad="1")",
+        "PackageEditor should request recalculation in the root-level workbook part");
+    check(root_output_reader.read_entry("_rels/workbook.xml.rels")
+            == root_workbook_relationships,
+        "PackageEditor should preserve root-level workbook relationships without stale calcChain");
+    check(root_output_reader.read_entry("custom/opaque.bin") == root_unknown,
+        "PackageEditor should preserve unrelated unknown bytes in root-level packages");
 }
 
 
@@ -2241,13 +2539,17 @@ int main(int argc, char* argv[])
         const std::string_view shard = package_editor_shard_from_args(argc, argv);
         std::cout << "fastxlsx.package_editor cellstore shard: " << shard << '\n';
 
-        if (should_run_package_editor_shard(shard, "cellstore-core")) {
-            test_package_editor_patches_cell_store_sheet_data_by_sheet_name();
-            test_package_editor_patches_cell_store_sheet_data_with_writer_style();
-            test_package_editor_patches_source_loaded_cell_store_sheet_data_by_sheet_name();
-            test_package_editor_source_loaded_cell_store_uses_planned_name_after_rename();
-            test_package_editor_source_loaded_cell_store_patches_queued_worksheet_replacement();
-            test_package_editor_source_loaded_cell_store_uses_planned_name_after_queued_rename_and_worksheet();
+        if (should_run_package_editor_shard(shard, "cellstore-catalog")) {
+            test_package_editor_source_loaded_cell_store_missing_entry_failure_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_crc_failure_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_corrupt_workbook_catalog_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_duplicate_sheet_name_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_missing_sheet_relationship_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_sheet_catalog_attribute_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_sheet_relationship_type_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_sheet_relationship_target_type_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_sheet_relationship_target_uri_preserves_editor_state();
+            test_package_editor_source_loaded_cell_store_office_document_catalog_preserves_editor_state();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

@@ -32695,7 +32695,9 @@ Output:
 - Added `tests/test_package_editor_sheetdata_planned_catalog.cpp` for
   planned workbook catalog by-name worksheet / sheetData coverage.
 - Kept `tests/test_package_editor_sheetdata_base.cpp` as the core sheetData
-  shard and made the included test groups selectable by local shard macros.
+  shard.
+- Added `tests/test_package_editor_sheetdata_common.hpp` for the shared
+  sheetData fixture/helper code used by the three sheetData base-family shards.
 - Added executable targets
   `fastxlsx_package_editor_sheetdata_by_name_tests` and
   `fastxlsx_package_editor_sheetdata_planned_catalog_tests`.

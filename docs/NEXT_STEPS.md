@@ -1784,6 +1784,15 @@ The final PackageEditor monolith split removes
 `fastxlsx.package_editor.policy` CTest names stay stable, and
 `fastxlsx_package_editor_tests` remains a build-only aggregate. This is still
 test organization only.
+The remaining WorkbookEditor monolith split removes
+`tests/test_workbook_editor.cpp` by moving `core`, `public`, and `public-edge`
+into `tests/test_workbook_editor_core.cpp`,
+`tests/test_workbook_editor_public.cpp`, and
+`tests/test_workbook_editor_public_edge.cpp`. The
+`fastxlsx.workbook_editor.core`, `fastxlsx.workbook_editor.public`, and
+`fastxlsx.workbook_editor.public-edge` CTest names stay stable, and
+`fastxlsx_workbook_editor_tests` remains a build-only aggregate. This is still
+test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -29383,6 +29383,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.689 - Split remaining WorkbookEditor core/public shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the remaining monolithic `tests/test_workbook_editor.cpp` source
+by splitting the `core`, `public`, and `public-edge` shard bodies into
+dedicated source files and executables while preserving the existing CTest
+names.
+
+Output:
+- Replaced `tests/test_workbook_editor.cpp` with:
+  - `tests/test_workbook_editor_core.cpp`.
+  - `tests/test_workbook_editor_public.cpp`.
+  - `tests/test_workbook_editor_public_edge.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_workbook_editor_core_shard_tests`,
+  `fastxlsx_workbook_editor_public_shard_tests`, and
+  `fastxlsx_workbook_editor_public_edge_shard_tests`.
+- Kept `fastxlsx_workbook_editor_tests` as a build-only aggregate target
+  depending on the three per-shard executables.
+- Kept the public CTest names `fastxlsx.workbook_editor.core`,
+  `fastxlsx.workbook_editor.public`, and
+  `fastxlsx.workbook_editor.public-edge`; only the executable behind each name
+  changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no WorkbookEditor behavior
+  change, no worksheet materialization semantic change, no Patch interaction
+  semantic change, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

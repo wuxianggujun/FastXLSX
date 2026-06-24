@@ -354,23 +354,49 @@ add_fastxlsx_package_editor_preservation_shard(
     preservation-linked fastxlsx_package_editor_preservation_linked_tests 60
 )
 
-add_executable(fastxlsx_package_editor_sheetdata_tests
-    test_package_editor_sheetdata.cpp
+function(add_fastxlsx_package_editor_sheetdata_target target source_file)
+    add_executable(${target}
+        ${source_file}
+    )
+    target_link_libraries(${target} PRIVATE FastXLSX::fastxlsx)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_compile_definitions(${target} PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    if(FASTXLSX_ENABLE_MINIZIP_NG)
+        target_link_libraries(${target} PRIVATE MINIZIP::minizip-ng)
+        target_compile_definitions(${target} PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+    endif()
+endfunction()
+
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_base_tests
+    test_package_editor_sheetdata_base.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_catalog_tests
+    test_package_editor_sheetdata_catalog.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_guards_tests
+    test_package_editor_sheetdata_guards.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_linked_tests
+    test_package_editor_sheetdata_linked.cpp
 )
 
-target_link_libraries(fastxlsx_package_editor_sheetdata_tests PRIVATE FastXLSX::fastxlsx)
-target_compile_features(fastxlsx_package_editor_sheetdata_tests PRIVATE cxx_std_20)
-target_compile_definitions(fastxlsx_package_editor_sheetdata_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
-target_include_directories(fastxlsx_package_editor_sheetdata_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-if(FASTXLSX_ENABLE_MINIZIP_NG)
-    target_link_libraries(fastxlsx_package_editor_sheetdata_tests PRIVATE MINIZIP::minizip-ng)
-    target_compile_definitions(fastxlsx_package_editor_sheetdata_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
-endif()
+add_custom_target(fastxlsx_package_editor_sheetdata_tests
+    DEPENDS
+        fastxlsx_package_editor_sheetdata_base_tests
+        fastxlsx_package_editor_sheetdata_catalog_tests
+        fastxlsx_package_editor_sheetdata_guards_tests
+        fastxlsx_package_editor_sheetdata_linked_tests
+)
 
-function(add_fastxlsx_package_editor_sheetdata_shard shard timeout_seconds)
+function(add_fastxlsx_package_editor_sheetdata_shard shard target timeout_seconds)
     add_test(
         NAME fastxlsx.package_editor.${shard}
-        COMMAND fastxlsx_package_editor_sheetdata_tests --shard=${shard}
+        COMMAND ${target} --shard=${shard}
     )
     set_tests_properties(fastxlsx.package_editor.${shard} PROPERTIES
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -378,10 +404,16 @@ function(add_fastxlsx_package_editor_sheetdata_shard shard timeout_seconds)
     )
 endfunction()
 
-add_fastxlsx_package_editor_sheetdata_shard(sheetdata 60)
-add_fastxlsx_package_editor_sheetdata_shard(sheetdata-catalog 60)
-add_fastxlsx_package_editor_sheetdata_shard(sheetdata-guards 60)
-add_fastxlsx_package_editor_sheetdata_shard(sheetdata-linked 60)
+add_fastxlsx_package_editor_sheetdata_shard(sheetdata fastxlsx_package_editor_sheetdata_base_tests 60)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-catalog fastxlsx_package_editor_sheetdata_catalog_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-guards fastxlsx_package_editor_sheetdata_guards_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-linked fastxlsx_package_editor_sheetdata_linked_tests 60
+)
 
 add_executable(fastxlsx_package_editor_cellstore_tests
     test_package_editor_cellstore.cpp

@@ -29421,6 +29421,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.690 - Split PackageEditor sheetData executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the monolithic `tests/test_package_editor_sheetdata.cpp` source by
+splitting the existing sheetData shard bodies into dedicated source files and
+executables while preserving the existing CTest names.
+
+Output:
+- Replaced `tests/test_package_editor_sheetdata.cpp` with:
+  - `tests/test_package_editor_sheetdata_base.cpp`.
+  - `tests/test_package_editor_sheetdata_catalog.cpp`.
+  - `tests/test_package_editor_sheetdata_guards.cpp`.
+  - `tests/test_package_editor_sheetdata_linked.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_sheetdata_base_tests`,
+  `fastxlsx_package_editor_sheetdata_catalog_tests`,
+  `fastxlsx_package_editor_sheetdata_guards_tests`, and
+  `fastxlsx_package_editor_sheetdata_linked_tests`.
+- Kept `fastxlsx_package_editor_sheetdata_tests` as a build-only aggregate
+  target depending on the four per-shard executables.
+- Kept the public CTest names `fastxlsx.package_editor.sheetdata`,
+  `fastxlsx.package_editor.sheetdata-catalog`,
+  `fastxlsx.package_editor.sheetdata-guards`, and
+  `fastxlsx.package_editor.sheetdata-linked`; only the executable behind each
+  name changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no sheetData XML semantic change, no relationship repair expansion,
+  no linked-object lifecycle expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_sheetdata_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

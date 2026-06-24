@@ -318,12 +318,37 @@ add_fastxlsx_package_editor_target(
     test_package_editor_core_linked.cpp
 )
 add_fastxlsx_package_editor_target(
-    fastxlsx_package_editor_c5_tests
+    fastxlsx_package_editor_c5_core_tests
     test_package_editor_c5.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_c5_linked_tests
+    test_package_editor_c5_linked.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_c5_chunked_tests
+    test_package_editor_c5_chunked.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_c5_guards_tests
+    test_package_editor_c5_guards.cpp
+)
+add_fastxlsx_package_editor_target(
+    fastxlsx_package_editor_c5_large_tests
+    test_package_editor_c5_large.cpp
 )
 add_fastxlsx_package_editor_target(
     fastxlsx_package_editor_policy_tests
     test_package_editor_policy.cpp
+)
+
+add_custom_target(fastxlsx_package_editor_c5_tests
+    DEPENDS
+        fastxlsx_package_editor_c5_core_tests
+        fastxlsx_package_editor_c5_linked_tests
+        fastxlsx_package_editor_c5_chunked_tests
+        fastxlsx_package_editor_c5_guards_tests
+        fastxlsx_package_editor_c5_large_tests
 )
 
 add_custom_target(fastxlsx_package_editor_tests
@@ -349,7 +374,11 @@ endfunction()
 add_fastxlsx_package_editor_shard(core fastxlsx_package_editor_core_tests 60)
 add_fastxlsx_package_editor_shard(core-calc fastxlsx_package_editor_core_calc_tests 60)
 add_fastxlsx_package_editor_shard(core-linked fastxlsx_package_editor_core_linked_tests 60)
-add_fastxlsx_package_editor_shard(c5 fastxlsx_package_editor_c5_tests 60)
+add_fastxlsx_package_editor_shard(c5 fastxlsx_package_editor_c5_core_tests 60)
+add_fastxlsx_package_editor_shard(c5-linked fastxlsx_package_editor_c5_linked_tests 60)
+add_fastxlsx_package_editor_shard(c5-chunked fastxlsx_package_editor_c5_chunked_tests 60)
+add_fastxlsx_package_editor_shard(c5-guards fastxlsx_package_editor_c5_guards_tests 60)
+add_fastxlsx_package_editor_shard(c5-large fastxlsx_package_editor_c5_large_tests 60)
 add_fastxlsx_package_editor_shard(policy fastxlsx_package_editor_policy_tests 60)
 
 function(add_fastxlsx_package_editor_preservation_target target source_file)

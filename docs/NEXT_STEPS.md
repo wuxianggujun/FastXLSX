@@ -1870,6 +1870,18 @@ families. The existing `fastxlsx.streaming` CTest name stays stable for the
 core shard, new `fastxlsx.streaming.*` CTest names cover the split families,
 and `fastxlsx_streaming_writer_tests` remains a build-only aggregate. This is
 still test organization only.
+The PackageEditor C5 lane is also split by executable now:
+`tests/test_package_editor_c5.cpp` keeps the core file-backed transformer and
+current-worksheet failure diagnostics, while
+`tests/test_package_editor_c5_linked.cpp`,
+`tests/test_package_editor_c5_chunked.cpp`,
+`tests/test_package_editor_c5_guards.cpp`, and
+`tests/test_package_editor_c5_large.cpp` own the linked-object, chunked-output,
+staged-chunk guard, and large-window families. The existing
+`fastxlsx.package_editor.c5` CTest name stays stable for the core shard, new
+`fastxlsx.package_editor.c5-*` CTest names cover the split families, and
+`fastxlsx_package_editor_c5_tests` remains a build-only aggregate. This is
+still test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

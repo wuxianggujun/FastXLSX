@@ -322,7 +322,9 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   Zip64 的 entry count 或单 entry 未压缩大小，以及超过 ZIP 16-bit 字段的 entry name。
 - CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
   基础单元格编码。
-- CTest 测试 `fastxlsx.streaming`，覆盖当前流式 writer 写入骨架。
+- CTest 测试 `fastxlsx.streaming` 与 `fastxlsx.streaming.*` shard，覆盖当前流式
+  writer 写入骨架及已拆分的 styles、conditional formatting、metadata、images 和
+  sharedStrings 回归。
 - CTest 测试 `fastxlsx.opc`，覆盖内部 OPC manifest、content types、
   relationships 和 XML serializer 基础。
 - CTest 测试 `fastxlsx.package_reader`、`fastxlsx.workbook_editor`、

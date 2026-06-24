@@ -29707,6 +29707,55 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.streaming" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.697 - Split PackageEditor C5 executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageEditor C5 test executable by moving the current
+cell-replacement / staged-chunk families into dedicated source files and
+executables, while keeping the existing `fastxlsx.package_editor.c5` CTest name
+stable for the core shard and adding new `fastxlsx.package_editor.c5-*` shard
+names for linked-object, chunked-output, staged-chunk guard, and large-window
+coverage.
+
+Output:
+- Kept `tests/test_package_editor_c5.cpp` focused on the core file-backed
+  transformer handoff, chunked replacement payload, current worksheet source
+  read failure, missing current worksheet entry, malformed current worksheet
+  event, and sheetData current worksheet source-read diagnostics.
+- Added:
+  - `tests/test_package_editor_c5_linked.cpp`.
+  - `tests/test_package_editor_c5_chunked.cpp`.
+  - `tests/test_package_editor_c5_guards.cpp`.
+  - `tests/test_package_editor_c5_large.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_c5_core_tests`,
+  `fastxlsx_package_editor_c5_linked_tests`,
+  `fastxlsx_package_editor_c5_chunked_tests`,
+  `fastxlsx_package_editor_c5_guards_tests`, and
+  `fastxlsx_package_editor_c5_large_tests`.
+- Kept `fastxlsx_package_editor_c5_tests` as a build-only aggregate target
+  depending on all C5 shard executables, and kept
+  `fastxlsx_package_editor_tests` depending on that aggregate.
+- Kept `fastxlsx.package_editor.c5` for the core shard and added
+  `fastxlsx.package_editor.c5-linked`,
+  `fastxlsx.package_editor.c5-chunked`,
+  `fastxlsx.package_editor.c5-guards`, and
+  `fastxlsx.package_editor.c5-large`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no staged-chunk semantics expansion, no relationship repair
+  expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_c5_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.c5" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

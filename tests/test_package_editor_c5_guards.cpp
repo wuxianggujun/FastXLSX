@@ -516,7 +516,7 @@ std::filesystem::path output_path(std::string_view name)
 
 bool is_package_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "c5";
+    return shard == "all" || shard == "c5-guards";
 }
 
 std::string_view package_editor_shard_from_args(int argc, char* argv[])
@@ -1609,174 +1609,377 @@ void rewrite_linked_object_source_package(const LinkedObjectSourcePackage& sourc
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
-void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff()
+void test_package_editor_rejects_changed_planned_staged_chunk_sizes_without_state_changes()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-cell-replacement-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cell-replacement-output.xlsx");
-    const std::vector<std::filesystem::path> temp_files_before =
-        package_editor_temp_files();
-
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const std::array replacements {
-        worksheet_cell_replacement(
-            "A1", R"(<c r="A1" t="inlineStr"><is><t>patched</t></is></c>)"),
+    struct ChunkMutationCase {
+        std::string_view name;
+        std::string_view mutated_body;
     };
 
-    {
+    const std::array cases {
+        ChunkMutationCase {
+            "truncated",
+            R"(<row r="2"><c r="A2"><v>x</v></c></row>)",
+        },
+        ChunkMutationCase {
+            "extended",
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row><!--extended-->)",
+        },
+    };
+
+    for (const ChunkMutationCase& test_case : cases) {
+        const std::string source_name =
+            "fastxlsx-package-editor-planned-chunk-size-" + std::string(test_case.name)
+            + "-source.xlsx";
+        const CalcSourcePackage source = write_calc_source_package(source_name);
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-planned-chunk-size-"
+                + std::string(test_case.name) + "-body.xml");
+
+        const std::string worksheet_prefix =
+            R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+            R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+        const std::string original_body =
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+        const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+        const std::uint64_t planned_expected_bytes =
+            static_cast<std::uint64_t>(
+                worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+        write_binary_file(body_path, original_body);
+
         fastxlsx::detail::PackageEditor editor =
             fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
 
-        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
 
-        const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
-        check(worksheet_plan != nullptr,
-            "cell replacement handoff should keep worksheet in the edit plan");
-        check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
-            "cell replacement handoff should expose staged stream rewrite mode");
-        check(worksheet_plan->reason.find("file-backed stream rewrite")
-                != std::string::npos,
-            "cell replacement handoff should describe file-backed staged transformer output");
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, test_case.mutated_body);
+
+        const std::array replacements {
+            worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+        };
+
+        bool replacement_failed = false;
+        try {
+            editor.replace_worksheet_cells(worksheet_part, replacements);
+        } catch (const std::exception& error) {
+            replacement_failed = true;
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet cell replacement analysis",
+                "planned staged chunk size mutation should report the input read boundary");
+            check_contains(error.what(),
+                "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+                "planned staged chunk size mutation should identify the current input source");
+            check_contains(error.what(),
+                std::string("expected_bytes=") + std::to_string(planned_expected_bytes),
+                "planned staged chunk size mutation should summarize recorded expected bytes");
+            const std::size_t emitted_chunk_count =
+                test_case.mutated_body.size() < original_body.size() ? 1U : 2U;
+            const std::uint64_t emitted_byte_count =
+                static_cast<std::uint64_t>(worksheet_prefix.size()
+                    + (test_case.mutated_body.size() < original_body.size()
+                            ? 0U
+                            : original_body.size()));
+            check_contains(error.what(),
+                std::string("after emitting ") + std::to_string(emitted_chunk_count)
+                    + " current-input chunk"
+                    + (emitted_chunk_count == 1U ? "" : "s")
+                    + " and " + std::to_string(emitted_byte_count)
+                    + " bytes",
+                "planned staged chunk size mutation should report current-input progress");
+            const std::size_t read_attempt =
+                test_case.mutated_body.size() < original_body.size() ? 2U : 3U;
+            check_contains(error.what(),
+                std::string("current-input read attempt ") + std::to_string(read_attempt),
+                "planned staged chunk size mutation should report the failing read attempt");
+            const std::uint64_t last_emitted_chunk_bytes =
+                static_cast<std::uint64_t>(
+                    test_case.mutated_body.size() < original_body.size()
+                        ? worksheet_prefix.size()
+                        : original_body.size());
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(last_emitted_chunk_bytes)
+                    + " bytes",
+                "planned staged chunk size mutation should report last emitted chunk size");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+                "planned staged chunk size mutation should report expected bytes");
+            check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+                "planned staged chunk size mutation should report replay expected total");
+            const std::uint64_t remaining_expected_bytes =
+                test_case.mutated_body.size() < original_body.size()
+                    ? static_cast<std::uint64_t>(
+                          original_body.size() + worksheet_suffix.size())
+                    : static_cast<std::uint64_t>(worksheet_suffix.size());
+            check_staged_chunk_expected_remaining(error.what(), remaining_expected_bytes,
+                "planned staged chunk size mutation should report replay remaining bytes");
+            if (test_case.mutated_body.size() < original_body.size()) {
+                check_contains(error.what(),
+                    "staged package-entry chunk file ended before expected bytes",
+                    "planned staged chunk size mutation should report short read");
+                check_staged_file_chunk_read_progress(error.what(), 1, 0,
+                    "planned staged chunk short read should report staged file progress");
+                check_contains(error.what(),
+                    std::string("actual ") + std::to_string(test_case.mutated_body.size())
+                        + " bytes",
+                    "planned staged chunk size mutation should report actual bytes");
+            } else {
+                check_contains(error.what(),
+                    "staged package-entry chunk file produced more bytes than expected",
+                    "planned staged chunk size mutation should report overrun read");
+                check_staged_file_chunk_read_progress(error.what(), 2,
+                    static_cast<std::uint64_t>(original_body.size()),
+                    "planned staged chunk overrun should report staged file progress");
+                check_contains(error.what(),
+                    std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                        + " bytes",
+                    "planned staged chunk size mutation should report lower-bound bytes");
+            }
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "planned staged chunk size mutation should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "planned staged chunk size mutation should include the file-backed chunk path");
+        }
+
+        check(replacement_failed,
+            "planned staged chunk size mutation should fail before follow-up transform");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "planned staged chunk size mutation failure should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "planned staged chunk size mutation failure should not append notes");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "planned staged chunk size mutation failure should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "planned staged chunk size mutation failure should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "planned staged chunk size mutation failure should preserve calc policy");
         check_manifest_write_mode(editor, worksheet_part,
             fastxlsx::detail::PartWriteMode::StreamRewrite,
-            "cell replacement handoff manifest should mirror staged stream rewrite mode");
-        check(editor.edit_plan().full_calculation_on_load(),
-            "cell replacement handoff should request full calculation on load");
-        check(editor.edit_plan().find_removed_part(calc_chain_part) != nullptr,
-            "cell replacement handoff should remove stale calcChain");
-
-        const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
-        check(output_plan.full_calculation_on_load,
-            "cell replacement output plan should expose full calculation request");
-        check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
-            "cell replacement output plan should expose file-backed chunk handoff note");
-        check(has_note_containing(output_plan.notes,
-                  {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
-            "cell replacement output plan should expose direct source-entry chunk source");
-        check(has_note_containing(output_plan.notes,
-                  {"source package worksheet XML", "transformer chunk-source adapter"}),
-            "cell replacement output plan should expose source chunk transformer input");
-        check(has_note_containing(output_plan.notes,
-                  {"dependency and dimension analysis", "transformer chunk-source adapter"}),
-            "cell replacement output plan should expose chunked dependency/dimension analysis");
-        check(has_note_containing(output_plan.notes,
-                  {"relationship-id audit", "transformer chunk-source adapter"}),
-            "cell replacement output plan should expose chunked relationship-id audit");
-        check(has_note_containing(output_plan.notes,
-                  {"root validation", "event-reader chunk-source validator"}),
-            "cell replacement output plan should expose chunk-source root validation");
-        check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
-            "cell replacement output plan should expose dimension refresh note");
-        check(has_note_containing(output_plan.notes,
-                  {"one prevalidated non-owning replacement lookup plan",
-                      "dependency/dimension analysis pass",
-                      "dimension-refreshed output pass",
-                      "without reparsing replacement cell payloads",
-                      "rebuilding selector lookup"}),
-            "cell replacement output plan should expose replacement lookup plan reuse");
-        check(has_note_containing(output_plan.notes,
-                  {"explicit replacement payload chunks",
-                      "rather than raw string fields",
-                      "bounded single-cell XML limit"}),
-            "cell replacement output plan should expose explicit payload-chunk boundary");
-        check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
-            fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
-            "cell replacement output plan should stream-rewrite worksheet chunks");
-        check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
-            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
-            "cell replacement output plan should local-rewrite workbook metadata");
-        check_output_entry_plan(output_plan.entries, "xl/calcChain.xml",
-            fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
-            "cell replacement output plan should omit stale calcChain");
-
-        editor.save_as(output);
+            "planned staged chunk size mutation failure should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "planned staged chunk size mutation failure should not leak temp files");
     }
-
-    check_no_new_package_editor_temp_files(temp_files_before,
-        "cell replacement should clean PackageEditor-owned temporary XML files");
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    const std::string expected_worksheet =
-        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>patched</t></is></c></row></sheetData></worksheet>)";
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
-        "cell replacement handoff should write transformed worksheet XML");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "cell replacement handoff output should omit calcChain payload");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "cell replacement handoff should preserve unknown bytes");
-    check_contains(output_reader.read_entry("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
-        "cell replacement handoff output should request full calculation");
-    check_not_contains(output_reader.read_entry("[Content_Types].xml"), "calcChain+xml",
-        "cell replacement handoff content types should remove calcChain");
-    const auto* output_worksheet = output_reader.part_index().find_part(worksheet_part);
-    check(output_worksheet != nullptr
-            && output_worksheet->write_mode == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "output reader should ingest the rewritten worksheet as a normal source part");
-    check(output_reader.part_index().find_part(workbook_part) != nullptr,
-        "output reader should retain workbook part");
 }
 
-void test_package_editor_replaces_worksheet_cells_with_chunked_payload()
+void test_package_editor_rejects_changed_planned_staged_chunk_sizes_for_sheet_data_without_state_changes()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package("fastxlsx-package-editor-cell-replacement-chunked-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cell-replacement-chunked-output.xlsx");
-    const std::vector<std::filesystem::path> temp_files_before =
-        package_editor_temp_files();
-
-    const std::array<std::string_view, 3> replacement_chunks {
-        R"(<c r="A1" t="inlineStr">)",
-        R"(<is><t>chunked payload</t></is>)",
-        R"(</c>)",
-    };
-    const std::array replacements {
-        chunked_worksheet_cell_replacement("A1", replacement_chunks),
+    struct ChunkMutationCase {
+        std::string_view name;
+        std::string_view mutated_body;
     };
 
-    {
+    const std::array cases {
+        ChunkMutationCase {
+            "truncated",
+            R"(<row r="2"><c r="A2"><v>x</v></c></row>)",
+        },
+        ChunkMutationCase {
+            "extended",
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row><!--extended-->)",
+        },
+    };
+
+    for (const ChunkMutationCase& test_case : cases) {
+        const CalcSourcePackage source = write_calc_source_package(
+            "fastxlsx-package-editor-sheetdata-planned-chunk-size-"
+            + std::string(test_case.name) + "-source.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-sheetdata-planned-chunk-size-"
+                + std::string(test_case.name) + "-body.xml");
+
+        const std::string worksheet_prefix =
+            R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+            R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+        const std::string original_body =
+            R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+        const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+        write_binary_file(body_path, original_body);
+
         fastxlsx::detail::PackageEditor editor =
             fastxlsx::detail::PackageEditor::open(source.path);
+        const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
 
-        editor.replace_worksheet_cells_by_name("Sheet1", replacements);
-        const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
-        check(has_note_containing(output_plan.notes,
-                  {"replacement payload chunks",
-                      "bounded single-cell XML limit",
-                      "not streamed cell payload sources"}),
-            "chunked cell replacement output plan should expose bounded payload chunk boundary");
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
 
-        editor.save_as(output);
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, test_case.mutated_body);
+
+        bool failed = false;
+        try {
+            replace_worksheet_sheet_data_from_single_chunk_source(editor, worksheet_part,
+                R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet "
+                "sheetData replacement output",
+                "sheetData planned staged chunk mutation should report the "
+                "input read boundary");
+            const std::size_t emitted_chunk_count =
+                test_case.mutated_body.size() < original_body.size() ? 1U : 2U;
+            const std::uint64_t emitted_byte_count =
+                static_cast<std::uint64_t>(worksheet_prefix.size()
+                    + (test_case.mutated_body.size() < original_body.size()
+                            ? 0U
+                            : original_body.size()));
+            check_contains(error.what(),
+                std::string("after emitting ") + std::to_string(emitted_chunk_count)
+                    + " current-input chunk"
+                    + (emitted_chunk_count == 1U ? "" : "s")
+                    + " and " + std::to_string(emitted_byte_count)
+                    + " bytes",
+                "sheetData planned staged chunk mutation should report current-input progress");
+            const std::size_t read_attempt =
+                test_case.mutated_body.size() < original_body.size() ? 2U : 3U;
+            check_contains(error.what(),
+                std::string("current-input read attempt ") + std::to_string(read_attempt),
+                "sheetData planned staged chunk mutation should report the failing read attempt");
+            const std::uint64_t last_emitted_chunk_bytes =
+                static_cast<std::uint64_t>(
+                    test_case.mutated_body.size() < original_body.size()
+                        ? worksheet_prefix.size()
+                        : original_body.size());
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(last_emitted_chunk_bytes)
+                    + " bytes",
+                "sheetData planned staged chunk mutation should report last emitted chunk size");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+                "sheetData planned staged chunk mutation should report expected bytes");
+            const std::uint64_t planned_expected_bytes =
+                static_cast<std::uint64_t>(
+                    worksheet_prefix.size() + original_body.size()
+                    + worksheet_suffix.size());
+            check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+                "sheetData planned staged chunk mutation should report replay expected total");
+            const std::uint64_t remaining_expected_bytes =
+                test_case.mutated_body.size() < original_body.size()
+                    ? static_cast<std::uint64_t>(
+                          original_body.size() + worksheet_suffix.size())
+                    : static_cast<std::uint64_t>(worksheet_suffix.size());
+            check_staged_chunk_expected_remaining(error.what(), remaining_expected_bytes,
+                "sheetData planned staged chunk mutation should report replay remaining bytes");
+            if (test_case.mutated_body.size() < original_body.size()) {
+                check_contains(error.what(),
+                    "staged package-entry chunk file ended before expected bytes",
+                    "sheetData planned staged chunk mutation should report short read");
+                check_staged_file_chunk_read_progress(error.what(), 1, 0,
+                    "sheetData planned staged short read should report staged file progress");
+                check_contains(error.what(),
+                    std::string("actual ") + std::to_string(test_case.mutated_body.size())
+                        + " bytes",
+                    "sheetData planned staged chunk mutation should report actual bytes");
+            } else {
+                check_contains(error.what(),
+                    "staged package-entry chunk file produced more bytes than expected",
+                    "sheetData planned staged chunk mutation should report overrun read");
+                check_staged_file_chunk_read_progress(error.what(), 2,
+                    static_cast<std::uint64_t>(original_body.size()),
+                    "sheetData planned staged overrun should report staged file progress");
+                check_contains(error.what(),
+                    std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                        + " bytes",
+                    "sheetData planned staged chunk mutation should report lower-bound bytes");
+            }
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "sheetData planned staged chunk mutation should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "sheetData planned staged chunk mutation should include the file-backed chunk path");
+        }
+
+        check(failed,
+            "sheetData replacement should reject planned staged chunks whose size changed");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "sheetData planned staged chunk mutation should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "sheetData planned staged chunk mutation should not append notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "sheetData planned staged chunk mutation should not add package-entry audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "sheetData planned staged chunk mutation should not add removed package-entry audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "sheetData planned staged chunk mutation should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "sheetData planned staged chunk mutation should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "sheetData planned staged chunk mutation should preserve calc policy");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "sheetData planned staged chunk mutation should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "sheetData planned staged chunk mutation should not leak PackageEditor temp files");
     }
-
-    check_no_new_package_editor_temp_files(temp_files_before,
-        "chunked cell replacement should clean PackageEditor-owned temporary XML files");
-
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    const std::string expected_worksheet =
-        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>chunked payload</t></is></c></row></sheetData></worksheet>)";
-    check(output_reader.read_entry("xl/worksheets/sheet1.xml") == expected_worksheet,
-        "chunked cell replacement should replay payload chunks into transformed worksheet XML");
-    check(output_reader.find_entry("xl/calcChain.xml") == nullptr,
-        "chunked cell replacement should omit stale calcChain payload");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "chunked cell replacement should preserve unknown bytes");
 }
 
-void test_package_editor_contextualizes_current_worksheet_source_read_failure_without_state_changes()
+void test_package_editor_rejects_changed_planned_staged_chunk_crc_without_state_changes()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package(
-            "fastxlsx-package-editor-cell-replacement-source-read-failure.xlsx");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-planned-chunk-crc-source.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-planned-chunk-crc-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    const std::uint64_t planned_expected_bytes =
+        static_cast<std::uint64_t>(
+            worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+    write_binary_file(body_path, original_body);
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
     const std::size_t initial_plan_size = editor.edit_plan().size();
     const std::size_t initial_note_count = editor.edit_plan().notes().size();
     const std::size_t initial_payload_audit_count =
@@ -1788,304 +1991,251 @@ void test_package_editor_contextualizes_current_worksheet_source_read_failure_wi
     const std::vector<std::filesystem::path> temp_files_before =
         package_editor_temp_files();
 
-    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
-    corrupt_first_occurrence(corrupted_source_bytes, "SUM(B1:C1)");
-    write_binary_file(source.path, corrupted_source_bytes);
+    write_binary_file(body_path, same_size_different_payload(original_body));
 
     const std::array replacements {
-        worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
     };
 
-    bool failed = false;
+    bool replacement_failed = false;
     try {
         editor.replace_worksheet_cells(worksheet_part, replacements);
     } catch (const std::exception& error) {
-        failed = true;
+        replacement_failed = true;
         check_contains(error.what(),
-            "current worksheet input for worksheet cell replacement analysis",
-            "source worksheet read failure should identify the analysis input boundary");
-        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
-            "source worksheet read failure should identify the current input source entry");
-        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
-            "source worksheet read failure should identify the worksheet part");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
-            "source worksheet read failure should identify the worksheet ZIP entry");
+            "failed to read current worksheet input for worksheet cell replacement analysis",
+            "planned staged chunk CRC mutation should report the input read boundary");
         check_contains(error.what(),
-            std::string("after emitting 1 current-input chunk and ")
-                + std::to_string(source.worksheet.size()) + " bytes",
-            "source worksheet read failure should report emitted current-input progress");
-        check_contains(error.what(), "current-input read attempt 2",
-            "source worksheet read failure should report the failing read attempt");
+            "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+            "planned staged chunk CRC mutation should identify the current input source");
         check_contains(error.what(),
-            std::string("last chunk ") + std::to_string(source.worksheet.size()) + " bytes",
-            "source worksheet read failure should report the last emitted chunk size");
-        check_contains(error.what(), "CRC mismatch",
-            "source worksheet read failure should preserve the underlying ZIP error");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml' CRC mismatch",
-            "source worksheet read failure should identify the corrupt worksheet entry");
+            std::string("expected_bytes=") + std::to_string(planned_expected_bytes),
+            "planned staged chunk CRC mutation should summarize recorded expected bytes");
+        check_contains(error.what(),
+            std::string("after emitting 2 current-input chunks and ")
+                + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+            "planned staged chunk CRC mutation should report completed current-input progress");
+        check_contains(error.what(), "current-input read attempt 3",
+            "planned staged chunk CRC mutation should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+            "planned staged chunk CRC mutation should report last emitted chunk size");
+        check_contains(error.what(),
+            "staged package-entry chunk CRC32 changed after validation",
+            "planned staged chunk CRC mutation should report the CRC contract");
+        check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+            "planned staged chunk CRC mutation should report replay expected total");
+        check_staged_chunk_expected_remaining(error.what(),
+            static_cast<std::uint64_t>(worksheet_suffix.size()),
+            "planned staged chunk CRC mutation should report replay remaining bytes");
+        check_staged_file_chunk_read_progress(error.what(), 2,
+            static_cast<std::uint64_t>(original_body.size()),
+            "planned staged chunk CRC mutation should report staged file progress");
         check_contains(error.what(), "expected ",
-            "source worksheet read failure should report expected CRC");
+            "planned staged chunk CRC mutation should report expected CRC");
         check_contains(error.what(), "actual ",
-            "source worksheet read failure should report actual CRC");
+            "planned staged chunk CRC mutation should report actual CRC");
+        check_contains(error.what(), "staged package-entry chunk 1",
+            "planned staged chunk CRC mutation should identify the file-backed chunk");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "planned staged chunk CRC mutation should include the file-backed chunk path");
     }
 
-    check(failed, "cell replacement should fail when source worksheet chunk read fails");
+    check(replacement_failed,
+        "planned staged chunk CRC mutation should fail before follow-up transform");
     check(editor.edit_plan().size() == initial_plan_size,
-        "source worksheet read failure should not mutate edit-plan parts");
+        "planned staged chunk CRC mutation failure should preserve edit-plan size");
     check(editor.edit_plan().notes().size() == initial_note_count,
-        "source worksheet read failure should not append edit-plan notes");
+        "planned staged chunk CRC mutation failure should not append notes");
     check(editor.edit_plan().worksheet_payload_dependency_audits().size()
             == initial_payload_audit_count,
-        "source worksheet read failure should not append payload audits");
+        "planned staged chunk CRC mutation failure should not append payload audits");
     check(editor.edit_plan().worksheet_relationship_reference_audits().size()
             == initial_relationship_audit_count,
-        "source worksheet read failure should not append relationship audits");
+        "planned staged chunk CRC mutation failure should not append relationship audits");
     check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
-        "source worksheet read failure should not change calc policy");
+        "planned staged chunk CRC mutation failure should preserve calc policy");
     check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "source worksheet read failure should leave worksheet manifest copy-original");
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "planned staged chunk CRC mutation failure should keep prior staged worksheet plan");
     check_no_new_package_editor_temp_files(temp_files_before,
-        "source worksheet read failure should not leak PackageEditor temp files");
+        "planned staged chunk CRC mutation failure should not leak temp files");
+}
 
-    const CalcSourcePackage planned_name_source =
-        write_calc_source_package(
-            "fastxlsx-package-editor-cell-replacement-planned-name-source-read-failure.xlsx");
-    fastxlsx::detail::PackageEditor planned_name_editor =
-        fastxlsx::detail::PackageEditor::open(planned_name_source.path);
+void test_package_editor_rejects_missing_planned_staged_chunk_file_at_read_boundary()
+{
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-planned-chunk-missing-file-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-planned-chunk-missing-file-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-planned-chunk-missing-file-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    const std::uint64_t planned_expected_bytes =
+        static_cast<std::uint64_t>(
+            worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+    write_binary_file(body_path, original_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const bool initial_full_calculation =
+        editor.edit_plan().full_calculation_on_load();
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    std::error_code remove_error;
+    const bool removed = std::filesystem::remove(body_path, remove_error);
+    check(removed && !remove_error,
+        "planned staged chunk missing-file fixture should delete the staged file");
+
+    const std::array replacements {
+        worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+    };
+
+    bool replacement_failed = false;
+    try {
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+    } catch (const std::exception& error) {
+        replacement_failed = true;
+        check_contains(error.what(),
+            "failed to read current worksheet input for worksheet cell replacement analysis",
+            "missing planned staged chunk should fail at the current worksheet read boundary");
+        check_contains(error.what(),
+            "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+            "missing planned staged chunk should identify the current input source");
+        check_contains(error.what(),
+            std::string("expected_bytes=") + std::to_string(planned_expected_bytes),
+            "missing planned staged chunk should summarize recorded expected bytes");
+        check_contains(error.what(),
+            std::string("after emitting 1 current-input chunk and ")
+                + std::to_string(worksheet_prefix.size()) + " bytes",
+            "missing planned staged chunk should report current-input progress");
+        check_contains(error.what(), "current-input read attempt 2",
+            "missing planned staged chunk should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(worksheet_prefix.size()) + " bytes",
+            "missing planned staged chunk should report last emitted chunk size");
+        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+            "missing planned staged chunk should identify the owning worksheet part");
+        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+            "missing planned staged chunk should identify the worksheet ZIP entry");
+        check_not_contains(error.what(), "failed to initialize current worksheet input",
+            "missing planned staged chunk should not fail during reader initialization");
+        check_contains(error.what(), "failed to open staged package-entry chunk file",
+            "missing planned staged chunk should report the read-time open failure");
+        check_staged_file_chunk_read_progress(error.what(), 0, 0,
+            "missing planned staged chunk should report staged file progress");
+        check_contains(error.what(),
+            std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+            "missing planned staged chunk should preserve recorded expected-size metadata");
+        check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+            "missing planned staged chunk should report replay expected total");
+        check_staged_chunk_expected_remaining(error.what(),
+            static_cast<std::uint64_t>(original_body.size() + worksheet_suffix.size()),
+            "missing planned staged chunk should report replay remaining bytes");
+        check_contains(error.what(), "staged package-entry chunk 1",
+            "missing planned staged chunk should identify the file-backed chunk");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "missing planned staged chunk should include the file-backed chunk path");
+    }
+
+    check(replacement_failed,
+        "PackageEditor should reject missing planned staged chunk files during follow-up transform");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "missing planned staged chunk failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "missing planned staged chunk failure should not append notes");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_payload_audit_count,
+        "missing planned staged chunk failure should not append payload audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_relationship_audit_count,
+        "missing planned staged chunk failure should not append relationship audits");
+    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+        "missing planned staged chunk failure should preserve calc policy");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "missing planned staged chunk failure should keep prior staged worksheet plan");
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "missing planned staged chunk failure should not leak PackageEditor temp files");
+
+    write_binary_file(body_path, original_body);
+    editor.replace_worksheet_cells(worksheet_part, replacements);
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet_xml = output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(worksheet_xml, R"(<c r="A1"><v>patched</v></c>)",
+        "later safe follow-up transform should still consume the restored staged chunk");
+    check_not_contains(worksheet_xml, "old-staged",
+        "later safe follow-up transform should replace the old staged target cell");
+    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
+        "later safe follow-up transform should preserve unknown bytes");
+}
+
+void test_package_editor_contextualizes_by_name_planned_staged_chunk_read_failures_without_state_changes()
+{
     const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
     const std::string planned_workbook =
         R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheets><sheet name="Renamed" sheetId="1" r:id="rId1"/></sheets>)"
         R"(</workbook>)";
-    planned_name_editor.replace_part(workbook_part, planned_workbook,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "ordinary workbook replacement before planned-name cell source-read failure");
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    const std::uint64_t planned_expected_bytes =
+        static_cast<std::uint64_t>(
+            worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+    const std::string planned_chunk_source_description =
+        "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml' "
+        "(3 chunks; memory=2, file=1, expected_bytes="
+        + std::to_string(planned_expected_bytes) + ")";
 
-    const std::size_t planned_name_plan_size =
-        planned_name_editor.edit_plan().size();
-    const std::size_t planned_name_note_count =
-        planned_name_editor.edit_plan().notes().size();
-    const std::size_t planned_name_package_entry_count =
-        planned_name_editor.edit_plan().package_entries().size();
-    const std::size_t planned_name_removed_package_entry_count =
-        planned_name_editor.edit_plan().removed_package_entries().size();
-    const std::size_t planned_name_payload_audit_count =
-        planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t planned_name_relationship_audit_count =
-        planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const bool planned_name_full_calculation =
-        planned_name_editor.edit_plan().full_calculation_on_load();
-    const fastxlsx::detail::CalcChainAction planned_name_calc_chain_action =
-        planned_name_editor.edit_plan().calc_chain_action();
-    const std::vector<std::filesystem::path> planned_name_temp_files_before =
-        package_editor_temp_files();
-
-    std::string planned_name_corrupted_source_bytes =
-        fastxlsx::test::read_file(planned_name_source.path);
-    corrupt_first_occurrence(planned_name_corrupted_source_bytes, "SUM(B1:C1)");
-    write_binary_file(planned_name_source.path, planned_name_corrupted_source_bytes);
-
-    failed = false;
-    try {
-        planned_name_editor.replace_worksheet_cells_by_name("Renamed", replacements);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(),
-            "by-name worksheet cell replacement for sheet 'Renamed'",
-            "planned-name cell source read failure should identify the planned sheet name");
-        check_contains(error.what(),
-            "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
-            "planned-name cell source read failure should show the resolved worksheet part");
-        check_contains(error.what(),
-            "current worksheet input for worksheet cell replacement analysis",
-            "planned-name cell source read failure should keep the analysis input boundary");
-        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
-            "planned-name cell source read failure should identify the source worksheet entry");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
-            "planned-name cell source read failure should identify the ZIP entry");
-        check_contains(error.what(),
-            std::string("after emitting 1 current-input chunk and ")
-                + std::to_string(planned_name_source.worksheet.size()) + " bytes",
-            "planned-name cell source read failure should report emitted current-input progress");
-        check_contains(error.what(), "current-input read attempt 2",
-            "planned-name cell source read failure should report the failing read attempt");
-        check_contains(error.what(),
-            std::string("last chunk ") + std::to_string(planned_name_source.worksheet.size())
-                + " bytes",
-            "planned-name cell source read failure should report the last emitted chunk size");
-        check_contains(error.what(), "CRC mismatch",
-            "planned-name cell source read failure should preserve the underlying ZIP error");
-        check_contains(error.what(), "expected ",
-            "planned-name cell source read failure should report expected CRC");
-        check_contains(error.what(), "actual ",
-            "planned-name cell source read failure should report actual CRC");
-        check_not_contains(error.what(), "replacement payload",
-            "planned-name cell source read failure should not be mislabeled as replacement payload input");
-    }
-
-    check(failed,
-        "planned-name by-name cell replacement should fail when source worksheet read fails");
-    check(planned_name_editor.edit_plan().size() == planned_name_plan_size,
-        "planned-name cell source read failure should preserve queued edit-plan size");
-    check(planned_name_editor.edit_plan().notes().size() == planned_name_note_count,
-        "planned-name cell source read failure should not append notes");
-    check(planned_name_editor.edit_plan().package_entries().size()
-            == planned_name_package_entry_count,
-        "planned-name cell source read failure should not add package-entry audits");
-    check(planned_name_editor.edit_plan().removed_package_entries().size()
-            == planned_name_removed_package_entry_count,
-        "planned-name cell source read failure should not add removed package-entry audits");
-    check(planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size()
-            == planned_name_payload_audit_count,
-        "planned-name cell source read failure should not append payload audits");
-    check(planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size()
-            == planned_name_relationship_audit_count,
-        "planned-name cell source read failure should not append relationship audits");
-    check(planned_name_editor.edit_plan().full_calculation_on_load()
-            == planned_name_full_calculation,
-        "planned-name cell source read failure should not change calc policy");
-    check(planned_name_editor.edit_plan().calc_chain_action()
-            == planned_name_calc_chain_action,
-        "planned-name cell source read failure should not change calcChain policy");
-    check_manifest_write_mode(planned_name_editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "planned-name cell source read failure should keep workbook local-DOM-rewrite");
-    check_manifest_write_mode(planned_name_editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "planned-name cell source read failure should leave worksheet manifest copy-original");
-    check_manifest_write_mode(planned_name_editor, calc_chain_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "planned-name cell source read failure should leave calcChain manifest copy-original");
-    check_no_new_package_editor_temp_files(planned_name_temp_files_before,
-        "planned-name cell source read failure should not leak PackageEditor temp files");
-}
-
-void test_package_editor_contextualizes_missing_current_worksheet_entry_without_state_changes()
-{
-    const SourcePackage source =
-        write_missing_worksheet_entry_source_package(
-            "fastxlsx-package-editor-cell-replacement-missing-source-entry-source.xlsx");
-    const std::filesystem::path output =
-        output_path("fastxlsx-package-editor-cell-replacement-missing-source-entry-output.xlsx");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(source.path);
-    const std::size_t initial_plan_size = editor.edit_plan().size();
-    const std::size_t initial_note_count = editor.edit_plan().notes().size();
-    const std::size_t initial_package_entry_count =
-        editor.edit_plan().package_entries().size();
-    const std::size_t initial_removed_package_entry_count =
-        editor.edit_plan().removed_package_entries().size();
-    const std::size_t initial_payload_audit_count =
-        editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t initial_relationship_audit_count =
-        editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const bool initial_full_calculation =
-        editor.edit_plan().full_calculation_on_load();
-    const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
-        editor.edit_plan().calc_chain_action();
-    const std::vector<std::filesystem::path> temp_files_before =
-        package_editor_temp_files();
-    const std::array replacements {
-        worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
-    };
-
-    bool failed = false;
-    try {
-        editor.replace_worksheet_cells(worksheet_part, replacements);
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(), "worksheet cell replacement",
-            "missing current worksheet entry failure should identify the operation");
-        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
-            "missing current worksheet entry failure should identify the worksheet part");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
-            "missing current worksheet entry failure should identify the worksheet ZIP entry");
-        check_not_contains(error.what(), "sheetData replacement XML",
-            "missing current worksheet entry failure should not be mislabeled as replacement payload input");
-    }
-
-    check(failed,
-        "cell replacement should fail when the source worksheet entry is absent");
-    check(editor.edit_plan().size() == initial_plan_size,
-        "missing current worksheet entry failure should not mutate edit-plan parts");
-    check(editor.edit_plan().notes().size() == initial_note_count,
-        "missing current worksheet entry failure should not append edit-plan notes");
-    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
-        "missing current worksheet entry failure should not add package-entry audits");
-    check(editor.edit_plan().removed_package_entries().size()
-            == initial_removed_package_entry_count,
-        "missing current worksheet entry failure should not add removed package-entry audits");
-    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
-            == initial_payload_audit_count,
-        "missing current worksheet entry failure should not append payload audits");
-    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
-            == initial_relationship_audit_count,
-        "missing current worksheet entry failure should not append relationship audits");
-    check(editor.edit_plan().removed_parts().empty(),
-        "missing current worksheet entry failure should not record removed parts");
-    check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
-        "missing current worksheet entry failure should not change calc policy");
-    check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
-        "missing current worksheet entry failure should not change calcChain policy");
-    const auto* missing_entry_manifest_part = editor.manifest().find_part(worksheet_part);
-    check(missing_entry_manifest_part == nullptr
-            || missing_entry_manifest_part->write_mode
-                == fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "missing current worksheet entry failure should not change worksheet manifest state");
-    check_no_new_package_editor_temp_files(temp_files_before,
-        "missing current worksheet entry failure should not leak PackageEditor temp files");
-
-    editor.save_as(output);
-    const fastxlsx::detail::PackageReader output_reader =
-        fastxlsx::detail::PackageReader::open(output);
-    check(output_reader.find_entry("xl/worksheets/sheet1.xml") == nullptr,
-        "missing current worksheet entry failure output should not invent worksheet XML");
-    check(output_reader.read_entry("xl/workbook.xml") == source.workbook,
-        "missing current worksheet entry failure output should preserve workbook bytes");
-    check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
-        "missing current worksheet entry failure output should preserve unknown bytes");
-}
-
-void test_package_editor_rejects_malformed_current_worksheet_events_without_state_changes()
-{
-    struct MalformedWorksheetCase {
-        std::string_view name;
-        std::string_view worksheet_xml;
-        std::string_view expected_error;
-    };
-
-    const std::array cases {
-        MalformedWorksheetCase {
-            "mismatched-value-boundary",
-            R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</f></c></row></sheetData></worksheet>)",
-            "mismatched cell value boundary",
-        },
-        MalformedWorksheetCase {
-            "nested-cell",
-            R"(<worksheet><sheetData><row r="1"><c r="A1"><c r="B1"/></c></row></sheetData></worksheet>)",
-            "invalid cell boundary",
-        },
-    };
-
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const std::array replacements {
-        worksheet_cell_replacement("A1", R"(<c r="A1"><v>7</v></c>)"),
-    };
-
-    for (const MalformedWorksheetCase& test_case : cases) {
-        CalcSourcePackage source =
-            write_calc_source_package("fastxlsx-package-editor-cell-replacement-"
-                + std::string(test_case.name) + "-source.xlsx");
-        source.worksheet = std::string(test_case.worksheet_xml);
-        rewrite_calc_source_package(source);
+    {
+        const CalcSourcePackage source = write_calc_source_package(
+            "fastxlsx-package-editor-by-name-planned-chunk-size-source.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-by-name-planned-chunk-size-body.xml");
+        write_binary_file(body_path, original_body);
 
         fastxlsx::detail::PackageEditor editor =
             fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part(workbook_part, planned_workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "ordinary workbook replacement before by-name planned chunk size failure");
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+
         const std::size_t initial_plan_size = editor.edit_plan().size();
         const std::size_t initial_note_count = editor.edit_plan().notes().size();
         const std::size_t initial_package_entry_count =
@@ -2103,60 +2253,228 @@ void test_package_editor_rejects_malformed_current_worksheet_events_without_stat
         const std::vector<std::filesystem::path> temp_files_before =
             package_editor_temp_files();
 
+        write_binary_file(body_path, original_body + "<!--extended-->");
+
+        const std::array replacements {
+            worksheet_cell_replacement("A1", R"(<c r="A1"><v>patched</v></c>)"),
+        };
+
         bool failed = false;
         try {
-            editor.replace_worksheet_cells(worksheet_part, replacements);
+            editor.replace_worksheet_cells_by_name("Renamed", replacements);
         } catch (const std::exception& error) {
             failed = true;
             check_contains(error.what(),
-                "current worksheet input for worksheet cell replacement analysis",
-                "malformed source worksheet should identify the analysis input boundary");
-            check_contains(error.what(), test_case.expected_error,
-                "malformed source worksheet should preserve event-reader diagnostics");
+                "by-name worksheet cell replacement for sheet 'Renamed'",
+                "by-name planned chunk size failure should identify the planned sheet name");
+            check_contains(error.what(),
+                "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
+                "by-name planned chunk size failure should show the resolved worksheet part");
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet cell replacement analysis",
+                "by-name planned chunk size failure should keep the analysis input boundary");
+            check_contains(error.what(),
+                planned_chunk_source_description,
+                "by-name planned chunk size failure should identify the planned chunk source composition");
+            check_contains(error.what(),
+                std::string("after emitting 2 current-input chunks and ")
+                    + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+                "by-name planned chunk size failure should report current-input progress");
+            check_contains(error.what(), "current-input read attempt 3",
+                "by-name planned chunk size failure should report the failing read attempt");
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+                "by-name planned chunk size failure should report last emitted chunk size");
+            check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
+                "by-name planned chunk size failure should identify the owning worksheet part");
+            check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
+                "by-name planned chunk size failure should identify the worksheet ZIP entry");
+            check_contains(error.what(),
+                std::string("expected ") + std::to_string(original_body.size()) + " bytes",
+                "by-name planned chunk size failure should report expected bytes");
+            check_contains(error.what(),
+                "staged package-entry chunk file produced more bytes than expected",
+                "by-name planned chunk size failure should report overrun read");
+            check_contains(error.what(),
+                std::string("read at least ") + std::to_string(original_body.size() + 1U)
+                    + " bytes",
+                "by-name planned chunk size failure should report lower-bound bytes");
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "by-name planned chunk size failure should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "by-name planned chunk size failure should include the file-backed chunk path");
         }
 
         check(failed,
-            "PackageEditor should reject malformed source worksheet events");
+            "by-name cell replacement should reject mutated planned staged chunk size");
         check(editor.edit_plan().size() == initial_plan_size,
-            "malformed source worksheet failure should not mutate edit-plan parts");
+            "by-name planned chunk size failure should preserve edit-plan size");
         check(editor.edit_plan().notes().size() == initial_note_count,
-            "malformed source worksheet failure should not append edit-plan notes");
+            "by-name planned chunk size failure should not append notes");
         check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
-            "malformed source worksheet failure should not add package-entry audits");
+            "by-name planned chunk size failure should not add package-entry audits");
         check(editor.edit_plan().removed_package_entries().size()
                 == initial_removed_package_entry_count,
-            "malformed source worksheet failure should not add removed package-entry audits");
+            "by-name planned chunk size failure should not add removed package-entry audits");
         check(editor.edit_plan().worksheet_payload_dependency_audits().size()
                 == initial_payload_audit_count,
-            "malformed source worksheet failure should not append payload audits");
+            "by-name planned chunk size failure should not append payload audits");
         check(editor.edit_plan().worksheet_relationship_reference_audits().size()
                 == initial_relationship_audit_count,
-            "malformed source worksheet failure should not append relationship audits");
-        check(editor.edit_plan().removed_parts().empty(),
-            "malformed source worksheet failure should not record removed parts");
+            "by-name planned chunk size failure should not append relationship audits");
         check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
-            "malformed source worksheet failure should not change calc policy");
+            "by-name planned chunk size failure should preserve calc policy");
         check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
-            "malformed source worksheet failure should not change calcChain policy");
-        check(editor.manifest().find_part(calc_chain_part) != nullptr,
-            "malformed source worksheet failure should keep calcChain in the manifest");
+            "by-name planned chunk size failure should preserve calcChain policy");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "by-name planned chunk size failure should keep planned workbook rewrite");
         check_manifest_write_mode(editor, worksheet_part,
-            fastxlsx::detail::PartWriteMode::CopyOriginal,
-            "malformed source worksheet failure should leave worksheet manifest copy-original");
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "by-name planned chunk size failure should keep prior staged worksheet plan");
         check_no_new_package_editor_temp_files(temp_files_before,
-            "malformed source worksheet failure should not leak PackageEditor temp files");
+            "by-name planned chunk size failure should not leak PackageEditor temp files");
+    }
+
+    {
+        const CalcSourcePackage source = write_calc_source_package(
+            "fastxlsx-package-editor-by-name-sheetdata-planned-chunk-crc-source.xlsx");
+        const std::filesystem::path body_path =
+            output_path("fastxlsx-package-editor-by-name-sheetdata-planned-chunk-crc-body.xml");
+        write_binary_file(body_path, original_body);
+
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part(workbook_part, planned_workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "ordinary workbook replacement before by-name sheetData planned chunk CRC failure");
+        editor.replace_worksheet_part_chunks(worksheet_part,
+            {
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+                fastxlsx::detail::PackageEntryChunk::file(body_path),
+                fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+            });
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+        const std::size_t initial_payload_audit_count =
+            editor.edit_plan().worksheet_payload_dependency_audits().size();
+        const std::size_t initial_relationship_audit_count =
+            editor.edit_plan().worksheet_relationship_reference_audits().size();
+        const bool initial_full_calculation =
+            editor.edit_plan().full_calculation_on_load();
+        const fastxlsx::detail::CalcChainAction initial_calc_chain_action =
+            editor.edit_plan().calc_chain_action();
+        const std::vector<std::filesystem::path> temp_files_before =
+            package_editor_temp_files();
+
+        write_binary_file(body_path, same_size_different_payload(original_body));
+
+        bool failed = false;
+        try {
+            replace_worksheet_sheet_data_by_name_from_single_chunk_source(editor,
+                "Renamed",
+                R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "by-name sheetData replacement for sheet 'Renamed'",
+                "by-name sheetData planned chunk CRC failure should identify the planned sheet name");
+            check_contains(error.what(),
+                "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
+                "by-name sheetData planned chunk CRC failure should show the resolved worksheet part");
+            check_contains(error.what(),
+                "failed to read current worksheet input for worksheet sheetData replacement output",
+                "by-name sheetData planned chunk CRC failure should keep the output input boundary");
+            check_contains(error.what(),
+                planned_chunk_source_description,
+                "by-name sheetData planned chunk CRC failure should identify the planned chunk source composition");
+            check_contains(error.what(),
+                std::string("after emitting 2 current-input chunks and ")
+                    + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+                "by-name sheetData planned chunk CRC failure should report completed current-input progress");
+            check_contains(error.what(), "current-input read attempt 3",
+                "by-name sheetData planned chunk CRC failure should report the failing read attempt");
+            check_contains(error.what(),
+                std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+                "by-name sheetData planned chunk CRC failure should report last emitted chunk size");
+            check_contains(error.what(),
+                "staged package-entry chunk CRC32 changed after validation",
+                "by-name sheetData planned chunk CRC failure should report the CRC contract");
+            check_contains(error.what(), "expected ",
+                "by-name sheetData planned chunk CRC failure should report expected CRC");
+            check_contains(error.what(), "actual ",
+                "by-name sheetData planned chunk CRC failure should report actual CRC");
+            check_contains(error.what(), "staged package-entry chunk 1",
+                "by-name sheetData planned chunk CRC failure should identify the file-backed chunk");
+            check_contains(error.what(), body_path.filename().generic_string(),
+                "by-name sheetData planned chunk CRC failure should include the file-backed chunk path");
+            check_not_contains(error.what(), "sheetData replacement XML",
+                "by-name sheetData planned chunk CRC failure should not be mislabeled as replacement payload input");
+        }
+
+        check(failed,
+            "by-name sheetData replacement should reject mutated planned staged chunk CRC");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "by-name sheetData planned chunk CRC failure should preserve edit-plan size");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "by-name sheetData planned chunk CRC failure should not append notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "by-name sheetData planned chunk CRC failure should not add package-entry audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "by-name sheetData planned chunk CRC failure should not add removed package-entry audits");
+        check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+                == initial_payload_audit_count,
+            "by-name sheetData planned chunk CRC failure should not append payload audits");
+        check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+                == initial_relationship_audit_count,
+            "by-name sheetData planned chunk CRC failure should not append relationship audits");
+        check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
+            "by-name sheetData planned chunk CRC failure should preserve calc policy");
+        check(editor.edit_plan().calc_chain_action() == initial_calc_chain_action,
+            "by-name sheetData planned chunk CRC failure should preserve calcChain policy");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "by-name sheetData planned chunk CRC failure should keep planned workbook rewrite");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "by-name sheetData planned chunk CRC failure should keep prior staged worksheet plan");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "by-name sheetData planned chunk CRC failure should not leak PackageEditor temp files");
     }
 }
 
-void test_package_editor_contextualizes_sheet_data_current_worksheet_source_read_failure_without_state_changes()
+void test_package_editor_rejects_changed_planned_staged_chunk_crc_for_sheet_data_without_state_changes()
 {
-    const CalcSourcePackage source =
-        write_calc_source_package(
-            "fastxlsx-package-editor-sheetdata-source-read-failure.xlsx");
-    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-sheetdata-planned-chunk-crc-source.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-sheetdata-planned-chunk-crc-body.xml");
+
+    const std::string worksheet_prefix =
+        R"(<worksheet><dimension ref="A1:A2"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-staged</v></c></row>)";
+    const std::string original_body =
+        R"(<row r="2"><c r="A2"><v>original-staged-body</v></c></row>)";
+    const std::string worksheet_suffix = R"(</sheetData></worksheet>)";
+    write_binary_file(body_path, original_body);
 
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    editor.replace_worksheet_part_chunks(worksheet_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix),
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+            fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix),
+        });
+
     const std::size_t initial_plan_size = editor.edit_plan().size();
     const std::size_t initial_note_count = editor.edit_plan().notes().size();
     const std::size_t initial_package_entry_count =
@@ -2172,9 +2490,7 @@ void test_package_editor_contextualizes_sheet_data_current_worksheet_source_read
     const std::vector<std::filesystem::path> temp_files_before =
         package_editor_temp_files();
 
-    std::string corrupted_source_bytes = fastxlsx::test::read_file(source.path);
-    corrupt_first_occurrence(corrupted_source_bytes, "SUM(B1:C1)");
-    write_binary_file(source.path, corrupted_source_bytes);
+    write_binary_file(body_path, same_size_different_payload(original_body));
 
     bool failed = false;
     try {
@@ -2183,267 +2499,70 @@ void test_package_editor_contextualizes_sheet_data_current_worksheet_source_read
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(),
-            "current worksheet input for worksheet sheetData replacement output",
-            "sheetData source read failure should identify the output input boundary");
-        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
-            "sheetData source read failure should identify the current input source entry");
-        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
-            "sheetData source read failure should identify the worksheet part");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
-            "sheetData source read failure should identify the worksheet ZIP entry");
+            "failed to read current worksheet input for worksheet "
+            "sheetData replacement output",
+            "sheetData planned staged chunk CRC mutation should report the "
+            "input read boundary");
         check_contains(error.what(),
-            std::string("after emitting 1 current-input chunk and ")
-                + std::to_string(source.worksheet.size()) + " bytes",
-            "sheetData source read failure should report emitted current-input progress");
-        check_contains(error.what(), "current-input read attempt 2",
-            "sheetData source read failure should report the failing read attempt");
+            "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
+            "sheetData planned staged chunk CRC mutation should identify the current input source");
         check_contains(error.what(),
-            std::string("last chunk ") + std::to_string(source.worksheet.size()) + " bytes",
-            "sheetData source read failure should report the last emitted chunk size");
-        check_contains(error.what(), "CRC mismatch",
-            "sheetData source read failure should preserve the underlying ZIP error");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml' CRC mismatch",
-            "sheetData source read failure should identify the corrupt worksheet entry");
+            std::string("after emitting 2 current-input chunks and ")
+                + std::to_string(worksheet_prefix.size() + original_body.size()) + " bytes",
+            "sheetData planned staged chunk CRC mutation should report completed current-input progress");
+        check_contains(error.what(), "current-input read attempt 3",
+            "sheetData planned staged chunk CRC mutation should report the failing read attempt");
+        check_contains(error.what(),
+            std::string("last chunk ") + std::to_string(original_body.size()) + " bytes",
+            "sheetData planned staged chunk CRC mutation should report last emitted chunk size");
+        check_contains(error.what(),
+            "staged package-entry chunk CRC32 changed after validation",
+            "sheetData planned staged chunk CRC mutation should report the CRC contract");
+        const std::uint64_t planned_expected_bytes =
+            static_cast<std::uint64_t>(
+                worksheet_prefix.size() + original_body.size() + worksheet_suffix.size());
+        check_staged_chunk_expected_total(error.what(), planned_expected_bytes,
+            "sheetData planned staged chunk CRC mutation should report replay expected total");
+        check_staged_chunk_expected_remaining(error.what(),
+            static_cast<std::uint64_t>(worksheet_suffix.size()),
+            "sheetData planned staged chunk CRC mutation should report replay remaining bytes");
+        check_staged_file_chunk_read_progress(error.what(), 2,
+            static_cast<std::uint64_t>(original_body.size()),
+            "sheetData planned staged CRC mutation should report staged file progress");
         check_contains(error.what(), "expected ",
-            "sheetData source read failure should report expected CRC");
+            "sheetData planned staged chunk CRC mutation should report expected CRC");
         check_contains(error.what(), "actual ",
-            "sheetData source read failure should report actual CRC");
-        check_not_contains(error.what(), "sheetData replacement XML",
-            "sheetData source read failure should not be mislabeled as replacement payload input");
+            "sheetData planned staged chunk CRC mutation should report actual CRC");
+        check_contains(error.what(), "staged package-entry chunk 1",
+            "sheetData planned staged chunk CRC mutation should identify the file-backed chunk");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "sheetData planned staged chunk CRC mutation should include the file-backed chunk path");
     }
 
-    check(failed, "sheetData replacement should fail when source worksheet chunk read fails");
+    check(failed,
+        "sheetData replacement should reject planned staged chunks whose CRC changed");
     check(editor.edit_plan().size() == initial_plan_size,
-        "sheetData source read failure should not mutate edit-plan parts");
+        "sheetData planned staged chunk CRC mutation should preserve edit-plan size");
     check(editor.edit_plan().notes().size() == initial_note_count,
-        "sheetData source read failure should not append edit-plan notes");
+        "sheetData planned staged chunk CRC mutation should not append notes");
     check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
-        "sheetData source read failure should not add package-entry audits");
+        "sheetData planned staged chunk CRC mutation should not add package-entry audits");
     check(editor.edit_plan().removed_package_entries().size()
             == initial_removed_package_entry_count,
-        "sheetData source read failure should not add removed package-entry audits");
+        "sheetData planned staged chunk CRC mutation should not add removed package-entry audits");
     check(editor.edit_plan().worksheet_payload_dependency_audits().size()
             == initial_payload_audit_count,
-        "sheetData source read failure should not append payload audits");
+        "sheetData planned staged chunk CRC mutation should not append payload audits");
     check(editor.edit_plan().worksheet_relationship_reference_audits().size()
             == initial_relationship_audit_count,
-        "sheetData source read failure should not append relationship audits");
+        "sheetData planned staged chunk CRC mutation should not append relationship audits");
     check(editor.edit_plan().full_calculation_on_load() == initial_full_calculation,
-        "sheetData source read failure should not change calc policy");
+        "sheetData planned staged chunk CRC mutation should preserve calc policy");
     check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "sheetData source read failure should leave worksheet manifest copy-original");
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "sheetData planned staged chunk CRC mutation should keep prior staged worksheet plan");
     check_no_new_package_editor_temp_files(temp_files_before,
-        "sheetData source read failure should not leak PackageEditor temp files");
-
-    const CalcSourcePackage by_name_source =
-        write_calc_source_package(
-            "fastxlsx-package-editor-sheetdata-by-name-source-read-failure.xlsx");
-    fastxlsx::detail::PackageEditor by_name_editor =
-        fastxlsx::detail::PackageEditor::open(by_name_source.path);
-    const std::size_t by_name_initial_plan_size = by_name_editor.edit_plan().size();
-    const std::size_t by_name_initial_note_count = by_name_editor.edit_plan().notes().size();
-    const std::size_t by_name_initial_package_entry_count =
-        by_name_editor.edit_plan().package_entries().size();
-    const std::size_t by_name_initial_removed_package_entry_count =
-        by_name_editor.edit_plan().removed_package_entries().size();
-    const std::size_t by_name_initial_payload_audit_count =
-        by_name_editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t by_name_initial_relationship_audit_count =
-        by_name_editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const bool by_name_initial_full_calculation =
-        by_name_editor.edit_plan().full_calculation_on_load();
-    const std::vector<std::filesystem::path> by_name_temp_files_before =
-        package_editor_temp_files();
-
-    std::string by_name_corrupted_source_bytes =
-        fastxlsx::test::read_file(by_name_source.path);
-    corrupt_first_occurrence(by_name_corrupted_source_bytes, "SUM(B1:C1)");
-    write_binary_file(by_name_source.path, by_name_corrupted_source_bytes);
-
-    failed = false;
-    try {
-        by_name_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            "Sheet1",
-            make_test_chunk_source({
-                R"(<sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData>)",
-            }));
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(),
-            "current worksheet input for worksheet sheetData replacement output",
-            "by-name sheetData source read failure should identify the output input boundary");
-        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
-            "by-name sheetData source read failure should identify the current input source entry");
-        check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
-            "by-name sheetData source read failure should identify the worksheet part");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
-            "by-name sheetData source read failure should identify the worksheet ZIP entry");
-        check_contains(error.what(),
-            std::string("after emitting 1 current-input chunk and ")
-                + std::to_string(by_name_source.worksheet.size()) + " bytes",
-            "by-name sheetData source read failure should report emitted current-input progress");
-        check_contains(error.what(), "current-input read attempt 2",
-            "by-name sheetData source read failure should report the failing read attempt");
-        check_contains(error.what(),
-            std::string("last chunk ") + std::to_string(by_name_source.worksheet.size())
-                + " bytes",
-            "by-name sheetData source read failure should report the last emitted chunk size");
-        check_contains(error.what(), "CRC mismatch",
-            "by-name sheetData source read failure should preserve the underlying ZIP error");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml' CRC mismatch",
-            "by-name sheetData source read failure should identify the corrupt worksheet entry");
-        check_contains(error.what(), "expected ",
-            "by-name sheetData source read failure should report expected CRC");
-        check_contains(error.what(), "actual ",
-            "by-name sheetData source read failure should report actual CRC");
-        check_not_contains(error.what(), "sheetData replacement XML",
-            "by-name sheetData source read failure should not be mislabeled as replacement payload input");
-    }
-
-    check(failed,
-        "by-name sheetData replacement should fail when source worksheet chunk read fails");
-    check(by_name_editor.edit_plan().size() == by_name_initial_plan_size,
-        "by-name sheetData source read failure should not mutate edit-plan parts");
-    check(by_name_editor.edit_plan().notes().size() == by_name_initial_note_count,
-        "by-name sheetData source read failure should not append edit-plan notes");
-    check(by_name_editor.edit_plan().package_entries().size()
-            == by_name_initial_package_entry_count,
-        "by-name sheetData source read failure should not add package-entry audits");
-    check(by_name_editor.edit_plan().removed_package_entries().size()
-            == by_name_initial_removed_package_entry_count,
-        "by-name sheetData source read failure should not add removed package-entry audits");
-    check(by_name_editor.edit_plan().worksheet_payload_dependency_audits().size()
-            == by_name_initial_payload_audit_count,
-        "by-name sheetData source read failure should not append payload audits");
-    check(by_name_editor.edit_plan().worksheet_relationship_reference_audits().size()
-            == by_name_initial_relationship_audit_count,
-        "by-name sheetData source read failure should not append relationship audits");
-    check(by_name_editor.edit_plan().full_calculation_on_load()
-            == by_name_initial_full_calculation,
-        "by-name sheetData source read failure should not change calc policy");
-    check_manifest_write_mode(by_name_editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "by-name sheetData source read failure should leave worksheet manifest copy-original");
-    check_no_new_package_editor_temp_files(by_name_temp_files_before,
-        "by-name sheetData source read failure should not leak PackageEditor temp files");
-
-    const CalcSourcePackage planned_name_source =
-        write_calc_source_package(
-            "fastxlsx-package-editor-sheetdata-planned-name-source-read-failure.xlsx");
-    fastxlsx::detail::PackageEditor planned_name_editor =
-        fastxlsx::detail::PackageEditor::open(planned_name_source.path);
-    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
-    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
-    const std::string planned_workbook =
-        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
-        R"(<sheets><sheet name="Renamed" sheetId="1" r:id="rId1"/></sheets>)"
-        R"(</workbook>)";
-    planned_name_editor.replace_part(workbook_part, planned_workbook,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "ordinary workbook replacement before planned-name source-read failure");
-
-    const std::size_t planned_name_plan_size =
-        planned_name_editor.edit_plan().size();
-    const std::size_t planned_name_note_count =
-        planned_name_editor.edit_plan().notes().size();
-    const std::size_t planned_name_package_entry_count =
-        planned_name_editor.edit_plan().package_entries().size();
-    const std::size_t planned_name_removed_package_entry_count =
-        planned_name_editor.edit_plan().removed_package_entries().size();
-    const std::size_t planned_name_payload_audit_count =
-        planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size();
-    const std::size_t planned_name_relationship_audit_count =
-        planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size();
-    const bool planned_name_full_calculation =
-        planned_name_editor.edit_plan().full_calculation_on_load();
-    const fastxlsx::detail::CalcChainAction planned_name_calc_chain_action =
-        planned_name_editor.edit_plan().calc_chain_action();
-    const std::vector<std::filesystem::path> planned_name_temp_files_before =
-        package_editor_temp_files();
-
-    std::string planned_name_corrupted_source_bytes =
-        fastxlsx::test::read_file(planned_name_source.path);
-    corrupt_first_occurrence(planned_name_corrupted_source_bytes, "SUM(B1:C1)");
-    write_binary_file(planned_name_source.path, planned_name_corrupted_source_bytes);
-
-    failed = false;
-    try {
-        planned_name_editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
-            "Renamed",
-            make_test_chunk_source({
-                R"(<sheetData><row r="1"><c r="A1"><v>84</v></c></row></sheetData>)",
-            }));
-    } catch (const std::exception& error) {
-        failed = true;
-        check_contains(error.what(),
-            "by-name sheetData replacement for sheet 'Renamed'",
-            "planned-name sheetData source read failure should identify the planned sheet name");
-        check_contains(error.what(),
-            "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
-            "planned-name sheetData source read failure should show the resolved worksheet part");
-        check_contains(error.what(),
-            "current worksheet input for worksheet sheetData replacement output",
-            "planned-name sheetData source read failure should keep the output input boundary");
-        check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
-            "planned-name sheetData source read failure should identify the source worksheet entry");
-        check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
-            "planned-name sheetData source read failure should identify the ZIP entry");
-        check_contains(error.what(),
-            std::string("after emitting 1 current-input chunk and ")
-                + std::to_string(planned_name_source.worksheet.size()) + " bytes",
-            "planned-name sheetData source read failure should report emitted current-input progress");
-        check_contains(error.what(), "current-input read attempt 2",
-            "planned-name sheetData source read failure should report the failing read attempt");
-        check_contains(error.what(),
-            std::string("last chunk ") + std::to_string(planned_name_source.worksheet.size())
-                + " bytes",
-            "planned-name sheetData source read failure should report the last emitted chunk size");
-        check_contains(error.what(), "CRC mismatch",
-            "planned-name sheetData source read failure should preserve the underlying ZIP error");
-        check_contains(error.what(), "expected ",
-            "planned-name sheetData source read failure should report expected CRC");
-        check_contains(error.what(), "actual ",
-            "planned-name sheetData source read failure should report actual CRC");
-        check_not_contains(error.what(), "sheetData replacement XML",
-            "planned-name sheetData source read failure should not be mislabeled as replacement payload input");
-    }
-
-    check(failed,
-        "planned-name by-name sheetData replacement should fail when source worksheet read fails");
-    check(planned_name_editor.edit_plan().size() == planned_name_plan_size,
-        "planned-name sheetData source read failure should preserve queued edit-plan size");
-    check(planned_name_editor.edit_plan().notes().size() == planned_name_note_count,
-        "planned-name sheetData source read failure should not append notes");
-    check(planned_name_editor.edit_plan().package_entries().size()
-            == planned_name_package_entry_count,
-        "planned-name sheetData source read failure should not add package-entry audits");
-    check(planned_name_editor.edit_plan().removed_package_entries().size()
-            == planned_name_removed_package_entry_count,
-        "planned-name sheetData source read failure should not add removed package-entry audits");
-    check(planned_name_editor.edit_plan().worksheet_payload_dependency_audits().size()
-            == planned_name_payload_audit_count,
-        "planned-name sheetData source read failure should not append payload audits");
-    check(planned_name_editor.edit_plan().worksheet_relationship_reference_audits().size()
-            == planned_name_relationship_audit_count,
-        "planned-name sheetData source read failure should not append relationship audits");
-    check(planned_name_editor.edit_plan().full_calculation_on_load()
-            == planned_name_full_calculation,
-        "planned-name sheetData source read failure should not change calc policy");
-    check(planned_name_editor.edit_plan().calc_chain_action()
-            == planned_name_calc_chain_action,
-        "planned-name sheetData source read failure should not change calcChain policy");
-    check_manifest_write_mode(planned_name_editor, workbook_part,
-        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
-        "planned-name sheetData source read failure should keep workbook local-DOM-rewrite");
-    check_manifest_write_mode(planned_name_editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "planned-name sheetData source read failure should leave worksheet manifest copy-original");
-    check_manifest_write_mode(planned_name_editor, calc_chain_part,
-        fastxlsx::detail::PartWriteMode::CopyOriginal,
-        "planned-name sheetData source read failure should leave calcChain manifest copy-original");
-    check_no_new_package_editor_temp_files(planned_name_temp_files_before,
-        "planned-name sheetData source read failure should not leak PackageEditor temp files");
+        "sheetData planned staged chunk CRC mutation should not leak PackageEditor temp files");
 }
 
 } // namespace
@@ -2454,13 +2573,13 @@ int main(int argc, char* argv[])
         const std::string_view shard = package_editor_shard_from_args(argc, argv);
         std::cout << "fastxlsx.package_editor shard: " << shard << '\n';
 
-        if (should_run_package_editor_shard(shard, "c5")) {
-            test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff();
-            test_package_editor_replaces_worksheet_cells_with_chunked_payload();
-            test_package_editor_contextualizes_current_worksheet_source_read_failure_without_state_changes();
-            test_package_editor_contextualizes_missing_current_worksheet_entry_without_state_changes();
-            test_package_editor_rejects_malformed_current_worksheet_events_without_state_changes();
-            test_package_editor_contextualizes_sheet_data_current_worksheet_source_read_failure_without_state_changes();
+        if (should_run_package_editor_shard(shard, "c5-guards")) {
+            test_package_editor_rejects_changed_planned_staged_chunk_sizes_without_state_changes();
+            test_package_editor_rejects_changed_planned_staged_chunk_sizes_for_sheet_data_without_state_changes();
+            test_package_editor_rejects_changed_planned_staged_chunk_crc_without_state_changes();
+            test_package_editor_rejects_missing_planned_staged_chunk_file_at_read_boundary();
+            test_package_editor_contextualizes_by_name_planned_staged_chunk_read_failures_without_state_changes();
+            test_package_editor_rejects_changed_planned_staged_chunk_crc_for_sheet_data_without_state_changes();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

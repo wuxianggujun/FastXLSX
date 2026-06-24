@@ -1754,6 +1754,11 @@ The next package-editor test-layout step is now the CellStore shard split:
 while `tests/test_package_editor.cpp` keeps the remaining shards. This is the
 same kind of CTest budget hygiene only; it does not change PackageEditor
 behavior.
+The follow-up sheetData layout split now moves `sheetdata`,
+`sheetdata-catalog`, `sheetdata-guards`, and `sheetdata-linked` into
+`tests/test_package_editor_sheetdata.cpp` under the same CTest names. This is
+still test organization only: no runtime behavior, public API, sheetData XML
+semantics, relationship repair, or linked-object lifecycle semantics changed.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -1872,10 +1872,17 @@ base `tests/test_package_editor_preservation_core.cpp` keeps drawing,
 unknown-extension, media, chart, and table coverage, while
 `tests/test_package_editor_preservation_core_drawings.cpp` and
 `tests/test_package_editor_preservation_core_docparts.cpp` hold the VML /
-percent-decoded drawing and doc-part families. The existing
-`fastxlsx.package_editor.preservation-core` CTest name stays stable, the new
-`fastxlsx.package_editor.preservation-core-drawings` and
-`fastxlsx.package_editor.preservation-core-docparts` names are added, and
+percent-decoded drawing and doc-part families. The doc-part lane is now split
+again: `tests/test_package_editor_preservation_core_docparts.cpp` keeps the
+workbook / worksheet families, `tests/test_package_editor_preservation_core_docparts_drawing.cpp`
+owns the drawing family, `tests/test_package_editor_preservation_core_docparts_shared.cpp`
+owns sharedStrings plus styles, and
+`tests/test_package_editor_preservation_core_docparts_vba.cpp` owns VBA.
+The existing `fastxlsx.package_editor.preservation-core` CTest name stays
+stable, the new `fastxlsx.package_editor.preservation-core-drawings`,
+`fastxlsx.package_editor.preservation-core-docparts-drawing`,
+`fastxlsx.package_editor.preservation-core-docparts-shared`, and
+`fastxlsx.package_editor.preservation-core-docparts-vba` names are added, and
 `fastxlsx_package_editor_preservation_tests` remains a build-only aggregate.
 This is still test organization only.
 The preservation-removal executable now follows the same split pattern:
@@ -2384,6 +2391,11 @@ schema validation.
   - `fastxlsx.package_editor.core`
   - `fastxlsx.package_editor.c5`
   - `fastxlsx.package_editor.preservation-core`
+  - `fastxlsx.package_editor.preservation-core-drawings`
+  - `fastxlsx.package_editor.preservation-core-docparts`
+  - `fastxlsx.package_editor.preservation-core-docparts-drawing`
+  - `fastxlsx.package_editor.preservation-core-docparts-shared`
+  - `fastxlsx.package_editor.preservation-core-docparts-vba`
   - `fastxlsx.package_editor.preservation-removal`
   - `fastxlsx.package_editor.preservation-removal-policy`
   - `fastxlsx.package_editor.preservation-removal-workbook-parts`

@@ -461,6 +461,18 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_core_docparts.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_core_docparts_drawing_tests
+    test_package_editor_preservation_core_docparts_drawing.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_core_docparts_shared_tests
+    test_package_editor_preservation_core_docparts_shared.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_core_docparts_vba_tests
+    test_package_editor_preservation_core_docparts_vba.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_removal_core_tests
     test_package_editor_preservation_removal.cpp
 )
@@ -529,6 +541,9 @@ add_custom_target(fastxlsx_package_editor_preservation_tests
         fastxlsx_package_editor_preservation_core_tests
         fastxlsx_package_editor_preservation_core_drawings_tests
         fastxlsx_package_editor_preservation_core_docparts_tests
+        fastxlsx_package_editor_preservation_core_docparts_drawing_tests
+        fastxlsx_package_editor_preservation_core_docparts_shared_tests
+        fastxlsx_package_editor_preservation_core_docparts_vba_tests
         fastxlsx_package_editor_preservation_removal_tests
         fastxlsx_package_editor_preservation_resources_tests
         fastxlsx_package_editor_preservation_comments_tests
@@ -559,6 +574,18 @@ add_fastxlsx_package_editor_preservation_shard(
 add_fastxlsx_package_editor_preservation_shard(
     preservation-core-docparts
     fastxlsx_package_editor_preservation_core_docparts_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-core-docparts-drawing
+    fastxlsx_package_editor_preservation_core_docparts_drawing_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-core-docparts-shared
+    fastxlsx_package_editor_preservation_core_docparts_shared_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-core-docparts-vba
+    fastxlsx_package_editor_preservation_core_docparts_vba_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-removal fastxlsx_package_editor_preservation_removal_core_tests 60

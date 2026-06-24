@@ -30047,6 +30047,51 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_reader" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.709 - Split PackageEditor core docparts executable by family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep the PackageEditor preservation core doc-part shard under budget by
+splitting workbook / worksheet, drawing, sharedStrings + styles, and VBA
+families into dedicated executables while preserving the existing
+`fastxlsx.package_editor.preservation-core-docparts` CTest name for the base
+workbook / worksheet shard.
+
+Output:
+- Extracted shared helpers to
+  `tests/test_package_editor_preservation_core_docparts_common.hpp`.
+- Kept `tests/test_package_editor_preservation_core_docparts.cpp` focused on
+  workbook and worksheet preservation coverage.
+- Added:
+  - `tests/test_package_editor_preservation_core_docparts_drawing.cpp`.
+  - `tests/test_package_editor_preservation_core_docparts_shared.cpp`.
+  - `tests/test_package_editor_preservation_core_docparts_vba.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_editor_preservation_core_docparts_tests`,
+  `fastxlsx_package_editor_preservation_core_docparts_drawing_tests`,
+  `fastxlsx_package_editor_preservation_core_docparts_shared_tests`, and
+  `fastxlsx_package_editor_preservation_core_docparts_vba_tests`.
+- Kept `fastxlsx_package_editor_preservation_tests` as a build-only aggregate
+  target depending on all preservation shard executables.
+- Kept the existing CTest name `fastxlsx.package_editor.preservation-core-docparts`
+  for the base shard, and added
+  `fastxlsx.package_editor.preservation-core-docparts-drawing`,
+  `fastxlsx.package_editor.preservation-core-docparts-shared`, and
+  `fastxlsx.package_editor.preservation-core-docparts-vba`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no preservation semantic expansion, no relationship repair/pruning
+  expansion, no object lifecycle expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_preservation_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

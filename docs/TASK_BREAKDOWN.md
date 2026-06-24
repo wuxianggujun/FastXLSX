@@ -32909,6 +32909,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.source-success-shared-strings" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.717 - WorksheetEditor style-preserving value update boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook style boundary; no style
+migration or style merge.
+
+Goal: provide a safe value-only edit API for styled source cells. When a source
+cell materializes with a validated non-default workbook-local style id,
+`WorksheetEditor::set_cell_value()` replaces only the value and keeps that
+same source style handle on the target coordinate. The existing `set_cell()`
+entry remains a full cell replacement that rejects caller-supplied non-default
+styles and drops any prior source style.
+
+Output:
+- Added row/column and strict A1 `WorksheetEditor::set_cell_value()` overloads.
+- Reused the materialized sparse store's existing cell record to preserve the
+  target cell's source style id before writing the replacement value.
+- Kept caller-supplied non-default `StyleId` rejection and last-edit-error
+  behavior consistent with other public mutation failures.
+- Extended source-style regressions to cover rejection no-state-pollution,
+  successful style-preserving value replacement, missing-cell insertion without
+  style synthesis, and byte-preserved `xl/styles.xml`.
+
+Non-goals / boundary:
+- No arbitrary style id write API, no styles.xml creation, no style migration
+  or merge, no style validation beyond already-materialized source ids, no
+  tombstone clear API, no relationship/content-type repair, and no
+  large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

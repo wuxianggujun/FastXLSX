@@ -15,6 +15,24 @@
 
 namespace fastxlsx {
 
+namespace {
+
+[[nodiscard]] bool has_non_default_style(const CellValue& value) noexcept
+{
+    return value.has_style() && value.style_id().value() != 0;
+}
+
+[[nodiscard]] CellValue with_preserved_source_style(
+    const CellValue& value, const detail::CellRecord* existing)
+{
+    if (existing == nullptr || !existing->style_id.has_value()) {
+        return value;
+    }
+    return value.with_style(*existing->style_id);
+}
+
+} // namespace
+
 WorksheetEditor::WorksheetEditor(
     WorkbookEditor* owner, std::string planned_name, std::uint64_t owner_generation)
     : owner_(owner)
@@ -102,7 +120,7 @@ void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const Ce
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
         detail::validate_worksheet_editor_cell_coordinate(row, column);
-        if (value.has_style() && value.style_id().value() != 0) {
+        if (has_non_default_style(value)) {
             throw FastXlsxError(
                 "WorksheetEditor::set_cell() does not support non-default StyleId values");
         }
@@ -120,6 +138,32 @@ void WorksheetEditor::set_cell(std::uint32_t row, std::uint32_t column, const Ce
     }
 }
 
+void WorksheetEditor::set_cell_value(
+    std::uint32_t row, std::uint32_t column, const CellValue& value)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_coordinate(row, column);
+        if (has_non_default_style(value)) {
+            throw FastXlsxError(
+                "WorksheetEditor::set_cell_value() does not support caller-supplied non-default StyleId values");
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        const detail::CellRecord* existing = session->try_cell(row, column);
+        session->set_cell(row, column, with_preserved_source_style(value, existing));
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue& value)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -127,6 +171,19 @@ void WorksheetEditor::set_cell(std::string_view cell_reference, const CellValue&
         const detail::WorksheetEditorCellCoordinate coordinate =
             detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
         set_cell(coordinate.row, coordinate.column, value);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::set_cell_value(std::string_view cell_reference, const CellValue& value)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        const detail::WorksheetEditorCellCoordinate coordinate =
+            detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
+        set_cell_value(coordinate.row, coordinate.column, value);
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
         throw;

@@ -2894,6 +2894,34 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
         check(!editor.has_pending_changes(),
             "source style materialization should not dirty WorkbookEditor");
 
+        const bool rejected_caller_style = threw_fastxlsx_error([&sheet, number_style]() {
+            sheet.set_cell_value("A1",
+                fastxlsx::CellValue::text("must-not-overwrite-style")
+                    .with_style(number_style));
+        });
+        check(rejected_caller_style,
+            "WorksheetEditor::set_cell_value should reject caller-supplied non-default style ids");
+        const fastxlsx::CellValue preserved_after_reject = sheet.get_cell("A1");
+        check(preserved_after_reject.kind() == fastxlsx::CellValueKind::Text
+                && preserved_after_reject.text_value() == "styled-source"
+                && preserved_after_reject.has_style()
+                && preserved_after_reject.style_id().value() == number_style.value(),
+            "rejected style-preserving value edit should not mutate the source cell");
+        check(editor.last_edit_error().has_value()
+                && editor.last_edit_error()->find("set_cell_value()") != std::string::npos,
+            "rejected style-preserving value edit should update last_edit_error");
+
+        sheet.set_cell_value("A1",
+            fastxlsx::CellValue::text("style-preserved-value-edit"));
+        const fastxlsx::CellValue updated_a1 = sheet.get_cell("A1");
+        check(updated_a1.kind() == fastxlsx::CellValueKind::Text
+                && updated_a1.text_value() == "style-preserved-value-edit"
+                && updated_a1.has_style()
+                && updated_a1.style_id().value() == number_style.value(),
+            "WorksheetEditor::set_cell_value should preserve the existing source style id");
+        check(!editor.last_edit_error().has_value(),
+            "successful style-preserving value edit should clear prior edit diagnostics");
+        sheet.set_cell_value(1, 3, fastxlsx::CellValue::text("value-edit-no-source-style"));
         sheet.set_cell("B1", fastxlsx::CellValue::text("style-passthrough-edit"));
         editor.save_as(output);
 
@@ -2902,11 +2930,14 @@ void test_public_worksheet_editor_materializes_source_style_ids_and_rejects_malf
             "dirty source-style projection should preserve styles.xml bytes");
         const std::string output_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(output_xml,
-            R"(<c r="A1" s="1" t="inlineStr"><is><t>styled-source</t></is></c>)",
-            "dirty source-style projection should preserve materialized source style ids");
+            R"(<c r="A1" s="1" t="inlineStr"><is><t>style-preserved-value-edit</t></is></c>)",
+            "dirty source-style projection should preserve style ids on value-only edits");
         check_contains(output_xml,
             R"(<c r="B1" t="inlineStr"><is><t>style-passthrough-edit</t></is></c>)",
             "dirty source-style projection should write new unstyled edits");
+        check_contains(output_xml,
+            R"(<c r="C1" t="inlineStr"><is><t>value-edit-no-source-style</t></is></c>)",
+            "style-preserving value edit on a missing cell should not synthesize styles");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-source-style",
             "dirty source-style projection should preserve untouched sheets");
     }

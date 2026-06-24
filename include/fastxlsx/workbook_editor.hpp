@@ -589,12 +589,14 @@ struct WorkbookEditorRenameOptions {
 /// during materialization. Canonical non-zero unsigned decimal source style ids
 /// are validated against the source styles.xml `cellXfs` table, materialized as
 /// numeric passthrough handles, and written back by dirty projection while the
-/// source styles part is preserved. This does not migrate or merge styles, or
-/// allow caller-supplied foreign style handles. Empty, valueless, unquoted,
-/// unterminated, padded, signed, leading-zero, entity-encoded, missing
-/// workbook styles metadata, or out-of-range source style tokens, duplicate
-/// style attributes, and qualified style-like attributes such as `x:s` remain
-/// unsupported.
+/// source styles part is preserved. `set_cell_value()` can replace a cell value
+/// while preserving the currently materialized source style handle on that same
+/// coordinate. This does not migrate or merge styles, synthesize styles for
+/// missing cells, or allow caller-supplied foreign style handles. Empty,
+/// valueless, unquoted, unterminated, padded, signed, leading-zero,
+/// entity-encoded, missing workbook styles metadata, or out-of-range source
+/// style tokens, duplicate style attributes, and qualified style-like
+/// attributes such as `x:s` remain unsupported.
 class WorksheetEditor {
 public:
     /// Returns the planned worksheet name for this borrowed handle.
@@ -662,6 +664,18 @@ public:
     /// rejected call does not mutate or dirty the sparse store.
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
 
+    /// Replaces one sparse-store cell value while preserving its current style.
+    ///
+    /// This is the safe existing-workbook style boundary for value-only edits:
+    /// if the target coordinate already has a materialized non-default source
+    /// StyleId, the replacement value keeps that same workbook-local handle.
+    /// Missing target cells are inserted without a style. Caller-supplied
+    /// non-default StyleId handles are still rejected because this method does
+    /// not migrate, merge, validate, or create styles. Use set_cell() when the
+    /// intended operation is a full cell replacement that drops any prior style.
+    void set_cell_value(
+        std::uint32_t row, std::uint32_t column, const CellValue& value);
+
     /// Sets or replaces one sparse-store cell value by strict uppercase A1
     /// reference.
     ///
@@ -678,6 +692,15 @@ public:
     /// results. Non-default StyleId handles follow the row/column overload:
     /// they are rejected before the sparse store is mutated or dirtied.
     void set_cell(std::string_view cell_reference, const CellValue& value);
+
+    /// Replaces one sparse-store cell value by strict uppercase A1 reference
+    /// while preserving the target cell's current source style handle.
+    ///
+    /// The reference parsing, coordinate guardrails, missing-cell insertion
+    /// behavior, and non-default caller-supplied StyleId rejection follow the
+    /// row/column set_cell_value() overload. This remains a value-only
+    /// convenience, not a public style migration or style editing API.
+    void set_cell_value(std::string_view cell_reference, const CellValue& value);
 
     /// Removes one sparse-store cell record.
     ///

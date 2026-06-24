@@ -42,6 +42,13 @@ creates a new sharedStrings part. The failure matrix is also pinned: duplicate
 or invalid sharedStrings relationships/targets, missing or wrong-typed parts,
 malformed sharedStrings XML, and invalid indexes fail fast for worksheets that
 actually require source shared strings instead of being repaired or guessed.
+The current `WorksheetEditor` style boundary now has a narrow value-only edit
+API: `set_cell_value()` replaces a cell's value while preserving the currently
+materialized source style handle on that coordinate. It still rejects
+caller-supplied non-default `StyleId` values, does not create or merge
+`xl/styles.xml` entries, and does not synthesize styles for newly inserted
+cells. Full cell replacement through `set_cell()` continues to drop prior
+source style handles by design.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

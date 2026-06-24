@@ -33133,6 +33133,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.723 - WorksheetEditor sparse coordinate batch erase boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` existing-workbook coordinate-batch erase API; no
+tombstone model, no row/column delete, and no dense range writer.
+
+Goal: provide an explicit-coordinate batch counterpart to `erase_cell()`.
+`WorksheetEditor::erase_cells(span<WorksheetCellReference>)` validates every
+coordinate before committing, removes only represented active sparse records,
+allows duplicate coordinates as no-ops after the first removal, and treats empty
+input / missing-only input as successful no-ops.
+
+Output:
+- Added public `WorksheetEditor::erase_cells(span<WorksheetCellReference>)`
+  with Doxygen boundary notes.
+- Added staged coordinate erase logic so invalid coordinates reject the whole
+  batch without mutating the active materialized session.
+- Extended public source-style regressions to prove invalid coordinate batch
+  no-state-pollution, empty batch no-op diagnostic cleanup, represented-cell
+  removal, duplicate-coordinate tolerance, missing-coordinate non-synthesis,
+  and dirty save-as omission.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  coordinate erase from explicit blank clear, tombstones, dense range deletion,
+  row/column delete, range metadata recalculation, relationship repair, and
+  large-file low-memory random editing.
+
+Non-goals / boundary:
+- No A1 range string parser, dense matrix/range deletion, tombstone model,
+  row/column delete/insert, explicit blank conversion, style migration/merge,
+  sharedStrings migration expansion, range metadata recalculation,
+  relationship/content-type repair, or large-file random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_source_failures" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

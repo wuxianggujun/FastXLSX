@@ -611,8 +611,10 @@ struct WorkbookEditorRenameOptions {
 /// style handles; missing cells are successful no-ops and range or coordinate
 /// batch clears do not synthesize blank records for missing coordinates. This
 /// does not migrate or merge styles, synthesize styles for missing cells,
-/// create tombstones, or allow caller-supplied foreign style handles. Empty,
-/// valueless, unquoted, unterminated, padded, signed, leading-zero,
+/// create tombstones, or allow caller-supplied foreign style handles.
+/// `erase_cell()` and `erase_cells()` remove active sparse records instead of
+/// writing explicit blanks. Empty, valueless, unquoted, unterminated, padded,
+/// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
 /// attributes such as `x:s` remain unsupported.
@@ -813,6 +815,24 @@ public:
     /// metadata recalculation, style migration/merge/creation, or an A1 range
     /// parser.
     void clear_cell_values(std::span<const WorksheetCellReference> cells);
+
+    /// Removes sparse-store cell records at explicit sparse coordinates.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Each
+    /// coordinate is 1-based and validated against Excel worksheet limits. The
+    /// input order is respected and duplicate coordinates are allowed; after an
+    /// earlier duplicate removes a record, later duplicates are no-ops. Missing
+    /// coordinates are successful no-ops and are not represented by tombstones.
+    /// Empty input, or input containing no represented cells, does not dirty the
+    /// session and clears prior public edit diagnostics. Invalid coordinates
+    /// reject the entire batch before the active sparse store is mutated and
+    /// update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// may shrink the worksheet dimension. This is not dense range deletion,
+    /// row/column delete, tombstone output, range metadata recalculation,
+    /// relationship repair, or a large-file low-memory random-editing path.
+    void erase_cells(std::span<const WorksheetCellReference> cells);
 
     /// Removes one sparse-store cell record.
     ///

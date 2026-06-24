@@ -362,6 +362,45 @@ void WorksheetEditor::clear_cell_values(std::span<const WorksheetCellReference> 
     }
 }
 
+void WorksheetEditor::erase_cells(std::span<const WorksheetCellReference> cells)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        for (const WorksheetCellReference& cell : cells) {
+            detail::validate_worksheet_editor_cell_coordinate(cell.row, cell.column);
+        }
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+        if (cells.empty()) {
+            state.clear_last_edit_error();
+            return;
+        }
+
+        detail::CellStore staged_store = session->store();
+        bool erased_any_cell = false;
+        for (const WorksheetCellReference& cell : cells) {
+            if (staged_store.try_cell(cell.row, cell.column) == nullptr) {
+                continue;
+            }
+
+            staged_store.erase_cell(cell.row, cell.column);
+            erased_any_cell = true;
+        }
+
+        if (erased_any_cell) {
+            session->replace_store(std::move(staged_store));
+        }
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::erase_cell(std::uint32_t row, std::uint32_t column)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

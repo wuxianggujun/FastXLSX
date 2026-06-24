@@ -30008,6 +30008,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.policy" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.708 - Split PackageReader executable by reader family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large PackageReader executable by moving workbook/catalog and
+ZIP/backend failure coverage into separate source files and executables, while
+keeping the existing `fastxlsx.package_reader` CTest name stable for the
+writer-guardrail and stored-entry core shard.
+
+Output:
+- Extracted shared PackageReader helpers to
+  `tests/test_package_reader_common.hpp`.
+- Kept `tests/test_package_reader.cpp` focused on package-writer guardrails and
+  stored-entry reader/extraction/chunking core coverage.
+- Added:
+  - `tests/test_package_reader_workbook.cpp`.
+  - `tests/test_package_reader_zip_failures.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_package_reader_core_tests`,
+  `fastxlsx_package_reader_workbook_tests`, and
+  `fastxlsx_package_reader_zip_failures_tests`.
+- Kept `fastxlsx_package_reader_tests` as a build-only aggregate target
+  depending on all PackageReader shard executables.
+- Kept `fastxlsx.package_reader` for the core shard and added
+  `fastxlsx.package_reader.workbook` and
+  `fastxlsx.package_reader.zip-failures`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageReader behavior
+  change, no ZIP/backend semantic expansion, and no CTest coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_reader_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_reader" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

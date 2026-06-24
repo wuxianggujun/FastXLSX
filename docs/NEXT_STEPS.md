@@ -1793,6 +1793,15 @@ invalid-input families. The existing `fastxlsx.package_editor.policy` CTest
 name stays stable for the core shard, the new policy shard names are added,
 and `fastxlsx_package_editor_policy_tests` remains a build-only aggregate.
 This is still test organization only.
+PackageReader now follows the same CTest-budget split:
+`tests/test_package_reader.cpp` keeps writer guardrails and stored-entry core
+coverage, while `tests/test_package_reader_workbook.cpp` owns workbook catalog
+and package-backed cell-store loader coverage, and
+`tests/test_package_reader_zip_failures.cpp` owns ZIP/backend failure coverage
+including the opt-in minizip cases. The existing `fastxlsx.package_reader`
+CTest name stays stable for the core shard, the new package-reader shard names
+are added, and `fastxlsx_package_reader_tests` remains a build-only aggregate.
+This is still test organization only.
 The remaining WorkbookEditor monolith split removes
 `tests/test_workbook_editor.cpp` by moving `core`, `public`, and `public-edge`
 into `tests/test_workbook_editor_core.cpp`,
@@ -2370,6 +2379,8 @@ schema validation.
   - `fastxlsx.worksheet_event_reader`
   - `fastxlsx.worksheet_transformer`
   - `fastxlsx.package_reader`
+  - `fastxlsx.package_reader.workbook`
+  - `fastxlsx.package_reader.zip-failures`
   - `fastxlsx.package_editor.core`
   - `fastxlsx.package_editor.c5`
   - `fastxlsx.package_editor.preservation-core`

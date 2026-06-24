@@ -509,6 +509,18 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_comments.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_comments_threaded_tests
+    test_package_editor_preservation_comments_threaded.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_comments_persons_tests
+    test_package_editor_preservation_comments_persons.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
+    fastxlsx_package_editor_preservation_comments_ordering_tests
+    test_package_editor_preservation_comments_ordering.cpp
+)
+add_fastxlsx_package_editor_preservation_target(
     fastxlsx_package_editor_preservation_linked_tests
     test_package_editor_preservation_linked.cpp
 )
@@ -548,6 +560,14 @@ add_custom_target(fastxlsx_package_editor_preservation_removal_tests
         fastxlsx_package_editor_preservation_removal_drawing_parts_tests
 )
 
+add_custom_target(fastxlsx_package_editor_preservation_comments_all_tests
+    DEPENDS
+        fastxlsx_package_editor_preservation_comments_tests
+        fastxlsx_package_editor_preservation_comments_threaded_tests
+        fastxlsx_package_editor_preservation_comments_persons_tests
+        fastxlsx_package_editor_preservation_comments_ordering_tests
+)
+
 add_custom_target(fastxlsx_package_editor_preservation_tests
     DEPENDS
         fastxlsx_package_editor_preservation_core_tests
@@ -558,7 +578,7 @@ add_custom_target(fastxlsx_package_editor_preservation_tests
         fastxlsx_package_editor_preservation_core_docparts_vba_tests
         fastxlsx_package_editor_preservation_removal_tests
         fastxlsx_package_editor_preservation_resources_tests
-        fastxlsx_package_editor_preservation_comments_tests
+        fastxlsx_package_editor_preservation_comments_all_tests
         fastxlsx_package_editor_preservation_linked_tests
         fastxlsx_package_editor_preservation_linked_pivot_tests
         fastxlsx_package_editor_preservation_linked_external_links_tests
@@ -619,6 +639,18 @@ add_fastxlsx_package_editor_preservation_shard(
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-comments fastxlsx_package_editor_preservation_comments_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-comments-threaded
+    fastxlsx_package_editor_preservation_comments_threaded_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-comments-persons
+    fastxlsx_package_editor_preservation_comments_persons_tests 60
+)
+add_fastxlsx_package_editor_preservation_shard(
+    preservation-comments-ordering
+    fastxlsx_package_editor_preservation_comments_ordering_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked fastxlsx_package_editor_preservation_linked_tests 60

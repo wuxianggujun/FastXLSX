@@ -1760,6 +1760,15 @@ coverage into `tests/test_workbook_editor_facade_save_as.cpp`,
 `fastxlsx.workbook_editor_facade` CTest name remains the core shard, the new
 facade shard names are test-organization only, and
 `fastxlsx_workbook_editor_facade_tests` is now a build-only aggregate.
+The PackageEditor preservation comments shard is now split by object family:
+legacy comments stay in `tests/test_package_editor_preservation_comments.cpp`,
+threaded comments, persons, and same-path ordering coverage move into
+`tests/test_package_editor_preservation_comments_threaded.cpp`,
+`tests/test_package_editor_preservation_comments_persons.cpp`, and
+`tests/test_package_editor_preservation_comments_ordering.cpp`, with shared
+fixtures in `tests/test_package_editor_preservation_comments_common.hpp`. The
+existing `fastxlsx.package_editor.preservation-comments` CTest name remains the
+legacy-comments shard, and the new names are test-organization only.
 The next package-editor test-layout step is now the CellStore shard split:
 `tests/test_package_editor_cellstore.cpp` owns the `cellstore-*` CTest names
 while `tests/test_package_editor.cpp` keeps the remaining shards. This is the
@@ -2433,6 +2442,9 @@ schema validation.
   - `fastxlsx.package_editor.preservation-removal-drawing-parts`
   - `fastxlsx.package_editor.preservation-resources`
   - `fastxlsx.package_editor.preservation-comments`
+  - `fastxlsx.package_editor.preservation-comments-threaded`
+  - `fastxlsx.package_editor.preservation-comments-persons`
+  - `fastxlsx.package_editor.preservation-comments-ordering`
   - `fastxlsx.package_editor.preservation-linked`
   - `fastxlsx.package_editor.preservation-linked-pivot`
   - `fastxlsx.package_editor.preservation-linked-pivot-cache-definition`

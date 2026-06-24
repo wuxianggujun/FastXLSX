@@ -32754,6 +32754,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_facade" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.713 - Split PackageEditor preservation comments by object family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep `fastxlsx.package_editor.preservation-comments` focused on legacy
+comments while moving threaded-comments, persons, and same-path ordering
+coverage into separate preservation comments shards.
+
+Output:
+- Added `tests/test_package_editor_preservation_comments_common.hpp` for shared
+  comments/persons fixture/helper code.
+- Kept `tests/test_package_editor_preservation_comments.cpp` as the legacy
+  comments shard behind the existing
+  `fastxlsx.package_editor.preservation-comments` CTest name.
+- Added:
+  - `tests/test_package_editor_preservation_comments_threaded.cpp`.
+  - `tests/test_package_editor_preservation_comments_persons.cpp`.
+  - `tests/test_package_editor_preservation_comments_ordering.cpp`.
+- Added CTest names:
+  - `fastxlsx.package_editor.preservation-comments-threaded`.
+  - `fastxlsx.package_editor.preservation-comments-persons`.
+  - `fastxlsx.package_editor.preservation-comments-ordering`.
+- Added `fastxlsx_package_editor_preservation_comments_all_tests` as a
+  build-only aggregate and wired it into
+  `fastxlsx_package_editor_preservation_tests`.
+
+Non-goals / boundary:
+- No runtime code change, no PackageEditor behavior change, no comments /
+  threaded-comments / persons semantic change, no relationship repair expansion,
+  and no coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_preservation_comments_all_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.preservation-comments" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

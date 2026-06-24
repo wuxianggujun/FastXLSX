@@ -157,23 +157,80 @@ set_tests_properties(fastxlsx.workbook_editor_materialized_edits PROPERTIES
     TIMEOUT 60
 )
 
-add_executable(fastxlsx_streaming_writer_tests
+function(add_fastxlsx_streaming_writer_target target source_file)
+    add_executable(${target}
+        ${source_file}
+    )
+
+    target_link_libraries(${target} PRIVATE FastXLSX::fastxlsx)
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    target_compile_definitions(${target} PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    if(FASTXLSX_ENABLE_MINIZIP_NG)
+        target_link_libraries(${target} PRIVATE MINIZIP::minizip-ng)
+        target_compile_definitions(${target} PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+    endif()
+endfunction()
+
+add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_core_tests
     test_streaming_writer.cpp
 )
+add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_styles_tests
+    test_streaming_writer_styles.cpp
+)
+add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_conditional_formatting_tests
+    test_streaming_writer_conditional_formatting.cpp
+)
+add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_metadata_tests
+    test_streaming_writer_metadata.cpp
+)
+add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_images_tests
+    test_streaming_writer_images.cpp
+)
+add_fastxlsx_streaming_writer_target(
+    fastxlsx_streaming_writer_shared_strings_tests
+    test_streaming_writer_shared_strings.cpp
+)
 
-target_link_libraries(fastxlsx_streaming_writer_tests PRIVATE FastXLSX::fastxlsx)
-target_compile_features(fastxlsx_streaming_writer_tests PRIVATE cxx_std_20)
-target_compile_definitions(fastxlsx_streaming_writer_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
-target_include_directories(fastxlsx_streaming_writer_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-if(FASTXLSX_ENABLE_MINIZIP_NG)
-    target_link_libraries(fastxlsx_streaming_writer_tests PRIVATE MINIZIP::minizip-ng)
-    target_compile_definitions(fastxlsx_streaming_writer_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
-endif()
+add_custom_target(fastxlsx_streaming_writer_tests
+    DEPENDS
+        fastxlsx_streaming_writer_core_tests
+        fastxlsx_streaming_writer_styles_tests
+        fastxlsx_streaming_writer_conditional_formatting_tests
+        fastxlsx_streaming_writer_metadata_tests
+        fastxlsx_streaming_writer_images_tests
+        fastxlsx_streaming_writer_shared_strings_tests
+)
 
-add_test(NAME fastxlsx.streaming COMMAND fastxlsx_streaming_writer_tests)
-set_tests_properties(fastxlsx.streaming PROPERTIES
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    TIMEOUT 60
+function(add_fastxlsx_streaming_writer_test test_name target timeout_seconds)
+    add_test(NAME ${test_name} COMMAND ${target})
+    set_tests_properties(${test_name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
+add_fastxlsx_streaming_writer_test(fastxlsx.streaming fastxlsx_streaming_writer_core_tests 60)
+add_fastxlsx_streaming_writer_test(
+    fastxlsx.streaming.styles fastxlsx_streaming_writer_styles_tests 60
+)
+add_fastxlsx_streaming_writer_test(
+    fastxlsx.streaming.conditional-formatting
+    fastxlsx_streaming_writer_conditional_formatting_tests 60
+)
+add_fastxlsx_streaming_writer_test(
+    fastxlsx.streaming.metadata fastxlsx_streaming_writer_metadata_tests 60
+)
+add_fastxlsx_streaming_writer_test(
+    fastxlsx.streaming.images fastxlsx_streaming_writer_images_tests 60
+)
+add_fastxlsx_streaming_writer_test(
+    fastxlsx.streaming.shared-strings fastxlsx_streaming_writer_shared_strings_tests 60
 )
 
 add_executable(fastxlsx_opc_tests

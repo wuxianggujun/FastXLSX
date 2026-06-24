@@ -29658,6 +29658,55 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.cellstore" --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.696 - Split StreamingWriter executable by shard
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: remove the large streaming writer test executable by moving the major
+families into dedicated source files and executables, while keeping the
+existing `fastxlsx.streaming` CTest name stable for the core shard and adding
+new `fastxlsx.streaming.*` shard names for styles, conditional formatting,
+metadata, images, and shared-strings.
+
+Output:
+- Kept `tests/test_streaming_writer.cpp` focused on smoke, docProps,
+  compression, dimension, row/column bounds, append-state, file-backed
+  round-trip, invalid ranges, sheet-name uniqueness, and invalid metadata/row
+  guardrails.
+- Added:
+  - `tests/test_streaming_writer_styles.cpp`.
+  - `tests/test_streaming_writer_conditional_formatting.cpp`.
+  - `tests/test_streaming_writer_metadata.cpp`.
+  - `tests/test_streaming_writer_images.cpp`.
+  - `tests/test_streaming_writer_shared_strings.cpp`.
+- Added per-shard executable targets:
+  `fastxlsx_streaming_writer_core_tests`,
+  `fastxlsx_streaming_writer_styles_tests`,
+  `fastxlsx_streaming_writer_conditional_formatting_tests`,
+  `fastxlsx_streaming_writer_metadata_tests`,
+  `fastxlsx_streaming_writer_images_tests`, and
+  `fastxlsx_streaming_writer_shared_strings_tests`.
+- Kept `fastxlsx_streaming_writer_tests` as a build-only aggregate target
+  depending on all streaming writer shard executables.
+- Kept the existing CTest name `fastxlsx.streaming` for the core shard and
+  added `fastxlsx.streaming.styles`,
+  `fastxlsx.streaming.conditional-formatting`,
+  `fastxlsx.streaming.metadata`, `fastxlsx.streaming.images`, and
+  `fastxlsx.streaming.shared-strings`.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no streaming writer behavior
+  change, no sharedStrings/style/metadata semantics expansion, and no CTest
+  coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_streaming_writer_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.streaming" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

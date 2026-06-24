@@ -1,0 +1,1467 @@
+#include <fastxlsx/streaming_writer.hpp>
+
+#include "image_test_bytes.hpp"
+#include "zip_test_utils.hpp"
+
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+class TestFailure : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+void check(bool condition, const char* message)
+{
+    if (!condition) {
+        throw TestFailure(message);
+    }
+}
+
+template <typename Func>
+void check_fastxlsx_error(Func func, const char* message)
+{
+    try {
+        func();
+    } catch (const fastxlsx::FastXlsxError&) {
+        return;
+    } catch (const std::exception& error) {
+        throw TestFailure(std::string(message) + ": unexpected exception: " + error.what());
+    }
+
+    throw TestFailure(message);
+}
+
+void check_contains(const std::string& text, const char* fragment, const char* message)
+{
+    check(text.find(fragment) != std::string::npos, message);
+}
+
+std::size_t count_occurrences(const std::string& text, std::string_view fragment)
+{
+    std::size_t count = 0;
+    std::size_t offset = 0;
+    while ((offset = text.find(fragment, offset)) != std::string::npos) {
+        ++count;
+        offset += fragment.size();
+    }
+    return count;
+}
+
+void write_bytes(const std::filesystem::path& path, std::span<const std::byte> bytes)
+{
+    std::ofstream output(path, std::ios::binary);
+    if (!output) {
+        throw TestFailure("failed to create test file");
+    }
+    output.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!output) {
+        throw TestFailure("failed to write test file");
+    }
+}
+
+bool bytes_equal(std::string_view text, std::span<const std::byte> bytes)
+{
+    if (text.size() != bytes.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (static_cast<unsigned char>(text[index])
+            != std::to_integer<unsigned char>(bytes[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fastxlsx::TwoColorScaleRule make_two_color_scale(
+    fastxlsx::ArgbColor lower, fastxlsx::ArgbColor upper)
+{
+    fastxlsx::TwoColorScaleRule rule;
+    rule.lower = {fastxlsx::ColorScaleValueType::Minimum, 0.0, lower};
+    rule.upper = {fastxlsx::ColorScaleValueType::Maximum, 0.0, upper};
+    return rule;
+}
+
+fastxlsx::ThreeColorScaleRule make_three_color_scale(
+    fastxlsx::ArgbColor lower, fastxlsx::ArgbColor midpoint, fastxlsx::ArgbColor upper)
+{
+    fastxlsx::ThreeColorScaleRule rule;
+    rule.lower = {fastxlsx::ColorScaleValueType::Minimum, 0.0, lower};
+    rule.midpoint = {fastxlsx::ColorScaleValueType::Percentile, 50.0, midpoint};
+    rule.upper = {fastxlsx::ColorScaleValueType::Maximum, 0.0, upper};
+    return rule;
+}
+
+fastxlsx::DataBarRule make_data_bar(fastxlsx::ArgbColor color)
+{
+    fastxlsx::DataBarRule rule;
+    rule.lower = {fastxlsx::DataBarValueType::Minimum, 0.0};
+    rule.upper = {fastxlsx::DataBarValueType::Maximum, 0.0};
+    rule.color = color;
+    return rule;
+}
+
+fastxlsx::IconSetRule make_icon_set()
+{
+    fastxlsx::IconSetRule rule;
+    rule.style = fastxlsx::IconSetStyle::ThreeArrows;
+    rule.value_type = fastxlsx::IconSetValueType::Percent;
+    rule.thresholds = {0.0, 33.0, 67.0};
+    return rule;
+}
+
+void test_streaming_writer_data_validations()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validations.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Validation");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Number"),
+        fastxlsx::CellView::text("Decimal"),
+        fastxlsx::CellView::text("Choice"),
+        fastxlsx::CellView::text("Date"),
+        fastxlsx::CellView::text("Time"),
+        fastxlsx::CellView::text("Length"),
+        fastxlsx::CellView::text("Custom"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::number(1.5),
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::number(45500.0),
+        fastxlsx::CellView::number(0.5),
+        fastxlsx::CellView::text("short"),
+        fastxlsx::CellView::text("abc"),
+    });
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+
+    fastxlsx::DataValidationRule decimal;
+    decimal.type = fastxlsx::DataValidationType::Decimal;
+    decimal.operator_type = fastxlsx::DataValidationOperator::GreaterThan;
+    decimal.formula1 = "0.5";
+    sheet.add_data_validation({2, 2, 10, 2}, decimal);
+
+    fastxlsx::DataValidationRule list;
+    list.type = fastxlsx::DataValidationType::List;
+    list.formula1 = "\"A,B,C\"";
+    list.allow_blank = true;
+    sheet.add_data_validation({2, 3, 10, 3}, list);
+
+    fastxlsx::DataValidationRule date;
+    date.type = fastxlsx::DataValidationType::Date;
+    date.operator_type = fastxlsx::DataValidationOperator::NotBetween;
+    date.formula1 = "DATE(2026,1,1)";
+    date.formula2 = "DATE(2026,12,31)";
+    sheet.add_data_validation({2, 4, 10, 4}, date);
+
+    fastxlsx::DataValidationRule time;
+    time.type = fastxlsx::DataValidationType::Time;
+    time.operator_type = fastxlsx::DataValidationOperator::LessThan;
+    time.formula1 = "TIME(18,0,0)";
+    sheet.add_data_validation({2, 5, 10, 5}, time);
+
+    fastxlsx::DataValidationRule text_length;
+    text_length.type = fastxlsx::DataValidationType::TextLength;
+    text_length.operator_type = fastxlsx::DataValidationOperator::LessThanOrEqual;
+    text_length.formula1 = "12";
+    sheet.add_data_validation({2, 6, 10, 6}, text_length);
+
+    fastxlsx::DataValidationRule custom;
+    custom.type = fastxlsx::DataValidationType::Custom;
+    custom.formula1 = "LEN(G2)&\"<tag>\"";
+    sheet.add_data_validation({2, 7, 10, 7}, custom);
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "data validation xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing data validation worksheet part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "data validation should not create a metadata package part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "data validation should not add content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "data validation should not add workbook relationships");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:G2\"/>",
+        "data validation worksheet dimension mismatch");
+    check_contains(worksheet_xml, "</sheetData><dataValidations count=\"7\">",
+        "dataValidations should follow sheetData when no other suffix metadata exists");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"whole\" allowBlank=\"1\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
+        "whole-number data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"decimal\" operator=\"greaterThan\" "
+        "sqref=\"B2:B10\"><formula1>0.5</formula1></dataValidation>",
+        "decimal data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"list\" allowBlank=\"1\" sqref=\"C2:C10\">"
+        "<formula1>\"A,B,C\"</formula1></dataValidation>",
+        "list data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"date\" operator=\"notBetween\" "
+        "sqref=\"D2:D10\"><formula1>DATE(2026,1,1)</formula1><formula2>DATE(2026,12,31)</formula2></dataValidation>",
+        "date data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"time\" operator=\"lessThan\" "
+        "sqref=\"E2:E10\"><formula1>TIME(18,0,0)</formula1></dataValidation>",
+        "time data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"textLength\" operator=\"lessThanOrEqual\" "
+        "sqref=\"F2:F10\"><formula1>12</formula1></dataValidation>",
+        "textLength data validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"custom\" sqref=\"G2:G10\">"
+        "<formula1>LEN(G2)&amp;\"&lt;tag&gt;\"</formula1></dataValidation>",
+        "custom data validation XML escaping mismatch");
+    check_contains(
+        worksheet_xml, "</dataValidations></worksheet>", "dataValidations footer mismatch");
+    check(count_occurrences(worksheet_xml, "<dataValidation ") == 7,
+        "dataValidation item count mismatch");
+}
+
+void test_streaming_writer_data_validation_multi_range_sqref()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validation-multi-range.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ValidationRanges");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::text("B"),
+        fastxlsx::CellView::text("C"),
+        fastxlsx::CellView::text("D"),
+        fastxlsx::CellView::text("E"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(1.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(2.0),
+        fastxlsx::CellView::text("gap"),
+        fastxlsx::CellView::number(3.0),
+    });
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    sheet.add_data_validation({{2, 1, 10, 1}, {2, 3, 10, 3}, {2, 5, 10, 5}}, whole);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing multi-range validation worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "multi-range data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "multi-range data validation should not create metadata part");
+    check(!entries.contains("xl/styles.xml"),
+        "multi-range data validation should not create styles");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "multi-range data validation should not add content types");
+    check(content_types.find("styles") == std::string::npos,
+        "multi-range data validation should not add style content types");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "multi-range data validation should not add workbook relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "multi-range data validation formulas should not request calculation metadata");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "multi-range validation-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:E2\"/>",
+        "multi-range data validation dimension mismatch");
+    check_contains(worksheet_xml, "</sheetData><dataValidations count=\"1\">",
+        "multi-range dataValidations count mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"whole\" allowBlank=\"1\" operator=\"between\" "
+        "sqref=\"A2:A10 C2:C10 E2:E10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
+        "multi-range data validation sqref XML mismatch");
+    check(count_occurrences(worksheet_xml, "<dataValidation ") == 1,
+        "multi-range dataValidation item count mismatch");
+}
+
+void test_streaming_writer_data_validations_with_relationship_metadata()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-validation-relationship-metadata.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ValidationRels");
+
+    sheet.append_row({fastxlsx::CellView::text("Value"), fastxlsx::CellView::text("Link")});
+    sheet.append_row({fastxlsx::CellView::number(5.0), fastxlsx::CellView::text("Docs")});
+    sheet.append_row({fastxlsx::CellView::number(7.0), fastxlsx::CellView::text("More")});
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    whole.show_input_message = true;
+    whole.prompt_title = "Input";
+    whole.prompt = "Use 1 to 10";
+    whole.show_error_message = true;
+    whole.error_style = fastxlsx::DataValidationErrorStyle::Stop;
+    whole.error_title = "Range";
+    whole.error = "Out of range";
+    sheet.add_data_validation({{2, 1, 10, 1}, {12, 1, 14, 1}}, whole);
+
+    sheet.add_external_hyperlink(2, 2, "https://example.com/docs");
+    sheet.add_external_hyperlink(3, 2, "https://example.com/more");
+
+    fastxlsx::TableOptions table;
+    table.name = "ValidationRelTable";
+    table.column_names = {"Value", "Link"};
+    sheet.add_table({1, 1, 3, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "validation relationship metadata sheet should create worksheet relationships");
+    check(entries.contains("xl/tables/table1.xml"),
+        "validation relationship metadata sheet should create table part");
+    check(!entries.contains("xl/metadata.xml"),
+        "data validation relationship metadata should not create metadata part");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "data validation relationship metadata should not add workbook relationships");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "data validation relationship metadata should not add data validation content types");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>)",
+        "validation relationship metadata table content type missing");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "validation relationship metadata worksheet should include relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:B3\"/>",
+        "validation relationship metadata dimension mismatch");
+    check_contains(worksheet_xml,
+        "</sheetData><dataValidations count=\"1\"><dataValidation type=\"whole\" allowBlank=\"1\" "
+        "showInputMessage=\"1\" showErrorMessage=\"1\" errorStyle=\"stop\" errorTitle=\"Range\" "
+        "error=\"Out of range\" promptTitle=\"Input\" prompt=\"Use 1 to 10\" operator=\"between\" "
+        "sqref=\"A2:A10 A12:A14\"><formula1>1</formula1><formula2>10</formula2></dataValidation></dataValidations>"
+        "<hyperlinks><hyperlink ref=\"B2\" r:id=\"rId1\"/><hyperlink ref=\"B3\" r:id=\"rId2\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId3\"/></tableParts></worksheet>",
+        "dataValidations should not consume relationship ids before hyperlinks and tables");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 3,
+        "validation relationship metadata relationship count mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/docs" TargetMode="External"/>)",
+        "first validation relationship metadata hyperlink relationship mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/more" TargetMode="External"/>)",
+        "second validation relationship metadata hyperlink relationship mismatch");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "validation relationship metadata table relationship mismatch");
+}
+
+void test_streaming_writer_data_validation_formula2_escape_and_namespace()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validation-formula2-escape.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Formula2Escape");
+
+    sheet.append_row({fastxlsx::CellView::text("Text")});
+    sheet.append_row({fastxlsx::CellView::text("abc")});
+
+    fastxlsx::DataValidationRule rule;
+    rule.type = fastxlsx::DataValidationType::TextLength;
+    rule.operator_type = fastxlsx::DataValidationOperator::Between;
+    rule.formula1 = "1";
+    rule.formula2 = "LEN(A2&\"<max>\")";
+    sheet.add_data_validation({2, 1, 10, 1}, rule);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "formula2 escape data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "formula2 escape data validation should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "formula2 escape data validation should not add content types");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "data validation formulas should not request workbook recalculation metadata");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "validation-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"textLength\" operator=\"between\" sqref=\"A2:A10\">"
+        "<formula1>1</formula1><formula2>LEN(A2&amp;\"&lt;max&gt;\")</formula2></dataValidation>",
+        "formula2 XML escaping mismatch");
+}
+
+void test_streaming_writer_data_validation_prompt_error_metadata()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-data-validation-prompts.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("ValidationPrompt");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Whole"),
+        fastxlsx::CellView::text("List"),
+        fastxlsx::CellView::text("Decimal"),
+        fastxlsx::CellView::text("Custom"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(5.0),
+        fastxlsx::CellView::text("A"),
+        fastxlsx::CellView::number(1.5),
+        fastxlsx::CellView::text("abc"),
+    });
+
+    fastxlsx::DataValidationRule whole;
+    whole.type = fastxlsx::DataValidationType::Whole;
+    whole.operator_type = fastxlsx::DataValidationOperator::Between;
+    whole.formula1 = "1";
+    whole.formula2 = "10";
+    whole.allow_blank = true;
+    whole.show_input_message = true;
+    whole.show_error_message = true;
+    whole.error_style = fastxlsx::DataValidationErrorStyle::Warning;
+    whole.error_title = "Error \"Title\" & <bad>";
+    whole.error = "Bad 'value' & <cell>";
+    whole.prompt_title = "Input <Title> & \"Quote\"";
+    whole.prompt = "Enter 'whole' & <value>";
+    sheet.add_data_validation({2, 1, 10, 1}, whole);
+
+    fastxlsx::DataValidationRule list;
+    list.type = fastxlsx::DataValidationType::List;
+    list.formula1 = "\"A,B,C\"";
+    list.hide_dropdown_arrow = true;
+    list.show_input_message = true;
+    list.prompt_title = "Choice";
+    list.prompt = "Pick A, B, or C";
+    sheet.add_data_validation({2, 2, 10, 2}, list);
+
+    fastxlsx::DataValidationRule decimal;
+    decimal.type = fastxlsx::DataValidationType::Decimal;
+    decimal.operator_type = fastxlsx::DataValidationOperator::GreaterThan;
+    decimal.formula1 = "0";
+    decimal.show_error_message = true;
+    decimal.error_style = fastxlsx::DataValidationErrorStyle::Information;
+    decimal.error_title = "Decimal";
+    decimal.error = "Use a positive decimal";
+    sheet.add_data_validation({2, 3, 10, 3}, decimal);
+
+    fastxlsx::DataValidationRule custom;
+    custom.type = fastxlsx::DataValidationType::Custom;
+    custom.formula1 = "LEN(D2)>0";
+    custom.error_style = fastxlsx::DataValidationErrorStyle::Stop;
+    sheet.add_data_validation({2, 4, 10, 4}, custom);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing prompt/error validation worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "prompt/error data validation should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"),
+        "prompt/error data validation should not create metadata part");
+    check(!entries.contains("xl/styles.xml"),
+        "prompt/error data validation should not create styles");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("dataValidation") == std::string::npos,
+        "prompt/error data validation should not add data validation content types");
+    check(content_types.find("styles") == std::string::npos,
+        "prompt/error data validation should not add style content types");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 1,
+        "prompt/error data validation should not add workbook relationships");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check(workbook_xml.find("<calcPr") == std::string::npos,
+        "prompt/error data validation should not request workbook recalculation metadata");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(worksheet_xml.find("xmlns:r=") == std::string::npos,
+        "prompt/error validation-only worksheet should not declare relationship namespace");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:D2\"/>",
+        "prompt/error data validation dimension mismatch");
+    check_contains(worksheet_xml, "</sheetData><dataValidations count=\"4\">",
+        "prompt/error dataValidations should follow sheetData");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"whole\" allowBlank=\"1\" showInputMessage=\"1\" "
+        "showErrorMessage=\"1\" errorStyle=\"warning\" "
+        "errorTitle=\"Error &quot;Title&quot; &amp; &lt;bad&gt;\" "
+        "error=\"Bad &apos;value&apos; &amp; &lt;cell&gt;\" "
+        "promptTitle=\"Input &lt;Title&gt; &amp; &quot;Quote&quot;\" "
+        "prompt=\"Enter &apos;whole&apos; &amp; &lt;value&gt;\" operator=\"between\" "
+        "sqref=\"A2:A10\"><formula1>1</formula1><formula2>10</formula2></dataValidation>",
+        "whole prompt/error validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"list\" showDropDown=\"1\" showInputMessage=\"1\" promptTitle=\"Choice\" "
+        "prompt=\"Pick A, B, or C\" sqref=\"B2:B10\"><formula1>\"A,B,C\"</formula1></dataValidation>",
+        "prompt-only list validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"decimal\" showErrorMessage=\"1\" errorStyle=\"information\" "
+        "errorTitle=\"Decimal\" error=\"Use a positive decimal\" operator=\"greaterThan\" "
+        "sqref=\"C2:C10\"><formula1>0</formula1></dataValidation>",
+        "error-only decimal validation XML mismatch");
+    check_contains(worksheet_xml,
+        "<dataValidation type=\"custom\" errorStyle=\"stop\" sqref=\"D2:D10\">"
+        "<formula1>LEN(D2)&gt;0</formula1></dataValidation>",
+        "stop-style custom validation XML mismatch");
+    check(worksheet_xml.find("showInputMessage=\"0\"") == std::string::npos,
+        "false showInputMessage should be omitted");
+    check(worksheet_xml.find("showErrorMessage=\"0\"") == std::string::npos,
+        "false showErrorMessage should be omitted");
+    check(count_occurrences(worksheet_xml, "showDropDown=\"1\"") == 1,
+        "hide dropdown arrow should be serialized only for the list validation");
+    check(worksheet_xml.find("showDropDown=\"0\"") == std::string::npos,
+        "false showDropDown should be omitted");
+    check(worksheet_xml.find("promptTitle=\"\"") == std::string::npos,
+        "empty promptTitle should be omitted");
+    check(worksheet_xml.find("prompt=\"\"") == std::string::npos,
+        "empty prompt should be omitted");
+    check(worksheet_xml.find("errorTitle=\"\"") == std::string::npos,
+        "empty errorTitle should be omitted");
+    check(worksheet_xml.find("error=\"\"") == std::string::npos,
+        "empty error should be omitted");
+    check(count_occurrences(worksheet_xml, "<dataValidation ") == 4,
+        "prompt/error dataValidation item count mismatch");
+}
+
+void test_streaming_writer_external_hyperlinks()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-external-hyperlinks.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto links = workbook.add_worksheet("Links");
+    auto more_links = workbook.add_worksheet("MoreLinks");
+    auto plain = workbook.add_worksheet("Plain");
+
+    links.append_row({
+        fastxlsx::CellView::text("OpenAI"),
+        fastxlsx::CellView::text("No link"),
+    });
+    links.append_row({
+        fastxlsx::CellView::text("Row2"),
+        fastxlsx::CellView::text("Docs & <API>"),
+    });
+    links.add_external_hyperlink(1, 1, "https://openai.com/");
+    links.add_external_hyperlink(2, 2, "https://example.com/path?a=1&b=2");
+
+    more_links.append_row({
+        fastxlsx::CellView::text("Second sheet"),
+    });
+    more_links.add_external_hyperlink(1, 1, "mailto:test@example.com");
+
+    plain.append_row({
+        fastxlsx::CellView::text("No hyperlink sheet"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "external hyperlinks xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing first hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing second hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet3.xml"), "missing plain worksheet");
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "missing first worksheet hyperlink relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "missing second worksheet hyperlink relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "plain worksheet should not create relationships");
+    check(!entries.contains("xl/metadata.xml"), "external hyperlinks should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "external hyperlinks should not add content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 3,
+        "external hyperlinks should not add workbook relationships");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_sheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "hyperlink worksheet namespace mismatch");
+    check_contains(first_sheet_xml, "<dimension ref=\"A1:B2\"/>",
+        "hyperlink worksheet dimension mismatch");
+    check_contains(first_sheet_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>OpenAI</t></is></c>",
+        "hyperlink should not replace A1 cell text");
+    check_contains(first_sheet_xml,
+        "<c r=\"B2\" t=\"inlineStr\"><is><t>Docs &amp; &lt;API&gt;</t></is></c>",
+        "hyperlink should not replace B2 escaped cell text");
+    check_contains(first_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\"/>"
+        "<hyperlink ref=\"B2\" r:id=\"rId2\"/></hyperlinks></worksheet>",
+        "first worksheet hyperlink XML mismatch");
+    check(count_occurrences(first_sheet_xml, "<hyperlink ") == 2,
+        "first worksheet hyperlink count mismatch");
+
+    const auto& first_sheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(first_sheet_rels, "<Relationship ") == 2,
+        "first worksheet hyperlink relationship count mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://openai.com/" TargetMode="External"/>)",
+        "first hyperlink relationship mismatch");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/path?a=1&amp;b=2" TargetMode="External"/>)",
+        "second hyperlink relationship mismatch or target escape failure");
+
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_sheet_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\"/></hyperlinks>",
+        "second worksheet hyperlink XML mismatch");
+    const auto& second_sheet_rels = entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:test@example.com" TargetMode="External"/>)",
+        "second worksheet owner-local hyperlink relationship mismatch");
+
+    const auto& third_sheet_xml = entries.at("xl/worksheets/sheet3.xml");
+    check(third_sheet_xml.find("<hyperlinks>") == std::string::npos,
+        "plain worksheet should not contain hyperlinks");
+    check(third_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not include relationship namespace");
+}
+
+void test_streaming_writer_internal_hyperlinks()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-internal-hyperlinks.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto internal_only = workbook.add_worksheet("Internal");
+    auto target = workbook.add_worksheet("Target & <Sheet>");
+    auto mixed = workbook.add_worksheet("Mixed");
+    auto plain = workbook.add_worksheet("Plain");
+
+    internal_only.append_row({fastxlsx::CellView::text("Jump to target")});
+    internal_only.append_row({fastxlsx::CellView::text("Second jump")});
+    internal_only.add_internal_hyperlink(1, 1, "'Target & <Sheet>'!A1");
+    internal_only.add_internal_hyperlink(2, 1, "'Target & <Sheet>'!B2:\"quoted\"");
+
+    target.append_row({fastxlsx::CellView::text("Target cell")});
+    target.append_row({fastxlsx::CellView::text("Second target")});
+
+    mixed.append_row({
+        fastxlsx::CellView::text("External"),
+        fastxlsx::CellView::text("Internal"),
+    });
+    mixed.append_row({fastxlsx::CellView::text("External 2")});
+    mixed.add_external_hyperlink(1, 1, "https://example.com/");
+    mixed.add_internal_hyperlink(1, 2, "'Target & <Sheet>'!A1");
+    mixed.add_external_hyperlink(2, 1, "https://example.com/more");
+
+    plain.append_row({fastxlsx::CellView::text("No hyperlink sheet")});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "internal hyperlinks xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/sheet1.xml"), "missing internal hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet2.xml"), "missing internal hyperlink target worksheet");
+    check(entries.contains("xl/worksheets/sheet3.xml"), "missing mixed hyperlink worksheet");
+    check(entries.contains("xl/worksheets/sheet4.xml"), "missing plain hyperlink worksheet");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "internal-only hyperlinks should not create worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "target sheet without relationships should not create worksheet relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "mixed sheet should keep external hyperlink relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet4.xml.rels"),
+        "plain sheet should not create worksheet relationships");
+    check(!entries.contains("xl/metadata.xml"), "internal hyperlinks should not create metadata part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "internal hyperlinks should not add content type overrides");
+
+    const auto& workbook_rels = entries.at("xl/_rels/workbook.xml.rels");
+    check(count_occurrences(workbook_rels, "<Relationship ") == 4,
+        "internal hyperlinks should not add workbook relationships");
+
+    const auto& internal_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check(internal_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "internal-only worksheet should not declare relationship namespace");
+    check_contains(internal_sheet_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>Jump to target</t></is></c>",
+        "internal hyperlink should not replace A1 cell text");
+    check_contains(internal_sheet_xml,
+        "</sheetData><hyperlinks>"
+        "<hyperlink ref=\"A1\" location=\"&apos;Target &amp; &lt;Sheet&gt;&apos;!A1\"/>"
+        "<hyperlink ref=\"A2\" location=\"&apos;Target &amp; &lt;Sheet&gt;&apos;!B2:&quot;quoted&quot;\"/>"
+        "</hyperlinks></worksheet>",
+        "internal-only hyperlink XML mismatch or location escaping failure");
+    check(count_occurrences(internal_sheet_xml, "<hyperlink ") == 2,
+        "internal-only worksheet hyperlink count mismatch");
+    check(internal_sheet_xml.find("r:id=") == std::string::npos,
+        "internal-only hyperlinks should not use relationship ids");
+
+    const auto& mixed_sheet_xml = entries.at("xl/worksheets/sheet3.xml");
+    check_contains(mixed_sheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "mixed hyperlink worksheet namespace mismatch");
+    check_contains(mixed_sheet_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\"/>"
+        "<hyperlink ref=\"A2\" r:id=\"rId2\"/>"
+        "<hyperlink ref=\"B1\" location=\"&apos;Target &amp; &lt;Sheet&gt;&apos;!A1\"/></hyperlinks>",
+        "mixed external/internal hyperlink XML mismatch");
+    check(count_occurrences(mixed_sheet_xml, "<hyperlink ") == 3,
+        "mixed worksheet hyperlink count mismatch");
+
+    const auto& mixed_sheet_rels = entries.at("xl/worksheets/_rels/sheet3.xml.rels");
+    check(count_occurrences(mixed_sheet_rels, "<Relationship ") == 2,
+        "internal hyperlinks should not create relationship entries");
+    check_contains(mixed_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>)",
+        "first mixed external hyperlink relationship mismatch");
+    check_contains(mixed_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/more" TargetMode="External"/>)",
+        "second mixed external hyperlink relationship mismatch");
+    check(mixed_sheet_rels.find("Target &amp; &lt;Sheet&gt;") == std::string::npos,
+        "internal hyperlink location should not be written to worksheet relationships");
+
+    const auto& plain_sheet_xml = entries.at("xl/worksheets/sheet4.xml");
+    check(plain_sheet_xml.find("<hyperlinks>") == std::string::npos,
+        "plain worksheet should not contain hyperlinks");
+    check(plain_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not include relationship namespace");
+}
+
+void test_streaming_writer_internal_hyperlink_with_table_relationship_id()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-internal-hyperlink-table-rels.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Objects");
+    auto target = workbook.add_worksheet("Target");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Name"),
+        fastxlsx::CellView::text("Qty"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("Widget"),
+        fastxlsx::CellView::number(7.0),
+    });
+    sheet.add_internal_hyperlink(2, 1, "Target!A1");
+
+    fastxlsx::TableOptions table;
+    table.name = "InternalLinkTable";
+    table.column_names = {"Name", "Qty"};
+    sheet.add_table({1, 1, 2, 2}, table);
+
+    target.append_row({fastxlsx::CellView::text("Destination")});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "internal hyperlink + table xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "table should still create worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "target sheet should not create worksheet relationships");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        "<hyperlinks><hyperlink ref=\"A2\" location=\"Target!A1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId1\"/></tableParts>",
+        "internal hyperlink should not shift table relationship id");
+
+    const auto& worksheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(worksheet_rels, "<Relationship ") == 1,
+        "internal hyperlink should not create a relationship next to table");
+    check_contains(worksheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table relationship should remain rId1 when only internal hyperlinks precede it");
+    check(worksheet_rels.find("hyperlink") == std::string::npos,
+        "internal hyperlink should not create hyperlink relationship entries");
+}
+
+void test_streaming_writer_hyperlink_display_tooltips()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-hyperlink-display-tooltips.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto external = workbook.add_worksheet("ExternalAttrs");
+    auto internal = workbook.add_worksheet("InternalAttrs");
+    auto target = workbook.add_worksheet("Target");
+
+    external.append_row({
+        fastxlsx::CellView::text("External both"),
+        fastxlsx::CellView::text("External display"),
+        fastxlsx::CellView::text("External tooltip"),
+    });
+    fastxlsx::HyperlinkOptions external_both;
+    external_both.display = "Open & <Docs> \"Q\" 'A'";
+    external_both.tooltip = "External tip & <more> \"Q\" 'A'";
+    external.add_external_hyperlink(1, 1, "https://example.com/both", external_both);
+    fastxlsx::HyperlinkOptions external_display;
+    external_display.display = "Display only";
+    external.add_external_hyperlink(1, 2, "https://example.com/display", external_display);
+    fastxlsx::HyperlinkOptions external_tooltip;
+    external_tooltip.tooltip = "Tooltip only";
+    external.add_external_hyperlink(1, 3, "https://example.com/tooltip", external_tooltip);
+
+    internal.append_row({
+        fastxlsx::CellView::text("Internal both"),
+        fastxlsx::CellView::text("Internal display"),
+        fastxlsx::CellView::text("Internal tooltip"),
+        fastxlsx::CellView::text("Internal empty options"),
+    });
+    fastxlsx::HyperlinkOptions internal_both;
+    internal_both.display = "Jump & <Target> \"Q\" 'A'";
+    internal_both.tooltip = "Internal tip & <more> \"Q\" 'A'";
+    internal.add_internal_hyperlink(1, 1, "Target!A1", internal_both);
+    fastxlsx::HyperlinkOptions internal_display;
+    internal_display.display = "Internal display only";
+    internal.add_internal_hyperlink(1, 2, "Target!A2", internal_display);
+    fastxlsx::HyperlinkOptions internal_tooltip;
+    internal_tooltip.tooltip = "Internal tooltip only";
+    internal.add_internal_hyperlink(1, 3, "Target!A3", internal_tooltip);
+    internal.add_internal_hyperlink(1, 4, "Target!D4", fastxlsx::HyperlinkOptions {});
+
+    target.append_row({
+        fastxlsx::CellView::text("A1"),
+        fastxlsx::CellView::text("A2"),
+        fastxlsx::CellView::text("A3"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path),
+        "hyperlink display/tooltip xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "external display/tooltip hyperlinks should keep worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "internal display/tooltip hyperlinks should not create worksheet relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "target sheet should not create worksheet relationships");
+
+    const auto& external_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(external_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" r:id=\"rId1\" "
+        "display=\"Open &amp; &lt;Docs&gt; &quot;Q&quot; &apos;A&apos;\" "
+        "tooltip=\"External tip &amp; &lt;more&gt; &quot;Q&quot; &apos;A&apos;\"/>"
+        "<hyperlink ref=\"B1\" r:id=\"rId2\" display=\"Display only\"/>"
+        "<hyperlink ref=\"C1\" r:id=\"rId3\" tooltip=\"Tooltip only\"/></hyperlinks>",
+        "external hyperlink display/tooltip XML mismatch");
+    check_contains(external_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>External both</t></is></c>",
+        "external hyperlink display should not replace cell text");
+
+    const auto& external_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check(count_occurrences(external_rels, "<Relationship ") == 3,
+        "external display/tooltip hyperlinks should only create URL relationships");
+    check(external_rels.find("display=") == std::string::npos,
+        "display attribute should not be written to worksheet relationships");
+    check(external_rels.find("tooltip=") == std::string::npos,
+        "tooltip attribute should not be written to worksheet relationships");
+
+    const auto& internal_xml = entries.at("xl/worksheets/sheet2.xml");
+    check(internal_xml.find("xmlns:r=") == std::string::npos,
+        "internal display/tooltip worksheet should not declare relationship namespace");
+    check(internal_xml.find("r:id=") == std::string::npos,
+        "internal display/tooltip hyperlinks should not use relationship ids");
+    check_contains(internal_xml,
+        "<hyperlinks><hyperlink ref=\"A1\" location=\"Target!A1\" "
+        "display=\"Jump &amp; &lt;Target&gt; &quot;Q&quot; &apos;A&apos;\" "
+        "tooltip=\"Internal tip &amp; &lt;more&gt; &quot;Q&quot; &apos;A&apos;\"/>"
+        "<hyperlink ref=\"B1\" location=\"Target!A2\" display=\"Internal display only\"/>"
+        "<hyperlink ref=\"C1\" location=\"Target!A3\" tooltip=\"Internal tooltip only\"/>"
+        "<hyperlink ref=\"D1\" location=\"Target!D4\"/></hyperlinks>",
+        "internal hyperlink display/tooltip XML mismatch");
+    check(internal_xml.find("display=\"\"") == std::string::npos,
+        "explicit empty display should be omitted");
+    check(internal_xml.find("tooltip=\"\"") == std::string::npos,
+        "explicit empty tooltip should be omitted");
+    check_contains(internal_xml,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>Internal both</t></is></c>",
+        "internal hyperlink display should not replace cell text");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check(content_types.find("hyperlink") == std::string::npos,
+        "hyperlink display/tooltip should not add content type overrides");
+    check(content_types.find("styles.xml") == std::string::npos,
+        "hyperlink display/tooltip should not create styles");
+}
+
+void test_streaming_writer_tables()
+{
+    const auto output_path = fastxlsx::test::artifact_dir() / "fastxlsx-streaming-tables.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto inventory = workbook.add_worksheet("Inventory");
+    auto totals = workbook.add_worksheet("Totals");
+    auto plain = workbook.add_worksheet("Plain");
+
+    inventory.append_row({
+        fastxlsx::CellView::text("Name"),
+        fastxlsx::CellView::text("Qty"),
+        fastxlsx::CellView::text("Price & <Cost>"),
+    });
+    inventory.append_row({
+        fastxlsx::CellView::text("Widget"),
+        fastxlsx::CellView::number(7.0),
+        fastxlsx::CellView::number(12.5),
+    });
+    inventory.append_row({
+        fastxlsx::CellView::text("Gadget"),
+        fastxlsx::CellView::number(3.0),
+        fastxlsx::CellView::number(8.25),
+    });
+    inventory.add_external_hyperlink(2, 1, "https://example.com/items/widget");
+
+    fastxlsx::TableOptions inventory_table;
+    inventory_table.name = "InventoryTable";
+    inventory_table.column_names = {"Name", "Qty", "Price & <Cost>"};
+    inventory_table.style_name = "TableStyleMedium9";
+    inventory.add_table({1, 1, 3, 3}, inventory_table);
+
+    totals.append_row({
+        fastxlsx::CellView::text("Metric"),
+        fastxlsx::CellView::text("Value"),
+    });
+    totals.append_row({
+        fastxlsx::CellView::text("Rows"),
+        fastxlsx::CellView::number(2.0),
+    });
+    totals.append_row({
+        fastxlsx::CellView::text("Total"),
+        fastxlsx::CellView::number(2.0),
+    });
+    fastxlsx::TableOptions totals_table;
+    totals_table.name = "TotalsTable";
+    totals_table.column_names = {"Metric", "Value"};
+    totals_table.show_totals_row = true;
+    totals_table.column_totals_labels = {"Total", ""};
+    totals_table.column_totals_functions.resize(2);
+    totals_table.column_totals_functions[1] = fastxlsx::TableTotalsFunction::Sum;
+    totals_table.style_name.clear();
+    totals.add_table({1, 1, 3, 2}, totals_table);
+
+    plain.append_row({
+        fastxlsx::CellView::text("No table sheet"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "table xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/tables/table1.xml"), "missing first table part");
+    check(entries.contains("xl/tables/table2.xml"), "missing second table part");
+    check(entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "missing first worksheet table relationships");
+    check(entries.contains("xl/worksheets/_rels/sheet2.xml.rels"),
+        "missing second worksheet table relationships");
+    check(!entries.contains("xl/worksheets/_rels/sheet3.xml.rels"),
+        "plain worksheet should not create table relationships");
+    check(!entries.contains("xl/styles.xml"), "table slice should not create a styles part");
+
+    const auto& content_types = entries.at("[Content_Types].xml");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>)",
+        "first table content type override missing");
+    check_contains(content_types,
+        R"(<Override PartName="/xl/tables/table2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>)",
+        "second table content type override missing");
+
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_sheet_xml,
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)",
+        "table worksheet namespace mismatch");
+    check_contains(first_sheet_xml, "<dimension ref=\"A1:C3\"/>",
+        "table worksheet dimension mismatch");
+    check_contains(first_sheet_xml,
+        "</sheetData><hyperlinks><hyperlink ref=\"A2\" r:id=\"rId1\"/></hyperlinks>"
+        "<tableParts count=\"1\"><tablePart r:id=\"rId2\"/></tableParts></worksheet>",
+        "tableParts XML should follow hyperlinks and use the next worksheet rId");
+
+    const auto& first_sheet_rels = entries.at("xl/worksheets/_rels/sheet1.xml.rels");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/items/widget" TargetMode="External"/>)",
+        "hyperlink relationship should keep the first worksheet rId");
+    check_contains(first_sheet_rels,
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>)",
+        "table relationship should use the next worksheet rId");
+
+    const auto& first_table_xml = entries.at("xl/tables/table1.xml");
+    check_contains(first_table_xml,
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="InventoryTable" displayName="InventoryTable" ref="A1:C3" totalsRowShown="0">)",
+        "first table root XML mismatch");
+    check_contains(first_table_xml, R"(<autoFilter ref="A1:C3"/>)",
+        "first table autoFilter mismatch");
+    check_contains(first_table_xml, R"(<tableColumns count="3">)",
+        "first table column count mismatch");
+    check_contains(first_table_xml, R"(<tableColumn id="1" name="Name"/>)",
+        "first table first column mismatch");
+    check_contains(first_table_xml, R"(<tableColumn id="3" name="Price &amp; &lt;Cost&gt;"/>)",
+        "first table column XML escaping mismatch");
+    check_contains(first_table_xml,
+        R"(<tableStyleInfo name="TableStyleMedium9" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/>)",
+        "first table style info mismatch");
+
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(second_sheet_xml,
+        "<tableParts count=\"1\"><tablePart r:id=\"rId1\"/></tableParts>",
+        "second sheet table relationship id should be owner-local");
+    const auto& second_sheet_rels = entries.at("xl/worksheets/_rels/sheet2.xml.rels");
+    check_contains(second_sheet_rels,
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table2.xml"/>)",
+        "second table relationship target mismatch");
+
+    const auto& second_table_xml = entries.at("xl/tables/table2.xml");
+    check_contains(second_table_xml,
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="2" name="TotalsTable" displayName="TotalsTable" ref="A1:B3" totalsRowCount="1">)",
+        "second table root XML mismatch");
+    check_contains(second_table_xml, R"(<autoFilter ref="A1:B2"/>)",
+        "second table autoFilter should exclude the totals row");
+    check(second_table_xml.find("totalsRowShown=\"0\"") == std::string::npos,
+        "visible totals row table should not also write hidden totals metadata");
+    check_contains(second_table_xml, R"(<tableColumn id="1" name="Metric" totalsRowLabel="Total"/>)",
+        "totals row label metadata mismatch");
+    check_contains(second_table_xml, R"(<tableColumn id="2" name="Value" totalsRowFunction="sum"/>)",
+        "totals row function metadata mismatch");
+    check(second_table_xml.find("totalsRowFormula") == std::string::npos,
+        "totals row metadata should not generate formula text");
+    check(second_table_xml.find("calculatedColumnFormula") == std::string::npos,
+        "totals row metadata should not generate calculated column formulas");
+    check(second_table_xml.find("<tableStyleInfo") == std::string::npos,
+        "empty table style name should omit style info");
+
+    const auto& third_sheet_xml = entries.at("xl/worksheets/sheet3.xml");
+    check(third_sheet_xml.find("<tableParts") == std::string::npos,
+        "plain worksheet should not contain tableParts");
+    check(third_sheet_xml.find("xmlns:r=") == std::string::npos,
+        "plain worksheet should not include relationship namespace");
+}
+
+void test_streaming_writer_table_style_flags()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-table-style-flags.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("StyleFlags");
+
+    sheet.append_row({fastxlsx::CellView::text("Name"), fastxlsx::CellView::text("Value")});
+    sheet.append_row({fastxlsx::CellView::text("A"), fastxlsx::CellView::number(1.0)});
+
+    fastxlsx::TableOptions table;
+    table.name = "StyleFlagTable";
+    table.column_names = {"Name", "Value"};
+    table.style_name = "TableStyleMedium4";
+    table.show_first_column = true;
+    table.show_last_column = true;
+    table.show_row_stripes = false;
+    table.show_column_stripes = true;
+    sheet.add_table({1, 1, 2, 2}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(!entries.contains("xl/styles.xml"),
+        "table style flags should not create a styles part");
+    check(entries.contains("xl/tables/table1.xml"),
+        "table style flags should create a table part");
+
+    const auto& table_xml = entries.at("xl/tables/table1.xml");
+    check_contains(table_xml,
+        R"(<tableStyleInfo name="TableStyleMedium4" showFirstColumn="1" showLastColumn="1" showRowStripes="0" showColumnStripes="1"/>)",
+        "table style flags XML mismatch");
+}
+
+void test_streaming_writer_table_column_attribute_escaping()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-table-column-escape.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("TableEscapes");
+
+    sheet.append_row({
+        fastxlsx::CellView::text("Text \"quoted\""),
+        fastxlsx::CellView::text("Owner's Share"),
+        fastxlsx::CellView::text("A&B<Limit>"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("alpha"),
+        fastxlsx::CellView::number(42.0),
+        fastxlsx::CellView::text("done"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::text("Total \"quoted\" & <done>"),
+        fastxlsx::CellView::number(42.0),
+        fastxlsx::CellView::text("Owner's Total"),
+    });
+
+    fastxlsx::TableOptions table;
+    table.name = "EscapedColumnTable";
+    table.column_names = {"Text \"quoted\"", "Owner's Share", "A&B<Limit>"};
+    table.show_totals_row = true;
+    table.column_totals_labels = {"Total \"quoted\" & <done>", "", ""};
+    table.column_totals_functions.resize(3);
+    table.column_totals_functions[1] = fastxlsx::TableTotalsFunction::Sum;
+    table.style_name.clear();
+    sheet.add_table({1, 1, 3, 3}, table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/tables/table1.xml"),
+        "table column escape test should create a table part");
+    check(!entries.contains("xl/styles.xml"),
+        "table column escape test should not create a styles part");
+
+    const auto& table_xml = entries.at("xl/tables/table1.xml");
+    check_contains(table_xml,
+        R"(<tableColumn id="1" name="Text &quot;quoted&quot;" totalsRowLabel="Total &quot;quoted&quot; &amp; &lt;done&gt;"/>)",
+        "table column double-quote attribute escape mismatch");
+    check_contains(table_xml,
+        R"(<tableColumn id="2" name="Owner&apos;s Share" totalsRowFunction="sum"/>)",
+        "table column apostrophe attribute escape mismatch");
+    check_contains(table_xml,
+        R"(<tableColumn id="3" name="A&amp;B&lt;Limit&gt;"/>)",
+        "table column ampersand and angle-bracket attribute escape mismatch");
+    check(table_xml.find("totalsRowLabel=\"\"") == std::string::npos,
+        "empty totals row labels should be omitted");
+    check(table_xml.find("totalsRowFormula") == std::string::npos,
+        "totals labels should not generate totals row formula text");
+}
+
+void test_streaming_writer_table_range_overlap()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-table-range-overlap.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Tables");
+    auto other_sheet = workbook.add_worksheet("OtherTables");
+
+    for (int row = 0; row < 4; ++row) {
+        sheet.append_row({
+            fastxlsx::CellView::text(row == 0 ? "A" : "a"),
+            fastxlsx::CellView::text(row == 0 ? "B" : "b"),
+            fastxlsx::CellView::text(row == 0 ? "C" : "c"),
+            fastxlsx::CellView::text(row == 0 ? "D" : "d"),
+        });
+        other_sheet.append_row({
+            fastxlsx::CellView::text(row == 0 ? "A" : "a"),
+            fastxlsx::CellView::text(row == 0 ? "B" : "b"),
+        });
+    }
+
+    fastxlsx::TableOptions first_table;
+    first_table.name = "FirstTable";
+    first_table.column_names = {"A", "B"};
+    first_table.style_name.clear();
+    sheet.add_table({1, 1, 2, 2}, first_table);
+
+    fastxlsx::TableOptions adjacent_columns = first_table;
+    adjacent_columns.name = "AdjacentColumnsTable";
+    adjacent_columns.column_names = {"C", "D"};
+    sheet.add_table({1, 3, 2, 4}, adjacent_columns);
+
+    fastxlsx::TableOptions adjacent_rows = first_table;
+    adjacent_rows.name = "AdjacentRowsTable";
+    sheet.add_table({3, 1, 4, 2}, adjacent_rows);
+
+    fastxlsx::TableOptions overlapping = first_table;
+    overlapping.name = "OverlappingTable";
+    check_fastxlsx_error(
+        [&sheet, &overlapping] { sheet.add_table({2, 2, 3, 3}, overlapping); },
+        "tables should reject overlapping ranges in the same worksheet");
+
+    fastxlsx::TableOptions other_sheet_table = first_table;
+    other_sheet_table.name = "OtherSheetTable";
+    other_sheet.add_table({1, 1, 2, 2}, other_sheet_table);
+
+    workbook.close();
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& first_sheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    const auto& second_sheet_xml = entries.at("xl/worksheets/sheet2.xml");
+    check_contains(first_sheet_xml, R"(<tableParts count="3">)",
+        "non-overlapping tables in the same worksheet should all be kept");
+    check_contains(second_sheet_xml, R"(<tableParts count="1">)",
+        "same table range on a different worksheet should be allowed");
+    check(entries.contains("xl/tables/table1.xml"), "missing first overlap test table");
+    check(entries.contains("xl/tables/table2.xml"), "missing adjacent-column table");
+    check(entries.contains("xl/tables/table3.xml"), "missing adjacent-row table");
+    check(entries.contains("xl/tables/table4.xml"), "missing cross-worksheet table");
+    check(!entries.contains("xl/tables/table5.xml"),
+        "rejected overlapping table should not create a table part");
+}
+
+void test_streaming_writer_invalid_table_options()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-invalid-tables.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("InvalidTables");
+
+    fastxlsx::TableOptions valid;
+    valid.name = "ValidTable";
+    valid.column_names = {"First", "Second"};
+
+    fastxlsx::TableOptions empty_name = valid;
+    empty_name.name.clear();
+    check_fastxlsx_error(
+        [&sheet, &empty_name] { sheet.add_table({1, 1, 2, 2}, empty_name); },
+        "tables should reject an empty name");
+
+    fastxlsx::TableOptions numeric_name = valid;
+    numeric_name.name = "1Table";
+    check_fastxlsx_error(
+        [&sheet, &numeric_name] { sheet.add_table({1, 1, 2, 2}, numeric_name); },
+        "tables should reject a name starting with a digit");
+
+    fastxlsx::TableOptions spaced_name = valid;
+    spaced_name.name = "Bad Table";
+    check_fastxlsx_error(
+        [&sheet, &spaced_name] { sheet.add_table({1, 1, 2, 2}, spaced_name); },
+        "tables should reject names with spaces");
+
+    fastxlsx::TableOptions cell_reference_name = valid;
+    cell_reference_name.name = "A1";
+    check_fastxlsx_error(
+        [&sheet, &cell_reference_name] { sheet.add_table({1, 1, 2, 2}, cell_reference_name); },
+        "tables should reject names that look like cell references");
+
+    fastxlsx::TableOptions wrong_column_count = valid;
+    wrong_column_count.name = "WrongColumnCount";
+    wrong_column_count.column_names = {"OnlyOne"};
+    check_fastxlsx_error(
+        [&sheet, &wrong_column_count] { sheet.add_table({1, 1, 2, 2}, wrong_column_count); },
+        "tables should reject a column count mismatch");
+
+    fastxlsx::TableOptions totals_function_without_totals_row = valid;
+    totals_function_without_totals_row.name = "TotalsFunctionWithoutTotalsRow";
+    totals_function_without_totals_row.column_totals_functions.resize(2);
+    totals_function_without_totals_row.column_totals_functions[1] =
+        fastxlsx::TableTotalsFunction::Sum;
+    check_fastxlsx_error(
+        [&sheet, &totals_function_without_totals_row] {
+            sheet.add_table({1, 1, 2, 2}, totals_function_without_totals_row);
+        },
+        "tables should reject totals functions without visible totals row metadata");
+
+    fastxlsx::TableOptions totals_label_without_totals_row = valid;
+    totals_label_without_totals_row.name = "TotalsLabelWithoutTotalsRow";
+    totals_label_without_totals_row.column_totals_labels = {"Total", ""};
+    check_fastxlsx_error(
+        [&sheet, &totals_label_without_totals_row] {
+            sheet.add_table({1, 1, 2, 2}, totals_label_without_totals_row);
+        },
+        "tables should reject totals labels without visible totals row metadata");
+
+    fastxlsx::TableOptions wrong_totals_function_count = valid;
+    wrong_totals_function_count.name = "WrongTotalsFunctionCount";
+    wrong_totals_function_count.show_totals_row = true;
+    wrong_totals_function_count.column_totals_functions.resize(1);
+    wrong_totals_function_count.column_totals_functions[0] =
+        fastxlsx::TableTotalsFunction::Sum;
+    check_fastxlsx_error(
+        [&sheet, &wrong_totals_function_count] {
+            sheet.add_table({1, 1, 3, 2}, wrong_totals_function_count);
+        },
+        "tables should reject a totals function count mismatch");
+
+    fastxlsx::TableOptions wrong_totals_label_count = valid;
+    wrong_totals_label_count.name = "WrongTotalsLabelCount";
+    wrong_totals_label_count.show_totals_row = true;
+    wrong_totals_label_count.column_totals_functions.resize(2);
+    wrong_totals_label_count.column_totals_functions[1] =
+        fastxlsx::TableTotalsFunction::Sum;
+    wrong_totals_label_count.column_totals_labels = {"Total"};
+    check_fastxlsx_error(
+        [&sheet, &wrong_totals_label_count] {
+            sheet.add_table({1, 1, 3, 2}, wrong_totals_label_count);
+        },
+        "tables should reject a totals label count mismatch");
+
+    fastxlsx::TableOptions labels_only_visible_totals = valid;
+    labels_only_visible_totals.name = "LabelsOnlyVisibleTotals";
+    labels_only_visible_totals.show_totals_row = true;
+    labels_only_visible_totals.column_totals_labels = {"Total", ""};
+    check_fastxlsx_error(
+        [&sheet, &labels_only_visible_totals] {
+            sheet.add_table({1, 1, 3, 2}, labels_only_visible_totals);
+        },
+        "visible totals rows with only labels should still require a totals function");
+
+    fastxlsx::TableOptions empty_column_name = valid;
+    empty_column_name.name = "EmptyColumnName";
+    empty_column_name.column_names = {"First", ""};
+    check_fastxlsx_error(
+        [&sheet, &empty_column_name] { sheet.add_table({1, 1, 2, 2}, empty_column_name); },
+        "tables should reject empty column names");
+
+    fastxlsx::TableOptions duplicate_column_name = valid;
+    duplicate_column_name.name = "DuplicateColumnName";
+    duplicate_column_name.column_names = {"Name", "name"};
+    check_fastxlsx_error(
+        [&sheet, &duplicate_column_name] { sheet.add_table({1, 1, 2, 2}, duplicate_column_name); },
+        "tables should reject duplicate column names");
+
+    sheet.add_table({1, 1, 2, 2}, valid);
+
+    fastxlsx::TableOptions duplicate_table_name = valid;
+    duplicate_table_name.name = "validtable";
+    check_fastxlsx_error(
+        [&sheet, &duplicate_table_name] { sheet.add_table({3, 1, 4, 2}, duplicate_table_name); },
+        "tables should reject duplicate workbook table names case-insensitively");
+}
+
+void test_streaming_writer_invalid_data_validation_rules()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-invalid-validations.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Validation");
+
+    fastxlsx::DataValidationRule missing_formula;
+    missing_formula.type = fastxlsx::DataValidationType::List;
+    check_fastxlsx_error(
+        [&sheet, &missing_formula] { sheet.add_data_validation({1, 1, 1, 1}, missing_formula); },
+        "dataValidations should reject empty formula1");
+
+    fastxlsx::DataValidationRule list_with_operator;
+    list_with_operator.type = fastxlsx::DataValidationType::List;
+    list_with_operator.operator_type = fastxlsx::DataValidationOperator::Equal;
+    list_with_operator.formula1 = "\"A,B\"";
+    check_fastxlsx_error(
+        [&sheet, &list_with_operator] { sheet.add_data_validation({1, 1, 1, 1}, list_with_operator); },
+        "list dataValidations should reject an operator");
+
+    fastxlsx::DataValidationRule custom_with_formula2;
+    custom_with_formula2.type = fastxlsx::DataValidationType::Custom;
+    custom_with_formula2.formula1 = "A1>0";
+    custom_with_formula2.formula2 = "B1";
+    check_fastxlsx_error(
+        [&sheet, &custom_with_formula2] { sheet.add_data_validation({1, 1, 1, 1}, custom_with_formula2); },
+        "custom dataValidations should reject formula2");
+
+    fastxlsx::DataValidationRule whole_without_operator;
+    whole_without_operator.type = fastxlsx::DataValidationType::Whole;
+    whole_without_operator.formula1 = "1";
+    check_fastxlsx_error(
+        [&sheet, &whole_without_operator] { sheet.add_data_validation({1, 1, 1, 1}, whole_without_operator); },
+        "whole dataValidations should require an operator");
+
+    fastxlsx::DataValidationRule whole_with_hidden_dropdown = whole_without_operator;
+    whole_with_hidden_dropdown.operator_type = fastxlsx::DataValidationOperator::Equal;
+    whole_with_hidden_dropdown.hide_dropdown_arrow = true;
+    check_fastxlsx_error(
+        [&sheet, &whole_with_hidden_dropdown] {
+            sheet.add_data_validation({1, 1, 1, 1}, whole_with_hidden_dropdown);
+        },
+        "non-list dataValidations should reject hidden dropdown arrows");
+
+    fastxlsx::DataValidationRule between_without_formula2;
+    between_without_formula2.type = fastxlsx::DataValidationType::Decimal;
+    between_without_formula2.operator_type = fastxlsx::DataValidationOperator::Between;
+    between_without_formula2.formula1 = "1.5";
+    check_fastxlsx_error(
+        [&sheet, &between_without_formula2] { sheet.add_data_validation({1, 1, 1, 1}, between_without_formula2); },
+        "between dataValidations should require formula2");
+
+    fastxlsx::DataValidationRule equal_with_formula2;
+    equal_with_formula2.type = fastxlsx::DataValidationType::Decimal;
+    equal_with_formula2.operator_type = fastxlsx::DataValidationOperator::Equal;
+    equal_with_formula2.formula1 = "1.5";
+    equal_with_formula2.formula2 = "2.5";
+    check_fastxlsx_error(
+        [&sheet, &equal_with_formula2] { sheet.add_data_validation({1, 1, 1, 1}, equal_with_formula2); },
+        "single-formula dataValidations should reject formula2");
+}
+
+} // namespace
+
+int main()
+{
+    try {
+        test_streaming_writer_data_validations();
+        test_streaming_writer_data_validation_multi_range_sqref();
+        test_streaming_writer_data_validations_with_relationship_metadata();
+        test_streaming_writer_data_validation_formula2_escape_and_namespace();
+        test_streaming_writer_data_validation_prompt_error_metadata();
+        test_streaming_writer_external_hyperlinks();
+        test_streaming_writer_internal_hyperlinks();
+        test_streaming_writer_internal_hyperlink_with_table_relationship_id();
+        test_streaming_writer_hyperlink_display_tooltips();
+        test_streaming_writer_tables();
+        test_streaming_writer_table_style_flags();
+        test_streaming_writer_table_column_attribute_escaping();
+        test_streaming_writer_table_range_overlap();
+        test_streaming_writer_invalid_table_options();
+        test_streaming_writer_invalid_data_validation_rules();
+    } catch (const std::exception& error) {
+        std::cerr << "Test failed: " << error.what() << '\n';
+        return 1;
+    }
+
+    return 0;
+}

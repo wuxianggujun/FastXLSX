@@ -1858,6 +1858,18 @@ The CellStore PackageEditor shard now follows the same pattern:
 CTest shards. The existing `fastxlsx.package_editor.cellstore-*` CTest names
 stay stable, and `fastxlsx_package_editor_cellstore_tests` remains a build-only
 aggregate. This is still test organization only.
+The StreamingWriter tests now follow the same executable split pattern:
+`tests/test_streaming_writer.cpp` keeps the core smoke, docProps, compression,
+dimension, bounds, append-state, file-backed, and generic guardrail coverage,
+while `tests/test_streaming_writer_styles.cpp`,
+`tests/test_streaming_writer_conditional_formatting.cpp`,
+`tests/test_streaming_writer_metadata.cpp`,
+`tests/test_streaming_writer_images.cpp`, and
+`tests/test_streaming_writer_shared_strings.cpp` own the larger feature
+families. The existing `fastxlsx.streaming` CTest name stays stable for the
+core shard, new `fastxlsx.streaming.*` CTest names cover the split families,
+and `fastxlsx_streaming_writer_tests` remains a build-only aggregate. This is
+still test organization only.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

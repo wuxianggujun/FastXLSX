@@ -613,8 +613,9 @@ struct WorkbookEditorRenameOptions {
 /// batch clears do not synthesize blank records for missing coordinates. This
 /// does not migrate or merge styles, synthesize styles for missing cells,
 /// create tombstones, or allow caller-supplied foreign style handles.
-/// `erase_cell()` and `erase_cells()` remove active sparse records instead of
-/// writing explicit blanks. Empty, valueless, unquoted, unterminated, padded,
+/// `erase_cell()`, `erase_cells()`, `erase_row()`, and `erase_rows()` remove
+/// active sparse records instead of writing explicit blanks. Empty, valueless,
+/// unquoted, unterminated, padded,
 /// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -768,6 +769,39 @@ public:
     /// delegates to the std::span overload, so row replacement, row-clear
     /// no-op behavior, guardrails, diagnostics, and non-goals are identical.
     void set_row(std::uint32_t row, std::initializer_list<CellValue> values);
+
+    /// Removes represented sparse cells from one row.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The row is
+    /// a 1-based Excel row number. Only active sparse records already present
+    /// in that row are removed; missing rows are successful no-ops that do not
+    /// dirty the materialized session and clear prior public edit diagnostics.
+    /// Invalid row numbers are mutation failures and update
+    /// WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// may shrink the worksheet dimension. This is not row deletion, row
+    /// shifting, row metadata editing, dense range deletion, tombstone output,
+    /// table/range metadata recalculation, relationship repair, or a large-file
+    /// low-memory random-editing path.
+    void erase_row(std::uint32_t row);
+
+    /// Removes represented sparse cells from an inclusive row range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// row-range bounds are 1-based Excel row numbers and must satisfy
+    /// `first_row <= last_row`. Only active sparse records already present in
+    /// those rows are removed; missing-only ranges are successful no-ops that
+    /// do not dirty the materialized session and clear prior public edit
+    /// diagnostics. Invalid or reversed ranges reject before mutating the
+    /// sparse store and update WorkbookEditor::last_edit_error().
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// may shrink the worksheet dimension. This is not row deletion, row
+    /// shifting, row metadata editing, dense range deletion, tombstone output,
+    /// table/range metadata recalculation, relationship repair, or a large-file
+    /// low-memory random-editing path.
+    void erase_rows(std::uint32_t first_row, std::uint32_t last_row);
 
     /// Replaces one sparse-store cell value while preserving its current style.
     ///

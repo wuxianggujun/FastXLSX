@@ -3590,6 +3590,183 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
     }
 }
 
+void test_public_worksheet_editor_erase_row_removes_sparse_row()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-row-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.erase_row(1);
+    check(sheet.cell_count() == 1,
+        "erase_row should remove all represented cells in the target sparse row");
+    check(!sheet.try_cell("A1").has_value(),
+        "erase_row should remove target-row text cells");
+    check(!sheet.try_cell("B1").has_value(),
+        "erase_row should remove target-row numeric cells");
+    check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "erase_row should preserve represented cells outside the target row");
+    check(sheet.has_pending_changes(),
+        "erase_row should dirty the materialized worksheet when records are removed");
+    check(editor.pending_materialized_cell_count() == 1,
+        "erase_row should update aggregate materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "successful erase_row should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A2"/>)",
+        "erase_row should shrink the projected dimension to remaining sparse cells");
+    check_contains(worksheet_xml, "placeholder-a2",
+        "erase_row should persist non-target row source cells");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "erase_row should omit erased row text cells");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "erase_row should omit erased row numeric cells");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "erase_row should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-rows-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before missing erase_row no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before missing erase_row no-op");
+
+        sheet.erase_row(3);
+        check(!editor.last_edit_error().has_value(),
+            "missing erase_row should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "missing erase_row should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "missing erase_row should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "missing erase_row should not create or remove sparse records");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-rows-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 4, fastxlsx::CellValue::text("range-extra"));
+        sheet.erase_rows(1, 2);
+        check(sheet.cell_count() == 1,
+            "erase_rows should remove represented sparse records in all target rows");
+        check(!sheet.try_cell("A1").has_value(),
+            "erase_rows should remove first row text cells");
+        check(!sheet.try_cell("B1").has_value(),
+            "erase_rows should remove first row numeric cells");
+        check(!sheet.try_cell("A2").has_value(),
+            "erase_rows should remove second row text cells");
+        check(sheet.get_cell("D4").text_value() == "range-extra",
+            "erase_rows should preserve represented cells outside the row range");
+        check(sheet.has_pending_changes(),
+            "erase_rows should keep the materialized worksheet dirty after mutation");
+        check(!editor.last_edit_error().has_value(),
+            "successful erase_rows should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="D4"/>)",
+            "erase_rows should shrink the projected dimension to remaining sparse cells");
+        check_contains(worksheet_xml, "range-extra",
+            "erase_rows should persist non-target row edits");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "erase_rows should omit erased row-one text cells");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "erase_rows should omit erased row-two text cells");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "erase_rows should omit erased row-one numeric cells");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool invalid_failed = false;
+        try {
+            sheet.erase_row(0);
+        } catch (const fastxlsx::FastXlsxError&) {
+            invalid_failed = true;
+        }
+        check(invalid_failed, "erase_row should reject invalid row numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed erase_row invalid-row mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "erase_row invalid-row failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "erase_row invalid-row failure should preserve sparse cell count");
+
+        bool reversed_failed = false;
+        try {
+            sheet.erase_rows(2, 1);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            reversed_failed = true;
+            check_contains(error.what(), "first_row <= last_row",
+                "erase_rows reversed failure should expose the row ordering rule");
+        }
+        check(reversed_failed, "erase_rows should reject reversed row ranges");
+        check(editor.last_edit_error().has_value(),
+            "failed erase_rows reversed mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "erase_rows reversed failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "erase_rows reversed failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "erase_rows reversed failure should preserve existing cells");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-budget-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+        sheet.erase_row(1);
+        check(sheet.cell_count() == 1,
+            "erase_row should release sparse records under an exact max_cells budget");
+        sheet.set_cell(3, 1, fastxlsx::CellValue::text("after-erase-row-budget"));
+        check(!editor.last_edit_error().has_value(),
+            "successful set_cell after erase_row budget release should clear diagnostics");
+        check(sheet.cell_count() == 2,
+            "set_cell after erase_row should stay within the exact max_cells budget");
+        check(sheet.get_cell("A3").text_value() == "after-erase-row-budget",
+            "set_cell after erase_row should insert the new sparse record");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "after-erase-row-budget",
+            "budget-released insertion after erase_row should persist through save_as");
+        check_contains(worksheet_xml, "placeholder-a2",
+            "budget-released insertion should preserve non-target row source cells");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "budget-released insertion should not resurrect erased row text cells");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "budget-released insertion should not resurrect erased row numeric cells");
+    }
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -4516,6 +4693,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_append_row_noop_and_guardrails();
             test_public_worksheet_editor_set_row_replaces_sparse_row();
             test_public_worksheet_editor_set_row_empty_and_guardrails();
+            test_public_worksheet_editor_erase_row_removes_sparse_row();
+            test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

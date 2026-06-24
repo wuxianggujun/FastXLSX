@@ -33356,6 +33356,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.729 - WorksheetEditor sparse row erase boundary
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse row erase convenience API; no
+row delete/shift and no metadata recalculation.
+
+Goal: provide explicit row-level erase UX for existing-workbook small-file
+In-memory editing without implying dense row deletion semantics.
+`WorksheetEditor::erase_row()` and `WorksheetEditor::erase_rows()` delete only
+represented active sparse records from a 1-based row or inclusive row range,
+treat missing rows / missing-only ranges as successful no-ops, and stage
+deletion before replacing the active sparse store.
+
+Output:
+- Added public `WorksheetEditor::erase_row(row)` and
+  `erase_rows(first_row, last_row)` with Doxygen boundary notes.
+- Implemented staged sparse-store row / row-range erase with Excel row guards,
+  reversed-range rejection, missing-only diagnostic cleanup, and no dirty-state
+  mutation for no-op inputs.
+- Added public-state regressions for normal row erase output, row-range erase,
+  missing row no-op diagnostic cleanup, invalid row / reversed range failure
+  hygiene, and max_cells budget release before later insertion.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  row record erase from row deletion, row shifting, row metadata editing,
+  dense range deletion, tombstones, table/range metadata recalculation,
+  relationship repair, and large-file random editing.
+
+Non-goals / boundary:
+- No row insertion, row deletion, row shifting, row metadata model,
+  dense range deletion, tombstone output, table/range/definedName/drawing
+  metadata recalculation, style/sharedStrings migration, relationship repair,
+  A1 range parser, or large-file low-memory random editing expansion.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

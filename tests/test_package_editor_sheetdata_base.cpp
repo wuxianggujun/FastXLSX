@@ -20,6 +20,33 @@
 #include <system_error>
 #include <vector>
 
+#ifndef FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_CORE_TESTS
+#define FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_CORE_TESTS 1
+#endif
+
+#ifndef FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_BY_NAME_TESTS
+#define FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_BY_NAME_TESTS 0
+#endif
+
+#ifndef FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_PLANNED_CATALOG_TESTS
+#define FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_PLANNED_CATALOG_TESTS 0
+#endif
+
+#ifndef FASTXLSX_PACKAGE_EDITOR_SHEETDATA_SHARD_NAME
+#define FASTXLSX_PACKAGE_EDITOR_SHEETDATA_SHARD_NAME "sheetdata"
+#endif
+
+#ifndef FASTXLSX_PACKAGE_EDITOR_SHEETDATA_RUN_TESTS
+#define FASTXLSX_PACKAGE_EDITOR_SHEETDATA_RUN_TESTS()                                      \
+    do {                                                                                   \
+        test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata();         \
+        test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_metadata_copy_original(); \
+        test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();                 \
+        test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch(); \
+        test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry();        \
+    } while (false)
+#endif
+
 namespace {
 
 class TestFailure : public std::runtime_error {
@@ -516,7 +543,9 @@ std::filesystem::path output_path(std::string_view name)
 
 bool is_package_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "sheetdata";
+    return shard == "all" || shard == "sheetdata"
+        || shard == "sheetdata-by-name"
+        || shard == "sheetdata-planned-catalog";
 }
 
 std::string_view package_editor_shard_from_args(int argc, char* argv[])
@@ -1609,6 +1638,8 @@ void rewrite_linked_object_source_package(const LinkedObjectSourcePackage& sourc
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
+
+#if FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_CORE_TESTS
 void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
 {
     const LinkedObjectSourcePackage source =
@@ -2231,7 +2262,9 @@ void test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata()
     check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
         "sheetData replacement should request full calculation in workbook XML");
 }
+#endif
 
+#if FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_BY_NAME_TESTS
 void test_package_editor_replaces_worksheet_sheet_data_from_chunk_source()
 {
     const LinkedObjectSourcePackage source =
@@ -2593,7 +2626,9 @@ void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name()
     check(output_reader.content_types().override_for(opaque_extension_part) == nullptr,
         "sheet-name sheetData replacement should keep unknown extension default content type");
 }
+#endif
 
+#if FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_CORE_TESTS
 void test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_metadata_copy_original()
 {
     SourcePackage source;
@@ -2726,7 +2761,9 @@ void test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_
     check(output_reader.read_entry("custom/opaque.bin") == source.unknown,
         "no-calcChain sheetData output should preserve unknown bytes");
 }
+#endif
 
+#if FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_BY_NAME_TESTS
 void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets()
 {
     LinkedObjectSourcePackage source =
@@ -2919,7 +2956,9 @@ void test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_se
     check(output_reader.content_types().override_for(opaque_extension_part) == nullptr,
         "dot-segment sheetData replacement should keep unknown extension default content type");
 }
+#endif
 
+#if FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_CORE_TESTS
 void test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip()
 {
     const std::filesystem::path source_path =
@@ -3516,7 +3555,9 @@ void test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry()
     check(output_reader.content_types().override_for(styles_part) != nullptr,
         "writer unknown output should preserve styles content type override");
 }
+#endif
 
+#if FASTXLSX_PACKAGE_EDITOR_SHEETDATA_INCLUDE_PLANNED_CATALOG_TESTS
 void test_package_editor_replaces_worksheet_by_sheet_name()
 {
     LinkedObjectSourcePackage source =
@@ -4201,6 +4242,7 @@ void test_package_editor_planned_workbook_catalog_respects_relationship_namespac
         "fastxlsx-package-editor-planned-catalog-plain-id-output.xlsx",
         "plain-id planned workbook catalog before by-name patch");
 }
+#endif
 
 
 } // namespace
@@ -4211,20 +4253,9 @@ int main(int argc, char* argv[])
         const std::string_view shard = package_editor_shard_from_args(argc, argv);
         std::cout << "fastxlsx.package_editor sheetdata shard: " << shard << '\n';
 
-        if (should_run_package_editor_shard(shard, "sheetdata")) {
-            test_package_editor_replaces_worksheet_sheet_data_and_preserves_metadata();
-            test_package_editor_replaces_worksheet_sheet_data_from_chunk_source();
-            test_package_editor_replaces_worksheet_sheet_data_by_sheet_name();
-            test_package_editor_sheet_data_patch_without_calc_chain_keeps_relationship_metadata_copy_original();
-            test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_absolute_targets();
-            test_package_editor_replaces_worksheet_sheet_data_by_sheet_name_with_dot_segment_targets();
-            test_package_editor_patches_fastxlsx_writer_sheet_data_roundtrip();
-            test_package_editor_controlled_template_fill_fixture_uses_bounded_sheet_data_patch();
-            test_package_editor_patches_writer_sheet_data_and_preserves_unknown_entry();
-            test_package_editor_replaces_worksheet_by_sheet_name();
-            test_package_editor_replaces_worksheet_by_planned_workbook_sheet_name();
-            test_package_editor_replaces_sheet_data_by_planned_workbook_sheet_name();
-            test_package_editor_planned_workbook_catalog_respects_relationship_namespace();
+        if (should_run_package_editor_shard(
+                shard, FASTXLSX_PACKAGE_EDITOR_SHEETDATA_SHARD_NAME)) {
+            FASTXLSX_PACKAGE_EDITOR_SHEETDATA_RUN_TESTS();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

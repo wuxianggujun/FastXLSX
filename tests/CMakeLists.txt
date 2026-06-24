@@ -663,6 +663,14 @@ add_fastxlsx_package_editor_sheetdata_target(
     test_package_editor_sheetdata_base.cpp
 )
 add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_by_name_tests
+    test_package_editor_sheetdata_by_name.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
+    fastxlsx_package_editor_sheetdata_planned_catalog_tests
+    test_package_editor_sheetdata_planned_catalog.cpp
+)
+add_fastxlsx_package_editor_sheetdata_target(
     fastxlsx_package_editor_sheetdata_catalog_core_tests
     test_package_editor_sheetdata_catalog.cpp
 )
@@ -708,6 +716,8 @@ add_custom_target(fastxlsx_package_editor_sheetdata_linked_tests
 add_custom_target(fastxlsx_package_editor_sheetdata_tests
     DEPENDS
         fastxlsx_package_editor_sheetdata_base_tests
+        fastxlsx_package_editor_sheetdata_by_name_tests
+        fastxlsx_package_editor_sheetdata_planned_catalog_tests
         fastxlsx_package_editor_sheetdata_catalog_tests
         fastxlsx_package_editor_sheetdata_guards_tests
         fastxlsx_package_editor_sheetdata_linked_tests
@@ -725,6 +735,13 @@ function(add_fastxlsx_package_editor_sheetdata_shard shard target timeout_second
 endfunction()
 
 add_fastxlsx_package_editor_sheetdata_shard(sheetdata fastxlsx_package_editor_sheetdata_base_tests 60)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-by-name fastxlsx_package_editor_sheetdata_by_name_tests 60
+)
+add_fastxlsx_package_editor_sheetdata_shard(
+    sheetdata-planned-catalog
+    fastxlsx_package_editor_sheetdata_planned_catalog_tests 60
+)
 add_fastxlsx_package_editor_sheetdata_shard(
     sheetdata-catalog fastxlsx_package_editor_sheetdata_catalog_core_tests 60
 )

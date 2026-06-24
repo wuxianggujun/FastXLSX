@@ -32677,6 +32677,43 @@ ctest --preset windows-nmake-release -R fastxlsx.streaming --output-on-failure -
 ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ```
 
+## P8.711 - Split PackageEditor sheetData base executable by by-name/catalog coverage
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep `fastxlsx.package_editor.sheetdata` focused on core sheetData and
+writer-roundtrip coverage, while moving by-name helper and planned-workbook
+catalog coverage into separate CTest shards under the existing sheetData
+aggregate.
+
+Output:
+- Added `tests/test_package_editor_sheetdata_by_name.cpp` for by-name
+  sheetData helper coverage.
+- Added `tests/test_package_editor_sheetdata_planned_catalog.cpp` for
+  planned workbook catalog by-name worksheet / sheetData coverage.
+- Kept `tests/test_package_editor_sheetdata_base.cpp` as the core sheetData
+  shard and made the included test groups selectable by local shard macros.
+- Added executable targets
+  `fastxlsx_package_editor_sheetdata_by_name_tests` and
+  `fastxlsx_package_editor_sheetdata_planned_catalog_tests`.
+- Added CTest names `fastxlsx.package_editor.sheetdata-by-name` and
+  `fastxlsx.package_editor.sheetdata-planned-catalog`.
+- Extended `fastxlsx_package_editor_sheetdata_tests` so the build-only
+  aggregate depends on the base, by-name, planned-catalog, catalog, guard, and
+  linked sheetData executables.
+
+Non-goals / boundary:
+- No production code change, no PackageEditor behavior change, no XML semantic
+  change, no new public API, and no coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_sheetdata_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.sheetdata(-by-name|-planned-catalog)?$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

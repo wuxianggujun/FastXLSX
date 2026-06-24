@@ -1821,6 +1821,16 @@ The PackageEditor sheetData executable split removes
 `fastxlsx.package_editor.sheetdata*` CTest names stay stable, and
 `fastxlsx_package_editor_sheetdata_tests` remains a build-only aggregate. This
 is still test organization only.
+The next sheetData shard pass splits the base executable further: the core
+sheetData / writer-roundtrip tests stay in
+`tests/test_package_editor_sheetdata_base.cpp`, while the by-name helper
+coverage and planned-workbook catalog coverage now live in
+`tests/test_package_editor_sheetdata_by_name.cpp` and
+`tests/test_package_editor_sheetdata_planned_catalog.cpp`. The new
+`fastxlsx.package_editor.sheetdata-by-name` and
+`fastxlsx.package_editor.sheetdata-planned-catalog` CTest names are added, and
+`fastxlsx_package_editor_sheetdata_tests` now aggregates all three sheetData
+executables. This is still test organization only.
 The sheetData catalog executable is now split further:
 `tests/test_package_editor_sheetdata_catalog.cpp` keeps catalog rename,
 by-name helper, and source workbook catalog failure coverage, while
@@ -2427,6 +2437,8 @@ schema validation.
   - `fastxlsx.package_editor.cellstore-failures`
   - `fastxlsx.package_editor.cellstore-catalog`
   - `fastxlsx.package_editor.sheetdata`
+  - `fastxlsx.package_editor.sheetdata-by-name`
+  - `fastxlsx.package_editor.sheetdata-planned-catalog`
   - `fastxlsx.package_editor.sheetdata-catalog`
   - `fastxlsx.package_editor.sheetdata-catalog-guards`
   - `fastxlsx.package_editor.sheetdata-catalog-audits`

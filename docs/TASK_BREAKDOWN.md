@@ -29275,6 +29275,38 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
 - `git diff --check` passes.
 
+## P8.686 - Split PackageEditor preservation shard bodies
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: reduce `tests/test_package_editor.cpp` by moving the linked-object and
+preservation-focused shard bodies into a dedicated test executable while
+keeping the existing CTest names and coverage.
+
+Output:
+- Added `tests/test_package_editor_preservation.cpp`.
+- Added `fastxlsx_package_editor_preservation_tests`.
+- Moved the existing `preservation-core`, `preservation-removal`,
+  `preservation-resources`, `preservation-comments`, and
+  `preservation-linked` shard bodies out of the monolithic
+  `test_package_editor.cpp`.
+- Kept the public CTest names as `fastxlsx.package_editor.preservation-*`;
+  only the executable target behind those names changed.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no PackageEditor behavior
+  change, no relationship repair expansion, no linked-object lifecycle
+  expansion, no preservation semantic expansion, and no CTest coverage
+  removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_tests fastxlsx_package_editor_preservation_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\." --output-on-failure` passes.
+- `git diff --check` passes.
+
 ## P8.345 - Split first public WorksheetEditor implementation task
 
 Status: done.

@@ -1759,6 +1759,12 @@ The follow-up sheetData layout split now moves `sheetdata`,
 `tests/test_package_editor_sheetdata.cpp` under the same CTest names. This is
 still test organization only: no runtime behavior, public API, sheetData XML
 semantics, relationship repair, or linked-object lifecycle semantics changed.
+The next preservation layout split moves `preservation-core`,
+`preservation-removal`, `preservation-resources`, `preservation-comments`, and
+`preservation-linked` into `tests/test_package_editor_preservation.cpp` under
+the same CTest names. This is still CTest budget hygiene only: no runtime
+behavior, public API, PackageEditor semantics, relationship repair, linked
+object lifecycle, or preservation guarantees changed.
 P8.584 extends the opt-in workbook-editor fixture QA runner with
 `external_defined_name_fixture_smoke`: the Python layer scans external fixture
 packages for direct workbook `definedNames`, runs a materialized-only public

@@ -260,12 +260,37 @@ endfunction()
 
 add_fastxlsx_package_editor_shard(core 60)
 add_fastxlsx_package_editor_shard(c5 60)
-add_fastxlsx_package_editor_shard(preservation-core 60)
-add_fastxlsx_package_editor_shard(preservation-removal 60)
-add_fastxlsx_package_editor_shard(preservation-resources 60)
-add_fastxlsx_package_editor_shard(preservation-comments 60)
-add_fastxlsx_package_editor_shard(preservation-linked 60)
 add_fastxlsx_package_editor_shard(policy 60)
+
+add_executable(fastxlsx_package_editor_preservation_tests
+    test_package_editor_preservation.cpp
+)
+
+target_link_libraries(fastxlsx_package_editor_preservation_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_package_editor_preservation_tests PRIVATE cxx_std_20)
+target_compile_definitions(fastxlsx_package_editor_preservation_tests PRIVATE FASTXLSX_ENABLE_TEST_HOOKS=1)
+target_include_directories(fastxlsx_package_editor_preservation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if(FASTXLSX_ENABLE_MINIZIP_NG)
+    target_link_libraries(fastxlsx_package_editor_preservation_tests PRIVATE MINIZIP::minizip-ng)
+    target_compile_definitions(fastxlsx_package_editor_preservation_tests PRIVATE FASTXLSX_TEST_HAS_MINIZIP_NG=1)
+endif()
+
+function(add_fastxlsx_package_editor_preservation_shard shard timeout_seconds)
+    add_test(
+        NAME fastxlsx.package_editor.${shard}
+        COMMAND fastxlsx_package_editor_preservation_tests --shard=${shard}
+    )
+    set_tests_properties(fastxlsx.package_editor.${shard} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
+add_fastxlsx_package_editor_preservation_shard(preservation-core 60)
+add_fastxlsx_package_editor_preservation_shard(preservation-removal 60)
+add_fastxlsx_package_editor_preservation_shard(preservation-resources 60)
+add_fastxlsx_package_editor_preservation_shard(preservation-comments 60)
+add_fastxlsx_package_editor_preservation_shard(preservation-linked 60)
 
 add_executable(fastxlsx_package_editor_sheetdata_tests
     test_package_editor_sheetdata.cpp

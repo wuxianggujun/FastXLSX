@@ -1749,6 +1749,17 @@ former monolithic `facade`, `source-success`, `source-failure-*`, and
 shards. This is test layout and CTest budget hygiene only; it does not change
 runtime behavior, public API, package output semantics, source materialization
 policy, materialized-session behavior, or formula/image/docProps features.
+The follow-up WorkbookEditor facade split keeps the base public facade
+diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
+save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke
+coverage into `tests/test_workbook_editor_facade_save_as.cpp`,
+`tests/test_workbook_editor_facade_rename.cpp`,
+`tests/test_workbook_editor_facade_images.cpp`, and
+`tests/test_workbook_editor_facade_smoke.cpp`, and shares fixtures through
+`tests/test_workbook_editor_facade_common.hpp`. The existing
+`fastxlsx.workbook_editor_facade` CTest name remains the core shard, the new
+facade shard names are test-organization only, and
+`fastxlsx_workbook_editor_facade_tests` is now a build-only aggregate.
 The next package-editor test-layout step is now the CellStore shard split:
 `tests/test_package_editor_cellstore.cpp` owns the `cellstore-*` CTest names
 while `tests/test_package_editor.cpp` keeps the remaining shards. This is the
@@ -2457,6 +2468,10 @@ schema validation.
   - `fastxlsx.workbook_editor_source_failures`
   - `fastxlsx.workbook_editor_materialized_sessions`
   - `fastxlsx.workbook_editor_facade`
+  - `fastxlsx.workbook_editor_facade-save-as`
+  - `fastxlsx.workbook_editor_facade-rename`
+  - `fastxlsx.workbook_editor_facade-images`
+  - `fastxlsx.workbook_editor_facade-smoke`
   - `fastxlsx.workbook_editor_formula_rewrite`
   - `fastxlsx.image`
 - The source-success `WorksheetEditor` materialization regressions are now

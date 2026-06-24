@@ -949,6 +949,17 @@ function(add_fastxlsx_workbook_editor_source_success_test ctest_name target time
     )
 endfunction()
 
+function(add_fastxlsx_workbook_editor_facade_test ctest_name target timeout_seconds)
+    add_test(
+        NAME ${ctest_name}
+        COMMAND ${target}
+    )
+    set_tests_properties(${ctest_name} PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        TIMEOUT ${timeout_seconds}
+    )
+endfunction()
+
 add_fastxlsx_workbook_editor_target(
     fastxlsx_workbook_editor_source_success_core_tests
     test_workbook_editor_source_success.cpp
@@ -996,7 +1007,62 @@ add_fastxlsx_workbook_editor_source_success_test(
 )
 add_fastxlsx_workbook_editor_standalone_test(source_failures test_workbook_editor_source_failures.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(materialized_sessions test_workbook_editor_materialized_sessions.cpp 60)
-add_fastxlsx_workbook_editor_standalone_test(facade test_workbook_editor_facade.cpp 60)
+
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_facade_core_tests
+    test_workbook_editor_facade.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_facade_save_as_tests
+    test_workbook_editor_facade_save_as.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_facade_rename_tests
+    test_workbook_editor_facade_rename.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_facade_images_tests
+    test_workbook_editor_facade_images.cpp
+)
+add_fastxlsx_workbook_editor_target(
+    fastxlsx_workbook_editor_facade_smoke_tests
+    test_workbook_editor_facade_smoke.cpp
+)
+
+add_custom_target(fastxlsx_workbook_editor_facade_tests
+    DEPENDS
+        fastxlsx_workbook_editor_facade_core_tests
+        fastxlsx_workbook_editor_facade_save_as_tests
+        fastxlsx_workbook_editor_facade_rename_tests
+        fastxlsx_workbook_editor_facade_images_tests
+        fastxlsx_workbook_editor_facade_smoke_tests
+)
+
+add_fastxlsx_workbook_editor_facade_test(
+    fastxlsx.workbook_editor_facade
+    fastxlsx_workbook_editor_facade_core_tests
+    60
+)
+add_fastxlsx_workbook_editor_facade_test(
+    fastxlsx.workbook_editor_facade-save-as
+    fastxlsx_workbook_editor_facade_save_as_tests
+    60
+)
+add_fastxlsx_workbook_editor_facade_test(
+    fastxlsx.workbook_editor_facade-rename
+    fastxlsx_workbook_editor_facade_rename_tests
+    60
+)
+add_fastxlsx_workbook_editor_facade_test(
+    fastxlsx.workbook_editor_facade-images
+    fastxlsx_workbook_editor_facade_images_tests
+    60
+)
+add_fastxlsx_workbook_editor_facade_test(
+    fastxlsx.workbook_editor_facade-smoke
+    fastxlsx_workbook_editor_facade_smoke_tests
+    60
+)
 
 add_executable(fastxlsx_workbook_editor_formula_rewrite_tests
     test_workbook_editor_formula_rewrite.cpp

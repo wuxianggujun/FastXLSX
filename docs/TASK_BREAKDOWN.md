@@ -32716,6 +32716,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.package_editor\.sheetdata(-by-name|-planned-catalog)?$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.712 - Split WorkbookEditor facade executable by behavior family
+
+Status: done.
+
+Type: test organization / CTest executable split; no public API symbol change
+and no production behavior change.
+
+Goal: keep `fastxlsx.workbook_editor_facade` focused on public facade
+diagnostics/state coverage while moving save-as/no-op, rename/planned-catalog,
+image replacement, and end-to-end smoke coverage into focused CTest shards.
+
+Output:
+- Added `tests/test_workbook_editor_facade_common.hpp` for shared public
+  facade fixture/helper code.
+- Kept `tests/test_workbook_editor_facade.cpp` as the core diagnostics/state
+  shard behind the existing `fastxlsx.workbook_editor_facade` CTest name.
+- Added:
+  - `tests/test_workbook_editor_facade_save_as.cpp`.
+  - `tests/test_workbook_editor_facade_rename.cpp`.
+  - `tests/test_workbook_editor_facade_images.cpp`.
+  - `tests/test_workbook_editor_facade_smoke.cpp`.
+- Added CTest names:
+  - `fastxlsx.workbook_editor_facade-save-as`.
+  - `fastxlsx.workbook_editor_facade-rename`.
+  - `fastxlsx.workbook_editor_facade-images`.
+  - `fastxlsx.workbook_editor_facade-smoke`.
+- Reworked `fastxlsx_workbook_editor_facade_tests` into a build-only aggregate
+  over all facade-family executables.
+
+Non-goals / boundary:
+- No runtime code change, no public API change, no public editing semantic
+  change, no image/docProps feature expansion, and no coverage removal.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_facade_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor_facade" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

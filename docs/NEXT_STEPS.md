@@ -148,6 +148,16 @@ They still only clear or remove represented active sparse records, never
 synthesize missing cells, and do not add dense range writes, tombstones,
 metadata recalculation, relationship repair, or large-file low-memory random
 editing.
+`fastxlsx_bench_workbook_editor` now provides the matching opt-in local
+performance probe for this public editor path. It generates a stored source
+workbook, opens it through `WorkbookEditor`, materializes one `Data` worksheet,
+executes `point-set`, `batch-set`, `a1-range-clear`, or `a1-range-erase`, and
+writes a schema-v1 JSON report with source generation, open, materialize,
+mutation, save, sparse-store estimates, process peak working set, and
+input/output package sizes. The tool is manual-only under
+`FASTXLSX_BUILD_BENCHMARKS`, not default CTest/CI, and does not prove
+large-file low-memory random editing or Office compatibility until a separate
+open check is actually run.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit

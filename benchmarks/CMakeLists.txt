@@ -2,11 +2,21 @@ add_executable(fastxlsx_bench_streaming_writer
     bench_streaming_writer.cpp
 )
 
+add_executable(fastxlsx_bench_workbook_editor
+    bench_workbook_editor.cpp
+)
+
 target_link_libraries(fastxlsx_bench_streaming_writer PRIVATE FastXLSX::fastxlsx)
 target_compile_features(fastxlsx_bench_streaming_writer PRIVATE cxx_std_20)
 target_compile_definitions(fastxlsx_bench_streaming_writer PRIVATE
     FASTXLSX_BENCH_DEFAULT_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}"
     FASTXLSX_ENABLE_BENCHMARK_METRICS=1
+)
+
+target_link_libraries(fastxlsx_bench_workbook_editor PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_bench_workbook_editor PRIVATE cxx_std_20)
+target_compile_definitions(fastxlsx_bench_workbook_editor PRIVATE
+    FASTXLSX_BENCH_DEFAULT_OUTPUT_DIR="${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 if(FASTXLSX_ENABLE_MINIZIP_NG)
@@ -15,6 +25,7 @@ endif()
 
 if(WIN32)
     target_link_libraries(fastxlsx_bench_streaming_writer PRIVATE psapi)
+    target_link_libraries(fastxlsx_bench_workbook_editor PRIVATE psapi)
 endif()
 
 function(fastxlsx_configure_reference_benchmark target_name)

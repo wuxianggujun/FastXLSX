@@ -160,6 +160,54 @@ minizip no-compression/stored output，而不是 DEFLATE 压缩结果。stored-b
 未压缩大小，因此 file-backed/chunked worksheet entry 仍不能被写成大文件或
 Zip64 benchmark 证据。
 
+### Workbook Editor Benchmark Workflow
+
+已有文件编辑性能使用独立 opt-in 手工工具，不进入默认 CTest/CI：
+
+```powershell
+cmake --preset windows-nmake-release-benchmark
+cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_workbook_editor
+.\build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_workbook_editor.exe `
+  --scenario batch-set --rows 10000 --cols 10 --edits 10000 `
+  --source .\build\windows-nmake-release-benchmark\benchmarks\editor-source.xlsx `
+  --output .\build\windows-nmake-release-benchmark\benchmarks\editor-edited.xlsx `
+  --result .\build\windows-nmake-release-benchmark\benchmarks\editor-batch-set.json
+```
+
+`fastxlsx_bench_workbook_editor` 会先生成一个 stored source workbook，再通过
+public `WorkbookEditor` 打开、materialize `Data` worksheet、执行 small-file
+In-memory sparse mutation，并 `save_as()` 到新 workbook。它支持：
+
+- `point-set`：逐个调用 `set_cell_value(row, column, value)`。
+- `batch-set`：一次性调用 `set_cell_values(span<WorksheetCellUpdate>)`。
+- `a1-range-clear`：调用 `clear_cell_values(std::string_view)`，只清 represented
+  sparse records。
+- `a1-range-erase`：调用 `erase_cells(std::string_view)`，只删除 represented
+  sparse records。
+
+A1 range 场景会使用从 `A1` 开始的矩形范围；当 `--edits` 不是 `--cols` 的整数倍时，
+实际触达坐标数以 JSON 中的 `touched_coordinates` 为准。
+
+生成 JSON 使用 `workbook_editor_benchmark_schema_version = "1"`，记录：
+
+- `source_write_ms`：生成基准 source workbook 的耗时，不属于编辑路径。
+- `open_ms`：`WorkbookEditor::open()` metadata/package 读取耗时。
+- `materialize_ms`：`WorksheetEditor` source worksheet materialization 耗时。
+- `mutation_ms`：实际 sparse edit API 耗时。
+- `save_ms`：`WorkbookEditor::save_as()` 输出耗时。
+- `total_editor_ms`：`open + materialize + mutation + save`，用于比较编辑路径。
+- `materialized_cells_before/after`、`estimated_memory_before/after_bytes`：
+  sparse store 诊断值，不是进程 RSS。
+- `peak_memory_mb`：当前进程 PeakWorkingSetSize；它包含 source 生成、打开、编辑、
+  save 和运行时开销，不是单独的 sparse store 内存。
+- `source_bytes` / `output_bytes`：输入/输出 package 文件大小。
+
+该 benchmark 只覆盖当前 public small-file In-memory sparse 编辑路径，不代表
+large-file low-memory random editing、relationship repair、metadata recalculation、
+sharedStrings/styles broad migration、Zip64 支持或 Office 打开兼容性。`office_open`
+初始仍为 `not_run`，只有实际用 Excel / WPS / LibreOffice 打开后，才能把兼容性写成
+已验证事实。
+
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`，记录字符串分布和
 package 元数据：
 

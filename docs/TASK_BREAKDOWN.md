@@ -33726,6 +33726,56 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.737 - WorkbookEditor sparse editing benchmark tool
+
+Status: done.
+
+Type: opt-in local benchmark tooling for public existing-workbook small-file
+In-memory sparse editing; no default CTest/CI registration.
+
+Depends on: P8.724, P8.726, P8.736.
+
+Touch files:
+- `benchmarks/CMakeLists.txt`
+- `benchmarks/bench_workbook_editor.cpp`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: provide a repeatable local performance probe for current public
+`WorkbookEditor` / `WorksheetEditor` editing paths, with phase timings and
+memory/file-size diagnostics that are specific enough to support engineering
+decisions without overstating large-file guarantees.
+
+Output:
+- Added opt-in benchmark target `fastxlsx_bench_workbook_editor` under
+  `FASTXLSX_BUILD_BENCHMARKS`.
+- The tool generates a stored source workbook, opens it through
+  `WorkbookEditor`, materializes the `Data` worksheet, executes one of
+  `point-set`, `batch-set`, `a1-range-clear`, or `a1-range-erase`, saves a new
+  workbook, and writes schema-v1 JSON.
+- JSON records source generation, open, materialize, mutation, save,
+  total-editor time, sparse materialized cell counts, sparse memory estimates,
+  process peak working set, input/output package size, and an explicit
+  `office_open = "not_run"` compatibility placeholder.
+- Updated performance docs and next-step status to distinguish this benchmark
+  from default tests and from large-file low-memory editing proof.
+
+Non-goals / boundary:
+- No default CTest/CI benchmark run, no Google Benchmark dependency, no
+  third-party comparison, no Office/openpyxl compatibility proof, no
+  relationship repair benchmark, no metadata recalculation benchmark, no
+  sharedStrings/styles broad migration benchmark, no Zip64 test, and no claim
+  of large-file low-memory random editing.
+
+Acceptance:
+- `cmake --preset windows-nmake-release-benchmark` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_workbook_editor` passes.
+- At least one local workbook-editor benchmark case writes an `.xlsx` output and
+  schema-v1 JSON report.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

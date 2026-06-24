@@ -1228,6 +1228,36 @@ public:
     /// access semantics, and does not flush or reload the materialized session.
     [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells() const;
 
+    /// Returns an owning row-major snapshot of active sparse records in one row.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. The row
+    /// is a 1-based Excel row number. Only active sparse records currently
+    /// present in that row are returned; missing cells are not synthesized as
+    /// blanks. The result is an owning snapshot, not an iterator or borrowed
+    /// reference into the WorkbookEditor session. This is a sparse row
+    /// inspection convenience over sparse_cells(CellRange), not dense row read,
+    /// row metadata inspection, row iterator, metadata recalculation, or
+    /// large-file low-memory random access. It does not mutate dirty state,
+    /// update WorkbookEditor::last_edit_error(), flush, or reload the
+    /// materialized session.
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> row_cells(std::uint32_t row) const;
+
+    /// Returns an owning row-major snapshot of active sparse records in one column.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. The
+    /// column is a 1-based Excel column number. Only active sparse records
+    /// currently present in that column are returned; missing cells are not
+    /// synthesized as blanks. The result is ordered by row and is an owning
+    /// snapshot, not an iterator or borrowed reference into the WorkbookEditor
+    /// session. This is a sparse column inspection convenience over
+    /// sparse_cells(CellRange), not dense column read, column metadata
+    /// inspection, column iterator, metadata recalculation, or large-file
+    /// low-memory random access. It does not mutate dirty state, update
+    /// WorkbookEditor::last_edit_error(), flush, or reload the materialized
+    /// session.
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> column_cells(
+        std::uint32_t column) const;
+
     /// Returns an owning row-major snapshot of active sparse records inside a
     /// rectangular range.
     ///

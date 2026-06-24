@@ -972,6 +972,28 @@ std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells() const
     return detail::public_snapshots_from_materialized_cells(internal_snapshots);
 }
 
+std::vector<WorksheetCellSnapshot> WorksheetEditor::row_cells(std::uint32_t row) const
+{
+    detail::validate_worksheet_editor_cell_coordinate(row, 1);
+    return sparse_cells(CellRange {
+        row,
+        1,
+        row,
+        static_cast<std::uint32_t>(max_excel_columns),
+    });
+}
+
+std::vector<WorksheetCellSnapshot> WorksheetEditor::column_cells(std::uint32_t column) const
+{
+    detail::validate_worksheet_editor_cell_coordinate(1, column);
+    return sparse_cells(CellRange {
+        1,
+        column,
+        max_excel_rows,
+        column,
+    });
+}
+
 std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(CellRange range) const
 {
     detail::validate_worksheet_editor_cell_range(range);

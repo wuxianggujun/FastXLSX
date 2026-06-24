@@ -288,7 +288,8 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   single-cell mutation/read API 的 strict uppercase A1 string overload、
   `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
-  `cell_count()` 和 `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
+  `row_cells()`、`column_cells()`、`cell_count()` 和
+  `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；caller-supplied default `StyleId{0}`
   会归一化为 no style handle，workbook-backed source `t="s"` shared string cells
   可只读 materialize 为 plain text，且 prefixed source sharedStrings `sst` / `si` /
@@ -710,6 +711,8 @@ sheet.erase_cells(erase_targets);
 sheet.erase_cells({{6, 1}, {6, 2}});
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
+const auto first_row_cells = sheet.row_cells(1);
+const auto first_column_cells = sheet.column_cells(1);
 sheet.erase_cell(2, 1);
 const bool sheet_dirty = sheet.has_pending_changes();
 const auto dirty_materialized_sheets = editor.pending_materialized_worksheet_names();
@@ -734,9 +737,12 @@ invalid read throws but does not update `last_edit_error()`，invalid
 mutation 会清空它；最后一个合法坐标 `(1048576, 16384)` 仍是有效输入。
 `sparse_cells()` 返回当前 materialized sparse store 的 owning row-major snapshot，
 包含 explicit blank records；`sparse_cells(CellRange)` 返回 1-based inclusive
-range 内已经存在的 active sparse records，不补齐 missing cells。两者都不暴露内部
-iterator/lifetime，不是 dense range read 或 streaming sparse iterator，也不会同步
-worksheet metadata。
+range 内已经存在的 active sparse records，不补齐 missing cells。`row_cells()` /
+`column_cells()` 是同一 sparse snapshot 语义的 row/column convenience：只返回目标
+row 或 column 中已 represented 的 active sparse records，missing cells 不会被合成
+blank，invalid row/column read 不更新 `last_edit_error()`。这些读取 API 都不暴露内部
+iterator/lifetime，不是 dense range read、dense row/column read 或 streaming sparse
+iterator，也不会同步 worksheet metadata。
 `clear_cell_values(CellRange)` 使用同样的 1-based inclusive range guardrail，只把
 range 内已经存在的 active records 清成 explicit blanks 并保留各自 source style
 handle；missing cells 不会被合成，且当前没有 A1 range string parser。

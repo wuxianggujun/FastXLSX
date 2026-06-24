@@ -2869,6 +2869,148 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "range sparse_cells should not revive erased source cells");
 }
 
+void test_public_worksheet_editor_row_and_column_cells_snapshot()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-row-column-cells-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-row-column-cells-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(1, 3, fastxlsx::CellValue::blank());
+    sheet.set_cell(3, 1, fastxlsx::CellValue::text("column-new"));
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("outside-row-column"));
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+    check(row_one.size() == 3,
+        "row_cells should return only active sparse records in the requested row");
+    check(row_one[0].reference.row == 1 && row_one[0].reference.column == 1 &&
+            row_one[0].value.text_value() == "placeholder-a1",
+        "row_cells should include source-backed row cells in column order");
+    check(row_one[1].reference.row == 1 && row_one[1].reference.column == 2 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            row_one[1].value.number_value() == 1.0,
+        "row_cells should keep same-row cells ordered by column");
+    check(row_one[2].reference.row == 1 && row_one[2].reference.column == 3 &&
+            row_one[2].value.kind() == fastxlsx::CellValueKind::Blank,
+        "row_cells should include explicit blank records");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_two = sheet.row_cells(2);
+    check(row_two.size() == 1 && row_two[0].reference.row == 2 &&
+            row_two[0].reference.column == 1 &&
+            row_two[0].value.text_value() == "placeholder-a2",
+        "row_cells should return represented records from other source-backed rows");
+    check(sheet.row_cells(99).empty(),
+        "row_cells should not synthesize missing rows or missing cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one = sheet.column_cells(1);
+    check(column_one.size() == 3,
+        "column_cells should return only active sparse records in the requested column");
+    check(column_one[0].reference.row == 1 && column_one[0].reference.column == 1 &&
+            column_one[0].value.text_value() == "placeholder-a1",
+        "column_cells should include source-backed records in row order");
+    check(column_one[1].reference.row == 2 && column_one[1].reference.column == 1 &&
+            column_one[1].value.text_value() == "placeholder-a2",
+        "column_cells should keep column records ordered by row");
+    check(column_one[2].reference.row == 3 && column_one[2].reference.column == 1 &&
+            column_one[2].value.text_value() == "column-new",
+        "column_cells should include edited column records");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_two = sheet.column_cells(2);
+    check(column_two.size() == 1 && column_two[0].reference.row == 1 &&
+            column_two[0].reference.column == 2 &&
+            column_two[0].value.number_value() == 1.0,
+        "column_cells should return represented records from other columns");
+    check(sheet.column_cells(99).empty(),
+        "column_cells should not synthesize missing columns or missing cells");
+
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("changed-after-row-column-snapshot"));
+    check(row_one[0].value.text_value() == "placeholder-a1",
+        "row_cells should return owning snapshots, not borrowed store references");
+    check(column_one[0].value.text_value() == "placeholder-a1",
+        "column_cells should return owning snapshots, not borrowed store references");
+    check(!editor.last_edit_error().has_value(),
+        "row_cells and column_cells reads should not update last_edit_error");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "row_cells and column_cells should not interfere with dirty-session save_as");
+    check_contains(worksheet_xml, "changed-after-row-column-snapshot",
+        "edits after row_cells and column_cells snapshots should still persist");
+    check_contains(worksheet_xml, "outside-row-column",
+        "cells outside inspected rows and columns should still persist");
+}
+
+void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-row-column-cells-invalid-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-row-column-cells-invalid-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t cell_count_before = sheet.cell_count();
+    const std::size_t memory_before = sheet.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-row-column-read-sentinel"));
+    }), "invalid coordinate mutation should seed last_edit_error before row/column reads");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid coordinate mutation should record a prior diagnostic");
+
+    check(threw_fastxlsx_error([&] { (void)sheet.row_cells(0); }),
+        "row_cells should reject zero row reads");
+    check(editor.last_edit_error() == prior_error,
+        "invalid row_cells read should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&] { (void)sheet.row_cells(1048577); }),
+        "row_cells should reject row overflow reads");
+    check(editor.last_edit_error() == prior_error,
+        "overflow row_cells read should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&] { (void)sheet.column_cells(0); }),
+        "column_cells should reject zero column reads");
+    check(editor.last_edit_error() == prior_error,
+        "invalid column_cells read should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&] { (void)sheet.column_cells(16385); }),
+        "column_cells should reject column overflow reads");
+    check(editor.last_edit_error() == prior_error,
+        "overflow column_cells read should preserve prior last_edit_error");
+
+    check(sheet.row_cells(10).empty(),
+        "valid missing row_cells reads should return an empty snapshot");
+    check(sheet.column_cells(10).empty(),
+        "valid missing column_cells reads should return an empty snapshot");
+    check(editor.last_edit_error() == prior_error,
+        "valid row_cells and column_cells reads should also preserve prior diagnostics");
+
+    check(!sheet.has_pending_changes(),
+        "row_cells and column_cells read failures should not dirty the materialized sheet");
+    check(!editor.has_pending_changes(),
+        "row_cells and column_cells read failures should not dirty the editor");
+    check(editor.pending_change_count() == 0,
+        "row_cells and column_cells read failures should not increment public edit count");
+    check(sheet.cell_count() == cell_count_before,
+        "row_cells and column_cells read failures should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == memory_before,
+        "row_cells and column_cells read failures should preserve sparse memory estimate");
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == prior_error,
+        "no-op save_as after row/column read failures should preserve the prior diagnostic");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "no-op save_as after row/column read failures should copy source entries");
+}
+
 void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic()
 {
     const std::filesystem::path source =
@@ -5845,6 +5987,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic();
             test_public_worksheet_editor_sparse_cells_snapshot();
             test_public_worksheet_editor_sparse_cells_range_snapshot();
+            test_public_worksheet_editor_row_and_column_cells_snapshot();
+            test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics();
             test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();
             test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
             test_public_worksheet_editor_erase_cells_range_reacquires_saved_state();

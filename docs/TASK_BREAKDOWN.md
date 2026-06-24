@@ -33571,6 +33571,54 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.734 - WorksheetEditor sparse row/column snapshot reads
+
+Status: done.
+
+Type: public `WorksheetEditor` small-file sparse row/column read convenience
+API; no dense row/column read and no iterator exposure.
+
+Depends on: P8.381, P8.382, P8.733.
+
+Touch files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: provide symmetric row/column sparse inspection after the row/column write
+convenience APIs. `WorksheetEditor::row_cells(row)` returns owning snapshots for
+active sparse records already represented in one row; `column_cells(column)`
+returns owning snapshots for active sparse records already represented in one
+column. Missing cells are not synthesized as blanks, and invalid read failures
+do not update `last_edit_error()`.
+
+Output:
+- Added public `row_cells()` and `column_cells()` with Doxygen boundaries.
+- Implemented both reads as sparse `CellRange` conveniences over the existing
+  row-major snapshot path.
+- Added public-state coverage for row/column snapshot order, explicit blank
+  inclusion, empty missing rows/columns, owning-copy behavior, invalid read
+  failure hygiene, and no-op save_as copy-original behavior.
+- Updated README, API design notes, and next-step status to distinguish sparse
+  row/column snapshots from dense row/column reads, row/column metadata
+  inspection, iterators, metadata recalculation, and large-file random access.
+
+Non-goals / boundary:
+- No dense row/column reads, dense range read, row/column metadata model,
+  iterator/lifetime exposure, missing-cell synthesis, coordinate inference,
+  source reload, save-as flush, metadata recalculation, or large-file low-memory
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\.workbook_editor\.public-state" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

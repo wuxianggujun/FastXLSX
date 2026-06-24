@@ -123,6 +123,14 @@ max_cells, and memory-budget failures are staged and do not mutate the active
 sparse store. This is not row/column replacement, insertion/deletion, shifting,
 dense range writing, metadata recalculation, style migration/merge/creation, or
 large-file low-memory random editing.
+`WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
+small-file sparse row/column inspection convenience: they return owning
+row-major `WorksheetCellSnapshot` vectors for active sparse records already
+represented in one row or one column, synthesize no missing cells, preserve
+existing read diagnostics, and do not dirty, flush, reload, or mutate the
+materialized session. They are not dense row/column reads, row/column metadata
+inspection, iterators, metadata recalculation, or large-file low-memory random
+access.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit

@@ -34174,6 +34174,51 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.745 - Extend WorksheetEditor sparse batch commit coverage
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/cell_store.hpp`
+- `include/fastxlsx/detail/materialized_worksheet_session.hpp`
+- `src/cell_store.cpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_minimal_xlsx.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: continue the P8.738 optimization by removing full sparse-store cloning
+and per-cell incremental rewrite paths from the existing public
+`WorksheetEditor` row/column/clear/erase convenience APIs, without adding new
+public API surface or changing small-file In-memory semantics.
+
+Output:
+- Added internal `CellStore::apply_cell_edits()` so sparse erasures and updates
+  can be validated, budget-checked, and committed as one operation.
+- Kept `CellStore::set_cells()` as the update-only wrapper over the same
+  preflight path.
+- Routed `WorksheetEditor::append_row()`, `set_row()`, `set_column()`,
+  `set_row_values()`, `set_column_values()`, row/column clear, row/column
+  erase, range clear/erase, and coordinate-batch clear/erase through batch
+  sparse edits instead of cloning the whole active `CellStore`.
+- Added guardrail coverage proving a failed erase-plus-insert sparse edit does
+  not erase existing records or leak rejected inserts before a later valid edit
+  succeeds.
+
+Non-goals / boundary:
+- No new public `WorksheetEditor` methods, no dense range writer, no row/column
+  shifting, no metadata recalculation, no relationship repair, no broad
+  sharedStrings/styles migration, and no large-file low-memory random editor.
+- This only reduces avoidable sparse-store copy/commit costs inside the
+  current small-file In-memory editor. Source worksheet materialization and
+  `save_as()` projection remain separate costs.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_tests fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(unit|workbook_editor\\.public-state)$" --output-on-failure` passes.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

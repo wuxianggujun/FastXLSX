@@ -2882,12 +2882,23 @@ void CellStore::set_cell(std::uint32_t row, std::uint32_t column, const CellValu
     cells_[position] = std::move(record);
 }
 
-void CellStore::set_cells(
+bool CellStore::apply_cell_edits(
+    std::span<const CellPosition> erasures,
     std::span<const CellStoreUpdate> updates,
     CellStoreBatchStylePolicy style_policy)
 {
-    if (updates.empty()) {
-        return;
+    if (erasures.empty() && updates.empty()) {
+        return false;
+    }
+
+    std::set<CellPosition> final_erasures;
+    bool erases_existing_record = false;
+    for (const CellPosition& position : erasures) {
+        validate_position(position.row, position.column);
+        final_erasures.insert(position);
+        if (cells_.find(position) != cells_.end()) {
+            erases_existing_record = true;
+        }
     }
 
     std::map<CellPosition, CellRecord> final_updates;
@@ -2901,7 +2912,10 @@ void CellStore::set_cells(
         if (style_policy == CellStoreBatchStylePolicy::PreserveExistingStyles
             && !record.style_id.has_value()) {
             const auto staged = final_updates.find(update.position);
-            const auto existing = cells_.find(update.position);
+            const bool erased_before_update =
+                final_erasures.find(update.position) != final_erasures.end();
+            const auto existing =
+                erased_before_update ? cells_.end() : cells_.find(update.position);
             const CellRecord* style_source = staged != final_updates.end()
                 ? &staged->second
                 : (existing != cells_.end() ? &existing->second : nullptr);
@@ -2914,6 +2928,12 @@ void CellStore::set_cells(
     }
 
     std::size_t next_cell_count = cells_.size();
+    for (const CellPosition& position : final_erasures) {
+        if (final_updates.find(position) == final_updates.end()
+            && cells_.find(position) != cells_.end()) {
+            --next_cell_count;
+        }
+    }
     for (const auto& [position, record] : final_updates) {
         (void)record;
         if (cells_.find(position) == cells_.end()) {
@@ -2926,9 +2946,19 @@ void CellStore::set_cells(
 
     if (options_.memory_budget_bytes.has_value()) {
         std::size_t next_memory_usage = estimated_memory_usage();
+        std::set<CellPosition> subtracted_existing_positions;
+        for (const CellPosition& position : final_erasures) {
+            const auto existing = cells_.find(position);
+            if (existing == cells_.end()) {
+                continue;
+            }
+            next_memory_usage -= entry_memory_usage(existing->first, existing->second);
+            subtracted_existing_positions.insert(position);
+        }
         for (const auto& [position, record] : final_updates) {
             const auto existing = cells_.find(position);
-            if (existing != cells_.end()) {
+            if (existing != cells_.end()
+                && subtracted_existing_positions.insert(position).second) {
                 next_memory_usage -= entry_memory_usage(existing->first, existing->second);
             }
             next_memory_usage += entry_memory_usage(position, record);
@@ -2938,9 +2968,21 @@ void CellStore::set_cells(
         }
     }
 
+    for (const CellPosition& position : final_erasures) {
+        cells_.erase(position);
+    }
     for (auto& [position, record] : final_updates) {
         cells_[position] = std::move(record);
     }
+    return erases_existing_record || !final_updates.empty();
+}
+
+void CellStore::set_cells(
+    std::span<const CellStoreUpdate> updates,
+    CellStoreBatchStylePolicy style_policy)
+{
+    (void)apply_cell_edits(
+        std::span<const CellPosition>(), updates, style_policy);
 }
 
 void CellStore::erase_cell(std::uint32_t row, std::uint32_t column)

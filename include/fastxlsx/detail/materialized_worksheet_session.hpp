@@ -73,6 +73,14 @@ public:
         dirty_ = dirty_ || !updates.empty();
     }
 
+    void apply_cell_edits(
+        std::span<const CellPosition> erasures,
+        std::span<const CellStoreUpdate> updates,
+        CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace)
+    {
+        dirty_ = store_.apply_cell_edits(erasures, updates, style_policy) || dirty_;
+    }
+
     void replace_store(CellStore store)
     {
         store_ = std::move(store);
@@ -120,19 +128,22 @@ public:
 
     void clear_cell_values(const CellRange& range)
     {
-        std::vector<CellPosition> positions;
+        std::vector<CellStoreUpdate> updates;
+        const CellValue blank_value = CellValue::blank();
         for (const auto& [position, record] : store_.records()) {
             (void)record;
             if (position.row < range.first_row || position.row > range.last_row ||
                 position.column < range.first_column || position.column > range.last_column) {
                 continue;
             }
-            positions.push_back(position);
+            updates.push_back(CellStoreUpdate {position, &blank_value});
         }
 
-        for (const CellPosition& position : positions) {
-            clear_cell_value(position.row, position.column);
+        if (updates.empty()) {
+            return;
         }
+
+        set_cells(updates, CellStoreBatchStylePolicy::PreserveExistingStyles);
     }
 
     void erase_cells(const CellRange& range)
@@ -147,9 +158,10 @@ public:
             positions.push_back(position);
         }
 
-        for (const CellPosition& position : positions) {
-            erase_cell(position.row, position.column);
+        if (positions.empty()) {
+            return;
         }
+        apply_cell_edits(positions, std::span<const CellStoreUpdate>());
     }
 
     [[nodiscard]] const CellRecord* try_cell(

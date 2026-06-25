@@ -182,6 +182,13 @@ public:
     explicit CellStore(CellStoreOptions options = {});
 
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
+    /// Applies sparse erasures followed by sparse updates as one preflighted
+    /// edit. Returns true when the edit contains at least one effective erase
+    /// or update.
+    bool apply_cell_edits(
+        std::span<const CellPosition> erasures,
+        std::span<const CellStoreUpdate> updates,
+        CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace);
     void set_cells(
         std::span<const CellStoreUpdate> updates,
         CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace);

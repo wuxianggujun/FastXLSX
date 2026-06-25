@@ -219,13 +219,19 @@ void WorksheetEditor::append_row(std::span<const CellValue> values)
             append_row = last_row + 1U;
         }
 
-        detail::CellStore staged_store = current_store;
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
         for (std::size_t index = 0; index < values.size(); ++index) {
-            staged_store.set_cell(
-                append_row, static_cast<std::uint32_t>(index + 1U), values[index]);
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {
+                    append_row,
+                    static_cast<std::uint32_t>(index + 1U),
+                },
+                &values[index],
+            });
         }
 
-        session->replace_store(std::move(staged_store));
+        session->set_cells(updates);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -273,16 +279,16 @@ void WorksheetEditor::set_row(std::uint32_t row, std::span<const CellValue> valu
             return;
         }
 
-        detail::CellStore staged_store = current_store;
-        for (const detail::CellPosition& position : row_positions) {
-            staged_store.erase_cell(position.row, position.column);
-        }
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
         for (std::size_t index = 0; index < values.size(); ++index) {
-            staged_store.set_cell(
-                row, static_cast<std::uint32_t>(index + 1U), values[index]);
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {row, static_cast<std::uint32_t>(index + 1U)},
+                &values[index],
+            });
         }
 
-        session->replace_store(std::move(staged_store));
+        session->apply_cell_edits(row_positions, updates);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -330,15 +336,16 @@ void WorksheetEditor::set_column(std::uint32_t column, std::span<const CellValue
             return;
         }
 
-        detail::CellStore staged_store = current_store;
-        for (const detail::CellPosition& position : column_positions) {
-            staged_store.erase_cell(position.row, position.column);
-        }
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
         for (std::size_t index = 0; index < values.size(); ++index) {
-            staged_store.set_cell(static_cast<std::uint32_t>(index + 1U), column, values[index]);
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {static_cast<std::uint32_t>(index + 1U), column},
+                &values[index],
+            });
         }
 
-        session->replace_store(std::move(staged_store));
+        session->apply_cell_edits(column_positions, updates);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -373,25 +380,12 @@ void WorksheetEditor::erase_rows(std::uint32_t first_row, std::uint32_t last_row
             throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
         }
 
-        const detail::CellStore& current_store = session->store();
-        std::vector<detail::CellPosition> row_positions;
-        for (const auto& [position, record] : current_store.records()) {
-            (void)record;
-            if (position.row >= first_row && position.row <= last_row) {
-                row_positions.push_back(position);
-            }
-        }
-        if (row_positions.empty()) {
-            state.clear_last_edit_error();
-            return;
-        }
-
-        detail::CellStore staged_store = current_store;
-        for (const detail::CellPosition& position : row_positions) {
-            staged_store.erase_cell(position.row, position.column);
-        }
-
-        session->replace_store(std::move(staged_store));
+        session->erase_cells(CellRange {
+            first_row,
+            1,
+            last_row,
+            static_cast<std::uint32_t>(max_excel_columns),
+        });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -421,25 +415,12 @@ void WorksheetEditor::erase_columns(std::uint32_t first_column, std::uint32_t la
             throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
         }
 
-        const detail::CellStore& current_store = session->store();
-        std::vector<detail::CellPosition> column_positions;
-        for (const auto& [position, record] : current_store.records()) {
-            (void)record;
-            if (position.column >= first_column && position.column <= last_column) {
-                column_positions.push_back(position);
-            }
-        }
-        if (column_positions.empty()) {
-            state.clear_last_edit_error();
-            return;
-        }
-
-        detail::CellStore staged_store = current_store;
-        for (const detail::CellPosition& position : column_positions) {
-            staged_store.erase_cell(position.row, position.column);
-        }
-
-        session->replace_store(std::move(staged_store));
+        session->erase_cells(CellRange {
+            1,
+            first_column,
+            max_excel_rows,
+            last_column,
+        });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -542,15 +523,18 @@ void WorksheetEditor::set_row_values(std::uint32_t row, std::span<const CellValu
             return;
         }
 
-        detail::CellStore staged_store = session->store();
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
         for (std::size_t index = 0; index < values.size(); ++index) {
             const std::uint32_t column = static_cast<std::uint32_t>(index + 1U);
-            const detail::CellRecord* existing = staged_store.try_cell(row, column);
-            staged_store.set_cell(
-                row, column, with_preserved_source_style(values[index], existing));
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {row, column},
+                &values[index],
+            });
         }
 
-        session->replace_store(std::move(staged_store));
+        session->set_cells(
+            updates, detail::CellStoreBatchStylePolicy::PreserveExistingStyles);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -589,15 +573,18 @@ void WorksheetEditor::set_column_values(std::uint32_t column, std::span<const Ce
             return;
         }
 
-        detail::CellStore staged_store = session->store();
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(values.size());
         for (std::size_t index = 0; index < values.size(); ++index) {
             const std::uint32_t row = static_cast<std::uint32_t>(index + 1U);
-            const detail::CellRecord* existing = staged_store.try_cell(row, column);
-            staged_store.set_cell(
-                row, column, with_preserved_source_style(values[index], existing));
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {row, column},
+                &values[index],
+            });
         }
 
-        session->replace_store(std::move(staged_store));
+        session->set_cells(
+            updates, detail::CellStoreBatchStylePolicy::PreserveExistingStyles);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -692,28 +679,12 @@ void WorksheetEditor::clear_rows(std::uint32_t first_row, std::uint32_t last_row
             throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
         }
 
-        const detail::CellStore& current_store = session->store();
-        std::vector<detail::CellPosition> row_positions;
-        for (const auto& [position, record] : current_store.records()) {
-            (void)record;
-            if (position.row >= first_row && position.row <= last_row) {
-                row_positions.push_back(position);
-            }
-        }
-        if (row_positions.empty()) {
-            state.clear_last_edit_error();
-            return;
-        }
-
-        detail::CellStore staged_store = current_store;
-        for (const detail::CellPosition& position : row_positions) {
-            const detail::CellRecord* existing =
-                staged_store.try_cell(position.row, position.column);
-            staged_store.set_cell(position.row, position.column,
-                with_preserved_source_style(CellValue::blank(), existing));
-        }
-
-        session->replace_store(std::move(staged_store));
+        session->clear_cell_values(CellRange {
+            first_row,
+            1,
+            last_row,
+            static_cast<std::uint32_t>(max_excel_columns),
+        });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -743,28 +714,12 @@ void WorksheetEditor::clear_columns(std::uint32_t first_column, std::uint32_t la
             throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
         }
 
-        const detail::CellStore& current_store = session->store();
-        std::vector<detail::CellPosition> column_positions;
-        for (const auto& [position, record] : current_store.records()) {
-            (void)record;
-            if (position.column >= first_column && position.column <= last_column) {
-                column_positions.push_back(position);
-            }
-        }
-        if (column_positions.empty()) {
-            state.clear_last_edit_error();
-            return;
-        }
-
-        detail::CellStore staged_store = current_store;
-        for (const detail::CellPosition& position : column_positions) {
-            const detail::CellRecord* existing =
-                staged_store.try_cell(position.row, position.column);
-            staged_store.set_cell(position.row, position.column,
-                with_preserved_source_style(CellValue::blank(), existing));
-        }
-
-        session->replace_store(std::move(staged_store));
+        session->clear_cell_values(CellRange {
+            1,
+            first_column,
+            max_excel_rows,
+            last_column,
+        });
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -824,24 +779,25 @@ void WorksheetEditor::clear_cell_values(std::span<const WorksheetCellReference> 
             return;
         }
 
-        detail::CellStore staged_store = session->store();
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(cells.size());
+        const CellValue blank_value = CellValue::blank();
         bool cleared_any_cell = false;
         for (const WorksheetCellReference& cell : cells) {
-            const detail::CellRecord* existing = staged_store.try_cell(cell.row, cell.column);
-            if (existing == nullptr) {
+            if (session->try_cell(cell.row, cell.column) == nullptr) {
                 continue;
             }
 
-            CellValue value = CellValue::blank();
-            if (existing->style_id.has_value()) {
-                value = value.with_style(*existing->style_id);
-            }
-            staged_store.set_cell(cell.row, cell.column, value);
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {cell.row, cell.column},
+                &blank_value,
+            });
             cleared_any_cell = true;
         }
 
         if (cleared_any_cell) {
-            session->replace_store(std::move(staged_store));
+            session->set_cells(
+                updates, detail::CellStoreBatchStylePolicy::PreserveExistingStyles);
         }
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
@@ -907,19 +863,21 @@ void WorksheetEditor::erase_cells(std::span<const WorksheetCellReference> cells)
             return;
         }
 
-        detail::CellStore staged_store = session->store();
+        std::vector<detail::CellPosition> erasures;
+        erasures.reserve(cells.size());
         bool erased_any_cell = false;
         for (const WorksheetCellReference& cell : cells) {
-            if (staged_store.try_cell(cell.row, cell.column) == nullptr) {
+            if (session->try_cell(cell.row, cell.column) == nullptr) {
                 continue;
             }
 
-            staged_store.erase_cell(cell.row, cell.column);
+            erasures.push_back(detail::CellPosition {cell.row, cell.column});
             erased_any_cell = true;
         }
 
         if (erased_any_cell) {
-            session->replace_store(std::move(staged_store));
+            session->apply_cell_edits(
+                erasures, std::span<const detail::CellStoreUpdate>());
         }
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {

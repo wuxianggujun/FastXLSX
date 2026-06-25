@@ -775,6 +775,56 @@ void test_internal_cell_store_guardrails()
             && !replaced_style_record->style_id.has_value(),
         "CellStore replace batch should drop existing style ids");
 
+    fastxlsx::detail::CellStoreOptions patch_max_options;
+    patch_max_options.max_cells = 2;
+    fastxlsx::detail::CellStore patch_store(patch_max_options);
+    patch_store.set_cell(1, 1, fastxlsx::CellValue::text("erase-candidate"));
+    patch_store.set_cell(1, 2, fastxlsx::CellValue::text("kept"));
+    const fastxlsx::CellValue patch_insert_c1 =
+        fastxlsx::CellValue::text("insert-c1");
+    const fastxlsx::CellValue patch_insert_d1 =
+        fastxlsx::CellValue::text("insert-d1");
+    const std::vector<fastxlsx::detail::CellPosition> patch_erasures = {
+        fastxlsx::detail::CellPosition {1, 1},
+    };
+    const std::vector<fastxlsx::detail::CellStoreUpdate> overflowing_patch_updates = {
+        {fastxlsx::detail::CellPosition {1, 3}, &patch_insert_c1},
+        {fastxlsx::detail::CellPosition {1, 4}, &patch_insert_d1},
+    };
+    check_fastxlsx_error(
+        [&patch_store, &patch_erasures, &overflowing_patch_updates] {
+            (void)patch_store.apply_cell_edits(
+                patch_erasures, overflowing_patch_updates);
+        },
+        "CellStore apply_cell_edits should reject final sparse count overflow");
+    check(patch_store.cell_count() == 2,
+        "CellStore failed apply_cell_edits should preserve sparse count");
+    const fastxlsx::detail::CellRecord* patch_preserved_a1 =
+        patch_store.find_cell(1, 1);
+    check(patch_preserved_a1 != nullptr
+            && patch_preserved_a1->text_value == "erase-candidate",
+        "CellStore failed apply_cell_edits should not erase preflighted records");
+    check(patch_store.find_cell(1, 3) == nullptr
+            && patch_store.find_cell(1, 4) == nullptr,
+        "CellStore failed apply_cell_edits should not leak rejected inserts");
+
+    const std::vector<fastxlsx::detail::CellStoreUpdate> valid_patch_updates = {
+        {fastxlsx::detail::CellPosition {1, 3}, &patch_insert_c1},
+    };
+    const bool patch_changed =
+        patch_store.apply_cell_edits(patch_erasures, valid_patch_updates);
+    check(patch_changed,
+        "CellStore apply_cell_edits should report effective sparse edits");
+    check(patch_store.cell_count() == 2,
+        "CellStore successful apply_cell_edits should apply final sparse count");
+    check(patch_store.find_cell(1, 1) == nullptr,
+        "CellStore successful apply_cell_edits should erase requested records");
+    const fastxlsx::detail::CellRecord* patch_inserted_c1 =
+        patch_store.find_cell(1, 3);
+    check(patch_inserted_c1 != nullptr
+            && patch_inserted_c1->text_value == "insert-c1",
+        "CellStore successful apply_cell_edits should commit requested inserts");
+
     fastxlsx::detail::CellStoreOptions empty_budget_options;
     empty_budget_options.memory_budget_bytes = sizeof(fastxlsx::detail::CellStore);
     fastxlsx::detail::CellStore empty_budget_store(empty_budget_options);

@@ -187,6 +187,13 @@ path is still dominated by source worksheet materialization and `save_as()`.
 Large-file editing should therefore continue through worksheet event
 reader/transformer streaming Patch work, not by raising in-memory materialized
 worksheet limits.
+That same internal sparse-edit commit path now also backs existing
+`WorksheetEditor` append, row/column replacement, row/column value writes,
+row/column clear, range clear/erase, and coordinate-batch clear/erase paths
+where those APIs previously cloned or incrementally rewrote the whole
+materialized sparse store. This is an implementation and performance-boundary
+cleanup only: no new public API is added, existing missing-target no-op
+semantics are preserved, and the editor remains the small-file In-memory path.
 `fastxlsx_bench_package_editor_cell_replacement` now provides the matching
 opt-in local performance probe for that internal Patch direction. It generates
 a stored source package whose worksheet entry is assembled from prefix +

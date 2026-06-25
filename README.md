@@ -266,14 +266,13 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `has_pending_targeted_cell_replacement()`、
   `estimated_pending_targeted_cell_replacement_xml_bytes()`、
   `CellPatchMissingCellPolicy`、
-  `replace_sheet_data()`、`replace_cells()`、`replace_or_insert_cells()`、
-  `replace_image()`、`rename_sheet()` 和 `save_as()`。
+  `replace_sheet_data()`、`replace_cells()`、`replace_image()`、`rename_sheet()` 和
+  `save_as()`。
   Patch path 支持已有 workbook 的 whole-`<sheetData>` 替换、已有 cell 定向替换、
   targeted point upsert 和窄 sheet catalog 改名；`replace_cells()` 是大 worksheet
   的 targeted Patch facade，默认 `CellPatchMissingCellPolicy::Fail` 要求目标 cell
   已存在；显式传 `CellPatchMissingCellPolicy::Insert` 可以插入缺失 cells 或合成
-  minimal rows；兼容 wrapper `replace_or_insert_cells()` 等价于该 Insert policy，
-  但新代码优先使用 direct enum overload。该路径不做
+  minimal rows。该路径不做
   row/column shifting、sharedStrings / styles migration、range metadata
   recalculation 或 relationship repair；
   `replace_image()` 只替换已有 PNG/JPEG `xl/media/*` part bytes，不编辑 drawing /
@@ -454,8 +453,8 @@ editor.save_as("patched.xlsx");
 `replace_sheet_data()` 替换已有 worksheet 的 whole-`<sheetData>`；`replace_cells()`
 默认只替换已经存在的 `<c>` cells，适合大 worksheet 中少量定点值更新；传入
 `CellPatchMissingCellPolicy::Insert` 时走同一 Patch transformer，但允许缺失 target
-作为 point upsert 插入。兼容 API `replace_or_insert_cells()` 等价于该 Insert policy。
-两种策略都不保留被覆盖 cell 的旧 metadata，不迁移 sharedStrings/style ids，
+作为 point upsert 插入。两种策略都不保留被覆盖 cell 的旧 metadata，不迁移
+sharedStrings/style ids，
 也不修复 tables / drawings / relationships；upsert 也不 shift rows/columns 或 resize
 range metadata。它们不是任意 random editing、sheet remove/add 或 public
 `PackageEditor`。小文件随机 cell 编辑请显式使用

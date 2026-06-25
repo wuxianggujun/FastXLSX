@@ -120,8 +120,7 @@ struct WorkbookEditorWorksheetEditSummary {
     bool sheet_data_replaced = false;
 
     /// True when replace_cells() has queued targeted cell patches for this
-    /// planned worksheet name. The compatibility replace_or_insert_cells()
-    /// wrapper reports through the same diagnostics.
+    /// planned worksheet name.
     bool targeted_cells_replaced = false;
 
     /// True when the materialized WorksheetEditor session for this planned
@@ -1429,11 +1428,6 @@ private:
 /// - Text replacement cells are written as inline strings. Formula replacement
 ///   cells write formula text and follow the same fullCalcOnLoad / stale
 ///   calcChain cleanup policy as worksheet replacement.
-/// - replace_or_insert_cells() remains as a compatibility convenience wrapper
-///   for replace_cells(..., CellPatchMissingCellPolicy::Insert); prefer the
-///   direct enum overload for new code so the missing-cell behavior is explicit
-///   at the call site.
-///
 /// Memory and scope: replace_sheet_data() rows are buffered in a sparse
 /// CellStore and emitted as a pull-based `<sheetData>` chunk source; the
 /// internal Patch helper
@@ -2149,8 +2143,8 @@ public:
     /// Replaces cells using an explicit missing-cell policy.
     ///
     /// Prefer this overload when the call site needs point upsert behavior:
-    /// pass CellPatchMissingCellPolicy::Insert instead of calling the legacy
-    /// replace_or_insert_cells() convenience wrapper.
+    /// pass CellPatchMissingCellPolicy::Insert so missing-cell behavior is
+    /// explicit at the call site.
     ///
     /// @param sheet_name Existing worksheet name in the current planned catalog.
     /// @param cells Targeted full-cell replacement/upsert batch.
@@ -2180,28 +2174,6 @@ public:
     void replace_cells(std::string_view sheet_name,
         std::initializer_list<WorksheetCellUpdate> cells,
         CellPatchMissingCellPolicy missing_cell_policy);
-
-    /// Compatibility convenience wrapper for point upsert.
-    ///
-    /// API mode: Patch / existing-workbook targeted cell upsert. This method is
-    /// equivalent to replace_cells(sheet_name, cells,
-    /// CellPatchMissingCellPolicy::Insert). It is kept for source
-    /// compatibility; new code should prefer the direct enum overload because
-    /// the missing-cell behavior is explicit at the call site.
-    ///
-    /// @param sheet_name Existing worksheet name in the current planned catalog.
-    /// @param cells Targeted full-cell upsert batch.
-    /// @throws FastXlsxError with the same failure and no-state-pollution
-    /// guarantees as replace_cells(..., CellPatchMissingCellPolicy::Insert).
-    void replace_or_insert_cells(
-        std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells);
-
-    /// Replaces or inserts cells from a small literal batch.
-    ///
-    /// This convenience overload consumes the initializer-list synchronously and
-    /// delegates to the std::span overload.
-    void replace_or_insert_cells(
-        std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells);
 
     /// Replaces an existing workbook image part from a file on disk.
     ///
@@ -2372,8 +2344,7 @@ private:
 
     void replace_cells_impl(std::string_view sheet_name,
         std::span<const WorksheetCellUpdate> cells,
-        CellPatchMissingCellPolicy missing_cell_policy,
-        std::string_view public_api_name);
+        CellPatchMissingCellPolicy missing_cell_policy);
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

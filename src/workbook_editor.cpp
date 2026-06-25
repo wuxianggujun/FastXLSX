@@ -418,16 +418,14 @@ void WorkbookEditor::replace_sheet_data(
 void WorkbookEditor::replace_cells(
     std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells)
 {
-    replace_cells_impl(
-        sheet_name, cells, CellPatchMissingCellPolicy::Fail, "WorkbookEditor::replace_cells()");
+    replace_cells_impl(sheet_name, cells, CellPatchMissingCellPolicy::Fail);
 }
 
 void WorkbookEditor::replace_cells(std::string_view sheet_name,
     std::span<const WorksheetCellUpdate> cells,
     CellPatchMissingCellPolicy missing_cell_policy)
 {
-    replace_cells_impl(
-        sheet_name, cells, missing_cell_policy, "WorkbookEditor::replace_cells()");
+    replace_cells_impl(sheet_name, cells, missing_cell_policy);
 }
 
 void WorkbookEditor::replace_cells(
@@ -445,24 +443,9 @@ void WorkbookEditor::replace_cells(std::string_view sheet_name,
         missing_cell_policy);
 }
 
-void WorkbookEditor::replace_or_insert_cells(
-    std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells)
-{
-    replace_cells_impl(sheet_name, cells, CellPatchMissingCellPolicy::Insert,
-        "WorkbookEditor::replace_or_insert_cells()");
-}
-
-void WorkbookEditor::replace_or_insert_cells(
-    std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells)
-{
-    replace_or_insert_cells(
-        sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
-}
-
 void WorkbookEditor::replace_cells_impl(std::string_view sheet_name,
     std::span<const WorksheetCellUpdate> cells,
-    CellPatchMissingCellPolicy missing_cell_policy,
-    std::string_view public_api_name)
+    CellPatchMissingCellPolicy missing_cell_policy)
 {
     if (impl_ == nullptr) {
         throw FastXlsxError("WorkbookEditor is not open");
@@ -498,7 +481,7 @@ void WorkbookEditor::replace_cells_impl(std::string_view sheet_name,
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
-        FastXlsxError public_error(std::string(public_api_name) + " failed for '"
+        FastXlsxError public_error(std::string("WorkbookEditor::replace_cells() failed for '")
             + sheet_name_key + "' with " + std::to_string(cells.size())
             + " input cells and " + std::to_string(input.unique_cell_count)
             + " unique targets: " + error.what());

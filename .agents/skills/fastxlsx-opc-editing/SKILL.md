@@ -206,6 +206,10 @@ package-entry audit、calc policy、planned output 或 copied output bytes，并
 unknown extension bytes；成功路径也会在 EditPlan/output-plan note 和 worksheet
 part reason 中暴露 bounded local rewrite 边界，不能写成大文件低内存 streaming
 worksheet transformer；
+当前 targeted-cell public Patch 只通过
+`WorkbookEditor::replace_cells(..., CellPatchMissingCellPolicy::Insert)` 暴露 point
+upsert；内部 `PackageEditor::replace_or_insert_worksheet_cells*` 只是 transformer /
+staged-chunk handoff 细节，不是 public API。
 当前结构测试还验证 sheetData patch 输出后，worksheet `.rels` 中保留的
 legacyDrawing `rId7` target `../drawings/vmlDrawing1.vml#shape1` 可由
 `PackageReader` / `RelationshipGraph` 重读；这仍是 preservation 证据，不是

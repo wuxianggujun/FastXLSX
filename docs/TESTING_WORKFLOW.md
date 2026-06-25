@@ -422,8 +422,8 @@ The public Patch targeted-cell shard
 `fastxlsx.workbook_editor_public_patch_cells` covers
 `WorkbookEditor::replace_cells()` as the large-worksheet facade over the
 internal worksheet transformer: successful existing-cell replacement,
-explicit `CellPatchMissingCellPolicy::Insert` point upsert, compatibility
-`replace_or_insert_cells()` delegation, untouched worksheet preservation,
+explicit `CellPatchMissingCellPolicy::Insert` point upsert, untouched worksheet
+preservation,
 workbook recalculation metadata, missing target no-state-pollution, unknown
 policy no-state-pollution, mode-mixing guards with `replace_sheet_data()` and
 materialized `WorksheetEditor`, planned-catalog behavior after `rename_sheet()`,

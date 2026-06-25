@@ -33,8 +33,16 @@ description: "设计或审查 FastXLSX public API、API 文档注释、任务计
 `ImageOptions`、`WorkbookWriter::add_style()`、`CellView::with_style()`、
 `read_image_info()`、`read_image_pixels()`、
 `WorksheetWriter::add_conditional_color_scale()`、`WorksheetWriter::add_conditional_data_bar()`、
-`WorksheetWriter::add_conditional_icon_set()`、`WorksheetWriter::add_image()` 和
-`FastXlsxError`。
+`WorksheetWriter::add_conditional_icon_set()`、`WorksheetWriter::add_image()`、
+`WorkbookEditor`、`WorkbookEditorOptions`、`WorkbookEditorWorksheetCatalogEntry`、
+`WorkbookEditorWorksheetEditSummary`、`WorkbookEditorFormulaReferenceAudit`、
+`WorkbookEditorDefinedNameFormulaReferenceAudit`、`WorksheetEditor`、
+`WorksheetEditorOptions`、`WorksheetCellReference`、`WorksheetCellUpdate`、
+`WorksheetCellSnapshot`、`CellPatchMissingCellPolicy` 和 `FastXlsxError`。
+当前 public targeted-cell Patch upsert 入口只通过
+`WorkbookEditor::replace_cells(..., CellPatchMissingCellPolicy::Insert)` 暴露；
+不要再文档化单独的 upsert-named public wrapper。内部
+`PackageEditor::replace_or_insert_worksheet_cells*` 仍只是实现细节。
 `Workbook::set_document_properties()`
 和 `WorkbookWriterOptions::document_properties` 是当前 new-workbook core/app
 docProps metadata API；它们只写 `docProps/core.xml` 和 `docProps/app.xml`。

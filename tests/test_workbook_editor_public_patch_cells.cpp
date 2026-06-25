@@ -3,8 +3,7 @@
 // These tests stay on the public WorkbookEditor facade and verify that
 // replace_cells() and its explicit missing-cell policy use the large-worksheet
 // Patch transformer path without materializing the worksheet through
-// WorksheetEditor. replace_or_insert_cells() is covered as a compatibility
-// wrapper for the Insert policy.
+// WorksheetEditor.
 
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/streaming_writer.hpp>
@@ -313,27 +312,6 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
         "replace_cells Insert policy should not create calcChain.xml");
 }
 
-void test_replace_or_insert_cells_wrapper_delegates_to_insert_policy()
-{
-    const std::filesystem::path source =
-        write_patch_cells_source("workbook-editor-public-upsert-wrapper-source.xlsx");
-    const std::filesystem::path output =
-        artifact("workbook-editor-public-upsert-wrapper-output.xlsx");
-
-    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    editor.replace_or_insert_cells("Data",
-        {{{1, 4}, fastxlsx::CellValue::text("wrapper inserted")}});
-    editor.save_as(output);
-
-    const auto output_entries = fastxlsx::test::read_zip_entries(output);
-    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(data_sheet, "<dimension ref=\"A1:D3\"",
-        "replace_or_insert_cells wrapper should refresh dimension through Insert policy");
-    check_contains(data_sheet,
-        "<c r=\"D1\" t=\"inlineStr\"><is><t>wrapper inserted</t></is></c>",
-        "replace_or_insert_cells wrapper should insert missing cells");
-}
-
 void test_replace_cells_can_follow_up_on_upserted_planned_cells()
 {
     const std::filesystem::path source =
@@ -501,7 +479,6 @@ int main()
         test_replace_cells_rejects_missing_target_without_public_state_pollution();
         test_replace_cells_rejects_unknown_missing_cell_policy_without_public_state_pollution();
         test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells_and_rows();
-        test_replace_or_insert_cells_wrapper_delegates_to_insert_policy();
         test_replace_cells_can_follow_up_on_upserted_planned_cells();
         test_replace_cells_mode_mixing_guards_and_empty_noop();
         test_replace_cells_follows_planned_catalog_after_rename();

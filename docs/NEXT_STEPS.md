@@ -35,12 +35,11 @@ The public Patch facade now also has large-worksheet targeted cell paths:
 existing cells by default, while
 `WorkbookEditor::replace_cells(..., CellPatchMissingCellPolicy::Insert)` performs
 a bounded point upsert that can insert missing cells into existing rows or
-synthesize minimal missing rows. The compatibility wrapper
-`replace_or_insert_cells(...)` remains available, but new code should prefer the
-direct enum overload. Both strategies write caller `CellValue` payloads through
-the internal worksheet transformer and stage rewritten worksheet XML as
-file-backed package-entry chunks. They are the recommended public path when a
-bounded set of cells must be edited in a large worksheet and whole-`<sheetData>`
+synthesize minimal missing rows. Both strategies write caller `CellValue`
+payloads through the internal worksheet transformer and stage rewritten
+worksheet XML as file-backed package-entry chunks. They are the recommended
+public path when a bounded set of cells must be edited in a large worksheet and
+whole-`<sheetData>`
 replacement or `WorksheetEditor` materialization is the wrong design. The
 boundary remains intentionally strict: duplicate inputs are later-wins, text is
 emitted as inline strings, caller `StyleId` values are written as-is without

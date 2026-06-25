@@ -1,8 +1,10 @@
 // Public Patch-mode WorkbookEditor targeted cell replacement tests.
 //
 // These tests stay on the public WorkbookEditor facade and verify that
-// replace_cells() / replace_or_insert_cells() use the large-worksheet Patch
-// transformer path without materializing the worksheet through WorksheetEditor.
+// replace_cells() and its explicit missing-cell policy use the large-worksheet
+// Patch transformer path without materializing the worksheet through
+// WorksheetEditor. replace_or_insert_cells() is covered as a compatibility
+// wrapper for the Insert policy.
 
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/streaming_writer.hpp>
@@ -231,7 +233,36 @@ void test_replace_cells_rejects_missing_target_without_public_state_pollution()
         "failed replace_cells should leave saved worksheet unchanged");
 }
 
-void test_replace_or_insert_cells_patches_existing_and_inserts_missing_cells_and_rows()
+void test_replace_cells_rejects_unknown_missing_cell_policy_without_public_state_pollution()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source("workbook-editor-public-patch-cells-policy-source.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const bool threw = threw_fastxlsx_error([&] {
+        editor.replace_cells("Data",
+            {{{1, 1}, fastxlsx::CellValue::text("policy")}},
+            static_cast<fastxlsx::CellPatchMissingCellPolicy>(99));
+    });
+
+    check(threw, "replace_cells should reject unknown missing-cell policy");
+    check(!editor.has_pending_changes(),
+        "failed policy validation should not mark pending changes");
+    check(editor.pending_change_count() == 0,
+        "failed policy validation should not increment public count");
+    check_patch_cells_clean_diagnostics(
+        editor, "unknown missing-cell policy replace_cells failure");
+    check(editor.last_edit_error().has_value(),
+        "failed policy validation should record last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(), "WorkbookEditor::replace_cells() failed",
+            "failed policy validation diagnostic should include public API name");
+        check_contains(*editor.last_edit_error(), "unknown CellPatchMissingCellPolicy",
+            "failed policy validation diagnostic should include policy context");
+    }
+}
+
+void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells_and_rows()
 {
     const std::filesystem::path source =
         write_patch_cells_source("workbook-editor-public-upsert-cells-source.xlsx");
@@ -239,20 +270,22 @@ void test_replace_or_insert_cells_patches_existing_and_inserts_missing_cells_and
         artifact("workbook-editor-public-upsert-cells-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    editor.replace_or_insert_cells("Data", {
-        {{1, 1}, fastxlsx::CellValue::number(88.0)},
-        {{1, 4}, fastxlsx::CellValue::text("inserted d1")},
-        {{4, 2}, fastxlsx::CellValue::formula("A1+B1")},
-    });
+    editor.replace_cells("Data",
+        {
+            {{1, 1}, fastxlsx::CellValue::number(88.0)},
+            {{1, 4}, fastxlsx::CellValue::text("inserted d1")},
+            {{4, 2}, fastxlsx::CellValue::formula("A1+B1")},
+        },
+        fastxlsx::CellPatchMissingCellPolicy::Insert);
 
     check(editor.has_pending_changes(),
-        "replace_or_insert_cells should mark WorkbookEditor as pending");
+        "replace_cells Insert policy should mark WorkbookEditor as pending");
     check(editor.pending_change_count() == 1,
-        "replace_or_insert_cells should increment public pending count");
+        "replace_cells Insert policy should increment public pending count");
     check(editor.pending_targeted_cell_replacement_count() == 3,
-        "replace_or_insert_cells should expose targeted cell count");
+        "replace_cells Insert policy should expose targeted cell count");
     check(editor.has_pending_targeted_cell_replacement("Data"),
-        "replace_or_insert_cells should reuse targeted diagnostics");
+        "replace_cells Insert policy should reuse targeted diagnostics");
 
     editor.save_as(output);
 
@@ -261,23 +294,44 @@ void test_replace_or_insert_cells_patches_existing_and_inserts_missing_cells_and
     const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
 
     check_contains(data_sheet, "<dimension ref=\"A1:D4\"",
-        "replace_or_insert_cells should refresh dimension for inserted cells and rows");
+        "replace_cells Insert policy should refresh dimension for inserted cells and rows");
     check_contains(data_sheet, "<c r=\"A1\"><v>88</v></c>",
-        "replace_or_insert_cells should replace existing A1");
+        "replace_cells Insert policy should replace existing A1");
     check_contains(data_sheet,
         "<c r=\"D1\" t=\"inlineStr\"><is><t>inserted d1</t></is></c>",
-        "replace_or_insert_cells should insert missing D1 into an existing row");
+        "replace_cells Insert policy should insert missing D1 into an existing row");
     check_contains(data_sheet, "<row r=\"4\"><c r=\"B4\"><f>A1+B1</f></c></row>",
-        "replace_or_insert_cells should synthesize missing row 4");
+        "replace_cells Insert policy should synthesize missing row 4");
     check_not_contains(data_sheet, "old-a1",
-        "replace_or_insert_cells should remove replaced old A1 payload");
+        "replace_cells Insert policy should remove replaced old A1 payload");
     check(output_entries.at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
-        "replace_or_insert_cells should preserve untouched worksheet bytes");
+        "replace_cells Insert policy should preserve untouched worksheet bytes");
     check_contains(output_entries.at("xl/workbook.xml"), "fullCalcOnLoad=\"1\"",
-        "replace_or_insert_cells formula should request workbook recalculation");
+        "replace_cells Insert policy formula should request workbook recalculation");
     check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
-        "replace_or_insert_cells should not create calcChain.xml");
+        "replace_cells Insert policy should not create calcChain.xml");
+}
+
+void test_replace_or_insert_cells_wrapper_delegates_to_insert_policy()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source("workbook-editor-public-upsert-wrapper-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-upsert-wrapper-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_or_insert_cells("Data",
+        {{{1, 4}, fastxlsx::CellValue::text("wrapper inserted")}});
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet, "<dimension ref=\"A1:D3\"",
+        "replace_or_insert_cells wrapper should refresh dimension through Insert policy");
+    check_contains(data_sheet,
+        "<c r=\"D1\" t=\"inlineStr\"><is><t>wrapper inserted</t></is></c>",
+        "replace_or_insert_cells wrapper should insert missing cells");
 }
 
 void test_replace_cells_can_follow_up_on_upserted_planned_cells()
@@ -288,8 +342,9 @@ void test_replace_cells_can_follow_up_on_upserted_planned_cells()
         artifact("workbook-editor-public-upsert-followup-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    editor.replace_or_insert_cells("Data",
-        {{{4, 2}, fastxlsx::CellValue::text("first inserted")}});
+    editor.replace_cells("Data",
+        {{{4, 2}, fastxlsx::CellValue::text("first inserted")}},
+        fastxlsx::CellPatchMissingCellPolicy::Insert);
     editor.replace_cells("Data",
         {{{4, 2}, fastxlsx::CellValue::text("followup replacement")}});
     editor.save_as(output);
@@ -444,7 +499,9 @@ int main()
     try {
         test_replace_cells_patches_existing_cells_and_preserves_unrelated_parts();
         test_replace_cells_rejects_missing_target_without_public_state_pollution();
-        test_replace_or_insert_cells_patches_existing_and_inserts_missing_cells_and_rows();
+        test_replace_cells_rejects_unknown_missing_cell_policy_without_public_state_pollution();
+        test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells_and_rows();
+        test_replace_or_insert_cells_wrapper_delegates_to_insert_policy();
         test_replace_cells_can_follow_up_on_upserted_planned_cells();
         test_replace_cells_mode_mixing_guards_and_empty_noop();
         test_replace_cells_follows_planned_catalog_after_rename();

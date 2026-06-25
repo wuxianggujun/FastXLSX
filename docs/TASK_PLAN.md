@@ -70,12 +70,14 @@ sheetData source-read failures include the source worksheet entry path, owning
 worksheet part, and ZIP entry context while preserving the pass boundary,
 ZIP/CRC detail, and no-state-pollution behavior.
 Public `WorkbookEditor::replace_cells()` now exposes the large-worksheet
-targeted existing-cell Patch path on top of the same worksheet transformer:
-callers provide bounded `WorksheetCellUpdate` payloads, the public facade
-validates current planned catalog / mode mixing, duplicate coordinates are
-later-wins, missing targets fail without public diagnostic pollution, targeted
-diagnostics follow `rename_sheet()`, and the benchmark tool defaults to the
-public facade while retaining the internal transformer mode for diagnostics.
+targeted-cell Patch path on top of the same worksheet transformer: callers
+provide bounded `WorksheetCellUpdate` payloads, the public facade validates
+current planned catalog / mode mixing, duplicate coordinates are later-wins,
+the default `CellPatchMissingCellPolicy::Fail` rejects missing targets without
+public diagnostic pollution, and explicit `CellPatchMissingCellPolicy::Insert`
+performs bounded point upsert. Targeted diagnostics follow `rename_sheet()`, and
+the benchmark tool defaults to the public facade while retaining the internal
+transformer mode for diagnostics.
 By-name sheetData / cell replacement failures that occur after workbook-catalog
 target resolution now also carry the requested sheet name plus the resolved
 worksheet part, so planned workbook catalog rename flows keep `"Renamed"`-style

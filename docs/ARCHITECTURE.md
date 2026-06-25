@@ -1476,10 +1476,11 @@ P7.5 save-as / Patch handoff draft：
   但它仍不是 random cell editing / in-memory materialization save-as。
 - 当前 public `WorkbookEditor::replace_cells()` 复用 internal worksheet event reader /
   transformer 和 `PackageEditor::replace_worksheet_cells_by_name()`，面向大 worksheet 的
-  bounded existing-cell replacement：只替换已经存在的 `<c>` elements，rewritten worksheet
-  作为 file-backed chunks staged 到 output plan。它不是缺失 cell/row insertion、
-  metadata sync、sharedStrings/styles migration、relationship repair 或 arbitrary random
-  editing。
+  bounded targeted-cell replacement：默认只替换已经存在的 `<c>` elements；
+  `CellPatchMissingCellPolicy::Insert` 复用 upsert transformer path 插入缺失 cells 或合成
+  minimal rows。rewritten worksheet 作为 file-backed chunks staged 到 output plan。它不是
+  row/column shifting、metadata sync、sharedStrings/styles migration、relationship repair
+  或 arbitrary random editing。
 - blank / erase / tombstone 在 save-as 阶段必须有明确 contract：删除 `<c>`、写 blank
   styled cell、保留 style/metadata 或 fail；P7.5 不宣称 existing-file cell clearing 已实现。
 - sharedStrings、styles 和 calc metadata 复用 P6 policy：默认 preserve / audit / fail，
@@ -1495,9 +1496,10 @@ P8.1 controlled large worksheet editing draft：
   streaming transformation；任意随机 cell editor 仍属于 P7 In-memory 小文件路径。
 - 当前 bounded `replace_worksheet_sheet_data()` 已使用 chunk-source worksheet input、
   direct replacement sheetData chunk consumption 和 file-backed staged output；当前
-  public `replace_cells()` 已把 existing-cell transformer 路径作为大 worksheet 定点编辑
-  facade 暴露出来。两者仍不是完整大文件低内存 worksheet editor；P8/C5 仍需要继续推进
-  broader stream-rewrite 边界、metadata sync 和 dependency policy。
+  public `replace_cells()` 已把 targeted-cell transformer 路径作为大 worksheet 定点编辑
+  facade 暴露出来，并用 `CellPatchMissingCellPolicy::Insert` 暴露 bounded point upsert。
+  两者仍不是完整大文件低内存 worksheet editor；P8/C5 仍需要继续推进 broader
+  stream-rewrite 边界、metadata sync 和 dependency policy。
 - P8 rewrite 仍必须通过 DependencyAnalyzer / EditPlan 暴露 sharedStrings、styles、
   worksheet `.rels`、tables、drawings、definedNames、calcChain 和 workbook calc metadata
   的 preserve / audit / fail / request-recalc 策略。

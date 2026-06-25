@@ -32,9 +32,12 @@ covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
 not a broad guarantee for unsupported Excel object models.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
-existing cells, while `WorkbookEditor::replace_or_insert_cells(...)` performs a
-bounded point upsert that can insert missing cells into existing rows or
-synthesize minimal missing rows. Both write caller `CellValue` payloads through
+existing cells by default, while
+`WorkbookEditor::replace_cells(..., CellPatchMissingCellPolicy::Insert)` performs
+a bounded point upsert that can insert missing cells into existing rows or
+synthesize minimal missing rows. The compatibility wrapper
+`replace_or_insert_cells(...)` remains available, but new code should prefer the
+direct enum overload. Both strategies write caller `CellValue` payloads through
 the internal worksheet transformer and stage rewritten worksheet XML as
 file-backed package-entry chunks. They are the recommended public path when a
 bounded set of cells must be edited in a large worksheet and whole-`<sheetData>`

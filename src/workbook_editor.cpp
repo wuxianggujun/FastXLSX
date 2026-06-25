@@ -105,6 +105,30 @@ workbook_editor_targeted_cell_replacements_from_materialized_cells(
     return replacements;
 }
 
+[[nodiscard]] std::string_view workbook_editor_targeted_cell_patch_operation_name(
+    CellPatchMissingCellPolicy missing_cell_policy)
+{
+    switch (missing_cell_policy) {
+    case CellPatchMissingCellPolicy::Fail:
+        return "replace cells";
+    case CellPatchMissingCellPolicy::Insert:
+        return "replace or insert cells";
+    }
+    throw FastXlsxError("unknown CellPatchMissingCellPolicy");
+}
+
+[[nodiscard]] bool workbook_editor_targeted_cell_patch_inserts_missing_cells(
+    CellPatchMissingCellPolicy missing_cell_policy)
+{
+    switch (missing_cell_policy) {
+    case CellPatchMissingCellPolicy::Fail:
+        return false;
+    case CellPatchMissingCellPolicy::Insert:
+        return true;
+    }
+    throw FastXlsxError("unknown CellPatchMissingCellPolicy");
+}
+
 } // namespace
 
 WorkbookEditor::WorkbookEditor() = default;
@@ -394,39 +418,16 @@ void WorkbookEditor::replace_sheet_data(
 void WorkbookEditor::replace_cells(
     std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells)
 {
-    if (impl_ == nullptr) {
-        throw FastXlsxError("WorkbookEditor is not open");
-    }
+    replace_cells_impl(
+        sheet_name, cells, CellPatchMissingCellPolicy::Fail, "WorkbookEditor::replace_cells()");
+}
 
-    const std::string sheet_name_key(sheet_name);
-    WorkbookEditorTargetedCellPatchInput input;
-    try {
-        validate_workbook_editor_targeted_cell_patch_target(impl_->sheet_catalog,
-            impl_->materialized_sessions,
-            impl_->has_pending_sheet_data_payload(sheet_name),
-            sheet_name, "replace cells");
-        input = materialize_workbook_editor_targeted_cell_patch_input(cells);
-        if (input.materialized_cells.empty()) {
-            impl_->clear_last_edit_error();
-            return;
-        }
-
-        const std::vector<detail::WorksheetCellReplacement> replacements =
-            workbook_editor_targeted_cell_replacements_from_materialized_cells(
-                input.materialized_cells);
-        impl_->editor.replace_worksheet_cells_by_name(sheet_name, replacements);
-        impl_->record_pending_targeted_cell_replacements(
-            sheet_name, input.public_diagnostics);
-        ++impl_->pending_public_edit_count;
-        impl_->clear_last_edit_error();
-    } catch (const FastXlsxError& error) {
-        FastXlsxError public_error("WorkbookEditor::replace_cells() failed for '"
-            + sheet_name_key + "' with " + std::to_string(cells.size())
-            + " input cells and " + std::to_string(input.unique_cell_count)
-            + " unique targets: " + error.what());
-        impl_->record_last_edit_error(public_error);
-        throw public_error;
-    }
+void WorkbookEditor::replace_cells(std::string_view sheet_name,
+    std::span<const WorksheetCellUpdate> cells,
+    CellPatchMissingCellPolicy missing_cell_policy)
+{
+    replace_cells_impl(
+        sheet_name, cells, missing_cell_policy, "WorkbookEditor::replace_cells()");
 }
 
 void WorkbookEditor::replace_cells(
@@ -435,8 +436,33 @@ void WorkbookEditor::replace_cells(
     replace_cells(sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
+void WorkbookEditor::replace_cells(std::string_view sheet_name,
+    std::initializer_list<WorksheetCellUpdate> cells,
+    CellPatchMissingCellPolicy missing_cell_policy)
+{
+    replace_cells(
+        sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()),
+        missing_cell_policy);
+}
+
 void WorkbookEditor::replace_or_insert_cells(
     std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells)
+{
+    replace_cells_impl(sheet_name, cells, CellPatchMissingCellPolicy::Insert,
+        "WorkbookEditor::replace_or_insert_cells()");
+}
+
+void WorkbookEditor::replace_or_insert_cells(
+    std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells)
+{
+    replace_or_insert_cells(
+        sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
+}
+
+void WorkbookEditor::replace_cells_impl(std::string_view sheet_name,
+    std::span<const WorksheetCellUpdate> cells,
+    CellPatchMissingCellPolicy missing_cell_policy,
+    std::string_view public_api_name)
 {
     if (impl_ == nullptr) {
         throw FastXlsxError("WorkbookEditor is not open");
@@ -445,10 +471,14 @@ void WorkbookEditor::replace_or_insert_cells(
     const std::string sheet_name_key(sheet_name);
     WorkbookEditorTargetedCellPatchInput input;
     try {
+        const std::string_view operation_name =
+            workbook_editor_targeted_cell_patch_operation_name(missing_cell_policy);
+        const bool insert_missing_cells =
+            workbook_editor_targeted_cell_patch_inserts_missing_cells(missing_cell_policy);
         validate_workbook_editor_targeted_cell_patch_target(impl_->sheet_catalog,
             impl_->materialized_sessions,
             impl_->has_pending_sheet_data_payload(sheet_name),
-            sheet_name, "replace or insert cells");
+            sheet_name, operation_name);
         input = materialize_workbook_editor_targeted_cell_patch_input(cells);
         if (input.materialized_cells.empty()) {
             impl_->clear_last_edit_error();
@@ -458,26 +488,23 @@ void WorkbookEditor::replace_or_insert_cells(
         const std::vector<detail::WorksheetCellReplacement> replacements =
             workbook_editor_targeted_cell_replacements_from_materialized_cells(
                 input.materialized_cells);
-        impl_->editor.replace_or_insert_worksheet_cells_by_name(sheet_name, replacements);
+        if (insert_missing_cells) {
+            impl_->editor.replace_or_insert_worksheet_cells_by_name(sheet_name, replacements);
+        } else {
+            impl_->editor.replace_worksheet_cells_by_name(sheet_name, replacements);
+        }
         impl_->record_pending_targeted_cell_replacements(
             sheet_name, input.public_diagnostics);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {
-        FastXlsxError public_error("WorkbookEditor::replace_or_insert_cells() failed for '"
+        FastXlsxError public_error(std::string(public_api_name) + " failed for '"
             + sheet_name_key + "' with " + std::to_string(cells.size())
             + " input cells and " + std::to_string(input.unique_cell_count)
             + " unique targets: " + error.what());
         impl_->record_last_edit_error(public_error);
         throw public_error;
     }
-}
-
-void WorkbookEditor::replace_or_insert_cells(
-    std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells)
-{
-    replace_or_insert_cells(
-        sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
 void WorkbookEditor::replace_image(

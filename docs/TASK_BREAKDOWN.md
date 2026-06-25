@@ -34055,8 +34055,11 @@ Non-goals / boundary:
   drawing/defined-name resize or recalculation, no relationship pruning/repair,
   no sharedStrings/style migration, no formula rewrite/evaluation, no Zip64 or
   DEFLATE proof, and no default benchmark/Office sidecar CI registration.
-- `replace_cells()` remains strict existing-target replacement; callers must use
-  `replace_or_insert_cells()` for missing target insertion.
+- At the time of this slice, `replace_cells()` remained strict existing-target
+  replacement and callers used `replace_or_insert_cells()` for missing target
+  insertion. P8.743 supersedes this API shape with the direct
+  `CellPatchMissingCellPolicy::Insert` overload while keeping the wrapper for
+  compatibility.
 - Upsert still linearly scans source/planned worksheet XML; it is a streaming
   Patch rewrite, not a random-access worksheet index.
 
@@ -34066,6 +34069,56 @@ Acceptance:
 - `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_workbook_editor` passes.
 - Local `fastxlsx_bench_workbook_editor` smoke runs for `batch-set`,
   `patch-replace`, and `patch-upsert` produce schema-v2 JSON.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+### P8.743 - WorkbookEditor targeted cell patch direct missing-policy enum API
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor.cpp`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `benchmarks/bench_workbook_editor.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: reduce public API confusion by making the targeted-cell Patch missing-cell
+behavior explicit on the primary `replace_cells()` API instead of requiring
+callers to choose a separate upsert-named method for the same transformer path.
+
+Output:
+- Added public `CellPatchMissingCellPolicy::{Fail, Insert}`.
+- Added `WorkbookEditor::replace_cells(sheet, cells, CellPatchMissingCellPolicy)`
+  span and initializer-list overloads.
+- Kept `replace_cells(sheet, cells)` as the strict existing-target default
+  (`Fail`) for source compatibility.
+- Kept `replace_or_insert_cells()` as a compatibility wrapper equivalent to
+  `replace_cells(..., CellPatchMissingCellPolicy::Insert)`; new docs and
+  examples prefer the direct enum overload.
+- Consolidated public facade implementation through a single internal member
+  helper while preserving wrapper-specific public error names.
+- Updated `fastxlsx_bench_workbook_editor` so `patch-upsert` exercises the new
+  direct enum overload.
+- Added public facade tests for direct Insert policy, compatibility wrapper
+  delegation, and unknown enum no-state-pollution diagnostics.
+
+Non-goals / boundary:
+- No production semantic expansion: Insert policy remains point upsert only.
+- No row/column shifting, table/filter/drawing/defined-name resize,
+  sharedStrings/style migration, relationship repair, formula rewrite, or broad
+  random-access worksheet indexing.
+- No removal of `replace_or_insert_cells()` in this slice; it remains a source
+  compatibility API.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor_public_patch_cells" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_workbook_editor` passes.
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 

@@ -427,7 +427,7 @@ void run_patch_upsert(fastxlsx::WorkbookEditor& editor,
             fastxlsx::CellValue::number(make_edit_number(existing_count + index)),
         });
     }
-    editor.replace_or_insert_cells("Data", updates);
+    editor.replace_cells("Data", updates, fastxlsx::CellPatchMissingCellPolicy::Insert);
     touched = updates.size();
     inserted = inserted_count;
 }

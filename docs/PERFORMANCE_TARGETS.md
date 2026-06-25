@@ -187,8 +187,9 @@ workbook。它支持：
   sparse records。
 - `patch-replace`：调用 public `WorkbookEditor::replace_cells()`，只替换已存在
   target cells，不 materialize worksheet。
-- `patch-upsert`：调用 public `WorkbookEditor::replace_or_insert_cells()`，一半编辑
-  替换已有 cells，另一半在 source 尾部之后合成新 rows，不 materialize worksheet。
+- `patch-upsert`：调用 public
+  `WorkbookEditor::replace_cells(..., CellPatchMissingCellPolicy::Insert)`，一半编辑替换
+  已有 cells，另一半在 source 尾部之后合成新 rows，不 materialize worksheet。
 
 A1 range 场景会使用从 `A1` 开始的矩形范围；当 `--edits` 不是 `--cols` 的整数倍时，
 实际触达坐标数以 JSON 中的 `touched_coordinates` 为准。

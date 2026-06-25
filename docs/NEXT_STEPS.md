@@ -57,14 +57,16 @@ coordinate. This lets large worksheets with an early sparse edit set spend less
 work on tail pass-through cells. This is a hot-path cleanup only: the current
 public Patch path still scans source XML, and metadata repair is still out of
 scope. The internal worksheet event reader now exposes absolute source byte
-offsets, and a new internal `WorksheetCellIndex` can build a sparse
-cell-reference to source-`<c>` byte-range map from materialized or chunked
-worksheet XML. The index can now validate a bounded target set and return
-source-order rewrite ranges, while transformer actions expose source XML
-offsets for source-backed pass-through / replacement events. There is also an
-internal materialized indexed slicer that can splice strict existing-cell
-replacement payloads by those ranges when the worksheet XML bytes already
-exactly match the index. `PackageEditor` now also has an internal
+offsets, and a new internal `WorksheetCellIndex` can build a sparse compact
+cell-coordinate to source-`<c>` byte-range index from materialized or chunked
+worksheet XML. The primary index no longer allocates a `std::map` string entry
+per source cell; the old `cells()` map view is only a lazy diagnostic snapshot.
+The index can now validate a bounded target set and return source-order rewrite
+ranges, while transformer actions expose source XML offsets for source-backed
+pass-through / replacement events. There is also an internal materialized
+indexed slicer that can splice strict existing-cell replacement payloads by
+those ranges when the worksheet XML bytes already exactly match the index.
+`PackageEditor` now also has an internal
 `PackageEntryChunk` byte-range emitter that can slice validated memory/file
 staged chunks, including ranges crossing chunk boundaries, and an internal
 chunk-backed indexed slicer prototype that replays strict existing-cell

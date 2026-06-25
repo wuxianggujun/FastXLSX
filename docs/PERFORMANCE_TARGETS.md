@@ -249,9 +249,9 @@ source cells、`1000` edits，stored source workbook，`office_open=not_run`：
 smoke 中，优化前本机 `total_editor_ms` 约 4248 ms，优化后约 1639 ms。结论是：
 大文件少量点编辑应优先走 Patch replace/upsert；它避免 worksheet materialization，
 峰值工作集在该 smoke 下约 6.3 MB。当前 public Patch 耗时仍与 source worksheet
-线性扫描相关；内部已有 `WorksheetCellIndex` source-offset 索引和 indexed rewrite
-planning 基础，transformer action stream 也暴露 source XML offset，且已有 internal
-materialized indexed slicer 可按 index range 拼接 strict existing-cell replacement。
+线性扫描相关；内部已有 `WorksheetCellIndex` source-offset compact index 和 indexed
+rewrite planning 基础，transformer action stream 也暴露 source XML offset，且已有
+internal materialized indexed slicer 可按 index range 拼接 strict existing-cell replacement。
 但这些还没有被切换成默认 Patch 算法，也不是 PackageEditor source-entry seek、
 source ZIP entry seek 或完整 O(1) 随机编辑。插入/替换也不会修复 tables、filters、
 drawings、defined names、formulas、sharedStrings 或 styles。
@@ -377,11 +377,27 @@ Zip64、DEFLATE input/output 或 Office 兼容性证明。
 | `transformer` | 2370 | 0 | 0 | 0 | 616 | 2989 | 4170 | 5.64 |
 | `indexed-staged` | 2755 | 754 | 146 | 1651 | 779 | 3535 | 4736 | 97.73 |
 
-该结果说明当前 indexed-staged benchmark/prototype 能正确输出，但在“每次编辑都临时
-构建完整 `WorksheetCellIndex`”的单轮场景中并不比 transformer 快，且会因
-`std::map` source-cell range index 产生明显内存成本。它的合理推进方向是后续 index
-复用、目标集合更大/多轮编辑摊销、或更紧凑的 index representation；不能把它切为
-public 默认路径。
+该结果说明 indexed-staged benchmark/prototype 能正确输出，但在“每次编辑都临时
+构建完整 `WorksheetCellIndex`”的单轮场景中并不比 transformer 快。旧实现还会因
+`std::map` source-cell range index 产生明显内存成本。
+
+同日随后把 `WorksheetCellIndex` 主索引从 per-cell `std::map<std::string, range>`
+改为 compact `{row, column, range}` vector，并仅在调用 `cells()` 诊断入口时惰性
+生成旧 map 快照。相同 `100000 x 10 = 1000000` source cells、`1000` edits、
+stored source package、工具内置 verifier 为 `output_verified=true` 的本机 release
+对照如下：
+
+| rewrite_strategy | patch_plan_ms | index_build_ms | indexed_emit_ms | indexed_stage_commit_ms | save_ms | total_edit_ms | total_ms | peak_memory_mb |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `transformer` | 3022 | 0 | 0 | 0 | 588 | 3611 | 4929 | 5.63 |
+| `indexed-staged` compact index | 3055 | 533 | 132 | 2387 | 723 | 3780 | 5014 | 37.64 |
+
+紧凑索引把 indexed-staged 1M-cell 峰值工作集从旧快照的 97.73 MB 降到
+37.64 MB，说明原来的 per-cell string/map node 是真实瓶颈之一；但它仍显著高于
+transformer 的 5.63 MB，因为 indexed-staged 仍为每个 source cell 保存一个随机访问
+range entry，并且当前单轮编辑还要支付完整 index build 成本。因此它仍只能作为
+internal opt-in prototype：合理推进方向是 index 复用、目标集合更大/多轮编辑摊销、
+或进一步压缩/分段化 index representation；不能把它切为 public 默认路径。
 
 上一组 internal `PackageEditor` 1M / 3M / 5M 快照另有本机 Excel COM sidecar
 验证：使用 Excel 16.0 只读打开三个输出，

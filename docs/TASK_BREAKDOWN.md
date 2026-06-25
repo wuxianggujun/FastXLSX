@@ -34580,6 +34580,62 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.753 - Compact WorksheetCellIndex representation
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/worksheet_cell_index.hpp`
+- `src/worksheet_cell_index.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-streaming-worksheet/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: reduce the indexed staged-chunk prototype's per-source-cell memory cost
+without changing the public `WorkbookEditor::replace_cells()` default
+transformer behavior.
+
+Output:
+- Changed internal `WorksheetCellIndex` from a primary
+  `std::map<std::string, WorksheetCellIndexedRange>` to a compact sorted vector
+  of `{row, column, source range}` entries.
+- Kept `find()` and `cell_count()` semantics for rewrite planning while avoiding
+  per-cell A1 string allocation on benchmark / rewrite paths.
+- Kept `cells()` as a compatibility/diagnostic view, but materialize its
+  canonical A1-keyed map lazily only when callers request it.
+- Added `finalize()` sorting / duplicate-coordinate validation so non-row-major
+  source XML can still be indexed and non-adjacent duplicate cells are rejected.
+- Extended `fastxlsx.worksheet_cell_index` coverage for non-row-major lookup,
+  lazy diagnostic snapshot stability, and duplicate detection after sorting.
+- Re-ran the 1M-cell / 1000-edit opt-in benchmark: compact indexed-staged
+  `peak_memory_mb=37.64`, down from the earlier `97.73` MB map-based snapshot;
+  current transformer same-scale baseline remains about `5.63` MB.
+
+Non-goals / boundary:
+- No public API, no default targeted-cell Patch algorithm switch, no source ZIP
+  entry seek, no upsert / missing-row insert change, no dimension refresh,
+  no metadata recalculation, no sharedStrings/styles migration, no relationship
+  repair, and no Office compatibility claim beyond the benchmark tool's built-in
+  output verifier.
+- The compact index still stores one entry per source cell, so it is not a
+  low-memory default for one-shot sparse edits. It remains useful only for
+  internal indexed rewrite experiments, possible index reuse, or larger/multi-run
+  target sets where index build cost can be amortized.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.worksheet_cell_index$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 1M-cell / 1000-edit `transformer` and `indexed-staged` benchmark smokes write
+  schema-v2 JSON with `output_verified=true`.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -111,6 +111,37 @@ void test_cell_index_maps_exact_source_cell_ranges()
         "C3 end offset should point after the closing cell tag");
 }
 
+void test_cell_index_handles_non_row_major_sources_and_diagnostic_snapshot()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="C1"><v>3</v></c>)"
+        R"(<c r="A1"><v>1</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_xml(xml);
+
+    const auto* a1 = index.find("A1");
+    const auto* c1 = index.find("C1");
+    check(a1 != nullptr && c1 != nullptr,
+        "compact cell index should find cells after source-order normalization");
+    check(fastxlsx::detail::worksheet_cell_range_xml(xml, *a1)
+            == R"(<c r="A1"><v>1</v></c>)",
+        "A1 lookup should keep its exact source byte range");
+    check(fastxlsx::detail::worksheet_cell_range_xml(xml, *c1)
+            == R"(<c r="C1"><v>3</v></c>)",
+        "C1 lookup should keep its exact source byte range");
+
+    const auto& cells = index.cells();
+    check(cells.size() == 2,
+        "diagnostic cell snapshot should expose every indexed cell");
+    check(cells.find("A1") != cells.end() && cells.find("C1") != cells.end(),
+        "diagnostic cell snapshot should be keyed by canonical cell references");
+    check(index.find("C1") == c1,
+        "materializing the diagnostic snapshot should not invalidate compact lookups");
+}
+
 void test_indexed_cell_rewrite_plan_validates_targets_and_sorts_by_source_range()
 {
     const std::string xml =
@@ -174,6 +205,9 @@ void test_cell_index_rejects_ambiguous_or_invalid_source_cells()
               R"(<worksheet><sheetData><row r="1"><c r="A1"/><c r="A1"/></row></sheetData></worksheet>)"),
         "worksheet cell index should reject duplicate source cell references");
     check(build_index_fails(
+              R"(<worksheet><sheetData><row r="1"><c r="B1"/><c r="A1"/><c r="B1"/></row></sheetData></worksheet>)"),
+        "worksheet cell index should reject duplicate source cell references after sorting");
+    check(build_index_fails(
               R"(<worksheet><sheetData><row r="1"><c><v>1</v></c></row></sheetData></worksheet>)"),
         "worksheet cell index should reject source cells without r attributes");
     check(build_index_fails(
@@ -212,6 +246,7 @@ int main()
 {
     try {
         test_cell_index_maps_exact_source_cell_ranges();
+        test_cell_index_handles_non_row_major_sources_and_diagnostic_snapshot();
         test_indexed_cell_rewrite_plan_validates_targets_and_sorts_by_source_range();
         test_cell_index_chunk_source_matches_materialized_offsets();
         test_cell_index_rejects_ambiguous_or_invalid_source_cells();

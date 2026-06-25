@@ -8,6 +8,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -33,7 +34,87 @@ std::uint32_t uppercase_column_value(char ch)
     return static_cast<std::uint32_t>(upper - 'A' + 1);
 }
 
-void validate_cell_reference(std::string_view reference)
+struct WorksheetCellCoordinate {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+};
+
+bool coordinate_less(
+    const fastxlsx::detail::WorksheetCellIndex::CellEntry& left,
+    const fastxlsx::detail::WorksheetCellIndex::CellEntry& right) noexcept
+{
+    if (left.row != right.row) {
+        return left.row < right.row;
+    }
+    return left.column < right.column;
+}
+
+bool coordinate_less(
+    const fastxlsx::detail::WorksheetCellIndex::CellEntry& left,
+    WorksheetCellCoordinate right) noexcept
+{
+    if (left.row != right.row) {
+        return left.row < right.row;
+    }
+    return left.column < right.column;
+}
+
+bool coordinate_equal(
+    const fastxlsx::detail::WorksheetCellIndex::CellEntry& left,
+    const fastxlsx::detail::WorksheetCellIndex::CellEntry& right) noexcept
+{
+    return left.row == right.row && left.column == right.column;
+}
+
+bool coordinate_equal(
+    const fastxlsx::detail::WorksheetCellIndex::CellEntry& left,
+    WorksheetCellCoordinate right) noexcept
+{
+    return left.row == right.row && left.column == right.column;
+}
+
+std::optional<WorksheetCellCoordinate> parse_cell_reference_for_lookup(
+    std::string_view reference) noexcept
+{
+    if (reference.empty()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t column = 0;
+    std::size_t position = 0;
+    while (position < reference.size() && is_ascii_alpha(reference[position])) {
+        column = column * 26U + uppercase_column_value(reference[position]);
+        if (column > max_excel_columns) {
+            return std::nullopt;
+        }
+        ++position;
+    }
+    if (position == 0 || position >= reference.size()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t row = 0;
+    while (position < reference.size() && is_ascii_digit(reference[position])) {
+        if (row > static_cast<std::uint64_t>(max_excel_rows) / 10U) {
+            return std::nullopt;
+        }
+        row = row * 10U + static_cast<std::uint32_t>(reference[position] - '0');
+        if (row > max_excel_rows) {
+            return std::nullopt;
+        }
+        ++position;
+    }
+    if (position != reference.size() || row == 0 || column == 0) {
+        return std::nullopt;
+    }
+
+    return WorksheetCellCoordinate {
+        static_cast<std::uint32_t>(row),
+        static_cast<std::uint32_t>(column),
+    };
+}
+
+WorksheetCellCoordinate parse_source_cell_reference(std::string_view reference)
 {
     if (reference.empty()) {
         throw fastxlsx::FastXlsxError("worksheet cell index requires cell r attributes");
@@ -56,6 +137,10 @@ void validate_cell_reference(std::string_view reference)
 
     std::uint64_t row = 0;
     while (position < reference.size() && is_ascii_digit(reference[position])) {
+        if (row > static_cast<std::uint64_t>(max_excel_rows) / 10U) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index source cell row exceeds Excel limits");
+        }
         row = row * 10U + static_cast<std::uint32_t>(reference[position] - '0');
         if (row > max_excel_rows) {
             throw fastxlsx::FastXlsxError(
@@ -67,6 +152,25 @@ void validate_cell_reference(std::string_view reference)
         throw fastxlsx::FastXlsxError(
             "worksheet cell index found an invalid source cell reference");
     }
+
+    return WorksheetCellCoordinate {
+        static_cast<std::uint32_t>(row),
+        static_cast<std::uint32_t>(column),
+    };
+}
+
+std::string cell_reference_from_coordinate(WorksheetCellCoordinate coordinate)
+{
+    std::string column_name;
+    std::uint32_t column = coordinate.column;
+    while (column > 0) {
+        --column;
+        column_name.push_back(
+            static_cast<char>('A' + static_cast<char>(column % 26U)));
+        column /= 26U;
+    }
+    std::reverse(column_name.begin(), column_name.end());
+    return column_name + std::to_string(coordinate.row);
 }
 
 std::uint64_t event_end_offset(const fastxlsx::detail::WorksheetEvent& event)
@@ -103,13 +207,13 @@ public:
         if (active_cell_.has_value()) {
             throw fastxlsx::FastXlsxError("worksheet cell index ended inside a source cell");
         }
+        index_.finalize();
         return std::move(index_);
     }
 
 private:
     void consume_cell_start(const fastxlsx::detail::WorksheetEvent& event)
     {
-        validate_cell_reference(event.cell_reference);
         if (event.self_closing) {
             index_.add_cell(event.cell_reference,
                 fastxlsx::detail::WorksheetCellIndexedRange {
@@ -200,11 +304,52 @@ WorksheetCellIndex WorksheetCellIndex::build_from_xml(
 const WorksheetCellIndexedRange* WorksheetCellIndex::find(
     std::string_view cell_reference) const noexcept
 {
-    const auto cell = cells_by_reference_.find(cell_reference);
-    if (cell == cells_by_reference_.end()) {
+    const std::optional<WorksheetCellCoordinate> coordinate =
+        parse_cell_reference_for_lookup(cell_reference);
+    if (!coordinate.has_value()) {
         return nullptr;
     }
-    return &cell->second;
+
+    if (!cells_are_sorted_) {
+        const auto cell = std::find_if(
+            cells_by_position_.begin(),
+            cells_by_position_.end(),
+            [&](const CellEntry& entry) {
+                return coordinate_equal(entry, *coordinate);
+            });
+        return cell == cells_by_position_.end() ? nullptr : &cell->range;
+    }
+
+    const auto cell = std::lower_bound(
+        cells_by_position_.begin(),
+        cells_by_position_.end(),
+        *coordinate,
+        [](const CellEntry& entry, WorksheetCellCoordinate target) {
+            return coordinate_less(entry, target);
+        });
+    if (cell == cells_by_position_.end() || !coordinate_equal(*cell, *coordinate)) {
+        return nullptr;
+    }
+    return &cell->range;
+}
+
+const WorksheetCellIndex::CellRangeMap& WorksheetCellIndex::cells() const
+{
+    if (cells_snapshot_valid_) {
+        return cells_snapshot_;
+    }
+
+    cells_snapshot_.clear();
+    for (const CellEntry& entry : cells_by_position_) {
+        cells_snapshot_.emplace(
+            cell_reference_from_coordinate(WorksheetCellCoordinate {
+                entry.row,
+                entry.column,
+            }),
+            entry.range);
+    }
+    cells_snapshot_valid_ = true;
+    return cells_snapshot_;
 }
 
 void WorksheetCellIndex::add_cell(
@@ -214,13 +359,54 @@ void WorksheetCellIndex::add_cell(
     if (range.end_offset < range.start_offset) {
         throw FastXlsxError("worksheet cell index found an invalid source cell range");
     }
-    auto [_, inserted] =
-        cells_by_reference_.emplace(std::string(cell_reference), range);
-    if (!inserted) {
-        throw FastXlsxError(
-            "worksheet cell index found duplicate source cell reference: "
-            + std::string(cell_reference));
+
+    const WorksheetCellCoordinate coordinate = parse_source_cell_reference(cell_reference);
+    const CellEntry entry {
+        coordinate.row,
+        coordinate.column,
+        range,
+    };
+    if (!cells_by_position_.empty()) {
+        const CellEntry& previous = cells_by_position_.back();
+        if (coordinate_equal(previous, entry)) {
+            throw FastXlsxError(
+                "worksheet cell index found duplicate source cell reference: "
+                + cell_reference_from_coordinate(coordinate));
+        }
+        if (coordinate_less(entry, previous)) {
+            cells_are_sorted_ = false;
+        }
     }
+    cells_by_position_.push_back(entry);
+    cells_snapshot_valid_ = false;
+}
+
+void WorksheetCellIndex::finalize()
+{
+    if (!cells_are_sorted_) {
+        std::sort(cells_by_position_.begin(),
+            cells_by_position_.end(),
+            [](const CellEntry& left, const CellEntry& right) {
+                return coordinate_less(left, right);
+            });
+    }
+
+    for (std::size_t index_position = 1; index_position < cells_by_position_.size();
+         ++index_position) {
+        const CellEntry& previous = cells_by_position_[index_position - 1];
+        const CellEntry& current = cells_by_position_[index_position];
+        if (coordinate_equal(previous, current)) {
+            throw FastXlsxError(
+                "worksheet cell index found duplicate source cell reference: "
+                + cell_reference_from_coordinate(WorksheetCellCoordinate {
+                    current.row,
+                    current.column,
+                }));
+        }
+    }
+
+    cells_are_sorted_ = true;
+    cells_snapshot_valid_ = false;
 }
 
 std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(

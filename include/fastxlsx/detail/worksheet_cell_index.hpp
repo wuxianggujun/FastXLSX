@@ -33,12 +33,19 @@ struct WorksheetCellIndexedRange {
 /// Internal sparse cell-reference -> source-byte-range index.
 ///
 /// This is a foundation for indexed/random-access worksheet rewrites. It keeps
-/// one map entry per indexed source cell and therefore is not the default path
-/// for every large-sheet edit. It does not materialize cell values, parse
-/// styles/sharedStrings, repair metadata, or expose public API.
+/// one compact coordinate/range entry per indexed source cell and therefore is
+/// still an opt-in internal path for bounded random access. It does not
+/// materialize cell values, parse styles/sharedStrings, repair metadata, or
+/// expose public API.
 class WorksheetCellIndex {
 public:
     using CellRangeMap = std::map<std::string, WorksheetCellIndexedRange, std::less<>>;
+
+    struct CellEntry {
+        std::uint32_t row = 0;
+        std::uint32_t column = 0;
+        WorksheetCellIndexedRange range;
+    };
 
     [[nodiscard]] static WorksheetCellIndex build_from_chunk_source(
         const WorksheetInputChunkCallback& read_next_chunk,
@@ -53,24 +60,31 @@ public:
 
     [[nodiscard]] std::size_t cell_count() const noexcept
     {
-        return cells_by_reference_.size();
+        return cells_by_position_.size();
     }
 
     [[nodiscard]] bool empty() const noexcept
     {
-        return cells_by_reference_.empty();
+        return cells_by_position_.empty();
     }
 
-    [[nodiscard]] const CellRangeMap& cells() const noexcept
-    {
-        return cells_by_reference_;
-    }
+    /// Returns a diagnostic compatibility snapshot keyed by canonical A1 text.
+    ///
+    /// The primary index is coordinate-based; this map is materialized lazily so
+    /// benchmark and rewrite paths do not allocate one string/map node per cell.
+    [[nodiscard]] const CellRangeMap& cells() const;
 
-    // Internal builder hook; validates duplicates and range ordering.
+    // Internal builder hook; validates the range/reference and appends an entry.
     void add_cell(std::string_view cell_reference, WorksheetCellIndexedRange range);
 
+    // Sorts the compact index and rejects duplicate source cell coordinates.
+    void finalize();
+
 private:
-    CellRangeMap cells_by_reference_;
+    std::vector<CellEntry> cells_by_position_;
+    bool cells_are_sorted_ = true;
+    mutable CellRangeMap cells_snapshot_;
+    mutable bool cells_snapshot_valid_ = false;
 };
 
 struct WorksheetIndexedCellRewrite {

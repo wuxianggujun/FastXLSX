@@ -28,6 +28,10 @@ worksheet/package-entry 缓冲优化，不要写成 true package streaming、Zip
 package writer 或生产级大文件性能完成。
 当前还可见 internal `PackageEntryChunk` byte-range emitter，可从 memory/file staged
 chunks 中按 offset/size 输出片段，作为 PackageEditor indexed rewrite 的底层前置能力；
+`WorksheetCellIndex` 主索引现在是 compact `{row, column, range}` vector，旧
+`cells()` map 只在诊断入口惰性生成，因此 indexed benchmark 不再为每个 source
+cell 分配 A1 字符串和 map 节点；但它仍是一 cell 一 entry 的内部索引，不是默认
+低内存随机编辑路径。
 当前还有 internal PackageEditor chunk-backed indexed strict-replace slicer prototype，
 可用 staged chunks + prebuilt index 拼接 existing-cell replacement payload；当前
 `fastxlsx_bench_package_editor_cell_replacement` 还提供 opt-in

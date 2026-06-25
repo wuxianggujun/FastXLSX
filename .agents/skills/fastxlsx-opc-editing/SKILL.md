@@ -214,9 +214,11 @@ staged-chunk handoff 细节，不是 public API。当前 transformer 在 target
 stream 越过最后 target 坐标后进入该 tail fast path，仍线性扫描 source XML。这只能
 写成 tail pass-through 热路径优化，不能写成默认索引算法、range metadata repair 或
 完整大文件随机编辑。当前已有 internal `WorksheetCellIndex` source-offset index
-foundation 和 indexed rewrite planning foundation，可把 source cells 映射到
-`<c>` byte ranges，并校验 / 排序有界 target set；transformer actions 也会暴露
-source XML offset。当前还有 internal materialized indexed slicer，可在 worksheet XML
+foundation 和 indexed rewrite planning foundation，可用 compact `{row, column,
+range}` 主索引把 source cells 映射到 `<c>` byte ranges，并校验 / 排序有界
+target set；旧 `cells()` map 只作为 lazy diagnostic snapshot 存在，不再是
+benchmark / rewrite 热路径。transformer actions 也会暴露 source XML offset。
+当前还有 internal materialized indexed slicer，可在 worksheet XML
 bytes 与 index 完全匹配时按 source ranges 拼接 strict existing-cell replacements。
 当前还有 internal `PackageEntryChunk` byte-range emitter，可按 offset/size 切出
 memory/file staged chunks，并覆盖跨 chunk 边界 range；当前还已有 internal

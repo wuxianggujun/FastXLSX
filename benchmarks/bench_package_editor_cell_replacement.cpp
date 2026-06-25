@@ -5,6 +5,7 @@
 #include <fastxlsx/workbook_editor.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -15,11 +16,13 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #ifdef _WIN32
@@ -35,11 +38,17 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint64_t kReplacementCellValueBase = 900999000ULL;
-constexpr std::string_view kBenchmarkSchemaVersion = "1";
+constexpr std::string_view kBenchmarkSchemaVersion = "2";
+constexpr std::size_t kBenchmarkChunkSize = 64U * 1024U;
 
 enum class EditorApi {
     PublicWorkbookEditor,
     InternalPackageEditor,
+};
+
+enum class RewriteStrategy {
+    Transformer,
+    IndexedStaged,
 };
 
 std::filesystem::path default_output_dir()
@@ -57,6 +66,7 @@ struct Options {
     std::uint32_t edits = 1000;
     bool verify_output = true;
     EditorApi editor_api = EditorApi::PublicWorkbookEditor;
+    RewriteStrategy rewrite_strategy = RewriteStrategy::Transformer;
     std::filesystem::path source =
         default_output_dir() / "fastxlsx-package-editor-cell-replacement-source.xlsx";
     std::filesystem::path source_body =
@@ -72,6 +82,9 @@ struct Timings {
     std::uint64_t source_package_write_ms = 0;
     std::uint64_t open_ms = 0;
     std::uint64_t patch_plan_ms = 0;
+    std::uint64_t index_build_ms = 0;
+    std::uint64_t indexed_emit_ms = 0;
+    std::uint64_t indexed_stage_commit_ms = 0;
     std::uint64_t save_ms = 0;
     std::uint64_t verify_ms = 0;
     std::uint64_t total_edit_ms = 0;
@@ -96,6 +109,9 @@ struct RunStats {
     bool public_facade_reports_targeted_cells = false;
     std::uint64_t public_facade_targeted_cell_count = 0;
     std::uint64_t public_facade_replacement_xml_bytes = 0;
+    std::uint64_t indexed_source_cell_count = 0;
+    std::uint64_t indexed_matched_replacement_count = 0;
+    std::uint64_t indexed_staged_output_bytes = 0;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -156,6 +172,28 @@ std::string_view editor_api_name(EditorApi api)
     return "unknown";
 }
 
+RewriteStrategy parse_rewrite_strategy(std::string_view value)
+{
+    if (value == "transformer") {
+        return RewriteStrategy::Transformer;
+    }
+    if (value == "indexed-staged" || value == "indexed-package-chunks") {
+        return RewriteStrategy::IndexedStaged;
+    }
+    fail("--rewrite-strategy must be transformer or indexed-staged");
+}
+
+std::string_view rewrite_strategy_name(RewriteStrategy strategy)
+{
+    switch (strategy) {
+    case RewriteStrategy::Transformer:
+        return "transformer";
+    case RewriteStrategy::IndexedStaged:
+        return "indexed-staged";
+    }
+    return "unknown";
+}
+
 void validate_options(const Options& options)
 {
     if (options.rows > kExcelRowLimit) {
@@ -172,6 +210,10 @@ void validate_options(const Options& options)
     }
     if (options.source_body == options.source || options.source_body == options.output) {
         fail("--source-body must be different from --source and --output");
+    }
+    if (options.rewrite_strategy == RewriteStrategy::IndexedStaged
+        && options.editor_api != EditorApi::InternalPackageEditor) {
+        fail("--rewrite-strategy indexed-staged requires --editor-api internal-package-editor");
     }
 }
 
@@ -204,6 +246,8 @@ Options parse_args(int argc, char** argv)
             options.result = std::filesystem::path(std::string(next_value()));
         } else if (arg == "--editor-api") {
             options.editor_api = parse_editor_api(next_value());
+        } else if (arg == "--rewrite-strategy") {
+            options.rewrite_strategy = parse_rewrite_strategy(next_value());
         } else if (arg == "--no-verify-output") {
             options.verify_output = false;
         } else if (arg == "--help" || arg == "-h") {
@@ -213,12 +257,15 @@ Options parse_args(int argc, char** argv)
                 << "--source source.xlsx --source-body body.xml "
                 << "--output edited.xlsx --result result.json "
                 << "[--editor-api public-workbook-editor|internal-package-editor] "
+                << "[--rewrite-strategy transformer|indexed-staged] "
                 << "[--no-verify-output]\n"
                 << "The tool builds a stored source package with a file-backed "
                 << "worksheet entry, patches existing cells through the public "
                 << "WorkbookEditor::replace_cells() facade by default or the "
-                << "internal PackageEditor transformer when requested, and "
-                << "writes a schema-v1 JSON report.\n";
+                << "internal PackageEditor transformer when requested. The "
+                << "indexed-staged strategy is an opt-in internal prototype that "
+                << "uses a prebuilt cell index plus staged source chunks, and "
+                << "writes a schema-v2 JSON report.\n";
             std::exit(0);
         } else {
             fail(std::string("unknown argument: ") + std::string(arg));
@@ -328,6 +375,95 @@ std::string worksheet_suffix()
     return "</sheetData></worksheet>";
 }
 
+std::vector<fastxlsx::detail::PackageEntryChunk> source_worksheet_chunks(
+    const Options& options)
+{
+    return {
+        fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix(options)),
+        fastxlsx::detail::PackageEntryChunk::file(options.source_body),
+        fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix()),
+    };
+}
+
+class BenchmarkPackageEntryChunkReader {
+public:
+    explicit BenchmarkPackageEntryChunkReader(
+        const std::vector<fastxlsx::detail::PackageEntryChunk>& chunks)
+        : chunks_(chunks)
+    {
+    }
+
+    bool read_next(std::string& output_chunk)
+    {
+        output_chunk.clear();
+        while (chunk_index_ < chunks_.size()) {
+            const fastxlsx::detail::PackageEntryChunk& chunk = chunks_[chunk_index_];
+            switch (chunk.kind) {
+            case fastxlsx::detail::PackageEntryChunk::Kind::Memory:
+                ++chunk_index_;
+                if (!chunk.data.empty()) {
+                    output_chunk = chunk.data;
+                    return true;
+                }
+                break;
+            case fastxlsx::detail::PackageEntryChunk::Kind::File:
+                if (read_file_chunk(chunk, output_chunk)) {
+                    return true;
+                }
+                break;
+            default:
+                fail("benchmark source worksheet chunk has an unsupported kind");
+            }
+        }
+        return false;
+    }
+
+private:
+    bool read_file_chunk(
+        const fastxlsx::detail::PackageEntryChunk& chunk,
+        std::string& output_chunk)
+    {
+        if (!file_open_) {
+            input_.open(chunk.path, std::ios::binary);
+            if (!input_) {
+                fail("failed to open benchmark source worksheet body chunk");
+            }
+            file_open_ = true;
+        }
+
+        input_.read(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
+        const std::streamsize read_size = input_.gcount();
+        if (input_.bad()) {
+            fail("failed to read benchmark source worksheet body chunk");
+        }
+        if (read_size > 0) {
+            output_chunk.assign(buffer_.data(), static_cast<std::size_t>(read_size));
+            return true;
+        }
+
+        input_.close();
+        input_.clear();
+        file_open_ = false;
+        ++chunk_index_;
+        return false;
+    }
+
+    const std::vector<fastxlsx::detail::PackageEntryChunk>& chunks_;
+    std::size_t chunk_index_ = 0;
+    bool file_open_ = false;
+    std::ifstream input_;
+    std::array<char, kBenchmarkChunkSize> buffer_ {};
+};
+
+fastxlsx::detail::WorksheetInputChunkCallback make_benchmark_chunk_source(
+    const std::vector<fastxlsx::detail::PackageEntryChunk>& chunks)
+{
+    auto reader = std::make_shared<BenchmarkPackageEntryChunkReader>(chunks);
+    return [reader = std::move(reader)](std::string& output_chunk) mutable {
+        return reader->read_next(output_chunk);
+    };
+}
+
 std::uint64_t write_source_worksheet_body(const Options& options)
 {
     ensure_parent_directory(options.source_body);
@@ -402,12 +538,7 @@ void write_source_package(const Options& options)
             {"_rels/.rels", package_relationships_xml()},
             {"xl/workbook.xml", workbook_xml()},
             {"xl/_rels/workbook.xml.rels", workbook_relationships_xml()},
-            {"xl/worksheets/sheet1.xml",
-                {
-                    fastxlsx::detail::PackageEntryChunk::memory(worksheet_prefix(options)),
-                    fastxlsx::detail::PackageEntryChunk::file(options.source_body),
-                    fastxlsx::detail::PackageEntryChunk::memory(worksheet_suffix()),
-                }},
+            {"xl/worksheets/sheet1.xml", source_worksheet_chunks(options)},
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
@@ -471,6 +602,95 @@ std::vector<fastxlsx::WorksheetCellUpdate> make_public_replacements(const Option
         });
     }
     return replacements;
+}
+
+std::filesystem::path indexed_staged_worksheet_temp_path(const Options& options)
+{
+    const std::string filename = options.output.filename().empty()
+        ? std::string("fastxlsx-package-editor-cell-replacement-output.xlsx")
+        : options.output.filename().string();
+    const std::filesystem::path temp_name =
+        std::filesystem::path(filename + ".indexed-staged-worksheet.xml.tmp");
+    const std::filesystem::path parent = options.output.parent_path();
+    return parent.empty() ? temp_name : parent / temp_name;
+}
+
+void remove_file_if_exists(
+    const std::filesystem::path& path,
+    std::string_view purpose)
+{
+    std::error_code error;
+    (void)std::filesystem::remove(path, error);
+    if (error) {
+        fail("failed to remove " + std::string(purpose) + ": " + error.message());
+    }
+}
+
+std::filesystem::path apply_indexed_staged_replacement(
+    const Options& options,
+    fastxlsx::detail::PackageEditor& editor,
+    std::span<const fastxlsx::detail::WorksheetCellReplacement> replacements,
+    RunStats& stats)
+{
+    std::vector<fastxlsx::detail::PackageEntryChunk> source_chunks =
+        source_worksheet_chunks(options);
+
+    auto phase_started = std::chrono::steady_clock::now();
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_chunk_source(
+            make_benchmark_chunk_source(source_chunks));
+    stats.timings.index_build_ms = milliseconds_since(phase_started);
+    stats.indexed_source_cell_count = static_cast<std::uint64_t>(index.cell_count());
+
+    phase_started = std::chrono::steady_clock::now();
+    const fastxlsx::detail::WorksheetCellReplacementPlan replacement_plan =
+        fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+
+    const std::filesystem::path staged_worksheet_path =
+        indexed_staged_worksheet_temp_path(options);
+    ensure_parent_directory(staged_worksheet_path);
+    remove_file_if_exists(staged_worksheet_path, "stale indexed staged worksheet temp file");
+
+    std::ofstream staged_worksheet(staged_worksheet_path, std::ios::binary);
+    if (!staged_worksheet) {
+        fail("failed to open indexed staged worksheet temp file");
+    }
+
+    const fastxlsx::detail::WorksheetTransformSummary summary =
+        fastxlsx::detail::emit_indexed_cell_replacement_from_package_entry_chunks(
+            source_chunks,
+            index,
+            replacement_plan,
+            [&](std::string_view chunk) {
+                staged_worksheet.write(
+                    chunk.data(), static_cast<std::streamsize>(chunk.size()));
+                if (!staged_worksheet) {
+                    fail("failed to write indexed staged worksheet temp file");
+                }
+            });
+
+    staged_worksheet.close();
+    if (!staged_worksheet) {
+        fail("failed to finalize indexed staged worksheet temp file");
+    }
+    stats.timings.indexed_emit_ms = milliseconds_since(phase_started);
+    stats.indexed_matched_replacement_count =
+        static_cast<std::uint64_t>(summary.matched_replacement_count);
+    stats.indexed_staged_output_bytes =
+        static_cast<std::uint64_t>(std::filesystem::file_size(staged_worksheet_path));
+
+    fastxlsx::detail::PackageEntryChunk output_chunk =
+        fastxlsx::detail::PackageEntryChunk::file(staged_worksheet_path);
+    output_chunk.has_expected_size = true;
+    output_chunk.expected_size = stats.indexed_staged_output_bytes;
+
+    phase_started = std::chrono::steady_clock::now();
+    editor.replace_worksheet_part_chunks_by_name("Data",
+        {std::move(output_chunk)},
+        {},
+        "benchmark indexed staged strict cell replacement");
+    stats.timings.indexed_stage_commit_ms = milliseconds_since(phase_started);
+    return staged_worksheet_path;
 }
 
 bool note_contains_all(std::string_view note, std::initializer_list<std::string_view> needles)
@@ -614,10 +834,16 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"source_cells\": " << stats.source_cells << ",\n";
     out << "  \"replacement_count\": " << options.edits << ",\n";
     out << "  \"editor_api\": \"" << editor_api_name(options.editor_api) << "\",\n";
+    out << "  \"rewrite_strategy\": \""
+        << rewrite_strategy_name(options.rewrite_strategy) << "\",\n";
     out << "  \"source_body_write_ms\": " << stats.timings.source_body_write_ms << ",\n";
     out << "  \"source_package_write_ms\": " << stats.timings.source_package_write_ms << ",\n";
     out << "  \"open_ms\": " << stats.timings.open_ms << ",\n";
     out << "  \"patch_plan_ms\": " << stats.timings.patch_plan_ms << ",\n";
+    out << "  \"index_build_ms\": " << stats.timings.index_build_ms << ",\n";
+    out << "  \"indexed_emit_ms\": " << stats.timings.indexed_emit_ms << ",\n";
+    out << "  \"indexed_stage_commit_ms\": "
+        << stats.timings.indexed_stage_commit_ms << ",\n";
     out << "  \"save_ms\": " << stats.timings.save_ms << ",\n";
     out << "  \"verify_ms\": " << stats.timings.verify_ms << ",\n";
     out << "  \"total_edit_ms\": " << stats.timings.total_edit_ms << ",\n";
@@ -641,6 +867,12 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.public_facade_targeted_cell_count << ",\n";
     out << "  \"public_facade_replacement_xml_bytes\": "
         << stats.public_facade_replacement_xml_bytes << ",\n";
+    out << "  \"indexed_source_cell_count\": "
+        << stats.indexed_source_cell_count << ",\n";
+    out << "  \"indexed_matched_replacement_count\": "
+        << stats.indexed_matched_replacement_count << ",\n";
+    out << "  \"indexed_staged_output_bytes\": "
+        << stats.indexed_staged_output_bytes << ",\n";
     out << "  \"output_verified\": "
         << (stats.output_verified ? "true" : "false") << ",\n";
     out << "  \"output_contains_first_replacement\": "
@@ -651,10 +883,20 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"editor_mode\": \""
         << (options.editor_api == EditorApi::PublicWorkbookEditor
                 ? "public-workbook-editor-replace-cells"
-                : "internal-package-editor-cell-replacement")
+                : (options.rewrite_strategy == RewriteStrategy::IndexedStaged
+                        ? "internal-package-editor-indexed-staged-cell-replacement"
+                        : "internal-package-editor-transformer-cell-replacement"))
         << "\",\n";
-    out << "  \"package_entry_source_mode\": \"source-zip-entry-chunk-source\",\n";
-    out << "  \"output_entry_mode\": \"file-backed-stream-rewrite\",\n";
+    out << "  \"package_entry_source_mode\": \""
+        << (options.rewrite_strategy == RewriteStrategy::IndexedStaged
+                ? "benchmark-prefix-body-file-suffix-staged-chunks"
+                : "source-zip-entry-chunk-source")
+        << "\",\n";
+    out << "  \"output_entry_mode\": \""
+        << (options.rewrite_strategy == RewriteStrategy::IndexedStaged
+                ? "indexed-staged-file-backed-worksheet-replacement"
+                : "file-backed-stream-rewrite")
+        << "\",\n";
     out << "  \"office_open\": \"not_run\",\n";
     out << "  \"source\": \"" << json_escape(options.source.generic_string()) << "\",\n";
     out << "  \"source_body\": \"" << json_escape(options.source_body.generic_string()) << "\",\n";
@@ -681,6 +923,7 @@ RunStats run_benchmark(const Options& options)
     phase_started = std::chrono::steady_clock::now();
     std::optional<fastxlsx::detail::PackageEditor> internal_editor;
     std::optional<fastxlsx::WorkbookEditor> public_editor;
+    std::optional<std::filesystem::path> indexed_staged_worksheet_path;
     if (options.editor_api == EditorApi::PublicWorkbookEditor) {
         public_editor = fastxlsx::WorkbookEditor::open(options.source);
     } else {
@@ -704,7 +947,13 @@ RunStats run_benchmark(const Options& options)
         std::vector<std::string> replacement_xml;
         std::vector<fastxlsx::detail::WorksheetCellReplacement> replacements =
             make_replacements(options, cell_references, replacement_xml);
-        internal_editor->replace_worksheet_cells_by_name("Data", replacements);
+        if (options.rewrite_strategy == RewriteStrategy::IndexedStaged) {
+            indexed_staged_worksheet_path =
+                apply_indexed_staged_replacement(
+                    options, *internal_editor, replacements, stats);
+        } else {
+            internal_editor->replace_worksheet_cells_by_name("Data", replacements);
+        }
     }
     stats.timings.patch_plan_ms = milliseconds_since(phase_started);
     if (internal_editor.has_value()) {
@@ -719,6 +968,10 @@ RunStats run_benchmark(const Options& options)
         internal_editor->save_as(options.output);
     }
     stats.timings.save_ms = milliseconds_since(phase_started);
+    if (indexed_staged_worksheet_path.has_value()) {
+        remove_file_if_exists(
+            *indexed_staged_worksheet_path, "indexed staged worksheet temp file");
+    }
     stats.output_package_bytes =
         static_cast<std::uint64_t>(std::filesystem::file_size(options.output));
 

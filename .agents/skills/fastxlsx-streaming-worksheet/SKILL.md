@@ -29,8 +29,10 @@ package writer 或生产级大文件性能完成。
 当前还可见 internal `PackageEntryChunk` byte-range emitter，可从 memory/file staged
 chunks 中按 offset/size 输出片段，作为 PackageEditor indexed rewrite 的底层前置能力；
 当前还有 internal PackageEditor chunk-backed indexed strict-replace slicer prototype，
-可用 staged chunks + prebuilt index 拼接 existing-cell replacement payload。它不是
-source ZIP entry seek、不是默认 Patch 算法切换，也不是完整低内存随机编辑。
+可用 staged chunks + prebuilt index 拼接 existing-cell replacement payload；当前
+`fastxlsx_bench_package_editor_cell_replacement` 还提供 opt-in
+`--rewrite-strategy indexed-staged` schema-v2 benchmark/prototype 路径。它不是 source
+ZIP entry seek、不是默认 Patch 算法切换，也不是完整低内存随机编辑。
 
 ## 不可破坏的边界
 

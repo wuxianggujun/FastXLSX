@@ -221,9 +221,12 @@ bytes 与 index 完全匹配时按 source ranges 拼接 strict existing-cell rep
 当前还有 internal `PackageEntryChunk` byte-range emitter，可按 offset/size 切出
 memory/file staged chunks，并覆盖跨 chunk 边界 range；当前还已有 internal
 PackageEditor chunk-backed indexed strict-replace slicer prototype，可用 staged
-chunks + prebuilt index 拼接 existing-cell replacement payload。它们不是 public API、
-不是当前 public Patch 默认路径、不是 PackageEditor source-entry ZIP seek，也不是完整
-indexed worksheet rewrite 能力。
+chunks + prebuilt index 拼接 existing-cell replacement payload；当前
+`fastxlsx_bench_package_editor_cell_replacement` 还提供 opt-in
+`--rewrite-strategy indexed-staged` schema-v2 benchmark/prototype 路径，专门验证
+benchmark 生成的 staged chunks + prebuilt index。它们不是 public API、不是当前 public
+Patch 默认路径、不是 PackageEditor source-entry ZIP seek，也不是完整 indexed worksheet
+rewrite 能力。
 当前结构测试还验证 sheetData patch 输出后，worksheet `.rels` 中保留的
 legacyDrawing `rId7` target `../drawings/vmlDrawing1.vml#shape1` 可由
 `PackageReader` / `RelationshipGraph` 重读；这仍是 preservation 证据，不是

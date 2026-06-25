@@ -68,10 +68,14 @@ exactly match the index. `PackageEditor` now also has an internal
 `PackageEntryChunk` byte-range emitter that can slice validated memory/file
 staged chunks, including ranges crossing chunk boundaries, and an internal
 chunk-backed indexed slicer prototype that replays strict existing-cell
-replacement payloads over those staged chunk ranges. These are
-indexed/random-access rewrite foundations, not public editor APIs, not a
-default large-sheet algorithm switch, not a PackageEditor source-entry ZIP seek
-path, and not a claim that source ZIP entries can be sought directly.
+replacement payloads over those staged chunk ranges. The lower-level
+`fastxlsx_bench_package_editor_cell_replacement` tool now exposes this as an
+opt-in internal `--rewrite-strategy indexed-staged` benchmark path with
+schema-v2 timing fields for index build, indexed emit, and staged worksheet
+commit. These are indexed/random-access rewrite foundations, not public editor
+APIs, not a default large-sheet algorithm switch, not a PackageEditor
+source-entry ZIP seek path, and not a claim that source ZIP entries can be
+sought directly.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source

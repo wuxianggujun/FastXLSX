@@ -153,7 +153,8 @@ try {
 
     foreach ($resultFile in $resolvedResults) {
         $result = Get-Content -LiteralPath $resultFile -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ([string]$result.package_editor_cell_replacement_benchmark_schema_version -ne "1") {
+        $schemaVersion = [string]$result.package_editor_cell_replacement_benchmark_schema_version
+        if ($schemaVersion -notin @("1", "2")) {
             throw "unsupported package editor benchmark schema in $resultFile"
         }
         if ([string]$result.scenario -ne "source-entry-cell-replacement") {
@@ -164,14 +165,22 @@ try {
         $cols = [int]$result.cols
         $sourceCells = [int64]$result.source_cells
         $replacementCount = [int64]$result.replacement_count
+        $editorApi = [string]$result.editor_api
+        $rewriteStrategy = [string]$result.rewrite_strategy
+        if ([string]::IsNullOrWhiteSpace($rewriteStrategy)) {
+            $rewriteStrategy = "transformer"
+        }
 
         $caseReport = [ordered]@{
             result_json = $resultFile
+            benchmark_schema_version = $schemaVersion
             output = [string]$result.output
             status = "pending"
             sheet = "Data"
             expected_rows = $rows
             expected_cols = $cols
+            editor_api = $editorApi
+            rewrite_strategy = $rewriteStrategy
             used_range_rows = $null
             used_range_cols = $null
             first_replacement_cell = "A1"
@@ -185,6 +194,8 @@ try {
             output_contains_tail_cell = [bool]$result.output_contains_tail_cell
             package_entry_source_mode = [string]$result.package_entry_source_mode
             output_entry_mode = [string]$result.output_entry_mode
+            indexed_source_cell_count = [int64]$result.indexed_source_cell_count
+            indexed_matched_replacement_count = [int64]$result.indexed_matched_replacement_count
         }
         [void]$officeCases.Add($caseReport)
 
@@ -192,17 +203,43 @@ try {
             Assert-BoolField $result.output_verified "$resultFile output_verified"
             Assert-BoolField $result.output_contains_first_replacement "$resultFile output_contains_first_replacement"
             Assert-BoolField $result.output_contains_tail_cell "$resultFile output_contains_tail_cell"
-            Assert-BoolField $result.plan_reports_source_entry_chunk_source "$resultFile plan_reports_source_entry_chunk_source"
-            Assert-BoolField $result.plan_reports_file_backed_stream_rewrite "$resultFile plan_reports_file_backed_stream_rewrite"
-            Assert-BoolField $result.output_plan_staged_replacement_chunks "$resultFile output_plan_staged_replacement_chunks"
-            if ([bool]$result.output_plan_materialized_replacement) {
-                throw "$resultFile output_plan_materialized_replacement expected false"
-            }
-            if ([string]$result.package_entry_source_mode -ne "source-zip-entry-chunk-source") {
-                throw "$resultFile package_entry_source_mode expected source-zip-entry-chunk-source"
-            }
-            if ([string]$result.output_entry_mode -ne "file-backed-stream-rewrite") {
-                throw "$resultFile output_entry_mode expected file-backed-stream-rewrite"
+            if ($rewriteStrategy -eq "indexed-staged") {
+                Assert-BoolField $result.output_plan_staged_replacement_chunks "$resultFile output_plan_staged_replacement_chunks"
+                if ([bool]$result.output_plan_materialized_replacement) {
+                    throw "$resultFile output_plan_materialized_replacement expected false"
+                }
+                if ([string]$result.package_entry_source_mode -ne "benchmark-prefix-body-file-suffix-staged-chunks") {
+                    throw "$resultFile package_entry_source_mode expected benchmark-prefix-body-file-suffix-staged-chunks"
+                }
+                if ([string]$result.output_entry_mode -ne "indexed-staged-file-backed-worksheet-replacement") {
+                    throw "$resultFile output_entry_mode expected indexed-staged-file-backed-worksheet-replacement"
+                }
+                if ([int64]$result.indexed_source_cell_count -ne $sourceCells) {
+                    throw "$resultFile indexed_source_cell_count expected $sourceCells"
+                }
+                if ([int64]$result.indexed_matched_replacement_count -ne $replacementCount) {
+                    throw "$resultFile indexed_matched_replacement_count expected $replacementCount"
+                }
+            } else {
+                if ([string]$result.package_entry_source_mode -ne "source-zip-entry-chunk-source") {
+                    throw "$resultFile package_entry_source_mode expected source-zip-entry-chunk-source"
+                }
+                if ([string]$result.output_entry_mode -ne "file-backed-stream-rewrite") {
+                    throw "$resultFile output_entry_mode expected file-backed-stream-rewrite"
+                }
+                if ($editorApi -eq "internal-package-editor") {
+                    Assert-BoolField $result.plan_reports_source_entry_chunk_source "$resultFile plan_reports_source_entry_chunk_source"
+                    Assert-BoolField $result.plan_reports_file_backed_stream_rewrite "$resultFile plan_reports_file_backed_stream_rewrite"
+                    Assert-BoolField $result.output_plan_staged_replacement_chunks "$resultFile output_plan_staged_replacement_chunks"
+                    if ([bool]$result.output_plan_materialized_replacement) {
+                        throw "$resultFile output_plan_materialized_replacement expected false"
+                    }
+                } elseif ($editorApi -eq "public-workbook-editor") {
+                    Assert-BoolField $result.public_facade_reports_targeted_cells "$resultFile public_facade_reports_targeted_cells"
+                    if ([int64]$result.public_facade_targeted_cell_count -ne $replacementCount) {
+                        throw "$resultFile public_facade_targeted_cell_count expected $replacementCount"
+                    }
+                }
             }
 
             $workbookPath = Resolve-JsonReferencedPath $result.output $resultFile "$resultFile output"

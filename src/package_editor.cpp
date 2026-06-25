@@ -5214,7 +5214,7 @@ PackageEntryIndexedCellReplacementPlan plan_indexed_cell_replacement_from_chunks
     return plan;
 }
 
-WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks(
+WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks_impl(
     const std::vector<PackageEntryChunk>& source_chunks,
     const WorksheetCellIndex& index,
     const WorksheetCellReplacementPlan& replacement_plan,
@@ -5466,6 +5466,16 @@ void validate_worksheet_replacement_preconditions(const PackageManifest& manifes
 }
 
 } // namespace
+
+WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const WorksheetOutputChunkCallback& callback)
+{
+    return emit_indexed_cell_replacement_from_package_entry_chunks_impl(
+        source_chunks, index, replacement_plan, callback);
+}
 
 PackageEditor PackageEditor::open(std::filesystem::path path)
 {

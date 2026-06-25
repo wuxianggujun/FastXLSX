@@ -34520,6 +34520,66 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.752 - PackageEditor indexed staged-chunk benchmark strategy
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `tools/verify_package_editor_cell_replacement_benchmark_excel.ps1`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+- `.agents/skills/fastxlsx-streaming-worksheet/SKILL.md`
+
+Goal: make the P8.751 indexed staged-chunk strict-replace slicer executable
+through an opt-in benchmark/prototype path, without changing the public
+`WorkbookEditor::replace_cells()` default transformer behavior.
+
+Output:
+- Exposed internal
+  `emit_indexed_cell_replacement_from_package_entry_chunks()` from the internal
+  `src/package_editor.hpp` boundary so benchmark code can call it without
+  enabling test hooks.
+- `fastxlsx_bench_package_editor_cell_replacement` now accepts
+  `--rewrite-strategy transformer|indexed-staged`; the default remains
+  `transformer`.
+- `indexed-staged` is restricted to `--editor-api internal-package-editor`,
+  builds a `WorksheetCellIndex` from the benchmark-generated
+  prefix/body-file/suffix staged chunks, emits the indexed replacement to a
+  temporary file-backed worksheet XML, then commits it through
+  `PackageEditor::replace_worksheet_part_chunks_by_name()` so existing worksheet
+  validation, audit, calc metadata, and package save paths still run.
+- Benchmark JSON is schema-v2 and records `rewrite_strategy`, `index_build_ms`,
+  `indexed_emit_ms`, `indexed_stage_commit_ms`, `indexed_source_cell_count`,
+  `indexed_matched_replacement_count`, `indexed_staged_output_bytes`, and
+  strategy-specific package/output entry modes.
+- Excel sidecar verification accepts schema-v1/v2 results and validates public,
+  internal transformer, and indexed-staged modes according to their actual
+  fields.
+
+Non-goals / boundary:
+- No public API, no `WorkbookEditor` behavior change, no default Patch algorithm
+  switch, no source-entry ZIP seek, no upsert / missing-row insert support, no
+  dimension refresh beyond existing staged worksheet replacement validation, no
+  relationship repair, no range metadata recalculation, and no sharedStrings /
+  styles migration.
+- The indexed benchmark source is the benchmark's own prefix/body-file/suffix
+  staged chunks. It is not proof that arbitrary source package ZIP entries can
+  be randomly sought.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- A small `--editor-api internal-package-editor --rewrite-strategy indexed-staged`
+  benchmark smoke run writes schema-v2 JSON and verifies output.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

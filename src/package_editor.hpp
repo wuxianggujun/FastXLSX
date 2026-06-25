@@ -113,6 +113,17 @@ struct SheetCatalogRenameOptions {
     std::vector<FormulaSheetReferenceRewrite> extra_formula_rewrites;
 };
 
+// Internal indexed strict-replace primitive over already-staged worksheet
+// chunks. The caller must provide a WorksheetCellIndex built from the exact same
+// decompressed worksheet bytes represented by source_chunks. This is an
+// internal benchmark/prototype handoff, not a public Patch algorithm switch,
+// source ZIP-entry seek layer, metadata repair path, or insert/upsert support.
+[[nodiscard]] WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const WorksheetOutputChunkCallback& callback);
+
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 using PackageEditorSourceCopyTempFilesHook =
     void (*)(std::span<const std::filesystem::path> temporary_source_files);

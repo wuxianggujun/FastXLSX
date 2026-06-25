@@ -259,6 +259,19 @@ set_tests_properties(fastxlsx.worksheet_event_reader PROPERTIES
     TIMEOUT 60
 )
 
+add_executable(fastxlsx_worksheet_cell_index_tests
+    test_worksheet_cell_index.cpp
+)
+
+target_link_libraries(fastxlsx_worksheet_cell_index_tests PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_worksheet_cell_index_tests PRIVATE cxx_std_20)
+
+add_test(NAME fastxlsx.worksheet_cell_index COMMAND fastxlsx_worksheet_cell_index_tests)
+set_tests_properties(fastxlsx.worksheet_cell_index PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    TIMEOUT 60
+)
+
 add_executable(fastxlsx_worksheet_transformer_tests
     test_worksheet_transformer.cpp
 )

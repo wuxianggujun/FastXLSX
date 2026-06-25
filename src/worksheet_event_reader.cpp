@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -209,13 +211,14 @@ public:
     {
     }
 
-    void emit_comment(std::string_view raw)
+    void emit_comment(std::string_view raw, std::uint64_t offset)
     {
         reject_markup_after_root();
-        emit(WorksheetEvent { WorksheetEventKind::Comment, raw, {}, current_row_, current_cell_ });
+        emit(WorksheetEvent { WorksheetEventKind::Comment, raw, {}, current_row_, current_cell_ },
+            offset);
     }
 
-    void emit_processing_instruction(std::string_view raw)
+    void emit_processing_instruction(std::string_view raw, std::uint64_t offset)
     {
         reject_markup_after_root();
         const bool xml_declaration = is_xml_declaration(raw);
@@ -226,10 +229,10 @@ public:
         const WorksheetEventKind kind = xml_declaration
             ? WorksheetEventKind::XmlDeclaration
             : WorksheetEventKind::ProcessingInstruction;
-        emit(WorksheetEvent { kind, raw, {}, current_row_, current_cell_ });
+        emit(WorksheetEvent { kind, raw, {}, current_row_, current_cell_ }, offset);
     }
 
-    void emit_unsupported(std::string_view raw)
+    void emit_unsupported(std::string_view raw, std::uint64_t offset)
     {
         reject_markup_outside_root();
         emit(WorksheetEvent { WorksheetEventKind::Unsupported,
@@ -238,10 +241,11 @@ public:
             current_row_,
             current_cell_,
             {},
-            false });
+            false },
+            offset);
     }
 
-    void emit_text(std::string_view text)
+    void emit_text(std::string_view text, std::uint64_t offset)
     {
         if (text.empty()) {
             return;
@@ -263,10 +267,11 @@ public:
             current_row_,
             current_cell_,
             in_cell_value_ ? text : std::string_view {},
-            false });
+            false },
+            offset);
     }
 
-    void emit_tag(std::string_view raw)
+    void emit_tag(std::string_view raw, std::uint64_t offset)
     {
         const std::string_view name = element_name(raw);
         const bool closing = is_closing_tag(raw);
@@ -278,11 +283,11 @@ public:
         }
 
         if (closing) {
-            emit_closing_tag(raw, name);
+            emit_closing_tag(raw, name, offset);
             return;
         }
 
-        emit_opening_tag(raw, name, self_closing);
+        emit_opening_tag(raw, name, self_closing, offset);
     }
 
     void finish() const
@@ -301,8 +306,9 @@ public:
     }
 
 private:
-    void emit(WorksheetEvent event) const
+    void emit(WorksheetEvent event, std::uint64_t offset) const
     {
+        event.raw_xml_offset = offset;
         callback_(event);
     }
 
@@ -361,7 +367,8 @@ private:
         current_cell_value_element_.clear();
     }
 
-    void emit_closing_tag(std::string_view raw, std::string_view name)
+    void emit_closing_tag(
+        std::string_view raw, std::string_view name, std::uint64_t offset)
     {
         if (is_value_element(name) && in_cell_) {
             if (!in_cell_value_ || current_cell_value_element_ != name) {
@@ -372,7 +379,8 @@ private:
                 raw,
                 name,
                 current_row_,
-                current_cell_ });
+                current_cell_ },
+                offset);
             clear_current_cell_value();
         } else if (name == "c") {
             if (!in_cell_) {
@@ -387,7 +395,8 @@ private:
                 raw,
                 name,
                 current_row_,
-                current_cell_ });
+                current_cell_ },
+                offset);
             in_cell_ = false;
             clear_current_cell();
         } else if (name == "row") {
@@ -401,7 +410,8 @@ private:
                 current_row_,
                 {},
                 {},
-                false });
+                false },
+                offset);
             in_row_ = false;
             clear_current_row();
         } else if (name == "sheetData") {
@@ -409,27 +419,29 @@ private:
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found an invalid sheetData boundary");
             }
-            emit(WorksheetEvent { WorksheetEventKind::SheetDataEnd, raw, name });
+            emit(WorksheetEvent { WorksheetEventKind::SheetDataEnd, raw, name }, offset);
             in_sheet_data_ = false;
         } else if (name == "worksheet") {
             if (in_sheet_data_ || in_row_ || in_cell_) {
                 throw fastxlsx::FastXlsxError(
                     "worksheet event reader found an invalid worksheet boundary");
             }
-            emit(WorksheetEvent { WorksheetEventKind::WorksheetEnd, raw, name });
+            emit(WorksheetEvent { WorksheetEventKind::WorksheetEnd, raw, name }, offset);
             seen_worksheet_end_ = true;
         } else if (in_cell_) {
             emit(WorksheetEvent { WorksheetEventKind::Metadata,
                 raw,
                 name,
                 current_row_,
-                current_cell_ });
+                current_cell_ },
+                offset);
         } else if (seen_worksheet_start_ && !seen_worksheet_end_ && !in_sheet_data_) {
-            emit(WorksheetEvent { WorksheetEventKind::Metadata, raw, name });
+            emit(WorksheetEvent { WorksheetEventKind::Metadata, raw, name }, offset);
         }
     }
 
-    void emit_opening_tag(std::string_view raw, std::string_view name, bool self_closing)
+    void emit_opening_tag(
+        std::string_view raw, std::string_view name, bool self_closing, std::uint64_t offset)
     {
         if (name == "worksheet") {
             if (seen_worksheet_start_) {
@@ -443,7 +455,8 @@ private:
                 {},
                 {},
                 {},
-                self_closing });
+                self_closing },
+                offset);
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::WorksheetEnd,
                     raw,
@@ -451,7 +464,8 @@ private:
                     {},
                     {},
                     {},
-                    true });
+                    true },
+                    offset);
                 seen_worksheet_end_ = true;
             }
         } else if (name == "sheetData") {
@@ -467,7 +481,8 @@ private:
                 {},
                 {},
                 {},
-                self_closing });
+                self_closing },
+                offset);
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::SheetDataEnd,
                     raw,
@@ -475,7 +490,8 @@ private:
                     {},
                     {},
                     {},
-                    true });
+                    true },
+                    offset);
                 in_sheet_data_ = false;
             }
         } else if (name == "row") {
@@ -494,7 +510,8 @@ private:
                 current_row_,
                 {},
                 {},
-                self_closing });
+                self_closing },
+                offset);
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::RowEnd,
                     raw,
@@ -502,7 +519,8 @@ private:
                     current_row_,
                     {},
                     {},
-                    true });
+                    true },
+                    offset);
                 in_row_ = false;
                 clear_current_row();
             }
@@ -522,7 +540,8 @@ private:
                 current_row_,
                 current_cell_,
                 {},
-                self_closing });
+                self_closing },
+                offset);
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::CellEnd,
                     raw,
@@ -530,7 +549,8 @@ private:
                     current_row_,
                     current_cell_,
                     {},
-                    true });
+                    true },
+                    offset);
                 in_cell_ = false;
                 clear_current_cell();
             }
@@ -545,7 +565,8 @@ private:
                 current_row_,
                 current_cell_,
                 {},
-                self_closing });
+                self_closing },
+                offset);
             if (!self_closing) {
                 in_cell_value_ = true;
                 current_cell_value_element_ = std::string(name);
@@ -557,7 +578,8 @@ private:
                 current_row_,
                 current_cell_,
                 {},
-                self_closing });
+                self_closing },
+                offset);
         } else if (seen_worksheet_start_ && !seen_worksheet_end_ && !in_sheet_data_) {
             emit(WorksheetEvent { WorksheetEventKind::Metadata,
                 raw,
@@ -565,7 +587,8 @@ private:
                 {},
                 {},
                 {},
-                self_closing });
+                self_closing },
+                offset);
         }
     }
 
@@ -585,22 +608,36 @@ private:
     std::string_view current_cell_;
 };
 
-std::size_t consume_available_events(
-    std::string_view xml_window, bool final_chunk, WorksheetEventState& state)
+std::uint64_t add_source_offset(std::uint64_t base, std::size_t relative)
+{
+    if (static_cast<std::uint64_t>(relative)
+        > std::numeric_limits<std::uint64_t>::max() - base) {
+        throw fastxlsx::FastXlsxError("worksheet event reader source offset overflow");
+    }
+    return base + static_cast<std::uint64_t>(relative);
+}
+
+std::size_t consume_available_events(std::string_view xml_window,
+    bool final_chunk,
+    WorksheetEventState& state,
+    std::uint64_t window_begin_offset)
 {
     std::size_t position = 0;
     while (position < xml_window.size()) {
         const std::size_t open = xml_window.find('<', position);
         if (open == std::string_view::npos) {
             if (final_chunk) {
-                state.emit_text(xml_window.substr(position));
+                state.emit_text(
+                    xml_window.substr(position),
+                    add_source_offset(window_begin_offset, position));
                 return xml_window.size();
             }
             return position;
         }
 
         if (open > position) {
-            state.emit_text(xml_window.substr(position, open - position));
+            state.emit_text(xml_window.substr(position, open - position),
+                add_source_offset(window_begin_offset, position));
             position = open;
         }
 
@@ -614,7 +651,7 @@ std::size_t consume_available_events(
                     "worksheet event reader found an unterminated XML comment");
             }
             const std::string_view raw = xml_window.substr(position, end + 3 - position);
-            state.emit_comment(raw);
+            state.emit_comment(raw, add_source_offset(window_begin_offset, position));
             position = end + 3;
             continue;
         }
@@ -629,7 +666,8 @@ std::size_t consume_available_events(
                     "worksheet event reader found an unterminated processing instruction");
             }
             const std::string_view raw = xml_window.substr(position, end + 2 - position);
-            state.emit_processing_instruction(raw);
+            state.emit_processing_instruction(raw,
+                add_source_offset(window_begin_offset, position));
             position = end + 2;
             continue;
         }
@@ -643,7 +681,7 @@ std::size_t consume_available_events(
                 throw fastxlsx::FastXlsxError("worksheet event reader found unterminated markup");
             }
             const std::string_view raw = xml_window.substr(position, end + 1 - position);
-            state.emit_unsupported(raw);
+            state.emit_unsupported(raw, add_source_offset(window_begin_offset, position));
             position = end + 1;
             continue;
         }
@@ -656,7 +694,7 @@ std::size_t consume_available_events(
             throw fastxlsx::FastXlsxError("worksheet event reader found unterminated markup");
         }
         const std::string_view raw = xml_window.substr(position, close + 1 - position);
-        state.emit_tag(raw);
+        state.emit_tag(raw, add_source_offset(window_begin_offset, position));
         position = close + 1;
     }
 
@@ -670,19 +708,27 @@ void erase_consumed_prefix(std::string& window, std::size_t consumed)
     }
 }
 
-void process_window(std::string& window, bool final_chunk, WorksheetEventState& state)
+void process_window(
+    std::string& window,
+    bool final_chunk,
+    WorksheetEventState& state,
+    std::uint64_t& window_begin_offset)
 {
-    erase_consumed_prefix(window, consume_available_events(window, final_chunk, state));
+    const std::size_t consumed =
+        consume_available_events(window, final_chunk, state, window_begin_offset);
+    erase_consumed_prefix(window, consumed);
+    window_begin_offset = add_source_offset(window_begin_offset, consumed);
 }
 
 void process_source_chunk(std::string_view chunk,
     WorksheetEventReaderOptions options,
     std::string& window,
-    WorksheetEventState& state)
+    WorksheetEventState& state,
+    std::uint64_t& window_begin_offset)
 {
     std::size_t chunk_offset = 0;
     while (chunk_offset < chunk.size()) {
-        process_window(window, false, state);
+        process_window(window, false, state, window_begin_offset);
         if (window.size() >= options.max_window_bytes) {
             throw fastxlsx::FastXlsxError(
                 "worksheet event reader exceeded bounded input window");
@@ -693,7 +739,7 @@ void process_source_chunk(std::string_view chunk,
         const std::size_t bytes_to_append = std::min(available, remaining);
         window.append(chunk.data() + chunk_offset, bytes_to_append);
         chunk_offset += bytes_to_append;
-        process_window(window, false, state);
+        process_window(window, false, state, window_begin_offset);
 
         if (bytes_to_append == 0 && !window.empty()) {
             throw fastxlsx::FastXlsxError(
@@ -724,13 +770,14 @@ void scan_worksheet_events_from_chunk_source(
     WorksheetEventState state(callback, true);
     std::string window;
     window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
+    std::uint64_t window_begin_offset = 0;
 
     std::string chunk;
     while (read_next_chunk(chunk)) {
-        process_source_chunk(chunk, options, window, state);
+        process_source_chunk(chunk, options, window, state, window_begin_offset);
     }
 
-    process_window(window, true, state);
+    process_window(window, true, state, window_begin_offset);
     state.finish();
 }
 

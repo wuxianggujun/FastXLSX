@@ -248,17 +248,21 @@ source cells、`1000` edits，stored source workbook，`office_open=not_run`：
 全部 targets，改为按 row/column 排序后的单向游标推进。相同 500000 / 1000 upsert
 smoke 中，优化前本机 `total_editor_ms` 约 4248 ms，优化后约 1639 ms。结论是：
 大文件少量点编辑应优先走 Patch replace/upsert；它避免 worksheet materialization，
-峰值工作集在该 smoke 下约 6.3 MB。当前耗时仍与 source worksheet 线性扫描相关，不是
-真正随机访问索引；插入/替换也不会修复 tables、filters、drawings、defined names、
-formulas、sharedStrings 或 styles。
+峰值工作集在该 smoke 下约 6.3 MB。当前 public Patch 耗时仍与 source worksheet
+线性扫描相关；内部已有 `WorksheetCellIndex` source-offset 索引基础，但还没有被
+切换成默认 Patch 算法，也不是 source ZIP entry seek 或完整 O(1) 随机编辑。插入/替换
+也不会修复 tables、filters、drawings、defined names、formulas、sharedStrings 或
+styles。
 
 同日又收紧 targeted-cell transformer 热路径：strict replace 在全部 target
 命中且 source stream 已越过最后一个 target 坐标后，不再对 tail source cells 做
 replacement map lookup；Insert/upsert 在保持 source cell reference 校验的前提下，
 全部 target 发射后也停止 pending-target / replacement lookup。该优化不改变 public
-API、不新增索引，也不跳过 source XML 扫描；它只减少“大 worksheet 前段少量点编辑、
-后段大量透传 cells”场景中的无效 target 查找。回归测试覆盖早段 target 完成后尾部
-cells 仍原样透传，并固定重复 source target 在进入 tail fast path 前仍按旧行为替换。
+API、不使用索引，也不跳过 source XML 扫描；它只减少“大 worksheet 前段少量点编辑、
+后段大量透传 cells”场景中的无效 target 查找。后续 indexed rewrite 可以复用
+event-reader source offsets 和 `WorksheetCellIndex`，但需要单独的算法切换与
+benchmark 证明。回归测试覆盖早段 target 完成后尾部 cells 仍原样透传，并固定重复
+source target 在进入 tail fast path 前仍按旧行为替换。
 
 ### Public WorkbookEditor Targeted Cell Replacement Benchmark Workflow
 

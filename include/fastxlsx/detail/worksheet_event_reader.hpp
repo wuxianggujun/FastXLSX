@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -44,6 +45,12 @@ struct WorksheetEvent {
     std::string_view cell_reference;
     std::string_view text;
     bool self_closing = false;
+    /// Absolute byte offset of raw_xml/text in the scanned worksheet source.
+    ///
+    /// Offsets are measured from the first byte returned by the chunk source.
+    /// They are intended for internal staged/indexed rewrite foundations; they
+    /// are not ZIP-entry offsets and do not imply source package seekability.
+    std::uint64_t raw_xml_offset = 0;
 };
 
 using WorksheetEventCallback = std::function<void(const WorksheetEvent&)>;

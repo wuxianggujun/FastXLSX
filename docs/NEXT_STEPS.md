@@ -54,9 +54,14 @@ diagnostics. The transformer now also stops targeted replacement lookup on
 tail pass-through cells after requested targets have been matched/emitted and,
 for strict replace, the source stream has advanced past the last target
 coordinate. This lets large worksheets with an early sparse edit set spend less
-work on tail pass-through cells. This is a hot-path cleanup only: source XML is
-still scanned, and there is still no random-access worksheet index or metadata
-repair.
+work on tail pass-through cells. This is a hot-path cleanup only: the current
+public Patch path still scans source XML, and metadata repair is still out of
+scope. The internal worksheet event reader now exposes absolute source byte
+offsets, and a new internal `WorksheetCellIndex` can build a sparse
+cell-reference to source-`<c>` byte-range map from materialized or chunked
+worksheet XML. That is an indexed/random-access rewrite foundation, not a
+public editor API, not a default large-sheet algorithm switch, and not a claim
+that source ZIP entries can be sought directly.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source

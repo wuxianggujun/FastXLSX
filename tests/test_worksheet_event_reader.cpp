@@ -1,6 +1,7 @@
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -32,6 +33,7 @@ struct CopiedWorksheetEvent {
     std::string cell_reference;
     std::string text;
     bool self_closing = false;
+    std::uint64_t raw_xml_offset = 0;
 };
 
 CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
@@ -42,7 +44,8 @@ CopiedWorksheetEvent copy_event(const WorksheetEvent& event)
         std::string(event.row_number),
         std::string(event.cell_reference),
         std::string(event.text),
-        event.self_closing };
+        event.self_closing,
+        event.raw_xml_offset };
 }
 
 std::vector<CopiedWorksheetEvent> read_source_events(
@@ -122,6 +125,7 @@ void check_same_events(const std::vector<CopiedWorksheetEvent>& actual,
         check(lhs.cell_reference == rhs.cell_reference, message);
         check(lhs.text == rhs.text, message);
         check(lhs.self_closing == rhs.self_closing, message);
+        check(lhs.raw_xml_offset == rhs.raw_xml_offset, message);
     }
 }
 
@@ -269,6 +273,57 @@ void test_event_reader_distinguishes_xml_stylesheet_processing_instruction()
         find_first(events, WorksheetEventKind::ProcessingInstruction);
     check(processing_instruction.raw_xml.find("xml-stylesheet") != std::string::npos,
         "processing instruction should preserve the xml-stylesheet raw XML");
+}
+
+void test_event_reader_exposes_absolute_source_offsets_across_chunks()
+{
+    const std::string xml =
+        "\n"
+        R"(<!--prolog-->)"
+        "\n"
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>alpha</v></c>)"
+        R"(<c r="B1"/>)"
+        R"(</row></sheetData></worksheet>)";
+
+    const std::vector<CopiedWorksheetEvent> events = read_source_events(xml, 3);
+
+    const auto find_cell_event = [&](WorksheetEventKind kind, std::string_view reference) {
+        for (const CopiedWorksheetEvent& event : events) {
+            if (event.kind == kind && event.cell_reference == reference) {
+                return event;
+            }
+        }
+        throw TestFailure("expected cell event with source offset not found");
+    };
+
+    const CopiedWorksheetEvent a1_start = find_cell_event(WorksheetEventKind::CellStart, "A1");
+    const CopiedWorksheetEvent a1_value = find_cell_event(WorksheetEventKind::CellValue, "A1");
+    const CopiedWorksheetEvent a1_end = find_cell_event(WorksheetEventKind::CellEnd, "A1");
+    const CopiedWorksheetEvent b1_start = find_cell_event(WorksheetEventKind::CellStart, "B1");
+    const CopiedWorksheetEvent b1_end = find_cell_event(WorksheetEventKind::CellEnd, "B1");
+
+    const std::size_t a1_start_offset = xml.find(R"(<c r="A1">)");
+    const std::size_t a1_value_offset = xml.find("alpha");
+    const std::size_t a1_end_offset = xml.find("</c>", a1_value_offset);
+    const std::size_t b1_offset = xml.find(R"(<c r="B1"/>)");
+
+    check(a1_start.raw_xml_offset == a1_start_offset,
+        "A1 start event should expose the absolute byte offset");
+    check(a1_value.raw_xml_offset == a1_value_offset,
+        "A1 value event should expose the absolute byte offset");
+    check(a1_end.raw_xml_offset == a1_end_offset,
+        "A1 end event should expose the absolute byte offset");
+    check(b1_start.raw_xml_offset == b1_offset,
+        "self-closing B1 start event should expose the absolute byte offset");
+    check(b1_end.raw_xml_offset == b1_offset,
+        "self-closing B1 end event should reuse the start tag byte offset");
+    check(xml.substr(static_cast<std::size_t>(a1_start.raw_xml_offset), a1_start.raw_xml.size())
+            == a1_start.raw_xml,
+        "A1 start offset should point back into the original source XML");
+    check(xml.substr(static_cast<std::size_t>(b1_start.raw_xml_offset), b1_start.raw_xml.size())
+            == b1_start.raw_xml,
+        "B1 start offset should point back into the original source XML");
 }
 
 void test_event_reader_rejects_xml_declaration_after_root_start()
@@ -548,6 +603,7 @@ int main()
         test_event_reader_handles_prefixes_inline_text_and_comments();
         test_event_reader_exposes_cell_inner_metadata();
         test_event_reader_distinguishes_xml_stylesheet_processing_instruction();
+        test_event_reader_exposes_absolute_source_offsets_across_chunks();
         test_event_reader_rejects_xml_declaration_after_root_start();
         test_event_reader_rejects_mismatched_cell_value_boundaries();
         test_event_reader_rejects_invalid_core_element_nesting();

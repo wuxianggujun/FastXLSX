@@ -23,7 +23,8 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
 - `fastxlsx` 当前是 compiled library，源码列表在顶层 `CMakeLists.txt`；当前已接入
   `src/image.cpp`、`src/opc.cpp`、`src/package_editor.cpp`、`src/package_reader.cpp`、
   `src/package_writer.cpp`、`src/streaming_writer.cpp`、`src/workbook.cpp`、
-  `src/xml.cpp`、`src/zip_store_writer.cpp`。
+  `src/xml.cpp`、`src/worksheet_event_reader.cpp`、`src/worksheet_transformer.cpp`、
+  `src/worksheet_cell_index.cpp`、`src/zip_store_writer.cpp`。
 - 别名目标是 `FastXLSX::fastxlsx`。
 - 选项：
   - `FASTXLSX_BUILD_TESTS` 默认 `ON`。
@@ -43,9 +44,13 @@ description: "配置、构建和排查 FastXLSX CMake 工程。用于修改 CMak
   从对应 installed include 目录预解析 `Stb_INCLUDE_DIR`，再调用
   `find_package(Stb MODULE REQUIRED)`，并把 `${Stb_INCLUDE_DIR}` 作为 `fastxlsx`
   的 private include path。
-- `tests/CMakeLists.txt` 注册 `fastxlsx_tests`、`fastxlsx_streaming_writer_tests`
-  `fastxlsx_opc_tests` 和 `fastxlsx_image_tests`，CTest 名称是
-  `fastxlsx.unit`、`fastxlsx.streaming`、`fastxlsx.opc` 和 `fastxlsx.image`。
+- `tests/CMakeLists.txt` 注册 `fastxlsx_tests`、streaming shards、
+  `fastxlsx_opc_tests`、`fastxlsx_worksheet_event_reader_tests`、
+  `fastxlsx_worksheet_cell_index_tests`、`fastxlsx_worksheet_transformer_tests`
+  和 `fastxlsx_image_tests` 等测试目标；对应 CTest 至少包括
+  `fastxlsx.unit`、`fastxlsx.streaming*`、`fastxlsx.opc`、
+  `fastxlsx.worksheet_event_reader`、`fastxlsx.worksheet_cell_index`、
+  `fastxlsx.worksheet_transformer` 和 `fastxlsx.image`。
 - 当前测试不依赖 Catch2。
 
 ## 本地配置命令

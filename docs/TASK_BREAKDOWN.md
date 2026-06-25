@@ -34275,6 +34275,58 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.747 - Worksheet cell source-offset index foundation
+
+Status: completed.
+
+Touched files:
+- `CMakeLists.txt`
+- `include/fastxlsx/detail/worksheet_event_reader.hpp`
+- `include/fastxlsx/detail/worksheet_cell_index.hpp`
+- `src/worksheet_event_reader.cpp`
+- `src/worksheet_cell_index.cpp`
+- `tests/CMakeLists.txt`
+- `tests/test_worksheet_event_reader.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: add an internal sparse source-offset index foundation for future
+indexed/random-access worksheet rewrites, without changing the current public
+Patch API or default transformer semantics.
+
+Output:
+- `WorksheetEvent` now reports `raw_xml_offset`, measured from the first byte of
+  the decompressed worksheet XML chunk source.
+- Added internal `WorksheetCellIndex`, mapping validated source cell references
+  to exact source `<c>` byte ranges for both ordinary and self-closing cells.
+- Added chunk-source and materialized XML builders; materialized XML is still
+  fed through bounded chunks so index behavior matches the streaming reader.
+- Added `worksheet_cell_range_xml()` for safe range slicing against the original
+  worksheet XML source.
+- Added focused tests for exact byte ranges, chunk boundary stability,
+  duplicate / missing / invalid cell references, and event-reader failure
+  propagation.
+
+Non-goals / boundary:
+- No public API, no default targeted-cell Patch algorithm switch, no source ZIP
+  entry seeking, no row/column shifting, no metadata recalculation, no
+  sharedStrings/styles migration, no relationship repair, and no benchmark
+  performance claim.
+- The index stores one map entry per source cell. It is a future rewrite
+  primitive, not a promise that every large worksheet edit should build an
+  index.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_event_reader_tests fastxlsx_worksheet_cell_index_tests fastxlsx_worksheet_transformer_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_event_reader|worksheet_cell_index|worksheet_transformer)$" --output-on-failure` passes.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

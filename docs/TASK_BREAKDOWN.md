@@ -33825,6 +33825,61 @@ Acceptance:
   100000 / 10000 and 500000 / 50000 write schema-v1 JSON reports.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.739 - PackageEditor source-entry cell replacement benchmark
+
+Status: done.
+
+Type: opt-in local benchmark tooling for internal existing-package Patch cell
+replacement; no default CTest/CI registration.
+
+Depends on: P8.738.
+
+Touch files:
+- `benchmarks/CMakeLists.txt`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: provide a repeatable benchmark for the internal PackageEditor
+cell-replacement Patch path that targets large worksheet source entries without
+conflating it with the public small-file `WorkbookEditor` in-memory editor.
+
+Output:
+- Added opt-in benchmark target
+  `fastxlsx_bench_package_editor_cell_replacement` under
+  `FASTXLSX_BUILD_BENCHMARKS`.
+- The tool generates a stored source package whose worksheet entry is assembled
+  from worksheet prefix, file-backed row body, and worksheet suffix; it opens
+  that package through internal `PackageEditor`, runs
+  `replace_worksheet_cells_by_name()`, saves a new package, and writes
+  schema-v1 JSON.
+- JSON records source body/package generation, open, patch plan, save, verify,
+  total edit time, process peak working set, package sizes, and explicit
+  path evidence for `source-zip-entry-chunk-source`,
+  `file-backed-stream-rewrite`, staged replacement chunks, and no materialized
+  worksheet replacement.
+- Local MSVC release runs for 1M / 3M / 5M source cells with 1000 / 3000 / 5000
+  edits passed output verification; the 5M case recorded
+  `total_edit_ms=17647`, `patch_plan_ms=14609`, `save_ms=3037`, and
+  `peak_memory_mb=7.31`.
+
+Non-goals / boundary:
+- No public API change, no default CTest/CI benchmark run, no Google Benchmark
+  dependency, no Office/openpyxl compatibility proof, no sharedStrings/styles
+  migration, no table/range metadata recalculation, no relationship repair,
+  no Zip64 proof, no DEFLATE backend proof, and no claim that public
+  `WorkbookEditor` is a large-file low-memory random editor.
+
+Acceptance:
+- `cmake --preset windows-nmake-release-benchmark` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- Local benchmark runs for 100000 x 10 / 300000 x 10 / 500000 x 10 source
+  cells write schema-v1 JSON reports and verify output through
+  `PackageReader::entry_chunk_source()`.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

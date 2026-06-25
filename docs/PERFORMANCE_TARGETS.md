@@ -224,6 +224,52 @@ CellStore batch preflight + direct commit，避免为失败原子性复制整张
 source worksheet materialization 和 `save_as()` package 输出支配，后续大文件编辑优化
 必须走 worksheet streaming patch / transformer，而不是扩大 In-memory sparse materialization。
 
+### PackageEditor Cell Replacement Benchmark Workflow
+
+大 worksheet 的已有文件定向 cell replacement 使用独立 opt-in 手工工具验证内部
+Patch 路径，不进入默认 CTest/CI：
+
+```powershell
+cmake --preset windows-nmake-release-benchmark
+cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement
+.\build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_package_editor_cell_replacement.exe `
+  --rows 500000 --cols 10 --edits 5000 `
+  --source build\bench-package-editor\source-500k.xlsx `
+  --source-body build\bench-package-editor\source-body-500k.xml `
+  --output build\bench-package-editor\out-500k.xlsx `
+  --result build\bench-package-editor\result-500k.json
+```
+
+`fastxlsx_bench_package_editor_cell_replacement` 会生成一个 stored source package，
+其中 `xl/worksheets/sheet1.xml` 由 worksheet prefix、file-backed row body 和
+worksheet suffix 组成；然后通过 internal `PackageEditor::replace_worksheet_cells_by_name()`
+替换已存在 cell，`save_as()` 写出结果，并用 `PackageReader::entry_chunk_source()`
+流式检查输出包含首个替换 cell 和尾部未修改 source cell。生成 JSON 使用
+`package_editor_cell_replacement_benchmark_schema_version = "1"`，记录 source body /
+package 生成耗时、open、patch plan、save、verify、总编辑耗时、进程峰值工作集、输入 /
+输出 package 大小，以及以下关键路径证据：
+
+- `package_entry_source_mode = "source-zip-entry-chunk-source"`。
+- `output_entry_mode = "file-backed-stream-rewrite"`。
+- `plan_reports_source_entry_chunk_source = true`。
+- `plan_reports_file_backed_stream_rewrite = true`。
+- `output_plan_staged_replacement_chunks = true`。
+- `output_plan_materialized_replacement = false`。
+
+2026-06-25 本地 MSVC release 手工快照，stored source package，`office_open=not_run`：
+
+| source cells / edits | source package MiB | output package MiB | patch_plan_ms | save_ms | total_edit_ms | total_ms | peak_memory_mb |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1000000 / 1000 | 36.12 | 36.12 | 4516 | 802 | 5322 | 7207 | 6.21 |
+| 3000000 / 3000 | 112.79 | 112.79 | 11196 | 1745 | 12943 | 17977 | 6.61 |
+| 5000000 / 5000 | 189.47 | 189.47 | 14609 | 3037 | 17647 | 25219 | 7.31 |
+
+该快照说明内部 Patch cell replacement 已能在 5M cells 级别避免整张 source worksheet
+XML 物化，并把 rewritten worksheet 作为 file-backed staged chunks 输出。它仍不是
+public `WorkbookEditor` 大文件随机编辑 API，不覆盖 sharedStrings/styles 迁移、table /
+range metadata recalculation、relationship repair、Zip64、DEFLATE input/output 或 Office
+打开兼容性；`office_open` 仍为 `not_run`，只有实际办公软件打开后才能写成兼容性事实。
+
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`，记录字符串分布和
 package 元数据：
 

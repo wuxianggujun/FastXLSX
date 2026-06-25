@@ -166,6 +166,21 @@ path is still dominated by source worksheet materialization and `save_as()`.
 Large-file editing should therefore continue through worksheet event
 reader/transformer streaming Patch work, not by raising in-memory materialized
 worksheet limits.
+`fastxlsx_bench_package_editor_cell_replacement` now provides the matching
+opt-in local performance probe for that internal Patch direction. It generates
+a stored source package whose worksheet entry is assembled from prefix +
+file-backed row body + suffix, opens it through internal `PackageEditor`, runs
+`replace_worksheet_cells_by_name()`, saves the edited package, and verifies the
+output through `PackageReader::entry_chunk_source()` without materializing the
+rewritten worksheet. The 2026-06-25 local release snapshot covers 1M / 3M / 5M
+source cells with 1000 / 3000 / 5000 edits respectively; all three reports show
+`source-zip-entry-chunk-source`, `file-backed-stream-rewrite`,
+`staged_replacement_chunks=true`, and `materialized_replacement=false`. The 5M
+case recorded `total_edit_ms=17647`, `patch_plan_ms=14609`,
+`save_ms=3037`, and `peak_memory_mb=7.31`. This is evidence for the internal
+PackageEditor cell-replacement Patch path only; it is still not a public
+large-file random editing API, not sharedStrings/styles migration, not
+relationship repair, not Zip64 proof, and not Office compatibility proof.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit
